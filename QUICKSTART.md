@@ -2,49 +2,47 @@
 
 ทดลองใช้ **CRM-BOM-Stock Web App** ได้ทันที โดยไม่ต้องติดตั้ง database!
 
-## ⚡ รันในครั้งเดียว (5 นาที)
+## ⚡ รัน 2 คำสั่งเท่านั้น! (2 นาที)
 
-### 1. Clone Repository
+### 1. Install Dependencies
 
 ```bash
 git clone <repository-url>
 cd CRM-BOM-Stock
+npm run install:all
 ```
 
-### 2. Install Dependencies
+คำสั่งเดียวติดตั้งทุกอย่าง! ✨
+
+### 2. Start Everything
 
 ```bash
-# Install root dependencies
-npm install
-
-# Install backend dependencies
-cd backend
-npm install
-
-# Install frontend dependencies
-cd ../frontend
-npm install
-```
-
-### 3. Start Backend Server
-
-```bash
-# จาก backend directory
-cd backend
 npm run dev
 ```
 
-Server จะรันที่ `http://localhost:5000`
+**เพียงคำสั่งเดียว!** Frontend และ Backend จะรันพร้อมกัน 🎉
 
-### 4. Start Frontend App (Terminal ใหม่)
+- 🌐 **Frontend**: http://localhost:3000
+- 🔌 **Backend API**: http://localhost:5000/api
 
-```bash
-# จาก frontend directory
-cd frontend
-npm run dev
+### ผลลัพธ์ที่เห็น:
+
+```
+[FRONTEND] ➜  Local:   http://localhost:3000/
+[BACKEND] 🚀 Server running on port 5000
+[BACKEND] 📊 Environment: development
+[BACKEND] 🌐 API URL: http://localhost:5000/api
 ```
 
-Frontend จะรันที่ `http://localhost:3000`
+---
+
+## 🎛️ Commands อื่นๆ (ถ้าต้องการรันแยก)
+
+```bash
+npm run dev:frontend    # รัน Frontend เท่านั้น
+npm run dev:backend     # รัน Backend เท่านั้น
+npm run build          # Build ทั้งหมด
+```
 
 ---
 
