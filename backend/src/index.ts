@@ -25,7 +25,7 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
 // Health check
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     message: 'CRM-BOM-Stock API is running',
@@ -42,7 +42,7 @@ app.use('/api/stock', stockRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 
 // 404 handler
-app.use((req: Request, res: Response) => {
+app.use((_req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     message: 'Route not found',
@@ -50,7 +50,7 @@ app.use((req: Request, res: Response) => {
 })
 
 // Error handler
-app.use((err: any, req: Request, res: Response, next: any) => {
+app.use((err: any, _req: Request, res: Response, _next: any) => {
   console.error('Error:', err)
   res.status(err.status || 500).json({
     success: false,
