@@ -111,64 +111,38 @@ CRM-BOM-Stock/
 
 ### Prerequisites
 - Node.js 18+
-- PostgreSQL 14+
 - npm หรือ yarn
 
-### 1. Clone Repository
+**ไม่ต้องติดตั้ง PostgreSQL!** ใช้ in-memory mock database
+
+### ⚡ Quick Start (2 คำสั่งเท่านั้น!)
 
 ```bash
+# 1. Clone และ Install
 git clone <repository-url>
 cd CRM-BOM-Stock
+npm run install:all
+
+# 2. Run Everything
+npm run dev
 ```
 
-### 2. Install Dependencies
+**เสร็จแล้ว!** 🎉
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:5000/api
+
+### การรันแยก (ถ้าต้องการ)
 
 ```bash
-# Install root dependencies
-npm install
+# รัน Frontend เท่านั้น
+npm run dev:frontend
 
-# Install frontend dependencies
-cd frontend
-npm install
+# รัน Backend เท่านั้น
+npm run dev:backend
 
-# Install backend dependencies
-cd ../backend
-npm install
-```
-
-### 3. Setup Database
-
-```bash
-cd backend
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env and update DATABASE_URL
-# DATABASE_URL="postgresql://user:password@localhost:5432/crm_bom_stock"
-
-# Generate Prisma Client
-npm run prisma:generate
-
-# Run migrations
-npm run prisma:migrate
-```
-
-### 4. Run Development Servers
-
-```bash
-# From root directory
-npm run dev
-
-# หรือรันแยกกัน
-
-# Terminal 1 - Frontend (Port 3000)
-cd frontend
-npm run dev
-
-# Terminal 2 - Backend (Port 5000)
-cd backend
-npm run dev
+# Build สำหรับ production
+npm run build
 ```
 
 ## 🌐 Access Application
