@@ -1,0 +1,232 @@
+// Prisma Schema for CRM-BOM-Stock Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+}
+
+// CRM - Customer Management
+model Customer {
+  id           String         @id @default(cuid())
+  code         String         @unique
+  name         String
+  type         CustomerType
+  contactName  String
+  email        String
+  phone        String
+  address      String?
+  city         String
+  creditLimit  Decimal        @default(0)
+  status       CustomerStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  orders       Order[]
+
+  @@map("customers")
+}
+
+enum CustomerType {
+  HOTEL
+  WHOLESALE
+  RETAIL
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Orders
+model Order {
+  id           String      @id @default(cuid())
+  orderNumber  String      @unique
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  orderDate    DateTime    @default(now())
+  deliveryDate DateTime?
+  totalAmount  Decimal
+  status       OrderStatus @default(PENDING)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  items        OrderItem[]
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String
+  order      Order   @relation(fields: [orderId], references: [id])
+  productId  String
+  product    Product @relation(fields: [productId], references: [id])
+  quantity   Int
+  unitPrice  Decimal
+  totalPrice Decimal
+
+  @@map("order_items")
+}
+
+// BOM - Bill of Materials
+model Product {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  name        String
+  category    String
+  description String?
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  boms        BOM[]
+  orderItems  OrderItem[]
+  stockItems  StockItem[]
+
+  @@map("products")
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+model BOM {
+  id        String    @id @default(cuid())
+  productId String
+  product   Product   @relation(fields: [productId], references: [id])
+  version   String
+  status    BOMStatus @default(DRAFT)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  materials BOMItem[]
+
+  @@unique([productId, version])
+  @@map("boms")
+}
+
+enum BOMStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model Material {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  unit      String
+  unitCost  Decimal
+  minStock  Int
+  maxStock  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bomItems   BOMItem[]
+  stockItems StockItem[]
+
+  @@map("materials")
+}
+
+model BOMItem {
+  id         String   @id @default(cuid())
+  bomId      String
+  bom        BOM      @relation(fields: [bomId], references: [id])
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+  quantity   Decimal
+  unit       String
+
+  @@map("bom_items")
+}
+
+// Stock/Inventory Management
+model StockItem {
+  id         String        @id @default(cuid())
+  sku        String        @unique
+  name       String
+  category   StockCategory
+  productId  String?
+  product    Product?      @relation(fields: [productId], references: [id])
+  materialId String?
+  material   Material?     @relation(fields: [materialId], references: [id])
+  quantity   Int
+  unit       String
+  minStock   Int
+  maxStock   Int
+  location   String
+  status     StockStatus
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  movements  StockMovement[]
+
+  @@map("stock_items")
+}
+
+enum StockCategory {
+  RAW_MATERIAL
+  WORK_IN_PROGRESS
+  FINISHED_GOODS
+}
+
+enum StockStatus {
+  ADEQUATE
+  LOW
+  CRITICAL
+  OVERSTOCK
+}
+
+model StockMovement {
+  id          String             @id @default(cuid())
+  stockItemId String
+  stockItem   StockItem          @relation(fields: [stockItemId], references: [id])
+  type        StockMovementType
+  quantity    Int
+  reference   String?
+  notes       String?
+  createdAt   DateTime           @default(now())
+  createdBy   String
+
+  @@map("stock_movements")
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
