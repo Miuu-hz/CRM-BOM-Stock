@@ -4,11 +4,12 @@
  */
 
 export interface Material {
-  id: string
+  id?: string
   name: string
   quantity: number
-  unit: string
-  unitCost: number
+  unit?: string
+  unitCost?: number
+  unitPrice?: number // Alias for unitCost for flexibility
 }
 
 export interface BOMItem {
@@ -34,7 +35,8 @@ export interface CostBreakdown {
  */
 export function calculateRawMaterialCost(materials: Material[]): number {
   return materials.reduce((total, material) => {
-    return total + (material.quantity * material.unitCost)
+    const cost = material.unitCost || material.unitPrice || 0
+    return total + (material.quantity * cost)
   }, 0)
 }
 
