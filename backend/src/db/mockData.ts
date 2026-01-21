@@ -372,3 +372,37 @@ export const orders = [
     ],
   },
 ]
+
+// Saved BOMs for Calculator
+export const savedBOMs: any[] = [
+  {
+    id: '1',
+    name: 'King Size Mattress - Standard',
+    description: 'Standard king size mattress production cost',
+    materials: [
+      { name: 'Foam Layer', quantity: 2.5, unitPrice: 600, unit: 'kg' },
+      { name: 'Spring Coils', quantity: 800, unitPrice: 5, unit: 'units' },
+      { name: 'Fabric Cover', quantity: 3.5, unitPrice: 250, unit: 'meters' },
+    ],
+    operatingCost: 500,
+    scrapValue: 50,
+    totalCost: 5825,
+    createdAt: new Date('2024-01-10'),
+    updatedAt: new Date('2024-01-10'),
+  },
+  {
+    id: '2',
+    name: 'Premium Pillow - Memory Foam',
+    description: 'Memory foam pillow production cost',
+    materials: [
+      { name: 'Memory Foam', quantity: 0.8, unitPrice: 800, unit: 'kg' },
+      { name: 'Fabric Cover', quantity: 1.2, unitPrice: 250, unit: 'meters' },
+      { name: 'Zipper', quantity: 1, unitPrice: 50, unit: 'unit' },
+    ],
+    operatingCost: 100,
+    scrapValue: 10,
+    totalCost: 1030,
+    createdAt: new Date('2024-01-12'),
+    updatedAt: new Date('2024-01-12'),
+  },
+]

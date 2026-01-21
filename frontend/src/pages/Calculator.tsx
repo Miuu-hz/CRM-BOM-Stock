@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Calculator as CalcIcon,
@@ -8,16 +8,21 @@ import {
   Package,
   Plus,
   X,
+  Save,
+  FolderOpen,
+  Trash2,
+  Download,
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
 interface Material {
-  id: string
+  id?: string
   name: string
   quantity: number
-  unit: string
-  unitCost: number
+  unit?: string
+  unitCost?: number
+  unitPrice?: number
 }
 
 interface PlatformResult {
@@ -26,6 +31,18 @@ interface PlatformResult {
   platformFees: number
   netProfit: number
   profitMargin: number
+}
+
+interface SavedBOM {
+  id: string
+  name: string
+  description: string
+  materials: Material[]
+  operatingCost: number
+  scrapValue: number
+  totalCost: number
+  createdAt: Date
+  updatedAt: Date
 }
 
 function Calculator() {
@@ -37,10 +54,31 @@ function Calculator() {
   const [scrapValue, setScrapValue] = useState(0)
   const [productionCostResult, setProductionCostResult] = useState<any>(null)
 
+  // Save BOM State
+  const [bomName, setBomName] = useState('')
+  const [bomDescription, setBomDescription] = useState('')
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [savedBOMs, setSavedBOMs] = useState<SavedBOM[]>([])
+
   // Platform Comparison State
   const [sellingPrice, setSellingPrice] = useState(0)
   const [quantity, setQuantity] = useState(1)
   const [platformResults, setPlatformResults] = useState<PlatformResult[]>([])
+
+  // Fetch saved BOMs on component mount
+  useEffect(() => {
+    fetchSavedBOMs()
+  }, [])
+
+  // Fetch Saved BOMs
+  const fetchSavedBOMs = async () => {
+    try {
+      const response = await axios.get('/api/calculator/saved-boms')
+      setSavedBOMs(response.data.data)
+    } catch (error) {
+      console.error('Error fetching saved BOMs:', error)
+    }
+  }
 
   // Add Material
   const addMaterial = () => {
@@ -62,7 +100,7 @@ function Calculator() {
   }
 
   // Update Material
-  const updateMaterial = (id: string, field: keyof Material, value: any) => {
+  const updateMaterial = (id: string | undefined, field: string, value: any) => {
     setMaterials(
       materials.map((m) =>
         m.id === id ? { ...m, [field]: value } : m
@@ -73,8 +111,15 @@ function Calculator() {
   // คำนวณต้นทุนการผลิต
   const calculateProductionCost = async () => {
     try {
+      const materialsData = materials.map(m => ({
+        name: m.name,
+        quantity: m.quantity,
+        unit: m.unit,
+        unitPrice: m.unitCost || m.unitPrice || 0
+      }))
+
       const response = await axios.post('/api/calculator/production-cost', {
-        materials,
+        materials: materialsData,
         operatingCost,
         scrapValue,
       })
@@ -84,6 +129,82 @@ function Calculator() {
     } catch (error) {
       console.error('Error:', error)
       toast.error('เกิดข้อผิดพลาดในการคำนวณ')
+    }
+  }
+
+  // บันทึก BOM
+  const saveBOM = async () => {
+    if (!bomName.trim()) {
+      toast.error('กรุณาใส่ชื่อ BOM')
+      return
+    }
+
+    if (materials.every(m => !m.name)) {
+      toast.error('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 รายการ')
+      return
+    }
+
+    try {
+      const materialsData = materials
+        .filter(m => m.name)
+        .map(m => ({
+          name: m.name,
+          quantity: m.quantity,
+          unit: m.unit,
+          unitPrice: m.unitCost || m.unitPrice || 0
+        }))
+
+      const response = await axios.post('/api/calculator/saved-boms', {
+        name: bomName,
+        description: bomDescription,
+        materials: materialsData,
+        operatingCost,
+        scrapValue,
+      })
+
+      toast.success('บันทึก BOM สำเร็จ!')
+      setShowSaveModal(false)
+      setBomName('')
+      setBomDescription('')
+      fetchSavedBOMs()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error('เกิดข้อผิดพลาดในการบันทึก')
+    }
+  }
+
+  // โหลด BOM
+  const loadBOM = (bom: SavedBOM) => {
+    const loadedMaterials = bom.materials.map((m, index) => ({
+      id: String(index + 1),
+      name: m.name,
+      quantity: m.quantity,
+      unit: m.unit || '',
+      unitCost: m.unitPrice || m.unitCost || 0,
+    }))
+
+    setMaterials(loadedMaterials)
+    setOperatingCost(bom.operatingCost)
+    setScrapValue(bom.scrapValue)
+    setBomName(bom.name)
+    setBomDescription(bom.description)
+
+    toast.success(`โหลด BOM "${bom.name}" สำเร็จ!`)
+  }
+
+  // ลบ BOM
+  const deleteBOM = async (id: string) => {
+    if (!confirm('คุณต้องการลบ BOM นี้หรือไม่?')) {
+      return
+    }
+
+    try {
+      await axios.delete(`/api/calculator/saved-boms/${id}`)
+      toast.success('ลบ BOM สำเร็จ!')
+      fetchSavedBOMs()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error('เกิดข้อผิดพลาดในการลบ')
     }
   }
 
@@ -99,7 +220,7 @@ function Calculator() {
         sellingPrice,
         quantity,
         productionCost: productionCostResult.totalCost,
-        platforms: ['lazada', 'shopee', 'tiktok'],
+        platforms: ['lazada', 'shopee', 'tiktok', 'facebook', 'line'],
       })
 
       const data = response.data.data
@@ -132,7 +253,63 @@ function Calculator() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Saved BOMs List */}
+        <div className="cyber-card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <FolderOpen className="w-6 h-6 text-cyber-green" />
+            <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+              BOM ที่บันทึกไว้
+            </h2>
+          </div>
+
+          <div className="space-y-2 max-h-[600px] overflow-y-auto cyber-scrollbar">
+            {savedBOMs.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">
+                ยังไม่มี BOM ที่บันทึกไว้
+              </p>
+            ) : (
+              savedBOMs.map((bom) => (
+                <div
+                  key={bom.id}
+                  className="p-3 bg-cyber-darker/50 rounded-lg border border-cyber-border hover:border-cyber-primary/50 transition-colors group"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-100 text-sm">
+                        {bom.name}
+                      </h3>
+                      {bom.description && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          {bom.description}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => deleteBOM(bom.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-red-400 hover:bg-red-500/10 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-cyber-green font-semibold">
+                      ฿{bom.totalCost.toFixed(2)}
+                    </span>
+                    <button
+                      onClick={() => loadBOM(bom)}
+                      className="px-2 py-1 text-xs bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50 rounded hover:bg-cyber-primary/30 transition-colors flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" />
+                      โหลด
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Production Cost Calculator */}
         <div className="cyber-card p-6">
           <div className="flex items-center gap-3 mb-6">
@@ -141,6 +318,14 @@ function Calculator() {
               คำนวณต้นทุนการผลิต
             </h2>
           </div>
+
+          {/* BOM Name (when loaded) */}
+          {bomName && (
+            <div className="mb-4 p-3 bg-cyber-primary/10 rounded-lg border border-cyber-primary/30">
+              <p className="text-xs text-gray-400">กำลังแก้ไข:</p>
+              <p className="text-sm font-semibold text-cyber-primary">{bomName}</p>
+            </div>
+          )}
 
           {/* Materials List */}
           <div className="space-y-4 mb-6">
@@ -157,7 +342,7 @@ function Calculator() {
               </button>
             </div>
 
-            {materials.map((material, index) => (
+            {materials.map((material) => (
               <div
                 key={material.id}
                 className="grid grid-cols-12 gap-2 items-end"
@@ -216,11 +401,11 @@ function Calculator() {
                 </div>
                 <div className="col-span-2 flex items-center">
                   <div className="text-sm text-gray-400">
-                    ฿{(material.quantity * material.unitCost).toFixed(2)}
+                    ฿{((material.quantity || 0) * (material.unitCost || 0)).toFixed(2)}
                   </div>
                   {materials.length > 1 && (
                     <button
-                      onClick={() => removeMaterial(material.id)}
+                      onClick={() => removeMaterial(material.id!)}
                       className="ml-2 p-1 text-red-400 hover:bg-red-500/10 rounded"
                     >
                       <X className="w-4 h-4" />
@@ -259,18 +444,27 @@ function Calculator() {
             </div>
           </div>
 
-          {/* Calculate Button */}
-          <button
-            onClick={calculateProductionCost}
-            className="w-full cyber-btn-primary flex items-center justify-center gap-2"
-          >
-            <CalcIcon className="w-5 h-5" />
-            คำนวณต้นทุน
-          </button>
+          {/* Action Buttons */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <button
+              onClick={calculateProductionCost}
+              className="cyber-btn-primary flex items-center justify-center gap-2"
+            >
+              <CalcIcon className="w-5 h-5" />
+              คำนวณ
+            </button>
+            <button
+              onClick={() => setShowSaveModal(true)}
+              className="cyber-btn-secondary flex items-center justify-center gap-2"
+            >
+              <Save className="w-5 h-5" />
+              บันทึก
+            </button>
+          </div>
 
           {/* Result */}
           {productionCostResult && (
-            <div className="mt-6 p-4 bg-cyber-darker/50 rounded-lg border border-cyber-border">
+            <div className="p-4 bg-cyber-darker/50 rounded-lg border border-cyber-border">
               <h3 className="text-sm font-semibold text-cyber-primary mb-3">
                 ผลการคำนวณ
               </h3>
@@ -352,7 +546,7 @@ function Calculator() {
 
           {/* Platform Results */}
           {platformResults.length > 0 && (
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 space-y-3 max-h-[500px] overflow-y-auto cyber-scrollbar">
               {platformResults
                 .sort((a, b) => b.netProfit - a.netProfit)
                 .map((result, index) => (
@@ -405,6 +599,69 @@ function Calculator() {
           )}
         </div>
       </div>
+
+      {/* Save BOM Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-gradient-card border border-cyber-border rounded-xl p-6 max-w-md w-full"
+          >
+            <h3 className="text-xl font-bold text-gray-100 mb-4 font-['Orbitron']">
+              บันทึก BOM
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  ชื่อ BOM *
+                </label>
+                <input
+                  type="text"
+                  value={bomName}
+                  onChange={(e) => setBomName(e.target.value)}
+                  className="cyber-input w-full"
+                  placeholder="เช่น King Size Mattress"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  คำอธิบาย (ไม่บังคับ)
+                </label>
+                <textarea
+                  value={bomDescription}
+                  onChange={(e) => setBomDescription(e.target.value)}
+                  className="cyber-input w-full"
+                  placeholder="คำอธิบายเพิ่มเติม..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowSaveModal(false)
+                    setBomName('')
+                    setBomDescription('')
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={saveBOM}
+                  className="flex-1 cyber-btn-primary"
+                >
+                  บันทึก
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   )
 }

@@ -14,6 +14,7 @@ import {
   PlatformType,
   SaleOrder,
 } from '../services/platformFees.service'
+import { savedBOMs } from '../db/mockData'
 
 const router = Router()
 
@@ -190,6 +191,192 @@ router.get('/platform-configs', (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch platform configs',
+    })
+  }
+})
+
+/**
+ * GET /api/calculator/saved-boms
+ * ดูรายการ BOM ที่บันทึกไว้ทั้งหมด
+ */
+router.get('/saved-boms', (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      data: savedBOMs,
+    })
+  } catch (error) {
+    console.error('Get saved BOMs error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch saved BOMs',
+    })
+  }
+})
+
+/**
+ * GET /api/calculator/saved-boms/:id
+ * ดู BOM ที่บันทึกไว้ตาม ID
+ */
+router.get('/saved-boms/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const bom = savedBOMs.find(b => b.id === id)
+
+    if (!bom) {
+      return res.status(404).json({
+        success: false,
+        message: 'BOM not found',
+      })
+    }
+
+    res.json({
+      success: true,
+      data: bom,
+    })
+  } catch (error) {
+    console.error('Get saved BOM error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch saved BOM',
+    })
+  }
+})
+
+/**
+ * POST /api/calculator/saved-boms
+ * บันทึก BOM ใหม่
+ */
+router.post('/saved-boms', (req: Request, res: Response) => {
+  try {
+    const { name, description, materials, operatingCost, scrapValue } = req.body
+
+    // คำนวณต้นทุนก่อนบันทึก
+    const bom: BOMItem = {
+      id: 'temp',
+      productId: 'temp',
+      productName: name,
+      version: 'v1.0',
+      materials: materials as Material[],
+      operatingCost: operatingCost || 0,
+      scrapValue: scrapValue || 0,
+    }
+
+    const costResult = calculateTotalProductionCost(bom)
+
+    // สร้าง BOM object ใหม่
+    const newBOM = {
+      id: String(savedBOMs.length + 1),
+      name,
+      description: description || '',
+      materials,
+      operatingCost: operatingCost || 0,
+      scrapValue: scrapValue || 0,
+      totalCost: costResult.totalCost,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    savedBOMs.push(newBOM)
+
+    res.json({
+      success: true,
+      data: newBOM,
+      message: 'BOM saved successfully',
+    })
+  } catch (error) {
+    console.error('Save BOM error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save BOM',
+    })
+  }
+})
+
+/**
+ * PUT /api/calculator/saved-boms/:id
+ * แก้ไข BOM ที่บันทึกไว้
+ */
+router.put('/saved-boms/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const { name, description, materials, operatingCost, scrapValue } = req.body
+
+    const bomIndex = savedBOMs.findIndex(b => b.id === id)
+
+    if (bomIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'BOM not found',
+      })
+    }
+
+    // คำนวณต้นทุนใหม่
+    const bom: BOMItem = {
+      id: 'temp',
+      productId: 'temp',
+      productName: name,
+      version: 'v1.0',
+      materials: materials as Material[],
+      operatingCost: operatingCost || 0,
+      scrapValue: scrapValue || 0,
+    }
+
+    const costResult = calculateTotalProductionCost(bom)
+
+    // อัพเดท BOM
+    savedBOMs[bomIndex] = {
+      ...savedBOMs[bomIndex],
+      name,
+      description: description || savedBOMs[bomIndex].description,
+      materials,
+      operatingCost: operatingCost || 0,
+      scrapValue: scrapValue || 0,
+      totalCost: costResult.totalCost,
+      updatedAt: new Date(),
+    }
+
+    res.json({
+      success: true,
+      data: savedBOMs[bomIndex],
+      message: 'BOM updated successfully',
+    })
+  } catch (error) {
+    console.error('Update BOM error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update BOM',
+    })
+  }
+})
+
+/**
+ * DELETE /api/calculator/saved-boms/:id
+ * ลบ BOM ที่บันทึกไว้
+ */
+router.delete('/saved-boms/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const bomIndex = savedBOMs.findIndex(b => b.id === id)
+
+    if (bomIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'BOM not found',
+      })
+    }
+
+    savedBOMs.splice(bomIndex, 1)
+
+    res.json({
+      success: true,
+      message: 'BOM deleted successfully',
+    })
+  } catch (error) {
+    console.error('Delete BOM error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete BOM',
     })
   }
 })
