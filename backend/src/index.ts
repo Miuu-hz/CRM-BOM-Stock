@@ -12,6 +12,7 @@ import orderRoutes from './routes/order.routes'
 import bomRoutes from './routes/bom.routes'
 import stockRoutes from './routes/stock.routes'
 import dashboardRoutes from './routes/dashboard.routes'
+import calculatorRoutes from './routes/calculator.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -40,6 +41,7 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/bom', bomRoutes)
 app.use('/api/stock', stockRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/calculator', calculatorRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

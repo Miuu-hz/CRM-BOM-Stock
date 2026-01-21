@@ -5,6 +5,7 @@ import {
   Users,
   FileText,
   Package,
+  Calculator,
   ShoppingCart,
   TrendingUp,
   Settings,
@@ -39,6 +40,12 @@ const menuItems = [
     label: 'Stock',
     icon: Package,
     description: 'Inventory Management',
+  },
+  {
+    path: '/calculator',
+    label: 'Calculator',
+    icon: Calculator,
+    description: 'Cost & Profit Analysis',
   },
 ]
 
