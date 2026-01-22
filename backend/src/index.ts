@@ -5,6 +5,9 @@ import dotenv from 'dotenv'
 // Load environment variables
 dotenv.config()
 
+// Initialize SQLite database
+import './db/sqlite'
+
 // Import routes
 import authRoutes from './routes/auth.routes'
 import customerRoutes from './routes/customer.routes'

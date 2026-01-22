@@ -14,14 +14,25 @@ export interface ShopeeMetricRow {
   campaignName?: string
   productName?: string
   sku?: string
+  adStatus?: string
   impressions: number
   clicks: number
   ctr: number
   orders: number
+  directOrders: number
+  orderRate: number
+  directOrderRate: number
+  costPerOrder: number
+  directCostPerOrder: number
+  itemsSold: number
+  directItemsSold: number
   sales: number
+  directSales: number
   adCost: number
   roas: number
+  directRoas: number
   acos: number
+  directAcos: number
   conversionRate: number
   extraData?: any
 }
@@ -104,20 +115,46 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
           try {
             const metrics: ShopeeMetricRow[] = results.data.map((row: any) => {
               // Map CSV columns to our structure
-              // Note: Column names may vary, adjust based on actual CSV
+              // Column names are in Thai from Shopee CSV
               return {
                 date: row['Date'] || row['วันที่'] || new Date().toISOString(),
-                campaignName: row['Campaign'] || row['แคมเปญ'] || '',
-                productName: row['Product'] || row['สินค้า'] || '',
-                sku: row['SKU'] || '',
-                impressions: cleanNumber(row['Impressions'] || row['การแสดงผล'] || 0),
-                clicks: cleanNumber(row['Clicks'] || row['คลิก'] || 0),
-                ctr: cleanPercent(row['CTR'] || 0),
-                orders: cleanNumber(row['Orders'] || row['คำสั่งซื้อ'] || 0),
-                sales: cleanNumber(row['Sales'] || row['ยอดขาย'] || 0),
-                adCost: cleanNumber(row['Ad Cost'] || row['ค่าโฆษณา'] || row['Cost'] || 0),
-                roas: cleanPercent(row['ROAS'] || 0),
+                campaignName: row['ชื่อโฆษณา / ชื่อสินค้า'] || row['Campaign'] || '',
+                productName: row['ชื่อโฆษณา / ชื่อสินค้า'] || row['Product'] || '',
+                sku: row['รหัสสินค้า'] || row['SKU'] || '',
+                adStatus: row['สถานะโฆษณา'] || row['Ad Status'] || '',
+
+                // Traffic
+                impressions: cleanNumber(row['การมองเห็น'] || row['Impressions'] || 0),
+                clicks: cleanNumber(row['จำนวนคลิก'] || row['Clicks'] || 0),
+                ctr: cleanPercent(row['อัตราการคลิก (CTR)'] || row['CTR'] || 0),
+
+                // Orders
+                orders: cleanNumber(row['การสั่งซื้อ'] || row['Orders'] || 0),
+                directOrders: cleanNumber(row['การสั่งซื้อโดยตรง'] || row['Direct Orders'] || 0),
+                orderRate: cleanPercent(row['อัตราการสั่งซื้อ'] || row['Order Rate'] || 0),
+                directOrderRate: cleanPercent(row['อัตราการสั่งซื้อโดยตรง'] || row['Direct Order Rate'] || 0),
+
+                // Cost per Order
+                costPerOrder: cleanNumber(row['ราคาต่อการสั่งซื้อ'] || row['Cost per Order'] || 0),
+                directCostPerOrder: cleanNumber(row['ราคาต่อการสั่งซื้อโดยตรง'] || row['Direct Cost per Order'] || 0),
+
+                // Items Sold
+                itemsSold: cleanNumber(row['สินค้าที่ขายแล้ว'] || row['Items Sold'] || 0),
+                directItemsSold: cleanNumber(row['สินค้าที่ขายแล้วโดยตรง'] || row['Direct Items Sold'] || 0),
+
+                // Sales
+                sales: cleanNumber(row['ยอดขาย'] || row['Sales'] || 0),
+                directSales: cleanNumber(row['ยอดขายโดยตรง'] || row['Direct Sales'] || 0),
+
+                // Ad Cost
+                adCost: cleanNumber(row['ค่าโฆษณา'] || row['Ad Cost'] || row['Cost'] || 0),
+
+                // Performance
+                roas: cleanPercent(row['ยอดขาย/รายจ่าย (ROAS)'] || row['ROAS'] || 0),
+                directRoas: cleanPercent(row['ผลตอบแทนจากการลงทุนโดยตรง (Direct ROAS)'] || row['Direct ROAS'] || 0),
                 acos: cleanPercent(row['ACOS'] || 0),
+                directAcos: cleanPercent(row['อัตราส่วนค่าใช้จ่ายต่อรายได้โดยตรง (Direct ACOS)'] || row['Direct ACOS'] || 0),
+
                 conversionRate: cleanPercent(row['Conversion Rate'] || row['อัตราการแปลง'] || 0),
                 extraData: row, // Store full row for reference
               }
