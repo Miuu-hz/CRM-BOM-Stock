@@ -47,6 +47,12 @@ const menuItems = [
     icon: Calculator,
     description: 'Cost & Profit Analysis',
   },
+  {
+    path: '/marketing',
+    label: 'Marketing',
+    icon: TrendingUp,
+    description: 'Campaign Analytics',
+  },
 ]
 
 const bottomMenuItems = [
