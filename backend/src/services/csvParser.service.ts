@@ -103,6 +103,15 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
           metadata.reportStart = dates[0] || ''
           metadata.reportEnd = dates[1] || dates[0] || ''
         }
+
+        // Also check line 6 (B6) for date if report period is not found
+        if (!metadata.reportStart && lines[5]) {
+          const dateFromB6 = parseLine(lines[5])
+          if (dateFromB6) {
+            metadata.reportStart = dateFromB6
+            metadata.reportEnd = dateFromB6
+          }
+        }
       }
 
       // Parse CSV data starting from row 7 (index 6)
@@ -113,11 +122,37 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
         skipEmptyLines: true,
         complete: (results) => {
           try {
-            const metrics: ShopeeMetricRow[] = results.data.map((row: any) => {
+            // Check if CSV has date column
+            const firstRow: any = results.data[0]
+            const hasDateColumn = results.data.length > 0 && firstRow &&
+              (firstRow.hasOwnProperty('Date') || firstRow.hasOwnProperty('วันที่'))
+
+            // If no date column, distribute dates across report period
+            let dateDistribution: string[] = []
+            if (!hasDateColumn && metadata.reportStart) {
+              const startDate = new Date(metadata.reportStart)
+              const endDate = metadata.reportEnd ? new Date(metadata.reportEnd) : startDate
+              const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+
+              // Create array of dates
+              if (daysDiff > 0) {
+                const interval = Math.ceil(daysDiff / results.data.length) || 1
+                for (let i = 0; i < results.data.length; i++) {
+                  const date = new Date(startDate)
+                  date.setDate(date.getDate() + (i * interval))
+                  dateDistribution.push(date.toISOString().split('T')[0])
+                }
+              } else {
+                // All on start date
+                dateDistribution = Array(results.data.length).fill(startDate.toISOString().split('T')[0])
+              }
+            }
+
+            const metrics: ShopeeMetricRow[] = results.data.map((row: any, index: number) => {
               // Map CSV columns to our structure
               // Column names are in Thai from Shopee CSV
               return {
-                date: row['Date'] || row['วันที่'] || new Date().toISOString(),
+                date: row['Date'] || row['วันที่'] || dateDistribution[index] || new Date().toISOString().split('T')[0],
                 campaignName: row['ชื่อโฆษณา / ชื่อสินค้า'] || row['Campaign'] || '',
                 productName: row['ชื่อโฆษณา / ชื่อสินค้า'] || row['Product'] || '',
                 sku: row['รหัสสินค้า'] || row['SKU'] || '',
