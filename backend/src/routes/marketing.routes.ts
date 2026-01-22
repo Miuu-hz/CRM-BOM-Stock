@@ -408,11 +408,11 @@ router.get('/analytics/summary', (req: Request, res: Response) => {
 
     if (filteredMetrics.length > 0) {
       filteredMetrics.forEach(m => {
-        summary.totalImpressions += m.impressions
-        summary.totalClicks += m.clicks
-        summary.totalOrders += m.orders
-        summary.totalSales += parseFloat(m.sales.toString())
-        summary.totalAdCost += parseFloat(m.adCost.toString())
+        summary.totalImpressions += Number(m.impressions) || 0
+        summary.totalClicks += Number(m.clicks) || 0
+        summary.totalOrders += Number(m.orders) || 0
+        summary.totalSales += Number(m.sales) || 0
+        summary.totalAdCost += Number(m.adCost) || 0
       })
 
       summary.avgCTR =
@@ -466,8 +466,8 @@ router.delete('/files/:id', (req: Request, res: Response) => {
     }
 
     // Delete physical file
-    if (fs.existsSync(file.file_path)) {
-      fs.unlinkSync(file.file_path)
+    if (fs.existsSync(file.filePath)) {
+      fs.unlinkSync(file.filePath)
     }
 
     // Delete from database (CASCADE will delete related metrics)

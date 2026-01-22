@@ -4,6 +4,22 @@ import { randomBytes } from 'crypto'
 // Generate unique ID
 const generateId = () => randomBytes(16).toString('hex')
 
+// Helper function to convert snake_case to camelCase
+const snakeToCamel = (obj: any): any => {
+  if (!obj || typeof obj !== 'object') return obj
+
+  if (Array.isArray(obj)) {
+    return obj.map(snakeToCamel)
+  }
+
+  const result: any = {}
+  for (const key in obj) {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+    result[camelKey] = obj[key]
+  }
+  return result
+}
+
 // ==================== SHOPS ====================
 
 export const getAllShops = (platform?: string, isActive?: boolean) => {
@@ -20,11 +36,13 @@ export const getAllShops = (platform?: string, isActive?: boolean) => {
     params.push(isActive ? 1 : 0)
   }
 
-  return db.prepare(query).all(...params)
+  const results = db.prepare(query).all(...params)
+  return snakeToCamel(results)
 }
 
 export const getShopById = (id: string) => {
-  return db.prepare('SELECT * FROM shops WHERE id = ?').get(id)
+  const result = db.prepare('SELECT * FROM shops WHERE id = ?').get(id)
+  return snakeToCamel(result)
 }
 
 export const createShop = (data: {
@@ -39,7 +57,7 @@ export const createShop = (data: {
   `)
 
   stmt.run(id, data.name, data.platform, data.shopId)
-  return getShopById(id)
+  return getShopById(id) // Already converted by getShopById
 }
 
 export const updateShop = (id: string, data: { name?: string; isActive?: boolean }) => {
@@ -66,7 +84,7 @@ export const updateShop = (id: string, data: { name?: string; isActive?: boolean
   `)
 
   stmt.run(...params)
-  return getShopById(id)
+  return getShopById(id) // Already converted by getShopById
 }
 
 export const deleteShop = (id: string) => {
@@ -92,7 +110,8 @@ export const getAllFiles = (shopId?: string, platform?: string) => {
 
   query += ' ORDER BY uploaded_at DESC'
 
-  return db.prepare(query).all(...params)
+  const results = db.prepare(query).all(...params)
+  return snakeToCamel(results)
 }
 
 export const createFile = (data: {
@@ -125,7 +144,8 @@ export const createFile = (data: {
     data.rowCount
   )
 
-  return db.prepare('SELECT * FROM marketing_files WHERE id = ?').get(id)
+  const result = db.prepare('SELECT * FROM marketing_files WHERE id = ?').get(id)
+  return snakeToCamel(result)
 }
 
 export const deleteFile = (id: string) => {
@@ -174,7 +194,8 @@ export const getMetrics = (filters: {
 
   query += ' ORDER BY date DESC'
 
-  return db.prepare(query).all(...params)
+  const results = db.prepare(query).all(...params)
+  return snakeToCamel(results)
 }
 
 export const createMetric = (data: any) => {
