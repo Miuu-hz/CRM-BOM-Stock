@@ -3,7 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { parseMarketingCSV } from '../services/csvParser.service'
-import { shops, marketingFiles, marketingMetrics } from '../db/mockData'
+import * as marketingRepo from '../repositories/marketing.repository'
 
 const router = Router()
 
@@ -51,23 +51,14 @@ router.get('/shops', (req: Request, res: Response) => {
   try {
     const { platform, isActive } = req.query
 
-    let filteredShops = [...shops]
+    const platformFilter = platform ? platform.toString().toUpperCase() : undefined
+    const isActiveFilter = isActive !== undefined ? isActive === 'true' : undefined
 
-    if (platform) {
-      filteredShops = filteredShops.filter(
-        s => s.platform === platform.toString().toUpperCase()
-      )
-    }
-
-    if (isActive !== undefined) {
-      filteredShops = filteredShops.filter(
-        s => s.isActive === (isActive === 'true')
-      )
-    }
+    const shops = marketingRepo.getAllShops(platformFilter, isActiveFilter)
 
     res.json({
       success: true,
-      data: filteredShops,
+      data: shops,
     })
   } catch (error) {
     console.error('Get shops error:', error)
@@ -85,7 +76,7 @@ router.get('/shops', (req: Request, res: Response) => {
 router.get('/shops/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const shop = shops.find(s => s.id === id)
+    const shop = marketingRepo.getShopById(id)
 
     if (!shop) {
       return res.status(404).json({
@@ -115,37 +106,28 @@ router.post('/shops', (req: Request, res: Response) => {
   try {
     const { name, platform, shopId } = req.body
 
-    // Check if shop already exists
-    const existingShop = shops.find(
-      s => s.platform === platform && s.shopId === shopId
-    )
-
-    if (existingShop) {
-      return res.status(400).json({
-        success: false,
-        message: 'Shop already exists for this platform',
-      })
-    }
-
-    const newShop = {
-      id: String(shops.length + 1),
+    const newShop = marketingRepo.createShop({
       name,
       platform: platform.toUpperCase(),
       shopId,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    shops.push(newShop)
+    })
 
     res.json({
       success: true,
       data: newShop,
       message: 'Shop created successfully',
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create shop error:', error)
+
+    // Handle unique constraint violation
+    if (error.message && error.message.includes('UNIQUE constraint')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop already exists for this platform',
+      })
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to create shop',
@@ -162,25 +144,18 @@ router.put('/shops/:id', (req: Request, res: Response) => {
     const { id } = req.params
     const { name, isActive } = req.body
 
-    const shopIndex = shops.findIndex(s => s.id === id)
+    const updatedShop = marketingRepo.updateShop(id, { name, isActive })
 
-    if (shopIndex === -1) {
+    if (!updatedShop) {
       return res.status(404).json({
         success: false,
         message: 'Shop not found',
       })
     }
 
-    shops[shopIndex] = {
-      ...shops[shopIndex],
-      name: name || shops[shopIndex].name,
-      isActive: isActive !== undefined ? isActive : shops[shopIndex].isActive,
-      updatedAt: new Date(),
-    }
-
     res.json({
       success: true,
-      data: shops[shopIndex],
+      data: updatedShop,
       message: 'Shop updated successfully',
     })
   } catch (error) {
@@ -199,16 +174,14 @@ router.put('/shops/:id', (req: Request, res: Response) => {
 router.delete('/shops/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const shopIndex = shops.findIndex(s => s.id === id)
+    const result = marketingRepo.deleteShop(id)
 
-    if (shopIndex === -1) {
+    if (result.changes === 0) {
       return res.status(404).json({
         success: false,
         message: 'Shop not found',
       })
     }
-
-    shops.splice(shopIndex, 1)
 
     res.json({
       success: true,
@@ -246,7 +219,7 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
     }
 
     // Find shop
-    const shop = shops.find(s => s.id === shopId)
+    const shop = marketingRepo.getShopById(shopId)
     if (!shop) {
       return res.status(404).json({
         success: false,
@@ -258,48 +231,49 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
     const parsedData = await parseMarketingCSV(req.file.path, platform)
 
     // Create file record
-    const fileRecord = {
-      id: String(marketingFiles.length + 1),
+    const fileRecord: any = marketingRepo.createFile({
       shopId,
       fileName: req.file.originalname,
       filePath: req.file.path,
       platform: platform.toUpperCase(),
       userName: parsedData.metadata.userName,
-      reportStart: parsedData.metadata.reportStart
-        ? new Date(parsedData.metadata.reportStart)
-        : null,
-      reportEnd: parsedData.metadata.reportEnd
-        ? new Date(parsedData.metadata.reportEnd)
-        : null,
+      reportStart: parsedData.metadata.reportStart || undefined,
+      reportEnd: parsedData.metadata.reportEnd || undefined,
       rowCount: parsedData.rowCount,
-      uploadedAt: new Date(),
-    }
-
-    marketingFiles.push(fileRecord)
-
-    // Store metrics
-    parsedData.metrics.forEach(metric => {
-      marketingMetrics.push({
-        id: String(marketingMetrics.length + 1),
-        fileId: fileRecord.id,
-        shopId,
-        date: new Date(metric.date),
-        campaignName: metric.campaignName,
-        productName: metric.productName,
-        sku: metric.sku,
-        impressions: metric.impressions,
-        clicks: metric.clicks,
-        ctr: metric.ctr,
-        orders: metric.orders,
-        sales: metric.sales,
-        adCost: metric.adCost,
-        roas: metric.roas,
-        acos: metric.acos,
-        conversionRate: metric.conversionRate,
-        extraData: JSON.stringify(metric.extraData),
-        createdAt: new Date(),
-      })
     })
+
+    // Store metrics in bulk
+    const metricsToInsert = parsedData.metrics.map(metric => ({
+      fileId: fileRecord.id,
+      shopId,
+      date: new Date(metric.date).toISOString(),
+      campaignName: metric.campaignName,
+      productName: metric.productName,
+      sku: metric.sku,
+      adStatus: metric.adStatus,
+      impressions: metric.impressions,
+      clicks: metric.clicks,
+      ctr: metric.ctr,
+      orders: metric.orders,
+      directOrders: metric.directOrders,
+      orderRate: metric.orderRate,
+      directOrderRate: metric.directOrderRate,
+      costPerOrder: metric.costPerOrder,
+      directCostPerOrder: metric.directCostPerOrder,
+      itemsSold: metric.itemsSold,
+      directItemsSold: metric.directItemsSold,
+      sales: metric.sales,
+      directSales: metric.directSales,
+      adCost: metric.adCost,
+      roas: metric.roas,
+      directRoas: metric.directRoas,
+      acos: metric.acos,
+      directAcos: metric.directAcos,
+      conversionRate: metric.conversionRate,
+      extraData: JSON.stringify(metric.extraData),
+    }))
+
+    marketingRepo.bulkCreateMetrics(metricsToInsert)
 
     res.json({
       success: true,
@@ -326,26 +300,14 @@ router.get('/files', (req: Request, res: Response) => {
   try {
     const { shopId, platform } = req.query
 
-    let filteredFiles = [...marketingFiles]
-
-    if (shopId) {
-      filteredFiles = filteredFiles.filter(f => f.shopId === shopId)
-    }
-
-    if (platform) {
-      filteredFiles = filteredFiles.filter(
-        f => f.platform === platform.toString().toUpperCase()
-      )
-    }
-
-    // Sort by upload date descending
-    filteredFiles.sort(
-      (a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()
+    const files = marketingRepo.getAllFiles(
+      shopId as string,
+      platform as string
     )
 
     res.json({
       success: true,
-      data: filteredFiles,
+      data: files,
     })
   } catch (error) {
     console.error('Get files error:', error)
@@ -364,37 +326,32 @@ router.get('/metrics', (req: Request, res: Response) => {
   try {
     const { shopId, startDate, endDate, platform } = req.query
 
-    let filteredMetrics = [...marketingMetrics]
-
-    if (shopId) {
-      filteredMetrics = filteredMetrics.filter(m => m.shopId === shopId)
-    }
+    // Normalize dates
+    let normalizedStartDate = startDate as string
+    let normalizedEndDate = endDate as string
 
     if (startDate) {
       const start = new Date(startDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date >= start)
+      start.setHours(0, 0, 0, 0)
+      normalizedStartDate = start.toISOString().split('T')[0]
     }
 
     if (endDate) {
       const end = new Date(endDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date <= end)
+      end.setHours(23, 59, 59, 999)
+      normalizedEndDate = end.toISOString().split('T')[0]
     }
 
-    if (platform) {
-      const shopIds = shops
-        .filter(s => s.platform === platform.toString().toUpperCase())
-        .map(s => s.id)
-      filteredMetrics = filteredMetrics.filter(m =>
-        shopIds.includes(m.shopId)
-      )
-    }
-
-    // Sort by date descending
-    filteredMetrics.sort((a, b) => b.date.getTime() - a.date.getTime())
+    const metrics = marketingRepo.getMetrics({
+      shopId: shopId as string,
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+      platform: platform as string,
+    })
 
     res.json({
       success: true,
-      data: filteredMetrics,
+      data: metrics,
     })
   } catch (error) {
     console.error('Get metrics error:', error)
@@ -413,21 +370,27 @@ router.get('/analytics/summary', (req: Request, res: Response) => {
   try {
     const { shopId, startDate, endDate } = req.query
 
-    let filteredMetrics = [...marketingMetrics]
-
-    if (shopId) {
-      filteredMetrics = filteredMetrics.filter(m => m.shopId === shopId)
-    }
+    // Normalize dates
+    let normalizedStartDate = startDate as string
+    let normalizedEndDate = endDate as string
 
     if (startDate) {
       const start = new Date(startDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date >= start)
+      start.setHours(0, 0, 0, 0)
+      normalizedStartDate = start.toISOString().split('T')[0]
     }
 
     if (endDate) {
       const end = new Date(endDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date <= end)
+      end.setHours(23, 59, 59, 999)
+      normalizedEndDate = end.toISOString().split('T')[0]
     }
+
+    const filteredMetrics: any[] = marketingRepo.getMetrics({
+      shopId: shopId as string,
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+    })
 
     // Calculate summary
     const summary = {
@@ -490,33 +453,25 @@ router.get('/analytics/summary', (req: Request, res: Response) => {
 router.delete('/files/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const fileIndex = marketingFiles.findIndex(f => f.id === id)
 
-    if (fileIndex === -1) {
+    // Get file info before deleting
+    const files: any[] = marketingRepo.getAllFiles()
+    const file = files.find((f: any) => f.id === id)
+
+    if (!file) {
       return res.status(404).json({
         success: false,
         message: 'File not found',
       })
     }
 
-    const file = marketingFiles[fileIndex]
-
     // Delete physical file
-    if (fs.existsSync(file.filePath)) {
-      fs.unlinkSync(file.filePath)
+    if (fs.existsSync(file.file_path)) {
+      fs.unlinkSync(file.file_path)
     }
 
-    // Remove from array
-    marketingFiles.splice(fileIndex, 1)
-
-    // Remove related metrics
-    const metricsToRemove = marketingMetrics.filter(m => m.fileId === id)
-    metricsToRemove.forEach(metric => {
-      const idx = marketingMetrics.findIndex(m => m.id === metric.id)
-      if (idx !== -1) {
-        marketingMetrics.splice(idx, 1)
-      }
-    })
+    // Delete from database (CASCADE will delete related metrics)
+    marketingRepo.deleteFile(id)
 
     res.json({
       success: true,
