@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import multer from 'multer'
+import multer, { FileFilterCallback } from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { parseMarketingCSV } from '../services/csvParser.service'
@@ -7,16 +7,21 @@ import { shops, marketingFiles, marketingMetrics } from '../db/mockData'
 
 const router = Router()
 
+// Extend Request type to include file from multer
+interface MulterRequest extends Request {
+  file?: Express.Multer.File
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     const uploadDir = path.join(__dirname, '../../uploads/marketing')
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true })
     }
     cb(null, uploadDir)
   },
-  filename: (req, file, cb) => {
+  filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9)
     cb(null, uniqueSuffix + '-' + file.originalname)
   },
@@ -24,7 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     const allowedTypes = ['.csv', '.xlsx', '.xls']
     const ext = path.extname(file.originalname).toLowerCase()
     if (allowedTypes.includes(ext)) {
@@ -222,7 +227,7 @@ router.delete('/shops/:id', (req: Request, res: Response) => {
  * POST /api/marketing/upload
  * อัพโหลดและ parse ไฟล์ CSV/Excel
  */
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({
