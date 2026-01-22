@@ -287,14 +287,25 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
         campaignName: metric.campaignName,
         productName: metric.productName,
         sku: metric.sku,
+        adStatus: metric.adStatus,
         impressions: metric.impressions,
         clicks: metric.clicks,
         ctr: metric.ctr,
         orders: metric.orders,
+        directOrders: metric.directOrders,
+        orderRate: metric.orderRate,
+        directOrderRate: metric.directOrderRate,
+        costPerOrder: metric.costPerOrder,
+        directCostPerOrder: metric.directCostPerOrder,
+        itemsSold: metric.itemsSold,
+        directItemsSold: metric.directItemsSold,
         sales: metric.sales,
+        directSales: metric.directSales,
         adCost: metric.adCost,
         roas: metric.roas,
+        directRoas: metric.directRoas,
         acos: metric.acos,
+        directAcos: metric.directAcos,
         conversionRate: metric.conversionRate,
         extraData: JSON.stringify(metric.extraData),
         createdAt: new Date(),
@@ -372,12 +383,21 @@ router.get('/metrics', (req: Request, res: Response) => {
 
     if (startDate) {
       const start = new Date(startDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date >= start)
+      start.setHours(0, 0, 0, 0) // Set to start of day
+      filteredMetrics = filteredMetrics.filter(m => {
+        const metricDate = new Date(m.date)
+        metricDate.setHours(0, 0, 0, 0)
+        return metricDate >= start
+      })
     }
 
     if (endDate) {
       const end = new Date(endDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date <= end)
+      end.setHours(23, 59, 59, 999) // Set to end of day
+      filteredMetrics = filteredMetrics.filter(m => {
+        const metricDate = new Date(m.date)
+        return metricDate <= end
+      })
     }
 
     if (platform) {
@@ -421,12 +441,21 @@ router.get('/analytics/summary', (req: Request, res: Response) => {
 
     if (startDate) {
       const start = new Date(startDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date >= start)
+      start.setHours(0, 0, 0, 0)
+      filteredMetrics = filteredMetrics.filter(m => {
+        const metricDate = new Date(m.date)
+        metricDate.setHours(0, 0, 0, 0)
+        return metricDate >= start
+      })
     }
 
     if (endDate) {
       const end = new Date(endDate as string)
-      filteredMetrics = filteredMetrics.filter(m => m.date <= end)
+      end.setHours(23, 59, 59, 999)
+      filteredMetrics = filteredMetrics.filter(m => {
+        const metricDate = new Date(m.date)
+        return metricDate <= end
+      })
     }
 
     // Calculate summary

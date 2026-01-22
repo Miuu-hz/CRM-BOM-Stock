@@ -287,17 +287,41 @@ model MarketingMetric {
   campaignName   String?
   productName    String?
   sku            String?
+  adStatus       String?       // สถานะโฆษณา
 
   // Performance Metrics
-  impressions    Int           @default(0)
-  clicks         Int           @default(0)
-  ctr            Decimal       @default(0) // Click-through rate
-  orders         Int           @default(0)
-  sales          Decimal       @default(0)
-  adCost         Decimal       @default(0)
-  roas           Decimal       @default(0) // Return on Ad Spend
-  acos           Decimal       @default(0) // Advertising Cost of Sale
-  conversionRate Decimal       @default(0)
+  impressions    Int           @default(0)        // การมองเห็น
+  clicks         Int           @default(0)        // จำนวนคลิก
+  ctr            Decimal       @default(0)        // อัตราการคลิก (CTR)
+
+  // Orders
+  orders         Int           @default(0)        // การสั่งซื้อ
+  directOrders   Int           @default(0)        // การสั่งซื้อโดยตรง
+  orderRate      Decimal       @default(0)        // อัตราการสั่งซื้อ
+  directOrderRate Decimal      @default(0)        // อัตราการสั่งซื้อโดยตรง
+
+  // Cost
+  costPerOrder   Decimal       @default(0)        // ราคาต่อการสั่งซื้อ
+  directCostPerOrder Decimal   @default(0)        // ราคาต่อการสั่งซื้อโดยตรง
+
+  // Items Sold
+  itemsSold      Int           @default(0)        // สินค้าที่ขายแล้ว
+  directItemsSold Int          @default(0)        // สินค้าที่ขายแล้วโดยตรง
+
+  // Sales
+  sales          Decimal       @default(0)        // ยอดขาย
+  directSales    Decimal       @default(0)        // ยอดขายโดยตรง
+
+  // Ad Cost
+  adCost         Decimal       @default(0)        // ค่าโฆษณา
+
+  // Performance Ratios
+  roas           Decimal       @default(0)        // ยอดขาย/รายจ่าย (ROAS)
+  directRoas     Decimal       @default(0)        // Direct ROAS
+  acos           Decimal       @default(0)        // ACOS
+  directAcos     Decimal       @default(0)        // Direct ACOS
+
+  conversionRate Decimal       @default(0)        // อัตราการแปลง
 
   // Additional metrics (flexible)
   extraData      String?       // JSON string for platform-specific fields
