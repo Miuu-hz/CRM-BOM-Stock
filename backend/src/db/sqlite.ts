@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 
 const dbPath = path.join(__dirname, '../../marketing.db')
-const db = new Database(dbPath)
+const db: any = new Database(dbPath)
 
 // Enable foreign keys
 db.pragma('foreign_keys = ON')
