@@ -45,6 +45,7 @@ interface OperatingCostItem {
   id: string
   category: string
   amount: number
+  type: 'fixed' | 'percent' // fixed = ฿, percent = %
 }
 
 interface PlatformCalculation {
@@ -75,7 +76,7 @@ function Calculator() {
 
   // Operating costs (multiple categories)
   const [operatingCosts, setOperatingCosts] = useState<OperatingCostItem[]>([
-    { id: '1', category: '', amount: 0 },
+    { id: '1', category: '', amount: 0, type: 'fixed' },
   ])
 
   // Cost calculation
@@ -152,7 +153,7 @@ function Calculator() {
   const addOperatingCost = () => {
     setOperatingCosts([
       ...operatingCosts,
-      { id: Date.now().toString(), category: '', amount: 0 },
+      { id: Date.now().toString(), category: '', amount: 0, type: 'fixed' },
     ])
   }
 
@@ -160,7 +161,7 @@ function Calculator() {
     setOperatingCosts(operatingCosts.filter((c) => c.id !== id))
   }
 
-  const updateOperatingCost = (id: string, field: 'category' | 'amount', value: string | number) => {
+  const updateOperatingCost = (id: string, field: 'category' | 'amount' | 'type', value: string | number) => {
     setOperatingCosts(
       operatingCosts.map((c) => (c.id === id ? { ...c, [field]: value } : c))
     )
@@ -181,8 +182,23 @@ function Calculator() {
         unitPrice: m.unitCost || 0,
       }))
 
-      // Sum all operating costs
-      const totalOperatingCost = operatingCosts.reduce((sum, c) => sum + (c.amount || 0), 0)
+      // Calculate raw material cost first (for percentage calculation)
+      const rawMaterialCost = selectedBOM.materials.reduce(
+        (sum, m) => sum + (m.unitCost || 0) * m.quantity,
+        0
+      )
+
+      // Calculate operating costs (handle both fixed and percentage)
+      let totalOperatingCost = 0
+      operatingCosts.forEach((cost) => {
+        if (cost.type === 'percent') {
+          // Calculate percentage of raw material cost
+          totalOperatingCost += (rawMaterialCost * (cost.amount || 0)) / 100
+        } else {
+          // Fixed amount
+          totalOperatingCost += cost.amount || 0
+        }
+      })
 
       const response = await axios.post('/api/calculator/production-cost', {
         materials: materialsData,
@@ -322,9 +338,9 @@ function Calculator() {
       </div>
 
       {/* Main Content - Single Column */}
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Product Search */}
-        <div className="cyber-card p-6">
+        <div className="cyber-card p-4">
           <div className="flex items-center gap-3 mb-6">
             <Package className="w-6 h-6 text-cyber-primary" />
             <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
@@ -384,7 +400,7 @@ function Calculator() {
 
         {/* Materials List */}
         {selectedBOM && (
-          <div className="cyber-card p-6">
+          <div className="cyber-card p-4">
             <div className="flex items-center gap-3 mb-6">
               <Package className="w-6 h-6 text-cyber-green" />
               <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
@@ -439,7 +455,7 @@ function Calculator() {
 
         {/* Operating Costs */}
         {selectedBOM && (
-          <div className="cyber-card p-6">
+          <div className="cyber-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <DollarSign className="w-6 h-6 text-cyber-purple" />
@@ -458,7 +474,7 @@ function Calculator() {
 
             <div className="space-y-3">
               {operatingCosts.map((cost, index) => (
-                <div key={cost.id} className="flex gap-3 items-center">
+                <div key={cost.id} className="flex gap-2 items-center">
                   <div className="flex-1">
                     <input
                       type="text"
@@ -470,7 +486,7 @@ function Calculator() {
                       placeholder="หมวดค่าใช้จ่าย (เช่น ค่าแรง, ค่าไฟ)"
                     />
                   </div>
-                  <div className="w-48">
+                  <div className="w-40">
                     <input
                       type="number"
                       value={cost.amount || ''}
@@ -478,8 +494,20 @@ function Calculator() {
                         updateOperatingCost(cost.id, 'amount', parseFloat(e.target.value) || 0)
                       }
                       className="cyber-input w-full"
-                      placeholder="฿0.00"
+                      placeholder={cost.type === 'percent' ? '0' : '฿0.00'}
                     />
+                  </div>
+                  <div className="w-24">
+                    <select
+                      value={cost.type}
+                      onChange={(e) =>
+                        updateOperatingCost(cost.id, 'type', e.target.value)
+                      }
+                      className="cyber-input w-full"
+                    >
+                      <option value="fixed">฿</option>
+                      <option value="percent">%</option>
+                    </select>
                   </div>
                   {operatingCosts.length > 1 && (
                     <button
@@ -496,7 +524,21 @@ function Calculator() {
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">รวมค่าดำเนินการทั้งหมด:</span>
                   <span className="text-xl font-bold text-cyber-green">
-                    ฿{operatingCosts.reduce((sum, c) => sum + (c.amount || 0), 0).toFixed(2)}
+                    {selectedBOM ? (() => {
+                      const rawMaterialCost = selectedBOM.materials.reduce(
+                        (sum, m) => sum + (m.unitCost || 0) * m.quantity,
+                        0
+                      )
+                      let total = 0
+                      operatingCosts.forEach((cost) => {
+                        if (cost.type === 'percent') {
+                          total += (rawMaterialCost * (cost.amount || 0)) / 100
+                        } else {
+                          total += cost.amount || 0
+                        }
+                      })
+                      return `฿${total.toFixed(2)}`
+                    })() : '฿0.00'}
                   </span>
                 </div>
               </div>
@@ -527,7 +569,7 @@ function Calculator() {
 
         {/* Cost Result */}
         {costBreakdown && (
-          <div className="cyber-card p-6">
+          <div className="cyber-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <TrendingUp className="w-6 h-6 text-cyber-green" />
@@ -581,7 +623,7 @@ function Calculator() {
 
         {/* Platform Comparison */}
         {costBreakdown && (
-          <div className="cyber-card p-6">
+          <div className="cyber-card p-4">
             <div className="flex items-center gap-3 mb-6">
               <ShoppingCart className="w-6 h-6 text-cyber-purple" />
               <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
