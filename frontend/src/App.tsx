@@ -5,6 +5,7 @@ import CRM from './pages/CRM'
 import BOM from './pages/BOM'
 import Stock from './pages/Stock'
 import Calculator from './pages/Calculator'
+import Marketing from './pages/Marketing'
 import Login from './pages/Login'
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
         <Route path="/bom" element={<BOM />} />
         <Route path="/stock" element={<Stock />} />
         <Route path="/calculator" element={<Calculator />} />
+        <Route path="/marketing" element={<Marketing />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

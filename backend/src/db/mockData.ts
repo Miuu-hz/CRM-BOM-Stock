@@ -406,3 +406,20 @@ export const savedBOMs: any[] = [
     updatedAt: new Date('2024-01-12'),
   },
 ]
+
+// Marketing Module Data
+export const shops: any[] = [
+  {
+    id: '1',
+    name: 'My Shopee Store',
+    platform: 'SHOPEE',
+    shopId: 'shopee_12345',
+    isActive: true,
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01'),
+  },
+]
+
+export const marketingFiles: any[] = []
+
+export const marketingMetrics: any[] = []

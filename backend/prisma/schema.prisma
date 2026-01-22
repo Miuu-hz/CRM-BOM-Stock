@@ -230,3 +230,80 @@ enum StockMovementType {
   OUT
   ADJUSTMENT
 }
+
+// Marketing Module
+model Shop {
+  id        String   @id @default(cuid())
+  name      String
+  platform  Platform
+  shopId    String   // Platform-specific shop ID
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marketingFiles   MarketingFile[]
+  marketingMetrics MarketingMetric[]
+
+  @@unique([platform, shopId])
+  @@map("shops")
+}
+
+enum Platform {
+  SHOPEE
+  TIKTOK
+  LAZADA
+  LINE
+}
+
+model MarketingFile {
+  id          String   @id @default(cuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id])
+  fileName    String
+  filePath    String
+  platform    Platform
+  userName    String?
+  reportStart DateTime?
+  reportEnd   DateTime?
+  rowCount    Int      @default(0)
+  uploadedAt  DateTime @default(now())
+
+  metrics MarketingMetric[]
+
+  @@map("marketing_files")
+}
+
+model MarketingMetric {
+  id             String        @id @default(cuid())
+  fileId         String
+  file           MarketingFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  shopId         String
+  shop           Shop          @relation(fields: [shopId], references: [id])
+
+  // Date
+  date           DateTime
+
+  // Campaign/Product Info
+  campaignName   String?
+  productName    String?
+  sku            String?
+
+  // Performance Metrics
+  impressions    Int           @default(0)
+  clicks         Int           @default(0)
+  ctr            Decimal       @default(0) // Click-through rate
+  orders         Int           @default(0)
+  sales          Decimal       @default(0)
+  adCost         Decimal       @default(0)
+  roas           Decimal       @default(0) // Return on Ad Spend
+  acos           Decimal       @default(0) // Advertising Cost of Sale
+  conversionRate Decimal       @default(0)
+
+  // Additional metrics (flexible)
+  extraData      String?       // JSON string for platform-specific fields
+
+  createdAt      DateTime      @default(now())
+
+  @@index([shopId, date])
+  @@map("marketing_metrics")
+}
