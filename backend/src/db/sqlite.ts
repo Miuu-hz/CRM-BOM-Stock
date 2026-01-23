@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 
-const dbPath = path.join(__dirname, '../../marketing.db')
+const dbPath = path.join(__dirname, '../../dev.db')
 const db: any = new Database(dbPath)
 
 // Enable foreign keys
@@ -42,6 +42,7 @@ db.exec(`
     file_id TEXT NOT NULL,
     shop_id TEXT NOT NULL,
     date TEXT NOT NULL,
+    order_number INTEGER,
     campaign_name TEXT,
     product_name TEXT,
     sku TEXT,

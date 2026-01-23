@@ -265,10 +265,25 @@ export const createMetric = (data: any) => {
   return id
 }
 
+/**
+ * Get the last order number for a shop in a specific date range
+ */
+export const getLastOrderNumber = (shopId: string, startDate: string, endDate: string): number => {
+  const result: any = db.prepare(`
+    SELECT MAX(order_number) as lastOrderNumber
+    FROM marketing_metrics
+    WHERE shop_id = ?
+      AND date >= ?
+      AND date < ?
+  `).get(shopId, startDate, endDate)
+
+  return result?.lastOrderNumber || 0
+}
+
 export const bulkCreateMetrics = (metrics: any[]) => {
   const insert = db.prepare(`
     INSERT INTO marketing_metrics (
-      id, file_id, shop_id, date,
+      id, file_id, shop_id, date, order_number,
       campaign_name, product_name, sku, ad_status,
       impressions, clicks, ctr,
       orders, direct_orders, order_rate, direct_order_rate,
@@ -279,7 +294,7 @@ export const bulkCreateMetrics = (metrics: any[]) => {
       roas, direct_roas, acos, direct_acos,
       conversion_rate, extra_data, created_at
     ) VALUES (
-      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
@@ -299,6 +314,7 @@ export const bulkCreateMetrics = (metrics: any[]) => {
         data.fileId,
         data.shopId,
         data.date,
+        data.orderNumber || null,
         data.campaignName || null,
         data.productName || null,
         data.sku || null,
