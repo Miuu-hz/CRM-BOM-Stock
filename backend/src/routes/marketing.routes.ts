@@ -251,11 +251,21 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
       rowCount: parsedData.rowCount,
     })
 
-    // Store metrics in bulk
-    const metricsToInsert = parsedData.metrics.map(metric => ({
+    // Get last order number for this shop and date range
+    const nextDayStr = new Date(endDate)
+    nextDayStr.setDate(nextDayStr.getDate() + 1)
+    const lastOrderNumber = marketingRepo.getLastOrderNumber(
+      shopId,
+      startDate,
+      nextDayStr.toISOString().split('T')[0]
+    )
+
+    // Store metrics in bulk with sequential order numbers
+    const metricsToInsert = parsedData.metrics.map((metric, index) => ({
       fileId: fileRecord.id,
       shopId,
       date: new Date(metric.date).toISOString(),
+      orderNumber: lastOrderNumber + index + 1,
       campaignName: metric.campaignName,
       productName: metric.productName,
       sku: metric.sku,
