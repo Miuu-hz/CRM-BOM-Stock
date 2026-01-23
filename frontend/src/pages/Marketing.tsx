@@ -165,13 +165,15 @@ function Marketing() {
   // Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (!file || !selectedShop) return
+    if (!file) return
 
     setUploading(true)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('shopId', selectedShop)
     formData.append('platform', selectedPlatform)
+    formData.append('startDate', dateRange.start)
+    formData.append('endDate', dateRange.end)
 
     try {
       const response = await axios.post(`${API_URL}/api/marketing/upload`, formData, {
@@ -486,22 +488,17 @@ function Marketing() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <Modal onClose={() => setShowUploadModal(false)}>
-          <h3 className="text-xl font-bold mb-4">อัพโหลดข้อมูลการตลาด</h3>
-          <p className="text-gray-400 mb-6">
-            อัพโหลดไฟล์ CSV จาก {PLATFORMS.find(p => p.id === selectedPlatform)?.name}
-          </p>
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            className="w-full p-4 border-2 border-dashed border-cyber-border rounded-lg bg-cyber-card/50 hover:border-cyber-primary transition-colors cursor-pointer"
-          />
-          {uploading && (
-            <p className="text-center text-cyber-primary mt-4">กำลังประมวลผล...</p>
-          )}
-        </Modal>
+        <UploadModal
+          platform={selectedPlatform}
+          shops={shops}
+          selectedShop={selectedShop}
+          setSelectedShop={setSelectedShop}
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          uploading={uploading}
+          onClose={() => setShowUploadModal(false)}
+          onUpload={handleFileUpload}
+        />
       )}
 
       {/* Add Shop Modal */}
@@ -566,6 +563,121 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         </button>
       </motion.div>
     </div>
+  )
+}
+
+function UploadModal({
+  platform,
+  shops,
+  selectedShop,
+  setSelectedShop,
+  dateRange,
+  setDateRange,
+  uploading,
+  onClose,
+  onUpload,
+}: {
+  platform: string
+  shops: Shop[]
+  selectedShop: string
+  setSelectedShop: (shopId: string) => void
+  dateRange: { start: string; end: string }
+  setDateRange: (range: { start: string; end: string }) => void
+  uploading: boolean
+  onClose: () => void
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const filteredShops = shops.filter(shop =>
+    shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    shop.shopId.includes(searchTerm)
+  )
+
+  const canUpload = selectedShop && dateRange.start && dateRange.end
+
+  return (
+    <Modal onClose={onClose}>
+      <h3 className="text-xl font-bold mb-4">อัพโหลดข้อมูลการตลาด</h3>
+
+      <div className="space-y-4">
+        {/* Platform */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">Platform</label>
+          <div className="w-full bg-cyber-card/50 border border-cyber-border rounded-lg px-4 py-2 text-white">
+            {PLATFORMS.find(p => p.id === platform)?.name}
+          </div>
+        </div>
+
+        {/* Shop Selector with Search */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">ร้านค้า</label>
+          <input
+            type="text"
+            placeholder="🔍 ค้นหาร้านค้า..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary mb-2"
+          />
+          <select
+            value={selectedShop}
+            onChange={(e) => setSelectedShop(e.target.value)}
+            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+            required
+          >
+            <option value="">เลือกร้านค้า</option>
+            {filteredShops.map(shop => (
+              <option key={shop.id} value={shop.id}>
+                {shop.name} ({shop.shopId})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Date Range */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">วันที่เริ่มต้น</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">วันที่สิ้นสุด</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              required
+            />
+          </div>
+        </div>
+
+        {/* File Upload */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-2">ไฟล์ CSV</label>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={onUpload}
+            disabled={uploading || !canUpload}
+            className="w-full p-4 border-2 border-dashed border-cyber-border rounded-lg bg-cyber-card/50 hover:border-cyber-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          {!canUpload && (
+            <p className="text-sm text-yellow-500 mt-2">กรุณาเลือกร้านค้าและวันที่ก่อนอัพโหลด</p>
+          )}
+        </div>
+
+        {uploading && (
+          <p className="text-center text-cyber-primary mt-4">กำลังประมวลผล...</p>
+        )}
+      </div>
+    </Modal>
   )
 }
 

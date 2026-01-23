@@ -211,12 +211,19 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
       })
     }
 
-    const { shopId, platform } = req.body
+    const { shopId, platform, startDate, endDate } = req.body
 
     if (!shopId || !platform) {
       return res.status(400).json({
         success: false,
         message: 'Shop ID and platform are required',
+      })
+    }
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required',
       })
     }
 
@@ -229,8 +236,8 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
       })
     }
 
-    // Parse CSV file
-    const parsedData = await parseMarketingCSV(req.file.path, platform)
+    // Parse CSV file with date range
+    const parsedData = await parseMarketingCSV(req.file.path, platform, startDate, endDate)
 
     // Create file record
     const fileRecord: any = marketingRepo.createFile({

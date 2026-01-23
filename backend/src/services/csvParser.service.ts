@@ -230,12 +230,129 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
 }
 
 /**
+ * Parse simplified CSV (header + data only)
+ * No metadata in file - all info comes from parameters
+ */
+export async function parseSimplifiedCSV(
+  filePath: string,
+  startDate: string,
+  endDate: string
+): Promise<ParsedCSVResult> {
+  return new Promise((resolve, reject) => {
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf-8')
+
+      Papa.parse(fileContent, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          try {
+            // Calculate date distribution
+            const start = new Date(startDate)
+            const end = new Date(endDate)
+            const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+
+            let dateDistribution: string[] = []
+
+            if (daysDiff === 0) {
+              // Single date - all rows use same date
+              dateDistribution = Array(results.data.length).fill(startDate)
+            } else {
+              // Multiple dates - distribute evenly
+              const rowsPerDay = Math.ceil(results.data.length / (daysDiff + 1))
+              for (let i = 0; i < results.data.length; i++) {
+                const dayOffset = Math.floor(i / rowsPerDay)
+                const date = new Date(start)
+                date.setDate(date.getDate() + dayOffset)
+                dateDistribution.push(date.toISOString().split('T')[0])
+              }
+            }
+
+            const metrics: ShopeeMetricRow[] = results.data.map((row: any, index: number) => {
+              return {
+                date: dateDistribution[index] || startDate,
+                campaignName: row['ชื่อโฆษณา / ชื่อสินค้า'] || '',
+                productName: row['ชื่อโฆษณา / ชื่อสินค้า'] || '',
+                sku: row['รหัสสินค้า'] || '',
+                adStatus: row['สถานะโฆษณา'] || '',
+
+                // Traffic
+                impressions: cleanNumber(row['การมองเห็น'] || 0),
+                clicks: cleanNumber(row['จำนวนคลิก'] || 0),
+                ctr: cleanPercent(row['อัตราการคลิก (CTR)'] || 0),
+
+                // Orders
+                orders: cleanNumber(row['การสั่งซื้อ'] || 0),
+                directOrders: cleanNumber(row['การสั่งซื้อโดยตรง'] || 0),
+                orderRate: cleanPercent(row['อัตราการสั่งซื้อ'] || 0),
+                directOrderRate: cleanPercent(row['อัตราการสั่งซื้อโดยตรง'] || 0),
+
+                // Cost per Order
+                costPerOrder: cleanNumber(row['ราคาต่อการสั่งซื้อ'] || 0),
+                directCostPerOrder: cleanNumber(row['ราคาต่อการสั่งซื้อโดยตรง'] || 0),
+
+                // Items Sold
+                itemsSold: cleanNumber(row['สินค้าที่ขายแล้ว'] || 0),
+                directItemsSold: cleanNumber(row['สินค้าที่ขายแล้วโดยตรง'] || 0),
+
+                // Sales
+                sales: cleanNumber(row['ยอดขาย'] || 0),
+                directSales: cleanNumber(row['ยอดขายโดยตรง'] || 0),
+
+                // Ad Cost
+                adCost: cleanNumber(row['ค่าโฆษณา'] || 0),
+
+                // Performance
+                roas: cleanNumber(row['ยอดขาย/รายจ่าย (ROAS)'] || 0),
+                directRoas: cleanNumber(row['ผลตอบแทนจากการลงทุนโดยตรง (Direct ROAS)'] || 0),
+                acos: cleanPercent(row['ACOS'] || 0),
+                directAcos: cleanPercent(row['อัตราส่วนค่าใช้จ่ายต่อรายได้โดยตรง (Direct ACOS)'] || 0),
+
+                conversionRate: cleanPercent(row['อัตราการแปลง'] || 0),
+                extraData: row,
+              }
+            })
+
+            resolve({
+              metadata: {
+                userName: '',
+                shopName: '',
+                shopId: '',
+                reportStart: startDate,
+                reportEnd: endDate,
+              },
+              metrics,
+              rowCount: metrics.length,
+            })
+          } catch (error) {
+            reject(new Error('Failed to process CSV data: ' + error))
+          }
+        },
+        error: (error: any) => {
+          reject(new Error('Failed to parse CSV: ' + error.message))
+        },
+      })
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
+
+/**
  * Generic CSV parser for future platform support (TikTok, etc.)
  */
 export async function parseMarketingCSV(
   filePath: string,
-  platform: string
+  platform: string,
+  startDate?: string,
+  endDate?: string
 ): Promise<ParsedCSVResult> {
+  // If dates provided, use simplified parser
+  if (startDate && endDate) {
+    return parseSimplifiedCSV(filePath, startDate, endDate)
+  }
+
+  // Otherwise use platform-specific parser with metadata
   switch (platform.toUpperCase()) {
     case 'SHOPEE':
       return parseShopeeCSV(filePath)
