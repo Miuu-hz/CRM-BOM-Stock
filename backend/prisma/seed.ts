@@ -5,6 +5,17 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🌱 Seeding database...')
 
+  // Make seed repeatable for local dev
+  await prisma.orderItem.deleteMany()
+  await prisma.order.deleteMany()
+  await prisma.stockMovement.deleteMany().catch(() => undefined)
+  await prisma.stockItem.deleteMany()
+  await prisma.bOMItem.deleteMany()
+  await prisma.bOM.deleteMany()
+  await prisma.material.deleteMany()
+  await prisma.product.deleteMany()
+  await prisma.customer.deleteMany()
+
   // Create Users
   const admin = await prisma.user.upsert({
     where: { email: 'admin@example.com' },
