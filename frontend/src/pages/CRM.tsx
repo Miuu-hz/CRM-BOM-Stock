@@ -1,97 +1,154 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Users,
   Search,
   Plus,
-  Filter,
   MoreVertical,
   Phone,
   Mail,
   MapPin,
   Building2,
 } from 'lucide-react'
+import axios from 'axios'
+
+type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 
 interface Customer {
   id: string
+  code: string
   name: string
-  type: 'hotel' | 'retail' | 'wholesale'
-  contact: string
+  type: CustomerType
+  contactName: string
   email: string
   phone: string
-  location: string
+  city: string
+  creditLimit: number
+  status: 'ACTIVE' | 'INACTIVE'
   totalOrders: number
-  totalRevenue: string
-  creditLimit: string
-  status: 'active' | 'inactive'
+  totalRevenue: number
 }
 
-const customers: Customer[] = [
-  {
-    id: 'CUS-001',
-    name: 'Hotel Grand Deluxe',
-    type: 'hotel',
-    contact: 'John Smith',
-    email: 'john@hotelgrand.com',
-    phone: '+66 2-345-6789',
-    location: 'Bangkok',
-    totalOrders: 45,
-    totalRevenue: '฿2.5M',
-    creditLimit: '฿500K',
-    status: 'active',
-  },
-  {
-    id: 'CUS-002',
-    name: 'ABC Trading Co.',
-    type: 'wholesale',
-    contact: 'Sarah Johnson',
-    email: 'sarah@abctrading.com',
-    phone: '+66 2-456-7890',
-    location: 'Chiang Mai',
-    totalOrders: 32,
-    totalRevenue: '฿1.8M',
-    creditLimit: '฿300K',
-    status: 'active',
-  },
-  {
-    id: 'CUS-003',
-    name: 'Resort Paradise',
-    type: 'hotel',
-    contact: 'Mike Wilson',
-    email: 'mike@resortparadise.com',
-    phone: '+66 76-234-567',
-    location: 'Phuket',
-    totalOrders: 28,
-    totalRevenue: '฿1.5M',
-    creditLimit: '฿400K',
-    status: 'active',
-  },
-  {
-    id: 'CUS-004',
-    name: 'Sleep Well Store',
-    type: 'retail',
-    contact: 'Emma Davis',
-    email: 'emma@sleepwell.com',
-    phone: '+66 2-567-8901',
-    location: 'Bangkok',
-    totalOrders: 18,
-    totalRevenue: '฿850K',
-    creditLimit: '฿150K',
-    status: 'active',
-  },
-]
+interface CrmSummary {
+  totalCustomers: number
+  activeCustomers: number
+  totalRevenue: number
+  avgOrderValue: number
+  recentContacts: {
+    customerName: string
+    contactName: string
+    lastContactAt: string
+    lastOrderNumber: string
+    totalAmount: number
+  }[]
+}
+
+interface CustomerInsights {
+  stats: {
+    totalOrders: number
+    totalRevenue: number
+    lastOrderDate: string | null
+  }
+  recentOrders: {
+    id: string
+    orderNumber: string
+    orderDate: string
+    totalAmount: number
+    status: string
+    notes?: string
+    items: {
+      productId: string
+      productName: string
+      category: string
+      quantity: number
+      totalPrice: number
+    }[]
+  }[]
+  favouriteProducts: {
+    productId: string
+    name: string
+    category: string
+    totalQuantity: number
+    totalRevenue: number
+  }[]
+  recommendations: {
+    productId: string
+    name: string
+    category: string
+    popularity: number
+  }[]
+  proposalsHistory: {
+    orderNumber: string
+    note: string
+    createdAt: string
+  }[]
+}
 
 function CRM() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
+  const [loading, setLoading] = useState(false)
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [summary, setSummary] = useState<CrmSummary | null>(null)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+  const [insights, setInsights] = useState<CustomerInsights | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals'
+  >('overview')
+
+  // Load CRM summary + customer list
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        const [summaryRes, customersRes] = await Promise.all([
+          axios.get('/api/customers/summary'),
+          axios.get('/api/customers'),
+        ])
+        setSummary(summaryRes.data.data)
+        setCustomers(customersRes.data.data)
+        if (customersRes.data.data.length > 0 && !selectedCustomerId) {
+          setSelectedCustomerId(customersRes.data.data[0].id)
+        }
+      } catch (error) {
+        console.error('Failed to load CRM data', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load insights when customer changes
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!selectedCustomerId) return
+      setInsightsLoading(true)
+      try {
+        const res = await axios.get(`/api/customers/${selectedCustomerId}/insights`)
+        setInsights(res.data.data)
+      } catch (error) {
+        console.error('Failed to load customer insights', error)
+      } finally {
+        setInsightsLoading(false)
+      }
+    }
+
+    fetchInsights()
+  }, [selectedCustomerId])
 
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.contact.toLowerCase().includes(searchTerm.toLowerCase())
+      customer.contactName.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesType = selectedType === 'all' || customer.type === selectedType
     return matchesSearch && matchesType
   })
+
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) || null
 
   return (
     <motion.div
@@ -106,7 +163,7 @@ function CRM() {
             <span className="neon-text">Customer Management</span>
           </h1>
           <p className="text-gray-400">
-            Manage your customers and relationships
+            ภาพรวมลูกค้าและโอกาสเพิ่มยอดขาย
           </p>
         </div>
         <motion.button
@@ -122,28 +179,36 @@ function CRM() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
-          label="Total Customers"
-          value="1,248"
+          label="ลูกค้าทั้งหมด"
+          value={summary ? summary.totalCustomers.toLocaleString('th-TH') : '-'}
           icon={Users}
-          color="primary"
         />
         <StatCard
-          label="Active Accounts"
-          value="1,156"
+          label="ลูกค้าที่ใช้งานอยู่"
+          value={summary ? summary.activeCustomers.toLocaleString('th-TH') : '-'}
           icon={Building2}
-          color="green"
         />
         <StatCard
-          label="Total Revenue"
-          value="฿8.2M"
+          label="ยอดซื้อรวม"
+          value={
+            summary
+              ? `฿${summary.totalRevenue.toLocaleString('th-TH', {
+                  maximumFractionDigits: 0,
+                })}`
+              : '-'
+          }
           icon={Users}
-          color="purple"
         />
         <StatCard
-          label="Avg. Order Value"
-          value="฿62.5K"
+          label="ยอดสั่งซื้อเฉลี่ย/ออเดอร์"
+          value={
+            summary
+              ? `฿${summary.avgOrderValue.toLocaleString('th-TH', {
+                  maximumFractionDigits: 0,
+                })}`
+              : '-'
+          }
           icon={Users}
-          color="primary"
         />
       </div>
 
@@ -208,11 +273,355 @@ function CRM() {
         </div>
       </div>
 
-      {/* Customers List */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredCustomers.map((customer, index) => (
-          <CustomerCard key={customer.id} customer={customer} index={index} />
-        ))}
+      {/* Customers List + Per-Customer Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          {loading && <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>}
+          {!loading &&
+            filteredCustomers.map((customer, index) => (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCustomerId(customer.id)
+                  setActiveTab('overview')
+                }}
+                className="w-full text-left"
+              >
+                <CustomerCard
+                  customer={customer}
+                  index={index}
+                  selected={customer.id === selectedCustomerId}
+                />
+              </button>
+            ))}
+        </div>
+
+        {/* Right panel: CRM insights for selected customer */}
+        <div className="space-y-4">
+          {/* ถ้ายังไม่เลือกชื่อลูกค้า ให้ขึ้นข้อความแนะนำ */}
+          {!selectedCustomer && (
+            <div className="cyber-card p-4">
+              <p className="text-sm text-gray-400">
+                กรุณาเลือกรายชื่อลูกค้าทางซ้ายเพื่อดูภาพรวมและประวัติของลูกค้ารายนั้น
+              </p>
+            </div>
+          )}
+
+          {/* ข้อมูลหัวลูกค้าที่เลือก (per customer header) */}
+          {selectedCustomer && (
+            <div className="cyber-card p-4 space-y-2">
+              <h2 className="text-lg font-semibold text-gray-100 mb-1">
+                ภาพรวมลูกค้า: <span className="text-cyber-primary">{selectedCustomer.name}</span>
+              </h2>
+              <p className="text-xs text-gray-400 mb-2">
+                โค้ด: {selectedCustomer.code} • ประเภท: {selectedCustomer.type} • สถานะ:{' '}
+                {selectedCustomer.status}
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
+                <div className="flex items-center gap-2">
+                  <Users className="w-3 h-3 text-cyber-primary" />
+                  <span>{selectedCustomer.contactName}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="w-3 h-3 text-cyber-primary" />
+                  <span className="truncate">{selectedCustomer.email}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-3 h-3 text-cyber-primary" />
+                  <span>{selectedCustomer.phone}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-3 h-3 text-cyber-primary" />
+                  <span>{selectedCustomer.city}</span>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">ยอดซื้อรวมทั้งหมด</p>
+                  <p className="text-sm font-semibold text-cyber-green">
+                    ฿
+                    {insights
+                      ? insights.stats.totalRevenue.toLocaleString('th-TH', {
+                          maximumFractionDigits: 0,
+                        })
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">วงเงินเครดิต</p>
+                  <p className="text-sm font-semibold text-cyber-purple">
+                    ฿
+                    {selectedCustomer.creditLimit.toLocaleString('th-TH', {
+                      maximumFractionDigits: 0,
+                    })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* เมนูย่อยของลูกค้าแต่ละคน (tabs) */}
+          {selectedCustomer && (
+            <div className="cyber-card p-2">
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('overview')}
+                  className={`px-3 py-1 rounded-md border transition-all ${
+                    activeTab === 'overview'
+                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
+                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
+                  }`}
+                >
+                  ภาพรวม
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('orders')}
+                  className={`px-3 py-1 rounded-md border transition-all ${
+                    activeTab === 'orders'
+                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
+                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
+                  }`}
+                >
+                  ออเดอร์ล่าสุด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('favourites')}
+                  className={`px-3 py-1 rounded-md border transition-all ${
+                    activeTab === 'favourites'
+                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
+                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
+                  }`}
+                >
+                  ชอบซื้ออะไร
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('recommendations')}
+                  className={`px-3 py-1 rounded-md border transition-all ${
+                    activeTab === 'recommendations'
+                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
+                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
+                  }`}
+                >
+                  สิ่งที่แนะนำ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('proposals')}
+                  className={`px-3 py-1 rounded-md border transition-all ${
+                    activeTab === 'proposals'
+                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
+                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
+                  }`}
+                >
+                  เคยเสนออะไรไปแล้วบ้าง
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* เนื้อหาในแต่ละเมนู (per customer) */}
+          {selectedCustomer && (
+            <>
+              {/* Overview: การติดต่อล่าสุด + ตัวเลขรวมหลัก ๆ */}
+              {activeTab === 'overview' && (
+                <div className="cyber-card p-4">
+                  <h3 className="text-md font-semibold text-gray-100 mb-2">
+                    ภาพรวมลูกค้ารายบุคคล
+                  </h3>
+                  {insightsLoading && (
+                    <p className="text-gray-400 text-sm">กำลังโหลดข้อมูลลูกค้า...</p>
+                  )}
+                  {!insightsLoading && insights && (
+                    <div className="space-y-2 text-sm text-gray-300">
+                      <p>
+                        <span className="text-gray-400">จำนวนออเดอร์ทั้งหมด: </span>
+                        <span className="text-cyber-primary">
+                          {insights.stats.totalOrders.toLocaleString('th-TH')}
+                        </span>
+                      </p>
+                      <p>
+                        <span className="text-gray-400">ยอดซื้อรวมทั้งหมด: </span>
+                        <span className="text-cyber-green">
+                          ฿
+                          {insights.stats.totalRevenue.toLocaleString('th-TH', {
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                      </p>
+                      <p>
+                        <span className="text-gray-400">การติดต่อล่าสุด (ออเดอร์ล่าสุด): </span>
+                        <span>
+                          {insights.stats.lastOrderDate
+                            ? new Date(
+                                insights.stats.lastOrderDate,
+                              ).toLocaleDateString('th-TH')
+                            : '-'}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Recent orders */}
+              {activeTab === 'orders' && (
+                <div className="cyber-card p-4">
+                  <h3 className="text-md font-semibold text-gray-100 mb-2">
+                    ออเดอร์ล่าสุดของลูกค้าคนนี้
+                  </h3>
+                  {insights && insights.recentOrders.length > 0 && (
+                    <div className="space-y-2 max-h-64 overflow-auto text-xs">
+                      {insights.recentOrders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="border border-cyber-border/60 rounded-lg p-2 space-y-1"
+                        >
+                          <div className="flex justify-between">
+                            <span className="font-semibold text-cyber-primary">
+                              {order.orderNumber}
+                            </span>
+                            <span className="text-gray-400">
+                              {new Date(order.orderDate).toLocaleDateString('th-TH')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">{order.status}</span>
+                            <span className="text-cyber-green">
+                              ฿
+                              {order.totalAmount.toLocaleString('th-TH', {
+                                maximumFractionDigits: 0,
+                              })}
+                            </span>
+                          </div>
+                          {order.items.length > 0 && (
+                            <p className="text-gray-400 truncate">
+                              {order.items
+                                .map((i) => `${i.productName} x${i.quantity}`)
+                                .join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(!insights || insights.recentOrders.length === 0) && (
+                    <p className="text-xs text-gray-500">ยังไม่มีประวัติการสั่งซื้อ</p>
+                  )}
+                </div>
+              )}
+
+              {/* Favourite products */}
+              {activeTab === 'favourites' && (
+                <div className="cyber-card p-4">
+                  <h3 className="text-md font-semibold text-gray-100 mb-2">
+                    ชอบซื้ออะไร (Top Products)
+                  </h3>
+                  {insights && insights.favouriteProducts.length > 0 && (
+                    <ul className="space-y-1 text-xs text-gray-300">
+                      {insights.favouriteProducts.map((prod) => (
+                        <li
+                          key={prod.productId}
+                          className="flex justify-between border border-cyber-border/60 rounded-lg px-2 py-1"
+                        >
+                          <div>
+                            <p className="font-semibold">{prod.name}</p>
+                            <p className="text-gray-400 text-[10px]">
+                              หมวด: {prod.category}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-cyber-primary">
+                              x{prod.totalQuantity.toLocaleString('th-TH')}
+                            </p>
+                            <p className="text-cyber-green">
+                              ฿
+                              {prod.totalRevenue.toLocaleString('th-TH', {
+                                maximumFractionDigits: 0,
+                              })}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {(!insights || insights.favouriteProducts.length === 0) && (
+                    <p className="text-xs text-gray-500">ยังไม่มีข้อมูลสินค้าโปรด</p>
+                  )}
+                </div>
+              )}
+
+              {/* Recommendations */}
+              {activeTab === 'recommendations' && (
+                <div className="cyber-card p-4">
+                  <h3 className="text-md font-semibold text-gray-100 mb-2">
+                    สิ่งที่แนะนำให้เสนอเพิ่ม
+                  </h3>
+                  {insights && insights.recommendations.length > 0 ? (
+                    <ul className="space-y-1 text-xs text-gray-300">
+                      {insights.recommendations.map((rec) => (
+                        <li
+                          key={rec.productId}
+                          className="flex justify-between border border-cyber-border/60 rounded-lg px-2 py-1"
+                        >
+                          <div>
+                            <p className="font-semibold">{rec.name}</p>
+                            <p className="text-gray-400 text-[10px]">
+                              หมวด: {rec.category}
+                            </p>
+                          </div>
+                          <p className="text-cyber-primary text-[10px]">
+                            ความนิยมรวม (ทุกลูกค้า):{' '}
+                            {rec.popularity.toLocaleString('th-TH')}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      ยังไม่มีคำแนะนำสินค้าเพิ่มเติมสำหรับลูกค้าคนนี้
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Proposals history */}
+              {activeTab === 'proposals' && (
+                <div className="cyber-card p-4">
+                  <h3 className="text-md font-semibold text-gray-100 mb-2">
+                    เคยเสนออะไรไปแล้วบ้าง (จากโน้ตในออเดอร์)
+                  </h3>
+                  {insights && insights.proposalsHistory.length > 0 ? (
+                    <ul className="space-y-1 text-xs text-gray-300 max-h-40 overflow-auto">
+                      {insights.proposalsHistory.map((p) => (
+                        <li
+                          key={p.orderNumber}
+                          className="border border-cyber-border/60 rounded-lg px-2 py-1"
+                        >
+                          <div className="flex justify-between mb-1">
+                            <span className="font-semibold text-cyber-primary">
+                              {p.orderNumber}
+                            </span>
+                            <span className="text-gray-400 text-[10px]">
+                              {new Date(p.createdAt).toLocaleDateString('th-TH')}
+                            </span>
+                          </div>
+                          <p className="text-gray-300">{p.note}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      ยังไม่มีโน้ต/ข้อเสนอที่บันทึกไว้ในออเดอร์ของลูกค้าคนนี้
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </motion.div>
   )
@@ -222,12 +631,10 @@ function StatCard({
   label,
   value,
   icon: Icon,
-  color,
 }: {
   label: string
   value: string
   icon: any
-  color: string
 }) {
   return (
     <div className="cyber-card p-4">
@@ -247,9 +654,11 @@ function StatCard({
 function CustomerCard({
   customer,
   index,
+  selected,
 }: {
   customer: Customer
   index: number
+  selected?: boolean
 }) {
   return (
     <motion.div
@@ -257,7 +666,9 @@ function CustomerCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ scale: 1.02 }}
-      className="cyber-card p-6 glow-effect"
+      className={`cyber-card p-6 glow-effect ${
+        selected ? 'ring-2 ring-cyber-primary/70' : ''
+      }`}
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -266,7 +677,7 @@ function CustomerCard({
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-100">{customer.name}</h3>
-            <p className="text-sm text-gray-400">{customer.id}</p>
+            <p className="text-sm text-gray-400">{customer.code}</p>
           </div>
         </div>
         <button className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors">
@@ -278,7 +689,7 @@ function CustomerCard({
         <div className="flex items-center gap-2 text-sm">
           <Users className="w-4 h-4 text-cyber-primary" />
           <span className="text-gray-400">Contact:</span>
-          <span className="text-gray-300">{customer.contact}</span>
+          <span className="text-gray-300">{customer.contactName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <Mail className="w-4 h-4 text-cyber-primary" />
@@ -290,7 +701,7 @@ function CustomerCard({
         </div>
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="w-4 h-4 text-cyber-primary" />
-          <span className="text-gray-400">{customer.location}</span>
+          <span className="text-gray-400">{customer.city}</span>
         </div>
       </div>
 
@@ -298,19 +709,25 @@ function CustomerCard({
         <div>
           <p className="text-xs text-gray-400 mb-1">Orders</p>
           <p className="text-sm font-semibold text-cyber-primary">
-            {customer.totalOrders}
+            {customer.totalOrders.toLocaleString('th-TH')}
           </p>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">Revenue</p>
           <p className="text-sm font-semibold text-cyber-green">
-            {customer.totalRevenue}
+            ฿
+            {customer.totalRevenue.toLocaleString('th-TH', {
+              maximumFractionDigits: 0,
+            })}
           </p>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">Credit</p>
           <p className="text-sm font-semibold text-cyber-purple">
-            {customer.creditLimit}
+            ฿
+            {customer.creditLimit.toLocaleString('th-TH', {
+              maximumFractionDigits: 0,
+            })}
           </p>
         </div>
       </div>

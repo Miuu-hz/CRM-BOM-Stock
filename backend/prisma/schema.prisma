@@ -15,17 +15,11 @@ model User {
   email     String   @unique
   password  String
   name      String
-  role      UserRole @default(USER)
+  role      String   @default("USER")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
-}
-
-enum UserRole {
-  ADMIN
-  MANAGER
-  USER
 }
 
 // CRM - Customer Management
@@ -33,31 +27,20 @@ model Customer {
   id           String         @id @default(cuid())
   code         String         @unique
   name         String
-  type         CustomerType
+  type         String
   contactName  String
   email        String
   phone        String
   address      String?
   city         String
   creditLimit  Decimal        @default(0)
-  status       CustomerStatus @default(ACTIVE)
+  status       String         @default("ACTIVE")
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   orders       Order[]
 
   @@map("customers")
-}
-
-enum CustomerType {
-  HOTEL
-  WHOLESALE
-  RETAIL
-}
-
-enum CustomerStatus {
-  ACTIVE
-  INACTIVE
 }
 
 // Orders
@@ -69,7 +52,7 @@ model Order {
   orderDate    DateTime    @default(now())
   deliveryDate DateTime?
   totalAmount  Decimal
-  status       OrderStatus @default(PENDING)
+  status       String      @default("PENDING")
   notes        String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -77,14 +60,6 @@ model Order {
   items        OrderItem[]
 
   @@map("orders")
-}
-
-enum OrderStatus {
-  PENDING
-  CONFIRMED
-  PROCESSING
-  COMPLETED
-  CANCELLED
 }
 
 model OrderItem {
@@ -107,7 +82,7 @@ model Product {
   name        String
   category    String
   description String?
-  status      ProductStatus @default(ACTIVE)
+  status      String        @default("ACTIVE")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -118,18 +93,12 @@ model Product {
   @@map("products")
 }
 
-enum ProductStatus {
-  ACTIVE
-  INACTIVE
-  DISCONTINUED
-}
-
 model BOM {
   id        String    @id @default(cuid())
   productId String
   product   Product   @relation(fields: [productId], references: [id])
   version   String
-  status    BOMStatus @default(DRAFT)
+  status    String    @default("DRAFT")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -137,12 +106,6 @@ model BOM {
 
   @@unique([productId, version])
   @@map("boms")
-}
-
-enum BOMStatus {
-  DRAFT
-  ACTIVE
-  ARCHIVED
 }
 
 model Material {
@@ -179,7 +142,7 @@ model StockItem {
   id         String        @id @default(cuid())
   sku        String        @unique
   name       String
-  category   StockCategory
+  category   String
   productId  String?
   product    Product?      @relation(fields: [productId], references: [id])
   materialId String?
@@ -189,7 +152,7 @@ model StockItem {
   minStock   Int
   maxStock   Int
   location   String
-  status     StockStatus
+  status     String
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
@@ -198,24 +161,11 @@ model StockItem {
   @@map("stock_items")
 }
 
-enum StockCategory {
-  RAW_MATERIAL
-  WORK_IN_PROGRESS
-  FINISHED_GOODS
-}
-
-enum StockStatus {
-  ADEQUATE
-  LOW
-  CRITICAL
-  OVERSTOCK
-}
-
 model StockMovement {
   id          String             @id @default(cuid())
   stockItemId String
   stockItem   StockItem          @relation(fields: [stockItemId], references: [id])
-  type        StockMovementType
+  type        String
   quantity    Int
   reference   String?
   notes       String?
@@ -225,17 +175,11 @@ model StockMovement {
   @@map("stock_movements")
 }
 
-enum StockMovementType {
-  IN
-  OUT
-  ADJUSTMENT
-}
-
 // Marketing Module
 model Shop {
   id        String   @id @default(cuid())
   name      String
-  platform  Platform
+  platform  String
   shopId    String   // Platform-specific shop ID
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -248,20 +192,13 @@ model Shop {
   @@map("shops")
 }
 
-enum Platform {
-  SHOPEE
-  TIKTOK
-  LAZADA
-  LINE
-}
-
 model MarketingFile {
   id          String   @id @default(cuid())
   shopId      String
   shop        Shop     @relation(fields: [shopId], references: [id])
   fileName    String
   filePath    String
-  platform    Platform
+  platform    String
   userName    String?
   reportStart DateTime?
   reportEnd   DateTime?
