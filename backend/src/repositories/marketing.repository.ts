@@ -176,8 +176,13 @@ export const getMetrics = (filters: {
   }
 
   if (filters.endDate) {
-    query += ' AND date <= ?'
-    params.push(filters.endDate)
+    // Use < with next day to properly handle ISO timestamps
+    // e.g., '2026-01-19T00:00:00.000Z' < '2026-01-20' works correctly
+    const nextDay = new Date(filters.endDate)
+    nextDay.setDate(nextDay.getDate() + 1)
+    const nextDayStr = nextDay.toISOString().split('T')[0]
+    query += ' AND date < ?'
+    params.push(nextDayStr)
   }
 
   if (filters.platform) {
