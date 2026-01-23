@@ -76,7 +76,7 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
       const fileContent = fs.readFileSync(filePath, 'utf-8')
       const lines = fileContent.split('\n')
 
-      // Extract metadata from first 6 lines
+      // Extract metadata from first 8 lines (actual Shopee format)
       const metadata: ShopeeMetadata = {
         userName: '',
         shopName: '',
@@ -85,37 +85,52 @@ export async function parseShopeeCSV(filePath: string): Promise<ParsedCSVResult>
         reportEnd: '',
       }
 
-      // Parse metadata (assuming format: "Label,Value")
-      if (lines.length >= 6) {
+      // Helper: Convert Thai date (19/01/2026) to ISO (2026-01-19)
+      const parseThaiDate = (dateStr: string): string => {
+        const parts = dateStr.trim().split('/')
+        if (parts.length === 3) {
+          return `${parts[2]}-${parts[1]}-${parts[0]}`
+        }
+        return dateStr
+      }
+
+      // Parse metadata (actual Shopee format)
+      if (lines.length >= 8) {
         const parseLine = (line: string) => {
           const parts = line.split(',')
           return parts.length > 1 ? parts[1].trim().replace(/"/g, '') : ''
         }
 
-        metadata.userName = parseLine(lines[1])
-        metadata.shopName = parseLine(lines[2])
-        metadata.shopId = parseLine(lines[3])
-
-        // Parse report period (lines 4-5 might have start and end dates)
-        const reportPeriod = parseLine(lines[4])
-        if (reportPeriod) {
-          const dates = reportPeriod.split('-').map(d => d.trim())
-          metadata.reportStart = dates[0] || ''
-          metadata.reportEnd = dates[1] || dates[0] || ''
+        // Line 2: User Name,xxx
+        if (lines[1]) {
+          metadata.userName = parseLine(lines[1])
         }
 
-        // Also check line 6 (B6) for date if report period is not found
-        if (!metadata.reportStart && lines[5]) {
-          const dateFromB6 = parseLine(lines[5])
-          if (dateFromB6) {
-            metadata.reportStart = dateFromB6
-            metadata.reportEnd = dateFromB6
+        // Line 3: ชื่อกลุ่ม or ชื่อร้านค้า
+        if (lines[2]) {
+          metadata.shopName = parseLine(lines[2])
+        }
+
+        // Line 4: Shop ID,xxx
+        if (lines[3]) {
+          metadata.shopId = parseLine(lines[3])
+        }
+
+        // Line 6: ระยะเวลา,19/01/2026 - 19/01/2026
+        if (lines[5]) {
+          const periodLine = parseLine(lines[5])
+          if (periodLine && periodLine.includes('-')) {
+            const dates = periodLine.split('-').map(d => d.trim())
+            if (dates.length >= 2) {
+              metadata.reportStart = parseThaiDate(dates[0])
+              metadata.reportEnd = parseThaiDate(dates[1])
+            }
           }
         }
       }
 
-      // Parse CSV data starting from row 7 (index 6)
-      const csvData = lines.slice(6).join('\n')
+      // Parse CSV data starting from row 8 (index 7) - skip line 7 which is empty
+      const csvData = lines.slice(7).join('\n')
 
       Papa.parse(csvData, {
         header: true,
