@@ -4,7 +4,6 @@ import {
   Users,
   Search,
   Plus,
-  MoreVertical,
   Phone,
   Mail,
   MapPin,
@@ -14,10 +13,15 @@ import {
   Heart,
   Lightbulb,
   FileText,
+  Clock,
+  AlertTriangle,
+  MessageSquare,
+  UserCheck,
 } from 'lucide-react'
 import axios from 'axios'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
+type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
 
 interface Customer {
   id: string
@@ -32,6 +36,18 @@ interface Customer {
   status: 'ACTIVE' | 'INACTIVE'
   totalOrders: number
   totalRevenue: number
+  segment?: CustomerSegment
+  daysSinceLastOrder?: number
+  creditUsed?: number
+}
+
+interface ActivityLog {
+  id: string
+  customerId: string
+  type: 'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'
+  note: string
+  createdAt: string
+  createdBy?: string
 }
 
 interface CrmSummary {
@@ -53,6 +69,8 @@ interface CustomerInsights {
     totalOrders: number
     totalRevenue: number
     lastOrderDate: string | null
+    daysSinceLastOrder?: number
+    avgOrderValue?: number
   }
   recentOrders: {
     id: string
@@ -87,6 +105,7 @@ interface CustomerInsights {
     note: string
     createdAt: string
   }[]
+  activities?: ActivityLog[]
 }
 
 function CRM() {
@@ -99,7 +118,7 @@ function CRM() {
   const [insights, setInsights] = useState<CustomerInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals'
+    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
   >('overview')
   const [showModal, setShowModal] = useState(false)
 
@@ -142,6 +161,30 @@ function CRM() {
 
     fetchInsights()
   }, [selectedCustomerId])
+
+  // Auto-calculate customer segment
+  const calculateSegment = (customer: Customer, insights: CustomerInsights | null): CustomerSegment => {
+    const daysSince = insights?.stats.daysSinceLastOrder || customer.daysSinceLastOrder || 0
+    const revenue = customer.totalRevenue
+    const orders = customer.totalOrders
+
+    // VIP - ยอดซื้อมากกว่า 500k
+    if (revenue > 500000) return 'VIP'
+
+    // Premium - ยอดซื้อ 200k-500k
+    if (revenue >= 200000) return 'PREMIUM'
+
+    // At Risk - ไม่ได้สั่งมา 60+ วัน และเคยสั่งแล้ว
+    if (daysSince > 60 && orders > 0) return 'AT_RISK'
+
+    // New - ลูกค้าใหม่ (ออเดอร์น้อยกว่า 3)
+    if (orders < 3) return 'NEW'
+
+    // Growing - ออเดอร์มากกว่า 5 และยอดเฉลี่ยดี
+    if (orders >= 5 && revenue / orders > 20000) return 'GROWING'
+
+    return 'REGULAR'
+  }
 
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
@@ -280,20 +323,29 @@ function CRM() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading && <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>}
         {!loading &&
-          filteredCustomers.map((customer, index) => (
-            <button
-              key={customer.id}
-              type="button"
-              onClick={() => {
-                setSelectedCustomerId(customer.id)
-                setShowModal(true)
-                setActiveTab('overview')
-              }}
-              className="w-full text-left"
-            >
-              <CustomerCard customer={customer} index={index} />
-            </button>
-          ))}
+          filteredCustomers.map((customer, index) => {
+            const segment = calculateSegment(customer, null)
+            const daysSince = customer.daysSinceLastOrder
+            return (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCustomerId(customer.id)
+                  setShowModal(true)
+                  setActiveTab('overview')
+                }}
+                className="w-full text-left"
+              >
+                <CustomerCard
+                  customer={customer}
+                  index={index}
+                  segment={segment}
+                  daysSinceLastOrder={daysSince}
+                />
+              </button>
+            )
+          })}
       </div>
 
       {/* Customer Detail Modal */}
@@ -322,8 +374,8 @@ function CustomerDetailModal({
   customer: Customer
   insights: CustomerInsights | null
   insightsLoading: boolean
-  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals'
-  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals') => void
+  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
+  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities') => void
   onClose: () => void
 }) {
   return (
@@ -399,16 +451,51 @@ function CustomerDetailModal({
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">วงเงินเครดิต</p>
+              <p className="text-xs text-gray-400 flex items-center gap-1">
+                วงเงินเครดิต
+                {customer.creditUsed !== undefined && customer.creditUsed > customer.creditLimit * 0.8 && (
+                  <AlertTriangle className="w-3 h-3 text-yellow-500" />
+                )}
+              </p>
               <p className="text-xl font-bold text-cyber-purple mt-1">
                 ฿{customer.creditLimit.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
               </p>
+              {customer.creditUsed !== undefined && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2 text-xs mb-1">
+                    <span className="text-gray-400">ใช้ไป:</span>
+                    <span className={`font-semibold ${
+                      customer.creditUsed > customer.creditLimit * 0.9 ? 'text-red-400' :
+                      customer.creditUsed > customer.creditLimit * 0.7 ? 'text-yellow-400' :
+                      'text-green-400'
+                    }`}>
+                      ฿{customer.creditUsed.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                      {' '}({((customer.creditUsed / customer.creditLimit) * 100).toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-cyber-darker h-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        customer.creditUsed > customer.creditLimit * 0.9 ? 'bg-red-500' :
+                        customer.creditUsed > customer.creditLimit * 0.7 ? 'bg-yellow-500' :
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min((customer.creditUsed / customer.creditLimit) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-400">จำนวนออเดอร์</p>
               <p className="text-xl font-bold text-cyber-primary mt-1">
                 {insights?.stats.totalOrders.toLocaleString('th-TH') || '-'}
               </p>
+              {insights?.stats.avgOrderValue && (
+                <p className="text-xs text-gray-400 mt-1">
+                  เฉลี่ย: ฿{insights.stats.avgOrderValue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-400">ออเดอร์ล่าสุด</p>
@@ -417,6 +504,16 @@ function CustomerDetailModal({
                   ? new Date(insights.stats.lastOrderDate).toLocaleDateString('th-TH')
                   : '-'}
               </p>
+              {insights?.stats.daysSinceLastOrder !== undefined && (
+                <p className={`text-xs mt-1 ${
+                  insights.stats.daysSinceLastOrder > 60 ? 'text-red-400' :
+                  insights.stats.daysSinceLastOrder > 30 ? 'text-yellow-400' :
+                  'text-gray-400'
+                }`}>
+                  {insights.stats.daysSinceLastOrder} วันที่แล้ว
+                  {insights.stats.daysSinceLastOrder > 60 && ' ⚠️'}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -478,6 +575,17 @@ function CustomerDetailModal({
             >
               <FileText className="w-4 h-4" />
               <span>สิ่งที่เคยเสนอ</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('activities')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'activities'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              <span>ติดตาม</span>
             </button>
           </div>
         </div>
@@ -671,8 +779,162 @@ function CustomerDetailModal({
               )}
             </div>
           )}
+
+          {!insightsLoading && activeTab === 'activities' && (
+            <ActivityLogTab customer={customer} activities={insights?.activities || []} />
+          )}
         </div>
       </motion.div>
+    </div>
+  )
+}
+
+// Activity Log Tab Component
+function ActivityLogTab({ customer, activities }: { customer: Customer; activities: ActivityLog[] }) {
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [activityType, setActivityType] = useState<'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'>('NOTE')
+  const [note, setNote] = useState('')
+
+  const handleAddActivity = () => {
+    // TODO: ส่งไปยัง API
+    console.log('Add activity:', { customerId: customer.id, type: activityType, note })
+    setNote('')
+    setShowAddForm(false)
+  }
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'CALL':
+        return <Phone className="w-4 h-4 text-blue-400" />
+      case 'EMAIL':
+        return <Mail className="w-4 h-4 text-green-400" />
+      case 'MEETING':
+        return <UserCheck className="w-4 h-4 text-purple-400" />
+      case 'NOTE':
+        return <MessageSquare className="w-4 h-4 text-gray-400" />
+      default:
+        return <MessageSquare className="w-4 h-4 text-gray-400" />
+    }
+  }
+
+  const getActivityLabel = (type: string) => {
+    switch (type) {
+      case 'CALL':
+        return 'โทรติดตาม'
+      case 'EMAIL':
+        return 'ส่งอีเมล'
+      case 'MEETING':
+        return 'พบลูกค้า'
+      case 'NOTE':
+        return 'บันทึกเพิ่มเติม'
+      default:
+        return type
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-cyber-primary" />
+          ประวัติการติดตามลูกค้า
+        </h3>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="cyber-btn-primary text-sm px-3 py-1.5 flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          เพิ่มบันทึก
+        </button>
+      </div>
+
+      {/* Add Activity Form */}
+      {showAddForm && (
+        <div className="cyber-card p-4 space-y-3 border-2 border-cyber-primary/30">
+          <h4 className="font-semibold text-white text-sm">เพิ่มบันทึกการติดตาม</h4>
+          <div className="flex gap-2">
+            {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setActivityType(type)}
+                className={`px-3 py-1.5 rounded-lg text-xs transition-all ${
+                  activityType === type
+                    ? 'bg-cyber-primary text-white'
+                    : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'
+                }`}
+              >
+                {getActivityLabel(type)}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="บันทึกรายละเอียด..."
+            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary min-h-[80px]"
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowAddForm(false)
+                setNote('')
+              }}
+              className="px-4 py-1.5 rounded-lg text-sm bg-cyber-card text-gray-400 hover:bg-cyber-card/80"
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={handleAddActivity}
+              disabled={!note.trim()}
+              className="px-4 py-1.5 rounded-lg text-sm bg-cyber-primary text-white hover:bg-cyber-primary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              บันทึก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Activities Timeline */}
+      <div className="space-y-3">
+        {activities && activities.length > 0 ? (
+          activities.map((activity, idx) => (
+            <div key={activity.id} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="w-8 h-8 rounded-full bg-cyber-card flex items-center justify-center">
+                  {getActivityIcon(activity.type)}
+                </div>
+                {idx < activities.length - 1 && <div className="w-0.5 flex-1 bg-cyber-border mt-2" />}
+              </div>
+              <div className="flex-1 cyber-card p-3 mb-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-cyber-primary">
+                    {getActivityLabel(activity.type)}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(activity.createdAt).toLocaleDateString('th-TH', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-300">{activity.note}</p>
+                {activity.createdBy && (
+                  <p className="text-xs text-gray-500 mt-1">โดย: {activity.createdBy}</p>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-12">
+            <Clock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+            <p className="text-gray-500">ยังไม่มีบันทึกการติดตาม</p>
+            <p className="text-xs text-gray-600 mt-1">คลิก "เพิ่มบันทึก" เพื่อเริ่มบันทึกการติดตามลูกค้า</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -701,34 +963,68 @@ function StatCard({
   )
 }
 
+// Helper function สำหรับ segment badge
+function getSegmentInfo(segment: CustomerSegment) {
+  const segmentMap = {
+    VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: '👑', textColor: 'text-yellow-400' },
+    PREMIUM: { label: 'Premium', color: 'from-purple-500 to-pink-500', icon: '⭐', textColor: 'text-purple-400' },
+    GROWING: { label: 'เติบโต', color: 'from-green-500 to-emerald-500', icon: '📈', textColor: 'text-green-400' },
+    AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: '⚠️', textColor: 'text-red-400' },
+    NEW: { label: 'ใหม่', color: 'from-blue-500 to-cyan-500', icon: '🎯', textColor: 'text-blue-400' },
+    SEASONAL: { label: 'ตามฤดู', color: 'from-indigo-500 to-violet-500', icon: '🔄', textColor: 'text-indigo-400' },
+    REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: '👤', textColor: 'text-gray-400' },
+  }
+  return segmentMap[segment] || segmentMap.REGULAR
+}
+
 function CustomerCard({
   customer,
   index,
+  segment,
+  daysSinceLastOrder,
 }: {
   customer: Customer
   index: number
+  segment: CustomerSegment
+  daysSinceLastOrder?: number
 }) {
+  const segmentInfo = getSegmentInfo(segment)
+  const isAtRisk = daysSinceLastOrder && daysSinceLastOrder > 60
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ scale: 1.02 }}
-      className="cyber-card p-6 glow-effect cursor-pointer"
+      className={`cyber-card p-6 glow-effect cursor-pointer ${
+        isAtRisk ? 'ring-2 ring-red-500/30' : ''
+      }`}
     >
       <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-1">
           <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center shadow-neon">
             <Building2 className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-gray-100">{customer.name}</h3>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-gray-100">{customer.name}</h3>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gradient-to-r ${segmentInfo.color} text-white flex items-center gap-1`}
+                title={segmentInfo.label}
+              >
+                <span>{segmentInfo.icon}</span>
+                <span>{segmentInfo.label}</span>
+              </span>
+            </div>
             <p className="text-sm text-gray-400">{customer.code}</p>
           </div>
         </div>
-        <button className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors">
-          <MoreVertical className="w-5 h-5 text-gray-400" />
-        </button>
+        {isAtRisk && (
+          <div className="ml-2" title={`ไม่ได้สั่งมา ${daysSinceLastOrder} วัน`}>
+            <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
+          </div>
+        )}
       </div>
 
       <div className="space-y-3 mb-4">
