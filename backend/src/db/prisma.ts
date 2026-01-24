@@ -1,39 +1,18 @@
 import dotenv from 'dotenv'
 import path from 'path'
 import { PrismaClient } from '@prisma/client'
-import { fileURLToPath } from 'url'
-import { dirname } from 'path'
 
-// Load environment variables BEFORE creating PrismaClient
-// Use multiple fallback paths to ensure .env is found
-const envPaths = [
-  path.resolve(process.cwd(), 'backend', '.env'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '..', '..', '.env'),
-]
+// FORCE load .env immediately
+dotenv.config({ path: path.join(process.cwd(), 'backend', '.env') })
 
-let envLoaded = false
-for (const envPath of envPaths) {
-  const result = dotenv.config({ path: envPath })
-  if (!result.error) {
-    console.log(`✅ Loaded .env from: ${envPath}`)
-    envLoaded = true
-    break
-  }
-}
-
-if (!envLoaded) {
-  console.warn('⚠️ No .env file found, trying default dotenv.config()')
-  dotenv.config()
-}
-
-// Verify DATABASE_URL is loaded
+// FALLBACK: If DATABASE_URL is still not set, use hardcoded path
 if (!process.env.DATABASE_URL) {
-  console.error('❌ DATABASE_URL not found in environment variables!')
-  console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('DATABASE')))
-} else {
-  console.log(`✅ DATABASE_URL loaded: ${process.env.DATABASE_URL}`)
+  console.warn('⚠️ DATABASE_URL not found in .env, using fallback: file:./dev.db')
+  process.env.DATABASE_URL = 'file:./dev.db'
 }
+
+console.log('🔍 DATABASE_URL:', process.env.DATABASE_URL)
+console.log('🔍 Current working directory:', process.cwd())
 
 const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
