@@ -1,9 +1,10 @@
 import express, { Express, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import path from 'path'
 
-// Load environment variables
-dotenv.config()
+// Load environment variables from backend/.env
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') })
 
 // Initialize SQLite database
 import './db/sqlite'
