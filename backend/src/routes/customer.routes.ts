@@ -13,9 +13,9 @@ router.get('/', async (_req: Request, res: Response) => {
       include: { orders: { select: { id: true, totalAmount: true } } },
     })
 
-    const data = customers.map((c) => {
+    const data = customers.map((c: any) => {
       const totalOrders = c.orders.length
-      const totalRevenue = c.orders.reduce((sum, o) => sum + toNumber(o.totalAmount), 0)
+      const totalRevenue = c.orders.reduce((sum: number, o: any) => sum + toNumber(o.totalAmount), 0)
       return {
         ...c,
         creditLimit: toNumber(c.creditLimit),
@@ -55,7 +55,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     const totalOrders = ordersAgg._count.id
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
 
-    const recentOrdersDto = recentOrders.map((o) => ({
+    const recentOrdersDto = recentOrders.map((o: any) => ({
       id: o.id,
       orderNumber: o.orderNumber,
       customerName: o.customer?.name || 'Unknown',
@@ -65,7 +65,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
       status: o.status,
     }))
 
-    const recentContacts = recentOrdersDto.map((o) => ({
+    const recentContacts = recentOrdersDto.map((o: any) => ({
       customerName: o.customerName,
       contactName: o.contactName,
       lastContactAt: o.orderDate,
@@ -112,7 +112,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       data: {
         ...customer,
         creditLimit: toNumber(customer.creditLimit),
-        orders: customer.orders.map((o) => ({
+        orders: customer.orders.map((o: any) => ({
           ...o,
           totalAmount: toNumber(o.totalAmount),
         })),
@@ -150,17 +150,17 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
     })
 
     const totalOrders = customerOrders.length
-    const totalRevenue = customerOrders.reduce((sum, o) => sum + toNumber(o.totalAmount), 0)
+    const totalRevenue = customerOrders.reduce((sum: number, o: any) => sum + toNumber(o.totalAmount), 0)
     const lastOrderDate = customerOrders.length ? customerOrders[0].orderDate : null
 
-    const recentOrders = customerOrders.slice(0, 5).map((o) => ({
+    const recentOrders = customerOrders.slice(0, 5).map((o: any) => ({
       id: o.id,
       orderNumber: o.orderNumber,
       orderDate: o.orderDate,
       totalAmount: toNumber(o.totalAmount),
       status: o.status,
       notes: o.notes,
-      items: o.items.map((it) => ({
+      items: o.items.map((it: any) => ({
         productId: it.productId,
         productName: it.product?.name || 'Unknown',
         category: it.product?.category || '',
@@ -175,8 +175,8 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
       { productId: string; name: string; category: string; totalQuantity: number; totalRevenue: number }
     > = {}
 
-    customerOrders.forEach((o) => {
-      o.items.forEach((it) => {
+    customerOrders.forEach((o: any) => {
+      o.items.forEach((it: any) => {
         if (!favAgg[it.productId]) {
           favAgg[it.productId] = {
             productId: it.productId,
@@ -202,7 +202,7 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
       by: ['productId'],
       _sum: { quantity: true },
     })
-    const popularityMap = new Map(popularity.map((p) => [p.productId, p._sum.quantity || 0]))
+    const popularityMap = new Map(popularity.map((p: any) => [p.productId, p._sum.quantity || 0]))
 
     const products = await prisma.product.findMany({
       where: { status: 'ACTIVE' },
@@ -210,21 +210,21 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
     })
 
     const recommendations = products
-      .filter((p) => !boughtProductIds.has(p.id))
-      .map((p) => ({
+      .filter((p: any) => !boughtProductIds.has(p.id))
+      .map((p: any) => ({
         productId: p.id,
         name: p.name,
         category: p.category,
         popularity: popularityMap.get(p.id) || 0,
       }))
-      .sort((a, b) => b.popularity - a.popularity)
+      .sort((a: any, b: any) => b.popularity - a.popularity)
       .slice(0, 5)
 
     // "Proposals" = ใช้ notes จากออเดอร์ก่อน ๆ เป็นสิ่งที่เคยเสนอ/พูดคุย
     const proposalsHistory = customerOrders
-      .filter((o) => o.notes && o.notes.trim().length > 0)
+      .filter((o: any) => o.notes && o.notes.trim().length > 0)
       .slice(0, 5)
-      .map((o) => ({
+      .map((o: any) => ({
         orderNumber: o.orderNumber,
         note: o.notes,
         createdAt: o.createdAt,
