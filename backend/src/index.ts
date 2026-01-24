@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.routes'
 import customerRoutes from './routes/customer.routes'
 import orderRoutes from './routes/order.routes'
 import bomRoutes from './routes/bom.routes'
+import materialsRoutes from './routes/materials.routes'
 import stockRoutes from './routes/stock.routes'
 import dashboardRoutes from './routes/dashboard.routes'
 import calculatorRoutes from './routes/calculator.routes'
@@ -45,6 +46,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/customers', customerRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/bom', bomRoutes)
+app.use('/api/materials', materialsRoutes)
 app.use('/api/stock', stockRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/calculator', calculatorRoutes)
