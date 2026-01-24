@@ -308,9 +308,6 @@ function Marketing() {
   }))
 
   const renderChart = () => {
-    // Don't render chart if no data
-    if (chartData.length === 0) return null
-
     const commonProps = {
       data: chartData,
       margin: { top: 5, right: 30, left: 20, bottom: 5 },
@@ -684,7 +681,7 @@ function Marketing() {
       )}
 
       {/* Chart View */}
-      {metrics.length > 0 && viewMode === 'chart' && (
+      {metrics.length > 0 && viewMode === 'chart' && pivotData.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
