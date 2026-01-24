@@ -4,26 +4,21 @@ import {
   Upload,
   TrendingUp,
   DollarSign,
-  ShoppingBag,
   Eye,
   MousePointer,
   Store,
   Plus,
-  Download,
-  Trash2,
   BarChart3,
   PieChart,
-  Filter,
   Calendar,
+  Settings,
+  Table,
 } from 'lucide-react'
 import {
   LineChart,
   Line,
   BarChart,
   Bar,
-  PieChart as RePieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -81,6 +76,17 @@ interface Summary {
   recordCount: number
 }
 
+interface PivotConfig {
+  rowBy: 'date' | 'product' | 'campaign' | 'sku'
+  metrics: string[]
+  aggregation: 'sum' | 'avg' | 'count'
+  groupBy: 'day' | 'week' | 'month'
+}
+
+interface PivotRow {
+  [key: string]: any
+}
+
 const COLORS = ['#00f0ff', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
 
 const PLATFORMS = [
@@ -96,6 +102,22 @@ const CHART_TYPES = [
   { id: 'area', name: 'Area Chart', icon: PieChart },
 ]
 
+const METRIC_OPTIONS = [
+  { key: 'sales', label: 'ยอดขาย', color: '#00f0ff' },
+  { key: 'adCost', label: 'ค่าโฆษณา', color: '#a855f7' },
+  { key: 'orders', label: 'คำสั่งซื้อ', color: '#10b981' },
+  { key: 'impressions', label: 'การมองเห็น', color: '#f59e0b' },
+  { key: 'clicks', label: 'คลิก', color: '#ef4444' },
+  { key: 'roas', label: 'ROAS', color: '#3b82f6' },
+]
+
+const ROW_OPTIONS = [
+  { key: 'date', label: 'วันที่' },
+  { key: 'product', label: 'สินค้า' },
+  { key: 'campaign', label: 'แคมเปญ' },
+  { key: 'sku', label: 'SKU' },
+]
+
 function Marketing() {
   const [selectedPlatform, setSelectedPlatform] = useState('SHOPEE')
   const [shops, setShops] = useState<Shop[]>([])
@@ -108,6 +130,14 @@ function Marketing() {
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showAddShopModal, setShowAddShopModal] = useState(false)
+  const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart')
+  const [showPivotSettings, setShowPivotSettings] = useState(false)
+  const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
+    rowBy: 'date',
+    metrics: ['sales', 'adCost'],
+    aggregation: 'sum',
+    groupBy: 'day',
+  })
 
   // Fetch shops
   const fetchShops = useCallback(async () => {
@@ -194,7 +224,7 @@ function Marketing() {
   // Add new shop
   const handleAddShop = async (name: string, shopId: string) => {
     try {
-      const response = await axios.post(`${API_URL}/api/marketing/shops`, {
+      await axios.post(`${API_URL}/api/marketing/shops`, {
         name,
         platform: selectedPlatform,
         shopId,
@@ -208,23 +238,88 @@ function Marketing() {
     }
   }
 
-  // Prepare chart data
-  const chartData = metrics
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map(m => ({
-      date: format(parseISO(m.date), 'dd/MM'),
-      sales: parseFloat(m.sales.toString()),
-      adCost: parseFloat(m.adCost.toString()),
-      orders: m.orders,
-      impressions: m.impressions,
-      clicks: m.clicks,
-      roas: parseFloat(m.roas.toString()),
-    }))
+  // Transform data to pivot table format
+  const transformToPivot = (): PivotRow[] => {
+    if (!metrics || metrics.length === 0) return []
+
+    const grouped: { [key: string]: MarketingMetric[] } = {}
+
+    // Group by selected dimension
+    metrics.forEach(metric => {
+      let key = ''
+      switch (pivotConfig.rowBy) {
+        case 'date':
+          key = format(parseISO(metric.date), 'dd/MM/yyyy')
+          break
+        case 'product':
+          key = metric.productName || 'N/A'
+          break
+        case 'campaign':
+          key = metric.campaignName || 'N/A'
+          break
+        case 'sku':
+          key = metric.sku || 'N/A'
+          break
+      }
+
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(metric)
+    })
+
+    // Aggregate metrics
+    const pivotData: PivotRow[] = Object.entries(grouped).map(([key, items]) => {
+      const row: PivotRow = { key }
+
+      pivotConfig.metrics.forEach(metricKey => {
+        const values = items.map(item => {
+          const val = item[metricKey as keyof MarketingMetric]
+          return typeof val === 'number' ? val : 0
+        })
+
+        let aggregated = 0
+        if (pivotConfig.aggregation === 'sum') {
+          aggregated = values.reduce((a, b) => a + b, 0)
+        } else if (pivotConfig.aggregation === 'avg') {
+          aggregated = values.reduce((a, b) => a + b, 0) / values.length
+        } else if (pivotConfig.aggregation === 'count') {
+          aggregated = values.length
+        }
+
+        row[metricKey] = aggregated
+      })
+
+      return row
+    })
+
+    return pivotData.sort((a, b) => {
+      if (pivotConfig.rowBy === 'date') {
+        return new Date(a.key.split('/').reverse().join('-')).getTime() -
+               new Date(b.key.split('/').reverse().join('-')).getTime()
+      }
+      return a.key.localeCompare(b.key)
+    })
+  }
+
+  // Prepare chart data from pivot
+  const pivotData = transformToPivot()
+  const chartData = pivotData.map(row => ({
+    key: row.key,
+    ...row
+  }))
 
   const renderChart = () => {
+    // Don't render chart if no data
+    if (chartData.length === 0) return null
+
     const commonProps = {
       data: chartData,
       margin: { top: 5, right: 30, left: 20, bottom: 5 },
+    }
+
+    const tooltipStyle = {
+      backgroundColor: '#1f2937',
+      border: '1px solid #374151',
+      borderRadius: '0.5rem',
     }
 
     switch (chartType) {
@@ -232,55 +327,69 @@ function Marketing() {
         return (
           <LineChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="date" stroke="#9ca3af" />
+            <XAxis dataKey="key" stroke="#9ca3af" />
             <YAxis stroke="#9ca3af" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
-                borderRadius: '0.5rem',
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Legend />
-            <Line type="monotone" dataKey="sales" stroke="#00f0ff" strokeWidth={2} name="ยอดขาย (฿)" />
-            <Line type="monotone" dataKey="adCost" stroke="#a855f7" strokeWidth={2} name="ค่าโฆษณา (฿)" />
-            <Line type="monotone" dataKey="orders" stroke="#10b981" strokeWidth={2} name="คำสั่งซื้อ" />
+            {pivotConfig.metrics.map((metricKey, index) => {
+              const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+              return (
+                <Line
+                  key={metricKey}
+                  type="monotone"
+                  dataKey={metricKey}
+                  stroke={metric?.color || COLORS[index]}
+                  strokeWidth={2}
+                  name={metric?.label || metricKey}
+                />
+              )
+            })}
           </LineChart>
         )
       case 'bar':
         return (
           <BarChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="date" stroke="#9ca3af" />
+            <XAxis dataKey="key" stroke="#9ca3af" />
             <YAxis stroke="#9ca3af" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
-                borderRadius: '0.5rem',
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Legend />
-            <Bar dataKey="sales" fill="#00f0ff" name="ยอดขาย (฿)" />
-            <Bar dataKey="adCost" fill="#a855f7" name="ค่าโฆษณา (฿)" />
+            {pivotConfig.metrics.map((metricKey, index) => {
+              const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+              return (
+                <Bar
+                  key={metricKey}
+                  dataKey={metricKey}
+                  fill={metric?.color || COLORS[index]}
+                  name={metric?.label || metricKey}
+                />
+              )
+            })}
           </BarChart>
         )
       case 'area':
         return (
           <AreaChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="date" stroke="#9ca3af" />
+            <XAxis dataKey="key" stroke="#9ca3af" />
             <YAxis stroke="#9ca3af" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
-                borderRadius: '0.5rem',
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Legend />
-            <Area type="monotone" dataKey="sales" stackId="1" stroke="#00f0ff" fill="#00f0ff" fillOpacity={0.6} name="ยอดขาย (฿)" />
-            <Area type="monotone" dataKey="adCost" stackId="1" stroke="#a855f7" fill="#a855f7" fillOpacity={0.6} name="ค่าโฆษณา (฿)" />
+            {pivotConfig.metrics.map((metricKey, index) => {
+              const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+              return (
+                <Area
+                  key={metricKey}
+                  type="monotone"
+                  dataKey={metricKey}
+                  stackId="1"
+                  stroke={metric?.color || COLORS[index]}
+                  fill={metric?.color || COLORS[index]}
+                  fillOpacity={0.6}
+                  name={metric?.label || metricKey}
+                />
+              )
+            })}
           </AreaChart>
         )
     }
@@ -390,7 +499,34 @@ function Marketing() {
         </div>
 
         <div className="flex gap-2">
-          {CHART_TYPES.map(type => (
+          {/* View Mode Toggle */}
+          <button
+            onClick={() => setViewMode('chart')}
+            className={`p-2 rounded-lg transition-all ${
+              viewMode === 'chart'
+                ? 'bg-cyber-primary text-white'
+                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+            }`}
+            title="Chart View"
+          >
+            <BarChart3 className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`p-2 rounded-lg transition-all ${
+              viewMode === 'table'
+                ? 'bg-cyber-primary text-white'
+                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+            }`}
+            title="Table View"
+          >
+            <Table className="w-5 h-5" />
+          </button>
+
+          <div className="w-px h-8 bg-cyber-border mx-1" />
+
+          {/* Chart Types (only show when in chart mode) */}
+          {viewMode === 'chart' && CHART_TYPES.map(type => (
             <button
               key={type.id}
               onClick={() => setChartType(type.id as any)}
@@ -404,6 +540,21 @@ function Marketing() {
               <type.icon className="w-5 h-5" />
             </button>
           ))}
+
+          <div className="w-px h-8 bg-cyber-border mx-1" />
+
+          {/* Pivot Settings */}
+          <button
+            onClick={() => setShowPivotSettings(!showPivotSettings)}
+            className={`p-2 rounded-lg transition-all ${
+              showPivotSettings
+                ? 'bg-cyber-primary text-white'
+                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+            }`}
+            title="Pivot Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
       </motion.div>
 
@@ -449,8 +600,91 @@ function Marketing() {
         </motion.div>
       )}
 
-      {/* Chart */}
-      {metrics.length > 0 && (
+      {/* Pivot Settings Panel */}
+      {showPivotSettings && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="cyber-card p-4"
+        >
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-cyber-primary" />
+            Pivot Table Configuration
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Row By */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มตาม</label>
+              <select
+                value={pivotConfig.rowBy}
+                onChange={(e) => setPivotConfig({ ...pivotConfig, rowBy: e.target.value as any })}
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              >
+                {ROW_OPTIONS.map(opt => (
+                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Metrics Selection */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Metrics</label>
+              <div className="space-y-1 bg-cyber-card border border-cyber-border rounded-lg p-2 max-h-32 overflow-y-auto">
+                {METRIC_OPTIONS.map(metric => (
+                  <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-cyber-card/50 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={pivotConfig.metrics.includes(metric.key)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setPivotConfig({ ...pivotConfig, metrics: [...pivotConfig.metrics, metric.key] })
+                        } else {
+                          setPivotConfig({ ...pivotConfig, metrics: pivotConfig.metrics.filter(m => m !== metric.key) })
+                        }
+                      }}
+                      className="rounded border-cyber-border text-cyber-primary focus:ring-cyber-primary"
+                    />
+                    <span className="text-sm">{metric.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Aggregation */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">การคำนวณ</label>
+              <select
+                value={pivotConfig.aggregation}
+                onChange={(e) => setPivotConfig({ ...pivotConfig, aggregation: e.target.value as any })}
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              >
+                <option value="sum">รวม (Sum)</option>
+                <option value="avg">เฉลี่ย (Average)</option>
+                <option value="count">นับ (Count)</option>
+              </select>
+            </div>
+
+            {/* Group By (for date only) */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มช่วง</label>
+              <select
+                value={pivotConfig.groupBy}
+                onChange={(e) => setPivotConfig({ ...pivotConfig, groupBy: e.target.value as any })}
+                disabled={pivotConfig.rowBy !== 'date'}
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+              >
+                <option value="day">รายวัน</option>
+                <option value="week">รายสัปดาห์</option>
+                <option value="month">รายเดือน</option>
+              </select>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Chart View */}
+      {metrics.length > 0 && viewMode === 'chart' && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -464,6 +698,119 @@ function Marketing() {
           <ResponsiveContainer width="100%" height={400}>
             {renderChart()}
           </ResponsiveContainer>
+        </motion.div>
+      )}
+
+      {/* Table View */}
+      {metrics.length > 0 && viewMode === 'table' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="cyber-card p-6"
+        >
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Table className="w-6 h-6 text-cyber-primary" />
+            Pivot Table View
+          </h2>
+
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-cyber-border">
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-300">
+                    {ROW_OPTIONS.find(opt => opt.key === pivotConfig.rowBy)?.label || 'Key'}
+                  </th>
+                  {pivotConfig.metrics.map(metricKey => {
+                    const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+                    return (
+                      <th key={metricKey} className="text-right py-3 px-4 text-sm font-semibold text-gray-300">
+                        {metric?.label || metricKey}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {pivotData.map((row, idx) => (
+                  <tr
+                    key={idx}
+                    className="border-b border-cyber-border/30 hover:bg-cyber-card/30 transition-colors"
+                  >
+                    <td className="py-3 px-4 text-sm font-medium text-white">
+                      {row.key}
+                    </td>
+                    {pivotConfig.metrics.map(metricKey => {
+                      const value = row[metricKey]
+                      const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+
+                      // Format based on metric type
+                      let formatted = ''
+                      if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
+                        formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
+                        formatted = value.toFixed(2)
+                      } else {
+                        formatted = Math.round(value).toLocaleString('th-TH')
+                      }
+
+                      return (
+                        <td
+                          key={metricKey}
+                          className="py-3 px-4 text-sm text-right font-mono"
+                          style={{ color: metric?.color || '#9ca3af' }}
+                        >
+                          {formatted}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+
+                {/* Totals Row */}
+                {pivotData.length > 1 && (
+                  <tr className="border-t-2 border-cyber-primary/50 bg-cyber-card/50 font-bold">
+                    <td className="py-3 px-4 text-sm text-white">
+                      รวมทั้งหมด ({pivotConfig.aggregation === 'avg' ? 'เฉลี่ย' : 'รวม'})
+                    </td>
+                    {pivotConfig.metrics.map(metricKey => {
+                      const total = pivotData.reduce((sum, row) => sum + (row[metricKey] || 0), 0)
+                      const avg = total / pivotData.length
+                      const value = pivotConfig.aggregation === 'avg' ? avg : total
+                      const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+
+                      // Format based on metric type
+                      let formatted = ''
+                      if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
+                        formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
+                        formatted = value.toFixed(2)
+                      } else {
+                        formatted = Math.round(value).toLocaleString('th-TH')
+                      }
+
+                      return (
+                        <td
+                          key={metricKey}
+                          className="py-3 px-4 text-sm text-right font-mono"
+                          style={{ color: metric?.color || '#9ca3af' }}
+                        >
+                          {formatted}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {pivotData.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <Table className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p>ไม่มีข้อมูลให้แสดง</p>
+            </div>
+          )}
         </motion.div>
       )}
 
