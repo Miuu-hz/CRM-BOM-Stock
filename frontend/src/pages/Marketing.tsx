@@ -4,16 +4,12 @@ import {
   Upload,
   TrendingUp,
   DollarSign,
-  ShoppingBag,
   Eye,
   MousePointer,
   Store,
   Plus,
-  Download,
-  Trash2,
   BarChart3,
   PieChart,
-  Filter,
   Calendar,
   Settings,
   Table,
@@ -23,9 +19,6 @@ import {
   Line,
   BarChart,
   Bar,
-  PieChart as RePieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -231,7 +224,7 @@ function Marketing() {
   // Add new shop
   const handleAddShop = async (name: string, shopId: string) => {
     try {
-      const response = await axios.post(`${API_URL}/api/marketing/shops`, {
+      await axios.post(`${API_URL}/api/marketing/shops`, {
         name,
         platform: selectedPlatform,
         shopId,
