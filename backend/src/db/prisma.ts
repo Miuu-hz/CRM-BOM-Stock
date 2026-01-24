@@ -15,7 +15,7 @@ console.log('🔍 DATABASE_URL:', process.env.DATABASE_URL)
 console.log('🔍 Current working directory:', process.cwd())
 
 const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  log: ['error', 'warn'],
 })
 
 export default prisma
