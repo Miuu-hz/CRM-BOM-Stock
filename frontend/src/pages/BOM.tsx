@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   FileText,
@@ -10,81 +10,98 @@ import {
   Edit,
   Copy,
   Trash2,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
+import bomService, { BOM, BOMStats } from '../services/bom'
 
-interface Material {
-  id: string
-  name: string
-  quantity: number
-  unit: string
-  cost: number
-}
-
-interface BOMItem {
-  id: string
-  productName: string
-  category: string
-  version: string
-  materials: Material[]
-  totalCost: number
-  status: 'active' | 'draft' | 'archived'
-  lastUpdated: string
-}
-
-const bomItems: BOMItem[] = [
-  {
-    id: 'BOM-001',
-    productName: 'King Size Mattress Premium',
-    category: 'Mattress',
-    version: 'v2.1',
-    materials: [
-      { id: 'MAT-001', name: 'Foam Layer', quantity: 2.5, unit: 'kg', cost: 1500 },
-      { id: 'MAT-002', name: 'Spring Coils', quantity: 800, unit: 'units', cost: 4000 },
-      { id: 'MAT-003', name: 'Fabric Cover', quantity: 3.5, unit: 'meters', cost: 875 },
-      { id: 'MAT-004', name: 'Thread', quantity: 1, unit: 'roll', cost: 200 },
-      { id: 'MAT-005', name: 'Zipper', quantity: 1, unit: 'unit', cost: 50 },
-    ],
-    totalCost: 6625,
-    status: 'active',
-    lastUpdated: '2024-01-15',
-  },
-  {
-    id: 'BOM-002',
-    productName: 'Premium Pillow Set',
-    category: 'Pillow',
-    version: 'v1.5',
-    materials: [
-      { id: 'MAT-006', name: 'Memory Foam', quantity: 0.5, unit: 'kg', cost: 400 },
-      { id: 'MAT-007', name: 'Cotton Cover', quantity: 0.8, unit: 'meters', cost: 160 },
-      { id: 'MAT-008', name: 'Thread', quantity: 0.5, unit: 'roll', cost: 100 },
-    ],
-    totalCost: 660,
-    status: 'active',
-    lastUpdated: '2024-01-12',
-  },
-  {
-    id: 'BOM-003',
-    productName: 'Luxury Blanket',
-    category: 'Blanket',
-    version: 'v1.0',
-    materials: [
-      { id: 'MAT-009', name: 'Fleece Fabric', quantity: 2.0, unit: 'meters', cost: 600 },
-      { id: 'MAT-010', name: 'Border Trim', quantity: 5.0, unit: 'meters', cost: 250 },
-      { id: 'MAT-011', name: 'Thread', quantity: 0.5, unit: 'roll', cost: 100 },
-    ],
-    totalCost: 950,
-    status: 'active',
-    lastUpdated: '2024-01-10',
-  },
-]
-
-function BOM() {
+function BOMPage() {
+  const [boms, setBoms] = useState<BOM[]>([])
+  const [stats, setStats] = useState<BOMStats | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedBOM, setSelectedBOM] = useState<BOMItem | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const filteredBOMs = bomItems.filter((bom) =>
-    bom.productName.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch BOMs and stats
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const [bomsData, statsData] = await Promise.all([
+        bomService.getAll(),
+        bomService.getStats(),
+      ])
+
+      setBoms(bomsData)
+      setStats(statsData)
+    } catch (err) {
+      console.error('Failed to fetch BOM data:', err)
+      setError('ไม่สามารถโหลดข้อมูล BOM ได้ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  // Filter BOMs by search term
+  const filteredBOMs = boms.filter((bom) =>
+    bom.product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    bom.product.code.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  // Handle delete BOM
+  const handleDelete = async (id: string, productName: string) => {
+    if (!confirm(`คุณต้องการลบ BOM ของ "${productName}" หรือไม่?`)) {
+      return
+    }
+
+    try {
+      await bomService.delete(id)
+      setBoms((prev) => prev.filter((bom) => bom.id !== id))
+      // Refresh stats
+      const newStats = await bomService.getStats()
+      setStats(newStats)
+    } catch (err) {
+      console.error('Failed to delete BOM:', err)
+      alert('ไม่สามารถลบ BOM ได้ กรุณาลองใหม่อีกครั้ง')
+    }
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-cyber-primary animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">กำลังโหลดข้อมูล BOM...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-gray-300 mb-4">{error}</p>
+          <button
+            onClick={fetchData}
+            className="cyber-btn-primary flex items-center gap-2 mx-auto"
+          >
+            <RefreshCw className="w-5 h-5" />
+            ลองใหม่
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <motion.div
@@ -114,25 +131,25 @@ function BOM() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
           label="Total BOMs"
-          value="45"
+          value={stats?.totalBOMs.toString() || '0'}
           icon={FileText}
           color="primary"
         />
         <StatCard
           label="Active Formulas"
-          value="38"
+          value={stats?.activeBOMs.toString() || '0'}
           icon={Layers}
           color="green"
         />
         <StatCard
           label="Total Materials"
-          value="156"
+          value={stats?.totalMaterials.toString() || '0'}
           icon={Package}
           color="purple"
         />
         <StatCard
           label="Avg. Cost/Unit"
-          value="฿2,745"
+          value={`฿${(stats?.avgCostPerUnit || 0).toLocaleString()}`}
           icon={DollarSign}
           color="primary"
         />
@@ -144,13 +161,28 @@ function BOM() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
-            placeholder="Search BOM..."
+            placeholder="Search BOM by product name or code..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="cyber-input pl-10 w-full"
           />
         </div>
       </div>
+
+      {/* Empty state */}
+      {filteredBOMs.length === 0 && (
+        <div className="cyber-card p-12 text-center">
+          <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            {searchTerm ? 'ไม่พบ BOM ที่ค้นหา' : 'ยังไม่มี BOM'}
+          </h3>
+          <p className="text-gray-500">
+            {searchTerm
+              ? 'ลองค้นหาด้วยคำอื่น'
+              : 'เริ่มต้นสร้าง BOM แรกของคุณ'}
+          </p>
+        </div>
+      )}
 
       {/* BOM List */}
       <div className="grid grid-cols-1 gap-6">
@@ -170,27 +202,30 @@ function BOM() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-100">
-                    {bom.productName}
+                    {bom.product.name}
                   </h3>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-sm text-gray-400">{bom.id}</span>
+                    <span className="text-sm text-gray-400">{bom.product.code}</span>
                     <span className="text-sm text-gray-400">•</span>
                     <span className="text-sm text-cyber-primary">{bom.version}</span>
                     <span className="text-sm text-gray-400">•</span>
-                    <span className="text-sm text-gray-400">{bom.category}</span>
+                    <span className="text-sm text-gray-400">{bom.product.category}</span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <StatusBadge status={bom.status} />
+                <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft'} />
                 <button className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors">
                   <Edit className="w-5 h-5 text-gray-400 hover:text-cyber-primary" />
                 </button>
                 <button className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors">
                   <Copy className="w-5 h-5 text-gray-400 hover:text-cyber-green" />
                 </button>
-                <button className="p-2 rounded-lg hover:bg-red-500/10 transition-colors">
+                <button
+                  onClick={() => handleDelete(bom.id, bom.product.name)}
+                  className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                >
                   <Trash2 className="w-5 h-5 text-gray-400 hover:text-red-400" />
                 </button>
               </div>
@@ -202,6 +237,7 @@ function BOM() {
                 <thead>
                   <tr>
                     <th>Material</th>
+                    <th>Code</th>
                     <th>Quantity</th>
                     <th>Unit</th>
                     <th>Cost/Unit</th>
@@ -209,19 +245,23 @@ function BOM() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bom.materials.map((material) => (
-                    <tr key={material.id}>
-                      <td className="text-gray-300">{material.name}</td>
-                      <td className="text-gray-400">{material.quantity}</td>
-                      <td className="text-gray-400">{material.unit}</td>
-                      <td className="text-gray-400">
-                        ฿{material.cost / material.quantity}
-                      </td>
-                      <td className="text-cyber-green font-semibold">
-                        ฿{material.cost}
-                      </td>
-                    </tr>
-                  ))}
+                  {bom.materials.map((item) => {
+                    const itemTotal = Number(item.quantity) * Number(item.material.unitCost)
+                    return (
+                      <tr key={item.id}>
+                        <td className="text-gray-300">{item.material.name}</td>
+                        <td className="text-gray-400">{item.material.code}</td>
+                        <td className="text-gray-400">{Number(item.quantity)}</td>
+                        <td className="text-gray-400">{item.unit}</td>
+                        <td className="text-gray-400">
+                          ฿{Number(item.material.unitCost).toLocaleString()}
+                        </td>
+                        <td className="text-cyber-green font-semibold">
+                          ฿{itemTotal.toLocaleString()}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -229,7 +269,7 @@ function BOM() {
             {/* Total Cost */}
             <div className="flex items-center justify-between pt-4 border-t border-cyber-border">
               <div className="text-sm text-gray-400">
-                Last updated: {bom.lastUpdated}
+                Last updated: {new Date(bom.updatedAt).toLocaleDateString('th-TH')}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400">Total Production Cost:</span>
@@ -271,7 +311,7 @@ function StatCard({
   )
 }
 
-function StatusBadge({ status }: { status: BOMItem['status'] }) {
+function StatusBadge({ status }: { status: 'active' | 'draft' | 'archived' }) {
   const config = {
     active: {
       label: 'Active',
@@ -287,7 +327,7 @@ function StatusBadge({ status }: { status: BOMItem['status'] }) {
     },
   }
 
-  const selected = config[status]
+  const selected = config[status] || config.draft
 
   return (
     <span className={`status-badge ${selected.className}`}>
@@ -297,4 +337,4 @@ function StatusBadge({ status }: { status: BOMItem['status'] }) {
   )
 }
 
-export default BOM
+export default BOMPage
