@@ -9,6 +9,11 @@ import {
   Mail,
   MapPin,
   Building2,
+  X,
+  ShoppingCart,
+  Heart,
+  Lightbulb,
+  FileText,
 } from 'lucide-react'
 import axios from 'axios'
 
@@ -96,6 +101,7 @@ function CRM() {
   const [activeTab, setActiveTab] = useState<
     'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals'
   >('overview')
+  const [showModal, setShowModal] = useState(false)
 
   // Load CRM summary + customer list
   useEffect(() => {
@@ -108,9 +114,6 @@ function CRM() {
         ])
         setSummary(summaryRes.data.data)
         setCustomers(customersRes.data.data)
-        if (customersRes.data.data.length > 0 && !selectedCustomerId) {
-          setSelectedCustomerId(customersRes.data.data[0].id)
-        }
       } catch (error) {
         console.error('Failed to load CRM data', error)
       } finally {
@@ -273,357 +276,404 @@ function CRM() {
         </div>
       </div>
 
-      {/* Customers List + Per-Customer Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          {loading && <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>}
-          {!loading &&
-            filteredCustomers.map((customer, index) => (
-              <button
-                key={customer.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCustomerId(customer.id)
-                  setActiveTab('overview')
-                }}
-                className="w-full text-left"
-              >
-                <CustomerCard
-                  customer={customer}
-                  index={index}
-                  selected={customer.id === selectedCustomerId}
-                />
-              </button>
-            ))}
-        </div>
-
-        {/* Right panel: CRM insights for selected customer */}
-        <div className="space-y-4">
-          {/* ถ้ายังไม่เลือกชื่อลูกค้า ให้ขึ้นข้อความแนะนำ */}
-          {!selectedCustomer && (
-            <div className="cyber-card p-4">
-              <p className="text-sm text-gray-400">
-                กรุณาเลือกรายชื่อลูกค้าทางซ้ายเพื่อดูภาพรวมและประวัติของลูกค้ารายนั้น
-              </p>
-            </div>
-          )}
-
-          {/* ข้อมูลหัวลูกค้าที่เลือก (per customer header) */}
-          {selectedCustomer && (
-            <div className="cyber-card p-4 space-y-2">
-              <h2 className="text-lg font-semibold text-gray-100 mb-1">
-                ภาพรวมลูกค้า: <span className="text-cyber-primary">{selectedCustomer.name}</span>
-              </h2>
-              <p className="text-xs text-gray-400 mb-2">
-                โค้ด: {selectedCustomer.code} • ประเภท: {selectedCustomer.type} • สถานะ:{' '}
-                {selectedCustomer.status}
-              </p>
-              <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
-                <div className="flex items-center gap-2">
-                  <Users className="w-3 h-3 text-cyber-primary" />
-                  <span>{selectedCustomer.contactName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="w-3 h-3 text-cyber-primary" />
-                  <span className="truncate">{selectedCustomer.email}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-3 h-3 text-cyber-primary" />
-                  <span>{selectedCustomer.phone}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-3 h-3 text-cyber-primary" />
-                  <span>{selectedCustomer.city}</span>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400">ยอดซื้อรวมทั้งหมด</p>
-                  <p className="text-sm font-semibold text-cyber-green">
-                    ฿
-                    {insights
-                      ? insights.stats.totalRevenue.toLocaleString('th-TH', {
-                          maximumFractionDigits: 0,
-                        })
-                      : '-'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400">วงเงินเครดิต</p>
-                  <p className="text-sm font-semibold text-cyber-purple">
-                    ฿
-                    {selectedCustomer.creditLimit.toLocaleString('th-TH', {
-                      maximumFractionDigits: 0,
-                    })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* เมนูย่อยของลูกค้าแต่ละคน (tabs) */}
-          {selectedCustomer && (
-            <div className="cyber-card p-2">
-              <div className="flex flex-wrap gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('overview')}
-                  className={`px-3 py-1 rounded-md border transition-all ${
-                    activeTab === 'overview'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
-                  }`}
-                >
-                  ภาพรวม
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('orders')}
-                  className={`px-3 py-1 rounded-md border transition-all ${
-                    activeTab === 'orders'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
-                  }`}
-                >
-                  ออเดอร์ล่าสุด
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('favourites')}
-                  className={`px-3 py-1 rounded-md border transition-all ${
-                    activeTab === 'favourites'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
-                  }`}
-                >
-                  ชอบซื้ออะไร
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('recommendations')}
-                  className={`px-3 py-1 rounded-md border transition-all ${
-                    activeTab === 'recommendations'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
-                  }`}
-                >
-                  สิ่งที่แนะนำ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('proposals')}
-                  className={`px-3 py-1 rounded-md border transition-all ${
-                    activeTab === 'proposals'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400 hover:border-cyber-primary/40'
-                  }`}
-                >
-                  เคยเสนออะไรไปแล้วบ้าง
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* เนื้อหาในแต่ละเมนู (per customer) */}
-          {selectedCustomer && (
-            <>
-              {/* Overview: การติดต่อล่าสุด + ตัวเลขรวมหลัก ๆ */}
-              {activeTab === 'overview' && (
-                <div className="cyber-card p-4">
-                  <h3 className="text-md font-semibold text-gray-100 mb-2">
-                    ภาพรวมลูกค้ารายบุคคล
-                  </h3>
-                  {insightsLoading && (
-                    <p className="text-gray-400 text-sm">กำลังโหลดข้อมูลลูกค้า...</p>
-                  )}
-                  {!insightsLoading && insights && (
-                    <div className="space-y-2 text-sm text-gray-300">
-                      <p>
-                        <span className="text-gray-400">จำนวนออเดอร์ทั้งหมด: </span>
-                        <span className="text-cyber-primary">
-                          {insights.stats.totalOrders.toLocaleString('th-TH')}
-                        </span>
-                      </p>
-                      <p>
-                        <span className="text-gray-400">ยอดซื้อรวมทั้งหมด: </span>
-                        <span className="text-cyber-green">
-                          ฿
-                          {insights.stats.totalRevenue.toLocaleString('th-TH', {
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
-                      </p>
-                      <p>
-                        <span className="text-gray-400">การติดต่อล่าสุด (ออเดอร์ล่าสุด): </span>
-                        <span>
-                          {insights.stats.lastOrderDate
-                            ? new Date(
-                                insights.stats.lastOrderDate,
-                              ).toLocaleDateString('th-TH')
-                            : '-'}
-                        </span>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Recent orders */}
-              {activeTab === 'orders' && (
-                <div className="cyber-card p-4">
-                  <h3 className="text-md font-semibold text-gray-100 mb-2">
-                    ออเดอร์ล่าสุดของลูกค้าคนนี้
-                  </h3>
-                  {insights && insights.recentOrders.length > 0 && (
-                    <div className="space-y-2 max-h-64 overflow-auto text-xs">
-                      {insights.recentOrders.map((order) => (
-                        <div
-                          key={order.id}
-                          className="border border-cyber-border/60 rounded-lg p-2 space-y-1"
-                        >
-                          <div className="flex justify-between">
-                            <span className="font-semibold text-cyber-primary">
-                              {order.orderNumber}
-                            </span>
-                            <span className="text-gray-400">
-                              {new Date(order.orderDate).toLocaleDateString('th-TH')}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">{order.status}</span>
-                            <span className="text-cyber-green">
-                              ฿
-                              {order.totalAmount.toLocaleString('th-TH', {
-                                maximumFractionDigits: 0,
-                              })}
-                            </span>
-                          </div>
-                          {order.items.length > 0 && (
-                            <p className="text-gray-400 truncate">
-                              {order.items
-                                .map((i) => `${i.productName} x${i.quantity}`)
-                                .join(', ')}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(!insights || insights.recentOrders.length === 0) && (
-                    <p className="text-xs text-gray-500">ยังไม่มีประวัติการสั่งซื้อ</p>
-                  )}
-                </div>
-              )}
-
-              {/* Favourite products */}
-              {activeTab === 'favourites' && (
-                <div className="cyber-card p-4">
-                  <h3 className="text-md font-semibold text-gray-100 mb-2">
-                    ชอบซื้ออะไร (Top Products)
-                  </h3>
-                  {insights && insights.favouriteProducts.length > 0 && (
-                    <ul className="space-y-1 text-xs text-gray-300">
-                      {insights.favouriteProducts.map((prod) => (
-                        <li
-                          key={prod.productId}
-                          className="flex justify-between border border-cyber-border/60 rounded-lg px-2 py-1"
-                        >
-                          <div>
-                            <p className="font-semibold">{prod.name}</p>
-                            <p className="text-gray-400 text-[10px]">
-                              หมวด: {prod.category}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-cyber-primary">
-                              x{prod.totalQuantity.toLocaleString('th-TH')}
-                            </p>
-                            <p className="text-cyber-green">
-                              ฿
-                              {prod.totalRevenue.toLocaleString('th-TH', {
-                                maximumFractionDigits: 0,
-                              })}
-                            </p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {(!insights || insights.favouriteProducts.length === 0) && (
-                    <p className="text-xs text-gray-500">ยังไม่มีข้อมูลสินค้าโปรด</p>
-                  )}
-                </div>
-              )}
-
-              {/* Recommendations */}
-              {activeTab === 'recommendations' && (
-                <div className="cyber-card p-4">
-                  <h3 className="text-md font-semibold text-gray-100 mb-2">
-                    สิ่งที่แนะนำให้เสนอเพิ่ม
-                  </h3>
-                  {insights && insights.recommendations.length > 0 ? (
-                    <ul className="space-y-1 text-xs text-gray-300">
-                      {insights.recommendations.map((rec) => (
-                        <li
-                          key={rec.productId}
-                          className="flex justify-between border border-cyber-border/60 rounded-lg px-2 py-1"
-                        >
-                          <div>
-                            <p className="font-semibold">{rec.name}</p>
-                            <p className="text-gray-400 text-[10px]">
-                              หมวด: {rec.category}
-                            </p>
-                          </div>
-                          <p className="text-cyber-primary text-[10px]">
-                            ความนิยมรวม (ทุกลูกค้า):{' '}
-                            {rec.popularity.toLocaleString('th-TH')}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-gray-500">
-                      ยังไม่มีคำแนะนำสินค้าเพิ่มเติมสำหรับลูกค้าคนนี้
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Proposals history */}
-              {activeTab === 'proposals' && (
-                <div className="cyber-card p-4">
-                  <h3 className="text-md font-semibold text-gray-100 mb-2">
-                    เคยเสนออะไรไปแล้วบ้าง (จากโน้ตในออเดอร์)
-                  </h3>
-                  {insights && insights.proposalsHistory.length > 0 ? (
-                    <ul className="space-y-1 text-xs text-gray-300 max-h-40 overflow-auto">
-                      {insights.proposalsHistory.map((p) => (
-                        <li
-                          key={p.orderNumber}
-                          className="border border-cyber-border/60 rounded-lg px-2 py-1"
-                        >
-                          <div className="flex justify-between mb-1">
-                            <span className="font-semibold text-cyber-primary">
-                              {p.orderNumber}
-                            </span>
-                            <span className="text-gray-400 text-[10px]">
-                              {new Date(p.createdAt).toLocaleDateString('th-TH')}
-                            </span>
-                          </div>
-                          <p className="text-gray-300">{p.note}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-gray-500">
-                      ยังไม่มีโน้ต/ข้อเสนอที่บันทึกไว้ในออเดอร์ของลูกค้าคนนี้
-                    </p>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      {/* Customers List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {loading && <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>}
+        {!loading &&
+          filteredCustomers.map((customer, index) => (
+            <button
+              key={customer.id}
+              type="button"
+              onClick={() => {
+                setSelectedCustomerId(customer.id)
+                setShowModal(true)
+                setActiveTab('overview')
+              }}
+              className="w-full text-left"
+            >
+              <CustomerCard customer={customer} index={index} />
+            </button>
+          ))}
       </div>
+
+      {/* Customer Detail Modal */}
+      {showModal && selectedCustomer && (
+        <CustomerDetailModal
+          customer={selectedCustomer}
+          insights={insights}
+          insightsLoading={insightsLoading}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </motion.div>
+  )
+}
+
+function CustomerDetailModal({
+  customer,
+  insights,
+  insightsLoading,
+  activeTab,
+  setActiveTab,
+  onClose,
+}: {
+  customer: Customer
+  insights: CustomerInsights | null
+  insightsLoading: boolean
+  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals'
+  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals') => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-cyber-darker border-2 border-cyber-primary/50 rounded-2xl shadow-2xl shadow-cyber-primary/20 max-w-4xl w-full max-h-[90vh] overflow-hidden"
+      >
+        {/* Modal Header */}
+        <div className="border-b border-cyber-border p-6 flex items-start justify-between bg-gradient-to-r from-cyber-card/50 to-cyber-darker">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center shadow-neon">
+              <Building2 className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-cyber-primary mb-1">
+                {customer.name}
+              </h2>
+              <p className="text-sm text-gray-400">
+                โค้ด: {customer.code} • ประเภท: {customer.type} • สถานะ: {customer.status}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+          >
+            <X className="w-6 h-6 text-gray-400 hover:text-white" />
+          </button>
+        </div>
+
+        {/* Contact Info */}
+        <div className="p-6 border-b border-cyber-border bg-cyber-card/30">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-cyber-primary" />
+              <div>
+                <p className="text-xs text-gray-400">ผู้ติดต่อ</p>
+                <p className="text-white font-medium">{customer.contactName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-cyber-primary" />
+              <div>
+                <p className="text-xs text-gray-400">อีเมล</p>
+                <p className="text-white font-medium truncate">{customer.email}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Phone className="w-4 h-4 text-cyber-primary" />
+              <div>
+                <p className="text-xs text-gray-400">โทรศัพท์</p>
+                <p className="text-white font-medium">{customer.phone}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-cyber-primary" />
+              <div>
+                <p className="text-xs text-gray-400">ที่ตั้ง</p>
+                <p className="text-white font-medium">{customer.city}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-cyber-border/30">
+            <div>
+              <p className="text-xs text-gray-400">ยอดซื้อรวมทั้งหมด</p>
+              <p className="text-xl font-bold text-cyber-green mt-1">
+                ฿{insights?.stats.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 }) || '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">วงเงินเครดิต</p>
+              <p className="text-xl font-bold text-cyber-purple mt-1">
+                ฿{customer.creditLimit.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">จำนวนออเดอร์</p>
+              <p className="text-xl font-bold text-cyber-primary mt-1">
+                {insights?.stats.totalOrders.toLocaleString('th-TH') || '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">ออเดอร์ล่าสุด</p>
+              <p className="text-sm font-medium text-white mt-1">
+                {insights?.stats.lastOrderDate
+                  ? new Date(insights.stats.lastOrderDate).toLocaleDateString('th-TH')
+                  : '-'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="px-6 pt-4 border-b border-cyber-border bg-cyber-darker">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'overview'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>ภาพรวม</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'orders'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>ออเดอร์</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('favourites')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'favourites'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <Heart className="w-4 h-4" />
+              <span>สิ่งที่ซื้อบ่อย</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('recommendations')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'recommendations'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4" />
+              <span>แนะนำสินค้า</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('proposals')}
+              className={`px-4 py-2 rounded-t-lg border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'proposals'
+                  ? 'border-cyber-primary bg-cyber-primary/10 text-cyber-primary'
+                  : 'border-transparent text-gray-400 hover:text-white hover:bg-cyber-card/30'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>สิ่งที่เคยเสนอ</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-400px)]">
+          {insightsLoading && (
+            <div className="text-center py-12">
+              <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>
+            </div>
+          )}
+
+          {!insightsLoading && activeTab === 'overview' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                <Users className="w-5 h-5 text-cyber-primary" />
+                ภาพรวมลูกค้ารายบุคคล
+              </h3>
+              {insights && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="cyber-card p-4">
+                    <p className="text-sm text-gray-400 mb-2">จำนวนออเดอร์ทั้งหมด</p>
+                    <p className="text-2xl font-bold text-cyber-primary">
+                      {insights.stats.totalOrders.toLocaleString('th-TH')}
+                    </p>
+                  </div>
+                  <div className="cyber-card p-4">
+                    <p className="text-sm text-gray-400 mb-2">ยอดซื้อรวมทั้งหมด</p>
+                    <p className="text-2xl font-bold text-cyber-green">
+                      ฿{insights.stats.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                    </p>
+                  </div>
+                  <div className="cyber-card p-4">
+                    <p className="text-sm text-gray-400 mb-2">การติดต่อล่าสุด</p>
+                    <p className="text-lg font-semibold text-white">
+                      {insights.stats.lastOrderDate
+                        ? new Date(insights.stats.lastOrderDate).toLocaleDateString('th-TH')
+                        : '-'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!insightsLoading && activeTab === 'orders' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-cyber-primary" />
+                ออเดอร์ล่าสุด
+              </h3>
+              {insights && insights.recentOrders.length > 0 ? (
+                <div className="space-y-3">
+                  {insights.recentOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="cyber-card p-4 hover:bg-cyber-card/80 transition-colors"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-semibold text-cyber-primary text-lg">
+                          {order.orderNumber}
+                        </span>
+                        <span className="text-gray-400">
+                          {new Date(order.orderDate).toLocaleDateString('th-TH')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-sm text-gray-400">{order.status}</span>
+                        <span className="text-xl font-bold text-cyber-green">
+                          ฿{order.totalAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                      {order.items.length > 0 && (
+                        <div className="text-sm text-gray-300">
+                          <p className="font-semibold mb-1">รายการสินค้า:</p>
+                          <ul className="space-y-1">
+                            {order.items.map((item, idx) => (
+                              <li key={idx} className="flex justify-between">
+                                <span>{item.productName}</span>
+                                <span className="text-cyber-primary">x{item.quantity}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">ยังไม่มีประวัติการสั่งซื้อ</p>
+              )}
+            </div>
+          )}
+
+          {!insightsLoading && activeTab === 'favourites' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                <Heart className="w-5 h-5 text-cyber-primary" />
+                สินค้าที่ซื้อบ่อย (Top Products)
+              </h3>
+              {insights && insights.favouriteProducts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {insights.favouriteProducts.map((prod) => (
+                    <div
+                      key={prod.productId}
+                      className="cyber-card p-4 hover:bg-cyber-card/80 transition-colors"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-semibold text-white mb-1">{prod.name}</p>
+                          <p className="text-xs text-gray-400">หมวด: {prod.category}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold text-cyber-primary">
+                            x{prod.totalQuantity.toLocaleString('th-TH')}
+                          </p>
+                          <p className="text-sm text-cyber-green">
+                            ฿{prod.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">ยังไม่มีข้อมูลสินค้าโปรด</p>
+              )}
+            </div>
+          )}
+
+          {!insightsLoading && activeTab === 'recommendations' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-cyber-primary" />
+                สินค้าที่แนะนำให้เสนอเพิ่ม
+              </h3>
+              {insights && insights.recommendations.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {insights.recommendations.map((rec) => (
+                    <div
+                      key={rec.productId}
+                      className="cyber-card p-4 hover:bg-cyber-card/80 transition-colors"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-semibold text-white mb-1">{rec.name}</p>
+                          <p className="text-xs text-gray-400 mb-2">หมวด: {rec.category}</p>
+                          <p className="text-xs text-cyber-primary">
+                            ความนิยมรวม: {rec.popularity.toLocaleString('th-TH')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">
+                  ยังไม่มีคำแนะนำสินค้าเพิ่มเติมสำหรับลูกค้าคนนี้
+                </p>
+              )}
+            </div>
+          )}
+
+          {!insightsLoading && activeTab === 'proposals' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-cyber-primary" />
+                สิ่งที่เคยเสนอไปแล้ว
+              </h3>
+              {insights && insights.proposalsHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {insights.proposalsHistory.map((p) => (
+                    <div
+                      key={p.orderNumber}
+                      className="cyber-card p-4 hover:bg-cyber-card/80 transition-colors"
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-cyber-primary">{p.orderNumber}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(p.createdAt).toLocaleDateString('th-TH')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-300">{p.note}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">
+                  ยังไม่มีโน้ต/ข้อเสนอที่บันทึกไว้ในออเดอร์ของลูกค้าคนนี้
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
   )
 }
 
@@ -654,11 +704,9 @@ function StatCard({
 function CustomerCard({
   customer,
   index,
-  selected,
 }: {
   customer: Customer
   index: number
-  selected?: boolean
 }) {
   return (
     <motion.div
@@ -666,9 +714,7 @@ function CustomerCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ scale: 1.02 }}
-      className={`cyber-card p-6 glow-effect ${
-        selected ? 'ring-2 ring-cyber-primary/70' : ''
-      }`}
+      className="cyber-card p-6 glow-effect cursor-pointer"
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
