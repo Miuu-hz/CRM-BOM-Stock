@@ -29,6 +29,9 @@ Thumbs.db
 *.db
 *.sqlite
 
+# Uploads
+backend/uploads/
+
 # Testing
 coverage/
 
