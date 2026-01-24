@@ -17,13 +17,21 @@ import {
   List,
   ChevronDown,
   ChevronUp,
+  Calculator,
+  TrendingUp,
+  Boxes,
 } from 'lucide-react'
 import bomService, { BOM, BOMStats } from '../services/bom'
 import BOMModal from '../components/bom/BOMModal'
+import MaterialsTab from '../components/bom/MaterialsTab'
+import ProductionCalculator from '../components/bom/ProductionCalculator'
+import CostSimulation from '../components/bom/CostSimulation'
 
 type ViewMode = 'card' | 'list'
+type TabType = 'bom' | 'materials' | 'calculator' | 'simulation'
 
 function BOMPage() {
+  const [activeTab, setActiveTab] = useState<TabType>('bom')
   const [boms, setBoms] = useState<BOM[]>([])
   const [stats, setStats] = useState<BOMStats | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -165,6 +173,13 @@ function BOMPage() {
     )
   }
 
+  const tabs = [
+    { id: 'bom' as TabType, label: 'BOM List', icon: FileText },
+    { id: 'materials' as TabType, label: 'Materials', icon: Boxes },
+    { id: 'calculator' as TabType, label: 'Production Calculator', icon: Calculator },
+    { id: 'simulation' as TabType, label: 'Cost Simulation', icon: TrendingUp },
+  ]
+
   return (
     <>
       <motion.div
@@ -180,18 +195,49 @@ function BOMPage() {
             </h1>
             <p className="text-gray-400">Manage product formulas and materials</p>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleCreate}
-            className="cyber-btn-primary flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Create BOM
-          </motion.button>
+          {activeTab === 'bom' && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleCreate}
+              className="cyber-btn-primary flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Create BOM
+            </motion.button>
+          )}
         </div>
 
-        {/* Stats */}
+        {/* Tabs Navigation */}
+        <div className="flex gap-2 border-b border-cyber-border pb-2 overflow-x-auto">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition-all whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
+                    : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-card/30'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'materials' && <MaterialsTab />}
+        {activeTab === 'calculator' && <ProductionCalculator />}
+        {activeTab === 'simulation' && <CostSimulation />}
+
+        {/* BOM Tab Content */}
+        {activeTab === 'bom' && (
+          <>
+            {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard
             label="Total BOMs"
@@ -426,6 +472,8 @@ function BOMPage() {
               </tbody>
             </table>
           </div>
+        )}
+          </>
         )}
       </motion.div>
 
