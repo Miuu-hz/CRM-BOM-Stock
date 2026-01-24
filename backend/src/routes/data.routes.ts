@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { products, materials, boms } from '../db/mockData'
+import prisma from '../db/prisma'
 
 const router = Router()
 
@@ -7,8 +7,12 @@ const router = Router()
  * GET /api/data/products
  * ดึงรายการสินค้าทั้งหมด
  */
-router.get('/products', (req: Request, res: Response) => {
+router.get('/products', async (req: Request, res: Response) => {
   try {
+    const products = await prisma.product.findMany({
+      orderBy: { name: 'asc' },
+    })
+
     res.json({
       success: true,
       data: products,
@@ -26,8 +30,12 @@ router.get('/products', (req: Request, res: Response) => {
  * GET /api/data/materials
  * ดึงรายการวัตถุดิบทั้งหมด
  */
-router.get('/materials', (req: Request, res: Response) => {
+router.get('/materials', async (req: Request, res: Response) => {
   try {
+    const materials = await prisma.material.findMany({
+      orderBy: { name: 'asc' },
+    })
+
     res.json({
       success: true,
       data: materials,
@@ -45,26 +53,39 @@ router.get('/materials', (req: Request, res: Response) => {
  * GET /api/data/boms
  * ดึงรายการ BOM ทั้งหมด
  */
-router.get('/boms', (req: Request, res: Response) => {
+router.get('/boms', async (req: Request, res: Response) => {
   try {
-    // Enrich BOM with product and material details
-    const enrichedBOMs = boms.map(bom => {
-      const product = products.find(p => p.id === bom.productId)
-      const bomMaterials = bom.materials.map(bomMat => {
-        const material = materials.find(m => m.id === bomMat.materialId)
-        return {
-          ...bomMat,
-          materialName: material?.name,
-          materialCode: material?.code,
-          unitCost: material?.unitCost,
-        }
-      })
+    const boms = await prisma.bOM.findMany({
+      include: {
+        product: true,
+        materials: {
+          include: {
+            material: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    // Enrich BOM with calculated data
+    const enrichedBOMs = boms.map((bom) => {
+      const bomMaterials = bom.materials.map((bomMat) => ({
+        ...bomMat,
+        materialName: bomMat.material.name,
+        materialCode: bomMat.material.code,
+        unitCost: Number(bomMat.material.unitCost),
+      }))
+
+      const totalCost = bomMaterials.reduce((sum, mat) => {
+        return sum + Number(mat.quantity) * mat.unitCost
+      }, 0)
 
       return {
         ...bom,
-        productName: product?.name,
-        productCode: product?.code,
+        productName: bom.product.name,
+        productCode: bom.product.code,
         materials: bomMaterials,
+        totalCost,
       }
     })
 
@@ -85,10 +106,24 @@ router.get('/boms', (req: Request, res: Response) => {
  * GET /api/data/boms/:productId
  * ดึง BOM ของสินค้าเฉพาะ
  */
-router.get('/boms/:productId', (req: Request, res: Response) => {
+router.get('/boms/:productId', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params
-    const bom = boms.find(b => b.productId === productId && b.status === 'ACTIVE')
+
+    const bom = await prisma.bOM.findFirst({
+      where: {
+        productId,
+        status: 'ACTIVE',
+      },
+      include: {
+        product: true,
+        materials: {
+          include: {
+            material: true,
+          },
+        },
+      },
+    })
 
     if (!bom) {
       return res.status(404).json({
@@ -97,24 +132,25 @@ router.get('/boms/:productId', (req: Request, res: Response) => {
       })
     }
 
-    const product = products.find(p => p.id === bom.productId)
-    const bomMaterials = bom.materials.map(bomMat => {
-      const material = materials.find(m => m.id === bomMat.materialId)
-      return {
-        ...bomMat,
-        materialName: material?.name,
-        materialCode: material?.code,
-        unitCost: material?.unitCost,
-      }
-    })
+    const bomMaterials = bom.materials.map((bomMat) => ({
+      ...bomMat,
+      materialName: bomMat.material.name,
+      materialCode: bomMat.material.code,
+      unitCost: Number(bomMat.material.unitCost),
+    }))
+
+    const totalCost = bomMaterials.reduce((sum, mat) => {
+      return sum + Number(mat.quantity) * mat.unitCost
+    }, 0)
 
     res.json({
       success: true,
       data: {
         ...bom,
-        productName: product?.name,
-        productCode: product?.code,
+        productName: bom.product.name,
+        productCode: bom.product.code,
         materials: bomMaterials,
+        totalCost,
       },
     })
   } catch (error) {
