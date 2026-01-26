@@ -1,140 +1,114 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Package,
-  Plus,
   Search,
-  Filter,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
   ArrowUpCircle,
   ArrowDownCircle,
+  X,
+  Eye,
+  Edit2,
+  Loader2,
+  Clock,
+  MapPin,
+  AlertCircle,
 } from 'lucide-react'
-
-interface StockItem {
-  id: string
-  name: string
-  category: 'raw' | 'wip' | 'finished'
-  sku: string
-  quantity: number
-  unit: string
-  minStock: number
-  maxStock: number
-  location: string
-  lastUpdated: string
-  status: 'adequate' | 'low' | 'critical' | 'overstock'
-  recentMovement: 'in' | 'out' | 'none'
-}
-
-const stockItems: StockItem[] = [
-  {
-    id: 'STK-001',
-    name: 'Foam Material',
-    category: 'raw',
-    sku: 'RM-FOAM-001',
-    quantity: 150,
-    unit: 'kg',
-    minStock: 500,
-    maxStock: 2000,
-    location: 'Warehouse A - Zone 1',
-    lastUpdated: '2024-01-15 14:30',
-    status: 'critical',
-    recentMovement: 'out',
-  },
-  {
-    id: 'STK-002',
-    name: 'Spring Coils',
-    category: 'raw',
-    sku: 'RM-SPRING-002',
-    quantity: 5400,
-    unit: 'units',
-    minStock: 2000,
-    maxStock: 8000,
-    location: 'Warehouse A - Zone 2',
-    lastUpdated: '2024-01-15 10:15',
-    status: 'adequate',
-    recentMovement: 'in',
-  },
-  {
-    id: 'STK-003',
-    name: 'King Mattress (Unfinished)',
-    category: 'wip',
-    sku: 'WIP-MATT-K-001',
-    quantity: 45,
-    unit: 'units',
-    minStock: 20,
-    maxStock: 100,
-    location: 'Production Floor B',
-    lastUpdated: '2024-01-15 16:45',
-    status: 'adequate',
-    recentMovement: 'none',
-  },
-  {
-    id: 'STK-004',
-    name: 'King Mattress Premium',
-    category: 'finished',
-    sku: 'FG-MATT-K-PREM',
-    quantity: 180,
-    unit: 'units',
-    minStock: 50,
-    maxStock: 200,
-    location: 'Warehouse C - Zone 1',
-    lastUpdated: '2024-01-15 12:00',
-    status: 'adequate',
-    recentMovement: 'out',
-  },
-  {
-    id: 'STK-005',
-    name: 'Premium Pillow',
-    category: 'finished',
-    sku: 'FG-PILL-PREM',
-    quantity: 850,
-    unit: 'units',
-    minStock: 200,
-    maxStock: 600,
-    location: 'Warehouse C - Zone 2',
-    lastUpdated: '2024-01-15 09:30',
-    status: 'overstock',
-    recentMovement: 'in',
-  },
-  {
-    id: 'STK-006',
-    name: 'Fabric Cover',
-    category: 'raw',
-    sku: 'RM-FABRIC-003',
-    quantity: 80,
-    unit: 'meters',
-    minStock: 100,
-    maxStock: 500,
-    location: 'Warehouse A - Zone 3',
-    lastUpdated: '2024-01-15 11:20',
-    status: 'low',
-    recentMovement: 'out',
-  },
-]
+import stockService, { StockItem, StockMovement, StockStats } from '../services/stock'
 
 function Stock() {
+  const [stockItems, setStockItems] = useState<StockItem[]>([])
+  const [stats, setStats] = useState<StockStats>({
+    totalItems: 0,
+    lowStockCount: 0,
+    criticalCount: 0,
+    totalValue: 0,
+  })
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+
+  // Modal states
+  const [detailModal, setDetailModal] = useState<{ open: boolean; item: StockItem | null }>({
+    open: false,
+    item: null,
+  })
+  const [editModal, setEditModal] = useState<{ open: boolean; item: StockItem | null }>({
+    open: false,
+    item: null,
+  })
+  const [movementModal, setMovementModal] = useState<{
+    open: boolean
+    type: 'IN' | 'OUT'
+    item: StockItem | null
+  }>({ open: false, type: 'IN', item: null })
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [itemsData, statsData] = await Promise.all([
+        stockService.getAll(),
+        stockService.getStats(),
+      ])
+      setStockItems(itemsData)
+      setStats(statsData)
+    } catch (err) {
+      console.error('Failed to load stock data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getItemStatus = (item: StockItem): 'adequate' | 'low' | 'critical' | 'overstock' | 'out' => {
+    if (item.quantity === 0) return 'out'
+    if (item.quantity <= item.minStock * 0.3) return 'critical'
+    if (item.quantity <= item.minStock) return 'low'
+    if (item.quantity >= item.maxStock) return 'overstock'
+    return 'adequate'
+  }
 
   const filteredItems = stockItems.filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory =
-      selectedCategory === 'all' || item.category === selectedCategory
-    const matchesStatus =
-      selectedStatus === 'all' || item.status === selectedStatus
+      selectedCategory === 'all' || item.category.toLowerCase() === selectedCategory.toLowerCase()
+    const status = getItemStatus(item)
+    const matchesStatus = selectedStatus === 'all' || status === selectedStatus
     return matchesSearch && matchesCategory && matchesStatus
   })
 
-  const stats = {
-    total: stockItems.length,
-    critical: stockItems.filter((i) => i.status === 'critical').length,
-    low: stockItems.filter((i) => i.status === 'low').length,
-    adequate: stockItems.filter((i) => i.status === 'adequate').length,
+  const handleOpenDetail = async (item: StockItem) => {
+    try {
+      const movements = await stockService.getMovements(item.id)
+      setDetailModal({ open: true, item: { ...item, movements } })
+    } catch (err) {
+      console.error('Failed to load movements:', err)
+      setDetailModal({ open: true, item })
+    }
+  }
+
+  const handleStockMovement = (type: 'IN' | 'OUT', item: StockItem) => {
+    if (type === 'OUT' && item.quantity === 0) {
+      alert('Cannot perform Stock Out - item is out of stock!')
+      return
+    }
+    setMovementModal({ open: true, type, item })
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+      </div>
+    )
   }
 
   return (
@@ -155,6 +129,7 @@ function Stock() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={() => setMovementModal({ open: true, type: 'IN', item: null })}
             className="cyber-btn-secondary flex items-center gap-2"
           >
             <ArrowUpCircle className="w-5 h-5" />
@@ -163,6 +138,7 @@ function Stock() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
             className="cyber-btn-primary flex items-center gap-2"
           >
             <ArrowDownCircle className="w-5 h-5" />
@@ -175,25 +151,25 @@ function Stock() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
           label="Total Items"
-          value={stats.total.toString()}
+          value={stats.totalItems.toString()}
           icon={Package}
           color="primary"
         />
         <StatCard
           label="Critical Stock"
-          value={stats.critical.toString()}
+          value={stats.criticalCount.toString()}
           icon={AlertTriangle}
           color="red"
         />
         <StatCard
           label="Low Stock"
-          value={stats.low.toString()}
+          value={stats.lowStockCount.toString()}
           icon={TrendingDown}
           color="yellow"
         />
         <StatCard
-          label="Adequate Stock"
-          value={stats.adequate.toString()}
+          label="Total Value"
+          value={`฿${stats.totalValue.toLocaleString()}`}
           icon={TrendingUp}
           color="green"
         />
@@ -215,7 +191,7 @@ function Stock() {
           </div>
 
           {/* Category Filter */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <FilterButton
               label="All"
               active={selectedCategory === 'all'}
@@ -239,11 +215,16 @@ function Stock() {
           </div>
 
           {/* Status Filter */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <FilterButton
               label="All Status"
               active={selectedStatus === 'all'}
               onClick={() => setSelectedStatus('all')}
+            />
+            <FilterButton
+              label="Out of Stock"
+              active={selectedStatus === 'out'}
+              onClick={() => setSelectedStatus('out')}
             />
             <FilterButton
               label="Critical"
@@ -272,61 +253,691 @@ function Stock() {
                 <th>Min / Max</th>
                 <th>Location</th>
                 <th>Status</th>
-                <th>Movement</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item, index) => (
-                <motion.tr
-                  key={item.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <td>
-                    <div className="flex items-center gap-2">
-                      <Package className="w-5 h-5 text-cyber-primary" />
-                      <span className="text-gray-300 font-medium">
-                        {item.name}
-                      </span>
-                    </div>
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-8 text-gray-500">
+                    No stock items found
                   </td>
-                  <td>
-                    <span className="text-gray-400 font-mono text-sm">
-                      {item.sku}
-                    </span>
-                  </td>
-                  <td>
-                    <CategoryBadge category={item.category} />
-                  </td>
-                  <td>
-                    <span className="text-cyber-primary font-semibold">
-                      {item.quantity} {item.unit}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-gray-400 text-sm">
-                      {item.minStock} / {item.maxStock}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-gray-400 text-sm">
-                      {item.location}
-                    </span>
-                  </td>
-                  <td>
-                    <StatusBadge status={item.status} />
-                  </td>
-                  <td>
-                    <MovementIndicator movement={item.recentMovement} />
-                  </td>
-                </motion.tr>
-              ))}
+                </tr>
+              ) : (
+                filteredItems.map((item, index) => {
+                  const status = getItemStatus(item)
+                  return (
+                    <motion.tr
+                      key={item.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <Package className="w-5 h-5 text-cyber-primary" />
+                          <span className="text-gray-300 font-medium">
+                            {item.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="text-gray-400 font-mono text-sm">
+                          {item.sku}
+                        </span>
+                      </td>
+                      <td>
+                        <CategoryBadge category={item.category} />
+                      </td>
+                      <td>
+                        <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                          {item.quantity} {item.unit}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-gray-400 text-sm">
+                          {item.minStock} / {item.maxStock}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-gray-400 text-sm">
+                          {item.location || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <StatusBadge status={status} />
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenDetail(item)}
+                            className="p-2 text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10 rounded-lg transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditModal({ open: true, item })}
+                            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleStockMovement('IN', item)}
+                            className="p-2 text-gray-400 hover:text-cyber-green hover:bg-cyber-green/10 rounded-lg transition-colors"
+                            title="Stock In"
+                          >
+                            <ArrowUpCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleStockMovement('OUT', item)}
+                            disabled={item.quantity === 0}
+                            className={`p-2 rounded-lg transition-colors ${
+                              item.quantity === 0
+                                ? 'text-gray-600 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10'
+                            }`}
+                            title={item.quantity === 0 ? 'Out of Stock' : 'Stock Out'}
+                          >
+                            <ArrowDownCircle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Detail Modal */}
+      <DetailModal
+        open={detailModal.open}
+        item={detailModal.item}
+        onClose={() => setDetailModal({ open: false, item: null })}
+      />
+
+      {/* Edit Modal */}
+      <EditModal
+        open={editModal.open}
+        item={editModal.item}
+        onClose={() => setEditModal({ open: false, item: null })}
+        onSave={loadData}
+      />
+
+      {/* Movement Modal */}
+      <MovementModal
+        open={movementModal.open}
+        type={movementModal.type}
+        item={movementModal.item}
+        stockItems={stockItems}
+        onClose={() => setMovementModal({ open: false, type: 'IN', item: null })}
+        onSave={loadData}
+      />
     </motion.div>
+  )
+}
+
+// Detail Modal Component
+function DetailModal({
+  open,
+  item,
+  onClose,
+}: {
+  open: boolean
+  item: StockItem | null
+  onClose: () => void
+}) {
+  if (!item) return null
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-100">Stock Item Details</h2>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Item Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Name</p>
+                  <p className="text-gray-200 font-medium">{item.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">SKU</p>
+                  <p className="text-gray-200 font-mono">{item.sku}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Category</p>
+                  <CategoryBadge category={item.category} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Current Stock</p>
+                  <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                    {item.quantity} {item.unit}
+                    {item.quantity === 0 && (
+                      <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                        OUT OF STOCK
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Min Stock</p>
+                  <p className="text-gray-200">{item.minStock} {item.unit}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Max Stock</p>
+                  <p className="text-gray-200">{item.maxStock} {item.unit}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-sm text-gray-400 mb-1">Location</p>
+                  <div className="flex items-center gap-2 text-gray-200">
+                    <MapPin className="w-4 h-4 text-cyber-primary" />
+                    {item.location || 'Not specified'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Related Material/Product */}
+              {item.material && (
+                <div className="p-4 bg-cyber-darker rounded-lg">
+                  <p className="text-sm text-gray-400 mb-2">Related Material</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-gray-200 font-medium">{item.material.name}</p>
+                      <p className="text-gray-400 text-sm">{item.material.code}</p>
+                    </div>
+                    <p className="text-cyber-green font-semibold">
+                      ฿{Number(item.material.unitCost).toLocaleString()}/unit
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Movement History */}
+              {item.movements && item.movements.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-200 mb-3">Recent Movements</h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {item.movements.slice(0, 10).map((movement) => (
+                      <div
+                        key={movement.id}
+                        className="flex items-center justify-between p-3 bg-cyber-darker rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          {movement.type === 'IN' ? (
+                            <ArrowUpCircle className="w-5 h-5 text-cyber-green" />
+                          ) : movement.type === 'OUT' ? (
+                            <ArrowDownCircle className="w-5 h-5 text-red-400" />
+                          ) : (
+                            <Package className="w-5 h-5 text-yellow-400" />
+                          )}
+                          <div>
+                            <p className="text-gray-200">
+                              {movement.type === 'IN' ? '+' : movement.type === 'OUT' ? '-' : ''}
+                              {movement.quantity} {item.unit}
+                            </p>
+                            {movement.notes && (
+                              <p className="text-gray-400 text-sm">{movement.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-gray-400 text-sm flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(movement.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// Edit Modal Component
+function EditModal({
+  open,
+  item,
+  onClose,
+  onSave,
+}: {
+  open: boolean
+  item: StockItem | null
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [formData, setFormData] = useState({
+    name: '',
+    category: '',
+    minStock: 0,
+    maxStock: 0,
+    location: '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (item) {
+      setFormData({
+        name: item.name,
+        category: item.category,
+        minStock: item.minStock,
+        maxStock: item.maxStock,
+        location: item.location || '',
+      })
+    }
+  }, [item])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!item) return
+
+    setSaving(true)
+    try {
+      await stockService.update(item.id, formData)
+      onSave()
+      onClose()
+    } catch (err) {
+      console.error('Failed to update stock item:', err)
+      alert('Failed to update stock item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!item) return null
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
+            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-100">Edit Stock Item</h2>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="cyber-input w-full"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="cyber-input w-full"
+                  required
+                >
+                  <option value="raw">Raw Material</option>
+                  <option value="wip">WIP</option>
+                  <option value="finished">Finished</option>
+                  <option value="material">Material</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
+                  <input
+                    type="number"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
+                  <input
+                    type="number"
+                    value={formData.maxStock}
+                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Location</label>
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="e.g., Warehouse A - Zone 1"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="cyber-btn-primary flex items-center gap-2"
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Edit2 className="w-4 h-4" />
+                  )}
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// Movement Modal Component
+function MovementModal({
+  open,
+  type,
+  item,
+  stockItems,
+  onClose,
+  onSave,
+}: {
+  open: boolean
+  type: 'IN' | 'OUT'
+  item: StockItem | null
+  stockItems: StockItem[]
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [selectedItemId, setSelectedItemId] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [notes, setNotes] = useState('')
+  const [reference, setReference] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (item) {
+      setSelectedItemId(item.id)
+    } else {
+      setSelectedItemId('')
+    }
+    setQuantity(1)
+    setNotes('')
+    setReference('')
+  }, [item, open])
+
+  const selectedItem = stockItems.find((i) => i.id === selectedItemId)
+  const isOutOfStock = selectedItem && selectedItem.quantity === 0 && type === 'OUT'
+  const exceedsStock = selectedItem && type === 'OUT' && quantity > selectedItem.quantity
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!selectedItemId) {
+      alert('Please select an item')
+      return
+    }
+
+    if (isOutOfStock) {
+      alert('Cannot perform Stock Out - item is out of stock!')
+      return
+    }
+
+    if (exceedsStock) {
+      alert(`Cannot take out more than available stock (${selectedItem?.quantity})`)
+      return
+    }
+
+    setSaving(true)
+    try {
+      await stockService.recordMovement({
+        stockItemId: selectedItemId,
+        type,
+        quantity,
+        notes: notes || undefined,
+        reference: reference || undefined,
+      })
+      onSave()
+      onClose()
+    } catch (err) {
+      console.error('Failed to record movement:', err)
+      alert('Failed to record movement')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Filter items for Stock Out - exclude items with 0 quantity
+  const availableItems = type === 'OUT'
+    ? stockItems.filter((i) => i.quantity > 0)
+    : stockItems
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
+            <div className={`p-6 border-b border-cyber-border flex items-center justify-between ${
+              type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
+            }`}>
+              <div className="flex items-center gap-3">
+                {type === 'IN' ? (
+                  <ArrowUpCircle className="w-6 h-6 text-cyber-green" />
+                ) : (
+                  <ArrowDownCircle className="w-6 h-6 text-red-400" />
+                )}
+                <h2 className="text-xl font-bold text-gray-100">
+                  Stock {type === 'IN' ? 'In' : 'Out'}
+                </h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Select Item</label>
+                <select
+                  value={selectedItemId}
+                  onChange={(e) => setSelectedItemId(e.target.value)}
+                  className="cyber-input w-full"
+                  required
+                  disabled={!!item}
+                >
+                  <option value="">-- Select Item --</option>
+                  {availableItems.map((stockItem) => (
+                    <option key={stockItem.id} value={stockItem.id}>
+                      {stockItem.name} ({stockItem.sku}) - {stockItem.quantity} {stockItem.unit}
+                    </option>
+                  ))}
+                </select>
+                {type === 'OUT' && availableItems.length === 0 && (
+                  <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" />
+                    No items available for Stock Out
+                  </p>
+                )}
+              </div>
+
+              {selectedItem && (
+                <div className="p-4 bg-cyber-darker rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Current Stock:</span>
+                    <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                      {selectedItem.quantity} {selectedItem.unit}
+                      {selectedItem.quantity === 0 && (
+                        <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                          OUT OF STOCK
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {isOutOfStock && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-red-400 font-medium">Cannot Proceed</p>
+                    <p className="text-red-400/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+                <input
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+                  className="cyber-input w-full"
+                  min="1"
+                  max={type === 'OUT' && selectedItem ? selectedItem.quantity : undefined}
+                  required
+                  disabled={isOutOfStock}
+                />
+                {exceedsStock && (
+                  <p className="text-red-400 text-sm mt-1">
+                    Cannot exceed available stock ({selectedItem?.quantity})
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
+                <input
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  className="cyber-input w-full"
+                  placeholder="e.g., PO-2024-001"
+                  disabled={isOutOfStock}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Notes (Optional)</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="cyber-input w-full"
+                  rows={3}
+                  placeholder="Additional notes..."
+                  disabled={isOutOfStock}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || isOutOfStock || exceedsStock || !selectedItemId}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
+                    type === 'IN'
+                      ? 'bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50'
+                      : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
+                  }`}
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : type === 'IN' ? (
+                    <ArrowUpCircle className="w-4 h-4" />
+                  ) : (
+                    <ArrowDownCircle className="w-4 h-4" />
+                  )}
+                  Record {type === 'IN' ? 'Stock In' : 'Stock Out'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -386,22 +997,23 @@ function FilterButton({
   )
 }
 
-function CategoryBadge({ category }: { category: StockItem['category'] }) {
-  const config = {
+function CategoryBadge({ category }: { category: string }) {
+  const config: Record<string, { label: string; color: string }> = {
     raw: { label: 'Raw Material', color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
     wip: { label: 'WIP', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
     finished: { label: 'Finished', color: 'text-cyber-green bg-cyber-green/20 border-cyber-green/30' },
+    material: { label: 'Material', color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
   }
 
-  const selected = config[category]
+  const selected = config[category.toLowerCase()] || config.material
 
   return (
     <span className={`status-badge ${selected.color}`}>{selected.label}</span>
   )
 }
 
-function StatusBadge({ status }: { status: StockItem['status'] }) {
-  const config = {
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { label: string; className: string }> = {
     adequate: {
       label: 'Adequate',
       className: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
@@ -418,34 +1030,19 @@ function StatusBadge({ status }: { status: StockItem['status'] }) {
       label: 'Overstock',
       className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     },
+    out: {
+      label: 'Out of Stock',
+      className: 'bg-red-600/30 text-red-300 border-red-600/50',
+    },
   }
 
-  const selected = config[status]
+  const selected = config[status] || config.adequate
 
   return (
     <span className={`status-badge ${selected.className}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
       {selected.label}
     </span>
-  )
-}
-
-function MovementIndicator({ movement }: { movement: StockItem['recentMovement'] }) {
-  if (movement === 'none') {
-    return <span className="text-gray-500 text-sm">-</span>
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      {movement === 'in' ? (
-        <ArrowUpCircle className="w-4 h-4 text-cyber-green" />
-      ) : (
-        <ArrowDownCircle className="w-4 h-4 text-red-400" />
-      )}
-      <span className={movement === 'in' ? 'text-cyber-green' : 'text-red-400'}>
-        {movement === 'in' ? 'In' : 'Out'}
-      </span>
-    </div>
   )
 }
 
