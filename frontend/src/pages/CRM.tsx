@@ -121,6 +121,7 @@ function CRM() {
     'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
   >('overview')
   const [showModal, setShowModal] = useState(false)
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false)
 
   // Load CRM summary + customer list
   useEffect(() => {
@@ -215,6 +216,7 @@ function CRM() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          onClick={() => setShowAddCustomerModal(true)}
           className="cyber-btn-primary flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
@@ -357,6 +359,20 @@ function CRM() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {/* Add Customer Modal */}
+      {showAddCustomerModal && (
+        <AddCustomerModal
+          onClose={() => setShowAddCustomerModal(false)}
+          onSuccess={() => {
+            setShowAddCustomerModal(false)
+            // Reload customers
+            axios.get('/api/customers').then((res) => {
+              setCustomers(res.data.data)
+            })
+          }}
         />
       )}
     </motion.div>
@@ -935,6 +951,268 @@ function ActivityLogTab({ customer, activities }: { customer: Customer; activiti
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Add Customer Modal Component
+function AddCustomerModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    type: 'RETAIL' as CustomerType,
+    contactName: '',
+    email: '',
+    phone: '',
+    city: '',
+    creditLimit: '',
+    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    // Validation
+    if (!formData.code || !formData.name || !formData.contactName || !formData.phone) {
+      setError('กรุณากรอกข้อมูลที่จำเป็นทั้งหมด (*)')
+      return
+    }
+
+    setLoading(true)
+    try {
+      await axios.post('/api/customers', {
+        ...formData,
+        creditLimit: parseFloat(formData.creditLimit) || 0,
+      })
+      onSuccess()
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการเพิ่มลูกค้า')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-cyber-darker border-2 border-cyber-primary/50 rounded-2xl shadow-2xl shadow-cyber-primary/20 max-w-2xl w-full max-h-[90vh] overflow-hidden"
+      >
+        {/* Modal Header */}
+        <div className="border-b border-cyber-border p-6 flex items-start justify-between bg-gradient-to-r from-cyber-card/50 to-cyber-darker">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center shadow-neon">
+              <Plus className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-cyber-primary mb-1">
+                เพิ่มลูกค้าใหม่
+              </h2>
+              <p className="text-sm text-gray-400">
+                กรอกข้อมูลลูกค้าใหม่ (*ข้อมูลที่จำเป็น)
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+          >
+            <X className="w-6 h-6 text-gray-400 hover:text-white" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-180px)] scrollbar-hide">
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {/* Customer Code */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                รหัสลูกค้า <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="code"
+                value={formData.code}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="เช่น CUST001"
+                required
+              />
+            </div>
+
+            {/* Customer Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                ชื่อลูกค้า/บริษัท <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="เช่น บริษัท ABC จำกัด"
+                required
+              />
+            </div>
+
+            {/* Customer Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                ประเภทลูกค้า <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="type"
+                value={formData.type}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                required
+              >
+                <option value="RETAIL">Retail (ปลีก)</option>
+                <option value="WHOLESALE">Wholesale (ส่ง)</option>
+                <option value="HOTEL">Hotel (โรงแรม)</option>
+              </select>
+            </div>
+
+            {/* Contact Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                ชื่อผู้ติดต่อ <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="contactName"
+                value={formData.contactName}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="เช่น คุณสมชาย"
+                required
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                อีเมล
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="example@email.com"
+              />
+            </div>
+
+            {/* Phone */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                เบอร์โทรศัพท์ <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="0812345678"
+                required
+              />
+            </div>
+
+            {/* City */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                เมือง/จังหวัด
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={formData.city}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="เช่น กรุงเทพฯ"
+              />
+            </div>
+
+            {/* Credit Limit */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                วงเงินเครดิต (บาท)
+              </label>
+              <input
+                type="number"
+                name="creditLimit"
+                value={formData.creditLimit}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                placeholder="0"
+                min="0"
+                step="0.01"
+              />
+            </div>
+
+            {/* Status */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                สถานะ <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                className="cyber-input w-full"
+                required
+              >
+                <option value="ACTIVE">Active (ใช้งาน)</option>
+                <option value="INACTIVE">Inactive (ไม่ใช้งาน)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 mt-6 pt-4 border-t border-cyber-border">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg bg-cyber-card text-gray-400 hover:bg-cyber-card/80 transition-colors"
+              disabled={loading}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 rounded-lg bg-cyber-primary text-white hover:bg-cyber-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
+            >
+              {loading ? 'กำลังบันทึก...' : 'เพิ่มลูกค้า'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   )
 }
