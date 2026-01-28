@@ -12,6 +12,9 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    allowedHosts: [
+      'bb.phopy.net' // เพิ่มชื่อโดเมนของคุณลงในลิสต์นี้
+    ],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

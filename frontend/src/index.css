@@ -99,6 +99,16 @@
     @apply bg-cyber-primary/30 rounded-full hover:bg-cyber-primary/50;
   }
 
+  /* Hidden Scrollbar - ซ่อน scrollbar แต่ยังเลื่อนได้ */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
+  }
+
   /* Status Badges */
   .status-badge {
     @apply px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
