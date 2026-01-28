@@ -1,24 +1,4 @@
-import db from '../db/sqlite'
-import { randomBytes } from 'crypto'
-
-// Generate unique ID
-const generateId = () => randomBytes(16).toString('hex')
-
-// Helper function to convert snake_case to camelCase
-const snakeToCamel = (obj: any): any => {
-  if (!obj || typeof obj !== 'object') return obj
-
-  if (Array.isArray(obj)) {
-    return obj.map(snakeToCamel)
-  }
-
-  const result: any = {}
-  for (const key in obj) {
-    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-    result[camelKey] = obj[key]
-  }
-  return result
-}
+import db, { generateId, snakeToCamel } from '../db/database'
 
 // ==================== SHOPS ====================
 
@@ -57,7 +37,7 @@ export const createShop = (data: {
   `)
 
   stmt.run(id, data.name, data.platform, data.shopId)
-  return getShopById(id) // Already converted by getShopById
+  return getShopById(id)
 }
 
 export const updateShop = (id: string, data: { name?: string; isActive?: boolean }) => {
@@ -84,7 +64,7 @@ export const updateShop = (id: string, data: { name?: string; isActive?: boolean
   `)
 
   stmt.run(...params)
-  return getShopById(id) // Already converted by getShopById
+  return getShopById(id)
 }
 
 export const deleteShop = (id: string) => {
@@ -149,7 +129,6 @@ export const createFile = (data: {
 }
 
 export const deleteFile = (id: string) => {
-  // Delete file and related metrics (CASCADE)
   const stmt = db.prepare('DELETE FROM marketing_files WHERE id = ?')
   return stmt.run(id)
 }
@@ -176,8 +155,6 @@ export const getMetrics = (filters: {
   }
 
   if (filters.endDate) {
-    // Use < with next day to properly handle ISO timestamps
-    // e.g., '2026-01-19T00:00:00.000Z' < '2026-01-20' works correctly
     const nextDay = new Date(filters.endDate)
     nextDay.setDate(nextDay.getDate() + 1)
     const nextDayStr = nextDay.toISOString().split('T')[0]
@@ -265,9 +242,6 @@ export const createMetric = (data: any) => {
   return id
 }
 
-/**
- * Get the last order number for a shop in a specific date range
- */
 export const getLastOrderNumber = (shopId: string, startDate: string, endDate: string): number => {
   const result: any = db.prepare(`
     SELECT MAX(order_number) as lastOrderNumber
