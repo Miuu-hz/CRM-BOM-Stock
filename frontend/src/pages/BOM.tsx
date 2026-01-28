@@ -243,25 +243,21 @@ function BOMPage() {
             label="Total BOMs"
             value={stats?.totalBOMs.toString() || '0'}
             icon={FileText}
-            color="primary"
           />
           <StatCard
             label="Active Formulas"
             value={stats?.activeBOMs.toString() || '0'}
             icon={Layers}
-            color="green"
           />
           <StatCard
             label="Total Materials"
             value={stats?.totalMaterials.toString() || '0'}
             icon={Package}
-            color="purple"
           />
           <StatCard
             label="Avg. Cost/Unit"
             value={`฿${(stats?.avgCostPerUnit || 0).toLocaleString()}`}
             icon={DollarSign}
-            color="primary"
           />
         </div>
 
@@ -609,12 +605,10 @@ function StatCard({
   label,
   value,
   icon: Icon,
-  color,
 }: {
   label: string
   value: string
   icon: any
-  color: string
 }) {
   return (
     <div className="cyber-card p-4">
