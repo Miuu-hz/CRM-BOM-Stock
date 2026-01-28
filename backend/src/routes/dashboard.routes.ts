@@ -1,33 +1,38 @@
 import { Router, Request, Response } from 'express'
-import { customers, orders, stockItems } from '../db/mockData'
+import * as customerRepo from '../repositories/customer.repository'
+import * as orderRepo from '../repositories/order.repository'
+import * as stockRepo from '../repositories/stock.repository'
 
 const router = Router()
 
 // Get dashboard statistics
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', (req: Request, res: Response) => {
   try {
-    const totalCustomers = customers.filter((c) => c.status === 'ACTIVE').length
-    const activeOrders = orders.filter((o) =>
-      ['PENDING', 'PROCESSING'].includes(o.status)
-    ).length
+    const totalCustomers = customerRepo.countCustomers('ACTIVE')
+    const stockStats = stockRepo.getStockStats()
+
+    // Get orders with status PENDING or PROCESSING
+    const pendingOrders = orderRepo.countOrders('PENDING')
+    const processingOrders = orderRepo.countOrders('PROCESSING')
+    const activeOrders = pendingOrders + processingOrders
 
     // Calculate monthly revenue (current month)
+    const orders = orderRepo.getAllOrders()
     const currentMonth = new Date().getMonth()
     const currentYear = new Date().getFullYear()
     const monthlyRevenue = orders
-      .filter(
-        (o) =>
-          o.orderDate.getMonth() === currentMonth &&
-          o.orderDate.getFullYear() === currentYear
-      )
-      .reduce((sum, order) => sum + order.totalAmount, 0)
+      .filter((o: any) => {
+        const orderDate = new Date(o.orderDate)
+        return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear
+      })
+      .reduce((sum: number, order: any) => sum + (order.totalAmount || 0), 0)
 
     res.json({
       success: true,
       data: {
         totalCustomers,
         activeOrders,
-        stockItems: stockItems.length,
+        stockItems: stockStats.totalItems,
         monthlyRevenue,
       },
     })
@@ -38,20 +43,21 @@ router.get('/stats', async (req: Request, res: Response) => {
 })
 
 // Get recent activities
-router.get('/activities', async (req: Request, res: Response) => {
+router.get('/activities', (req: Request, res: Response) => {
   try {
-    const activities = orders
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, 10)
-      .map((order) => {
-        const customer = customers.find((c) => c.id === order.customerId)
-        return {
-          id: order.id,
-          type: 'order',
-          message: `New order ${order.orderNumber} from ${customer?.name || 'Unknown'}`,
-          timestamp: order.createdAt,
-        }
-      })
+    const recentOrders = orderRepo.getRecentOrders(10)
+    const customers = customerRepo.getAllCustomers()
+    const customerMap = new Map<string, any>(customers.map((c: any) => [c.id, c]))
+
+    const activities = recentOrders.map((order: any) => {
+      const customer = customerMap.get(order.customerId)
+      return {
+        id: order.id,
+        type: 'order',
+        message: `New order ${order.orderNumber} from ${customer?.name || 'Unknown'}`,
+        timestamp: order.createdAt,
+      }
+    })
 
     res.json({
       success: true,

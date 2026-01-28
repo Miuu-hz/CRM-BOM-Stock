@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express'
 import {
-  calculateRawMaterialCost,
   calculateTotalProductionCost,
   calculateBatchCost,
   Material,
@@ -14,7 +13,7 @@ import {
   PlatformType,
   SaleOrder,
 } from '../services/platformFees.service'
-import { savedBOMs } from '../db/mockData'
+import * as savedBomRepo from '../repositories/saved-bom.repository'
 
 const router = Router()
 
@@ -201,6 +200,7 @@ router.get('/platform-configs', (req: Request, res: Response) => {
  */
 router.get('/saved-boms', (req: Request, res: Response) => {
   try {
+    const savedBOMs = savedBomRepo.getAllSavedBOMs()
     res.json({
       success: true,
       data: savedBOMs,
@@ -221,7 +221,7 @@ router.get('/saved-boms', (req: Request, res: Response) => {
 router.get('/saved-boms/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const bom = savedBOMs.find(b => b.id === id)
+    const bom = savedBomRepo.getSavedBOMById(id)
 
     if (!bom) {
       return res.status(404).json({
@@ -264,20 +264,14 @@ router.post('/saved-boms', (req: Request, res: Response) => {
 
     const costResult = calculateTotalProductionCost(bom)
 
-    // สร้าง BOM object ใหม่
-    const newBOM = {
-      id: String(savedBOMs.length + 1),
+    const newBOM = savedBomRepo.createSavedBOM({
       name,
       description: description || '',
       materials,
       operatingCost: operatingCost || 0,
       scrapValue: scrapValue || 0,
       totalCost: costResult.totalCost,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    savedBOMs.push(newBOM)
+    })
 
     res.json({
       success: true,
@@ -302,9 +296,8 @@ router.put('/saved-boms/:id', (req: Request, res: Response) => {
     const { id } = req.params
     const { name, description, materials, operatingCost, scrapValue } = req.body
 
-    const bomIndex = savedBOMs.findIndex(b => b.id === id)
-
-    if (bomIndex === -1) {
+    const existing = savedBomRepo.getSavedBOMById(id)
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: 'BOM not found',
@@ -324,21 +317,18 @@ router.put('/saved-boms/:id', (req: Request, res: Response) => {
 
     const costResult = calculateTotalProductionCost(bom)
 
-    // อัพเดท BOM
-    savedBOMs[bomIndex] = {
-      ...savedBOMs[bomIndex],
+    const updatedBOM = savedBomRepo.updateSavedBOM(id, {
       name,
-      description: description || savedBOMs[bomIndex].description,
+      description: description || existing.description,
       materials,
       operatingCost: operatingCost || 0,
       scrapValue: scrapValue || 0,
       totalCost: costResult.totalCost,
-      updatedAt: new Date(),
-    }
+    })
 
     res.json({
       success: true,
-      data: savedBOMs[bomIndex],
+      data: updatedBOM,
       message: 'BOM updated successfully',
     })
   } catch (error) {
@@ -357,16 +347,16 @@ router.put('/saved-boms/:id', (req: Request, res: Response) => {
 router.delete('/saved-boms/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const bomIndex = savedBOMs.findIndex(b => b.id === id)
 
-    if (bomIndex === -1) {
+    const existing = savedBomRepo.getSavedBOMById(id)
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: 'BOM not found',
       })
     }
 
-    savedBOMs.splice(bomIndex, 1)
+    savedBomRepo.deleteSavedBOM(id)
 
     res.json({
       success: true,

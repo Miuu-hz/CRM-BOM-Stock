@@ -6,8 +6,8 @@ import path from 'path'
 // Load environment variables from backend/.env
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') })
 
-// Initialize SQLite database
-import './db/sqlite'
+// Initialize unified SQLite database
+import './db/database'
 
 // Import routes
 import authRoutes from './routes/auth.routes'

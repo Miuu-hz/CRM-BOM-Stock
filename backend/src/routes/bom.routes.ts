@@ -1,44 +1,16 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../db/prisma'
+import * as bomRepo from '../repositories/bom.repository'
+import * as productRepo from '../repositories/product.repository'
 
 const router = Router()
 
 // Get BOM statistics
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', (req: Request, res: Response) => {
   try {
-    const totalBOMs = await prisma.bOM.count()
-    const activeBOMs = await prisma.bOM.count({
-      where: { status: 'ACTIVE' },
-    })
-    const totalMaterials = await prisma.material.count()
-
-    // Calculate average cost per unit
-    const boms = await prisma.bOM.findMany({
-      include: {
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-    })
-
-    let totalCost = 0
-    for (const bom of boms) {
-      for (const item of bom.materials) {
-        totalCost += Number(item.quantity) * Number(item.material.unitCost)
-      }
-    }
-    const avgCostPerUnit = boms.length > 0 ? Math.round(totalCost / boms.length) : 0
-
+    const stats = bomRepo.getBOMStats()
     res.json({
       success: true,
-      data: {
-        totalBOMs,
-        activeBOMs,
-        totalMaterials,
-        avgCostPerUnit,
-      },
+      data: stats,
     })
   } catch (error) {
     console.error('Get BOM stats error:', error)
@@ -47,37 +19,12 @@ router.get('/stats', async (req: Request, res: Response) => {
 })
 
 // Get all BOMs
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
   try {
-    const boms = await prisma.bOM.findMany({
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-    })
-
-    // Calculate total cost for each BOM
-    const bomsWithCost = boms.map((bom) => {
-      const totalCost = bom.materials.reduce((sum: number, item: typeof bom.materials[0]) => {
-        return sum + Number(item.quantity) * Number(item.material.unitCost)
-      }, 0)
-
-      return {
-        ...bom,
-        totalCost,
-      }
-    })
-
+    const boms = bomRepo.getAllBOMs()
     res.json({
       success: true,
-      data: bomsWithCost,
+      data: boms,
     })
   } catch (error) {
     console.error('Get BOMs error:', error)
@@ -86,19 +33,9 @@ router.get('/', async (req: Request, res: Response) => {
 })
 
 // Get BOM by ID
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', (req: Request, res: Response) => {
   try {
-    const bom = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-    })
+    const bom = bomRepo.getBOMById(req.params.id)
 
     if (!bom) {
       return res.status(404).json({
@@ -107,16 +44,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    const totalCost = bom.materials.reduce((sum: number, item: typeof bom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
-    }, 0)
-
     res.json({
       success: true,
-      data: {
-        ...bom,
-        totalCost,
-      },
+      data: bom,
     })
   } catch (error) {
     console.error('Get BOM error:', error)
@@ -125,7 +55,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 })
 
 // Create BOM
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', (req: Request, res: Response) => {
   try {
     const { productId, version, status = 'DRAFT', materials } = req.body
 
@@ -138,10 +68,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check if product exists
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-    })
-
+    const product = productRepo.getProductById(productId)
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -150,59 +77,25 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check for duplicate version
-    const existingBOM = await prisma.bOM.findFirst({
-      where: {
-        productId,
-        version,
-      },
-    })
-
-    if (existingBOM) {
+    const existingBOM = bomRepo.getBOMByProductId(productId)
+    if (existingBOM && existingBOM.version === version) {
       return res.status(400).json({
         success: false,
         message: 'BOM with this version already exists for this product',
       })
     }
 
-    // Create BOM with materials
-    const newBom = await prisma.bOM.create({
-      data: {
-        productId,
-        version,
-        status,
-        materials: materials
-          ? {
-              create: materials.map(
-                (m: { materialId: string; quantity: number; unit: string }) => ({
-                  materialId: m.materialId,
-                  quantity: m.quantity,
-                  unit: m.unit,
-                })
-              ),
-            }
-          : undefined,
-      },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
+    const newBom = bomRepo.createBOM({
+      productId,
+      version,
+      status,
+      materials,
     })
-
-    const totalCost = newBom.materials.reduce((sum: number, item: typeof newBom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
-    }, 0)
 
     res.json({
       success: true,
       message: 'BOM created successfully',
-      data: {
-        ...newBom,
-        totalCost,
-      },
+      data: newBom,
     })
   } catch (error) {
     console.error('Create BOM error:', error)
@@ -211,15 +104,11 @@ router.post('/', async (req: Request, res: Response) => {
 })
 
 // Update BOM
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', (req: Request, res: Response) => {
   try {
     const { version, status, materials } = req.body
 
-    // Check if BOM exists
-    const existingBOM = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-    })
-
+    const existingBOM = bomRepo.getBOMById(req.params.id)
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -227,51 +116,16 @@ router.put('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    // If materials are being updated, delete existing and create new
-    if (materials) {
-      await prisma.bOMItem.deleteMany({
-        where: { bomId: req.params.id },
-      })
-    }
-
-    const updatedBom = await prisma.bOM.update({
-      where: { id: req.params.id },
-      data: {
-        version: version || undefined,
-        status: status || undefined,
-        materials: materials
-          ? {
-              create: materials.map(
-                (m: { materialId: string; quantity: number; unit: string }) => ({
-                  materialId: m.materialId,
-                  quantity: m.quantity,
-                  unit: m.unit,
-                })
-              ),
-            }
-          : undefined,
-      },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
+    const updatedBom = bomRepo.updateBOM(req.params.id, {
+      version,
+      status,
+      materials,
     })
-
-    const totalCost = updatedBom.materials.reduce((sum: number, item: typeof updatedBom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
-    }, 0)
 
     res.json({
       success: true,
       message: 'BOM updated successfully',
-      data: {
-        ...updatedBom,
-        totalCost,
-      },
+      data: updatedBom,
     })
   } catch (error) {
     console.error('Update BOM error:', error)
@@ -280,13 +134,9 @@ router.put('/:id', async (req: Request, res: Response) => {
 })
 
 // Delete BOM
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', (req: Request, res: Response) => {
   try {
-    // Check if BOM exists
-    const existingBOM = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-    })
-
+    const existingBOM = bomRepo.getBOMById(req.params.id)
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -294,15 +144,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    // Delete BOM items first
-    await prisma.bOMItem.deleteMany({
-      where: { bomId: req.params.id },
-    })
-
-    // Delete BOM
-    await prisma.bOM.delete({
-      where: { id: req.params.id },
-    })
+    bomRepo.deleteBOM(req.params.id)
 
     res.json({
       success: true,
