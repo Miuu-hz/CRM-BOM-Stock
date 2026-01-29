@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Package,
@@ -16,7 +16,7 @@ import {
   MapPin,
   AlertCircle,
 } from 'lucide-react'
-import stockService, { StockItem, StockMovement, StockStats } from '../services/stock'
+import stockService, { StockItem, StockStats } from '../services/stock'
 
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
@@ -717,36 +717,83 @@ function MovementModal({
   const [reference, setReference] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Search state for item picker
+  const [itemSearch, setItemSearch] = useState('')
+  const [showItemDropdown, setShowItemDropdown] = useState(false)
+  const itemSearchRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (item) {
       setSelectedItemId(item.id)
+      setItemSearch(item.name)
     } else {
       setSelectedItemId('')
+      setItemSearch('')
     }
     setQuantity(1)
     setNotes('')
     setReference('')
+    setShowItemDropdown(false)
   }, [item, open])
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (itemSearchRef.current && !itemSearchRef.current.contains(e.target as Node)) {
+        setShowItemDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const selectedItem = stockItems.find((i) => i.id === selectedItemId)
   const isOutOfStock = selectedItem && selectedItem.quantity === 0 && type === 'OUT'
   const exceedsStock = selectedItem && type === 'OUT' && quantity > selectedItem.quantity
 
+  // Filter items for Stock Out - exclude items with 0 quantity
+  const availableItems = type === 'OUT'
+    ? stockItems.filter((i) => i.quantity > 0)
+    : stockItems
+
+  // Filter by search term
+  const filteredSearchItems = availableItems.filter((i) => {
+    if (!itemSearch.trim()) return true
+    const term = itemSearch.toLowerCase()
+    return (
+      i.name.toLowerCase().includes(term) ||
+      i.sku.toLowerCase().includes(term) ||
+      (i.location || '').toLowerCase().includes(term)
+    )
+  })
+
+  const handleSelectItem = (stockItem: StockItem) => {
+    setSelectedItemId(stockItem.id)
+    setItemSearch(stockItem.name)
+    setShowItemDropdown(false)
+  }
+
+  const handleClearSelection = () => {
+    setSelectedItemId('')
+    setItemSearch('')
+    setShowItemDropdown(false)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!selectedItemId) {
-      alert('Please select an item')
+      alert('กรุณาเลือกสินค้า')
       return
     }
 
     if (isOutOfStock) {
-      alert('Cannot perform Stock Out - item is out of stock!')
+      alert('ไม่สามารถเบิกได้ - สินค้าหมดสต็อก!')
       return
     }
 
     if (exceedsStock) {
-      alert(`Cannot take out more than available stock (${selectedItem?.quantity})`)
+      alert(`ไม่สามารถเบิกเกินจำนวนคงเหลือ (${selectedItem?.quantity})`)
       return
     }
 
@@ -768,11 +815,6 @@ function MovementModal({
       setSaving(false)
     }
   }
-
-  // Filter items for Stock Out - exclude items with 0 quantity
-  const availableItems = type === 'OUT'
-    ? stockItems.filter((i) => i.quantity > 0)
-    : stockItems
 
   return (
     <AnimatePresence>
@@ -813,42 +855,113 @@ function MovementModal({
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Searchable Item Picker */}
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Select Item</label>
-                <select
-                  value={selectedItemId}
-                  onChange={(e) => setSelectedItemId(e.target.value)}
-                  className="cyber-input w-full"
-                  required
-                  disabled={!!item}
-                >
-                  <option value="">-- Select Item --</option>
-                  {availableItems.map((stockItem) => (
-                    <option key={stockItem.id} value={stockItem.id}>
-                      {stockItem.name} ({stockItem.sku}) - {stockItem.quantity} {stockItem.unit}
-                    </option>
-                  ))}
-                </select>
-                {type === 'OUT' && availableItems.length === 0 && (
-                  <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4" />
-                    No items available for Stock Out
-                  </p>
+                <label className="block text-sm text-gray-400 mb-2">ค้นหาสินค้า</label>
+                {item ? (
+                  // Pre-selected item (from table action button)
+                  <div className="cyber-input w-full flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-200">{item.name}</span>
+                      <span className="text-gray-500 text-sm ml-2">({item.sku})</span>
+                    </div>
+                    <span className="text-gray-400 text-sm">{item.quantity} {item.unit}</span>
+                  </div>
+                ) : (
+                  <div className="relative" ref={itemSearchRef}>
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={itemSearch}
+                      onChange={(e) => {
+                        setItemSearch(e.target.value)
+                        setShowItemDropdown(true)
+                        if (!e.target.value.trim()) {
+                          setSelectedItemId('')
+                        }
+                      }}
+                      onFocus={() => setShowItemDropdown(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') setShowItemDropdown(false)
+                      }}
+                      placeholder="พิมพ์ชื่อ, SKU หรือ location..."
+                      className="cyber-input pl-9 pr-8 w-full"
+                    />
+                    {selectedItemId && (
+                      <button
+                        type="button"
+                        onClick={handleClearSelection}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {/* Search Dropdown */}
+                    <AnimatePresence>
+                      {showItemDropdown && !selectedItemId && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          transition={{ duration: 0.1 }}
+                          className="absolute top-full left-0 mt-1 w-full bg-cyber-card border border-cyber-border rounded-lg shadow-2xl max-h-[200px] overflow-y-auto z-50"
+                        >
+                          {filteredSearchItems.length === 0 ? (
+                            <div className="px-4 py-3 text-center text-gray-500 text-sm">
+                              {type === 'OUT' && availableItems.length === 0
+                                ? 'ไม่มีสินค้าที่สามารถเบิกได้'
+                                : 'ไม่พบสินค้าที่ค้นหา'}
+                            </div>
+                          ) : (
+                            filteredSearchItems.map((stockItem) => (
+                              <button
+                                key={stockItem.id}
+                                type="button"
+                                onClick={() => handleSelectItem(stockItem)}
+                                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-cyber-primary/10 transition-colors border-b border-cyber-border/30 last:border-b-0"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-sm text-gray-200 font-medium truncate">
+                                    {stockItem.name}
+                                  </div>
+                                  <div className="text-xs text-gray-400 truncate">
+                                    {stockItem.sku} {stockItem.location ? `| ${stockItem.location}` : ''}
+                                  </div>
+                                </div>
+                                <span className={`text-sm font-semibold whitespace-nowrap ml-3 ${
+                                  stockItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'
+                                }`}>
+                                  {stockItem.quantity} {stockItem.unit}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 )}
               </div>
 
               {selectedItem && (
                 <div className="p-4 bg-cyber-darker rounded-lg">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Current Stock:</span>
-                    <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                      {selectedItem.quantity} {selectedItem.unit}
-                      {selectedItem.quantity === 0 && (
-                        <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
-                          OUT OF STOCK
-                        </span>
-                      )}
-                    </span>
+                    <div>
+                      <span className="text-gray-400 text-sm">สินค้าที่เลือก:</span>
+                      <p className="text-gray-200 font-medium">{selectedItem.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-gray-400 text-sm">คงเหลือ:</span>
+                      <p className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                        {selectedItem.quantity} {selectedItem.unit}
+                        {selectedItem.quantity === 0 && (
+                          <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                            หมด
+                          </span>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -857,14 +970,14 @@ function MovementModal({
                 <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
                   <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0" />
                   <div>
-                    <p className="text-red-400 font-medium">Cannot Proceed</p>
-                    <p className="text-red-400/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
+                    <p className="text-red-400 font-medium">ไม่สามารถดำเนินการได้</p>
+                    <p className="text-red-400/70 text-sm">สินค้าหมดสต็อก ไม่สามารถเบิกออกได้</p>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+                <label className="block text-sm text-gray-400 mb-2">จำนวน</label>
                 <input
                   type="number"
                   value={quantity}
@@ -877,31 +990,31 @@ function MovementModal({
                 />
                 {exceedsStock && (
                   <p className="text-red-400 text-sm mt-1">
-                    Cannot exceed available stock ({selectedItem?.quantity})
+                    ไม่สามารถเบิกเกินจำนวนคงเหลือ ({selectedItem?.quantity})
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
+                <label className="block text-sm text-gray-400 mb-2">อ้างอิง (ไม่บังคับ)</label>
                 <input
                   type="text"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   className="cyber-input w-full"
-                  placeholder="e.g., PO-2024-001"
+                  placeholder="เช่น PO-2024-001"
                   disabled={isOutOfStock}
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Notes (Optional)</label>
+                <label className="block text-sm text-gray-400 mb-2">หมายเหตุ (ไม่บังคับ)</label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="cyber-input w-full"
                   rows={3}
-                  placeholder="Additional notes..."
+                  placeholder="รายละเอียดเพิ่มเติม..."
                   disabled={isOutOfStock}
                 />
               </div>
@@ -912,7 +1025,7 @@ function MovementModal({
                   onClick={onClose}
                   className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
                 >
-                  Cancel
+                  ยกเลิก
                 </button>
                 <button
                   type="submit"
@@ -930,7 +1043,7 @@ function MovementModal({
                   ) : (
                     <ArrowDownCircle className="w-4 h-4" />
                   )}
-                  Record {type === 'IN' ? 'Stock In' : 'Stock Out'}
+                  {type === 'IN' ? 'บันทึกรับเข้า' : 'บันทึกเบิกออก'}
                 </button>
               </div>
             </form>
