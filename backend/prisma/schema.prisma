@@ -102,11 +102,11 @@ model BOM {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  materials BOMItem[]
+  materials  BOMItem[]
+  workOrders WorkOrder[]
 
   @@unique([productId, version])
   @@map("boms")
-}
 
 model Material {
   id        String   @id @default(cuid())
@@ -119,11 +119,12 @@ model Material {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bomItems   BOMItem[]
-  stockItems StockItem[]
+  bomItems            BOMItem[]
+  stockItems          StockItem[]
+  purchaseOrderItems  PurchaseOrderItem[]
+  workOrderMaterials  WorkOrderMaterial[]
 
   @@map("materials")
-}
 
 model BOMItem {
   id         String   @id @default(cuid())
@@ -173,6 +174,111 @@ model StockMovement {
   createdBy   String
 
   @@map("stock_movements")
+}
+
+// Supplier Management (อ้างอิง Carbon ERP pattern)
+model Supplier {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  type         String   // RAW_MATERIAL, PACKAGING, SERVICE, OTHER
+  contactName  String
+  email        String
+  phone        String
+  address      String?
+  city         String?
+  taxId        String?
+  paymentTerms String   @default("NET30") // NET15, NET30, NET60, COD
+  rating       Int      @default(0) // 0-5 stars
+  status       String   @default("ACTIVE") // ACTIVE, INACTIVE, BLOCKED
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+// Purchase Orders (ใบสั่งซื้อ - อ้างอิง Carbon ERP)
+model PurchaseOrder {
+  id             String   @id @default(cuid())
+  poNumber       String   @unique
+  supplierId     String
+  supplier       Supplier @relation(fields: [supplierId], references: [id])
+  status         String   @default("DRAFT") // DRAFT, SUBMITTED, APPROVED, RECEIVED, PARTIAL, CANCELLED
+  orderDate      DateTime @default(now())
+  expectedDate   DateTime?
+  receivedDate   DateTime?
+  subtotal       Decimal  @default(0)
+  taxRate        Decimal  @default(0)
+  taxAmount      Decimal  @default(0)
+  totalAmount    Decimal  @default(0)
+  notes          String?
+  createdBy      String?
+  approvedBy     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  materialId      String
+  material        Material      @relation(fields: [materialId], references: [id])
+  quantity        Decimal
+  unitPrice       Decimal
+  totalPrice      Decimal
+  receivedQty     Decimal       @default(0)
+  unit            String
+  notes           String?
+
+  @@map("purchase_order_items")
+}
+
+// Work Orders (ใบสั่งผลิต - อ้างอิง Carbon ERP MES)
+model WorkOrder {
+  id              String   @id @default(cuid())
+  woNumber        String   @unique
+  bomId           String
+  bom             BOM      @relation(fields: [bomId], references: [id])
+  quantity        Int      // จำนวนที่ต้องผลิต
+  completedQty    Int      @default(0) // จำนวนที่ผลิตเสร็จ
+  scrapQty        Int      @default(0) // จำนวนของเสีย
+  status          String   @default("DRAFT") // DRAFT, PLANNED, IN_PROGRESS, COMPLETED, CANCELLED, ON_HOLD
+  priority        String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  startDate       DateTime?
+  dueDate         DateTime?
+  completedDate   DateTime?
+  assignedTo      String?
+  notes           String?
+  estimatedCost   Decimal  @default(0)
+  actualCost      Decimal  @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  materialUsages WorkOrderMaterial[]
+
+  @@map("work_orders")
+}
+
+model WorkOrderMaterial {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material  @relation(fields: [materialId], references: [id])
+  requiredQty Decimal
+  issuedQty   Decimal   @default(0) // จำนวนที่เบิกจริง
+  unit        String
+  status      String    @default("PENDING") // PENDING, ISSUED, RETURNED
+
+  @@map("work_order_materials")
 }
 
 // Marketing Module

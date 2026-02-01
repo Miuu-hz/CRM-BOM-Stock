@@ -17,8 +17,10 @@ import {
   AlertTriangle,
   MessageSquare,
   UserCheck,
+  Truck,
 } from 'lucide-react'
 import axios from 'axios'
+import SupplierTab from '../components/crm/SupplierTab'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -109,6 +111,7 @@ interface CustomerInsights {
 }
 
 function CRM() {
+  const [mainTab, setMainTab] = useState<'customers' | 'suppliers'>('customers')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
   const [loading, setLoading] = useState(false)
@@ -206,21 +209,56 @@ function CRM() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
-            <span className="neon-text">Customer Management</span>
+            <span className="neon-text">CRM</span>
           </h1>
           <p className="text-gray-400">
-            ภาพรวมลูกค้าและโอกาสเพิ่มยอดขาย
+            {mainTab === 'customers' ? 'จัดการลูกค้าและโอกาสเพิ่มยอดขาย' : 'จัดการผู้ขายและซัพพลายเออร์'}
           </p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="cyber-btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Add Customer
-        </motion.button>
+        {mainTab === 'customers' && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="cyber-btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Add Customer
+          </motion.button>
+        )}
       </div>
+
+      {/* Main Tabs: Customers / Suppliers */}
+      <div className="flex gap-2 border-b border-cyber-border pb-2">
+        <button
+          onClick={() => setMainTab('customers')}
+          className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
+            mainTab === 'customers'
+              ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
+              : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
+          }`}
+        >
+          <Users className="w-5 h-5" />
+          Customers (ลูกค้า)
+        </button>
+        <button
+          onClick={() => setMainTab('suppliers')}
+          className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
+            mainTab === 'suppliers'
+              ? 'bg-cyber-purple/20 text-cyber-purple border-b-2 border-cyber-purple'
+              : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
+          }`}
+        >
+          <Truck className="w-5 h-5" />
+          Suppliers (ผู้ขาย)
+        </button>
+      </div>
+
+      {/* Suppliers Tab Content */}
+      {mainTab === 'suppliers' && <SupplierTab />}
+
+      {/* Customers Tab Content */}
+      {mainTab === 'customers' && (<>
+
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -359,6 +397,7 @@ function CRM() {
           onClose={() => setShowModal(false)}
         />
       )}
+      </>)}
     </motion.div>
   )
 }
