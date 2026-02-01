@@ -21,6 +21,9 @@ import calculatorRoutes from './routes/calculator.routes'
 import dataRoutes from './routes/data.routes'
 import marketingRoutes from './routes/marketing.routes'
 import searchRoutes from './routes/search.routes'
+import supplierRoutes from './routes/supplier.routes'
+import purchaseOrderRoutes from './routes/purchaseOrder.routes'
+import workOrderRoutes from './routes/workOrder.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -54,6 +57,9 @@ app.use('/api/calculator', calculatorRoutes)
 app.use('/api/data', dataRoutes)
 app.use('/api/marketing', marketingRoutes)
 app.use('/api/search', searchRoutes)
+app.use('/api/suppliers', supplierRoutes)
+app.use('/api/purchase-orders', purchaseOrderRoutes)
+app.use('/api/work-orders', workOrderRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

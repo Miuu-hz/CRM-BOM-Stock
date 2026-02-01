@@ -7,6 +7,7 @@ import {
   Package,
   Calculator,
   ShoppingCart,
+  Wrench,
   TrendingUp,
   Settings,
   LogOut,
@@ -40,6 +41,18 @@ const menuItems = [
     label: 'Stock',
     icon: Package,
     description: 'Inventory Management',
+  },
+  {
+    path: '/purchase-orders',
+    label: 'Purchase Orders',
+    icon: ShoppingCart,
+    description: 'Procurement Management',
+  },
+  {
+    path: '/work-orders',
+    label: 'Work Orders',
+    icon: Wrench,
+    description: 'Production Management',
   },
   {
     path: '/calculator',
