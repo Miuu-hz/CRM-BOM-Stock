@@ -56,7 +56,7 @@ function MaterialsTab() {
   }, [])
 
   // Filter materials
-  const filteredMaterials = materials.filter(
+  const filteredMaterials = (materials || []).filter(
     (m) =>
       m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.code.toLowerCase().includes(searchTerm.toLowerCase())
@@ -244,7 +244,7 @@ function MaterialsTab() {
                 </td>
               </tr>
             ) : (
-              filteredMaterials.map((material) => (
+              (filteredMaterials || []).map((material) => (
                 <tr key={material.id}>
                   <td className="text-cyber-primary font-mono">{material.code}</td>
                   <td className="text-gray-200">{material.name}</td>

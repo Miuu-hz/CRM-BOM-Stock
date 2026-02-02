@@ -74,7 +74,7 @@ function CostSimulation() {
       return
     }
 
-    const costs: SimulatedCost[] = selectedBom.materials.map((item) => {
+    const costs: SimulatedCost[] = (selectedBom.materials || []).map((item) => {
       const originalCost = Number(item.material.unitCost)
       const simulatedCost = priceChanges[item.materialId] ?? originalCost
       const quantity = Number(item.quantity)
@@ -165,7 +165,7 @@ function CostSimulation() {
               className="cyber-input w-full"
             >
               <option value="">-- Select a BOM --</option>
-              {boms.map((bom) => (
+              {(boms || []).map((bom) => (
                 <option key={bom.id} value={bom.id}>
                   {bom.product.name} ({bom.version}) - ฿{bom.totalCost.toLocaleString()}
                 </option>
@@ -313,7 +313,7 @@ function CostSimulation() {
                 </tr>
               </thead>
               <tbody>
-                {simulatedCosts.map((cost) => (
+                {(simulatedCosts || []).map((cost) => (
                   <tr key={cost.materialId}>
                     <td className="text-gray-200">{cost.materialName}</td>
                     <td className="text-gray-400">{cost.quantity}</td>

@@ -107,6 +107,7 @@ model BOM {
 
   @@unique([productId, version])
   @@map("boms")
+}
 
 model Material {
   id        String   @id @default(cuid())
@@ -125,6 +126,7 @@ model Material {
   workOrderMaterials  WorkOrderMaterial[]
 
   @@map("materials")
+}
 
 model BOMItem {
   id         String   @id @default(cuid())

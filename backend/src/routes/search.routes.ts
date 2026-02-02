@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../lib/prisma'
+import prisma from '../db/prisma'
 
 const router = Router()
 
@@ -33,15 +33,17 @@ router.get('/', async (req: Request, res: Response) => {
             { name: { contains: searchTerm } },
             { email: { contains: searchTerm } },
             { phone: { contains: searchTerm } },
-            { company: { contains: searchTerm } },
+            { code: { contains: searchTerm } },
           ],
         },
         take: 5,
         select: {
           id: true,
+          code: true,
           name: true,
           email: true,
-          company: true,
+          phone: true,
+          city: true,
           status: true,
         },
       }),
@@ -67,17 +69,17 @@ router.get('/', async (req: Request, res: Response) => {
         where: {
           OR: [
             { name: { contains: searchTerm } },
-            { sku: { contains: searchTerm } },
+            { code: { contains: searchTerm } },
             { description: { contains: searchTerm } },
           ],
         },
         take: 5,
         select: {
           id: true,
+          code: true,
           name: true,
-          sku: true,
-          price: true,
           category: true,
+          status: true,
         },
       }),
 
@@ -87,17 +89,15 @@ router.get('/', async (req: Request, res: Response) => {
           OR: [
             { name: { contains: searchTerm } },
             { code: { contains: searchTerm } },
-            { description: { contains: searchTerm } },
           ],
         },
         take: 5,
         select: {
           id: true,
-          name: true,
           code: true,
+          name: true,
           unit: true,
           unitCost: true,
-          stockQuantity: true,
         },
       }),
 
@@ -105,15 +105,15 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.bOM.findMany({
         where: {
           OR: [
-            { name: { contains: searchTerm } },
-            { code: { contains: searchTerm } },
+            { version: { contains: searchTerm } },
             { product: { name: { contains: searchTerm } } },
+            { product: { code: { contains: searchTerm } } },
           ],
         },
         take: 5,
         include: {
           product: {
-            select: { name: true },
+            select: { name: true, code: true },
           },
         },
       }),
@@ -130,12 +130,13 @@ router.get('/', async (req: Request, res: Response) => {
         take: 5,
         select: {
           id: true,
-          name: true,
           sku: true,
+          name: true,
           quantity: true,
           unit: true,
           category: true,
           location: true,
+          status: true,
         },
       }),
     ])
@@ -147,7 +148,7 @@ router.get('/', async (req: Request, res: Response) => {
           ...c,
           type: 'customer',
           label: c.name,
-          subtitle: c.company || c.email,
+          subtitle: `${c.code} - ${c.city}`,
         })),
         orders: orders.map((o) => ({
           ...o,
@@ -159,25 +160,25 @@ router.get('/', async (req: Request, res: Response) => {
           ...p,
           type: 'product',
           label: p.name,
-          subtitle: `SKU: ${p.sku} - ฿${Number(p.price).toLocaleString()}`,
+          subtitle: `Code: ${p.code} - ${p.category}`,
         })),
         materials: materials.map((m) => ({
           ...m,
           type: 'material',
           label: m.name,
-          subtitle: `${m.code} - ${m.stockQuantity} ${m.unit}`,
+          subtitle: `${m.code} - ${Number(m.unitCost).toLocaleString()} ฿/${m.unit}`,
         })),
         boms: boms.map((b) => ({
           ...b,
           type: 'bom',
-          label: b.name,
-          subtitle: b.product?.name || b.code,
+          label: `BOM ${b.product?.name || 'Unknown'}`,
+          subtitle: `Version: ${b.version} - ${b.product?.code || ''}`,
         })),
         stock: stock.map((s) => ({
           ...s,
           type: 'stock',
           label: s.name,
-          subtitle: `${s.sku} - ${s.quantity} ${s.unit}`,
+          subtitle: `${s.sku} - ${s.quantity} ${s.unit} @ ${s.location}`,
         })),
       },
     })

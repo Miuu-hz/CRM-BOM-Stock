@@ -470,7 +470,7 @@ function Marketing() {
             className="flex-1 bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
           >
             <option value="">เลือกร้านค้า</option>
-            {shops.map(shop => (
+            {(shops || []).map(shop => (
               <option key={shop.id} value={shop.id}>
                 {shop.name}
               </option>
@@ -637,7 +637,7 @@ function Marketing() {
                         if (e.target.checked) {
                           setPivotConfig({ ...pivotConfig, metrics: [...pivotConfig.metrics, metric.key] })
                         } else {
-                          setPivotConfig({ ...pivotConfig, metrics: pivotConfig.metrics.filter(m => m !== metric.key) })
+                          setPivotConfig({ ...pivotConfig, metrics: (pivotConfig.metrics || []).filter(m => m !== metric.key) })
                         }
                       }}
                       className="rounded border-cyber-border text-cyber-primary focus:ring-cyber-primary"
@@ -729,7 +729,7 @@ function Marketing() {
                 </tr>
               </thead>
               <tbody>
-                {pivotData.map((row, idx) => (
+                {(pivotData || []).map((row, idx) => (
                   <tr
                     key={idx}
                     className="border-b border-cyber-border/30 hover:bg-cyber-card/30 transition-colors"
@@ -933,7 +933,7 @@ function UploadModal({
 }) {
   const [searchTerm, setSearchTerm] = useState('')
 
-  const filteredShops = shops.filter(shop =>
+  const filteredShops = (shops || []).filter(shop =>
     shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     shop.shopId.includes(searchTerm)
   )
@@ -970,7 +970,7 @@ function UploadModal({
             required
           >
             <option value="">เลือกร้านค้า</option>
-            {filteredShops.map(shop => (
+            {(filteredShops || []).map(shop => (
               <option key={shop.id} value={shop.id}>
                 {shop.name} ({shop.shopId})
               </option>

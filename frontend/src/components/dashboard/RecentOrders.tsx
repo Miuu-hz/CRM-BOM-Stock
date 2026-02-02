@@ -79,7 +79,7 @@ function RecentOrders() {
             </tr>
           </thead>
           <tbody>
-            {orders.map((order, index) => (
+            {(orders || []).map((order, index) => (
               <motion.tr
                 key={order.id}
                 initial={{ opacity: 0, x: -20 }}

@@ -73,7 +73,7 @@ function BOMPage() {
   }, [])
 
   // Filter BOMs by search term
-  const filteredBOMs = boms.filter(
+  const filteredBOMs = (boms || []).filter(
     (bom) =>
       bom.product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       bom.product.code.toLowerCase().includes(searchTerm.toLowerCase())

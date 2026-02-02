@@ -46,7 +46,7 @@ function ProductionCalculator() {
         bomService.getAll(),
         materialsService.getAll(),
       ])
-      setBoms(bomsData.filter((b) => b.status === 'ACTIVE'))
+      setBoms((bomsData || []).filter((b) => b.status === 'ACTIVE'))
       setMaterials(materialsData)
     } catch (err) {
       console.error('Failed to load data:', err)
@@ -65,7 +65,7 @@ function ProductionCalculator() {
     const selectedBom = boms.find((b) => b.id === selectedBomId)
     if (!selectedBom) return
 
-    const reqs: MaterialRequirement[] = selectedBom.materials.map((bomItem) => {
+    const reqs: MaterialRequirement[] = (selectedBom.materials || []).map((bomItem) => {
       const material = materials.find((m) => m.id === bomItem.materialId)
       const requiredQty = Number(bomItem.quantity) * quantity
       const availableStock = material?.currentStock || 0
@@ -154,7 +154,7 @@ function ProductionCalculator() {
               className="cyber-input w-full"
             >
               <option value="">-- Select a BOM --</option>
-              {boms.map((bom) => (
+              {(boms || []).map((bom) => (
                 <option key={bom.id} value={bom.id}>
                   {bom.product.name} ({bom.version})
                 </option>
@@ -255,7 +255,7 @@ function ProductionCalculator() {
                 </tr>
               </thead>
               <tbody>
-                {requirements.map((req) => (
+                {(requirements || []).map((req) => (
                   <tr
                     key={req.materialId}
                     className={req.status === 'OUT_OF_STOCK' ? 'bg-red-600/20' : req.status === 'INSUFFICIENT' ? 'bg-red-500/10' : ''}

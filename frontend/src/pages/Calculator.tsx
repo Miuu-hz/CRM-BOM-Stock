@@ -101,7 +101,7 @@ function Calculator() {
   // Filter products when search changes
   useEffect(() => {
     if (searchQuery.trim()) {
-      const filtered = products.filter(
+      const filtered = (products || []).filter(
         (p) =>
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           p.code.toLowerCase().includes(searchQuery.toLowerCase())
@@ -158,12 +158,12 @@ function Calculator() {
   }
 
   const removeOperatingCost = (id: string) => {
-    setOperatingCosts(operatingCosts.filter((c) => c.id !== id))
+    setOperatingCosts((operatingCosts || []).filter((c) => c.id !== id))
   }
 
   const updateOperatingCost = (id: string, field: 'category' | 'amount' | 'type', value: string | number) => {
     setOperatingCosts(
-      operatingCosts.map((c) => (c.id === id ? { ...c, [field]: value } : c))
+      (operatingCosts || []).map((c) => (c.id === id ? { ...c, [field]: value } : c))
     )
   }
 
@@ -175,7 +175,7 @@ function Calculator() {
 
     try {
       // Prepare materials data
-      const materialsData = selectedBOM.materials.map((m) => ({
+      const materialsData = (selectedBOM.materials || []).map((m) => ({
         name: m.materialName || '',
         quantity: m.quantity,
         unit: m.unit,
@@ -365,7 +365,7 @@ function Calculator() {
             {/* Search Results Dropdown */}
             {showDropdown && filteredProducts.length > 0 && (
               <div className="absolute z-10 w-full mt-2 bg-cyber-darker border border-cyber-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                {filteredProducts.map((product) => (
+                {(filteredProducts || []).map((product) => (
                   <button
                     key={product.id}
                     onClick={() => handleProductSelect(product)}
@@ -409,7 +409,7 @@ function Calculator() {
             </div>
 
             <div className="space-y-3">
-              {selectedBOM.materials.map((material, index) => (
+              {(selectedBOM.materials || []).map((material, index) => (
                 <div
                   key={index}
                   className="p-4 bg-cyber-darker/50 rounded-lg border border-cyber-border"
@@ -473,7 +473,7 @@ function Calculator() {
             </div>
 
             <div className="space-y-3">
-              {operatingCosts.map((cost, index) => (
+              {(operatingCosts || []).map((cost, index) => (
                 <div key={cost.id} className="flex gap-2 items-center">
                   <div className="flex-1">
                     <input
@@ -714,7 +714,7 @@ function Calculator() {
                   ผลการเปรียบเทียบ (เรียงตามกำไรสูงสุด)
                 </h3>
 
-                {platformResults.map((result, index) => (
+                {(platformResults || []).map((result, index) => (
                   <div
                     key={result.platform}
                     className={`p-6 rounded-lg border ${
