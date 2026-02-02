@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users,
   Search,
@@ -124,26 +124,28 @@ function CRM() {
     'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
   >('overview')
   const [showModal, setShowModal] = useState(false)
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
 
   // Load CRM summary + customer list
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const [summaryRes, customersRes] = await Promise.all([
-          axios.get('/api/customers/summary'),
-          axios.get('/api/customers'),
-        ])
-        setSummary(summaryRes.data.data)
-        setCustomers(customersRes.data.data)
-      } catch (error) {
-        console.error('Failed to load CRM data', error)
-      } finally {
-        setLoading(false)
-      }
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [summaryRes, customersRes] = await Promise.all([
+        axios.get('/api/customers/summary'),
+        axios.get('/api/customers'),
+      ])
+      setSummary(summaryRes.data.data)
+      setCustomers(customersRes.data.data)
+    } catch (error) {
+      console.error('Failed to load CRM data', error)
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchData()
+  useEffect(() => {
+    loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -189,7 +191,7 @@ function CRM() {
     return 'REGULAR'
   }
 
-  const filteredCustomers = customers.filter((customer) => {
+  const filteredCustomers = (customers || []).filter((customer) => {
     const matchesSearch =
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.contactName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -219,6 +221,7 @@ function CRM() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            onClick={() => { setEditingCustomer(null); setShowCustomerModal(true) }}
             className="cyber-btn-primary flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -380,6 +383,11 @@ function CRM() {
                   index={index}
                   segment={segment}
                   daysSinceLastOrder={daysSince}
+                  onEdit={(e) => {
+                    e.stopPropagation()
+                    setEditingCustomer(customer)
+                    setShowCustomerModal(true)
+                  }}
                 />
               </button>
             )
@@ -397,8 +405,166 @@ function CRM() {
           onClose={() => setShowModal(false)}
         />
       )}
+
+      {/* Add/Edit Customer Modal */}
+      <CustomerModal
+        open={showCustomerModal}
+        customer={editingCustomer}
+        onClose={() => { setShowCustomerModal(false); setEditingCustomer(null) }}
+        onSave={loadData}
+      />
       </>)}
     </motion.div>
+  )
+}
+
+function CustomerModal({ open, customer, onClose, onSave }: {
+  open: boolean; customer: Customer | null; onClose: () => void; onSave: () => void
+}) {
+  const [form, setForm] = useState({
+    code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
+    city: '', creditLimit: 0, status: 'ACTIVE'
+  })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (customer) {
+      setForm({
+        code: customer.code, name: customer.name, type: customer.type,
+        contactName: customer.contactName, email: customer.email, phone: customer.phone,
+        city: customer.city, creditLimit: customer.creditLimit, status: customer.status
+      })
+    } else {
+      setForm({ code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
+        city: '', creditLimit: 0, status: 'ACTIVE' })
+    }
+  }, [customer, open])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (customer) {
+        await axios.put(`/api/customers/${customer.id}`, form)
+      } else {
+        await axios.post('/api/customers', form)
+      }
+      onSave()
+      onClose()
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to save customer')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-100">
+                {customer ? 'Edit Customer' : 'New Customer'}
+              </h2>
+              <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Code *</label>
+                  <input type="text" value={form.code}
+                    onChange={(e) => setForm({ ...form, code: e.target.value })}
+                    className="cyber-input w-full" required disabled={!!customer}
+                    placeholder="CUS-001" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Name *</label>
+                  <input type="text" value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    className="cyber-input w-full" required placeholder="Customer Name" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Type</label>
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}
+                    className="cyber-input w-full">
+                    <option value="RETAIL">Retail</option>
+                    <option value="HOTEL">Hotel</option>
+                    <option value="WHOLESALE">Wholesale</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Status</label>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    className="cyber-input w-full">
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Contact Name *</label>
+                  <input type="text" value={form.contactName}
+                    onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+                    className="cyber-input w-full" required placeholder="Contact Person" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Phone *</label>
+                  <input type="text" value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    className="cyber-input w-full" required placeholder="081-234-5678" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Email</label>
+                  <input type="email" value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className="cyber-input w-full" placeholder="email@example.com" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">City</label>
+                  <input type="text" value={form.city}
+                    onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    className="cyber-input w-full" placeholder="Bangkok" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Credit Limit (฿)</label>
+                <input type="number" value={form.creditLimit}
+                  onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
+                  className="cyber-input w-full" min="0" placeholder="0" />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={onClose}
+                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:bg-cyber-dark">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving}
+                  className="cyber-btn-primary flex items-center gap-2">
+                  {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {customer ? 'Update' : 'Create'} Customer
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -1021,11 +1187,13 @@ function CustomerCard({
   index,
   segment,
   daysSinceLastOrder,
+  onEdit,
 }: {
   customer: Customer
   index: number
   segment: CustomerSegment
   daysSinceLastOrder?: number
+  onEdit?: (e: React.MouseEvent) => void
 }) {
   const segmentInfo = getSegmentInfo(segment)
   const isAtRisk = daysSinceLastOrder && daysSinceLastOrder > 60
@@ -1063,6 +1231,17 @@ function CustomerCard({
           <div className="ml-2" title={`ไม่ได้สั่งมา ${daysSinceLastOrder} วัน`}>
             <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
           </div>
+        )}
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors ml-2"
+            title="Edit Customer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
         )}
       </div>
 

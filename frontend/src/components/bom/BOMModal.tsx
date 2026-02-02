@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Trash2, Loader2, Package } from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
+import { SearchableDropdown } from '../common/SearchableDropdown'
 
 interface BOMModalProps {
   isOpen: boolean
@@ -49,7 +50,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(editBOM.version)
       setStatus(editBOM.status)
       setMaterialRows(
-        editBOM.materials.map((m) => ({
+        (editBOM.materials || []).map((m) => ({
           id: m.id,
           materialId: m.materialId,
           quantity: Number(m.quantity),
@@ -61,7 +62,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(`${copyFrom.version}-copy`)
       setStatus('DRAFT')
       setMaterialRows(
-        copyFrom.materials.map((m) => ({
+        (copyFrom.materials || []).map((m) => ({
           id: crypto.randomUUID(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
@@ -105,13 +106,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
   const handleRemoveMaterial = (id: string) => {
     if (materialRows.length > 1) {
-      setMaterialRows(materialRows.filter((row) => row.id !== id))
+      setMaterialRows((materialRows || []).filter((row) => row.id !== id))
     }
   }
 
   const handleMaterialChange = (id: string, field: keyof MaterialRow, value: string | number) => {
     setMaterialRows(
-      materialRows.map((row) => {
+      (materialRows || []).map((row) => {
         if (row.id === id) {
           if (field === 'materialId') {
             const selectedMaterial = materials.find((m) => m.id === value)
@@ -140,7 +141,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       alert('กรุณาระบุเวอร์ชัน')
       return
     }
-    const validMaterials = materialRows.filter((m) => m.materialId && m.quantity > 0)
+    const validMaterials = (materialRows || []).filter((m) => m.materialId && m.quantity > 0)
     if (validMaterials.length === 0) {
       alert('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 รายการ')
       return
@@ -152,7 +153,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         productId,
         version: version.trim(),
         status,
-        materials: validMaterials.map((m) => ({
+        materials: (validMaterials || []).map((m) => ({
           materialId: m.materialId,
           quantity: m.quantity,
           unit: m.unit,
@@ -244,19 +245,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                       สินค้า <span className="text-red-400">*</span>
                     </label>
-                    <select
+                    <SearchableDropdown
                       value={productId}
-                      onChange={(e) => setProductId(e.target.value)}
+                      onChange={setProductId}
+                      options={(products || []).map((p) => ({
+                        id: p.id,
+                        label: `${p.code} - ${p.name}`,
+                        searchText: `${p.code} ${p.name}`,
+                      }))}
+                      placeholder="ค้นหาสินค้า..."
                       disabled={isEdit}
-                      className="cyber-input w-full"
-                    >
-                      <option value="">เลือกสินค้า...</option>
-                      {products.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.code} - {product.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
 
                   <div>
@@ -304,7 +303,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   </div>
 
                   <div className="space-y-3">
-                    {materialRows.map((row, index) => {
+                    {(materialRows || []).map((row, index) => {
                       const selectedMaterial = materials.find((m) => m.id === row.materialId)
                       const rowTotal = selectedMaterial
                         ? Number(selectedMaterial.unitCost) * row.quantity
@@ -316,20 +315,18 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           className="grid grid-cols-12 gap-3 items-center p-3 bg-cyber-dark/50 rounded-lg border border-cyber-border"
                         >
                           <div className="col-span-4">
-                            <select
+                            <SearchableDropdown
                               value={row.materialId}
-                              onChange={(e) =>
-                                handleMaterialChange(row.id, 'materialId', e.target.value)
+                              onChange={(value) =>
+                                handleMaterialChange(row.id, 'materialId', value)
                               }
-                              className="cyber-input w-full text-sm"
-                            >
-                              <option value="">เลือกวัตถุดิบ...</option>
-                              {materials.map((material) => (
-                                <option key={material.id} value={material.id}>
-                                  {material.code} - {material.name}
-                                </option>
-                              ))}
-                            </select>
+                              options={(materials || []).map((m) => ({
+                                id: m.id,
+                                label: `${m.code} - ${m.name}`,
+                                searchText: `${m.code} ${m.name}`,
+                              }))}
+                              placeholder="ค้นหาวัตถุดิบ..."
+                            />
                           </div>
 
                           <div className="col-span-2">

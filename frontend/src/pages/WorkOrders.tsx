@@ -35,7 +35,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 
 function WorkOrders() {
   const [orders, setOrders] = useState<WorkOrder[]>([])
-  const [stats, setStats] = useState<WOStats>({ totalOrders: 0, inProgress: 0, planned: 0, completed: 0, totalProduced: 0 })
+  const [stats, setStats] = useState<WOStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -88,7 +88,7 @@ function WorkOrders() {
     }
   }
 
-  const filtered = orders.filter((o) => {
+  const filtered = (orders || []).filter((o) => {
     const matchSearch = o.wo_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (o.assigned_to || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -118,11 +118,11 @@ function WorkOrders() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <StatCard label="Total WOs" value={stats.totalOrders.toString()} color="text-cyber-primary" />
-        <StatCard label="Planned" value={stats.planned.toString()} color="text-blue-400" />
-        <StatCard label="In Progress" value={stats.inProgress.toString()} color="text-yellow-400" />
-        <StatCard label="Completed" value={stats.completed.toString()} color="text-cyber-green" />
-        <StatCard label="Total Produced" value={stats.totalProduced.toLocaleString()} color="text-cyber-purple" />
+        <StatCard label="Total WOs" value={(stats?.totalOrders ?? 0).toString()} color="text-cyber-primary" />
+        <StatCard label="Planned" value={(stats?.planned ?? 0).toString()} color="text-blue-400" />
+        <StatCard label="In Progress" value={(stats?.inProgress ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="Completed" value={(stats?.completed ?? 0).toString()} color="text-cyber-green" />
+        <StatCard label="Total Produced" value={(stats?.totalProduced ?? 0).toLocaleString()} color="text-cyber-purple" />
       </div>
 
       {/* Filters */}
@@ -294,7 +294,7 @@ function CreateWOModal({ open, onClose, onSave }: {
   const [saving, setSaving] = useState(false)
 
   const addMaterial = () => setMaterials([...materials, { materialName: '', requiredQty: 1, unit: 'units' }])
-  const removeMaterial = (idx: number) => setMaterials(materials.filter((_, i) => i !== idx))
+  const removeMaterial = (idx: number) => setMaterials((materials || []).filter((_, i) => i !== idx))
   const updateMaterial = (idx: number, field: string, value: any) => {
     const updated = [...materials]
     ;(updated[idx] as any)[field] = value
@@ -306,7 +306,7 @@ function CreateWOModal({ open, onClose, onSave }: {
     if (!productName.trim()) { alert('Please enter a product name'); return }
     setSaving(true)
     try {
-      const validMaterials = materials.filter(m => m.materialName.trim())
+      const validMaterials = (materials || []).filter(m => m.materialName.trim())
       await workOrderService.create({
         productName,
         quantity,

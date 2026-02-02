@@ -1,32 +1,38 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../db/prisma'
+import db from '../db/sqlite'
+import { randomUUID } from 'crypto'
 
 const router = Router()
 
+function generateId() {
+  return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
 // Get BOM statistics
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', async (_req: Request, res: Response) => {
   try {
-    const totalBOMs = await prisma.bOM.count()
-    const activeBOMs = await prisma.bOM.count({
-      where: { status: 'ACTIVE' },
-    })
-    const totalMaterials = await prisma.material.count()
+    const totalBOMs = (db.prepare('SELECT COUNT(*) as count FROM boms').get() as any).count
+    const activeBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE status = 'ACTIVE'").get() as any).count
+    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials').get() as any).count
 
     // Calculate average cost per unit
-    const boms = await prisma.bOM.findMany({
-      include: {
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-    })
+    const boms = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      LEFT JOIN products p ON b.product_id = p.id
+    `).all() as any[]
+
+    const bomItems = db.prepare(`
+      SELECT bi.*, m.unit_cost
+      FROM bom_items bi
+      LEFT JOIN materials m ON bi.material_id = m.id
+    `).all() as any[]
 
     let totalCost = 0
     for (const bom of boms) {
-      for (const item of bom.materials) {
-        totalCost += Number(item.quantity) * Number(item.material.unitCost)
+      const items = bomItems.filter((item) => item.bom_id === bom.id)
+      for (const item of items) {
+        totalCost += Number(item.quantity) * Number(item.unit_cost || 0)
       }
     }
     const avgCostPerUnit = boms.length > 0 ? Math.round(totalCost / boms.length) : 0
@@ -47,30 +53,31 @@ router.get('/stats', async (req: Request, res: Response) => {
 })
 
 // Get all BOMs
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
-    const boms = await prisma.bOM.findMany({
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-    })
+    const boms = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      LEFT JOIN products p ON b.product_id = p.id
+      ORDER BY b.updated_at DESC
+    `).all() as any[]
+
+    const bomItems = db.prepare(`
+      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
+      FROM bom_items bi
+      LEFT JOIN materials m ON bi.material_id = m.id
+    `).all() as any[]
 
     // Calculate total cost for each BOM
     const bomsWithCost = boms.map((bom) => {
-      const totalCost = bom.materials.reduce((sum: number, item: typeof bom.materials[0]) => {
-        return sum + Number(item.quantity) * Number(item.material.unitCost)
+      const items = bomItems.filter((item) => item.bom_id === bom.id)
+      const totalCost = items.reduce((sum: number, item: any) => {
+        return sum + Number(item.quantity) * Number(item.unit_cost || 0)
       }, 0)
 
       return {
         ...bom,
+        materials: items,
         totalCost,
       }
     })
@@ -88,17 +95,12 @@ router.get('/', async (req: Request, res: Response) => {
 // Get BOM by ID
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const bom = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-    })
+    const bom = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      LEFT JOIN products p ON b.product_id = p.id
+      WHERE b.id = ?
+    `).get(req.params.id) as any
 
     if (!bom) {
       return res.status(404).json({
@@ -107,14 +109,22 @@ router.get('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    const totalCost = bom.materials.reduce((sum: number, item: typeof bom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
+    const items = db.prepare(`
+      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
+      FROM bom_items bi
+      LEFT JOIN materials m ON bi.material_id = m.id
+      WHERE bi.bom_id = ?
+    `).all(req.params.id) as any[]
+
+    const totalCost = items.reduce((sum: number, item: any) => {
+      return sum + Number(item.quantity) * Number(item.unit_cost || 0)
     }, 0)
 
     res.json({
       success: true,
       data: {
         ...bom,
+        materials: items,
         totalCost,
       },
     })
@@ -129,7 +139,6 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const { productId, version, status = 'DRAFT', materials } = req.body
 
-    // Validate required fields
     if (!productId || !version) {
       return res.status(400).json({
         success: false,
@@ -138,10 +147,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check if product exists
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-    })
-
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as any
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -150,13 +156,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check for duplicate version
-    const existingBOM = await prisma.bOM.findFirst({
-      where: {
-        productId,
-        version,
-      },
-    })
-
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE product_id = ? AND version = ?').get(productId, version) as any
     if (existingBOM) {
       return res.status(400).json({
         success: false,
@@ -164,36 +164,44 @@ router.post('/', async (req: Request, res: Response) => {
       })
     }
 
-    // Create BOM with materials
-    const newBom = await prisma.bOM.create({
-      data: {
-        productId,
-        version,
-        status,
-        materials: materials
-          ? {
-              create: materials.map(
-                (m: { materialId: string; quantity: number; unit: string }) => ({
-                  materialId: m.materialId,
-                  quantity: m.quantity,
-                  unit: m.unit,
-                })
-              ),
-            }
-          : undefined,
-      },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
+    const id = generateId()
+    const now = new Date().toISOString()
+
+    const insertBOM = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO boms (id, product_id, version, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, productId, version, status, now, now)
+
+      if (materials && materials.length > 0) {
+        const insertItem = db.prepare(`
+          INSERT INTO bom_items (id, bom_id, material_id, quantity, unit)
+          VALUES (?, ?, ?, ?, ?)
+        `)
+        for (const m of materials) {
+          insertItem.run(generateId(), id, m.materialId, m.quantity, m.unit)
+        }
+      }
     })
 
-    const totalCost = newBom.materials.reduce((sum: number, item: typeof newBom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
+    insertBOM()
+
+    const newBom = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      LEFT JOIN products p ON b.product_id = p.id
+      WHERE b.id = ?
+    `).get(id) as any
+
+    const items = db.prepare(`
+      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
+      FROM bom_items bi
+      LEFT JOIN materials m ON bi.material_id = m.id
+      WHERE bi.bom_id = ?
+    `).all(id) as any[]
+
+    const totalCost = items.reduce((sum: number, item: any) => {
+      return sum + Number(item.quantity) * Number(item.unit_cost || 0)
     }, 0)
 
     res.json({
@@ -201,6 +209,7 @@ router.post('/', async (req: Request, res: Response) => {
       message: 'BOM created successfully',
       data: {
         ...newBom,
+        materials: items,
         totalCost,
       },
     })
@@ -215,11 +224,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { version, status, materials } = req.body
 
-    // Check if BOM exists
-    const existingBOM = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-    })
-
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ?').get(req.params.id) as any
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -227,42 +232,46 @@ router.put('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    // If materials are being updated, delete existing and create new
-    if (materials) {
-      await prisma.bOMItem.deleteMany({
-        where: { bomId: req.params.id },
-      })
-    }
+    const now = new Date().toISOString()
 
-    const updatedBom = await prisma.bOM.update({
-      where: { id: req.params.id },
-      data: {
-        version: version || undefined,
-        status: status || undefined,
-        materials: materials
-          ? {
-              create: materials.map(
-                (m: { materialId: string; quantity: number; unit: string }) => ({
-                  materialId: m.materialId,
-                  quantity: m.quantity,
-                  unit: m.unit,
-                })
-              ),
-            }
-          : undefined,
-      },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
+    const updateBOM = db.transaction(() => {
+      // Update BOM
+      db.prepare(`
+        UPDATE boms SET version = COALESCE(?, version), status = COALESCE(?, status), updated_at = ?
+        WHERE id = ?
+      `).run(version, status, now, req.params.id)
+
+      // If materials are being updated, delete existing and create new
+      if (materials) {
+        db.prepare('DELETE FROM bom_items WHERE bom_id = ?').run(req.params.id)
+        const insertItem = db.prepare(`
+          INSERT INTO bom_items (id, bom_id, material_id, quantity, unit)
+          VALUES (?, ?, ?, ?, ?)
+        `)
+        for (const m of materials) {
+          insertItem.run(generateId(), req.params.id, m.materialId, m.quantity, m.unit)
+        }
+      }
     })
 
-    const totalCost = updatedBom.materials.reduce((sum: number, item: typeof updatedBom.materials[0]) => {
-      return sum + Number(item.quantity) * Number(item.material.unitCost)
+    updateBOM()
+
+    const updatedBom = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      LEFT JOIN products p ON b.product_id = p.id
+      WHERE b.id = ?
+    `).get(req.params.id) as any
+
+    const items = db.prepare(`
+      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
+      FROM bom_items bi
+      LEFT JOIN materials m ON bi.material_id = m.id
+      WHERE bi.bom_id = ?
+    `).all(req.params.id) as any[]
+
+    const totalCost = items.reduce((sum: number, item: any) => {
+      return sum + Number(item.quantity) * Number(item.unit_cost || 0)
     }, 0)
 
     res.json({
@@ -270,6 +279,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       message: 'BOM updated successfully',
       data: {
         ...updatedBom,
+        materials: items,
         totalCost,
       },
     })
@@ -282,11 +292,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 // Delete BOM
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    // Check if BOM exists
-    const existingBOM = await prisma.bOM.findUnique({
-      where: { id: req.params.id },
-    })
-
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ?').get(req.params.id) as any
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -294,15 +300,12 @@ router.delete('/:id', async (req: Request, res: Response) => {
       })
     }
 
-    // Delete BOM items first
-    await prisma.bOMItem.deleteMany({
-      where: { bomId: req.params.id },
+    const deleteBOM = db.transaction(() => {
+      db.prepare('DELETE FROM bom_items WHERE bom_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM boms WHERE id = ?').run(req.params.id)
     })
 
-    // Delete BOM
-    await prisma.bOM.delete({
-      where: { id: req.params.id },
-    })
+    deleteBOM()
 
     res.json({
       success: true,

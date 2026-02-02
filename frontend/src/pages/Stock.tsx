@@ -17,15 +17,11 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import stockService, { StockItem, StockMovement, StockStats } from '../services/stock'
+import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
-  const [stats, setStats] = useState<StockStats>({
-    totalItems: 0,
-    lowStockCount: 0,
-    criticalCount: 0,
-    totalValue: 0,
-  })
+  const [stats, setStats] = useState<StockStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -74,7 +70,7 @@ function Stock() {
     return 'adequate'
   }
 
-  const filteredItems = stockItems.filter((item) => {
+  const filteredItems = (stockItems || []).filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
@@ -151,25 +147,25 @@ function Stock() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
           label="Total Items"
-          value={stats.totalItems.toString()}
+          value={(stats?.totalItems ?? 0).toString()}
           icon={Package}
           color="primary"
         />
         <StatCard
           label="Critical Stock"
-          value={stats.criticalCount.toString()}
+          value={(stats?.criticalCount ?? 0).toString()}
           icon={AlertTriangle}
           color="red"
         />
         <StatCard
           label="Low Stock"
-          value={stats.lowStockCount.toString()}
+          value={(stats?.lowStockCount ?? 0).toString()}
           icon={TrendingDown}
           color="yellow"
         />
         <StatCard
           label="Total Value"
-          value={`฿${stats.totalValue.toLocaleString()}`}
+          value={`฿${(stats?.totalValue ?? 0).toLocaleString()}`}
           icon={TrendingUp}
           color="green"
         />
@@ -771,7 +767,7 @@ function MovementModal({
 
   // Filter items for Stock Out - exclude items with 0 quantity
   const availableItems = type === 'OUT'
-    ? stockItems.filter((i) => i.quantity > 0)
+    ? (stockItems || []).filter((i) => i.quantity > 0)
     : stockItems
 
   return (
@@ -815,20 +811,17 @@ function MovementModal({
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Select Item</label>
-                <select
+                <SearchableDropdown
                   value={selectedItemId}
-                  onChange={(e) => setSelectedItemId(e.target.value)}
-                  className="cyber-input w-full"
-                  required
+                  onChange={setSelectedItemId}
+                  options={availableItems.map((stockItem) => ({
+                    id: stockItem.id,
+                    label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
+                    searchText: `${stockItem.name} ${stockItem.sku}`,
+                  }))}
+                  placeholder="-- Select Item --"
                   disabled={!!item}
-                >
-                  <option value="">-- Select Item --</option>
-                  {availableItems.map((stockItem) => (
-                    <option key={stockItem.id} value={stockItem.id}>
-                      {stockItem.name} ({stockItem.sku}) - {stockItem.quantity} {stockItem.unit}
-                    </option>
-                  ))}
-                </select>
+                />
                 {type === 'OUT' && availableItems.length === 0 && (
                   <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
                     <AlertCircle className="w-4 h-4" />

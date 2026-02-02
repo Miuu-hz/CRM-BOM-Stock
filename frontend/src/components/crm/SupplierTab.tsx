@@ -19,7 +19,7 @@ import supplierService, { Supplier, SupplierStats } from '../../services/supplie
 
 export default function SupplierTab() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [stats, setStats] = useState<SupplierStats>({ totalSuppliers: 0, activeSuppliers: 0, totalPOs: 0, totalSpent: 0 })
+  const [stats, setStats] = useState<SupplierStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState('all')
@@ -54,7 +54,7 @@ export default function SupplierTab() {
     }
   }
 
-  const filtered = suppliers.filter((s) => {
+  const filtered = (suppliers || []).filter((s) => {
     const matchSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.code.toLowerCase().includes(searchTerm.toLowerCase())
     const matchType = selectedType === 'all' || s.type === selectedType
@@ -73,10 +73,10 @@ export default function SupplierTab() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard label="Total Suppliers" value={stats.totalSuppliers.toString()} color="text-cyber-primary" />
-        <StatCard label="Active" value={stats.activeSuppliers.toString()} color="text-cyber-green" />
-        <StatCard label="Purchase Orders" value={stats.totalPOs.toString()} color="text-yellow-400" />
-        <StatCard label="Total Spent" value={`฿${stats.totalSpent.toLocaleString()}`} color="text-cyber-purple" />
+        <StatCard label="Total Suppliers" value={(stats?.totalSuppliers ?? 0).toString()} color="text-cyber-primary" />
+        <StatCard label="Active" value={(stats?.activeSuppliers ?? 0).toString()} color="text-cyber-green" />
+        <StatCard label="Purchase Orders" value={(stats?.totalPOs ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="Total Spent" value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-cyber-purple" />
       </div>
 
       {/* Toolbar */}
@@ -139,7 +139,7 @@ export default function SupplierTab() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-8 text-gray-500">No suppliers found</td></tr>
               ) : (
-                filtered.map((supplier, i) => (
+                (filtered || []).map((supplier, i) => (
                   <motion.tr
                     key={supplier.id}
                     initial={{ opacity: 0, x: -20 }}

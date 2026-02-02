@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import purchaseOrderService, { PurchaseOrder, POStats } from '../services/purchaseOrder'
 import supplierService, { Supplier } from '../services/supplier'
+import materialService, { Material } from '../services/materials'
+import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   DRAFT: { label: 'Draft', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30', icon: FileText },
@@ -30,7 +32,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 
 function PurchaseOrders() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
-  const [stats, setStats] = useState<POStats>({ totalOrders: 0, draftOrders: 0, pendingOrders: 0, receivedOrders: 0, totalValue: 0 })
+  const [stats, setStats] = useState<POStats | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -86,8 +88,8 @@ function PurchaseOrders() {
     }
   }
 
-  const filtered = orders.filter((o) => {
-    const matchSearch = o.po_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filtered = (orders || []).filter((o) => {
+    const matchSearch = o.po_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (o.supplier_name || '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchStatus = statusFilter === 'all' || o.status === statusFilter
     return matchSearch && matchStatus
@@ -115,11 +117,11 @@ function PurchaseOrders() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <StatCard label="Total POs" value={stats.totalOrders.toString()} color="text-cyber-primary" />
-        <StatCard label="Draft" value={stats.draftOrders.toString()} color="text-gray-400" />
-        <StatCard label="Pending" value={stats.pendingOrders.toString()} color="text-yellow-400" />
-        <StatCard label="Received" value={stats.receivedOrders.toString()} color="text-cyber-green" />
-        <StatCard label="Total Value" value={`฿${stats.totalValue.toLocaleString()}`} color="text-cyber-purple" />
+        <StatCard label="Total POs" value={(stats?.totalOrders ?? 0).toString()} color="text-cyber-primary" />
+        <StatCard label="Draft" value={(stats?.draftOrders ?? 0).toString()} color="text-gray-400" />
+        <StatCard label="Pending" value={(stats?.pendingOrders ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="Received" value={(stats?.receivedOrders ?? 0).toString()} color="text-cyber-green" />
+        <StatCard label="Total Value" value={`฿${(stats?.totalValue ?? 0).toLocaleString()}`} color="text-cyber-purple" />
       </div>
 
       {/* Filters */}
@@ -255,13 +257,30 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
   const [taxRate, setTaxRate] = useState(7)
-  const [items, setItems] = useState<{ description: string; quantity: number; unitPrice: number; unit: string }[]>([
+  const [items, setItems] = useState<{ description: string; quantity: number; unitPrice: number; unit: string; materialId?: string }[]>([
     { description: '', quantity: 1, unitPrice: 0, unit: 'units' },
   ])
+  const [materials, setMaterials] = useState<Material[]>([])
   const [saving, setSaving] = useState(false)
 
+  // Load materials when modal opens
+  useEffect(() => {
+    if (open) {
+      loadMaterials()
+    }
+  }, [open])
+
+  const loadMaterials = async () => {
+    try {
+      const data = await materialService.getAll()
+      setMaterials(data)
+    } catch (err) {
+      console.error('Failed to load materials:', err)
+    }
+  }
+
   const addItem = () => setItems([...items, { description: '', quantity: 1, unitPrice: 0, unit: 'units' }])
-  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
+  const removeItem = (idx: number) => setItems((items || []).filter((_, i) => i !== idx))
   const updateItem = (idx: number, field: string, value: any) => {
     const updated = [...items]
     ;(updated[idx] as any)[field] = value
@@ -306,12 +325,16 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Supplier *</label>
-                  <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="cyber-input w-full" required>
-                    <option value="">-- Select Supplier --</option>
-                    {suppliers.filter((s) => s.status === 'ACTIVE').map((s) => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                    ))}
-                  </select>
+                  <SearchableDropdown
+                    value={supplierId}
+                    onChange={setSupplierId}
+                    options={(suppliers || []).filter((s) => s.status === 'ACTIVE').map((s) => ({
+                      id: s.id,
+                      label: `${s.name} (${s.code})`,
+                      searchText: `${s.name} ${s.code}`,
+                    }))}
+                    placeholder="-- Select Supplier --"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Expected Date</label>
@@ -328,12 +351,44 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {items.map((item, idx) => (
+                  {(items || []).map((item, idx) => (
                     <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-cyber-darker p-3 rounded-lg">
                       <div className="col-span-4">
-                        <label className="text-xs text-gray-500">Description</label>
-                        <input type="text" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)}
-                          className="cyber-input w-full text-sm" placeholder="Material/Item" required />
+                        <label className="text-xs text-gray-500">Material/Item</label>
+                        <SearchableDropdown
+                          value={item.materialId || ''}
+                          onChange={(value) => {
+                            const selectedMaterial = materials.find((m) => m.id === value)
+                            if (selectedMaterial) {
+                              updateItem(idx, 'description', selectedMaterial.name)
+                              updateItem(idx, 'unitPrice', Number(selectedMaterial.unitCost))
+                              updateItem(idx, 'unit', selectedMaterial.unit)
+                              updateItem(idx, 'materialId', value)
+                            } else {
+                              updateItem(idx, 'materialId', '')
+                              updateItem(idx, 'description', '')
+                            }
+                          }}
+                          options={[
+                            { id: '', label: '-- Custom Item --', searchText: '' },
+                            ...materials.map((m) => ({
+                              id: m.id,
+                              label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${m.unit})`,
+                              searchText: `${m.code} ${m.name}`,
+                            })),
+                          ]}
+                          placeholder="Search material..."
+                        />
+                        {(!item.materialId || item.materialId === '') && (
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                            className="cyber-input w-full text-sm mt-2"
+                            placeholder="Enter custom item name"
+                            required
+                          />
+                        )}
                       </div>
                       <div className="col-span-2">
                         <label className="text-xs text-gray-500">Qty</label>
@@ -452,7 +507,7 @@ function PODetailModal({ po, onClose, onStatusChange }: {
               <h3 className="text-lg font-semibold text-gray-200 mb-3">Items</h3>
               {po.items && po.items.length > 0 ? (
                 <div className="space-y-2">
-                  {po.items.map((item) => (
+                  {(po.items || []).map((item) => (
                     <div key={item.id} className="flex justify-between items-center p-3 bg-cyber-darker rounded-lg">
                       <div>
                         <p className="text-gray-200">{item.description || 'Item'}</p>

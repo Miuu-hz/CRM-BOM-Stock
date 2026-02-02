@@ -335,7 +335,7 @@ function ResultSection({
         </span>
       </div>
       <div className="space-y-1">
-        {items.map((item) => (
+        {(items || []).map((item) => (
           <motion.button
             key={`${item.type}-${item.id}`}
             whileHover={{ x: 4 }}
