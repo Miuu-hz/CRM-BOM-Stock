@@ -56,7 +56,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(editBOM.version)
       setStatus(editBOM.status)
       setMaterialRows(
-        (editBOM.materials || []).map((m, idx) => ({
+        (editBOM.materials || []).map((m) => ({
           id: m.id && m.id.trim() !== '' ? m.id : generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
@@ -68,7 +68,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(`${copyFrom.version}-copy`)
       setStatus('DRAFT')
       setMaterialRows(
-        (copyFrom.materials || []).map((m, idx) => ({
+        (copyFrom.materials || []).map((m) => ({
           id: generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
@@ -309,7 +309,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   </div>
 
                   <div className="space-y-3">
-                    {(materialRows || []).filter(row => row.id && row.id.trim() !== '').map((row, index) => {
+                    {(materialRows || []).filter(row => row.id && row.id.trim() !== '').map((row) => {
                       const selectedMaterial = materials.find((m) => m.id === row.materialId)
                       const rowTotal = selectedMaterial
                         ? Number(selectedMaterial.unitCost) * row.quantity
