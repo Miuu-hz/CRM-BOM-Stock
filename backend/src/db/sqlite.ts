@@ -47,26 +47,30 @@ db.exec(`
   -- ==================== PRODUCTS ====================
   CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    code TEXT NOT NULL,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     description TEXT,
     status TEXT DEFAULT 'ACTIVE',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code)
   );
 
   -- ==================== MATERIALS ====================
   CREATE TABLE IF NOT EXISTS materials (
     id TEXT PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    code TEXT NOT NULL,
     name TEXT NOT NULL,
     unit TEXT NOT NULL,
     unit_cost REAL NOT NULL,
     min_stock INTEGER DEFAULT 0,
     max_stock INTEGER DEFAULT 1000,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code)
   );
 
   -- ==================== ORDERS ====================
@@ -98,17 +102,19 @@ db.exec(`
   -- ==================== BOMs ====================
   CREATE TABLE IF NOT EXISTS boms (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     product_id TEXT NOT NULL,
     version TEXT NOT NULL,
     status TEXT DEFAULT 'DRAFT',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id),
-    UNIQUE(product_id, version)
+    UNIQUE(tenant_id, product_id, version)
   );
 
   CREATE TABLE IF NOT EXISTS bom_items (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     bom_id TEXT NOT NULL,
     material_id TEXT NOT NULL,
     quantity REAL NOT NULL,
@@ -141,6 +147,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS stock_movements (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     stock_item_id TEXT NOT NULL,
     type TEXT NOT NULL,
     quantity INTEGER NOT NULL,
@@ -154,18 +161,20 @@ db.exec(`
   -- ==================== SHOPS (Marketing) ====================
   CREATE TABLE IF NOT EXISTS shops (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     name TEXT NOT NULL,
     platform TEXT NOT NULL,
     shop_id TEXT NOT NULL,
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(platform, shop_id)
+    UNIQUE(tenant_id, platform, shop_id)
   );
 
   -- ==================== MARKETING FILES ====================
   CREATE TABLE IF NOT EXISTS marketing_files (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     shop_id TEXT NOT NULL,
     file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
@@ -181,6 +190,7 @@ db.exec(`
   -- ==================== MARKETING METRICS ====================
   CREATE TABLE IF NOT EXISTS marketing_metrics (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     file_id TEXT NOT NULL,
     shop_id TEXT NOT NULL,
     date TEXT NOT NULL,
@@ -239,7 +249,8 @@ db.exec(`
   -- ==================== PURCHASE ORDERS ====================
   CREATE TABLE IF NOT EXISTS purchase_orders (
     id TEXT PRIMARY KEY,
-    po_number TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    po_number TEXT NOT NULL,
     supplier_id TEXT NOT NULL,
     status TEXT DEFAULT 'DRAFT',
     order_date TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -254,11 +265,13 @@ db.exec(`
     approved_by TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    UNIQUE(tenant_id, po_number)
   );
 
   CREATE TABLE IF NOT EXISTS purchase_order_items (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     purchase_order_id TEXT NOT NULL,
     material_id TEXT,
     description TEXT,
@@ -274,7 +287,8 @@ db.exec(`
   -- ==================== WORK ORDERS ====================
   CREATE TABLE IF NOT EXISTS work_orders (
     id TEXT PRIMARY KEY,
-    wo_number TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    wo_number TEXT NOT NULL,
     bom_id TEXT,
     product_name TEXT,
     quantity INTEGER DEFAULT 0,
@@ -290,11 +304,13 @@ db.exec(`
     estimated_cost REAL DEFAULT 0,
     actual_cost REAL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, wo_number)
   );
 
   CREATE TABLE IF NOT EXISTS work_order_materials (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     work_order_id TEXT NOT NULL,
     material_id TEXT,
     material_name TEXT,
@@ -308,6 +324,7 @@ db.exec(`
   -- ==================== SAVED BOMs (Calculator) ====================
   CREATE TABLE IF NOT EXISTS saved_boms (
     id TEXT PRIMARY KEY,
+    tenant_id TEXT,
     name TEXT NOT NULL,
     description TEXT,
     materials TEXT NOT NULL,
