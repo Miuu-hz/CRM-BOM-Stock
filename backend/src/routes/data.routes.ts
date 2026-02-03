@@ -1,17 +1,25 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../db/prisma'
+import { authenticate } from '../middleware/auth.middleware'
+import db from '../db/sqlite'
 
 const router = Router()
+
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
 
 /**
  * GET /api/data/products
  * ดึงรายการสินค้าทั้งหมด
  */
-router.get('/products', async (req: Request, res: Response) => {
+router.get('/products', (req: Request, res: Response) => {
   try {
-    const products = await prisma.product.findMany({
-      orderBy: { name: 'asc' },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const products = db.prepare(`
+      SELECT * FROM products 
+      WHERE tenant_id = ?
+      ORDER BY name ASC
+    `).all(tenantId)
 
     res.json({
       success: true,
@@ -30,11 +38,15 @@ router.get('/products', async (req: Request, res: Response) => {
  * GET /api/data/materials
  * ดึงรายการวัตถุดิบทั้งหมด
  */
-router.get('/materials', async (req: Request, res: Response) => {
+router.get('/materials', (req: Request, res: Response) => {
   try {
-    const materials = await prisma.material.findMany({
-      orderBy: { name: 'asc' },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const materials = db.prepare(`
+      SELECT * FROM materials 
+      WHERE tenant_id = ?
+      ORDER BY name ASC
+    `).all(tenantId)
 
     res.json({
       success: true,
@@ -53,37 +65,35 @@ router.get('/materials', async (req: Request, res: Response) => {
  * GET /api/data/boms
  * ดึงรายการ BOM ทั้งหมด
  */
-router.get('/boms', async (req: Request, res: Response) => {
+router.get('/boms', (req: Request, res: Response) => {
   try {
-    const boms = await prisma.bOM.findMany({
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const boms = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      JOIN products p ON b.product_id = p.id
+      WHERE b.tenant_id = ?
+      ORDER BY b.updated_at DESC
+    `).all(tenantId) as any[]
 
     // Enrich BOM with calculated data
     const enrichedBOMs = boms.map((bom) => {
-      const bomMaterials = bom.materials.map((bomMat) => ({
-        ...bomMat,
-        materialName: bomMat.material.name,
-        materialCode: bomMat.material.code,
-        unitCost: Number(bomMat.material.unitCost),
-      }))
+      const bomMaterials = db.prepare(`
+        SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost
+        FROM bom_items bi
+        JOIN materials m ON bi.material_id = m.id
+        WHERE bi.bom_id = ?
+      `).all(bom.id) as any[]
 
       const totalCost = bomMaterials.reduce((sum, mat) => {
-        return sum + Number(mat.quantity) * mat.unitCost
+        return sum + Number(mat.quantity) * Number(mat.unit_cost)
       }, 0)
 
       return {
         ...bom,
-        productName: bom.product.name,
-        productCode: bom.product.code,
+        productName: bom.product_name,
+        productCode: bom.product_code,
         materials: bomMaterials,
         totalCost,
       }
@@ -106,24 +116,17 @@ router.get('/boms', async (req: Request, res: Response) => {
  * GET /api/data/boms/:productId
  * ดึง BOM ของสินค้าเฉพาะ
  */
-router.get('/boms/:productId', async (req: Request, res: Response) => {
+router.get('/boms/:productId', (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { productId } = req.params
 
-    const bom = await prisma.bOM.findFirst({
-      where: {
-        productId,
-        status: 'ACTIVE',
-      },
-      include: {
-        product: true,
-        materials: {
-          include: {
-            material: true,
-          },
-        },
-      },
-    })
+    const bom = db.prepare(`
+      SELECT b.*, p.name as product_name, p.code as product_code
+      FROM boms b
+      JOIN products p ON b.product_id = p.id
+      WHERE b.product_id = ? AND b.status = 'ACTIVE' AND b.tenant_id = ?
+    `).get(productId, tenantId) as any
 
     if (!bom) {
       return res.status(404).json({
@@ -132,23 +135,23 @@ router.get('/boms/:productId', async (req: Request, res: Response) => {
       })
     }
 
-    const bomMaterials = bom.materials.map((bomMat) => ({
-      ...bomMat,
-      materialName: bomMat.material.name,
-      materialCode: bomMat.material.code,
-      unitCost: Number(bomMat.material.unitCost),
-    }))
+    const bomMaterials = db.prepare(`
+      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost
+      FROM bom_items bi
+      JOIN materials m ON bi.material_id = m.id
+      WHERE bi.bom_id = ?
+    `).all(bom.id) as any[]
 
     const totalCost = bomMaterials.reduce((sum, mat) => {
-      return sum + Number(mat.quantity) * mat.unitCost
+      return sum + Number(mat.quantity) * Number(mat.unit_cost)
     }, 0)
 
     res.json({
       success: true,
       data: {
         ...bom,
-        productName: bom.product.name,
-        productCode: bom.product.code,
+        productName: bom.product_name,
+        productCode: bom.product_code,
         materials: bomMaterials,
         totalCost,
       },
