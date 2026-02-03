@@ -1,11 +1,16 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../db/prisma'
+import { authenticate } from '../middleware/auth.middleware'
+import db from '../db/sqlite'
 
 const router = Router()
 
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
+
 // Global search endpoint
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { q } = req.query
 
     if (!q || typeof q !== 'string' || q.trim().length < 2) {
@@ -22,124 +27,80 @@ router.get('/', async (req: Request, res: Response) => {
       })
     }
 
-    const searchTerm = q.trim().toLowerCase()
+    const searchTerm = `%${q.trim().toLowerCase()}%`
 
-    // Search in parallel for better performance
-    const [customers, orders, products, materials, boms, stock] = await Promise.all([
-      // Search customers
-      prisma.customer.findMany({
-        where: {
-          OR: [
-            { name: { contains: searchTerm } },
-            { email: { contains: searchTerm } },
-            { phone: { contains: searchTerm } },
-            { code: { contains: searchTerm } },
-          ],
-        },
-        take: 5,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          email: true,
-          phone: true,
-          city: true,
-          status: true,
-        },
-      }),
+    // Search customers
+    const customers = db.prepare(`
+      SELECT id, code, name, email, phone, city, status
+      FROM customers
+      WHERE tenant_id = ? AND (
+        LOWER(name) LIKE ? OR 
+        LOWER(email) LIKE ? OR 
+        LOWER(phone) LIKE ? OR 
+        LOWER(code) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm, searchTerm, searchTerm) as any[]
 
-      // Search orders
-      prisma.order.findMany({
-        where: {
-          OR: [
-            { orderNumber: { contains: searchTerm } },
-            { customer: { name: { contains: searchTerm } } },
-          ],
-        },
-        take: 5,
-        include: {
-          customer: {
-            select: { name: true },
-          },
-        },
-      }),
+    // Search orders
+    const orders = db.prepare(`
+      SELECT o.id, o.order_number, o.total_amount, o.status, c.name as customer_name
+      FROM orders o
+      JOIN customers c ON o.customer_id = c.id
+      WHERE o.tenant_id = ? AND (
+        LOWER(o.order_number) LIKE ? OR 
+        LOWER(c.name) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm) as any[]
 
-      // Search products
-      prisma.product.findMany({
-        where: {
-          OR: [
-            { name: { contains: searchTerm } },
-            { code: { contains: searchTerm } },
-            { description: { contains: searchTerm } },
-          ],
-        },
-        take: 5,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          category: true,
-          status: true,
-        },
-      }),
+    // Search products
+    const products = db.prepare(`
+      SELECT id, code, name, category, status
+      FROM products
+      WHERE tenant_id = ? AND (
+        LOWER(name) LIKE ? OR 
+        LOWER(code) LIKE ? OR 
+        LOWER(description) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
 
-      // Search materials
-      prisma.material.findMany({
-        where: {
-          OR: [
-            { name: { contains: searchTerm } },
-            { code: { contains: searchTerm } },
-          ],
-        },
-        take: 5,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          unit: true,
-          unitCost: true,
-        },
-      }),
+    // Search materials
+    const materials = db.prepare(`
+      SELECT id, code, name, unit, unit_cost
+      FROM materials
+      WHERE tenant_id = ? AND (
+        LOWER(name) LIKE ? OR 
+        LOWER(code) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm) as any[]
 
-      // Search BOMs
-      prisma.bOM.findMany({
-        where: {
-          OR: [
-            { version: { contains: searchTerm } },
-            { product: { name: { contains: searchTerm } } },
-            { product: { code: { contains: searchTerm } } },
-          ],
-        },
-        take: 5,
-        include: {
-          product: {
-            select: { name: true, code: true },
-          },
-        },
-      }),
+    // Search BOMs
+    const boms = db.prepare(`
+      SELECT b.id, b.version, b.status, p.name as product_name, p.code as product_code
+      FROM boms b
+      JOIN products p ON b.product_id = p.id
+      WHERE b.tenant_id = ? AND (
+        LOWER(b.version) LIKE ? OR 
+        LOWER(p.name) LIKE ? OR 
+        LOWER(p.code) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
 
-      // Search stock items
-      prisma.stockItem.findMany({
-        where: {
-          OR: [
-            { name: { contains: searchTerm } },
-            { sku: { contains: searchTerm } },
-            { location: { contains: searchTerm } },
-          ],
-        },
-        take: 5,
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          quantity: true,
-          unit: true,
-          category: true,
-          location: true,
-          status: true,
-        },
-      }),
-    ])
+    // Search stock items
+    const stock = db.prepare(`
+      SELECT id, sku, name, quantity, unit, category, location, status
+      FROM stock_items
+      WHERE tenant_id = ? AND (
+        LOWER(name) LIKE ? OR 
+        LOWER(sku) LIKE ? OR 
+        LOWER(location) LIKE ?
+      )
+      LIMIT 5
+    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
 
     res.json({
       success: true,
@@ -153,8 +114,8 @@ router.get('/', async (req: Request, res: Response) => {
         orders: orders.map((o) => ({
           ...o,
           type: 'order',
-          label: o.orderNumber,
-          subtitle: `${o.customer?.name || 'Unknown'} - ฿${Number(o.totalAmount).toLocaleString()}`,
+          label: o.order_number,
+          subtitle: `${o.customer_name || 'Unknown'} - ฿${Number(o.total_amount).toLocaleString()}`,
         })),
         products: products.map((p) => ({
           ...p,
@@ -166,13 +127,13 @@ router.get('/', async (req: Request, res: Response) => {
           ...m,
           type: 'material',
           label: m.name,
-          subtitle: `${m.code} - ${Number(m.unitCost).toLocaleString()} ฿/${m.unit}`,
+          subtitle: `${m.code} - ${Number(m.unit_cost).toLocaleString()} ฿/${m.unit}`,
         })),
         boms: boms.map((b) => ({
           ...b,
           type: 'bom',
-          label: `BOM ${b.product?.name || 'Unknown'}`,
-          subtitle: `Version: ${b.version} - ${b.product?.code || ''}`,
+          label: `BOM ${b.product_name || 'Unknown'}`,
+          subtitle: `Version: ${b.version} - ${b.product_code || ''}`,
         })),
         stock: stock.map((s) => ({
           ...s,

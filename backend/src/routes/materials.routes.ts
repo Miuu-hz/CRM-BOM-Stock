@@ -1,33 +1,42 @@
 import { Router, Request, Response } from 'express'
-import prisma from '../db/prisma'
+import { authenticate } from '../middleware/auth.middleware'
+import db from '../db/sqlite'
+import { randomUUID } from 'crypto'
 
 const router = Router()
 
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
+
+function generateId() {
+  return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
 // Get materials statistics
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', (req: Request, res: Response) => {
   try {
-    const totalMaterials = await prisma.material.count()
+    const tenantId = req.user!.tenantId
+    
+    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
 
     // Get materials with low stock
-    const stockItems = await prisma.stockItem.findMany({
-      where: {
-        materialId: { not: null },
-      },
-      include: {
-        material: true,
-      },
-    })
+    const stockItems = db.prepare(`
+      SELECT si.*, m.min_stock, m.max_stock
+      FROM stock_items si
+      JOIN materials m ON si.material_id = m.id
+      WHERE si.material_id IS NOT NULL AND si.tenant_id = ?
+    `).all(tenantId) as any[]
 
     const lowStockCount = stockItems.filter(
-      (item) => item.quantity <= item.minStock
+      (item) => item.quantity <= item.min_stock
     ).length
 
     // Calculate total inventory value
-    const materials = await prisma.material.findMany()
+    const materials = db.prepare('SELECT id, unit_cost FROM materials WHERE tenant_id = ?').all(tenantId) as any[]
     const totalValue = stockItems.reduce((sum, item) => {
-      const material = materials.find((m) => m.id === item.materialId)
+      const material = materials.find((m) => m.id === item.material_id)
       if (material) {
-        return sum + item.quantity * Number(material.unitCost)
+        return sum + item.quantity * Number(material.unit_cost)
       }
       return sum
     }, 0)
@@ -48,33 +57,26 @@ router.get('/stats', async (req: Request, res: Response) => {
 })
 
 // Get all materials with stock info
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
   try {
-    const materials = await prisma.material.findMany({
-      include: {
-        stockItems: true,
-        bomItems: {
-          include: {
-            bom: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: { name: 'asc' },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const materials = db.prepare(`
+      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
+      FROM materials m
+      LEFT JOIN stock_items si ON m.id = si.material_id
+      WHERE m.tenant_id = ?
+      ORDER BY m.name ASC
+    `).all(tenantId) as any[]
 
     // Enrich with stock status
     const materialsWithStock = materials.map((material) => {
-      const stockItem = material.stockItems[0]
-      const currentStock = stockItem?.quantity || 0
-      const minStock = material.minStock
-      const maxStock = material.maxStock
+      const currentStock = material.stock_quantity || 0
+      const minStock = material.min_stock
+      const maxStock = material.max_stock
 
       let stockStatus = 'NO_STOCK'
-      if (stockItem) {
+      if (material.stock_id) {
         if (currentStock <= minStock * 0.3) {
           stockStatus = 'CRITICAL'
         } else if (currentStock <= minStock) {
@@ -87,14 +89,15 @@ router.get('/', async (req: Request, res: Response) => {
       }
 
       // Count usage in BOMs
-      const usedInBOMs = material.bomItems.length
+      const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(material.id) as any
+      const usedInBOMs = bomCount.count
 
       return {
         ...material,
         currentStock,
         stockStatus,
         usedInBOMs,
-        stockItem,
+        stockItem: material.stock_id ? { id: material.stock_id, quantity: currentStock } : null,
       }
     })
 
@@ -109,30 +112,16 @@ router.get('/', async (req: Request, res: Response) => {
 })
 
 // Get material by ID
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', (req: Request, res: Response) => {
   try {
-    const material = await prisma.material.findUnique({
-      where: { id: req.params.id },
-      include: {
-        stockItems: {
-          include: {
-            movements: {
-              orderBy: { createdAt: 'desc' },
-              take: 10,
-            },
-          },
-        },
-        bomItems: {
-          include: {
-            bom: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-      },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const material = db.prepare(`
+      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
+      FROM materials m
+      LEFT JOIN stock_items si ON m.id = si.material_id
+      WHERE m.id = ? AND m.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
 
     if (!material) {
       return res.status(404).json({
@@ -140,6 +129,25 @@ router.get('/:id', async (req: Request, res: Response) => {
         message: 'Material not found',
       })
     }
+
+    // Get stock movements if stock item exists
+    if (material.stock_id) {
+      material.movements = db.prepare(`
+        SELECT * FROM stock_movements
+        WHERE stock_item_id = ?
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all(material.stock_id)
+    }
+
+    // Get BOM usage
+    material.bomItems = db.prepare(`
+      SELECT bi.*, p.name as product_name, p.code as product_code
+      FROM bom_items bi
+      JOIN boms b ON bi.bom_id = b.id
+      JOIN products p ON b.product_id = p.id
+      WHERE bi.material_id = ?
+    `).all(req.params.id)
 
     res.json({
       success: true,
@@ -152,8 +160,9 @@ router.get('/:id', async (req: Request, res: Response) => {
 })
 
 // Create material
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { code, name, unit, unitCost, minStock, maxStock, initialStock } = req.body
 
     // Validate required fields
@@ -165,9 +174,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check for duplicate code
-    const existing = await prisma.material.findUnique({
-      where: { code },
-    })
+    const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
 
     if (existing) {
       return res.status(400).json({
@@ -176,35 +183,38 @@ router.post('/', async (req: Request, res: Response) => {
       })
     }
 
+    const id = generateId()
+    const now = new Date().toISOString()
+
     // Create material
-    const material = await prisma.material.create({
-      data: {
-        code,
-        name,
-        unit,
-        unitCost,
-        minStock: minStock || 0,
-        maxStock: maxStock || 1000,
-      },
-    })
+    db.prepare(`
+      INSERT INTO materials (id, tenant_id, code, name, unit, unit_cost, min_stock, max_stock, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
 
     // Create stock item if initial stock provided
     if (initialStock && initialStock > 0) {
-      await prisma.stockItem.create({
-        data: {
-          sku: `STK-${code}`,
-          name: `Stock: ${name}`,
-          category: 'RAW_MATERIAL',
-          materialId: material.id,
-          quantity: initialStock,
-          unit,
-          minStock: minStock || 0,
-          maxStock: maxStock || 1000,
-          location: 'WAREHOUSE',
-          status: initialStock > (minStock || 0) ? 'ADEQUATE' : 'LOW',
-        },
-      })
+      const stockId = generateId()
+      db.prepare(`
+        INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
+      `).run(
+        stockId, 
+        tenantId, 
+        `STK-${code}`, 
+        `Stock: ${name}`, 
+        id, 
+        initialStock, 
+        unit,
+        minStock || 0, 
+        maxStock || 1000, 
+        initialStock > (minStock || 0) ? 'ADEQUATE' : 'LOW',
+        now, 
+        now
+      )
     }
+
+    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id)
 
     res.json({
       success: true,
@@ -218,13 +228,12 @@ router.post('/', async (req: Request, res: Response) => {
 })
 
 // Update material
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { code, name, unit, unitCost, minStock, maxStock } = req.body
 
-    const existing = await prisma.material.findUnique({
-      where: { id: req.params.id },
-    })
+    const existing = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
     if (!existing) {
       return res.status(404).json({
@@ -235,9 +244,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check for duplicate code (excluding current)
     if (code && code !== existing.code) {
-      const duplicate = await prisma.material.findUnique({
-        where: { code },
-      })
+      const duplicate = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
       if (duplicate) {
         return res.status(400).json({
           success: false,
@@ -246,28 +253,32 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    const material = await prisma.material.update({
-      where: { id: req.params.id },
-      data: {
-        code: code || undefined,
-        name: name || undefined,
-        unit: unit || undefined,
-        unitCost: unitCost !== undefined ? unitCost : undefined,
-        minStock: minStock !== undefined ? minStock : undefined,
-        maxStock: maxStock !== undefined ? maxStock : undefined,
-      },
-    })
+    const now = new Date().toISOString()
+
+    db.prepare(`
+      UPDATE materials SET
+        code = COALESCE(?, code),
+        name = COALESCE(?, name),
+        unit = COALESCE(?, unit),
+        unit_cost = COALESCE(?, unit_cost),
+        min_stock = COALESCE(?, min_stock),
+        max_stock = COALESCE(?, max_stock),
+        updated_at = ?
+      WHERE id = ? AND tenant_id = ?
+    `).run(code, name, unit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
 
     // Update related stock items
     if (minStock !== undefined || maxStock !== undefined) {
-      await prisma.stockItem.updateMany({
-        where: { materialId: req.params.id },
-        data: {
-          minStock: minStock !== undefined ? minStock : undefined,
-          maxStock: maxStock !== undefined ? maxStock : undefined,
-        },
-      })
+      db.prepare(`
+        UPDATE stock_items SET
+          min_stock = COALESCE(?, min_stock),
+          max_stock = COALESCE(?, max_stock),
+          updated_at = ?
+        WHERE material_id = ? AND tenant_id = ?
+      `).run(minStock, maxStock, now, req.params.id, tenantId)
     }
+
+    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id)
 
     res.json({
       success: true,
@@ -281,15 +292,11 @@ router.put('/:id', async (req: Request, res: Response) => {
 })
 
 // Delete material
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', (req: Request, res: Response) => {
   try {
-    const existing = await prisma.material.findUnique({
-      where: { id: req.params.id },
-      include: {
-        bomItems: true,
-        stockItems: true,
-      },
-    })
+    const tenantId = req.user!.tenantId
+    
+    const existing = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
 
     if (!existing) {
       return res.status(404).json({
@@ -299,22 +306,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Check if used in any BOM
-    if (existing.bomItems.length > 0) {
+    const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(req.params.id) as any
+    if (bomCount.count > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete: Material is used in ${existing.bomItems.length} BOM(s)`,
+        message: `Cannot delete: Material is used in ${bomCount.count} BOM(s)`,
       })
     }
 
     // Delete related stock items first
-    await prisma.stockItem.deleteMany({
-      where: { materialId: req.params.id },
-    })
+    db.prepare('DELETE FROM stock_items WHERE material_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
 
     // Delete material
-    await prisma.material.delete({
-      where: { id: req.params.id },
-    })
+    db.prepare('DELETE FROM materials WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
 
     res.json({
       success: true,
@@ -327,8 +331,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
 })
 
 // Adjust stock for material
-router.post('/:id/stock', async (req: Request, res: Response) => {
+router.post('/:id/stock', (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { type, quantity, notes } = req.body
 
     if (!type || quantity === undefined) {
@@ -338,10 +343,7 @@ router.post('/:id/stock', async (req: Request, res: Response) => {
       })
     }
 
-    const material = await prisma.material.findUnique({
-      where: { id: req.params.id },
-      include: { stockItems: true },
-    })
+    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
     if (!material) {
       return res.status(404).json({
@@ -350,24 +352,28 @@ router.post('/:id/stock', async (req: Request, res: Response) => {
       })
     }
 
-    let stockItem = material.stockItems[0]
+    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
     // Create stock item if doesn't exist
     if (!stockItem) {
-      stockItem = await prisma.stockItem.create({
-        data: {
-          sku: `STK-${material.code}`,
-          name: `Stock: ${material.name}`,
-          category: 'RAW_MATERIAL',
-          materialId: material.id,
-          quantity: 0,
-          unit: material.unit,
-          minStock: material.minStock,
-          maxStock: material.maxStock,
-          location: 'WAREHOUSE',
-          status: 'NO_STOCK',
-        },
-      })
+      const stockId = generateId()
+      const now = new Date().toISOString()
+      db.prepare(`
+        INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, 0, ?, ?, ?, 'WAREHOUSE', 'NO_STOCK', ?, ?)
+      `).run(
+        stockId,
+        tenantId,
+        `STK-${material.code}`,
+        `Stock: ${material.name}`,
+        material.id,
+        material.unit,
+        material.min_stock,
+        material.max_stock,
+        now,
+        now
+      )
+      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockId)
     }
 
     // Calculate new quantity
@@ -388,40 +394,32 @@ router.post('/:id/stock', async (req: Request, res: Response) => {
 
     // Determine status
     let status = 'ADEQUATE'
-    if (newQuantity <= material.minStock * 0.3) {
+    if (newQuantity <= material.min_stock * 0.3) {
       status = 'CRITICAL'
-    } else if (newQuantity <= material.minStock) {
+    } else if (newQuantity <= material.min_stock) {
       status = 'LOW'
-    } else if (newQuantity >= material.maxStock) {
+    } else if (newQuantity >= material.max_stock) {
       status = 'OVERSTOCK'
     }
 
+    const now = new Date().toISOString()
+
     // Update stock item
-    const updatedStock = await prisma.stockItem.update({
-      where: { id: stockItem.id },
-      data: {
-        quantity: newQuantity,
-        status,
-      },
-    })
+    db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ?').run(newQuantity, status, now, stockItem.id)
 
     // Record movement
-    await prisma.stockMovement.create({
-      data: {
-        stockItemId: stockItem.id,
-        type,
-        quantity,
-        notes,
-        createdBy: 'system',
-      },
-    })
+    const movementId = generateId()
+    db.prepare(`
+      INSERT INTO stock_movements (id, stock_item_id, type, quantity, notes, created_at, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(movementId, stockItem.id, type, quantity, notes || '', now, 'system')
 
     res.json({
       success: true,
       message: 'Stock adjusted successfully',
       data: {
         material,
-        stockItem: updatedStock,
+        stockItem: { ...stockItem, quantity: newQuantity, status },
         previousQuantity: stockItem.quantity,
         newQuantity,
       },
