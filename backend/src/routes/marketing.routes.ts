@@ -2,10 +2,14 @@ import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
+import { authenticate } from '../middleware/auth.middleware'
 import { parseMarketingCSV } from '../services/csvParser.service'
 import * as marketingRepo from '../repositories/marketing.repository'
 
 const router = Router()
+
+// All routes require authentication
+router.use(authenticate)
 
 // Extend Request type to include file from multer
 interface MulterRequest extends Request {

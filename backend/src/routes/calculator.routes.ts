@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { authenticate } from '../middleware/auth.middleware'
 import {
   calculateRawMaterialCost,
   calculateTotalProductionCost,
@@ -17,6 +18,9 @@ import {
 import { savedBOMs } from '../db/mockData'
 
 const router = Router()
+
+// All routes require authentication
+router.use(authenticate)
 
 /**
  * POST /api/calculator/production-cost

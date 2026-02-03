@@ -1,32 +1,40 @@
 import { Router, Request, Response } from 'express'
+import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 
 const router = Router()
+
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
 // Get BOM statistics
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const totalBOMs = (db.prepare('SELECT COUNT(*) as count FROM boms').get() as any).count
-    const activeBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE status = 'ACTIVE'").get() as any).count
-    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials').get() as any).count
+    const tenantId = req.user!.tenantId
+    
+    const totalBOMs = (db.prepare('SELECT COUNT(*) as count FROM boms WHERE tenant_id = ?').get(tenantId) as any).count
+    const activeBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId) as any).count
+    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
 
     // Calculate average cost per unit
     const boms = db.prepare(`
       SELECT b.*, p.name as product_name, p.code as product_code
       FROM boms b
       LEFT JOIN products p ON b.product_id = p.id
-    `).all() as any[]
+      WHERE b.tenant_id = ?
+    `).all(tenantId) as any[]
 
     const bomItems = db.prepare(`
       SELECT bi.*, m.unit_cost
       FROM bom_items bi
       LEFT JOIN materials m ON bi.material_id = m.id
-    `).all() as any[]
+      WHERE bi.tenant_id = ?
+    `).all(tenantId) as any[]
 
     let totalCost = 0
     for (const bom of boms) {
@@ -53,20 +61,24 @@ router.get('/stats', async (_req: Request, res: Response) => {
 })
 
 // Get all BOMs
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
+    
     const boms = db.prepare(`
       SELECT b.*, p.name as product_name, p.code as product_code
       FROM boms b
       LEFT JOIN products p ON b.product_id = p.id
+      WHERE b.tenant_id = ?
       ORDER BY b.updated_at DESC
-    `).all() as any[]
+    `).all(tenantId) as any[]
 
     const bomItems = db.prepare(`
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
       LEFT JOIN materials m ON bi.material_id = m.id
-    `).all() as any[]
+      WHERE bi.tenant_id = ?
+    `).all(tenantId) as any[]
 
     // Calculate total cost for each BOM
     const bomsWithCost = boms.map((bom) => {
@@ -95,12 +107,14 @@ router.get('/', async (_req: Request, res: Response) => {
 // Get BOM by ID
 router.get('/:id', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
+    
     const bom = db.prepare(`
       SELECT b.*, p.name as product_name, p.code as product_code
       FROM boms b
       LEFT JOIN products p ON b.product_id = p.id
-      WHERE b.id = ?
-    `).get(req.params.id) as any
+      WHERE b.id = ? AND b.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
 
     if (!bom) {
       return res.status(404).json({
@@ -113,8 +127,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
       LEFT JOIN materials m ON bi.material_id = m.id
-      WHERE bi.bom_id = ?
-    `).all(req.params.id) as any[]
+      WHERE bi.bom_id = ? AND bi.tenant_id = ?
+    `).all(req.params.id, tenantId) as any[]
 
     const totalCost = items.reduce((sum: number, item: any) => {
       return sum + Number(item.quantity) * Number(item.unit_cost || 0)
@@ -137,6 +151,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // Create BOM
 router.post('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { productId, version, status = 'DRAFT', materials } = req.body
 
     if (!productId || !version) {
@@ -147,7 +162,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check if product exists
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as any
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND tenant_id = ?').get(productId, tenantId) as any
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -156,7 +171,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Check for duplicate version
-    const existingBOM = db.prepare('SELECT * FROM boms WHERE product_id = ? AND version = ?').get(productId, version) as any
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE product_id = ? AND version = ? AND tenant_id = ?').get(productId, version, tenantId) as any
     if (existingBOM) {
       return res.status(400).json({
         success: false,
@@ -169,17 +184,17 @@ router.post('/', async (req: Request, res: Response) => {
 
     const insertBOM = db.transaction(() => {
       db.prepare(`
-        INSERT INTO boms (id, product_id, version, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, productId, version, status, now, now)
+        INSERT INTO boms (id, tenant_id, product_id, version, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, tenantId, productId, version, status, now, now)
 
       if (materials && materials.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, bom_id, material_id, quantity, unit)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity, unit)
+          VALUES (?, ?, ?, ?, ?, ?)
         `)
         for (const m of materials) {
-          insertItem.run(generateId(), id, m.materialId, m.quantity, m.unit)
+          insertItem.run(generateId(), tenantId, id, m.materialId, m.quantity, m.unit)
         }
       }
     })
@@ -222,9 +237,10 @@ router.post('/', async (req: Request, res: Response) => {
 // Update BOM
 router.put('/:id', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { version, status, materials } = req.body
 
-    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ?').get(req.params.id) as any
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -238,18 +254,18 @@ router.put('/:id', async (req: Request, res: Response) => {
       // Update BOM
       db.prepare(`
         UPDATE boms SET version = COALESCE(?, version), status = COALESCE(?, status), updated_at = ?
-        WHERE id = ?
-      `).run(version, status, now, req.params.id)
+        WHERE id = ? AND tenant_id = ?
+      `).run(version, status, now, req.params.id, tenantId)
 
       // If materials are being updated, delete existing and create new
       if (materials) {
-        db.prepare('DELETE FROM bom_items WHERE bom_id = ?').run(req.params.id)
+        db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, bom_id, material_id, quantity, unit)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity, unit)
+          VALUES (?, ?, ?, ?, ?, ?)
         `)
         for (const m of materials) {
-          insertItem.run(generateId(), req.params.id, m.materialId, m.quantity, m.unit)
+          insertItem.run(generateId(), tenantId, req.params.id, m.materialId, m.quantity, m.unit)
         }
       }
     })
@@ -292,7 +308,9 @@ router.put('/:id', async (req: Request, res: Response) => {
 // Delete BOM
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ?').get(req.params.id) as any
+    const tenantId = req.user!.tenantId
+    
+    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existingBOM) {
       return res.status(404).json({
         success: false,
@@ -301,8 +319,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     const deleteBOM = db.transaction(() => {
-      db.prepare('DELETE FROM bom_items WHERE bom_id = ?').run(req.params.id)
-      db.prepare('DELETE FROM boms WHERE id = ?').run(req.params.id)
+      db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM boms WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })
 
     deleteBOM()
