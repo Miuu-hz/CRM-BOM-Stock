@@ -24,6 +24,7 @@ import searchRoutes from './routes/search.routes'
 import supplierRoutes from './routes/supplier.routes'
 import purchaseOrderRoutes from './routes/purchaseOrder.routes'
 import workOrderRoutes from './routes/workOrder.routes'
+import activityRoutes from './routes/activity.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -60,6 +61,7 @@ app.use('/api/search', searchRoutes)
 app.use('/api/suppliers', supplierRoutes)
 app.use('/api/purchase-orders', purchaseOrderRoutes)
 app.use('/api/work-orders', workOrderRoutes)
+app.use('/api/activities', activityRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

@@ -15,7 +15,8 @@ import {
   X,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import searchService, { SearchResults, SearchResultItem } from '../../services/search'
+import searchService from '../../services/search'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -23,8 +24,9 @@ interface HeaderProps {
 
 function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
+  const { user, isMaster, logout } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResults | null>(null)
+  const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -85,7 +87,7 @@ function Header({ onMenuClick }: HeaderProps) {
   }, [])
 
   const handleResultClick = useCallback(
-    (item: SearchResultItem) => {
+    (item: any) => {
       setShowResults(false)
       setSearchQuery('')
 
@@ -122,20 +124,20 @@ function Header({ onMenuClick }: HeaderProps) {
 
   const hasResults =
     searchResults &&
-    (searchResults.customers.length > 0 ||
-      searchResults.orders.length > 0 ||
-      searchResults.products.length > 0 ||
-      searchResults.materials.length > 0 ||
-      searchResults.boms.length > 0 ||
-      searchResults.stock.length > 0)
+    ((searchResults.customers || []).length > 0 ||
+      (searchResults.orders || []).length > 0 ||
+      (searchResults.products || []).length > 0 ||
+      (searchResults.materials || []).length > 0 ||
+      (searchResults.boms || []).length > 0 ||
+      (searchResults.stock || []).length > 0)
 
   const totalResults = searchResults
-    ? searchResults.customers.length +
-      searchResults.orders.length +
-      searchResults.products.length +
-      searchResults.materials.length +
-      searchResults.boms.length +
-      searchResults.stock.length
+    ? (searchResults.customers || []).length +
+      (searchResults.orders || []).length +
+      (searchResults.products || []).length +
+      (searchResults.materials || []).length +
+      (searchResults.boms || []).length +
+      (searchResults.stock || []).length
     : 0
 
   return (
@@ -199,7 +201,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       </p>
 
                       {/* Customers */}
-                      {searchResults.customers.length > 0 && (
+                      {(searchResults.customers || []).length > 0 && (
                         <ResultSection
                           title="Customers"
                           icon={Users}
@@ -210,7 +212,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       )}
 
                       {/* Orders */}
-                      {searchResults.orders.length > 0 && (
+                      {(searchResults.orders || []).length > 0 && (
                         <ResultSection
                           title="Orders"
                           icon={ShoppingCart}
@@ -221,7 +223,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       )}
 
                       {/* Products */}
-                      {searchResults.products.length > 0 && (
+                      {(searchResults.products || []).length > 0 && (
                         <ResultSection
                           title="Products"
                           icon={Package}
@@ -232,7 +234,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       )}
 
                       {/* Materials */}
-                      {searchResults.materials.length > 0 && (
+                      {(searchResults.materials || []).length > 0 && (
                         <ResultSection
                           title="Materials"
                           icon={Layers}
@@ -243,7 +245,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       )}
 
                       {/* BOMs */}
-                      {searchResults.boms.length > 0 && (
+                      {(searchResults.boms || []).length > 0 && (
                         <ResultSection
                           title="Bill of Materials"
                           icon={Box}
@@ -254,7 +256,7 @@ function Header({ onMenuClick }: HeaderProps) {
                       )}
 
                       {/* Stock */}
-                      {searchResults.stock.length > 0 && (
+                      {(searchResults.stock || []).length > 0 && (
                         <ResultSection
                           title="Stock Items"
                           icon={Package}
@@ -287,6 +289,7 @@ function Header({ onMenuClick }: HeaderProps) {
           <motion.button
             whileHover={{ scale: 1.1, rotate: 90 }}
             whileTap={{ scale: 0.9 }}
+            onClick={() => navigate('/settings')}
             className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
           >
             <Settings className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
@@ -295,14 +298,22 @@ function Header({ onMenuClick }: HeaderProps) {
           {/* User Profile */}
           <motion.div
             whileHover={{ scale: 1.05 }}
-            className="flex items-center gap-3 pl-3 pr-4 py-2 rounded-lg bg-cyber-card/50 hover:bg-cyber-card cursor-pointer border border-cyber-border hover:border-cyber-primary/50 transition-all"
+            className="flex items-center gap-3 pl-3 pr-4 py-2 rounded-lg bg-cyber-card/50 border border-cyber-border hover:border-cyber-primary/50 transition-all cursor-pointer"
+            onClick={() => navigate('/settings')}
           >
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center shadow-neon">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              isMaster 
+                ? 'bg-gradient-to-br from-cyber-green to-emerald-500 shadow-[0_0_10px_rgba(0,255,136,0.3)]' 
+                : 'bg-gradient-to-br from-cyber-primary to-cyber-purple shadow-[0_0_10px_rgba(0,240,255,0.3)]'
+            }`}>
               <User className="w-5 h-5 text-white" />
             </div>
             <div className="hidden lg:block">
-              <p className="text-sm font-semibold text-gray-100">Admin User</p>
-              <p className="text-xs text-gray-400">Administrator</p>
+              <p className="text-sm font-semibold text-gray-100">{user?.name || 'User'}</p>
+              <p className={`text-xs ${isMaster ? 'text-cyber-green' : 'text-gray-400'}`}>
+                {user?.role || 'USER'}
+                {isMaster && ' ★'}
+              </p>
             </div>
           </motion.div>
         </div>
@@ -321,8 +332,8 @@ function ResultSection({
 }: {
   title: string
   icon: any
-  items: SearchResultItem[]
-  onItemClick: (item: SearchResultItem) => void
+  items: any[]
+  onItemClick: (item: any) => void
   color: string
 }) {
   return (

@@ -19,7 +19,7 @@ import {
   UserCheck,
   Truck,
 } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
@@ -126,14 +126,38 @@ function CRM() {
   const [showModal, setShowModal] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [activities, setActivities] = useState<ActivityLog[]>([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+
+  // Load activities for selected customer
+  const fetchActivities = async (customerId: string) => {
+    setActivitiesLoading(true)
+    try {
+      const res = await api.get(`/activities/customer/${customerId}`)
+      setActivities(res.data.data)
+    } catch (error) {
+      console.error('Failed to load activities:', error)
+      setActivities([])
+    } finally {
+      setActivitiesLoading(false)
+    }
+  }
+
+  // Add new activity
+  const handleAddActivity = async (customerId: string, type: string, note: string) => {
+    const res = await api.post('/activities', { customerId, type, note })
+    // Refresh activities after adding
+    await fetchActivities(customerId)
+    return res.data.data
+  }
 
   // Load CRM summary + customer list
   const loadData = async () => {
     setLoading(true)
     try {
       const [summaryRes, customersRes] = await Promise.all([
-        axios.get('/api/customers/summary'),
-        axios.get('/api/customers'),
+        api.get('/customers/summary/stats'),
+        api.get('/customers'),
       ])
       setSummary(summaryRes.data.data)
       setCustomers(customersRes.data.data)
@@ -150,21 +174,17 @@ function CRM() {
   }, [])
 
   // Load insights when customer changes
+  // TODO: Implement /customers/:id/insights endpoint in backend
   useEffect(() => {
-    const fetchInsights = async () => {
-      if (!selectedCustomerId) return
-      setInsightsLoading(true)
-      try {
-        const res = await axios.get(`/api/customers/${selectedCustomerId}/insights`)
-        setInsights(res.data.data)
-      } catch (error) {
-        console.error('Failed to load customer insights', error)
-      } finally {
-        setInsightsLoading(false)
-      }
+    // setInsights(null) // Skip for now
+    setInsightsLoading(false)
+    
+    // Load activities for selected customer
+    if (selectedCustomerId) {
+      fetchActivities(selectedCustomerId)
+    } else {
+      setActivities([])
     }
-
-    fetchInsights()
   }, [selectedCustomerId])
 
   // Auto-calculate customer segment
@@ -267,19 +287,19 @@ function CRM() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
           label="ลูกค้าทั้งหมด"
-          value={summary ? summary.totalCustomers.toLocaleString('th-TH') : '-'}
+          value={summary?.total_customers?.toLocaleString('th-TH') ?? '-'}
           icon={Users}
         />
         <StatCard
           label="ลูกค้าที่ใช้งานอยู่"
-          value={summary ? summary.activeCustomers.toLocaleString('th-TH') : '-'}
+          value={summary?.active_customers?.toLocaleString('th-TH') ?? '-'}
           icon={Building2}
         />
         <StatCard
           label="ยอดซื้อรวม"
           value={
-            summary
-              ? `฿${summary.totalRevenue.toLocaleString('th-TH', {
+            summary?.total_revenue
+              ? `฿${(summary?.total_revenue ?? 0).toLocaleString('th-TH', {
                   maximumFractionDigits: 0,
                 })}`
               : '-'
@@ -290,7 +310,7 @@ function CRM() {
           label="ยอดสั่งซื้อเฉลี่ย/ออเดอร์"
           value={
             summary
-              ? `฿${summary.avgOrderValue.toLocaleString('th-TH', {
+              ? `฿${summary.avg_customer_value?.toLocaleString('th-TH', {
                   maximumFractionDigits: 0,
                 })}`
               : '-'
@@ -445,9 +465,9 @@ function CustomerModal({ open, customer, onClose, onSave }: {
     setSaving(true)
     try {
       if (customer) {
-        await axios.put(`/api/customers/${customer.id}`, form)
+        await api.put(`/customers/${customer.id}`, form)
       } else {
-        await axios.post('/api/customers', form)
+        await api.post('/customers', form)
       }
       onSave()
       onClose()
@@ -652,7 +672,7 @@ function CustomerDetailModal({
             <div>
               <p className="text-xs text-gray-400">ยอดซื้อรวมทั้งหมด</p>
               <p className="text-xl font-bold text-cyber-green mt-1">
-                ฿{insights?.stats.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 }) || '-'}
+                ฿{(insights?.stats?.totalRevenue ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }) || '-'}
               </p>
             </div>
             <div>
@@ -663,7 +683,7 @@ function CustomerDetailModal({
                 )}
               </p>
               <p className="text-xl font-bold text-cyber-purple mt-1">
-                ฿{customer.creditLimit.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                ฿{(customer.creditLimit ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
               </p>
               {customer.creditUsed !== undefined && (
                 <div className="mt-2">
@@ -674,7 +694,7 @@ function CustomerDetailModal({
                       customer.creditUsed > customer.creditLimit * 0.7 ? 'text-yellow-400' :
                       'text-green-400'
                     }`}>
-                      ฿{customer.creditUsed.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                      ฿{(customer.creditUsed ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                       {' '}({((customer.creditUsed / customer.creditLimit) * 100).toFixed(0)}%)
                     </span>
                   </div>
@@ -694,11 +714,11 @@ function CustomerDetailModal({
             <div>
               <p className="text-xs text-gray-400">จำนวนออเดอร์</p>
               <p className="text-xl font-bold text-cyber-primary mt-1">
-                {insights?.stats.totalOrders.toLocaleString('th-TH') || '-'}
+                {(insights?.stats?.totalOrders ?? 0).toLocaleString('th-TH') || '-'}
               </p>
               {insights?.stats.avgOrderValue && (
                 <p className="text-xs text-gray-400 mt-1">
-                  เฉลี่ย: ฿{insights.stats.avgOrderValue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                  เฉลี่ย: ฿{(insights?.stats?.avgOrderValue ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                 </p>
               )}
             </div>
@@ -814,13 +834,13 @@ function CustomerDetailModal({
                   <div className="cyber-card p-4">
                     <p className="text-sm text-gray-400 mb-2">จำนวนออเดอร์ทั้งหมด</p>
                     <p className="text-2xl font-bold text-cyber-primary">
-                      {insights.stats.totalOrders.toLocaleString('th-TH')}
+                      {(insights?.stats?.totalOrders ?? 0).toLocaleString('th-TH')}
                     </p>
                   </div>
                   <div className="cyber-card p-4">
                     <p className="text-sm text-gray-400 mb-2">ยอดซื้อรวมทั้งหมด</p>
                     <p className="text-2xl font-bold text-cyber-green">
-                      ฿{insights.stats.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                      ฿{(insights?.stats?.totalRevenue ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                     </p>
                   </div>
                   <div className="cyber-card p-4">
@@ -860,7 +880,7 @@ function CustomerDetailModal({
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-sm text-gray-400">{order.status}</span>
                         <span className="text-xl font-bold text-cyber-green">
-                          ฿{order.totalAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                          ฿{(order?.totalAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                         </span>
                       </div>
                       {order.items.length > 0 && (
@@ -905,10 +925,10 @@ function CustomerDetailModal({
                         </div>
                         <div className="text-right">
                           <p className="text-lg font-bold text-cyber-primary">
-                            x{prod.totalQuantity.toLocaleString('th-TH')}
+                            x{(prod?.totalQuantity ?? 0).toLocaleString('th-TH')}
                           </p>
                           <p className="text-sm text-cyber-green">
-                            ฿{prod.totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                            ฿{(prod?.totalRevenue ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </p>
                         </div>
                       </div>
@@ -939,7 +959,7 @@ function CustomerDetailModal({
                           <p className="font-semibold text-white mb-1">{rec.name}</p>
                           <p className="text-xs text-gray-400 mb-2">หมวด: {rec.category}</p>
                           <p className="text-xs text-cyber-primary">
-                            ความนิยมรวม: {rec.popularity.toLocaleString('th-TH')}
+                            ความนิยมรวม: {(rec?.popularity ?? 0).toLocaleString('th-TH')}
                           </p>
                         </div>
                       </div>
@@ -986,7 +1006,11 @@ function CustomerDetailModal({
           )}
 
           {!insightsLoading && activeTab === 'activities' && (
-            <ActivityLogTab customer={customer} activities={insights?.activities || []} />
+            <ActivityLogTab 
+                  customer={customer} 
+                  activities={activities}
+                  onAddActivity={(type, note) => handleAddActivity(customer.id, type, note)}
+                />
           )}
         </div>
       </motion.div>
@@ -995,16 +1019,32 @@ function CustomerDetailModal({
 }
 
 // Activity Log Tab Component
-function ActivityLogTab({ customer, activities }: { customer: Customer; activities: ActivityLog[] }) {
+function ActivityLogTab({ 
+  customer, 
+  activities, 
+  onAddActivity 
+}: { 
+  customer: Customer; 
+  activities: ActivityLog[];
+  onAddActivity: (type: string, note: string) => Promise<void>;
+}) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [activityType, setActivityType] = useState<'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'>('NOTE')
   const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const handleAddActivity = () => {
-    // TODO: ส่งไปยัง API
-    console.log('Add activity:', { customerId: customer.id, type: activityType, note })
-    setNote('')
-    setShowAddForm(false)
+  const handleAddActivity = async () => {
+    if (!note.trim()) return
+    setSaving(true)
+    try {
+      await onAddActivity(activityType, note)
+      setNote('')
+      setShowAddForm(false)
+    } catch (error) {
+      console.error('Failed to add activity:', error)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const getActivityIcon = (type: string) => {
@@ -1090,10 +1130,10 @@ function ActivityLogTab({ customer, activities }: { customer: Customer; activiti
             </button>
             <button
               onClick={handleAddActivity}
-              disabled={!note.trim()}
+              disabled={!note.trim() || saving}
               className="px-4 py-1.5 rounded-lg text-sm bg-cyber-primary text-white hover:bg-cyber-primary/80 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              บันทึก
+              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
             </button>
           </div>
         </div>
@@ -1269,14 +1309,14 @@ function CustomerCard({
         <div>
           <p className="text-xs text-gray-400 mb-1">Orders</p>
           <p className="text-sm font-semibold text-cyber-primary">
-            {customer.totalOrders.toLocaleString('th-TH')}
+            {(customer.totalOrders ?? 0).toLocaleString('th-TH')}
           </p>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">Revenue</p>
           <p className="text-sm font-semibold text-cyber-green">
             ฿
-            {customer.totalRevenue.toLocaleString('th-TH', {
+            {(customer.totalRevenue ?? 0).toLocaleString('th-TH', {
               maximumFractionDigits: 0,
             })}
           </p>
@@ -1285,7 +1325,7 @@ function CustomerCard({
           <p className="text-xs text-gray-400 mb-1">Credit</p>
           <p className="text-sm font-semibold text-cyber-purple">
             ฿
-            {customer.creditLimit.toLocaleString('th-TH', {
+            {(customer.creditLimit ?? 0).toLocaleString('th-TH', {
               maximumFractionDigits: 0,
             })}
           </p>

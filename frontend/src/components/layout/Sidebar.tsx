@@ -13,6 +13,7 @@ import {
   LogOut,
   Zap,
 } from 'lucide-react'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface SidebarProps {
   isOpen: boolean
@@ -77,6 +78,8 @@ const bottomMenuItems = [
 ]
 
 function Sidebar({ isOpen }: SidebarProps) {
+  const { user, isMaster, logout } = useAuth()
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -108,6 +111,28 @@ function Sidebar({ isOpen }: SidebarProps) {
                   CRM-BOM
                 </h1>
                 <p className="text-xs text-gray-400">Bedding Factory</p>
+              </div>
+            </div>
+          </div>
+
+          {/* User Info */}
+          <div className="px-6 py-3 border-b border-cyber-border">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                isMaster ? 'bg-gradient-to-br from-cyber-green to-emerald-500' : 'bg-gradient-to-br from-cyber-primary to-cyber-purple'
+              }`}>
+                <span className="text-white font-bold text-sm">
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-200 truncate">
+                  {user?.name || 'User'}
+                </p>
+                <p className={`text-xs ${isMaster ? 'text-cyber-green' : 'text-cyber-primary'}`}>
+                  {user?.role || 'USER'}
+                  {isMaster && ' ★'}
+                </p>
               </div>
             </div>
           </div>
@@ -191,14 +216,25 @@ function Sidebar({ isOpen }: SidebarProps) {
               <NavLink
                 key={item.path}
                 to={item.path}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-cyber-card/50 transition-all group"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${
+                    isActive
+                      ? 'bg-cyber-primary/20 text-cyber-primary'
+                      : 'hover:bg-cyber-card/50 text-gray-300'
+                  }`
+                }
               >
-                <item.icon className="w-5 h-5 text-gray-400 group-hover:text-cyber-primary transition-colors" />
-                <span className="text-gray-300 font-medium">{item.label}</span>
+                <item.icon className={`w-5 h-5 ${
+                  'text-gray-400 group-hover:text-cyber-primary transition-colors'
+                }`} />
+                <span className="font-medium">{item.label}</span>
               </NavLink>
             ))}
 
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-500/10 transition-all group mt-2">
+            <button 
+              onClick={logout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-500/10 transition-all group mt-2"
+            >
               <LogOut className="w-5 h-5 text-gray-400 group-hover:text-red-400 transition-colors" />
               <span className="text-gray-300 font-medium group-hover:text-red-400 transition-colors">
                 Logout

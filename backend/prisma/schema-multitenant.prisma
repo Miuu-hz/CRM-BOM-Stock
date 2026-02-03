@@ -1,0 +1,455 @@
+// Multi-Tenant Schema for CRM-BOM-Stock
+// แบบ 1: Shared Database + Tenant ID
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== TENANT (บริษัท/ร้าน) ====================
+model Tenant {
+  id          String   @id @default(cuid())
+  code        String   @unique // รหัสบริษัท เช่น "BED001"
+  name        String   // ชื่อบริษัท
+  logo        String?  // URL logo
+  address     String?
+  phone       String?
+  email       String?
+  taxId       String?  @map("tax_id")
+  status      String   @default("ACTIVE") // ACTIVE, SUSPENDED
+  
+  // ข้อมูล subscription
+  plan        String   @default("FREE") // FREE, BASIC, PRO
+  expiresAt   DateTime? @map("expires_at")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  users       User[]
+  customers   Customer[]
+  products    Product[]
+  materials   Material[]
+  boms        BOM[]
+  orders      Order[]
+  stockItems  StockItem[]
+  suppliers   Supplier[]
+  purchaseOrders PurchaseOrder[]
+  workOrders  WorkOrder[]
+  
+  @@map("tenants")
+}
+
+// ==================== USER ====================
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  email     String   
+  password  String
+  name      String
+  role      String   @default("USER") // ADMIN, MANAGER, USER, VIEWER
+  status    String   @default("ACTIVE") // ACTIVE, INACTIVE
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Session tracking
+  lastLoginAt DateTime? @map("last_login_at")
+  
+  @@unique([tenantId, email]) // Email ซ้ำกันได้ข้าม Tenant
+  @@map("users")
+}
+
+// ==================== CUSTOMER (CRM) ====================
+model Customer {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  code         String   // รหัสลูกค้า
+  name         String
+  type         String   // HOTEL, RETAIL, WHOLESALE
+  contactName  String   @map("contact_name")
+  email        String
+  phone        String
+  address      String?
+  city         String
+  creditLimit  Decimal  @default(0) @map("credit_limit")
+  status       String   @default("ACTIVE")
+  
+  totalOrders  Int      @default(0) @map("total_orders")
+  totalRevenue Decimal  @default(0) @map("total_revenue")
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  
+  @@unique([tenantId, code])
+  @@map("customers")
+}
+
+// ==================== PRODUCT ====================
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  code        String   // รหัสสินค้า
+  name        String
+  category    String
+  description String?
+  status      String   @default("ACTIVE")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  boms        BOM[]
+  orderItems  OrderItem[]
+  stockItems  StockItem[]
+  
+  @@unique([tenantId, code])
+  @@map("products")
+}
+
+// ==================== MATERIAL ====================
+model Material {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  code      String   // รหัสวัตถุดิบ
+  name      String
+  unit      String   // หน่วยนับ
+  unitCost  Decimal  @map("unit_cost")
+  minStock  Int      @default(0) @map("min_stock")
+  maxStock  Int      @default(1000) @map("max_stock")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bomItems         BOMItem[]
+  stockItems       StockItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  workOrderMaterials WorkOrderMaterial[]
+  
+  @@unique([tenantId, code])
+  @@map("materials")
+}
+
+// ==================== BOM ====================
+model BOM {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  productId String   @map("product_id")
+  version   String
+  status    String   @default("DRAFT") // DRAFT, ACTIVE
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product      Product     @relation(fields: [productId], references: [id])
+  materials    BOMItem[]
+  workOrders   WorkOrder[]
+  
+  @@unique([tenantId, productId, version])
+  @@map("boms")
+}
+
+model BOMItem {
+  id         String   @id @default(cuid())
+  bomId      String   @map("bom_id")
+  materialId String   @map("material_id")
+  quantity   Decimal
+  unit       String
+  
+  // Relations
+  bom        BOM      @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id])
+  
+  @@map("bom_items")
+}
+
+// ==================== ORDER ====================
+model Order {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  orderNumber  String   @unique @map("order_number")
+  customerId   String   @map("customer_id")
+  orderDate    DateTime @default(now()) @map("order_date")
+  deliveryDate DateTime? @map("delivery_date")
+  totalAmount  Decimal  @map("total_amount")
+  status       String   @default("PENDING")
+  notes        String?
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  items        OrderItem[]
+  
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String  @map("order_id")
+  productId  String  @map("product_id")
+  quantity   Int
+  unitPrice  Decimal @map("unit_price")
+  totalPrice Decimal @map("total_price")
+  
+  // Relations
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id])
+  
+  @@map("order_items")
+}
+
+// ==================== STOCK ====================
+model StockItem {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  sku        String   // รหัสสต็อก
+  name       String
+  category   String   // RAW, WIP, FINISHED
+  productId  String?  @map("product_id")
+  materialId String?  @map("material_id")
+  quantity   Int      @default(0)
+  unit       String
+  minStock   Int      @default(0) @map("min_stock")
+  maxStock   Int      @default(1000) @map("max_stock")
+  location   String
+  status     String   @default("ADEQUATE") // CRITICAL, LOW, ADEQUATE, OVERSTOCK
+  
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product    Product?        @relation(fields: [productId], references: [id])
+  material   Material?       @relation(fields: [materialId], references: [id])
+  movements  StockMovement[]
+  
+  @@unique([tenantId, sku])
+  @@map("stock_items")
+}
+
+model StockMovement {
+  id          String   @id @default(cuid())
+  stockItemId String   @map("stock_item_id")
+  type        String   // IN, OUT, ADJUST
+  quantity    Int
+  reference   String?
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by")
+  
+  // Relations
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  
+  @@map("stock_movements")
+}
+
+// ==================== SUPPLIER ====================
+model Supplier {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  code         String   @unique
+  name         String
+  type         String   @default("RAW_MATERIAL")
+  contactName  String   @map("contact_name")
+  email        String
+  phone        String
+  address      String?
+  city         String?
+  taxId        String?  @map("tax_id")
+  paymentTerms String   @default("NET30") @map("payment_terms")
+  rating       Int      @default(0)
+  status       String   @default("ACTIVE")
+  notes        String?
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+  
+  @@unique([tenantId, code])
+  @@map("suppliers")
+}
+
+// ==================== PURCHASE ORDER ====================
+model PurchaseOrder {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  poNumber       String   @unique @map("po_number")
+  supplierId     String   @map("supplier_id")
+  status         String   @default("DRAFT") // DRAFT, SUBMITTED, APPROVED, RECEIVED, CANCELLED
+  orderDate      DateTime @default(now()) @map("order_date")
+  expectedDate   DateTime? @map("expected_date")
+  receivedDate   DateTime? @map("received_date")
+  subtotal       Decimal  @default(0)
+  taxRate        Decimal  @default(0) @map("tax_rate")
+  taxAmount      Decimal  @default(0) @map("tax_amount")
+  totalAmount    Decimal  @default(0) @map("total_amount")
+  notes          String?
+  
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier  Supplier            @relation(fields: [supplierId], references: [id])
+  items     PurchaseOrderItem[]
+  
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String  @map("purchase_order_id")
+  materialId      String? @map("material_id")
+  description     String
+  quantity        Decimal
+  unitPrice       Decimal @map("unit_price")
+  totalPrice      Decimal @map("total_price")
+  receivedQty     Decimal @default(0) @map("received_qty")
+  unit            String
+  notes           String?
+  
+  // Relations
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  material      Material?     @relation(fields: [materialId], references: [id])
+  
+  @@map("purchase_order_items")
+}
+
+// ==================== WORK ORDER ====================
+model WorkOrder {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  woNumber        String   @unique @map("wo_number")
+  bomId           String   @map("bom_id")
+  quantity        Int
+  completedQty    Int      @default(0) @map("completed_qty")
+  scrapQty        Int      @default(0) @map("scrap_qty")
+  status          String   @default("DRAFT") // DRAFT, PLANNED, IN_PROGRESS, COMPLETED, CANCELLED
+  priority        String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  startDate       DateTime? @map("start_date")
+  dueDate         DateTime? @map("due_date")
+  completedDate   DateTime? @map("completed_date")
+  assignedTo      String?  @map("assigned_to")
+  notes           String?
+  estimatedCost   Decimal  @default(0) @map("estimated_cost")
+  actualCost      Decimal  @default(0) @map("actual_cost")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bom        BOM                 @relation(fields: [bomId], references: [id])
+  materials  WorkOrderMaterial[]
+  
+  @@map("work_orders")
+}
+
+model WorkOrderMaterial {
+  id          String   @id @default(cuid())
+  workOrderId String   @map("work_order_id")
+  materialId  String   @map("material_id")
+  requiredQty Decimal  @map("required_qty")
+  issuedQty   Decimal  @default(0) @map("issued_qty")
+  unit        String
+  status      String   @default("PENDING") // PENDING, ISSUED, RETURNED
+  
+  // Relations
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  material  Material  @relation(fields: [materialId], references: [id])
+  
+  @@map("work_order_materials")
+}
+
+// ==================== MARKETING ====================
+model Shop {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  platform  String   // SHOPEE, LAZADA, FACEBOOK
+  shopId    String   @map("shop_id") // Platform-specific ID
+  isActive  Boolean  @default(true) @map("is_active")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  marketingFiles   MarketingFile[]
+  marketingMetrics MarketingMetric[]
+  
+  @@unique([tenantId, platform, shopId])
+  @@map("shops")
+}
+
+model MarketingFile {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  shopId      String   @map("shop_id")
+  fileName    String   @map("file_name")
+  filePath    String   @map("file_path")
+  platform    String
+  userName    String?  @map("user_name")
+  reportStart DateTime? @map("report_start")
+  reportEnd   DateTime? @map("report_end")
+  rowCount    Int      @default(0) @map("row_count")
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+  
+  // Relations
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shop     Shop              @relation(fields: [shopId], references: [id])
+  metrics  MarketingMetric[]
+  
+  @@map("marketing_files")
+}
+
+model MarketingMetric {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  fileId              String   @map("file_id")
+  shopId              String   @map("shop_id")
+  date                DateTime
+  campaignName        String?  @map("campaign_name")
+  productName         String?  @map("product_name")
+  sku                 String?
+  impressions         Int      @default(0)
+  clicks              Int      @default(0)
+  ctr                 Decimal  @default(0)
+  orders              Int      @default(0)
+  sales               Decimal  @default(0)
+  adCost              Decimal  @default(0) @map("ad_cost")
+  roas                Decimal  @default(0)
+  
+  createdAt           DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  file    MarketingFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  shop    Shop          @relation(fields: [shopId], references: [id])
+  
+  @@index([tenantId, date])
+  @@index([shopId, date])
+  @@map("marketing_metrics")
+}

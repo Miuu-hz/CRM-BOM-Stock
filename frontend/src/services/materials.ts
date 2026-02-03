@@ -63,22 +63,22 @@ export const materialsService = {
   // Get all materials with stock info
   getAll: async (): Promise<Material[]> => {
     const response = await api.get<Material[]>('/materials')
-    return response.data || []
+    return response.data?.data || []
   },
 
   // Get material by ID
   getById: async (id: string): Promise<Material> => {
     const response = await api.get<Material>(`/materials/${id}`)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Material not found')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Get materials statistics
   getStats: async (): Promise<MaterialStats> => {
     const response = await api.get<MaterialStats>('/materials/stats')
-    return response.data || {
+    return response.data?.data || {
       totalMaterials: 0,
       lowStockCount: 0,
       totalValue: 0,
@@ -89,19 +89,19 @@ export const materialsService = {
   // Create new material
   create: async (input: CreateMaterialInput): Promise<Material> => {
     const response = await api.post<Material>('/materials', input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to create material')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Update material
   update: async (id: string, input: UpdateMaterialInput): Promise<Material> => {
     const response = await api.put<Material>(`/materials/${id}`, input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to update material')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Delete material

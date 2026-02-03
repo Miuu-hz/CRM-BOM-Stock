@@ -2,7 +2,7 @@
   "name": "crm-root",
   "version": "1.0.0",
   "scripts": {
-    "dev": "npx concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
+    "dev": "npx kill-port 5000 3000 && npx concurrently --kill-others --kill-others-on-fail --prefix-colors \"cyan.bold,magenta.bold\" --names \"BACKEND,FRONTEND\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

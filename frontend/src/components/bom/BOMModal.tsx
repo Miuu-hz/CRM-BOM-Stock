@@ -24,13 +24,16 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  
+  // Material creation modal
+  const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false)
 
   // Form state
   const [productId, setProductId] = useState('')
   const [version, setVersion] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE'>('DRAFT')
   const [materialRows, setMaterialRows] = useState<MaterialRow[]>([
-    { id: crypto.randomUUID(), materialId: '', quantity: 0, unit: '' },
+    { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' },
   ])
 
   const isEdit = !!editBOM
@@ -62,8 +65,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(`${copyFrom.version}-copy`)
       setStatus('DRAFT')
       setMaterialRows(
-        (copyFrom.materials || []).map((m) => ({
-          id: crypto.randomUUID(),
+        (copyFrom.materials || []).map((m, idx) => ({
+          id: `${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
           materialId: m.materialId,
           quantity: Number(m.quantity),
           unit: m.unit,
@@ -94,13 +97,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setProductId('')
     setVersion('')
     setStatus('DRAFT')
-    setMaterialRows([{ id: crypto.randomUUID(), materialId: '', quantity: 0, unit: '' }])
+    setMaterialRows([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' }])
   }
 
   const handleAddMaterial = () => {
     setMaterialRows([
       ...materialRows,
-      { id: crypto.randomUUID(), materialId: '', quantity: 0, unit: '' },
+      { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' },
     ])
   }
 
@@ -327,6 +330,19 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               }))}
                               placeholder="ค้นหาวัตถุดิบ..."
                             />
+                            {!row.materialId && (
+                              <div className="mt-1 flex items-center gap-2">
+                                <span className="text-xs text-gray-500">ไม่พบวัตถุดิบ?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsMaterialModalOpen(true)}
+                                  className="text-xs text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  เพิ่มวัตถุดิบใหม่
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           <div className="col-span-2">
@@ -412,6 +428,199 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           </div>
         </motion.div>
       </motion.div>
+      
+      {/* Create Material Modal */}
+      <CreateMaterialModal
+        isOpen={isMaterialModalOpen}
+        onClose={() => setIsMaterialModalOpen(false)}
+        onSuccess={(newMaterial) => {
+          setMaterials([...materials, newMaterial])
+          setIsMaterialModalOpen(false)
+        }}
+      />
+    </AnimatePresence>
+  )
+}
+
+// Create Material Modal Component
+interface CreateMaterialModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSuccess: (material: Material) => void
+}
+
+function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModalProps) {
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    unit: 'pcs',
+    unitCost: 0,
+    minStock: 10,
+    maxStock: 100,
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.code || !formData.name) {
+      alert('กรุณากรอกรหัสและชื่อวัตถุดิบ')
+      return
+    }
+
+    setSaving(true)
+    try {
+      // Import materialsService dynamically to avoid circular dependency
+      const { default: materialsService } = await import('../../services/materials')
+      const newMaterial = await materialsService.create({
+        code: formData.code,
+        name: formData.name,
+        unit: formData.unit,
+        unitCost: formData.unitCost,
+        minStock: formData.minStock,
+        maxStock: formData.maxStock,
+      })
+      onSuccess(newMaterial)
+      // Reset form
+      setFormData({
+        code: '',
+        name: '',
+        unit: 'pcs',
+        unitCost: 0,
+        minStock: 10,
+        maxStock: 100,
+      })
+    } catch (err) {
+      console.error('Failed to create material:', err)
+      alert('ไม่สามารถสร้างวัตถุดิบได้')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-md"
+          >
+            <div className="p-4 border-b border-cyber-border flex items-center justify-between bg-cyber-primary/10">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-cyber-primary" />
+                <h3 className="text-lg font-bold text-gray-100">เพิ่มวัตถุดิบใหม่</h3>
+              </div>
+              <button onClick={onClose} className="p-1 hover:bg-cyber-dark rounded">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">รหัส *</label>
+                  <input
+                    type="text"
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    className="cyber-input w-full text-sm"
+                    placeholder="e.g., MAT-001"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">หน่วย</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="cyber-input w-full text-sm"
+                  >
+                    <option value="pcs">ชิ้น</option>
+                    <option value="kg">กิโลกรัม</option>
+                    <option value="m">เมตร</option>
+                    <option value="yard">หลา</option>
+                    <option value="roll">ม้วน</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">ชื่อวัตถุดิบ *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="cyber-input w-full text-sm"
+                  placeholder="ชื่อวัตถุดิบ"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">ต้นทุน/หน่วย</label>
+                  <input
+                    type="number"
+                    value={formData.unitCost}
+                    onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                    className="cyber-input w-full text-sm"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Min Stock</label>
+                  <input
+                    type="number"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full text-sm"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Max Stock</label>
+                  <input
+                    type="number"
+                    value={formData.maxStock}
+                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full text-sm"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50 flex items-center gap-1"
+                >
+                  {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+                  <Plus className="w-3 h-3" />
+                  เพิ่มวัตถุดิบ
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   )
 }

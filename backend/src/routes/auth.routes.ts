@@ -1,55 +1,244 @@
-import { Router, Request, Response } from 'express'
+import { Router } from 'express'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { getDb } from '../db/sqlite'
 
 const router = Router()
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
 
-// Login
-router.post('/login', async (req: Request, res: Response) => {
+// Hardcoded master accounts
+const MASTER_ACCOUNTS: Record<string, { password: string; tenantId: string; name: string }> = {
+  'BB-pillow': { 
+    password: 'BB0918033688', 
+    tenantId: 'tenant_bb_pillow', 
+    name: 'BB Pillow Master' 
+  },
+  'Kidshosuecafe': { 
+    password: 'Kids0834516669', 
+    tenantId: 'tenant_kids_house', 
+    name: 'Kids House Master' 
+  }
+}
+
+// Generate JWT token
+const generateToken = (payload: any) => {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
+}
+
+// @route   POST /api/auth/login
+// @desc    Login user
+router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body
 
-    // TODO: Implement actual authentication
-    // For now, return mock response
-    if (email === 'admin@example.com' && password === 'admin123') {
-      res.json({
-        success: true,
-        message: 'Login successful',
-        data: {
-          token: 'mock-jwt-token',
-          user: {
-            id: '1',
-            email: 'admin@example.com',
-            name: 'Admin User',
-            role: 'ADMIN',
-          },
-        },
-      })
-    } else {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-      })
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'กรุณากรอกอีเมลและรหัสผ่าน' })
     }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Login failed',
+
+    // Check hardcoded master accounts
+    const masterAccount = MASTER_ACCOUNTS[email]
+    if (masterAccount) {
+      if (masterAccount.password === password) {
+        const token = generateToken({
+          userId: `master_${email}`,
+          email,
+          role: 'MASTER',
+          tenantId: masterAccount.tenantId
+        })
+
+        return res.json({
+          success: true,
+          data: {
+            user: {
+              id: `master_${email}`,
+              email,
+              name: masterAccount.name,
+              role: 'MASTER',
+              tenant_id: masterAccount.tenantId
+            },
+            token
+          }
+        })
+      }
+      return res.status(401).json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' })
+    }
+
+    // Check database for regular users
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password)
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' })
+    }
+
+    const token = generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenant_id
     })
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          tenant_id: user.tenant_id
+        },
+        token
+      }
+    })
+
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({ success: false, message: 'เข้าสู่ระบบไม่สำเร็จ' })
   }
 })
 
-// Register
-router.post('/register', async (req: Request, res: Response) => {
+// @route   POST /api/auth/register
+// @desc    Register new user (for master to create child)
+router.post('/create-child', async (req, res) => {
   try {
-    // TODO: Implement user registration
-    res.json({
-      success: true,
-      message: 'User registered successfully',
-    })
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
+    }
+
+    const token = authHeader.split(' ')[1]
+    let decoded: any
+    
+    try {
+      decoded = jwt.verify(token, JWT_SECRET)
+    } catch {
+      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
+    }
+
+    // Check if master
+    if (decoded.role !== 'MASTER') {
+      return res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้นที่สร้างผู้ใช้งานได้' })
+    }
+
+    const { email, password, name, role = 'USER' } = req.body
+
+    if (!email || !password || !name) {
+      return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+    }
+
+    const db = getDb()
+
+    // Check if email exists
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'อีเมลนี้ถูกใช้แล้ว' })
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10)
+
+    // Insert user with parent_id = master
+    const result = db.prepare(`
+      INSERT INTO users (id, email, password, name, role, tenant_id, parent_id, status, created_at, updated_at)
+      VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+    `).run(email, hashedPassword, name, role, decoded.tenantId, decoded.userId)
+
+    res.json({ success: true, data: { id: result.lastInsertRowid } })
+
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-    })
+    console.error('Create child error:', error)
+    res.status(500).json({ success: false, message: 'สร้างไม่สำเร็จ' })
+  }
+})
+
+// @route   GET /api/auth/children
+// @desc    Get all child users for master
+router.get('/children', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
+    }
+
+    const token = authHeader.split(' ')[1]
+    let decoded: any
+    
+    try {
+      decoded = jwt.verify(token, JWT_SECRET)
+    } catch {
+      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
+    }
+
+    const db = getDb()
+    let children: any[] = []
+
+    if (decoded.role === 'MASTER') {
+      // Get all users in same tenant or with this master as parent
+      children = db.prepare(`
+        SELECT id, email, name, role, status, created_at, last_login_at
+        FROM users 
+        WHERE tenant_id = ? OR parent_id = ?
+        ORDER BY created_at DESC
+      `).all(decoded.tenantId, decoded.userId)
+    } else {
+      // Regular users can see themselves only
+      const user = db.prepare('SELECT id, email, name, role, status, created_at, last_login_at FROM users WHERE id = ?').get(decoded.userId)
+      if (user) children = [user]
+    }
+
+    res.json({ success: true, data: children })
+
+  } catch (error) {
+    console.error('Get children error:', error)
+    res.status(500).json({ success: false, message: 'ดึงข้อมูลไม่สำเร็จ' })
+  }
+})
+
+// @route   DELETE /api/auth/children/:id
+// @desc    Delete child user
+router.delete('/children/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
+    }
+
+    const token = authHeader.split(' ')[1]
+    let decoded: any
+    
+    try {
+      decoded = jwt.verify(token, JWT_SECRET)
+    } catch {
+      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
+    }
+
+    // Only master can delete
+    if (decoded.role !== 'MASTER') {
+      return res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้น' })
+    }
+
+    const { id } = req.params
+    const db = getDb()
+
+    // Verify the user belongs to this master/tenant
+    const child = db.prepare('SELECT * FROM users WHERE id = ? AND (parent_id = ? OR tenant_id = ?)').get(id, decoded.userId, decoded.tenantId)
+    if (!child) {
+      return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
+    }
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+
+    res.json({ success: true })
+
+  } catch (error) {
+    console.error('Delete child error:', error)
+    res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' })
   }
 })
 
