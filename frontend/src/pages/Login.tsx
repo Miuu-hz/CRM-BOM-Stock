@@ -1,15 +1,27 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Mail, Lock, ArrowRight } from 'lucide-react'
+import { Zap, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 function Login() {
+  const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement authentication
-    console.log('Login attempt:', { email, password })
+    setError('')
+    setLoading(true)
+    
+    const result = await login(email, password)
+    
+    if (!result.success) {
+      setError(result.message || 'เข้าสู่ระบบไม่สำเร็จ')
+    }
+    
+    setLoading(false)
   }
 
   return (
@@ -49,20 +61,27 @@ function Login() {
           <p className="text-gray-400 mt-2">Bedding Factory Management</p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Email Input */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Email Address
+              Email / Username
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="admin@example.com หรือ BB-pillow"
                 className="cyber-input pl-10 w-full"
                 required
               />
@@ -109,29 +128,47 @@ function Login() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             type="submit"
-            className="w-full cyber-btn-primary flex items-center justify-center gap-2 group"
+            disabled={loading}
+            className="w-full cyber-btn-primary flex items-center justify-center gap-2 group disabled:opacity-50"
           >
-            <span>Sign In</span>
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                <span>Sign In</span>
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </>
+            )}
           </motion.button>
         </form>
 
         {/* Divider */}
         <div className="flex items-center gap-4 my-6">
           <div className="flex-1 h-px bg-cyber-border"></div>
-          <span className="text-sm text-gray-400">OR</span>
+          <span className="text-sm text-gray-400">MASTER ACCOUNTS</span>
           <div className="flex-1 h-px bg-cyber-border"></div>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="p-4 rounded-lg bg-cyber-darker/50 border border-cyber-border">
-          <p className="text-sm text-gray-400 mb-2">Demo Credentials:</p>
-          <p className="text-sm text-cyber-primary font-mono">
-            Email: admin@example.com
-          </p>
-          <p className="text-sm text-cyber-primary font-mono">
-            Password: admin123
-          </p>
+        {/* Master Credentials */}
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-cyber-green/10 border border-cyber-green/30">
+            <p className="text-sm text-cyber-green font-semibold">BB Pillow Master</p>
+            <p className="text-xs text-gray-400 font-mono mt-1">
+              User: BB-pillow
+            </p>
+            <p className="text-xs text-gray-400 font-mono">
+              Pass: BB0918033688
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-cyber-primary/10 border border-cyber-primary/30">
+            <p className="text-sm text-cyber-primary font-semibold">Kids House Master</p>
+            <p className="text-xs text-gray-400 font-mono mt-1">
+              User: Kidshosuecafe
+            </p>
+            <p className="text-xs text-gray-400 font-mono">
+              Pass: Kids0834516669
+            </p>
+          </div>
         </div>
 
         {/* Footer */}

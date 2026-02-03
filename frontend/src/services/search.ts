@@ -34,7 +34,7 @@ export const searchService = {
       params: { q: query.trim() },
     })
 
-    return response.data.data
+    return response.data?.data
   },
 }
 

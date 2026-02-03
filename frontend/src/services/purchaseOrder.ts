@@ -43,32 +43,32 @@ export interface POStats {
 const purchaseOrderService = {
   async getAll(): Promise<PurchaseOrder[]> {
     const res = await api.get('/purchase-orders')
-    return res.data.data
+    return res.data?.data
   },
 
   async getById(id: string): Promise<PurchaseOrder> {
     const res = await api.get(`/purchase-orders/${id}`)
-    return res.data.data
+    return res.data?.data
   },
 
   async getStats(): Promise<POStats> {
     const res = await api.get('/purchase-orders/stats')
-    return res.data.data
+    return res.data?.data
   },
 
   async create(data: any): Promise<PurchaseOrder> {
     const res = await api.post('/purchase-orders', data)
-    return res.data.data
+    return res.data?.data
   },
 
   async update(id: string, data: any): Promise<PurchaseOrder> {
     const res = await api.put(`/purchase-orders/${id}`, data)
-    return res.data.data
+    return res.data?.data
   },
 
   async updateStatus(id: string, status: string): Promise<PurchaseOrder> {
     const res = await api.put(`/purchase-orders/${id}/status`, { status })
-    return res.data.data
+    return res.data?.data
   },
 
   async delete(id: string): Promise<void> {

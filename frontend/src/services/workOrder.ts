@@ -43,32 +43,32 @@ export interface WOStats {
 const workOrderService = {
   async getAll(): Promise<WorkOrder[]> {
     const res = await api.get('/work-orders')
-    return res.data.data
+    return res.data?.data
   },
 
   async getById(id: string): Promise<WorkOrder> {
     const res = await api.get(`/work-orders/${id}`)
-    return res.data.data
+    return res.data?.data
   },
 
   async getStats(): Promise<WOStats> {
     const res = await api.get('/work-orders/stats')
-    return res.data.data
+    return res.data?.data
   },
 
   async create(data: any): Promise<WorkOrder> {
     const res = await api.post('/work-orders', data)
-    return res.data.data
+    return res.data?.data
   },
 
   async update(id: string, data: any): Promise<WorkOrder> {
     const res = await api.put(`/work-orders/${id}`, data)
-    return res.data.data
+    return res.data?.data
   },
 
   async updateStatus(id: string, status: string): Promise<WorkOrder> {
     const res = await api.put(`/work-orders/${id}/status`, { status })
-    return res.data.data
+    return res.data?.data
   },
 
   async delete(id: string): Promise<void> {

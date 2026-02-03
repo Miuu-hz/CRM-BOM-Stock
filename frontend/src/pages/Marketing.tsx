@@ -28,11 +28,10 @@ import {
   Area,
   AreaChart,
 } from 'recharts'
-import axios from 'axios'
+import api from '../utils/api'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 interface Shop {
   id: string
@@ -142,7 +141,7 @@ function Marketing() {
   // Fetch shops
   const fetchShops = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/marketing/shops`, {
+      const response = await api.get('/marketing/shops', {
         params: { platform: selectedPlatform },
       })
       setShops(response.data.data || [])
@@ -168,8 +167,8 @@ function Marketing() {
       if (dateRange.end) params.endDate = dateRange.end
 
       const [metricsRes, summaryRes] = await Promise.all([
-        axios.get(`${API_URL}/api/marketing/metrics`, { params }),
-        axios.get(`${API_URL}/api/marketing/analytics/summary`, { params }),
+        api.get('/marketing/metrics', { params }),
+        api.get('/marketing/analytics/summary', { params }),
       ])
 
       setMetrics(metricsRes.data.data || [])
@@ -206,7 +205,7 @@ function Marketing() {
     formData.append('endDate', dateRange.end)
 
     try {
-      const response = await axios.post(`${API_URL}/api/marketing/upload`, formData, {
+      const response = await api.post('/marketing/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
 
@@ -224,7 +223,7 @@ function Marketing() {
   // Add new shop
   const handleAddShop = async (name: string, shopId: string) => {
     try {
-      await axios.post(`${API_URL}/api/marketing/shops`, {
+      await api.post('/marketing/shops', {
         name,
         platform: selectedPlatform,
         shopId,

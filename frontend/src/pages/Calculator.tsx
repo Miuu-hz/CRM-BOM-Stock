@@ -12,7 +12,7 @@ import {
   RefreshCw,
   ShoppingCart,
 } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
 import toast from 'react-hot-toast'
 
 interface Product {
@@ -118,8 +118,8 @@ function Calculator() {
     try {
       setLoading(true)
       const [productsRes, bomsRes] = await Promise.all([
-        axios.get('/api/data/products'),
-        axios.get('/api/data/boms'),
+        api.get('/data/products'),
+        api.get('/data/boms'),
       ])
 
       setProducts(productsRes.data.data)
@@ -200,7 +200,7 @@ function Calculator() {
         }
       })
 
-      const response = await axios.post('/api/calculator/production-cost', {
+      const response = await api.post('/calculator/production-cost', {
         materials: materialsData,
         operatingCost: totalOperatingCost,
         scrapValue,
@@ -233,7 +233,7 @@ function Calculator() {
     }
 
     try {
-      const response = await axios.post('/api/calculator/compare-platforms', {
+      const response = await api.post('/calculator/compare-platforms', {
         sellingPrice,
         quantity,
         productionCost: costBreakdown.totalCost,

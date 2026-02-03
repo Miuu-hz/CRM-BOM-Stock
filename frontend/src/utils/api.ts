@@ -21,6 +21,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      // Clear auth and redirect to login
       localStorage.removeItem('crm_user')
       localStorage.removeItem('crm_token')
       localStorage.removeItem('crm_tenant')

@@ -18,6 +18,10 @@ db.exec(`
     password TEXT NOT NULL,
     name TEXT NOT NULL,
     role TEXT DEFAULT 'USER',
+    tenant_id TEXT,
+    parent_id TEXT,
+    status TEXT DEFAULT 'active',
+    last_login_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
@@ -35,6 +39,7 @@ db.exec(`
     city TEXT NOT NULL,
     credit_limit REAL DEFAULT 0,
     status TEXT DEFAULT 'ACTIVE',
+    tenant_id TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
@@ -115,7 +120,8 @@ db.exec(`
   -- ==================== STOCK ITEMS ====================
   CREATE TABLE IF NOT EXISTS stock_items (
     id TEXT PRIMARY KEY,
-    sku TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    sku TEXT NOT NULL,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     product_id TEXT,
@@ -129,7 +135,8 @@ db.exec(`
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id),
-    FOREIGN KEY (material_id) REFERENCES materials(id)
+    FOREIGN KEY (material_id) REFERENCES materials(id),
+    UNIQUE(tenant_id, sku)
   );
 
   CREATE TABLE IF NOT EXISTS stock_movements (
@@ -210,7 +217,8 @@ db.exec(`
   -- ==================== SUPPLIERS ====================
   CREATE TABLE IF NOT EXISTS suppliers (
     id TEXT PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
+    tenant_id TEXT,
+    code TEXT NOT NULL,
     name TEXT NOT NULL,
     type TEXT DEFAULT 'RAW_MATERIAL',
     contact_name TEXT NOT NULL,
@@ -224,7 +232,8 @@ db.exec(`
     status TEXT DEFAULT 'ACTIVE',
     notes TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, code)
   );
 
   -- ==================== PURCHASE ORDERS ====================
@@ -312,6 +321,18 @@ db.exec(`
   -- ==================== INDEXES ====================
   CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+  -- ==================== ACTIVITY LOGS ====================
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_by TEXT,
+    tenant_id TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
   CREATE INDEX IF NOT EXISTS idx_boms_product ON boms(product_id);
   CREATE INDEX IF NOT EXISTS idx_bom_items_bom ON bom_items(bom_id);
@@ -325,8 +346,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status);
   CREATE INDEX IF NOT EXISTS idx_wo_status ON work_orders(status);
   CREATE INDEX IF NOT EXISTS idx_wo_bom ON work_orders(bom_id);
+  CREATE INDEX IF NOT EXISTS idx_activity_customer ON activity_logs(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_activity_tenant ON activity_logs(tenant_id);
 `)
 
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db
+export const getDb = () => db

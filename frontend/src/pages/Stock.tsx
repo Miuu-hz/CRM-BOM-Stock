@@ -15,6 +15,7 @@ import {
   Clock,
   MapPin,
   AlertCircle,
+  Plus,
 } from 'lucide-react'
 import stockService, { StockItem, StockMovement, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
@@ -41,6 +42,9 @@ function Stock() {
     type: 'IN' | 'OUT'
     item: StockItem | null
   }>({ open: false, type: 'IN', item: null })
+  
+  // Add New Item Modal
+  const [showAddModal, setShowAddModal] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -372,6 +376,17 @@ function Stock() {
         stockItems={stockItems}
         onClose={() => setMovementModal({ open: false, type: 'IN', item: null })}
         onSave={loadData}
+        setShowAddModal={setShowAddModal}
+      />
+      
+      {/* Add New Item Modal */}
+      <AddStockModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSave={() => {
+          setShowAddModal(false)
+          loadData()
+        }}
       />
     </motion.div>
   )
@@ -699,6 +714,7 @@ function MovementModal({
   stockItems,
   onClose,
   onSave,
+  setShowAddModal,
 }: {
   open: boolean
   type: 'IN' | 'OUT'
@@ -706,6 +722,7 @@ function MovementModal({
   stockItems: StockItem[]
   onClose: () => void
   onSave: () => void
+  setShowAddModal: (show: boolean) => void
 }) {
   const [selectedItemId, setSelectedItemId] = useState('')
   const [quantity, setQuantity] = useState(1)
@@ -827,6 +844,22 @@ function MovementModal({
                     <AlertCircle className="w-4 h-4" />
                     No items available for Stock Out
                   </p>
+                )}
+                {type === 'IN' && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-sm text-gray-500">Item not found?</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose()
+                        setShowAddModal(true)
+                      }}
+                      className="text-sm text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create New Item
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1036,6 +1069,228 @@ function StatusBadge({ status }: { status: string }) {
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
       {selected.label}
     </span>
+  )
+}
+
+// Add New Stock Item Modal
+function AddStockModal({
+  open,
+  onClose,
+  onSave,
+}: {
+  open: boolean
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [formData, setFormData] = useState({
+    sku: '',
+    name: '',
+    category: 'raw',
+    unit: 'pcs',
+    quantity: 0,
+    minStock: 10,
+    maxStock: 100,
+    location: '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.sku || !formData.name) {
+      alert('Please enter SKU and Name')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await stockService.create({
+        sku: formData.sku,
+        name: formData.name,
+        category: formData.category,
+        unit: formData.unit,
+        quantity: formData.quantity,
+        minStock: formData.minStock,
+        maxStock: formData.maxStock,
+        location: formData.location || 'Main Warehouse',
+      })
+      onSave()
+      // Reset form
+      setFormData({
+        sku: '',
+        name: '',
+        category: 'raw',
+        unit: 'pcs',
+        quantity: 0,
+        minStock: 10,
+        maxStock: 100,
+        location: '',
+      })
+    } catch (err) {
+      console.error('Failed to create stock item:', err)
+      alert('Failed to create stock item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
+            <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10">
+              <div className="flex items-center gap-3">
+                <Package className="w-6 h-6 text-cyber-green" />
+                <h2 className="text-xl font-bold text-gray-100">Create New Stock Item</h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">SKU *</label>
+                  <input
+                    type="text"
+                    value={formData.sku}
+                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                    className="cyber-input w-full"
+                    placeholder="e.g., RAW-001"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    <option value="raw">Raw Material</option>
+                    <option value="wip">WIP</option>
+                    <option value="finished">Finished</option>
+                    <option value="material">Material</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Item Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="Enter item name"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Unit</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    <option value="pcs">Pieces</option>
+                    <option value="kg">Kilograms</option>
+                    <option value="m">Meters</option>
+                    <option value="yard">Yards</option>
+                    <option value="roll">Rolls</option>
+                    <option value="box">Boxes</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
+                  <input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
+                  <input
+                    type="number"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
+                  <input
+                    type="number"
+                    value={formData.maxStock}
+                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Location</label>
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="e.g., Main Warehouse, A-12"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50"
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  Create Item
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 

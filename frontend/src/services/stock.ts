@@ -79,23 +79,23 @@ export interface StockMovementInput {
 export const stockService = {
   // Get all stock items
   getAll: async (): Promise<StockItem[]> => {
-    const response = await api.get<StockItem[]>('/stock')
-    return response.data || []
+    const response = await api.get('/stock')
+    return response.data?.data || []
   },
 
   // Get stock item by ID
   getById: async (id: string): Promise<StockItem> => {
     const response = await api.get<StockItem>(`/stock/${id}`)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Stock item not found')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Get stock statistics
   getStats: async (): Promise<StockStats> => {
     const response = await api.get<StockStats>('/stock/stats')
-    return response.data || {
+    return response.data?.data || {
       totalItems: 0,
       lowStockCount: 0,
       criticalCount: 0,
@@ -106,19 +106,19 @@ export const stockService = {
   // Create stock item
   create: async (input: CreateStockInput): Promise<StockItem> => {
     const response = await api.post<StockItem>('/stock', input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to create stock item')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Update stock item
   update: async (id: string, input: UpdateStockInput): Promise<StockItem> => {
     const response = await api.put<StockItem>(`/stock/${id}`, input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to update stock item')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Delete stock item
@@ -129,16 +129,16 @@ export const stockService = {
   // Record stock movement
   recordMovement: async (input: StockMovementInput): Promise<StockItem> => {
     const response = await api.post<StockItem>('/stock/movement', input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to record movement')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Get movements for a stock item
   getMovements: async (id: string): Promise<StockMovement[]> => {
     const response = await api.get<StockMovement[]>(`/stock/${id}/movements`)
-    return response.data || []
+    return response.data?.data || []
   },
 }
 

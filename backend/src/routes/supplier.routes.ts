@@ -1,23 +1,29 @@
 import { Router, Request, Response } from 'express'
+import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 
 const router = Router()
+
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
 // GET all suppliers
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const suppliers = db.prepare(`
       SELECT s.*,
         (SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = s.id) as total_orders,
         (SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE supplier_id = s.id AND status != 'CANCELLED') as total_spent
       FROM suppliers s
+      WHERE s.tenant_id = ?
       ORDER BY s.created_at DESC
-    `).all()
+    `).all(tenantId)
 
     res.json({ success: true, data: suppliers })
   } catch (error) {
@@ -27,12 +33,23 @@ router.get('/', async (_req: Request, res: Response) => {
 })
 
 // GET supplier stats
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const totalSuppliers = db.prepare('SELECT COUNT(*) as count FROM suppliers').get() as any
-    const activeSuppliers = db.prepare("SELECT COUNT(*) as count FROM suppliers WHERE status = 'ACTIVE'").get() as any
-    const totalPOs = db.prepare('SELECT COUNT(*) as count FROM purchase_orders').get() as any
-    const totalSpent = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_orders WHERE status != 'CANCELLED'").get() as any
+    const tenantId = req.user!.tenantId
+    
+    const totalSuppliers = db.prepare('SELECT COUNT(*) as count FROM suppliers WHERE tenant_id = ?').get(tenantId) as any
+    const activeSuppliers = db.prepare("SELECT COUNT(*) as count FROM suppliers WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId) as any
+    const totalPOs = db.prepare(`
+      SELECT COUNT(*) as count FROM purchase_orders po
+      JOIN suppliers s ON po.supplier_id = s.id
+      WHERE s.tenant_id = ?
+    `).get(tenantId) as any
+    const totalSpent = db.prepare(`
+      SELECT COALESCE(SUM(po.total_amount), 0) as total 
+      FROM purchase_orders po
+      JOIN suppliers s ON po.supplier_id = s.id
+      WHERE s.tenant_id = ? AND po.status != 'CANCELLED'
+    `).get(tenantId) as any
 
     res.json({
       success: true,
@@ -71,22 +88,38 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST create supplier
 router.post('/', async (req: Request, res: Response) => {
   try {
+    const tenantId = req.user!.tenantId
     const { code, name, type, contactName, email, phone, address, city, taxId, paymentTerms, notes } = req.body
+    
+    // Validate required fields
+    if (!code || !name || !contactName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'กรุณากรอกข้อมูลให้ครบ: รหัสผู้จัดจำหน่าย, ชื่อบริษัท, ชื่อผู้ติดต่อ' 
+      })
+    }
+    
+    // Check for duplicate code in this tenant
+    const existing = db.prepare('SELECT id FROM suppliers WHERE tenant_id = ? AND code = ?').get(tenantId, code)
+    if (existing) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `รหัสผู้จัดจำหน่าย "${code}" ถูกใช้แล้ว กรุณาใช้รหัสอื่น` 
+      })
+    }
+    
     const id = generateId()
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO suppliers (id, code, name, type, contact_name, email, phone, address, city, tax_id, payment_terms, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', now, now)
+      INSERT INTO suppliers (id, tenant_id, code, name, type, contact_name, email, phone, address, city, tax_id, payment_terms, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', now, now)
 
     const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id)
     res.status(201).json({ success: true, data: supplier })
   } catch (error: any) {
     console.error('Create supplier error:', error)
-    if (error.message?.includes('UNIQUE')) {
-      return res.status(400).json({ success: false, message: 'Supplier code already exists' })
-    }
     res.status(500).json({ success: false, message: 'Failed to create supplier' })
   }
 })

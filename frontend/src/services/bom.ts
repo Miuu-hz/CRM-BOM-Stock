@@ -71,22 +71,22 @@ export const bomService = {
   // Get all BOMs with details
   getAll: async (): Promise<BOM[]> => {
     const response = await api.get<BOM[]>('/bom')
-    return response.data || []
+    return response.data?.data || []
   },
 
   // Get BOM by ID
   getById: async (id: string): Promise<BOM> => {
     const response = await api.get<BOM>(`/bom/${id}`)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('BOM not found')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Get BOM statistics
   getStats: async (): Promise<BOMStats> => {
     const response = await api.get<BOMStats>('/bom/stats')
-    return response.data || {
+    return response.data?.data || {
       totalBOMs: 0,
       activeBOMs: 0,
       totalMaterials: 0,
@@ -97,19 +97,19 @@ export const bomService = {
   // Create new BOM
   create: async (input: CreateBOMInput): Promise<BOM> => {
     const response = await api.post<BOM>('/bom', input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to create BOM')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Update BOM
   update: async (id: string, input: UpdateBOMInput): Promise<BOM> => {
     const response = await api.put<BOM>(`/bom/${id}`, input)
-    if (!response.data) {
+    if (!response.data?.data) {
       throw new Error('Failed to update BOM')
     }
-    return response.data
+    return response.data?.data
   },
 
   // Delete BOM
@@ -120,13 +120,13 @@ export const bomService = {
   // Get all materials (for dropdown/selection)
   getMaterials: async (): Promise<Material[]> => {
     const response = await api.get<Material[]>('/data/materials')
-    return response.data || []
+    return response.data?.data || []
   },
 
   // Get all products (for dropdown/selection)
   getProducts: async (): Promise<Product[]> => {
     const response = await api.get<Product[]>('/data/products')
-    return response.data || []
+    return response.data?.data || []
   },
 }
 
