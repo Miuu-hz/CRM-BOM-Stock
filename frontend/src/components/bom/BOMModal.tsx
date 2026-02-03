@@ -53,8 +53,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setVersion(editBOM.version)
       setStatus(editBOM.status)
       setMaterialRows(
-        (editBOM.materials || []).map((m) => ({
-          id: m.id,
+        (editBOM.materials || []).map((m, idx) => ({
+          id: m.id || `${Date.now()}-edit-${idx}-${Math.random().toString(36).substr(2, 5)}`,
           materialId: m.materialId,
           quantity: Number(m.quantity),
           unit: m.unit,
