@@ -32,8 +32,11 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [productId, setProductId] = useState('')
   const [version, setVersion] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE'>('DRAFT')
+  // Generate unique id helper
+  const generateRowId = () => `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`
+  
   const [materialRows, setMaterialRows] = useState<MaterialRow[]>([
-    { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' },
+    { id: generateRowId(), materialId: '', quantity: 0, unit: '' },
   ])
 
   const isEdit = !!editBOM
@@ -54,7 +57,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setStatus(editBOM.status)
       setMaterialRows(
         (editBOM.materials || []).map((m, idx) => ({
-          id: m.id || `${Date.now()}-edit-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+          id: m.id && m.id.trim() !== '' ? m.id : generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
           unit: m.unit,
@@ -66,7 +69,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setStatus('DRAFT')
       setMaterialRows(
         (copyFrom.materials || []).map((m, idx) => ({
-          id: `${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+          id: generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
           unit: m.unit,
@@ -97,13 +100,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setProductId('')
     setVersion('')
     setStatus('DRAFT')
-    setMaterialRows([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' }])
+    setMaterialRows([{ id: generateRowId(), materialId: '', quantity: 0, unit: '' }])
   }
 
   const handleAddMaterial = () => {
     setMaterialRows([
       ...materialRows,
-      { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, materialId: '', quantity: 0, unit: '' },
+      { id: generateRowId(), materialId: '', quantity: 0, unit: '' },
     ])
   }
 
@@ -306,7 +309,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   </div>
 
                   <div className="space-y-3">
-                    {(materialRows || []).map((row, index) => {
+                    {(materialRows || []).filter(row => row.id && row.id.trim() !== '').map((row, index) => {
                       const selectedMaterial = materials.find((m) => m.id === row.materialId)
                       const rowTotal = selectedMaterial
                         ? Number(selectedMaterial.unitCost) * row.quantity
