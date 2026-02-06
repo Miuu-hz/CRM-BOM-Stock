@@ -1,7 +1,18 @@
 import api from './api'
 
+export interface MaterialCategory {
+  id: string
+  code: string
+  name: string
+  defaultUnit: string
+  description?: string
+}
+
 export interface Material {
   id: string
+  categoryId?: string
+  categoryName?: string
+  categoryDefaultUnit?: string
   code: string
   name: string
   unit: string
@@ -37,7 +48,7 @@ export interface MaterialStats {
 export interface CreateMaterialInput {
   code: string
   name: string
-  unit: string
+  categoryId: string
   unitCost: number
   minStock?: number
   maxStock?: number
@@ -47,7 +58,7 @@ export interface CreateMaterialInput {
 export interface UpdateMaterialInput {
   code?: string
   name?: string
-  unit?: string
+  categoryId?: string
   unitCost?: number
   minStock?: number
   maxStock?: number
@@ -60,6 +71,18 @@ export interface StockAdjustment {
 }
 
 export const materialsService = {
+  // Get all material categories
+  getCategories: async (): Promise<MaterialCategory[]> => {
+    const response = await api.get<MaterialCategory[]>('/materials/categories')
+    return response.data?.data || []
+  },
+
+  // Create new category (admin only)
+  createCategory: async (input: { code: string; name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
+    const response = await api.post<MaterialCategory>('/materials/categories', input)
+    return response.data?.data
+  },
+
   // Get all materials with stock info
   getAll: async (): Promise<Material[]> => {
     const response = await api.get<Material[]>('/materials')

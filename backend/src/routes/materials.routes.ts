@@ -12,6 +12,57 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
+// Material Categories Routes
+// GET /api/materials/categories - ดึงหมวดหมู่วัตถุดิบทั้งหมด
+router.get('/categories', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const categories = db.prepare(`
+      SELECT id, code, name, default_unit as defaultUnit, description
+      FROM material_categories 
+      WHERE tenant_id = ? OR tenant_id IS NULL
+      ORDER BY name ASC
+    `).all(tenantId) as any[]
+    
+    res.json({ success: true, data: categories })
+  } catch (error) {
+    console.error('Get categories error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch categories' })
+  }
+})
+
+// POST /api/materials/categories - สร้างหมวดหมู่ใหม่
+router.post('/categories', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { code, name, defaultUnit, description } = req.body
+    
+    if (!code || !name || !defaultUnit) {
+      return res.status(400).json({ success: false, message: 'Code, name, and defaultUnit are required' })
+    }
+    
+    // Validate unit
+    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle']
+    if (!validUnits.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
+    }
+    
+    const id = generateId()
+    const now = new Date().toISOString()
+    
+    db.prepare(`
+      INSERT INTO material_categories (id, tenant_id, code, name, default_unit, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, defaultUnit, description || '', now, now)
+    
+    const category = db.prepare('SELECT * FROM material_categories WHERE id = ?').get(id)
+    res.json({ success: true, data: category })
+  } catch (error) {
+    console.error('Create category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create category' })
+  }
+})
+
 // Get materials statistics
 router.get('/stats', (req: Request, res: Response) => {
   try {
@@ -62,14 +113,16 @@ router.get('/', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const materials = db.prepare(`
-      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
+      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity,
+             mc.name as category_name, mc.default_unit as category_default_unit
       FROM materials m
       LEFT JOIN stock_items si ON m.id = si.material_id
+      LEFT JOIN material_categories mc ON m.category_id = mc.id
       WHERE m.tenant_id = ?
       ORDER BY m.name ASC
     `).all(tenantId) as any[]
 
-    // Enrich with stock status
+    // Enrich with stock status and convert to camelCase
     const materialsWithStock = materials.map((material) => {
       const currentStock = material.stock_quantity || 0
       const minStock = material.min_stock
@@ -93,7 +146,16 @@ router.get('/', (req: Request, res: Response) => {
       const usedInBOMs = bomCount.count
 
       return {
-        ...material,
+        id: material.id,
+        categoryId: material.category_id,
+        categoryName: material.category_name,
+        categoryDefaultUnit: material.category_default_unit,
+        code: material.code,
+        name: material.name,
+        unit: material.unit,
+        unitCost: material.unit_cost,
+        minStock: material.min_stock,
+        maxStock: material.max_stock,
         currentStock,
         stockStatus,
         usedInBOMs,
@@ -163,15 +225,27 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, unit, unitCost, minStock, maxStock, initialStock } = req.body
+    const { code, name, categoryId, unitCost, minStock, maxStock, initialStock } = req.body
 
     // Validate required fields
-    if (!code || !name || !unit || unitCost === undefined) {
+    if (!code || !name || !categoryId || unitCost === undefined) {
       return res.status(400).json({
         success: false,
-        message: 'Code, name, unit, and unitCost are required',
+        message: 'Code, name, categoryId, and unitCost are required',
       })
     }
+
+    // Get category to determine unit
+    const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid categoryId',
+      })
+    }
+
+    // Unit is determined by category - cannot be changed
+    const unit = category.default_unit
 
     // Check for duplicate code
     const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
@@ -186,11 +260,11 @@ router.post('/', (req: Request, res: Response) => {
     const id = generateId()
     const now = new Date().toISOString()
 
-    // Create material
+    // Create material with category
     db.prepare(`
-      INSERT INTO materials (id, tenant_id, code, name, unit, unit_cost, min_stock, max_stock, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, tenantId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
+      INSERT INTO materials (id, tenant_id, category_id, code, name, unit, unit_cost, min_stock, max_stock, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, categoryId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
 
     // Create stock item if initial stock provided
     if (initialStock && initialStock > 0) {
@@ -231,7 +305,7 @@ router.post('/', (req: Request, res: Response) => {
 router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, unit, unitCost, minStock, maxStock } = req.body
+    const { code, name, categoryId, unitCost, minStock, maxStock } = req.body
 
     const existing = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
@@ -253,29 +327,44 @@ router.put('/:id', (req: Request, res: Response) => {
       }
     }
 
+    // If changing category, get new unit
+    let newUnit = existing.unit
+    if (categoryId && categoryId !== existing.category_id) {
+      const category = db.prepare('SELECT default_unit FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+      if (!category) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid categoryId',
+        })
+      }
+      newUnit = category.default_unit
+    }
+
     const now = new Date().toISOString()
 
     db.prepare(`
       UPDATE materials SET
         code = COALESCE(?, code),
         name = COALESCE(?, name),
-        unit = COALESCE(?, unit),
+        category_id = COALESCE(?, category_id),
+        unit = ?,
         unit_cost = COALESCE(?, unit_cost),
         min_stock = COALESCE(?, min_stock),
         max_stock = COALESCE(?, max_stock),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(code, name, unit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
+    `).run(code, name, categoryId, newUnit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
 
-    // Update related stock items
+    // Update related stock items (including unit from material)
     if (minStock !== undefined || maxStock !== undefined) {
       db.prepare(`
         UPDATE stock_items SET
           min_stock = COALESCE(?, min_stock),
           max_stock = COALESCE(?, max_stock),
+          unit = ?,
           updated_at = ?
         WHERE material_id = ? AND tenant_id = ?
-      `).run(minStock, maxStock, now, req.params.id, tenantId)
+      `).run(minStock, maxStock, newUnit, now, req.params.id, tenantId)
     }
 
     const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id)

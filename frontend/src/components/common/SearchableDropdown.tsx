@@ -79,13 +79,13 @@ export function SearchableDropdown({
         </span>
         <div className="flex items-center gap-1">
           {value && !disabled && (
-            <button
-              type="button"
+            <div
               onClick={handleClear}
-              className="p-0.5 hover:bg-cyber-dark rounded"
+              className="p-0.5 hover:bg-cyber-dark rounded cursor-pointer"
+              role="button"
             >
               <X className="w-4 h-4 text-gray-400 hover:text-gray-300" />
-            </button>
+            </div>
           )}
           <ChevronDown
             className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}

@@ -16,11 +16,13 @@ import {
   Boxes,
   DollarSign,
   TrendingDown,
+  Tag,
 } from 'lucide-react'
-import materialsService, { Material, MaterialStats, CreateMaterialInput } from '../../services/materials'
+import materialsService, { Material, MaterialStats, CreateMaterialInput, MaterialCategory } from '../../services/materials'
 
 function MaterialsTab() {
   const [materials, setMaterials] = useState<Material[]>([])
+  const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [stats, setStats] = useState<MaterialStats | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -37,12 +39,14 @@ function MaterialsTab() {
     try {
       setLoading(true)
       setError(null)
-      const [materialsData, statsData] = await Promise.all([
+      const [materialsData, statsData, categoriesData] = await Promise.all([
         materialsService.getAll(),
         materialsService.getStats(),
+        materialsService.getCategories(),
       ])
       setMaterials(materialsData)
       setStats(statsData)
+      setCategories(categoriesData)
     } catch (err) {
       console.error('Failed to fetch materials:', err)
       setError('ไม่สามารถโหลดข้อมูลวัตถุดิบได้')
@@ -228,6 +232,7 @@ function MaterialsTab() {
             <tr>
               <th>Code</th>
               <th>Name</th>
+              <th>Category</th>
               <th>Unit</th>
               <th>Cost/Unit</th>
               <th>Stock</th>
@@ -239,7 +244,7 @@ function MaterialsTab() {
           <tbody>
             {filteredMaterials.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-8 text-gray-500">
+                <td colSpan={9} className="text-center py-8 text-gray-500">
                   {searchTerm ? 'ไม่พบวัตถุดิบที่ค้นหา' : 'ยังไม่มีวัตถุดิบ'}
                 </td>
               </tr>
@@ -248,6 +253,12 @@ function MaterialsTab() {
                 <tr key={material.id}>
                   <td className="text-cyber-primary font-mono">{material.code}</td>
                   <td className="text-gray-200">{material.name}</td>
+                  <td>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-cyber-card rounded text-xs text-cyber-primary">
+                      <Tag className="w-3 h-3" />
+                      {material.categoryName || 'Uncategorized'}
+                    </span>
+                  </td>
                   <td className="text-gray-400">{material.unit}</td>
                   <td className="text-gray-400">฿{Number(material.unitCost).toLocaleString()}</td>
                   <td>
@@ -298,6 +309,7 @@ function MaterialsTab() {
         onClose={() => setIsModalOpen(false)}
         onSuccess={fetchData}
         editMaterial={editingMaterial}
+        categories={categories}
       />
 
       {/* Stock Adjustment Modal */}
@@ -317,17 +329,20 @@ function MaterialModal({
   onClose,
   onSuccess,
   editMaterial,
+  categories,
 }: {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
   editMaterial: Material | null
+  categories: MaterialCategory[]
 }) {
   const [submitting, setSubmitting] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<MaterialCategory | null>(null)
   const [formData, setFormData] = useState<CreateMaterialInput>({
     code: '',
     name: '',
-    unit: '',
+    categoryId: '',
     unitCost: 0,
     minStock: 10,
     maxStock: 1000,
@@ -338,31 +353,40 @@ function MaterialModal({
 
   useEffect(() => {
     if (editMaterial) {
+      const category = categories.find(c => c.id === editMaterial.categoryId) || null
+      setSelectedCategory(category)
       setFormData({
         code: editMaterial.code,
         name: editMaterial.name,
-        unit: editMaterial.unit,
+        categoryId: editMaterial.categoryId || '',
         unitCost: Number(editMaterial.unitCost),
         minStock: editMaterial.minStock,
         maxStock: editMaterial.maxStock,
       })
     } else {
+      setSelectedCategory(null)
       setFormData({
         code: '',
         name: '',
-        unit: '',
+        categoryId: '',
         unitCost: 0,
         minStock: 10,
         maxStock: 1000,
         initialStock: 0,
       })
     }
-  }, [editMaterial, isOpen])
+  }, [editMaterial, isOpen, categories])
+
+  const handleCategoryChange = (categoryId: string) => {
+    const category = categories.find(c => c.id === categoryId) || null
+    setSelectedCategory(category)
+    setFormData(prev => ({ ...prev, categoryId }))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.code || !formData.name || !formData.unit) {
+    if (!formData.code || !formData.name || !formData.categoryId) {
       alert('กรุณากรอกข้อมูลให้ครบ')
       return
     }
@@ -424,14 +448,20 @@ function MaterialModal({
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Unit *</label>
-                <input
-                  type="text"
-                  value={formData.unit}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                <label className="block text-sm text-gray-400 mb-1">Category *</label>
+                <select
+                  value={formData.categoryId}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   className="cyber-input w-full"
-                  placeholder="kg, pcs, meters"
-                />
+                  disabled={isEdit} // ห้ามเปลี่ยน category ตอน edit เพราะจะทำให้ unit เปลี่ยน
+                >
+                  <option value="">เลือกหมวดหมู่</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -446,16 +476,30 @@ function MaterialModal({
               />
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Cost per Unit (฿) *</label>
-              <input
-                type="number"
-                value={formData.unitCost}
-                onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                className="cyber-input w-full"
-                min="0"
-                step="0.01"
-              />
+            {/* Unit - แสดงเป็น read-only ตามที่กำหนดโดย category */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Unit (Auto)</label>
+                <div className="cyber-input w-full bg-cyber-dark/50 text-gray-400 flex items-center">
+                  <span className={selectedCategory ? 'text-cyber-primary font-semibold' : ''}>
+                    {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  หน่วยถูกกำหนดโดยอัตโนมัติตามหมวดหมู่
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Cost per Unit (฿) *</label>
+                <input
+                  type="number"
+                  value={formData.unitCost}
+                  onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                  className="cyber-input w-full"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -498,7 +542,11 @@ function MaterialModal({
               <button type="button" onClick={onClose} className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300">
                 ยกเลิก
               </button>
-              <button type="submit" disabled={submitting} className="cyber-btn-primary">
+              <button 
+                type="submit" 
+                disabled={submitting || !selectedCategory} 
+                className="cyber-btn-primary disabled:opacity-50"
+              >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 {isEdit ? 'บันทึก' : 'เพิ่ม'}
               </button>

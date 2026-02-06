@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Trash2, Loader2, Package } from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
+import { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
 
 interface BOMModalProps {
@@ -16,7 +17,28 @@ interface MaterialRow {
   id: string
   materialId: string
   quantity: number
-  unit: string
+  // unit ถูกลบออก - ดึงจาก material โดยตรง
+}
+
+// Helper: แปลง category เป็นภาษาไทย
+const getCategoryLabel = (category: string): string => {
+  const labels: Record<string, string> = {
+    raw: 'วัตถุดิบ',
+    wip: 'ระหว่างผลิต',
+    finished: 'สำเร็จรูป',
+    material: 'วัตถุดิบกึ่งสำเร็จรูป',
+  }
+  return labels[category?.toLowerCase()] || category
+}
+
+// หน่วยถูกกำหนดโดย Material Category - ไม่สามารถเลือกเองได้
+// แสดงเป็น read-only จาก material.unit
+
+// Helper: กรองเฉพาะสินค้าที่ใช้ทำ BOM ได้ (ไม่ใช่ raw material)
+const getValidBOMProducts = (products: Product[]): Product[] => {
+  return products.filter((p) => 
+    ['wip', 'finished', 'material'].includes(p.category?.toLowerCase())
+  )
 }
 
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
@@ -25,19 +47,21 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   
-  // Material creation modal
+  // Modals
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false)
 
   // Form state
   const [productId, setProductId] = useState('')
   const [version, setVersion] = useState('')
-  const [status, setStatus] = useState<'DRAFT' | 'ACTIVE'>('DRAFT')
+  const [status, setStatus] = useState<'DRAFT' | 'ACTIVE' | 'ARCHIVED'>('DRAFT')
   // Generate unique id helper
   const generateRowId = () => `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`
   
   const [materialRows, setMaterialRows] = useState<MaterialRow[]>([
-    { id: generateRowId(), materialId: '', quantity: 0, unit: '' },
+    { id: generateRowId(), materialId: '', quantity: 0 },
   ])
+
+
 
   const isEdit = !!editBOM
   const isCopy = !!copyFrom
@@ -60,7 +84,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           id: m.id && m.id.trim() !== '' ? m.id : generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
-          unit: m.unit,
+          // unit ดึงจาก material โดยตรง
         }))
       )
     } else if (copyFrom) {
@@ -72,7 +96,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           id: generateRowId(),
           materialId: m.materialId,
           quantity: Number(m.quantity),
-          unit: m.unit,
+          // unit ดึงจาก material โดยตรง
         }))
       )
     } else {
@@ -106,7 +130,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const handleAddMaterial = () => {
     setMaterialRows([
       ...materialRows,
-      { id: generateRowId(), materialId: '', quantity: 0, unit: '' },
+      { id: generateRowId(), materialId: '', quantity: 0 },
     ])
   }
 
@@ -120,19 +144,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setMaterialRows(
       (materialRows || []).map((row) => {
         if (row.id === id) {
-          if (field === 'materialId') {
-            const selectedMaterial = materials.find((m) => m.id === value)
-            return {
-              ...row,
-              materialId: value as string,
-              unit: selectedMaterial?.unit || row.unit,
-            }
-          }
           return { ...row, [field]: value }
         }
         return row
       })
     )
+  }
+
+  // ดึง unit จาก material โดยตรง
+  const getMaterialUnit = (materialId: string): string => {
+    const material = materials.find((m) => m.id === materialId)
+    return material?.unit || '-'
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,7 +184,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         materials: (validMaterials || []).map((m) => ({
           materialId: m.materialId,
           quantity: m.quantity,
-          unit: m.unit,
+          // unit ไม่ส่งไป backend - backend จะดึงจาก materials เอง
         })),
       }
 
@@ -195,12 +217,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   if (!isOpen) return null
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key="bom-modal-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+    <>
+      <AnimatePresence>
+        <motion.div
+          key="bom-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
@@ -256,12 +279,12 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     <SearchableDropdown
                       value={productId}
                       onChange={setProductId}
-                      options={(products || []).map((p) => ({
+                      options={getValidBOMProducts(products || []).map((p) => ({
                         id: p.id,
-                        label: `${p.code} - ${p.name}`,
-                        searchText: `${p.code} ${p.name}`,
+                        label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
+                        searchText: `${p.code} ${p.name} ${p.category}`,
                       }))}
-                      placeholder="ค้นหาสินค้า..."
+                      placeholder="เลือกสินค้าสำเร็จรูป / ระหว่างผลิต..."
                       disabled={isEdit}
                     />
                   </div>
@@ -285,11 +308,12 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     </label>
                     <select
                       value={status}
-                      onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE')}
+                      onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
                       className="cyber-input w-full"
                     >
                       <option value="DRAFT">Draft</option>
                       <option value="ACTIVE">Active</option>
+                      <option value="ARCHIVED">Archived</option>
                     </select>
                   </div>
                 </div>
@@ -365,13 +389,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           </div>
 
                           <div className="col-span-2">
-                            <input
-                              type="text"
-                              value={row.unit}
-                              onChange={(e) => handleMaterialChange(row.id, 'unit', e.target.value)}
-                              placeholder="หน่วย"
-                              className="cyber-input w-full text-sm"
-                            />
+                            {/* Unit - แสดงเป็น read-only จาก material */}
+                            <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
+                              {getMaterialUnit(row.materialId)}
+                            </div>
                           </div>
 
                           <div className="col-span-2 text-right">
@@ -443,7 +464,9 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           setIsMaterialModalOpen(false)
         }}
       />
-    </AnimatePresence>
+      </AnimatePresence>
+
+    </>
   )
 }
 
@@ -455,31 +478,55 @@ interface CreateMaterialModalProps {
 }
 
 function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModalProps) {
+  const [categories, setCategories] = useState<MaterialCategory[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<MaterialCategory | null>(null)
   const [formData, setFormData] = useState({
     code: '',
     name: '',
-    unit: 'pcs',
+    categoryId: '',
     unitCost: 0,
     minStock: 10,
     maxStock: 100,
   })
   const [saving, setSaving] = useState(false)
 
+  // Load categories
+  useEffect(() => {
+    if (isOpen) {
+      loadCategories()
+    }
+  }, [isOpen])
+
+  const loadCategories = async () => {
+    try {
+      const { default: materialsService } = await import('../../services/materials')
+      const cats = await materialsService.getCategories()
+      setCategories(cats)
+    } catch (err) {
+      console.error('Failed to load categories:', err)
+    }
+  }
+
+  const handleCategoryChange = (categoryId: string) => {
+    const category = categories.find(c => c.id === categoryId) || null
+    setSelectedCategory(category)
+    setFormData(prev => ({ ...prev, categoryId }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.code || !formData.name) {
-      alert('กรุณากรอกรหัสและชื่อวัตถุดิบ')
+    if (!formData.code || !formData.name || !formData.categoryId) {
+      alert('กรุณากรอกรหัส ชื่อ และเลือกหมวดหมู่วัตถุดิบ')
       return
     }
 
     setSaving(true)
     try {
-      // Import materialsService dynamically to avoid circular dependency
       const { default: materialsService } = await import('../../services/materials')
       const newMaterial = await materialsService.create({
         code: formData.code,
         name: formData.name,
-        unit: formData.unit,
+        categoryId: formData.categoryId,
         unitCost: formData.unitCost,
         minStock: formData.minStock,
         maxStock: formData.maxStock,
@@ -489,11 +536,12 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
       setFormData({
         code: '',
         name: '',
-        unit: 'pcs',
+        categoryId: '',
         unitCost: 0,
         minStock: 10,
         maxStock: 100,
       })
+      setSelectedCategory(null)
     } catch (err) {
       console.error('Failed to create material:', err)
       alert('ไม่สามารถสร้างวัตถุดิบได้')
@@ -503,7 +551,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
   }
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       {isOpen && (
         <motion.div
           key="material-modal-backdrop"
@@ -545,19 +593,32 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">หน่วย</label>
+                  <label className="block text-sm text-gray-400 mb-1">หมวดหมู่ *</label>
                   <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    value={formData.categoryId}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     className="cyber-input w-full text-sm"
+                    required
                   >
-                    <option value="pcs">ชิ้น</option>
-                    <option value="kg">กิโลกรัม</option>
-                    <option value="m">เมตร</option>
-                    <option value="yard">หลา</option>
-                    <option value="roll">ม้วน</option>
+                    <option value="">เลือกหมวดหมู่</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Unit - แสดงเป็น read-only */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">หน่วย (Auto)</label>
+                <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center">
+                  {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  หน่วยถูกกำหนดโดยอัตโนมัติตามหมวดหมู่วัตถุดิบ
+                </p>
               </div>
 
               <div>
@@ -616,7 +677,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || !selectedCategory}
                   className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50 flex items-center gap-1"
                 >
                   {saving && <Loader2 className="w-3 h-3 animate-spin" />}

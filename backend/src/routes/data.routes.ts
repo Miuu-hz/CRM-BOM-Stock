@@ -9,17 +9,39 @@ router.use(authenticate)
 
 /**
  * GET /api/data/products
- * ดึงรายการสินค้าทั้งหมด
+ * ดึงรายการสินค้าจาก Stock ที่ใช้เป็น Finished Goods/WIP ได้
  */
 router.get('/products', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const products = db.prepare(`
-      SELECT * FROM products 
-      WHERE tenant_id = ?
+    // ดึงจาก stock_items แทน products (เพราะสินค้าสร้างใน Stock)
+    const rows = db.prepare(`
+      SELECT 
+        id,
+        tenant_id,
+        sku as code,
+        name,
+        category,
+        'ACTIVE' as status,
+        created_at,
+        updated_at
+      FROM stock_items 
+      WHERE tenant_id = ? 
+        AND category IN ('finished', 'wip', 'material')
       ORDER BY name ASC
-    `).all(tenantId)
+    `).all(tenantId) as any[]
+
+    // แปลง snake_case เป็น camelCase
+    const products = rows.map((p) => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      category: p.category,
+      status: p.status,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+    }))
 
     res.json({
       success: true,
@@ -36,17 +58,45 @@ router.get('/products', (req: Request, res: Response) => {
 
 /**
  * GET /api/data/materials
- * ดึงรายการวัตถุดิบทั้งหมด
+ * ดึงรายการวัตถุดิบจาก stock_items (raw, material category)
  */
 router.get('/materials', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const materials = db.prepare(`
-      SELECT * FROM materials 
-      WHERE tenant_id = ?
+    // ดึงจาก stock_items แทน materials table
+    const rows = db.prepare(`
+      SELECT 
+        id,
+        sku as code,
+        name,
+        unit,
+        quantity as current_stock,
+        min_stock,
+        max_stock,
+        category,
+        created_at,
+        updated_at
+      FROM stock_items 
+      WHERE tenant_id = ? 
+        AND category IN ('raw', 'material')
       ORDER BY name ASC
-    `).all(tenantId)
+    `).all(tenantId) as any[]
+
+    // แปลง snake_case เป็น camelCase
+    const materials = rows.map((m) => ({
+      id: m.id,
+      code: m.code,
+      name: m.name,
+      unit: m.unit,
+      unitCost: 0, // ยังไม่มีในตารางนี้ ต้องเพิ่มทีหลัง
+      minStock: m.min_stock,
+      maxStock: m.max_stock,
+      currentStock: m.current_stock,
+      category: m.category,
+      createdAt: m.created_at,
+      updatedAt: m.updated_at,
+    }))
 
     res.json({
       success: true,

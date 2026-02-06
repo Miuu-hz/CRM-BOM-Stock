@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Package,
   Search,
@@ -17,33 +17,8 @@ import {
   AlertCircle,
   Plus,
 } from 'lucide-react'
-import stockService, { StockItem, StockStats } from '../services/stock'
+import stockService, { StockItem, StockMovement, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
-
-// รายการหน่วยพื้นฐาน
-const DEFAULT_UNITS = [
-  { value: 'pcs', label: 'ชิ้น' },
-  { value: 'kg', label: 'กิโลกรัม' },
-  { value: 'g', label: 'กรัม' },
-  { value: 'm', label: 'เมตร' },
-  { value: 'cm', label: 'เซนติเมตร' },
-  { value: 'yard', label: 'หลา' },
-  { value: 'roll', label: 'ม้วน' },
-  { value: 'box', label: 'กล่อง' },
-  { value: 'pack', label: 'แพ็ค' },
-  { value: 'set', label: 'ชุด' },
-  { value: 'pair', label: 'คู่' },
-  { value: 'sheet', label: 'แผ่น' },
-  { value: 'ltr', label: 'ลิตร' },
-  { value: 'bottle', label: 'ขวด' },
-]
-
-// ดึงหน่วยจาก localStorage
-const getUnits = () => {
-  const saved = localStorage.getItem('customUnits')
-  const customUnits = saved ? JSON.parse(saved) : []
-  return [...DEFAULT_UNITS, ...customUnits]
-}
 
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
@@ -427,17 +402,26 @@ function DetailModal({
   item: StockItem | null
   onClose: () => void
 }) {
-  if (!open || !item) return null
+  if (!item) return null
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn"
-      >
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="edit-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          >
             <div className="p-6 border-b border-cyber-border flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-100">Stock Item Details</h2>
               <button
@@ -547,8 +531,10 @@ function DetailModal({
                 </div>
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -576,10 +562,10 @@ function EditModal({
   useEffect(() => {
     if (item) {
       setFormData({
-        name: item.name || '',
-        category: item.category || '',
-        minStock: item.minStock ?? 0,
-        maxStock: item.maxStock ?? 0,
+        name: item.name,
+        category: item.category,
+        minStock: item.minStock,
+        maxStock: item.maxStock,
         location: item.location || '',
       })
     }
@@ -602,17 +588,25 @@ function EditModal({
     }
   }
 
-  if (!open || !item) return null
+  if (!item) return null
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
-      >
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
             <div className="p-6 border-b border-cyber-border flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-100">Edit Stock Item</h2>
               <button
@@ -706,8 +700,10 @@ function EditModal({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -792,17 +788,23 @@ function MovementModal({
     ? (stockItems || []).filter((i) => i.quantity > 0)
     : stockItems
 
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
-      >
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
             <div className={`p-6 border-b border-cyber-border flex items-center justify-between ${
               type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
             }`}>
@@ -959,8 +961,10 @@ function MovementModal({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -1090,18 +1094,6 @@ function AddStockModal({
     location: '',
   })
   const [saving, setSaving] = useState(false)
-  const [showUnitModal, setShowUnitModal] = useState(false)
-  const [newUnit, setNewUnit] = useState({ value: '', label: '' })
-
-  const handleAddUnit = () => {
-    if (!newUnit.value || !newUnit.label) return
-    const saved = localStorage.getItem('customUnits')
-    const customUnits = saved ? JSON.parse(saved) : []
-    customUnits.push(newUnit)
-    localStorage.setItem('customUnits', JSON.stringify(customUnits))
-    setNewUnit({ value: '', label: '' })
-    setShowUnitModal(false)
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1142,17 +1134,23 @@ function AddStockModal({
     }
   }
 
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
-      >
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="cyber-card w-full max-w-lg"
+          >
             <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10">
               <div className="flex items-center gap-3">
                 <Package className="w-6 h-6 text-cyber-green" />
@@ -1208,25 +1206,19 @@ function AddStockModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">หน่วย</label>
+                  <label className="block text-sm text-gray-400 mb-2">Unit</label>
                   <select
                     value={formData.unit}
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                     className="cyber-input w-full"
                   >
-                    {getUnits().map((u) => (
-                      <option key={u.value} value={u.value}>
-                        {u.label}
-                      </option>
-                    ))}
+                    <option value="pcs">Pieces</option>
+                    <option value="kg">Kilograms</option>
+                    <option value="m">Meters</option>
+                    <option value="yard">Yards</option>
+                    <option value="roll">Rolls</option>
+                    <option value="box">Boxes</option>
                   </select>
-                  <button
-                    type="button"
-                    onClick={() => setShowUnitModal(true)}
-                    className="text-xs text-cyber-primary hover:underline mt-1"
-                  >
-                    + เพิ่มหน่วยใหม่
-                  </button>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
@@ -1280,7 +1272,7 @@ function AddStockModal({
                   onClick={onClose}
                   className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
                 >
-                  ยกเลิก
+                  Cancel
                 </button>
                 <button
                   type="submit"
@@ -1292,63 +1284,14 @@ function AddStockModal({
                   ) : (
                     <Plus className="w-4 h-4" />
                   )}
-                  สร้างรายการ
+                  Create Item
                 </button>
               </div>
             </form>
-
-            {/* Add Unit Modal */}
-            {showUnitModal && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 animate-fadeIn">
-                <div className="cyber-card w-full max-w-sm animate-scaleIn">
-                  <div className="p-4 border-b border-cyber-border flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
-                    <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
-                      <input
-                        type="text"
-                        value={newUnit.value}
-                        onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
-                        placeholder="เช่น ลัง"
-                        className="cyber-input w-full text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
-                      <input
-                        type="text"
-                        value={newUnit.label}
-                        onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
-                        placeholder="เช่น ลัง"
-                        className="cyber-input w-full text-sm"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => setShowUnitModal(false)}
-                        className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
-                      >
-                        ยกเลิก
-                      </button>
-                      <button
-                        onClick={handleAddUnit}
-                        disabled={!newUnit.value || !newUnit.label}
-                        className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50"
-                      >
-                        บันทึก
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 

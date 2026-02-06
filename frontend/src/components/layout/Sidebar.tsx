@@ -44,8 +44,8 @@ const menuItems = [
     description: 'Inventory Management',
   },
   {
-    path: '/purchase-orders',
-    label: 'Purchase Orders',
+    path: '/purchase',
+    label: 'Purchase',
     icon: ShoppingCart,
     description: 'Procurement Management',
   },
@@ -60,6 +60,12 @@ const menuItems = [
     label: 'Calculator',
     icon: Calculator,
     description: 'Cost & Profit Analysis',
+  },
+  {
+    path: '/sales',
+    label: 'Sales',
+    icon: TrendingUp,
+    description: 'Sales & Invoicing',
   },
   {
     path: '/marketing',
