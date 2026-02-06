@@ -7,7 +7,8 @@ import BOM from './pages/BOM'
 import Stock from './pages/Stock'
 import Calculator from './pages/Calculator'
 import Marketing from './pages/Marketing'
-import PurchaseOrders from './pages/PurchaseOrders'
+import Sales from './pages/Sales'
+import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
@@ -40,7 +41,8 @@ function AppContent() {
         <Route path="/stock" element={<Stock />} />
         <Route path="/calculator" element={<Calculator />} />
         <Route path="/marketing" element={<Marketing />} />
-        <Route path="/purchase-orders" element={<PurchaseOrders />} />
+        <Route path="/sales" element={<Sales />} />
+        <Route path="/purchase" element={<Purchase />} />
         <Route path="/work-orders" element={<WorkOrders />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

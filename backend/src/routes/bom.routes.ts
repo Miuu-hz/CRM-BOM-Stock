@@ -66,13 +66,14 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const boms = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      LEFT JOIN products p ON b.product_id = p.id
+      LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.tenant_id = ?
       ORDER BY b.updated_at DESC
     `).all(tenantId) as any[]
 
+    // ดึง bom_items พร้อม unit จาก materials โดยตรง
     const bomItems = db.prepare(`
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
@@ -89,7 +90,10 @@ router.get('/', async (req: Request, res: Response) => {
 
       return {
         ...bom,
-        materials: items,
+        materials: items.map((item: any) => ({
+          ...item,
+          unit: item.unit, // unit ดึงจาก materials โดยตรง
+        })),
         totalCost,
       }
     })
@@ -110,9 +114,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const bom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      LEFT JOIN products p ON b.product_id = p.id
+      LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.id = ? AND b.tenant_id = ?
     `).get(req.params.id, tenantId) as any
 
@@ -123,6 +127,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       })
     }
 
+    // ดึง items พร้อม unit จาก materials โดยตรง
     const items = db.prepare(`
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
@@ -138,7 +143,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...bom,
-        materials: items,
+        materials: items.map((item: any) => ({
+          ...item,
+          unit: item.unit, // unit ดึงจาก materials โดยตรง
+        })),
         totalCost,
       },
     })
@@ -161,12 +169,12 @@ router.post('/', async (req: Request, res: Response) => {
       })
     }
 
-    // Check if product exists
-    const product = db.prepare('SELECT * FROM products WHERE id = ? AND tenant_id = ?').get(productId, tenantId) as any
+    // Check if product exists in stock_items (not products table)
+    const product = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, tenantId) as any
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found',
+        message: 'Product not found in stock',
       })
     }
 
@@ -189,12 +197,18 @@ router.post('/', async (req: Request, res: Response) => {
       `).run(id, tenantId, productId, version, status, now, now)
 
       if (materials && materials.length > 0) {
+        // ไม่เก็บ unit ใน bom_items อีกต่อไป - ดึงจาก materials แทน
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity, unit)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity)
+          VALUES (?, ?, ?, ?, ?)
         `)
         for (const m of materials) {
-          insertItem.run(generateId(), tenantId, id, m.materialId, m.quantity, m.unit)
+          // Validate material exists
+          const material = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(m.materialId, tenantId)
+          if (!material) {
+            throw new Error(`Material ${m.materialId} not found`)
+          }
+          insertItem.run(generateId(), tenantId, id, m.materialId, m.quantity)
         }
       }
     })
@@ -202,12 +216,13 @@ router.post('/', async (req: Request, res: Response) => {
     insertBOM()
 
     const newBom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      LEFT JOIN products p ON b.product_id = p.id
+      LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.id = ?
     `).get(id) as any
 
+    // ดึง items พร้อม unit จาก materials โดยตรง
     const items = db.prepare(`
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
@@ -224,13 +239,16 @@ router.post('/', async (req: Request, res: Response) => {
       message: 'BOM created successfully',
       data: {
         ...newBom,
-        materials: items,
+        materials: items.map((item: any) => ({
+          ...item,
+          unit: item.unit, // unit ดึงจาก materials
+        })),
         totalCost,
       },
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create BOM error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create BOM' })
+    res.status(500).json({ success: false, message: error.message || 'Failed to create BOM' })
   }
 })
 
@@ -260,12 +278,18 @@ router.put('/:id', async (req: Request, res: Response) => {
       // If materials are being updated, delete existing and create new
       if (materials) {
         db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+        // ไม่เก็บ unit ใน bom_items - ดึงจาก materials แทน
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity, unit)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, material_id, quantity)
+          VALUES (?, ?, ?, ?, ?)
         `)
         for (const m of materials) {
-          insertItem.run(generateId(), tenantId, req.params.id, m.materialId, m.quantity, m.unit)
+          // Validate material exists
+          const material = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(m.materialId, tenantId)
+          if (!material) {
+            throw new Error(`Material ${m.materialId} not found`)
+          }
+          insertItem.run(generateId(), tenantId, req.params.id, m.materialId, m.quantity)
         }
       }
     })
@@ -273,12 +297,13 @@ router.put('/:id', async (req: Request, res: Response) => {
     updateBOM()
 
     const updatedBom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      LEFT JOIN products p ON b.product_id = p.id
+      LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.id = ?
     `).get(req.params.id) as any
 
+    // ดึง items พร้อม unit จาก materials โดยตรง
     const items = db.prepare(`
       SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost, m.unit
       FROM bom_items bi
@@ -295,13 +320,16 @@ router.put('/:id', async (req: Request, res: Response) => {
       message: 'BOM updated successfully',
       data: {
         ...updatedBom,
-        materials: items,
+        materials: items.map((item: any) => ({
+          ...item,
+          unit: item.unit, // unit ดึงจาก materials
+        })),
         totalCost,
       },
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update BOM error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update BOM' })
+    res.status(500).json({ success: false, message: error.message || 'Failed to update BOM' })
   }
 })
 

@@ -1,5 +1,80 @@
 // Mock Database for Development/Testing
 
+// ==================== MATERIAL CATEGORIES ====================
+// หมวดหมู่วัตถุดิบ - กำหนดหน่วยตามประเภทวัตถุดิบ (ไม่สามารถเปลี่ยนได้)
+export const materialCategories = [
+  {
+    id: 'cat-001',
+    code: 'SYNTHETIC_FIBER',
+    name: 'ใยสังเคราะห์',
+    defaultUnit: 'kg', // ใยสังเคราะห์ต้องเป็นหน่วย กิโลกรัม เท่านั้น
+    description: 'ใยสังเคราะห์สำหรับเครื่องนอน เช่น Polyester Fiber, Hollow Fiber',
+  },
+  {
+    id: 'cat-002',
+    code: 'NATURAL_FIBER',
+    name: 'ใยธรรมชาติ',
+    defaultUnit: 'kg',
+    description: 'ใยธรรมชาติ เช่น ใยขนสัตว์, ใยฝ้าย, Down Feather',
+  },
+  {
+    id: 'cat-003',
+    code: 'FABRIC',
+    name: 'ผ้า/ตาข่าย',
+    defaultUnit: 'm', // ผ้าเป็นหน่วย เมตร
+    description: 'ผ้าหุ้ม, ตาข่าย, ผ้าคอตตอน, ผ้าไมโครไฟเบอร์',
+  },
+  {
+    id: 'cat-004',
+    code: 'FOAM',
+    name: 'โฟม/ยางพารา',
+    defaultUnit: 'kg',
+    description: 'โฟมอัด, โฟมยางพารา, Memory Foam, Latex',
+  },
+  {
+    id: 'cat-005',
+    code: 'SPRING',
+    name: 'สปริง/โครงสร้าง',
+    defaultUnit: 'pcs', // สปริงเป็นหน่วย ชิ้น
+    description: 'สปริง, ข้อต่อ, โครงเหล็ก, แผ่นไม้',
+  },
+  {
+    id: 'cat-006',
+    code: 'THREAD',
+    name: 'ด้าย/เส้นใย',
+    defaultUnit: 'roll', // ด้ายเป็นหน่วย ม้วน
+    description: 'ด้ายเย็บ, ด้ายปั๊ม, เชือก, ริบบิ้น',
+  },
+  {
+    id: 'cat-007',
+    code: 'FASTENER',
+    name: 'อุปกรณ์ปิดผนึก',
+    defaultUnit: 'm', // ซิปเป็นหน่วย เมตร
+    description: 'ซิป, กระดุม, ตะขอ, Velcro',
+  },
+  {
+    id: 'cat-008',
+    code: 'PACKAGING',
+    name: 'บรรจุภัณฑ์',
+    defaultUnit: 'pcs',
+    description: 'กล่อง, ถุงพลาสติก, ป้าย tag, คู่มือ',
+  },
+  {
+    id: 'cat-009',
+    code: 'CHEMICAL',
+    name: 'สารเคมี/กาว',
+    defaultUnit: 'ltr', // ของเหลวเป็นลิตร
+    description: 'กาว, น้ำยาทำความสะอาด, สารกันบูด',
+  },
+  {
+    id: 'cat-010',
+    code: 'ACCESSORY',
+    name: 'อุปกรณ์เสริม',
+    defaultUnit: 'pcs',
+    description: 'ป้ายแบรนด์, อุปกรณ์ตกแต่ง, อุปกรณ์เสริมอื่นๆ',
+  },
+]
+
 export const users = [
   {
     id: '1',
@@ -121,9 +196,10 @@ export const products = [
 export const materials = [
   {
     id: '1',
+    categoryId: 'cat-004', // FOAM
     code: 'MAT-001',
     name: 'Foam Layer',
-    unit: 'kg',
+    unit: 'kg', // หน่วยถูกกำหนดตาม category
     unitCost: 600,
     minStock: 500,
     maxStock: 2000,
@@ -132,9 +208,10 @@ export const materials = [
   },
   {
     id: '2',
+    categoryId: 'cat-005', // SPRING
     code: 'MAT-002',
     name: 'Spring Coils',
-    unit: 'units',
+    unit: 'pcs',
     unitCost: 5,
     minStock: 2000,
     maxStock: 8000,
@@ -143,9 +220,10 @@ export const materials = [
   },
   {
     id: '3',
+    categoryId: 'cat-003', // FABRIC
     code: 'MAT-003',
     name: 'Fabric Cover',
-    unit: 'meters',
+    unit: 'm',
     unitCost: 250,
     minStock: 100,
     maxStock: 500,
@@ -154,6 +232,7 @@ export const materials = [
   },
   {
     id: '4',
+    categoryId: 'cat-006', // THREAD
     code: 'MAT-004',
     name: 'Thread',
     unit: 'roll',
@@ -165,9 +244,10 @@ export const materials = [
   },
   {
     id: '5',
+    categoryId: 'cat-007', // FASTENER
     code: 'MAT-005',
     name: 'Zipper',
-    unit: 'unit',
+    unit: 'm',
     unitCost: 50,
     minStock: 500,
     maxStock: 2000,
@@ -185,11 +265,12 @@ export const boms = [
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     materials: [
-      { materialId: '1', quantity: 2.5, unit: 'kg' },
-      { materialId: '2', quantity: 800, unit: 'units' },
-      { materialId: '3', quantity: 3.5, unit: 'meters' },
-      { materialId: '4', quantity: 1, unit: 'roll' },
-      { materialId: '5', quantity: 1, unit: 'unit' },
+      // unit ถูกลบออก - ดึงจาก materials แทน
+      { materialId: '1', quantity: 2.5 },
+      { materialId: '2', quantity: 800 },
+      { materialId: '3', quantity: 3.5 },
+      { materialId: '4', quantity: 1 },
+      { materialId: '5', quantity: 1 },
     ],
   },
   {
@@ -200,9 +281,9 @@ export const boms = [
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     materials: [
-      { materialId: '1', quantity: 0.5, unit: 'kg' },
-      { materialId: '3', quantity: 0.8, unit: 'meters' },
-      { materialId: '4', quantity: 0.5, unit: 'roll' },
+      { materialId: '1', quantity: 0.5 },
+      { materialId: '3', quantity: 0.8 },
+      { materialId: '4', quantity: 0.5 },
     ],
   },
 ]

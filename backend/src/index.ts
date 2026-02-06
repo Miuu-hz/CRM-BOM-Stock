@@ -23,8 +23,11 @@ import marketingRoutes from './routes/marketing.routes'
 import searchRoutes from './routes/search.routes'
 import supplierRoutes from './routes/supplier.routes'
 import purchaseOrderRoutes from './routes/purchaseOrder.routes'
+import purchaseRoutes from './routes/purchase.routes'
 import workOrderRoutes from './routes/workOrder.routes'
 import activityRoutes from './routes/activity.routes'
+import salesRoutes from './routes/sales.routes'
+import approvalRoutes from './routes/approval.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -60,8 +63,11 @@ app.use('/api/marketing', marketingRoutes)
 app.use('/api/search', searchRoutes)
 app.use('/api/suppliers', supplierRoutes)
 app.use('/api/purchase-orders', purchaseOrderRoutes)
+app.use('/api/purchase', purchaseRoutes)
 app.use('/api/work-orders', workOrderRoutes)
 app.use('/api/activities', activityRoutes)
+app.use('/api/sales', salesRoutes)
+app.use('/api/approval', approvalRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
