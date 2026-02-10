@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Trash2, Loader2, Package } from 'lucide-react'
+import { X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square } from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
 import { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
@@ -13,11 +13,13 @@ interface BOMModalProps {
   copyFrom?: BOM | null
 }
 
-interface MaterialRow {
+interface BOMItemRow {
   id: string
+  itemType: 'MATERIAL' | 'CHILD_BOM'
   materialId: string
+  childBomId: string
   quantity: number
-  // unit ถูกลบออก - ดึงจาก material โดยตรง
+  notes: string
 }
 
 // Helper: แปลง category เป็นภาษาไทย
@@ -31,9 +33,6 @@ const getCategoryLabel = (category: string): string => {
   return labels[category?.toLowerCase()] || category
 }
 
-// หน่วยถูกกำหนดโดย Material Category - ไม่สามารถเลือกเองได้
-// แสดงเป็น read-only จาก material.unit
-
 // Helper: กรองเฉพาะสินค้าที่ใช้ทำ BOM ได้ (ไม่ใช่ raw material)
 const getValidBOMProducts = (products: Product[]): Product[] => {
   return products.filter((p) => 
@@ -44,6 +43,7 @@ const getValidBOMProducts = (products: Product[]): Product[] => {
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
   const [products, setProducts] = useState<Product[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
+  const [availableChildBOMs, setAvailableChildBOMs] = useState<BOM[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   
@@ -54,19 +54,19 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [productId, setProductId] = useState('')
   const [version, setVersion] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE' | 'ARCHIVED'>('DRAFT')
+  const [isSemiFinished, setIsSemiFinished] = useState(false)
+  
   // Generate unique id helper
   const generateRowId = () => `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`
   
-  const [materialRows, setMaterialRows] = useState<MaterialRow[]>([
-    { id: generateRowId(), materialId: '', quantity: 0 },
+  const [itemRows, setItemRows] = useState<BOMItemRow[]>([
+    { id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' },
   ])
-
-
 
   const isEdit = !!editBOM
   const isCopy = !!copyFrom
 
-  // Load products and materials
+  // Load products, materials, and available child BOMs
   useEffect(() => {
     if (isOpen) {
       loadData()
@@ -79,26 +79,45 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setProductId(editBOM.productId)
       setVersion(editBOM.version)
       setStatus(editBOM.status)
-      setMaterialRows(
-        (editBOM.materials || []).map((m) => ({
-          id: m.id && m.id.trim() !== '' ? m.id : generateRowId(),
-          materialId: m.materialId,
-          quantity: Number(m.quantity),
-          // unit ดึงจาก material โดยตรง
-        }))
-      )
+      setIsSemiFinished(editBOM.isSemiFinished || editBOM.is_semi_finished === 1)
+      
+      // Transform items to rows
+      const items = editBOM.items || editBOM.materials || []
+      if (items.length > 0) {
+        setItemRows(
+          items.map((item: any) => ({
+            id: item.id && item.id.trim() !== '' ? item.id : generateRowId(),
+            itemType: item.itemType || 'MATERIAL',
+            materialId: item.materialId || item.material_id || '',
+            childBomId: item.childBomId || item.child_bom_id || '',
+            quantity: Number(item.quantity),
+            notes: item.notes || '',
+          }))
+        )
+      } else {
+        setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
+      }
     } else if (copyFrom) {
       setProductId(copyFrom.productId)
       setVersion(`${copyFrom.version}-copy`)
       setStatus('DRAFT')
-      setMaterialRows(
-        (copyFrom.materials || []).map((m) => ({
-          id: generateRowId(),
-          materialId: m.materialId,
-          quantity: Number(m.quantity),
-          // unit ดึงจาก material โดยตรง
-        }))
-      )
+      setIsSemiFinished(false)
+      
+      const items = copyFrom.items || copyFrom.materials || []
+      if (items.length > 0) {
+        setItemRows(
+          items.map((item: any) => ({
+            id: generateRowId(),
+            itemType: item.itemType || 'MATERIAL',
+            materialId: item.materialId || item.material_id || '',
+            childBomId: item.childBomId || item.child_bom_id || '',
+            quantity: Number(item.quantity),
+            notes: item.notes || '',
+          }))
+        )
+      } else {
+        setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
+      }
     } else {
       resetForm()
     }
@@ -107,12 +126,14 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const loadData = async () => {
     setLoading(true)
     try {
-      const [productsData, materialsData] = await Promise.all([
+      const [productsData, materialsData, childBOMsData] = await Promise.all([
         bomService.getProducts(),
         bomService.getMaterials(),
+        bomService.getAvailableChildren(editBOM?.id),
       ])
       setProducts(productsData)
       setMaterials(materialsData)
+      setAvailableChildBOMs(childBOMsData)
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
@@ -124,25 +145,26 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setProductId('')
     setVersion('')
     setStatus('DRAFT')
-    setMaterialRows([{ id: generateRowId(), materialId: '', quantity: 0, unit: '' }])
+    setIsSemiFinished(false)
+    setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
   }
 
-  const handleAddMaterial = () => {
-    setMaterialRows([
-      ...materialRows,
-      { id: generateRowId(), materialId: '', quantity: 0 },
+  const handleAddItem = (itemType: 'MATERIAL' | 'CHILD_BOM') => {
+    setItemRows([
+      ...itemRows,
+      { id: generateRowId(), itemType, materialId: '', childBomId: '', quantity: 0, notes: '' },
     ])
   }
 
-  const handleRemoveMaterial = (id: string) => {
-    if (materialRows.length > 1) {
-      setMaterialRows((materialRows || []).filter((row) => row.id !== id))
+  const handleRemoveItem = (id: string) => {
+    if (itemRows.length > 1) {
+      setItemRows((itemRows || []).filter((row) => row.id !== id))
     }
   }
 
-  const handleMaterialChange = (id: string, field: keyof MaterialRow, value: string | number) => {
-    setMaterialRows(
-      (materialRows || []).map((row) => {
+  const handleItemChange = (id: string, field: keyof BOMItemRow, value: string | number | boolean) => {
+    setItemRows(
+      (itemRows || []).map((row) => {
         if (row.id === id) {
           return { ...row, [field]: value }
         }
@@ -169,9 +191,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       alert('กรุณาระบุเวอร์ชัน')
       return
     }
-    const validMaterials = (materialRows || []).filter((m) => m.materialId && m.quantity > 0)
-    if (validMaterials.length === 0) {
-      alert('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 รายการ')
+    
+    const validItems = (itemRows || []).filter((row) => {
+      if (row.itemType === 'MATERIAL') {
+        return row.materialId && row.quantity > 0
+      } else {
+        return row.childBomId && row.quantity > 0
+      }
+    })
+    
+    if (validItems.length === 0) {
+      alert('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ')
       return
     }
 
@@ -180,11 +210,14 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       const data = {
         productId,
         version: version.trim(),
-        status,
-        materials: (validMaterials || []).map((m) => ({
-          materialId: m.materialId,
-          quantity: m.quantity,
-          // unit ไม่ส่งไป backend - backend จะดึงจาก materials เอง
+        status: status as 'DRAFT' | 'ACTIVE' | 'ARCHIVED',
+        isSemiFinished,
+        items: validItems.map((row) => ({
+          itemType: row.itemType,
+          materialId: row.itemType === 'MATERIAL' ? row.materialId : undefined,
+          childBomId: row.itemType === 'CHILD_BOM' ? row.childBomId : undefined,
+          quantity: row.quantity,
+          notes: row.notes,
         })),
       }
 
@@ -206,10 +239,18 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   }
 
   // Calculate total cost
-  const totalCost = materialRows.reduce((sum, row) => {
-    const material = materials.find((m) => m.id === row.materialId)
-    if (material && row.quantity > 0) {
-      return sum + Number(material.unitCost) * row.quantity
+  const totalCost = itemRows.reduce((sum, row) => {
+    if (row.itemType === 'MATERIAL') {
+      const material = materials.find((m) => m.id === row.materialId)
+      if (material && row.quantity > 0) {
+        return sum + Number(material.unitCost) * row.quantity
+      }
+    } else {
+      // For child BOM, we would need to fetch the cost, for now show 0
+      const childBOM = availableChildBOMs.find((b) => b.id === row.childBomId)
+      if (childBOM && row.quantity > 0) {
+        return sum + (childBOM.totalCost || 0) * row.quantity
+      }
     }
     return sum
   }, 0)
@@ -224,248 +265,330 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          key="bom-modal-content"
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="cyber-card w-full max-w-4xl max-h-[90vh] overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={onClose}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-cyber-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center">
-                <Package className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-100">
-                  {isEdit ? 'แก้ไข BOM' : isCopy ? 'คัดลอก BOM' : 'สร้าง BOM ใหม่'}
-                </h2>
-                <p className="text-sm text-gray-400">
-                  {isEdit
-                    ? 'แก้ไขสูตรการผลิต'
-                    : isCopy
-                    ? 'สร้างสูตรใหม่จากสูตรที่มีอยู่'
-                    : 'กำหนดวัตถุดิบสำหรับสินค้า'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Product & Version */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-1">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      สินค้า <span className="text-red-400">*</span>
-                    </label>
-                    <SearchableDropdown
-                      value={productId}
-                      onChange={setProductId}
-                      options={getValidBOMProducts(products || []).map((p) => ({
-                        id: p.id,
-                        label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
-                        searchText: `${p.code} ${p.name} ${p.category}`,
-                      }))}
-                      placeholder="เลือกสินค้าสำเร็จรูป / ระหว่างผลิต..."
-                      disabled={isEdit}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      เวอร์ชัน <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={version}
-                      onChange={(e) => setVersion(e.target.value)}
-                      placeholder="เช่น v1.0, v2.1"
-                      className="cyber-input w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      สถานะ
-                    </label>
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
-                      className="cyber-input w-full"
-                    >
-                      <option value="DRAFT">Draft</option>
-                      <option value="ACTIVE">Active</option>
-                      <option value="ARCHIVED">Archived</option>
-                    </select>
-                  </div>
+          <motion.div
+            key="bom-modal-content"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="cyber-card w-full max-w-5xl max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-cyber-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center">
+                  <Package className="w-5 h-5 text-white" />
                 </div>
-
-                {/* Materials */}
                 <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <label className="block text-sm font-medium text-gray-300">
-                      วัตถุดิบ <span className="text-red-400">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleAddMaterial}
-                      className="text-sm text-cyber-primary hover:text-cyber-primary/80 flex items-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" />
-                      เพิ่มวัตถุดิบ
-                    </button>
+                  <h2 className="text-xl font-bold text-gray-100">
+                    {isEdit ? 'แก้ไข BOM' : isCopy ? 'คัดลอก BOM' : 'สร้าง BOM ใหม่'}
+                  </h2>
+                  <p className="text-sm text-gray-400">
+                    {isEdit
+                      ? 'แก้ไขสูตรการผลิต'
+                      : isCopy
+                      ? 'สร้างสูตรใหม่จากสูตรที่มีอยู่'
+                      : 'กำหนดวัตถุดิบสำหรับสินค้า'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Product & Version & Status */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-1">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        สินค้า <span className="text-red-400">*</span>
+                      </label>
+                      <SearchableDropdown
+                        value={productId}
+                        onChange={setProductId}
+                        options={getValidBOMProducts(products || []).map((p) => ({
+                          id: p.id,
+                          label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
+                          searchText: `${p.code} ${p.name} ${p.category}`,
+                        }))}
+                        placeholder="เลือกสินค้าสำเร็จรูป / ระหว่างผลิต..."
+                        disabled={isEdit}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        เวอร์ชัน <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={version}
+                        onChange={(e) => setVersion(e.target.value)}
+                        placeholder="เช่น v1.0, v2.1"
+                        className="cyber-input w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        สถานะ
+                      </label>
+                      <select
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
+                        className="cyber-input w-full"
+                      >
+                        <option value="DRAFT">Draft</option>
+                        <option value="ACTIVE">Active</option>
+                        <option value="ARCHIVED">Archived</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        ประเภท BOM
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsSemiFinished(!isSemiFinished)}
+                        className={`flex items-center gap-2 w-full p-2.5 rounded-lg border transition-all ${
+                          isSemiFinished
+                            ? 'bg-cyber-purple/20 border-cyber-purple text-cyber-purple'
+                            : 'bg-cyber-dark/50 border-cyber-border text-gray-400 hover:text-gray-300'
+                        }`}
+                      >
+                        {isSemiFinished ? (
+                          <CheckSquare className="w-5 h-5" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                        <GitBranch className="w-4 h-4" />
+                        <span>Semi-finished (สำหรับเป็น Child BOM)</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {(materialRows || []).filter(row => row.id && row.id.trim() !== '').map((row) => {
-                      const selectedMaterial = materials.find((m) => m.id === row.materialId)
-                      const rowTotal = selectedMaterial
-                        ? Number(selectedMaterial.unitCost) * row.quantity
-                        : 0
-
-                      return (
-                        <div
-                          key={row.id}
-                          className="grid grid-cols-12 gap-3 items-center p-3 bg-cyber-dark/50 rounded-lg border border-cyber-border"
+                  {/* Items Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <label className="block text-sm font-medium text-gray-300">
+                        รายการวัตถุดิบ / Child BOM <span className="text-red-400">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAddItem('MATERIAL')}
+                          className="text-sm text-cyber-primary hover:text-cyber-primary/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyber-primary/10 border border-cyber-primary/20"
                         >
-                          <div className="col-span-4">
-                            <SearchableDropdown
-                              value={row.materialId}
-                              onChange={(value) =>
-                                handleMaterialChange(row.id, 'materialId', value)
-                              }
-                              options={(materials || []).map((m) => ({
-                                id: m.id,
-                                label: `${m.code} - ${m.name}`,
-                                searchText: `${m.code} ${m.name}`,
-                              }))}
-                              placeholder="ค้นหาวัตถุดิบ..."
-                            />
-                            {!row.materialId && (
-                              <div className="mt-1 flex items-center gap-2">
-                                <span className="text-xs text-gray-500">ไม่พบวัตถุดิบ?</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setIsMaterialModalOpen(true)}
-                                  className="text-xs text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  เพิ่มวัตถุดิบใหม่
-                                </button>
+                          <Box className="w-4 h-4" />
+                          เพิ่มวัตถุดิบ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddItem('CHILD_BOM')}
+                          className="text-sm text-cyber-purple hover:text-cyber-purple/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyber-purple/10 border border-cyber-purple/20"
+                          disabled={availableChildBOMs.length === 0}
+                        >
+                          <GitBranch className="w-4 h-4" />
+                          เพิ่ม Child BOM
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {(itemRows || []).filter(row => row.id && row.id.trim() !== '').map((row) => {
+                        const isMaterial = row.itemType === 'MATERIAL'
+                        const selectedMaterial = isMaterial ? materials.find((m) => m.id === row.materialId) : null
+                        const selectedChildBOM = !isMaterial ? availableChildBOMs.find((b) => b.id === row.childBomId) : null
+                        const rowTotal = isMaterial
+                          ? (selectedMaterial ? Number(selectedMaterial.unitCost) * row.quantity : 0)
+                          : (selectedChildBOM ? (selectedChildBOM.totalCost || 0) * row.quantity : 0)
+
+                        return (
+                          <div
+                            key={row.id}
+                            className={`grid grid-cols-12 gap-3 items-start p-3 rounded-lg border ${
+                              isMaterial
+                                ? 'bg-cyber-dark/50 border-cyber-border'
+                                : 'bg-cyber-purple/5 border-cyber-purple/30'
+                            }`}
+                          >
+                            {/* Type Indicator */}
+                            <div className="col-span-1">
+                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${
+                                isMaterial ? 'bg-cyber-primary/10' : 'bg-cyber-purple/20'
+                              }`}>
+                                {isMaterial ? (
+                                  <Box className="w-4 h-4 text-cyber-primary" />
+                                ) : (
+                                  <GitBranch className="w-4 h-4 text-cyber-purple" />
+                                )}
                               </div>
-                            )}
-                          </div>
+                            </div>
 
-                          <div className="col-span-2">
-                            <input
-                              type="number"
-                              value={row.quantity || ''}
-                              onChange={(e) =>
-                                handleMaterialChange(row.id, 'quantity', parseFloat(e.target.value) || 0)
-                              }
-                              placeholder="จำนวน"
-                              min="0"
-                              step="0.01"
-                              className="cyber-input w-full text-sm"
-                            />
-                          </div>
+                            {/* Item Selection */}
+                            <div className="col-span-4">
+                              {isMaterial ? (
+                                <>
+                                  <SearchableDropdown
+                                    value={row.materialId}
+                                    onChange={(value) => handleItemChange(row.id, 'materialId', value)}
+                                    options={(materials || []).map((m) => ({
+                                      id: m.id,
+                                      label: `${m.code} - ${m.name}`,
+                                      searchText: `${m.code} ${m.name}`,
+                                    }))}
+                                    placeholder="ค้นหาวัตถุดิบ..."
+                                  />
+                                  {!row.materialId && (
+                                    <div className="mt-1 flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">ไม่พบวัตถุดิบ?</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsMaterialModalOpen(true)}
+                                        className="text-xs text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                        เพิ่มวัตถุดิบใหม่
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <SearchableDropdown
+                                  value={row.childBomId}
+                                  onChange={(value) => handleItemChange(row.id, 'childBomId', value)}
+                                  options={(availableChildBOMs || []).map((b) => ({
+                                    id: b.id,
+                                    label: `${b.productCode || b.product?.code} - ${b.productName || b.product?.name} (฿${(b.totalCost || 0).toLocaleString()})`,
+                                    searchText: `${b.productCode || b.product?.code} ${b.productName || b.product?.name}`,
+                                  }))}
+                                  placeholder="เลือก Semi-finished BOM..."
+                                />
+                              )}
+                            </div>
 
-                          <div className="col-span-2">
-                            {/* Unit - แสดงเป็น read-only จาก material */}
-                            <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
-                              {getMaterialUnit(row.materialId)}
+                            {/* Quantity */}
+                            <div className="col-span-2">
+                              <input
+                                type="number"
+                                value={row.quantity || ''}
+                                onChange={(e) =>
+                                  handleItemChange(row.id, 'quantity', parseFloat(e.target.value) || 0)
+                                }
+                                placeholder="จำนวน"
+                                min="0"
+                                step="0.01"
+                                className="cyber-input w-full text-sm"
+                              />
+                            </div>
+
+                            {/* Unit Display */}
+                            <div className="col-span-2">
+                              <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
+                                {isMaterial
+                                  ? getMaterialUnit(row.materialId)
+                                  : selectedChildBOM
+                                  ? 'ชุด'
+                                  : '-'}
+                              </div>
+                            </div>
+
+                            {/* Unit Cost */}
+                            <div className="col-span-1 text-right">
+                              <span className="text-sm text-gray-400">
+                                {isMaterial
+                                  ? selectedMaterial && `฿${Number(selectedMaterial.unitCost).toLocaleString()}`
+                                  : selectedChildBOM && `฿${(selectedChildBOM.totalCost || 0).toLocaleString()}`}
+                              </span>
+                            </div>
+
+                            {/* Row Total */}
+                            <div className="col-span-1 text-right">
+                              <span className="text-sm font-semibold text-cyber-green">
+                                ฿{rowTotal.toLocaleString()}
+                              </span>
+                            </div>
+
+                            {/* Remove Button */}
+                            <div className="col-span-1 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(row.id)}
+                                disabled={itemRows.length === 1}
+                                className="p-1.5 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
+                        )
+                      })}
+                    </div>
 
-                          <div className="col-span-2 text-right">
-                            <span className="text-sm text-gray-400">
-                              {selectedMaterial && `฿${Number(selectedMaterial.unitCost).toLocaleString()}/unit`}
-                            </span>
-                          </div>
-
-                          <div className="col-span-1 text-right">
-                            <span className="text-sm font-semibold text-cyber-green">
-                              ฿{rowTotal.toLocaleString()}
-                            </span>
-                          </div>
-
-                          <div className="col-span-1 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMaterial(row.id)}
-                              disabled={materialRows.length === 1}
-                              className="p-1.5 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
+                    {availableChildBOMs.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-2">
+                        * ไม่มี Semi-finished BOM ที่สามารถใช้เป็น Child BOM ได้ (สร้าง BOM ที่เป็น Semi-finished ก่อน)
+                      </p>
+                    )}
                   </div>
-                </div>
 
-                {/* Total Cost */}
-                <div className="flex items-center justify-end gap-4 pt-4 border-t border-cyber-border">
-                  <span className="text-gray-400">ต้นทุนรวม:</span>
-                  <span className="text-2xl font-bold text-cyber-primary font-['Orbitron']">
-                    ฿{totalCost.toLocaleString()}
-                  </span>
-                </div>
-              </form>
-            )}
-          </div>
+                  {/* Total Cost */}
+                  <div className="flex items-center justify-end gap-4 pt-4 border-t border-cyber-border">
+                    <span className="text-gray-400">ต้นทุนรวม:</span>
+                    <span className="text-2xl font-bold text-cyber-primary font-['Orbitron']">
+                      ฿{totalCost.toLocaleString()}
+                    </span>
+                  </div>
+                </form>
+              )}
+            </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-cyber-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-2.5 rounded-lg border border-cyber-border text-gray-300 hover:bg-cyber-card/50 transition-colors"
-            >
-              ยกเลิก
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitting || loading}
-              className="cyber-btn-primary flex items-center gap-2"
-            >
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isEdit ? 'บันทึกการแก้ไข' : 'สร้าง BOM'}
-            </button>
-          </div>
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-cyber-border">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-6 py-2.5 rounded-lg border border-cyber-border text-gray-300 hover:bg-cyber-card/50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || loading}
+                className="cyber-btn-primary flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isEdit ? 'บันทึกการแก้ไข' : 'สร้าง BOM'}
+              </button>
+            </div>
+          </motion.div>
         </motion.div>
-      </motion.div>
-      
-      {/* Create Material Modal */}
-      <CreateMaterialModal
-        isOpen={isMaterialModalOpen}
-        onClose={() => setIsMaterialModalOpen(false)}
-        onSuccess={(newMaterial) => {
-          setMaterials([...materials, newMaterial])
-          setIsMaterialModalOpen(false)
-        }}
-      />
+        
+        {/* Create Material Modal */}
+        <CreateMaterialModal
+          isOpen={isMaterialModalOpen}
+          onClose={() => setIsMaterialModalOpen(false)}
+          onSuccess={(newMaterial) => {
+            setMaterials([...materials, newMaterial])
+            setIsMaterialModalOpen(false)
+          }}
+        />
       </AnimatePresence>
-
     </>
   )
 }
@@ -558,7 +681,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
           onClick={onClose}
         >
           <motion.div

@@ -28,6 +28,9 @@ import workOrderRoutes from './routes/workOrder.routes'
 import activityRoutes from './routes/activity.routes'
 import salesRoutes from './routes/sales.routes'
 import approvalRoutes from './routes/approval.routes'
+import accountsRoutes from './routes/accounts.routes'
+import journalRoutes from './routes/journal.routes'
+import reportsRoutes from './routes/reports.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -68,6 +71,9 @@ app.use('/api/work-orders', workOrderRoutes)
 app.use('/api/activities', activityRoutes)
 app.use('/api/sales', salesRoutes)
 app.use('/api/approval', approvalRoutes)
+app.use('/api/accounts', accountsRoutes)
+app.use('/api/journal', journalRoutes)
+app.use('/api/reports', reportsRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

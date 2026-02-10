@@ -117,27 +117,38 @@ db.exec(`
   );
 
   -- ==================== BOMs ====================
+  -- Nested BOM (Multi-level) - รองรับ BOM ที่มี hierarchy
   CREATE TABLE IF NOT EXISTS boms (
     id TEXT PRIMARY KEY,
     tenant_id TEXT,
     product_id TEXT NOT NULL,
+    parent_id TEXT,              -- ← อ้างอิง BOM แม่ (สำหรับ Semi-finished)
     version TEXT NOT NULL,
     status TEXT DEFAULT 'DRAFT',
+    level INTEGER DEFAULT 0,     -- ← ระดับความลึก (0=Finished Good, 1=Semi-finished, etc.)
+    is_semi_finished BOOLEAN DEFAULT 0,  -- ← เป็น Semi-finished product หรือไม่
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES stock_items(id),
+    FOREIGN KEY (parent_id) REFERENCES boms(id) ON DELETE SET NULL,
     UNIQUE(tenant_id, product_id, version)
   );
 
+  -- ==================== BOM Items ====================
+  -- รองรับทั้ง Raw Material และ Child BOM (Semi-finished)
   CREATE TABLE IF NOT EXISTS bom_items (
     id TEXT PRIMARY KEY,
     tenant_id TEXT,
     bom_id TEXT NOT NULL,
-    material_id TEXT NOT NULL,
+    item_type TEXT DEFAULT 'MATERIAL',  -- 'MATERIAL' | 'CHILD_BOM'
+    material_id TEXT,                   -- ใช้เมื่อ item_type = 'MATERIAL'
+    child_bom_id TEXT,                  -- ใช้เมื่อ item_type = 'CHILD_BOM' (อ้างอิง BOM ลูก)
     quantity REAL NOT NULL,
-    -- unit ถูกลบออก - ดึงจาก materials แทน
+    notes TEXT,
+    sort_order INTEGER DEFAULT 0,
     FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE CASCADE,
-    FOREIGN KEY (material_id) REFERENCES materials(id)
+    FOREIGN KEY (material_id) REFERENCES materials(id),
+    FOREIGN KEY (child_bom_id) REFERENCES boms(id) ON DELETE SET NULL
   );
 
   -- ==================== STOCK ITEMS ====================
@@ -1018,6 +1029,132 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_approval_logs_request ON approval_logs(approval_request_id);
   CREATE INDEX IF NOT EXISTS idx_user_approval_perm ON user_approval_permissions(tenant_id, user_id);
   CREATE INDEX IF NOT EXISTS idx_stock_adj_status ON stock_adjustments(tenant_id, status);
+
+  -- ==================== ACCOUNTING MODULE ====================
+  -- ผังบัญชี (Chart of Accounts) ตามประมวลบัญชีไทย
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    code TEXT NOT NULL,                    -- เช่น 1101, 2101, 3101
+    name TEXT NOT NULL,                    -- เช่น เงินสด, เจ้าหนี้การค้า
+    name_en TEXT,                          -- ชื่อภาษาอังกฤษ (optional)
+    type TEXT NOT NULL,                    -- ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+    category TEXT NOT NULL,                -- หมวดย่อย เช่น CURRENT_ASSET, FIXED_ASSET
+    parent_id TEXT,                        -- อ้างอิงบัญชีแม่ (สำหรับ grouping)
+    level INTEGER DEFAULT 0,               -- ระดับ (0=หลัก, 1=ย่อย, 2=รอง)
+    is_active BOOLEAN DEFAULT 1,
+    is_system BOOLEAN DEFAULT 0,           -- บัญชีระบบ (ลบไม่ได้)
+    normal_balance TEXT NOT NULL,          -- DEBIT หรือ CREDIT
+    description TEXT,
+    tax_related BOOLEAN DEFAULT 0,         -- เกี่ยวข้องกับภาษี
+    tax_code TEXT,                         -- รหัสภาษี (ถ้ามี)
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES accounts(id) ON DELETE SET NULL,
+    UNIQUE(tenant_id, code)
+  );
+
+  -- สมุดรายวัน (Journal Entries) - บันทึกรายการคู่
+  CREATE TABLE IF NOT EXISTS journal_entries (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    entry_number TEXT NOT NULL,            -- JV-2024-000001
+    date TEXT NOT NULL,                    -- วันที่บันทึก
+    reference_type TEXT,                   -- PO, INVOICE, PAYMENT, ADJUSTMENT, MANUAL
+    reference_id TEXT,                     -- ID ของเอกสารอ้างอิง
+    description TEXT NOT NULL,             -- คำอธิบายรายการ
+    total_debit REAL NOT NULL DEFAULT 0,
+    total_credit REAL NOT NULL DEFAULT 0,
+    is_auto_generated BOOLEAN DEFAULT 0,   -- สร้างอัตโนมัติจากระบบอื่น
+    is_posted BOOLEAN DEFAULT 0,           -- ยืนยันแล้ว (post แล้ว)
+    posted_at TEXT,
+    posted_by TEXT,
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, entry_number)
+  );
+
+  -- รายการในสมุดรายวัน (Journal Lines)
+  CREATE TABLE IF NOT EXISTS journal_lines (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    journal_entry_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    line_number INTEGER DEFAULT 1,
+    description TEXT,
+    debit REAL DEFAULT 0,
+    credit REAL DEFAULT 0,
+    FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+  );
+
+  -- ยอดคงเหลือบัญชีต่อช่วงเวลา (Account Balances) - สำหรับรายงาน
+  CREATE TABLE IF NOT EXISTS account_balances (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    account_id TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL,          -- ปีงบประมาณ
+    period INTEGER NOT NULL,               -- งวด (1-12)
+    beginning_balance REAL DEFAULT 0,
+    debit_amount REAL DEFAULT 0,
+    credit_amount REAL DEFAULT 0,
+    ending_balance REAL DEFAULT 0,
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+    UNIQUE(tenant_id, account_id, fiscal_year, period)
+  );
+
+  -- รายการเฉพาะทาง (Special Entries)
+  -- ภาษีมูลค่าเพิ่ม (VAT)
+  CREATE TABLE IF NOT EXISTS vat_entries (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    document_type TEXT NOT NULL,           -- PURCHASE, SALES
+    document_id TEXT NOT NULL,
+    document_number TEXT NOT NULL,
+    document_date TEXT NOT NULL,
+    party_name TEXT NOT NULL,              -- ชื่อคู่ค้า
+    party_tax_id TEXT,                     -- เลขประจำตัวผู้เสียภาษี
+    base_amount REAL NOT NULL,             -- ยอดก่อนภาษี
+    vat_rate REAL DEFAULT 7,               -- อัตราภาษี
+    vat_amount REAL NOT NULL,              -- ยอดภาษี
+    total_amount REAL NOT NULL,            -- ยอดรวม
+    is_input_vat BOOLEAN DEFAULT 0,        -- ภาษีซื้อ
+    is_output_vat BOOLEAN DEFAULT 0,       -- ภาษีขาย
+    journal_entry_id TEXT,                 -- อ้างอิงสมุดรายวัน
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id)
+  );
+
+  -- หัก ณ ที่จ่าย (Withholding Tax)
+  CREATE TABLE IF NOT EXISTS withholding_tax_entries (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    document_type TEXT NOT NULL,           -- PAYMENT, INVOICE
+    document_id TEXT NOT NULL,
+    document_number TEXT NOT NULL,
+    document_date TEXT NOT NULL,
+    party_name TEXT NOT NULL,
+    party_tax_id TEXT,
+    base_amount REAL NOT NULL,             -- ยอดก่อนหัก
+    wht_rate REAL NOT NULL,                -- อัตราหัก ณ ที่จ่าย
+    wht_amount REAL NOT NULL,              -- ยอดหัก
+    wht_type TEXT,                         -- ประเภท หัก ณ ที่จ่าย (เงินเดือน, ค่าบริการ, etc.)
+    journal_entry_id TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id)
+  );
+
+  -- ==================== ACCOUNTING INDEXES ====================
+  CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(tenant_id, type);
+  CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(tenant_id, date);
+  CREATE INDEX IF NOT EXISTS idx_journal_ref ON journal_entries(reference_type, reference_id);
+  CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(journal_entry_id);
+  CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
+  CREATE INDEX IF NOT EXISTS idx_vat_entries_date ON vat_entries(tenant_id, document_date);
+  CREATE INDEX IF NOT EXISTS idx_wht_entries_date ON withholding_tax_entries(tenant_id, document_date);
 `)
 
 console.log('✅ SQLite database initialized at:', dbPath)
