@@ -304,7 +304,7 @@ function Calculator() {
     setSearchQuery('')
     setSelectedProduct('')
     setSelectedBOM(null)
-    setOperatingCosts([{ id: '1', category: '', amount: 0 }])
+    setOperatingCosts([{ id: '1', category: '', amount: 0, type: 'fixed' }])
     setScrapValue(0)
     setCostBreakdown(null)
     setSellingPrice(0)
@@ -473,7 +473,7 @@ function Calculator() {
             </div>
 
             <div className="space-y-3">
-              {(operatingCosts || []).map((cost, index) => (
+              {(operatingCosts || []).map((cost) => (
                 <div key={cost.id} className="flex gap-2 items-center">
                   <div className="flex-1">
                     <input
