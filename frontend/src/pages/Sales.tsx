@@ -26,6 +26,7 @@ import {
   X
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../services/api'
 import toast from 'react-hot-toast'
 
 // Types
@@ -166,19 +167,10 @@ const Sales = () => {
     }
   }, [activeTab])
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('token')
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : ''
-    }
-  }
-
   const handleApiError = (error: any, defaultMsg: string) => {
     console.error('API Error:', error)
-    if (error.status === 401) {
+    if (error.response?.status === 401) {
       toast.error('Session expired. Please login again.')
-      // Optionally redirect to login
     } else {
       toast.error(defaultMsg)
     }
@@ -186,14 +178,7 @@ const Sales = () => {
 
   const fetchSummary = async () => {
     try {
-      const res = await fetch('/api/sales/summary', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/summary')
       if (data.success) {
         setSummary(data.data)
       }
@@ -207,18 +192,11 @@ const Sales = () => {
   const fetchQuotations = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/quotations', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/quotations')
       if (data.success) {
         setQuotations(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลใบเสนอราคาได้')
     } finally {
       setLoading(false)
@@ -228,18 +206,11 @@ const Sales = () => {
   const fetchSalesOrders = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/sales-orders', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/sales-orders')
       if (data.success) {
         setSalesOrders(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลคำสั่งขายได้')
     } finally {
       setLoading(false)
@@ -249,18 +220,11 @@ const Sales = () => {
   const fetchInvoices = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/invoices', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/invoices')
       if (data.success) {
         setInvoices(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลใบแจ้งหนี้ได้')
     } finally {
       setLoading(false)
@@ -270,18 +234,11 @@ const Sales = () => {
   const fetchCreditNotes = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/credit-notes', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/credit-notes')
       if (data.success) {
         setCreditNotes(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลใบลดหนี้ได้')
     } finally {
       setLoading(false)
@@ -291,18 +248,11 @@ const Sales = () => {
   const fetchBackorders = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/backorders', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/backorders')
       if (data.success) {
         setBackorders(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลใบค้างส่งได้')
     } finally {
       setLoading(false)
@@ -312,18 +262,11 @@ const Sales = () => {
   const fetchTemplates = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/sales/quotation-templates', {
-        headers: getAuthHeaders()
-      })
-      if (res.status === 401) {
-        handleApiError({ status: 401 }, '')
-        return
-      }
-      const data = await res.json()
+      const { data } = await api.get('/sales/quotation-templates')
       if (data.success) {
         setTemplates(data.data)
       }
-    } catch (error) {
+    } catch (error: any) {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลเทมเพลตได้')
     } finally {
       setLoading(false)

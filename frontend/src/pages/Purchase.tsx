@@ -25,6 +25,7 @@ import {
   Calendar
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../services/api'
 import toast from 'react-hot-toast'
 
 // Types
@@ -287,14 +288,6 @@ const Purchase = () => {
     else if (activeTab === 'returns') fetchReturns()
   }, [activeTab])
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('token')
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : ''
-    }
-  }
-
   const handleApiError = (error: any, defaultMsg: string) => {
     console.error('API Error:', error)
     if (error.status === 401) {
@@ -306,16 +299,14 @@ const Purchase = () => {
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch('/api/suppliers', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/suppliers')
       if (data.success) setSuppliers(data.data)
     } catch (error) { console.error('Fetch suppliers error:', error) }
   }
 
   const fetchMaterials = async () => {
     try {
-      const res = await fetch('/api/materials', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/materials')
       if (data.success) setMaterials(data.data)
     } catch (error) { console.error('Fetch materials error:', error) }
   }
@@ -323,8 +314,7 @@ const Purchase = () => {
   const fetchSummary = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/summary', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/summary')
       if (data.success) setSummary(data.data)
     } catch (error) { console.error('Fetch summary error:', error) }
     finally { setLoading(false) }
@@ -333,60 +323,54 @@ const Purchase = () => {
   const fetchRequests = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/requests', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/requests')
       if (data.success) setRequests(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบขอซื้อได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบขอซื้อได้') }
     finally { setLoading(false) }
   }
 
   const fetchOrders = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase-orders', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase-orders')
       if (data.success) setOrders(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบสั่งซื้อได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบสั่งซื้อได้') }
     finally { setLoading(false) }
   }
 
   const fetchReceipts = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/goods-receipts', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/goods-receipts')
       if (data.success) setReceipts(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบรับสินค้าได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบรับสินค้าได้') }
     finally { setLoading(false) }
   }
 
   const fetchInvoices = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/invoices', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/invoices')
       if (data.success) setInvoices(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบแจ้งหนี้ได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบแจ้งหนี้ได้') }
     finally { setLoading(false) }
   }
 
   const fetchPayments = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/payments', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/payments')
       if (data.success) setPayments(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการจ่ายเงินได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการจ่ายเงินได้') }
     finally { setLoading(false) }
   }
 
   const fetchReturns = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/purchase/returns', { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get('/purchase/returns')
       if (data.success) setReturns(data.data)
-    } catch (error) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการคืนสินค้าได้') }
+    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการคืนสินค้าได้') }
     finally { setLoading(false) }
   }
 
@@ -399,12 +383,7 @@ const Purchase = () => {
         estimated_total_price: item.quantity * item.estimated_unit_price
       }))
       
-      const res = await fetch('/api/purchase/requests', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ ...requestForm, items })
-      })
-      const data = await res.json()
+      const { data } = await api.post('/purchase/requests', { ...requestForm, items })
       if (data.success) {
         toast.success('สร้างใบขอซื้อสำเร็จ')
         closeModal()
@@ -412,8 +391,8 @@ const Purchase = () => {
       } else {
         toast.error(data.message || 'ไม่สามารถสร้างใบขอซื้อได้')
       }
-    } catch (error) {
-      toast.error('เกิดข้อผิดพลาดในการสร้างใบขอซื้อ')
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'เกิดข้อผิดพลาดในการสร้างใบขอซื้อ')
     } finally {
       setFormLoading(false)
     }
@@ -444,14 +423,9 @@ const Purchase = () => {
   const handleDeleteRequest = async (id: string) => {
     if (!confirm('ต้องการลบใบขอซื้อนี้?')) return
     try {
-      const res = await fetch(`/api/purchase/requests/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
-      if (res.ok) {
-        toast.success('ลบใบขอซื้อสำเร็จ')
-        fetchRequests()
-      }
+      await api.delete(`/purchase/requests/${id}`)
+      toast.success('ลบใบขอซื้อสำเร็จ')
+      fetchRequests()
     } catch (error) {
       toast.error('ไม่สามารถลบใบขอซื้อได้')
     }
@@ -872,8 +846,7 @@ const Purchase = () => {
 
   const loadPendingItems = async (poId: string) => {
     try {
-      const res = await fetch(`/api/purchase/goods-receipts/pending-items/${poId}`, { headers: getAuthHeaders() })
-      const data = await res.json()
+      const { data } = await api.get(`/purchase/goods-receipts/pending-items/${poId}`)
       if (data.success) {
         setReceiptForm(prev => ({
           ...prev,
