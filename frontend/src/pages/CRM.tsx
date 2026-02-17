@@ -18,9 +18,11 @@ import {
   MessageSquare,
   UserCheck,
   Truck,
+  Upload,
 } from 'lucide-react'
 import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
+import ImportModal from '../components/common/ImportModal'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -125,6 +127,7 @@ function CRM() {
   >('overview')
   const [showModal, setShowModal] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
@@ -213,8 +216,10 @@ function CRM() {
 
   const filteredCustomers = (customers || []).filter((customer) => {
     const matchesSearch =
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.contactName.toLowerCase().includes(searchTerm.toLowerCase())
+      customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.contactName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false
     const matchesType = selectedType === 'all' || customer.type === selectedType
     return matchesSearch && matchesType
   })
@@ -238,15 +243,26 @@ function CRM() {
           </p>
         </div>
         {mainTab === 'customers' && (
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => { setEditingCustomer(null); setShowCustomerModal(true) }}
-            className="cyber-btn-primary flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Add Customer
-          </motion.button>
+          <div className="flex gap-3">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowImportModal(true)}
+              className="cyber-btn-secondary flex items-center gap-2"
+            >
+              <Upload className="w-5 h-5" />
+              Import
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => { setEditingCustomer(null); setShowCustomerModal(true) }}
+              className="cyber-btn-primary flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Add Customer
+            </motion.button>
+          </div>
         )}
       </div>
 
@@ -432,6 +448,14 @@ function CRM() {
         customer={editingCustomer}
         onClose={() => { setShowCustomerModal(false); setEditingCustomer(null) }}
         onSave={loadData}
+      />
+      
+      {/* Import Modal */}
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        type="customers"
+        onSuccess={loadData}
       />
       </>)}
     </motion.div>

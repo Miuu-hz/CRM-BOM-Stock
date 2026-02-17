@@ -12,11 +12,12 @@ import {
   ArrowRightLeft,
   Calculator,
 } from 'lucide-react'
-import { journalApi, JournalEntry, Account } from '../../services/accounting'
+import { journalApi, accountsApi, JournalEntry, Account } from '../../services/accounting'
 import toast from 'react-hot-toast'
 
 const JournalEntries = () => {
   const [entries, setEntries] = useState<JournalEntry[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
@@ -49,9 +50,29 @@ const JournalEntries = () => {
     }
   }
 
+  const fetchAccounts = async () => {
+    try {
+      const response = await accountsApi.getAll({ active: true })
+      if (response.data.success) {
+        // Filter only level 2 accounts (actual posting accounts, not headers)
+        const postingAccounts = response.data.data.list.filter((a: Account) => a.level >= 2)
+        setAccounts(postingAccounts)
+      }
+    } catch (error) {
+      toast.error('ไม่สามารถโหลดข้อมูลบัญชีได้')
+    }
+  }
+
   useEffect(() => {
     fetchEntries()
   }, [dateRange])
+
+  // Load accounts when modal opens
+  useEffect(() => {
+    if (showModal) {
+      fetchAccounts()
+    }
+  }, [showModal])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -355,9 +376,30 @@ const JournalEntries = () => {
                           onChange={(e) => updateLine(index, 'accountId', e.target.value)}
                           className="cyber-input w-full text-sm"
                           required
+                          disabled={accounts.length === 0}
                         >
-                          <option value="">เลือกบัญชี</option>
-                          {/* TODO: Load accounts from API */}
+                          <option value="">
+                            {accounts.length === 0 ? 'กำลังโหลดบัญชี...' : 'เลือกบัญชี'}
+                          </option>
+                          {/* Group by account type */}
+                          {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map(type => {
+                            const typeAccounts = accounts.filter(a => a.type === type)
+                            if (typeAccounts.length === 0) return null
+                            return (
+                              <optgroup key={type} label={
+                                type === 'ASSET' ? 'สินทรัพย์' :
+                                type === 'LIABILITY' ? 'หนี้สิน' :
+                                type === 'EQUITY' ? 'ส่วนของผู้ถือหุ้น' :
+                                type === 'REVENUE' ? 'รายได้' : 'ค่าใช้จ่าย'
+                              }>
+                                {typeAccounts.map(acc => (
+                                  <option key={acc.id} value={acc.id}>
+                                    {acc.code} - {acc.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )
+                          })}
                         </select>
                       </div>
                       <div className="col-span-3">

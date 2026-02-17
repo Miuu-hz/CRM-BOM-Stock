@@ -16,9 +16,11 @@ import {
   MapPin,
   AlertCircle,
   Plus,
+  Upload,
 } from 'lucide-react'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
+import ImportModal from '../components/common/ImportModal'
 
 // รายการหน่วยพื้นฐาน
 const DEFAULT_UNITS = [
@@ -70,6 +72,9 @@ function Stock() {
   
   // Add New Item Modal
   const [showAddModal, setShowAddModal] = useState(false)
+  
+  // Import Modal
+  const [showImportModal, setShowImportModal] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -151,6 +156,15 @@ function Stock() {
           <p className="text-gray-400">Track and manage your stock levels</p>
         </div>
         <div className="flex gap-3">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowImportModal(true)}
+            className="cyber-btn-secondary flex items-center gap-2"
+          >
+            <Upload className="w-5 h-5" />
+            Import
+          </motion.button>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -412,6 +426,14 @@ function Stock() {
           setShowAddModal(false)
           loadData()
         }}
+      />
+
+      {/* Import Modal */}
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        type="stock"
+        onSuccess={loadData}
       />
     </motion.div>
   )

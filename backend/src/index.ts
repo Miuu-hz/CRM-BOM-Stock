@@ -31,6 +31,7 @@ import approvalRoutes from './routes/approval.routes'
 import accountsRoutes from './routes/accounts.routes'
 import journalRoutes from './routes/journal.routes'
 import reportsRoutes from './routes/reports.routes'
+import importRoutes from './routes/import.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -40,8 +41,8 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
 }))
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -74,6 +75,7 @@ app.use('/api/approval', approvalRoutes)
 app.use('/api/accounts', accountsRoutes)
 app.use('/api/journal', journalRoutes)
 app.use('/api/reports', reportsRoutes)
+app.use('/api/import', importRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
