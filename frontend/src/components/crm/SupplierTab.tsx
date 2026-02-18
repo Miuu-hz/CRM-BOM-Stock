@@ -7,13 +7,8 @@ import {
   Edit2,
   Trash2,
   X,
-  Phone,
-  Mail,
-  MapPin,
   Star,
-  FileText,
   Loader2,
-  Building2,
 } from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
 

@@ -7,38 +7,64 @@ const router = Router()
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
 
+// หมวดหมู่สินค้าสำเร็จรูป (ไม่ใช้เป็นวัตถุดิบใน BOM)
+// รองรับทั้งภาษาไทยและอังกฤษ
+const FINISHED_CATEGORIES = `('[สินค้า]', 'finished', 'FINISHED')`
+
 /**
  * GET /api/data/products
- * ดึงรายการสินค้าจาก Stock ที่ใช้เป็น Finished Goods/WIP ได้
+ * ดึงรายการสินค้าจาก stock_items สำหรับสร้าง BOM
+ * เฉพาะสินค้าสำเร็จรูปและกึ่งสำเร็จรูป
  */
 router.get('/products', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
-    // ดึงจาก stock_items แทน products (เพราะสินค้าสร้างใน Stock)
+
+    // ดึงจาก stock_items เฉพาะประเภทที่ใช้เป็น BOM product ได้
+    // รองรับ category ภาษาไทย: [สินค้า], [สินค้าสำเร็จรูป], [สินค้ากึ่งสำเร็จรูป]
+    // และภาษาอังกฤษ: finished, wip
     const rows = db.prepare(`
-      SELECT 
+      SELECT
         id,
         tenant_id,
         sku as code,
         name,
         category,
-        'ACTIVE' as status,
+        unit,
+        unit_cost,
+        quantity as current_stock,
+        status,
         created_at,
         updated_at
-      FROM stock_items 
-      WHERE tenant_id = ? 
-        AND category IN ('finished', 'wip', 'material')
-      ORDER BY name ASC
+      FROM stock_items
+      WHERE tenant_id = ?
+        AND category IN (
+          '[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]',
+          'finished', 'wip', 'FINISHED', 'WIP', 'material'
+        )
+      ORDER BY
+        CASE category
+          WHEN '[สินค้า]' THEN 1
+          WHEN '[สินค้าสำเร็จรูป]' THEN 1
+          WHEN 'finished' THEN 1
+          WHEN 'FINISHED' THEN 1
+          WHEN '[สินค้ากึ่งสำเร็จรูป]' THEN 2
+          WHEN 'wip' THEN 2
+          WHEN 'WIP' THEN 2
+          ELSE 3
+        END,
+        name ASC
     `).all(tenantId) as any[]
 
-    // แปลง snake_case เป็น camelCase
     const products = rows.map((p) => ({
       id: p.id,
       code: p.code,
       name: p.name,
       category: p.category,
-      status: p.status,
+      unit: p.unit,
+      unitCost: Number(p.unit_cost) || 0,
+      currentStock: p.current_stock,
+      status: p.status || 'ACTIVE',
       createdAt: p.created_at,
       updatedAt: p.updated_at,
     }))
@@ -58,42 +84,46 @@ router.get('/products', (req: Request, res: Response) => {
 
 /**
  * GET /api/data/materials
- * ดึงรายการวัตถุดิบจาก stock_items (raw, material category)
+ * ดึงรายการวัตถุดิบจาก stock_items
+ * เลือกได้ทุก category ยกเว้นสินค้าสำเร็จรูป [สินค้า]
  */
 router.get('/materials', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
-    // ดึงจาก stock_items แทน materials table
+
+    // ดึงจาก stock_items ทุก category ยกเว้นสินค้าสำเร็จรูป
+    // ไม่รวม [สินค้า], [สินค้าสำเร็จรูป], finished
     const rows = db.prepare(`
-      SELECT 
+      SELECT
         id,
         sku as code,
         name,
         unit,
+        unit_cost,
+        category,
         quantity as current_stock,
         min_stock,
         max_stock,
-        category,
+        status,
         created_at,
         updated_at
-      FROM stock_items 
-      WHERE tenant_id = ? 
-        AND category IN ('raw', 'material')
+      FROM stock_items
+      WHERE tenant_id = ?
+        AND category NOT IN ('[สินค้า]', '[สินค้าสำเร็จรูป]', 'finished', 'FINISHED')
       ORDER BY name ASC
     `).all(tenantId) as any[]
 
-    // แปลง snake_case เป็น camelCase
     const materials = rows.map((m) => ({
       id: m.id,
       code: m.code,
       name: m.name,
       unit: m.unit,
-      unitCost: 0, // ยังไม่มีในตารางนี้ ต้องเพิ่มทีหลัง
+      unitCost: Number(m.unit_cost) || 0,
+      category: m.category,
+      currentStock: m.current_stock,
       minStock: m.min_stock,
       maxStock: m.max_stock,
-      currentStock: m.current_stock,
-      category: m.category,
+      status: m.status,
       createdAt: m.created_at,
       updatedAt: m.updated_at,
     }))
@@ -120,9 +150,9 @@ router.get('/boms', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const boms = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      JOIN products p ON b.product_id = p.id
+      JOIN stock_items p ON b.product_id = p.id
       WHERE b.tenant_id = ?
       ORDER BY b.updated_at DESC
     `).all(tenantId) as any[]
@@ -130,9 +160,9 @@ router.get('/boms', (req: Request, res: Response) => {
     // Enrich BOM with calculated data
     const enrichedBOMs = boms.map((bom) => {
       const bomMaterials = db.prepare(`
-        SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost
+        SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit_cost
         FROM bom_items bi
-        JOIN materials m ON bi.material_id = m.id
+        JOIN stock_items m ON bi.material_id = m.id
         WHERE bi.bom_id = ?
       `).all(bom.id) as any[]
 
@@ -172,9 +202,9 @@ router.get('/boms/:productId', (req: Request, res: Response) => {
     const { productId } = req.params
 
     const bom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.code as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code
       FROM boms b
-      JOIN products p ON b.product_id = p.id
+      JOIN stock_items p ON b.product_id = p.id
       WHERE b.product_id = ? AND b.status = 'ACTIVE' AND b.tenant_id = ?
     `).get(productId, tenantId) as any
 
@@ -186,9 +216,9 @@ router.get('/boms/:productId', (req: Request, res: Response) => {
     }
 
     const bomMaterials = db.prepare(`
-      SELECT bi.*, m.name as material_name, m.code as material_code, m.unit_cost
+      SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit_cost
       FROM bom_items bi
-      JOIN materials m ON bi.material_id = m.id
+      JOIN stock_items m ON bi.material_id = m.id
       WHERE bi.bom_id = ?
     `).all(bom.id) as any[]
 

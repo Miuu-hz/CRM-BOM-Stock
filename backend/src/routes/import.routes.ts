@@ -129,9 +129,15 @@ router.post('/customers', async (req: Request, res: Response) => {
 // IMPORT STOCK ITEMS - นำเข้าสินค้าจาก Excel/CSV
 // ============================================
 router.post('/stock', async (req: Request, res: Response) => {
+  console.log('=== IMPORT STOCK API CALLED ===')
+  
   try {
     const tenantId = req.user!.tenantId
     const { data } = req.body
+
+    console.log('TenantId:', tenantId)
+    console.log('Data received:', data?.length, 'rows')
+    console.log('First row sample:', JSON.stringify(data?.[0], null, 2))
 
     if (!Array.isArray(data) || data.length === 0) {
       return res.status(400).json({
@@ -158,6 +164,11 @@ router.post('/stock', async (req: Request, res: Response) => {
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i]
+      
+      // Log first few rows for debugging
+      if (i < 3) {
+        console.log(`Row ${i + 1}:`, JSON.stringify(row))
+      }
       
       try {
         // Validate required fields
@@ -196,6 +207,7 @@ router.post('/stock', async (req: Request, res: Response) => {
 
         results.success++
       } catch (error: any) {
+        console.error(`Row ${i + 1} error:`, error.message, 'Row data:', row)
         results.failed++
         results.errors.push(`Row ${i + 1}: ${error.message}`)
       }

@@ -40,8 +40,14 @@ router.post('/', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const createdBy = req.user!.email
     
+    console.log('Create activity:', { customerId, type, note, tenantId, createdBy })
+    
     if (!customerId || !type || !note) {
-      return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+      return res.status(400).json({ 
+        success: false, 
+        message: 'กรุณากรอกข้อมูลให้ครบ',
+        received: { customerId, type, note }
+      })
     }
     
     // ตรวจสอบว่า customer เป็นของ tenant นี้

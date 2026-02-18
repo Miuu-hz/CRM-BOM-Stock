@@ -25,10 +25,13 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
   visited.add(bomId)
 
   const items = db.prepare(`
-    SELECT bi.*, m.unit_cost, m.name as material_name, 
+    SELECT bi.*,
+           COALESCE(m.unit_cost, 0) as unit_cost,
+           m.name as material_name,
+           m.unit as material_unit,
            child_bom.product_id as child_product_id
     FROM bom_items bi
-    LEFT JOIN materials m ON bi.material_id = m.id
+    LEFT JOIN stock_items m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
@@ -67,10 +70,10 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
 
   // Get items with both material and child BOM info
   const items = db.prepare(`
-    SELECT 
+    SELECT
       bi.*,
-      m.name as material_name, 
-      m.code as material_code, 
+      m.name as material_name,
+      m.sku as material_code,
       m.unit_cost,
       m.unit,
       child_bom.id as child_bom_id_ref,
@@ -78,7 +81,7 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
       child_p.name as child_bom_product_name,
       child_p.sku as child_bom_product_code
     FROM bom_items bi
-    LEFT JOIN materials m ON bi.material_id = m.id
+    LEFT JOIN stock_items m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -165,7 +168,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     const totalBOMs = (db.prepare('SELECT COUNT(*) as count FROM boms WHERE tenant_id = ?').get(tenantId) as any).count
     const activeBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId) as any).count
     const semiFinishedBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE tenant_id = ? AND is_semi_finished = 1").get(tenantId) as any).count
-    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
+    const totalMaterials = (db.prepare("SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ? AND category IN ('raw', 'material')").get(tenantId) as any).count
 
     // Calculate average cost per unit (top-level BOMs only)
     const topLevelBOMs = db.prepare(`
@@ -256,7 +259,25 @@ router.get('/tree/:id', async (req: Request, res: Response) => {
   }
 })
 
-// Get BOM by ID (flat structure)
+// Get available child BOMs (for dropdown) - MUST BE BEFORE /:id
+router.get('/available-children/:id?', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const currentBomId = req.params.id || null
+    
+    const availableBOMs = getAvailableChildBOMs(currentBomId, tenantId)
+
+    res.json({
+      success: true,
+      data: availableBOMs,
+    })
+  } catch (error) {
+    console.error('Get available child BOMs error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch available child BOMs' })
+  }
+})
+
+// Get BOM by ID (flat structure) - MUST BE AFTER specific routes
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -281,17 +302,17 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     // Get items with both material and child BOM info
     const items = db.prepare(`
-      SELECT 
+      SELECT
         bi.*,
-        m.name as material_name, 
-        m.code as material_code, 
+        m.name as material_name,
+        m.sku as material_code,
         m.unit_cost,
         m.unit,
         child_bom.version as child_bom_version,
         child_p.name as child_bom_product_name,
         child_p.sku as child_bom_product_code
       FROM bom_items bi
-      LEFT JOIN materials m ON bi.material_id = m.id
+      LEFT JOIN stock_items m ON bi.material_id = m.id
       LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
       LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
       WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -315,24 +336,6 @@ router.get('/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get BOM error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch BOM' })
-  }
-})
-
-// Get available child BOMs (for dropdown)
-router.get('/available-children/:id?', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const currentBomId = req.params.id || null
-    
-    const availableBOMs = getAvailableChildBOMs(currentBomId, tenantId)
-
-    res.json({
-      success: true,
-      data: availableBOMs,
-    })
-  } catch (error) {
-    console.error('Get available child BOMs error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch available child BOMs' })
   }
 })
 
@@ -415,8 +418,8 @@ router.post('/', async (req: Request, res: Response) => {
             
             insertItem.run(generateId(), tenantId, id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.notes || '', i)
           } else {
-            // Raw Material
-            const material = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
+            // Raw Material - check in stock_items table
+            const material = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
             if (!material) {
               throw new Error(`Material ${item.materialId} not found`)
             }
@@ -502,8 +505,8 @@ router.put('/:id', async (req: Request, res: Response) => {
             
             insertItem.run(generateId(), tenantId, req.params.id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.notes || '', i)
           } else {
-            // Raw Material
-            const material = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
+            // Raw Material - check in stock_items table
+            const material = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
             if (!material) {
               throw new Error(`Material ${item.materialId} not found`)
             }
@@ -595,9 +598,9 @@ router.get('/explode/:id', async (req: Request, res: Response) => {
       visited.add(currentBomId)
 
       const items = db.prepare(`
-        SELECT bi.*, m.name as material_name, m.code as material_code, m.unit
+        SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit
         FROM bom_items bi
-        LEFT JOIN materials m ON bi.material_id = m.id
+        LEFT JOIN stock_items m ON bi.material_id = m.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ?
       `).all(currentBomId, tenantId) as any[]
 
