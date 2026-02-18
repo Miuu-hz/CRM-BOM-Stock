@@ -69,19 +69,39 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
             return
           }
 
-          // Check if it's FlowAccount Thai format (has specific Thai headers)
+          // Check format type
           const firstRow = jsonData[0] as string[]
+          const secondRow = jsonData[1] as string[]
+          
+          // Check if it's FlowAccount Thai format (has specific Thai headers in first row)
           const isFlowAccountFormat = firstRow.some(h => 
             h && typeof h === 'string' && 
             (h.includes('ข้อมูลผู้ติดต่อ') || h.includes('ที่อยู่จดทะเบียน') || h.includes('ช่องทางติดต่อ'))
           )
           
-          console.log('Format detection:', { isFlowAccountFormat, type, firstRowHeaders: firstRow.slice(0, 5) })
+          // Check if it's Thai stock format (first row is company name, second row has 'รหัสสินค้า')
+          const isThaiStockFormat = type === 'stock' && secondRow && secondRow.some(h =>
+            h && typeof h === 'string' && 
+            (h.includes('รหัสสินค้า') || h.includes('ชื่อสินค้า') || h.includes('หมวดหมู่'))
+          )
+          
+          console.log('Format detection:', { 
+            isFlowAccountFormat, 
+            isThaiStockFormat,
+            type, 
+            firstRowHeaders: firstRow.slice(0, 5),
+            secondRowHeaders: secondRow?.slice(0, 5)
+          })
 
           if (isFlowAccountFormat && type === 'customers') {
             // FlowAccount format: use row 2 (index 1) as headers, data starts at row 3 (index 2)
             const parsed = parseFlowAccountCustomerFormat(jsonData)
             console.log('FlowAccount parsed sample:', parsed.slice(0, 3))
+            resolve(parsed)
+          } else if (isThaiStockFormat) {
+            // Thai stock format: skip row 1 (company name), use row 2 as headers
+            const parsed = parseThaiStockFormat(jsonData)
+            console.log('Thai stock parsed sample:', parsed.slice(0, 3))
             resolve(parsed)
           } else {
             // Standard format: first row as headers
@@ -112,11 +132,75 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
     return rows.filter(row => Object.values(row).some(v => v !== ''))
   }
 
-  // Parse FlowAccount Thai format for customers
-  const parseFlowAccountCustomerFormat = (jsonData: any[]): any[] => {
-    // Row 2 (index 1) contains actual column headers
+  // Parse Thai stock format (row 1 = company name, row 2 = headers, data from row 3)
+  const parseThaiStockFormat = (jsonData: any[]): any[] => {
+    // Skip first row (company name), use row 2 (index 1) as headers
     const headers = jsonData[1] as string[]
     const dataRows = jsonData.slice(2) // Data starts from row 3
+
+    // Map Thai headers to English field names
+    const headerMap: Record<string, string> = {
+      'รหัสสินค้า': 'sku',
+      'ชื่อสินค้า': 'name',
+      'ประเภทสินค้า': 'category',
+      'หมวดหมู่': 'category',
+      'ยี่ห้อ': 'brand',
+      'ดีไวร์ด': 'brand',
+      'ราคาขาย': 'sale_price',
+      'ราคาซื้อ': 'purchase_price',
+      'หน่วย': 'unit',
+      'จำนวน': 'quantity',
+      'stock': 'quantity',
+      'จำนวนขั้นต่ำ': 'min_stock',
+      'min': 'min_stock',
+      'จำนวนสูงสุด': 'max_stock',
+      'max': 'max_stock',
+      'ที่ตั้ง': 'location',
+      'location': 'location',
+      'ใช้งาน': 'is_active',
+      'จัดการจำนวน': 'track_quantity',
+    }
+
+    return dataRows
+      .filter((row: any) => row[0]) // Must have at least first column
+      .map((row: any) => {
+        const obj: any = {}
+        headers.forEach((header, index) => {
+          if (header) {
+            const headerStr = String(header).trim()
+            const key = headerMap[headerStr] || headerStr.toLowerCase().replace(/\s+/g, '_')
+            let value = row[index]
+            
+            // Convert numeric strings to numbers
+            if (key === 'quantity' || key === 'min_stock' || key === 'max_stock') {
+              value = parseFloat(value) || 0
+            }
+            
+            obj[key] = value !== undefined ? value : ''
+          }
+        })
+        
+        // If name is not provided but sku is, use sku as name
+        if (!obj.name && obj.sku) {
+          obj.name = obj.sku
+        }
+        
+        // Set defaults for missing fields
+        if (!obj.unit) obj.unit = 'PCS'
+        if (!obj.quantity && obj.quantity !== 0) obj.quantity = 0
+        if (!obj.min_stock && obj.min_stock !== 0) obj.min_stock = 0
+        if (!obj.max_stock && obj.max_stock !== 0) obj.max_stock = 1000
+        if (!obj.location) obj.location = 'MAIN'
+        
+        return obj
+      })
+      .filter(row => row.sku || row.name) // Must have sku or name
+  }
+
+  // Parse FlowAccount Thai format for customers
+  const parseFlowAccountCustomerFormat = (jsonData: any[]): any[] => {
+    // Row 2 (index 1) contains actual column headers, data starts from row 3 (index 2)
+    const dataRows = jsonData.slice(2)
 
     return dataRows
       .filter((row: any) => row[1]) // Must have customer code (column B)
@@ -271,7 +355,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
                   <p className="text-xs text-gray-600 mt-1">
                     {type === 'customers' 
                       ? 'รองรับไฟล์จาก FlowAccount (Thai) หรือคอลัมน์: name, type, contact_name, email, phone'
-                      : 'คอลัมน์: name, category, unit, quantity, min_stock, max_stock, location'
+                      : 'รองรับทั้งภาษาไทย (รหัสสินค้า, ชื่อสินค้า, หน่วย) หรือภาษาอังกฤษ: name, category, unit, quantity, min_stock, max_stock, location'
                     }
                   </p>
                 </>

@@ -54,6 +54,10 @@ function Stock() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
 
   // Modal states
   const [detailModal, setDetailModal] = useState<{ open: boolean; item: StockItem | null }>({
@@ -114,6 +118,29 @@ function Stock() {
     const matchesStatus = selectedStatus === 'all' || status === selectedStatus
     return matchesSearch && matchesCategory && matchesStatus
   })
+  
+  // Pagination logic
+  const totalItems = filteredItems.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedItems = filteredItems.slice(startIndex, endIndex)
+  
+  // Reset to page 1 when filters change
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    setCurrentPage(1)
+  }
+  
+  const handleCategoryChange = (value: string) => {
+    setSelectedCategory(value)
+    setCurrentPage(1)
+  }
+  
+  const handleStatusChange = (value: string) => {
+    setSelectedStatus(value)
+    setCurrentPage(1)
+  }
 
   const handleOpenDetail = async (item: StockItem) => {
     try {
@@ -224,7 +251,7 @@ function Stock() {
               type="text"
               placeholder="Search items by name or SKU..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="cyber-input pl-10 w-full"
             />
           </div>
@@ -234,22 +261,22 @@ function Stock() {
             <FilterButton
               label="All"
               active={selectedCategory === 'all'}
-              onClick={() => setSelectedCategory('all')}
+              onClick={() => handleCategoryChange('all')}
             />
             <FilterButton
               label="Raw Material"
               active={selectedCategory === 'raw'}
-              onClick={() => setSelectedCategory('raw')}
+              onClick={() => handleCategoryChange('raw')}
             />
             <FilterButton
               label="WIP"
               active={selectedCategory === 'wip'}
-              onClick={() => setSelectedCategory('wip')}
+              onClick={() => handleCategoryChange('wip')}
             />
             <FilterButton
               label="Finished"
               active={selectedCategory === 'finished'}
-              onClick={() => setSelectedCategory('finished')}
+              onClick={() => handleCategoryChange('finished')}
             />
           </div>
 
@@ -258,22 +285,22 @@ function Stock() {
             <FilterButton
               label="All Status"
               active={selectedStatus === 'all'}
-              onClick={() => setSelectedStatus('all')}
+              onClick={() => handleStatusChange('all')}
             />
             <FilterButton
               label="Out of Stock"
               active={selectedStatus === 'out'}
-              onClick={() => setSelectedStatus('out')}
+              onClick={() => handleStatusChange('out')}
             />
             <FilterButton
               label="Critical"
               active={selectedStatus === 'critical'}
-              onClick={() => setSelectedStatus('critical')}
+              onClick={() => handleStatusChange('critical')}
             />
             <FilterButton
               label="Low"
               active={selectedStatus === 'low'}
-              onClick={() => setSelectedStatus('low')}
+              onClick={() => handleStatusChange('low')}
             />
           </div>
         </div>
@@ -303,7 +330,7 @@ function Stock() {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item, index) => {
+                paginatedItems.map((item, index) => {
                   const status = getItemStatus(item)
                   return (
                     <motion.tr
@@ -389,6 +416,66 @@ function Stock() {
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-cyber-border">
+          <div className="flex items-center gap-4">
+            <span className="text-gray-400 text-sm">
+              แสดง <span className="text-cyber-primary font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-cyber-primary font-semibold">{totalItems}</span> รายการ
+            </span>
+            
+            {/* Items Per Page Selector */}
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value))
+                setCurrentPage(1)
+              }}
+              className="cyber-input text-sm py-1 px-2"
+            >
+              <option value={20}>20 / หน้า</option>
+              <option value={50}>50 / หน้า</option>
+              <option value={100}>100 / หน้า</option>
+            </select>
+          </div>
+          
+          {/* Page Navigation */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              หน้าแรก
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              ก่อนหน้า
+            </button>
+            
+            <span className="px-4 py-1 text-sm text-cyber-primary font-semibold bg-cyber-primary/10 rounded border border-cyber-primary/30">
+              หน้า {currentPage} / {totalPages || 1}
+            </span>
+            
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              ถัดไป
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              หน้าสุดท้าย
+            </button>
+          </div>
         </div>
       </div>
 

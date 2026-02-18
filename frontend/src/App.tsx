@@ -13,6 +13,7 @@ import WorkOrders from './pages/WorkOrders'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import { ChartOfAccounts, JournalEntries, FinancialReports } from './pages/Accounting'
+import Tax from './pages/Tax'
 
 function AppContent() {
   const { user, isReady } = useAuth()
@@ -45,6 +46,7 @@ function AppContent() {
         <Route path="/sales" element={<Sales />} />
         <Route path="/purchase" element={<Purchase />} />
         <Route path="/work-orders" element={<WorkOrders />} />
+        <Route path="/production" element={<Navigate to="/bom" replace />} />
         <Route path="/settings" element={<Settings />} />
         
         {/* Accounting Routes */}
@@ -52,6 +54,9 @@ function AppContent() {
         <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
         <Route path="/accounting/journal-entries" element={<JournalEntries />} />
         <Route path="/accounting/reports" element={<FinancialReports />} />
+        
+        {/* Tax Route */}
+        <Route path="/tax" element={<Tax />} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

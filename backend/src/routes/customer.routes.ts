@@ -163,6 +163,134 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), (req: Request, res: Respo
   }
 })
 
+// Get customer insights (orders, favourites, recommendations, proposals)
+router.get('/:id/insights', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    
+    // Check customer exists and belongs to tenant
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    }
+    
+    // Get order stats
+    const orderStats = db.prepare(`
+      SELECT 
+        COUNT(*) as totalOrders,
+        COALESCE(SUM(total_amount), 0) as totalRevenue,
+        MAX(order_date) as lastOrderDate,
+        CASE 
+          WHEN MAX(order_date) IS NOT NULL 
+          THEN julianday('now') - julianday(MAX(order_date))
+          ELSE NULL 
+        END as daysSinceLastOrder,
+        CASE 
+          WHEN COUNT(*) > 0 THEN COALESCE(SUM(total_amount), 0) / COUNT(*)
+          ELSE 0 
+        END as avgOrderValue
+      FROM orders 
+      WHERE customer_id = ?
+    `).get(id) as any
+    
+    // Get recent orders with items
+    const recentOrders = db.prepare(`
+      SELECT 
+        o.id, o.order_number as orderNumber, o.order_date as orderDate, 
+        o.total_amount as totalAmount, o.status, o.notes
+      FROM orders o
+      WHERE o.customer_id = ?
+      ORDER BY o.order_date DESC
+      LIMIT 10
+    `).all(id) as any[]
+    
+    // Get order items for each order
+    for (const order of recentOrders) {
+      order.items = db.prepare(`
+        SELECT 
+          oi.product_id as productId, 
+          COALESCE(p.name, oi.product_name) as productName,
+          COALESCE(p.category, 'ทั่วไป') as category,
+          oi.quantity, oi.total_price as totalPrice
+        FROM order_items oi
+        LEFT JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = ?
+      `).all(order.id) || []
+    }
+    
+    // Get favourite products (most ordered)
+    const favouriteProducts = db.prepare(`
+      SELECT 
+        oi.product_id as productId,
+        COALESCE(p.name, oi.product_name) as name,
+        COALESCE(p.category, 'ทั่วไป') as category,
+        SUM(oi.quantity) as totalQuantity,
+        SUM(oi.total_price) as totalRevenue
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE o.customer_id = ?
+      GROUP BY oi.product_id
+      ORDER BY totalQuantity DESC
+      LIMIT 10
+    `).all(id) || []
+    
+    // Get product recommendations (popular products not yet ordered by this customer)
+    const recommendations = db.prepare(`
+      SELECT 
+        p.id as productId, p.name, p.category,
+        COUNT(DISTINCT oi.order_id) as popularity
+      FROM products p
+      JOIN order_items oi ON p.id = oi.product_id
+      WHERE p.id NOT IN (
+        SELECT DISTINCT oi2.product_id 
+        FROM order_items oi2 
+        JOIN orders o2 ON oi2.order_id = o2.id 
+        WHERE o2.customer_id = ?
+      )
+      GROUP BY p.id
+      ORDER BY popularity DESC
+      LIMIT 5
+    `).all(id) || []
+    
+    // Get proposals history (from order notes)
+    const proposalsHistory = db.prepare(`
+      SELECT 
+        order_number as orderNumber,
+        COALESCE(notes, '') as note,
+        created_at as createdAt
+      FROM orders
+      WHERE customer_id = ? AND notes IS NOT NULL AND notes != ''
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all(id) || []
+    
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalOrders: orderStats.totalOrders || 0,
+          totalRevenue: orderStats.totalRevenue || 0,
+          lastOrderDate: orderStats.lastOrderDate,
+          daysSinceLastOrder: orderStats.daysSinceLastOrder ? Math.floor(orderStats.daysSinceLastOrder) : undefined,
+          avgOrderValue: orderStats.avgOrderValue || 0
+        },
+        recentOrders: recentOrders.map(o => ({
+          ...o,
+          items: o.items || []
+        })),
+        favouriteProducts,
+        recommendations,
+        proposalsHistory
+      }
+    })
+  } catch (error) {
+    console.error('Get customer insights error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถดึงข้อมูล insights ได้' })
+  }
+})
+
 // Get customer summary (เฉพาะของบริษัทนี้)
 router.get('/summary/stats', (req: Request, res: Response) => {
   try {

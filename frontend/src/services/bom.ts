@@ -172,7 +172,7 @@ export const bomService = {
 
   // Get available child BOMs for selection
   getAvailableChildren: async (id?: string): Promise<BOM[]> => {
-    const url = id ? `/bom/available-children/${id}` : '/bom/available-children/'
+    const url = id ? `/bom/available-children/${id}` : '/bom/available-children'
     const response = await api.get<ApiResponse<BOM[]>>(url)
     return response.data?.data || []
   },

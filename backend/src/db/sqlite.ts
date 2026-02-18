@@ -141,13 +141,13 @@ db.exec(`
     tenant_id TEXT,
     bom_id TEXT NOT NULL,
     item_type TEXT DEFAULT 'MATERIAL',  -- 'MATERIAL' | 'CHILD_BOM'
-    material_id TEXT,                   -- ใช้เมื่อ item_type = 'MATERIAL'
+    material_id TEXT,                   -- ใช้เมื่อ item_type = 'MATERIAL' (อ้างอิง stock_items)
     child_bom_id TEXT,                  -- ใช้เมื่อ item_type = 'CHILD_BOM' (อ้างอิง BOM ลูก)
     quantity REAL NOT NULL,
     notes TEXT,
     sort_order INTEGER DEFAULT 0,
     FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE CASCADE,
-    FOREIGN KEY (material_id) REFERENCES materials(id),
+    FOREIGN KEY (material_id) REFERENCES stock_items(id),
     FOREIGN KEY (child_bom_id) REFERENCES boms(id) ON DELETE SET NULL
   );
 
@@ -162,6 +162,7 @@ db.exec(`
     material_id TEXT,
     quantity INTEGER DEFAULT 0,
     unit TEXT NOT NULL,
+    unit_cost REAL DEFAULT 0,
     min_stock INTEGER DEFAULT 0,
     max_stock INTEGER DEFAULT 1000,
     location TEXT NOT NULL,
@@ -906,6 +907,174 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_wo_bom ON work_orders(bom_id);
   CREATE INDEX IF NOT EXISTS idx_activity_customer ON activity_logs(customer_id);
   CREATE INDEX IF NOT EXISTS idx_activity_tenant ON activity_logs(tenant_id);
+
+  -- ==================== CUSTOMER PRODUCT RECOMMENDATIONS ====================
+  -- สินค้าที่แนะนำสำหรับลูกค้า (จาก Sales/CRM)
+  CREATE TABLE IF NOT EXISTS customer_recommendations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    customer_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    product_category TEXT,
+    reason TEXT,                           -- เหตุผลที่แนะนำ
+    priority INTEGER DEFAULT 0,            -- ลำดับความสำคัญ
+    status TEXT DEFAULT 'PENDING',         -- PENDING, OFFERED, ACCEPTED, REJECTED
+    offered_at TEXT,                       -- วันที่เสนอ
+    offered_by TEXT,
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    UNIQUE(tenant_id, customer_id, product_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_rec_customer ON customer_recommendations(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_rec_status ON customer_recommendations(status);
+  CREATE INDEX IF NOT EXISTS idx_rec_tenant ON customer_recommendations(tenant_id);
+
+  -- ==================== TAX MANAGEMENT SYSTEM ====================
+  -- Tax Periods (งวดภาษี)
+  CREATE TABLE IF NOT EXISTS tax_periods (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    period_type TEXT NOT NULL, -- 'MONTHLY', 'QUARTERLY', 'ANNUAL'
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    vat_due_date TEXT,
+    wht_due_date TEXT,
+    status TEXT DEFAULT 'OPEN', -- 'OPEN', 'CLOSED', 'FILING'
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, year, month, period_type)
+  );
+
+  -- Tax Transactions (รายการภาษี)
+  CREATE TABLE IF NOT EXISTS tax_transactions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    period_id TEXT,
+    transaction_type TEXT NOT NULL, -- 'VAT_OUTPUT', 'VAT_INPUT', 'VAT_INPUT_UNDEDUCTIBLE', 'WHT', 'CIT'
+    source_type TEXT NOT NULL, -- 'SALE_INVOICE', 'PURCHASE_INVOICE', 'PAYMENT', 'JOURNAL'
+    source_id TEXT NOT NULL,
+    document_number TEXT NOT NULL,
+    document_date TEXT NOT NULL,
+    partner_id TEXT, -- customer_id or supplier_id
+    partner_name TEXT,
+    partner_tax_id TEXT,
+    description TEXT,
+    base_amount REAL DEFAULT 0, -- ยอดก่อนภาษี
+    tax_amount REAL DEFAULT 0, -- ยอดภาษี
+    total_amount REAL DEFAULT 0, -- ยอดรวม
+    tax_rate REAL DEFAULT 0,
+    wht_rate REAL DEFAULT 0,
+    is_deductible INTEGER DEFAULT 1, -- ภาษีซื้อหักได้หรือไม่
+    is_paid INTEGER DEFAULT 0,
+    paid_date TEXT,
+    paid_amount REAL DEFAULT 0,
+    tax_invoice_number TEXT,
+    tax_invoice_date TEXT,
+    remarks TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (period_id) REFERENCES tax_periods(id)
+  );
+
+  -- Tax Incentives (สิทธิประโยชน์ทางภาษี)
+  CREATE TABLE IF NOT EXISTS tax_incentives (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    incentive_type TEXT NOT NULL, -- 'TRAINING_200', 'AUTOMATION', 'EMPLOY_SENIOR', 'EMPLOY_EX_PRISONER', 'SME_DEPRECIATION'
+    description TEXT,
+    multiplier INTEGER DEFAULT 100, -- 100 = 100%, 200 = 200%
+    max_amount REAL,
+    valid_from TEXT,
+    valid_to TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Tax Incentive Claims (การเคลมสิทธิประโยชน์)
+  CREATE TABLE IF NOT EXISTS tax_incentive_claims (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    incentive_id TEXT NOT NULL,
+    period_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    base_amount REAL DEFAULT 0,
+    claimable_amount REAL DEFAULT 0, -- base_amount * multiplier / 100
+    document_ref TEXT,
+    status TEXT DEFAULT 'PENDING', -- 'PENDING', 'APPROVED', 'REJECTED'
+    remarks TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (incentive_id) REFERENCES tax_incentives(id),
+    FOREIGN KEY (period_id) REFERENCES tax_periods(id)
+  );
+
+  -- Tax Adjustments (รายการปรับปรุงภาษี CIT)
+  CREATE TABLE IF NOT EXISTS tax_adjustments (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    period_id TEXT NOT NULL,
+    adjustment_type TEXT NOT NULL, -- 'ADD_BACK', 'DEDUCTION', 'DOUBLE_DEDUCTION'
+    account_code TEXT NOT NULL,
+    description TEXT,
+    accounting_amount REAL DEFAULT 0,
+    tax_amount REAL DEFAULT 0,
+    reason TEXT,
+    is_permanent INTEGER DEFAULT 1, -- Permanent or Temporary difference
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (period_id) REFERENCES tax_periods(id)
+  );
+
+  -- Tax Filing Status (สถานะการยื่นแบบ)
+  CREATE TABLE IF NOT EXISTS tax_filings (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    period_id TEXT NOT NULL,
+    form_type TEXT NOT NULL, -- 'PP30', 'PND3', 'PND53', 'PND50', 'PND51'
+    filing_status TEXT DEFAULT 'DRAFT', -- 'DRAFT', 'READY', 'SUBMITTED', 'PAID'
+    submission_date TEXT,
+    submitted_by TEXT,
+    tax_amount REAL DEFAULT 0,
+    penalty_amount REAL DEFAULT 0,
+    surcharge_amount REAL DEFAULT 0,
+    total_payable REAL DEFAULT 0,
+    paid_amount REAL DEFAULT 0,
+    attachment_path TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (period_id) REFERENCES tax_periods(id)
+  );
+
+  -- Tax Reports (รายงานภาษีที่สร้าง)
+  CREATE TABLE IF NOT EXISTS tax_reports (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    filing_id TEXT,
+    report_type TEXT NOT NULL, -- 'PP30', 'PND3', 'PND53', 'PND50', 'CIT_COMPUTATION'
+    report_period TEXT NOT NULL,
+    file_path TEXT,
+    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    generated_by TEXT,
+    status TEXT DEFAULT 'GENERATED'
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tax_trans_period ON tax_transactions(period_id);
+  CREATE INDEX IF NOT EXISTS idx_tax_trans_type ON tax_transactions(transaction_type);
+  CREATE INDEX IF NOT EXISTS idx_tax_trans_date ON tax_transactions(document_date);
+  CREATE INDEX IF NOT EXISTS idx_tax_trans_partner ON tax_transactions(partner_tax_id);
+  CREATE INDEX IF NOT EXISTS idx_tax_periods_tenant ON tax_periods(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tax_incentives_tenant ON tax_incentives(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_tax_filings_period ON tax_filings(period_id);
 
   -- ==================== APPROVAL SYSTEM ====================
   -- ตั้งค่าการอนุมัติตาม Role (Master ID ตั้งค่าได้คนเดียว)

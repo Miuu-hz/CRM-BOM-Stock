@@ -33,11 +33,14 @@ const getCategoryLabel = (category: string): string => {
   return labels[category?.toLowerCase()] || category
 }
 
-// Helper: กรองเฉพาะสินค้าที่ใช้ทำ BOM ได้ (ไม่ใช่ raw material)
+// Helper: กรองเฉพาะสินค้าที่ใช้ทำ BOM ได้ (สำเร็จรูปและกึ่งสำเร็จรูป)
+// รองรับทั้ง category ภาษาไทยและภาษาอังกฤษ
+const BOM_PRODUCT_CATEGORIES = [
+  '[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]',
+  'finished', 'wip', 'FINISHED', 'WIP', 'material',
+]
 const getValidBOMProducts = (products: Product[]): Product[] => {
-  return products.filter((p) => 
-    ['wip', 'finished', 'material'].includes(p.category?.toLowerCase())
-  )
+  return products.filter((p) => BOM_PRODUCT_CATEGORIES.includes(p.category))
 }
 
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
@@ -126,16 +129,32 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const loadData = async () => {
     setLoading(true)
     try {
-      const [productsData, materialsData, childBOMsData] = await Promise.all([
-        bomService.getProducts(),
-        bomService.getMaterials(),
-        bomService.getAvailableChildren(editBOM?.id),
-      ])
-      setProducts(productsData)
-      setMaterials(materialsData)
-      setAvailableChildBOMs(childBOMsData)
-    } catch (err) {
-      console.error('Failed to load data:', err)
+      // Load products separately with error handling
+      try {
+        const productsData = await bomService.getProducts()
+        setProducts(productsData || [])
+      } catch (err: any) {
+        console.error('Failed to load products:', err?.message || err)
+        setProducts([])
+      }
+      
+      // Load materials separately with error handling
+      try {
+        const materialsData = await bomService.getMaterials()
+        setMaterials(materialsData || [])
+      } catch (err: any) {
+        console.error('Failed to load materials:', err?.message || err)
+        setMaterials([])
+      }
+      
+      // Load child BOMs separately with error handling
+      try {
+        const childBOMsData = await bomService.getAvailableChildren(editBOM?.id)
+        setAvailableChildBOMs(childBOMsData || [])
+      } catch (err: any) {
+        console.error('Failed to load child BOMs:', err?.message || err)
+        setAvailableChildBOMs([])
+      }
     } finally {
       setLoading(false)
     }

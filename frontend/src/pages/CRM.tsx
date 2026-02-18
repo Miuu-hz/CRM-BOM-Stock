@@ -23,6 +23,7 @@ import {
 import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
+import customerRecommendationsApi from '../services/customerRecommendations'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -57,6 +58,7 @@ interface ActivityLog {
 interface CrmSummary {
   totalCustomers: number
   activeCustomers: number
+  totalOrders: number
   totalRevenue: number
   avgOrderValue: number
   recentContacts: {
@@ -130,27 +132,22 @@ function CRM() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [activities, setActivities] = useState<ActivityLog[]>([])
-  const [activitiesLoading, setActivitiesLoading] = useState(false)
-
-  // Load activities for selected customer
-  const fetchActivities = async (customerId: string) => {
-    setActivitiesLoading(true)
-    try {
-      const res = await api.get(`/activities/customer/${customerId}`)
-      setActivities(res.data.data)
-    } catch (error) {
-      console.error('Failed to load activities:', error)
-      setActivities([])
-    } finally {
-      setActivitiesLoading(false)
-    }
-  }
 
   // Add new activity
-  const handleAddActivity = async (customerId: string, type: string, note: string) => {
-    const res = await api.post('/activities', { customerId, type, note })
+  const handleAddActivity = async (type: string, note: string) => {
+    if (!selectedCustomerId || !type || !note?.trim()) {
+      throw new Error('Missing required fields')
+    }
+    const res = await api.post('/activities', { 
+      customerId: selectedCustomerId, 
+      type, 
+      note 
+    })
     // Refresh activities after adding
-    await fetchActivities(customerId)
+    if (selectedCustomerId) {
+      const activitiesRes = await api.get(`/activities/customer/${selectedCustomerId}`)
+      setActivities(activitiesRes.data.data || [])
+    }
     return res.data.data
   }
 
@@ -177,17 +174,32 @@ function CRM() {
   }, [])
 
   // Load insights when customer changes
-  // TODO: Implement /customers/:id/insights endpoint in backend
   useEffect(() => {
-    // setInsights(null) // Skip for now
-    setInsightsLoading(false)
-    
-    // Load activities for selected customer
-    if (selectedCustomerId) {
-      fetchActivities(selectedCustomerId)
-    } else {
-      setActivities([])
+    const loadInsights = async () => {
+      if (!selectedCustomerId) {
+        setInsights(null)
+        setActivities([])
+        return
+      }
+      
+      setInsightsLoading(true)
+      try {
+        const [insightsRes, activitiesRes] = await Promise.all([
+          api.get(`/customers/${selectedCustomerId}/insights`),
+          api.get(`/activities/customer/${selectedCustomerId}`)
+        ])
+        setInsights(insightsRes.data.data)
+        setActivities(activitiesRes.data.data || [])
+      } catch (error) {
+        console.error('Failed to load customer insights:', error)
+        setInsights(null)
+        setActivities([])
+      } finally {
+        setInsightsLoading(false)
+      }
     }
+    
+    loadInsights()
   }, [selectedCustomerId])
 
   // Auto-calculate customer segment
@@ -303,19 +315,19 @@ function CRM() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
           label="ลูกค้าทั้งหมด"
-          value={summary?.total_customers?.toLocaleString('th-TH') ?? '-'}
+          value={summary?.totalCustomers?.toLocaleString('th-TH') ?? '-'}
           icon={Users}
         />
         <StatCard
           label="ลูกค้าที่ใช้งานอยู่"
-          value={summary?.active_customers?.toLocaleString('th-TH') ?? '-'}
+          value={summary?.activeCustomers?.toLocaleString('th-TH') ?? '-'}
           icon={Building2}
         />
         <StatCard
           label="ยอดซื้อรวม"
           value={
-            summary?.total_revenue
-              ? `฿${(summary?.total_revenue ?? 0).toLocaleString('th-TH', {
+            summary?.totalRevenue
+              ? `฿${(summary?.totalRevenue ?? 0).toLocaleString('th-TH', {
                   maximumFractionDigits: 0,
                 })}`
               : '-'
@@ -326,7 +338,7 @@ function CRM() {
           label="ยอดสั่งซื้อเฉลี่ย/ออเดอร์"
           value={
             summary
-              ? `฿${summary.avg_customer_value?.toLocaleString('th-TH', {
+              ? `฿${summary.avgOrderValue?.toLocaleString('th-TH', {
                   maximumFractionDigits: 0,
                 })}`
               : '-'
@@ -363,9 +375,9 @@ function CRM() {
               All
             </button>
             <button
-              onClick={() => setSelectedType('hotel')}
+              onClick={() => setSelectedType('HOTEL')}
               className={`px-4 py-2 rounded-lg transition-all ${
-                selectedType === 'hotel'
+                selectedType === 'HOTEL'
                   ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
                   : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
               }`}
@@ -373,9 +385,9 @@ function CRM() {
               Hotels
             </button>
             <button
-              onClick={() => setSelectedType('wholesale')}
+              onClick={() => setSelectedType('WHOLESALE')}
               className={`px-4 py-2 rounded-lg transition-all ${
-                selectedType === 'wholesale'
+                selectedType === 'WHOLESALE'
                   ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
                   : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
               }`}
@@ -383,9 +395,9 @@ function CRM() {
               Wholesale
             </button>
             <button
-              onClick={() => setSelectedType('retail')}
+              onClick={() => setSelectedType('RETAIL')}
               className={`px-4 py-2 rounded-lg transition-all ${
-                selectedType === 'retail'
+                selectedType === 'RETAIL'
                   ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
                   : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
               }`}
@@ -436,9 +448,11 @@ function CRM() {
           customer={selectedCustomer}
           insights={insights}
           insightsLoading={insightsLoading}
+          activities={activities}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onClose={() => setShowModal(false)}
+          onAddActivity={handleAddActivity}
         />
       )}
 
@@ -616,17 +630,86 @@ function CustomerDetailModal({
   customer,
   insights,
   insightsLoading,
+  activities,
   activeTab,
   setActiveTab,
   onClose,
+  onAddActivity,
 }: {
   customer: Customer
   insights: CustomerInsights | null
   insightsLoading: boolean
+  activities: ActivityLog[]
   activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
   setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities') => void
   onClose: () => void
+  onAddActivity: (type: string, note: string) => Promise<void>
 }) {
+  // State for recommendations
+  const [recommendations, setRecommendations] = useState<any[]>([])
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+  const [showAddRec, setShowAddRec] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const [addingRec, setAddingRec] = useState(false)
+
+  // Load recommendations when tab is active
+  useEffect(() => {
+    if (activeTab === 'recommendations' && customer.id) {
+      fetchRecommendations()
+    }
+  }, [activeTab, customer.id])
+
+  const fetchRecommendations = async () => {
+    setRecommendationsLoading(true)
+    try {
+      const res = await customerRecommendationsApi.getByCustomer(customer.id)
+      setRecommendations(res.data.data)
+    } catch (error) {
+      console.error('Failed to load recommendations:', error)
+    } finally {
+      setRecommendationsLoading(false)
+    }
+  }
+
+  const handleSearchProducts = async (query: string) => {
+    setSearchQuery(query)
+    if (query.length < 2) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const res = await customerRecommendationsApi.searchProducts(query)
+      setSearchResults(res.data.data)
+    } catch (error) {
+      console.error('Search failed:', error)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleAddRecommendation = async (product: any) => {
+    setAddingRec(true)
+    try {
+      await customerRecommendationsApi.create({
+        customerId: customer.id,
+        productId: product.id,
+        productName: product.name,
+        productCategory: product.category,
+      })
+      await fetchRecommendations()
+      setSearchQuery('')
+      setSearchResults([])
+      setShowAddRec(false)
+    } catch (error) {
+      console.error('Failed to add recommendation:', error)
+    } finally {
+      setAddingRec(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div
@@ -965,26 +1048,92 @@ function CustomerDetailModal({
             </div>
           )}
 
-          {!insightsLoading && activeTab === 'recommendations' && (
+          {activeTab === 'recommendations' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-cyber-primary" />
-                สินค้าที่แนะนำให้เสนอเพิ่ม
-              </h3>
-              {insights && insights.recommendations.length > 0 ? (
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                  <Lightbulb className="w-5 h-5 text-cyber-primary" />
+                  สินค้าที่แนะนำให้เสนอเพิ่ม
+                </h3>
+                <button
+                  onClick={() => setShowAddRec(!showAddRec)}
+                  className="cyber-btn-secondary text-sm flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  เพิ่มสินค้าแนะนำ
+                </button>
+              </div>
+
+              {/* Add Recommendation Search */}
+              {showAddRec && (
+                <div className="cyber-card p-4 space-y-3">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => handleSearchProducts(e.target.value)}
+                      placeholder="ค้นหาสินค้า (พิมพ์อย่างน้อย 2 ตัวอักษร)..."
+                      className="cyber-input w-full pl-10"
+                    />
+                    {searching && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">กำลังค้นหา...</span>
+                    )}
+                  </div>
+                  
+                  {searchResults.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {searchResults.map((product) => (
+                        <div
+                          key={product.id}
+                          className="flex items-center justify-between p-3 bg-cyber-dark rounded-lg hover:bg-cyber-card/50"
+                        >
+                          <div>
+                            <p className="font-medium text-white">{product.name}</p>
+                            <p className="text-xs text-gray-400">SKU: {product.sku} • {product.category}</p>
+                          </div>
+                          <button
+                            onClick={() => handleAddRecommendation(product)}
+                            disabled={addingRec}
+                            className="px-3 py-1 bg-cyber-primary/20 text-cyber-primary rounded hover:bg-cyber-primary/30 text-sm"
+                          >
+                            {addingRec ? '...' : 'เพิ่ม'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {searchQuery.length >= 2 && !searching && searchResults.length === 0 && (
+                    <p className="text-center text-gray-500 py-2">ไม่พบสินค้า</p>
+                  )}
+                </div>
+              )}
+
+              {/* Recommendations List */}
+              {recommendationsLoading ? (
+                <p className="text-center text-gray-500 py-8">กำลังโหลด...</p>
+              ) : recommendations.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {insights.recommendations.map((rec) => (
+                  {recommendations.map((rec) => (
                     <div
-                      key={rec.productId}
+                      key={rec.id}
                       className="cyber-card p-4 hover:bg-cyber-card/80 transition-colors"
                     >
                       <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-semibold text-white mb-1">{rec.name}</p>
-                          <p className="text-xs text-gray-400 mb-2">หมวด: {rec.category}</p>
-                          <p className="text-xs text-cyber-primary">
-                            ความนิยมรวม: {(rec?.popularity ?? 0).toLocaleString('th-TH')}
-                          </p>
+                        <div className="flex-1">
+                          <p className="font-semibold text-white mb-1">{rec.productName}</p>
+                          <p className="text-xs text-gray-400 mb-1">หมวด: {rec.productCategory || '-'}</p>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            rec.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
+                            rec.status === 'OFFERED' ? 'bg-blue-500/20 text-blue-400' :
+                            rec.status === 'ACCEPTED' ? 'bg-green-500/20 text-green-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {rec.status === 'PENDING' ? 'รอเสนอ' :
+                             rec.status === 'OFFERED' ? 'เสนอแล้ว' :
+                             rec.status === 'ACCEPTED' ? 'ลูกค้าสนใจ' : 'ลูกค้าไม่สนใจ'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -992,7 +1141,7 @@ function CustomerDetailModal({
                 </div>
               ) : (
                 <p className="text-center text-gray-500 py-8">
-                  ยังไม่มีคำแนะนำสินค้าเพิ่มเติมสำหรับลูกค้าคนนี้
+                  ยังไม่มีรายการสินค้าแนะนำ กด "เพิ่มสินค้าแนะนำ" เพื่อเพิ่ม
                 </p>
               )}
             </div>
@@ -1031,10 +1180,9 @@ function CustomerDetailModal({
 
           {!insightsLoading && activeTab === 'activities' && (
             <ActivityLogTab 
-                  customer={customer} 
-                  activities={activities}
-                  onAddActivity={(type, note) => handleAddActivity(customer.id, type, note)}
-                />
+              activities={activities}
+              onAddActivity={onAddActivity}
+            />
           )}
         </div>
       </motion.div>
@@ -1044,11 +1192,9 @@ function CustomerDetailModal({
 
 // Activity Log Tab Component
 function ActivityLogTab({ 
-  customer, 
   activities, 
   onAddActivity 
 }: { 
-  customer: Customer; 
   activities: ActivityLog[];
   onAddActivity: (type: string, note: string) => Promise<void>;
 }) {

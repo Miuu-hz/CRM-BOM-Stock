@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
@@ -15,6 +15,8 @@ import {
   BookOpen,
   BarChart3,
   Landmark,
+  Percent,
+  Factory,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -35,10 +37,15 @@ const menuItems = [
     description: 'Customer Relations',
   },
   {
-    path: '/bom',
-    label: 'BOM',
-    icon: FileText,
-    description: 'Bill of Materials',
+    path: '/production',
+    label: 'Production',
+    icon: Factory,
+    description: 'BOM & Work Orders',
+    isParent: true,
+    subMenu: [
+      { path: '/bom', label: 'BOM', icon: FileText },
+      { path: '/work-orders', label: 'Work Orders', icon: Wrench },
+    ]
   },
   {
     path: '/stock',
@@ -51,12 +58,6 @@ const menuItems = [
     label: 'Purchase',
     icon: ShoppingCart,
     description: 'Procurement Management',
-  },
-  {
-    path: '/work-orders',
-    label: 'Work Orders',
-    icon: Wrench,
-    description: 'Production Management',
   },
   {
     path: '/calculator',
@@ -75,6 +76,12 @@ const menuItems = [
     label: 'Marketing',
     icon: TrendingUp,
     description: 'Campaign Analytics',
+  },
+  {
+    path: '/tax',
+    label: 'Tax',
+    icon: Percent,
+    description: 'VAT, WHT & CIT Management',
   },
   {
     path: '/accounting',
@@ -100,6 +107,7 @@ const bottomMenuItems = [
 
 function Sidebar({ isOpen }: SidebarProps) {
   const { user, isMaster, logout } = useAuth()
+  const location = useLocation()
 
   return (
     <AnimatePresence>
@@ -164,17 +172,22 @@ function Sidebar({ isOpen }: SidebarProps) {
               {menuItems.map((item) => (
                 <div key={item.path}>
                   {item.subMenu ? (
-                    // Menu with submenu (like Accounting)
+                    // Menu with submenu (like Production, Accounting)
                     <div className="space-y-1">
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300">
-                        <item.icon className="w-5 h-5 text-gray-400" />
-                        <div className="flex-1">
-                          <p className="font-semibold">{item.label}</p>
-                          {item.description && (
-                            <p className="text-xs text-gray-500">{item.description}</p>
-                          )}
-                        </div>
-                      </div>
+                      {(() => {
+                        const isChildActive = item.subMenu.some(sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/'))
+                        return (
+                          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg ${isChildActive ? 'text-cyber-primary' : 'text-gray-300'}`}>
+                            <item.icon className={`w-5 h-5 ${isChildActive ? 'text-cyber-primary' : 'text-gray-400'}`} />
+                            <div className="flex-1">
+                              <p className="font-semibold">{item.label}</p>
+                              {item.description && (
+                                <p className="text-xs text-gray-500">{item.description}</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
                       <div className="ml-4 pl-4 border-l border-cyber-border space-y-1">
                         {item.subMenu.map((sub) => (
                           <NavLink
