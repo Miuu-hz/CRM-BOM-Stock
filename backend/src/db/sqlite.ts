@@ -1479,6 +1479,41 @@ db.exec(`
     FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id)
   );
 
+  -- POS Daily Sales Summary (Z-Report สรุปยอดขายประจำวัน)
+  CREATE TABLE IF NOT EXISTS pos_daily_sales (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    summary_number TEXT NOT NULL,      -- POS-SUM-20240228-001
+    sales_date TEXT NOT NULL,          -- วันที่ขาย
+    total_revenue REAL NOT NULL,       -- รายได้รวม
+    total_tax REAL DEFAULT 0,          -- ภาษีทั้งหมด
+    total_service_charge REAL DEFAULT 0, -- Service charge
+    total_discount REAL DEFAULT 0,     -- ส่วนลด
+    estimated_cogs REAL DEFAULT 0,     -- ต้นทุนขาย (COGS)
+    net_profit REAL DEFAULT 0,         -- กำไรขาดสุทธิ
+    cash_amount REAL DEFAULT 0,        -- ยอดเงินสด
+    bank_amount REAL DEFAULT 0,        -- ยอดโอน/ธนาคาร
+    other_amount REAL DEFAULT 0,       -- ยอดอื่นๆ
+    bill_count INTEGER DEFAULT 0,      -- จำนวนบิล
+    notes TEXT,
+    closed_by TEXT,                    -- ผู้ปิดกะ
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (closed_by) REFERENCES users(id),
+    UNIQUE(tenant_id, sales_date)
+  );
+
+  -- POS Daily Sales Bills (บิลที่อยู่ในสรุปประจำวัน)
+  CREATE TABLE IF NOT EXISTS pos_daily_sales_bills (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    daily_sales_id TEXT NOT NULL,      -- อ้างอิง pos_daily_sales
+    bill_id TEXT NOT NULL,             -- อ้างอิง pos_running_bills
+    amount REAL NOT NULL,
+    FOREIGN KEY (daily_sales_id) REFERENCES pos_daily_sales(id) ON DELETE CASCADE,
+    FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id),
+    UNIQUE(tenant_id, bill_id)
+  );
+
   -- ==================== POS INDEXES ====================
   CREATE INDEX IF NOT EXISTS idx_pos_categories_tenant ON pos_categories(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_pos_menu_tenant ON pos_menu_configs(tenant_id);
@@ -1495,6 +1530,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pos_stock_deductions_bill_item ON pos_stock_deductions(bill_item_id);
   CREATE INDEX IF NOT EXISTS idx_pos_clearing_transfers_date ON pos_clearing_transfers(tenant_id, transfer_date);
   CREATE INDEX IF NOT EXISTS idx_pos_clearing_transfer_items_transfer ON pos_clearing_transfer_items(transfer_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_daily_sales_date ON pos_daily_sales(tenant_id, sales_date);
+  CREATE INDEX IF NOT EXISTS idx_pos_daily_sales_bills_summary ON pos_daily_sales_bills(daily_sales_id);
 `)
 
 // ==================== MIGRATIONS ====================
