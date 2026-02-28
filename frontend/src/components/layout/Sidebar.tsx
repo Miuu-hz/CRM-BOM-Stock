@@ -17,6 +17,7 @@ import {
   Landmark,
   Percent,
   Factory,
+  Store,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -94,6 +95,12 @@ const menuItems = [
       { path: '/accounting/journal-entries', label: 'Journal Entries', icon: FileText },
       { path: '/accounting/reports', label: 'Financial Reports', icon: BarChart3 },
     ]
+  },
+  {
+    path: '/cashier',
+    label: 'Cashier',
+    icon: Store,
+    description: 'POS & Quick Sales',
   },
 ]
 

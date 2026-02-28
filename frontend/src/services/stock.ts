@@ -38,6 +38,8 @@ export interface StockMovement {
   notes?: string
   createdAt: string
   createdBy: string
+  journalId?: string
+  journalNumber?: string
 }
 
 export interface StockStats {

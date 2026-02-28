@@ -1,410 +1,367 @@
-# 🏭 Carbon ERP Comparison & Development Guide
+# 🏭 Carbon ERP - System Architecture & Development Guide
 
-> เอกสารเปรียบเทียบระหว่าง CRM-BOM-Stock (ระบบปัจจุบัน) กับ Carbon ERP
-> และแนวทางการพัฒนาที่ควรนำมาใช้
+> เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
+> อัปเดตล่าสุด: February 2025
 
 ---
 
-## 📊 สรุปฟีเจอร์ปัจจุบัน
+## 📊 สรุปฟีเจอร์ปัจจุบัน (Current Status)
 
-### ✅ มีแล้ว (Ready)
+### ✅ พร้อมใช้งานแล้ว (Production Ready)
 
 | โมดูล | สถานะ | รายละเอียด |
 |--------|--------|------------|
-| **CRM** | ✅ | Customers, Orders, Contacts |
-| **BOM** | ✅ | Bill of Materials (1 ระดับ), Materials |
-| **Stock** | ✅ | Inventory, Stock Movements |
-| **Purchase Orders** | ✅ | ใบสั่งซื้อ, Suppliers |
+| **CRM** | ✅ | Customers, Orders, Contacts, Activity Logs |
+| **BOM** | ✅ | Bill of Materials (Multi-level), Materials Management |
+| **Stock** | ✅ | Inventory, Stock Movements, Low Stock Alerts |
+| **Purchase Orders** | ✅ | ใบสั่งซื้อ, Suppliers, Goods Receipt |
 | **Work Orders** | ✅ | ใบสั่งผลิต, MES เบื้องต้น |
-| **Marketing** | ✅ | Campaign Analytics (Shopee/Lazada) |
+| **Marketing** | ✅ | Campaign Analytics (Shopee/Lazada integration) |
 | **Calculator** | ✅ | Cost & Profit Analysis |
-| **User Management** | ⚠️ | Login ง่าย ไม่มี RBAC |
+| **POS/Cashier** | ✅ | Open Bill System, Stock Integration, Accounting Link |
+| **Accounting** | ✅ | Chart of Accounts, Journal Entries, VAT |
+| **Tax Management** | ✅ | VAT, Withholding Tax, Tax Periods |
+| **Approval System** | ✅ | Multi-level approval workflow |
 
-### ❌ ยังไม่มี (Missing)
+### 🚧 อยู่ระหว่างพัฒนา (In Progress)
 
-| โมดูล | ความสำคัญ | ความยาก |
+| โมดูล | สถานะ | รายละเอียด |
+|--------|--------|------------|
+| **MRP** | 🚧 | Material Requirements Planning |
+| **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
+| **POS Clearing Transfer** | 🚧 | End-of-day cash/bank transfer UI |
+
+### ❌ ยังไม่มี (Planned)
+
+| โมดูล | ความสำคัญ | รายละเอียด |
 |--------|-----------|---------|
-| **Accounting/บัญชี** | 🔴 สูงมาก | ⭐⭐⭐ |
-| **MRP** | 🔴 สูง | ⭐⭐⭐ |
-| **RBAC** | 🟠 ปานกลาง | ⭐⭐ |
-| **Nested BOM** | 🟠 ปานกลาง | ⭐⭐⭐ |
-| **QMS** | 🟡 ต่ำ | ⭐⭐⭐ |
-| **Capacity Planning** | 🟡 ต่ำ | ⭐⭐⭐⭐ |
+| **RBAC** | 🟠 ปานกลาง | Role-Based Access Control |
+| **QMS** | 🟡 ต่ำ | Quality Management System |
+| **Capacity Planning** | 🟡 ต่ำ | Production capacity planning |
 
 ---
 
-## 🏭 Carbon ERP Overview
+## 🏗️ System Architecture
 
-### Technology Stack
+### Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| **Framework** | React Router |
-| **Language** | TypeScript |
+| **Frontend** | React 18 + TypeScript |
+| **Build Tool** | Vite |
 | **Styling** | Tailwind CSS |
-| **UI Components** | Radix UI |
-| **Database** | Supabase (PostgreSQL) |
-| **Auth** | Supabase Auth |
-| **Cache** | Upstash (Redis) |
-| **Background Jobs** | Trigger.dev |
-| **License** | AGPL (Open Source) |
+| **UI Components** | Custom + Lucide Icons |
+| **Animation** | Framer Motion |
+| **State Management** | Zustand |
+| **Data Fetching** | TanStack Query (React Query) |
+| **Backend** | Node.js + Express + TypeScript |
+| **Database** | SQLite (better-sqlite3) |
+| **Authentication** | JWT |
 
-### GitHub Repository
-- **Repo:** https://github.com/crbnos/carbon
-- **Docs:** https://learn.carbon.ms
-- **Website:** https://carbon.ms
-- **Stats:** 1.8k+ stars, 190+ forks
+### Database Schema Overview
 
----
-
-## 🎯 ฟีเจอร์ที่ควรดึงจาก Carbon ERP
-
-### 1️⃣ Accounting / ระบบบัญชี (เร่งด่วน!)
-
-#### Chart of Accounts (ผังบัญชี)
-```typescript
-// ตัวอย่างโครงสร้างบัญชีมาตรฐาน
-interface Account {
-  code: string;        // เช่น "1101" (สินทรัพย์หมุนเวียน)
-  name: string;        // เช่น "เงินสด"
-  type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
-  parentId?: string;   // สำหรับ grouping
-  isActive: boolean;
-}
 ```
-
-#### Journal Entries (สมุดรายวัน)
-```typescript
-interface JournalEntry {
-  id: string;
-  date: Date;
-  reference: string;   // เลขที่เอกสารอ้างอิง
-  description: string;
-  lines: JournalLine[];
-  totalDebit: Decimal;
-  totalCredit: Decimal;
-}
-
-interface JournalLine {
-  accountId: string;
-  debit: Decimal;
-  credit: Decimal;
-  description?: string;
-}
-```
-
-#### Financial Reports
-- **งบดุล (Balance Sheet)** - สินทรัพย์ = หนี้สิน + ส่วนของเจ้าของ
-- **งบกำไรขาดทุน (P&L)** - รายได้ - ค่าใช้จ่าย
-- **งบกระแสเงินสด (Cash Flow)** - เงินสดเข้า/ออก
-
-#### การเชื่อมโยงกับระบบปัจจุบัน
-```typescript
-// เมื่อสร้าง Purchase Order → บันทึกภาระผูกพัน
-// เมื่อรับสินค้า → บันทึกสต็อก + ภาษีซื้อ
-// เมื่อขาย → บันทึกรายได้ + ต้นทุนขาย
-// เมื่อจ่ายเงิน → ลดเงินสด/ธนาคาร
+┌─────────────────────────────────────────────────────────────────┐
+│                        CORE MODULES                              │
+├─────────────────────────────────────────────────────────────────┤
+│  👥 CRM           │  🏭 PRODUCTION      │  📦 INVENTORY         │
+│  ├── customers    │  ├── boms           │  ├── stock_items      │
+│  ├── orders       │  ├── bom_items      │  ├── stock_movements  │
+│  └── activity_logs│  └── work_orders    │  └── materials        │
+├─────────────────────────────────────────────────────────────────┤
+│  🛒 SALES         │  💰 ACCOUNTING      │  🏪 POS SYSTEM        │
+│  ├── quotations   │  ├── accounts       │  ├── pos_menu_configs │
+│  ├── sales_orders │  ├── journal_entries│  ├── pos_running_bills│
+│  ├── invoices     │  ├── vat_entries    │  ├── pos_bill_items   │
+│  └── receipts     │  └── account_balances│  └── pos_payments    │
+├─────────────────────────────────────────────────────────────────┤
+│  🛍️ PURCHASE      │  📊 TAX            │  👤 USER MGMT         │
+│  ├── purchase_orders│  ├── tax_periods   │  ├── users            │
+│  ├── goods_receipts │  ├── tax_transactions│  └── user_approval_permissions│
+│  └── suppliers      │  └── tax_filings   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 2️⃣ MRP (Material Requirements Planning)
+## 🍽️ POS System Architecture
 
-#### Logic การคำนวณ
+### Overview
+ระบบขายหน้าร้าน (Point of Sale) แบบ Open Bill ไม่ผูกกับโต๊ะ เชื่อมต่อกับ BOM และ Accounting
+
+### Key Features
+
+1. **Open Bill System**
+   - ไม่ผูกกับโต๊ะ ตั้งชื่อบิลเองได้ ("โต๊ะ 1", "Grab 01", "คุณสมชาย")
+   - บันทึกชื่อลูกค้า, เบอร์โทร optional
+   - ค้างบิลไว้ได้ กลับมาแก้ไขทีหลังได้
+
+2. **BOM Integration** ⭐ NEW
+   ```
+   pos_menu_configs.bom_id → boms.id → bom_items
+   
+   ขาย 1 ชิ้น → ตัด stock ตาม BOM ingredients อัตโนมัติ
+   ```
+
+3. **Stock Deduct Flow**
+   ```
+   Payment Received
+        ↓
+   Check Stock Availability (from BOM or pos_menu_ingredients)
+        ↓
+   Deduct stock_items.quantity
+        ↓
+   Create stock_movements (type: 'SALE')
+        ↓
+   Record pos_stock_deductions
+   ```
+
+4. **Accounting Integration (Clearing Account)**
+   ```
+   ตอนขาย:
+   Dr. ลูกหนี้การค้า-POS (1180)     ฿107
+      Cr. รายได้จากการขาย (4100)     ฿100
+      Cr. ภาษีขาย (2150)             ฿7
+   
+   ตอนโอนยอด (End of Day):
+   Dr. เงินสด/ธนาคาร (1101/1102)
+      Cr. ลูกหนี้การค้า-POS (1180)
+   ```
+
+### Database Tables
+
+```sql
+-- POS Menu Configuration (with BOM linkage)
+pos_menu_configs
+├── id, tenant_id
+├── product_id → products.id
+├── bom_id → boms.id          -- NEW: Link to BOM
+├── category_id → pos_categories.id
+├── pos_price, cost_price
+├── is_available, is_pos_enabled
+└── display_order, quick_code
+
+-- Running Bills (Open Bill System)
+pos_running_bills
+├── id, tenant_id
+├── bill_number               -- POS-2024-00001
+├── display_name              -- Custom name (editable)
+├── customer_name, customer_phone
+├── status: OPEN|PENDING_PAYMENT|PAID|CANCELLED
+├── subtotal, tax_amount, service_charge_amount
+├── discount_amount, total_amount
+└── created_by, closed_by
+
+-- Bill Items
+pos_bill_items
+├── id, bill_id
+├── pos_menu_id → pos_menu_configs.id
+├── product_name (cache)
+├── quantity, unit_price, total_price
+├── special_instructions
+└── status: PENDING|PREPARING|READY|SERVED
+
+-- Stock Deduction Records
+pos_stock_deductions
+├── id, bill_item_id, stock_item_id
+├── quantity_deducted
+└── returned (for cancelled bills)
+```
+
+### API Endpoints
+
 ```typescript
-interface MRPResult {
-  materialId: string;
-  materialName: string;
-  requiredQty: number;      // จาก Work Orders
-  availableQty: number;     // จาก Stock
-  reservedQty: number;      // จาก Work Orders อื่น
-  availableToUse: number;   // available - reserved
-  toPurchaseQty: number;    // required - availableToUse
-  needByDate: Date;         // วันที่ต้องใช้
-  suggestedOrderDate: Date; // วันที่ควรสั่ง (lead time)
-}
-```
+// Menu Management
+GET    /api/pos/menu-configs
+POST   /api/pos/menu-configs              // With bom_id support
+PUT    /api/pos/menu-configs/:id
+DELETE /api/pos/menu-configs/:id
+PATCH  /api/pos/menu-configs/:id/toggle
 
-#### กระบวนการทำงาน
-1. รวมความต้องการวัตถุดิบจากทุก Work Orders
-2. หักลบด้วยสต็อกปัจจุบัน
-3. หักลบด้วยวัตถุดิบที่จองไว้แล้ว
-4. คำนวณวันที่ต้องสั่งซื้อ (อิงจาก lead time ของ supplier)
-5. สร้าง Purchase Order อัตโนมัติ หรือแจ้งเตือน
+// Bill Management
+GET    /api/pos/bills
+GET    /api/pos/bills/open
+POST   /api/pos/bills
+POST   /api/pos/bills/:id/items
+POST   /api/pos/bills/:id/pay            // + stock deduct + accounting
+POST   /api/pos/bills/:id/cancel         // + stock return
 
----
-
-### 3️⃣ RBAC (Role-Based Access Control)
-
-#### Role Hierarchy
-```typescript
-type Role = 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'OPERATOR' | 'VIEWER';
-
-type Permission =
-  // Orders
-  | 'orders:create' | 'orders:read' | 'orders:update' | 'orders:delete' | 'orders:approve'
-  // Work Orders
-  | 'workorders:create' | 'workorders:read' | 'workorders:update' | 'workorders:complete'
-  // Purchase Orders
-  | 'purchaseorders:create' | 'purchaseorders:approve' | 'purchaseorders:receive'
-  // Accounting
-  | 'accounting:read' | 'accounting:write' | 'accounting:approve'
-  // Reports
-  | 'reports:view' | 'reports:export'
-  // Settings
-  | 'settings:manage';
-```
-
-#### User Groups (จาก Carbon ERP)
-```typescript
-interface UserGroup {
-  id: string;
-  name: string;
-  permissions: Permission[];
-  users: User[];
-}
-
-// ตัวอย่าง: กลุ่ม "ฝ่ายผลิต" มองเห็นเฉพาะ Work Orders
-// ตัวอย่าง: กลุ่ม "ฝ่ายจัดซื้อ" มองเห็นเฉพาะ Purchase Orders
-```
-
----
-
-### 4️⃣ Nested BOM (BoM ซับซ้อน)
-
-#### โครงสร้าง Multi-level
-```
-ที่นอนสปริง 6 ฟุต (Finished Good)
-├── ตัวที่นอน (Semi-finished) - มี BOM ของตัวเอง
-│   ├── สปริง (Raw Material)
-│   ├── ไส้ผ้า (Raw Material)
-│   └── ฟองน้ำ (Raw Material)
-├── ฐานที่นอน (Semi-finished) - มี BOM ของตัวเอง
-│   ├── ไม้ (Raw Material)
-│   └── ขาตั้ง (Raw Material)
-└── ผ้าหุ้ม (Raw Material)
-```
-
-#### Schema ที่ต้องแก้ไข
-```prisma
-model BOM {
-  id        String    @id @default(cuid())
-  productId String
-  product   Product   @relation(fields: [productId], references: [id])
-  parentId  String?   // ← เพิ่ม: อ้างอิง BOM แม่
-  parent    BOM?      @relation("BOMHierarchy", fields: [parentId], references: [id])
-  children  BOM[]     @relation("BOMHierarchy") // ← BOM ลูก
-  version   String
-  status    String    @default("DRAFT")
-  // ...
-}
-```
-
----
-
-### 5️⃣ QMS (Quality Management System)
-
-#### Inspection Plans
-```typescript
-interface InspectionPlan {
-  id: string;
-  productId: string;
-  checkpoints: Checkpoint[];
-}
-
-interface Checkpoint {
-  name: string;           // เช่น "ความแข็งแรงของโครง"
-  method: string;         // เช่น "ทดสอบแรงกด"
-  standard: string;       // เกณฑ์ที่ต้องผ่าน
-  tolerance?: string;     // ช่วงค่ายอมรับ
-}
-```
-
-#### Quality Control Records
-```typescript
-interface QCRecord {
-  id: string;
-  workOrderId: string;
-  checkpointId: string;
-  result: 'PASS' | 'FAIL';
-  measuredValue?: string;
-  inspectorId: string;
-  inspectedAt: Date;
-  notes?: string;
-}
+// Stock Check
+GET    /api/pos/menu-configs/:id/stock
+GET    /api/pos/menu-configs/:id/stock-check
 ```
 
 ---
 
-### 6️⃣ Capacity Planning
-
-```typescript
-interface WorkCenter {
-  id: string;
-  name: string;           // เช่น "แผนกตัดผ้า"
-  capacityPerDay: number; // หน่วย/วัน
-  operatingHours: number; // ชั่วโมงทำงาน/วัน
-}
-
-interface CapacityCheck {
-  workCenterId: string;
-  date: Date;
-  availableCapacity: number;
-  plannedLoad: number;
-  remainingCapacity: number;
-  overloaded: boolean;
-}
-```
-
----
-
-## 🛠️ แผนการพัฒนา (Development Roadmap)
-
-### Phase 1: Core Accounting (Priority: 🔴 HIGH)
-**ระยะเวลา:** 1-2 สัปดาห์
-
-```
-├── 1. Chart of Accounts
-│   └── สร้างผังบัญชีมาตรฐาน (ตามประมวลบัญชีไทย)
-│
-├── 2. Journal Entries
-│   └── ระบบบันทึกรายการคู่ (Double Entry)
-│
-├── 3. Integration
-│   ├── PO → ภาระผูกพัน (Liability)
-│   ├── รับสินค้า → สต็อก + ภาษีซื้อ
-│   ├── ขาย → รายได้ + ลดสต็อก
-│   └── จ่ายเงิน → เงินสด/ธนาคาร
-│
-└── 4. Reports
-    ├── งบทดลอง (Trial Balance)
-    ├── งบดุล
-    └── งบกำไรขาดทุน
-```
-
-### Phase 2: MRP & Planning (Priority: 🔴 HIGH)
-**ระยะเวลา:** 2 สัปดาห์
-
-```
-├── 1. Material Requirements Calculation
-│   └── คำนวณจาก Work Orders + BOM
-│
-├── 2. Stock Reservation
-│   └── จองวัตถุดิบสำหรับ Work Order
-│
-├── 3. Auto-generate PO
-│   └── สร้าง Purchase Order อัตโนมัติ
-│
-└── 4. Alerts
-    └── แจ้งเตือนวัตถุดิบต่ำกว่า min stock
-```
-
-### Phase 3: RBAC & Security (Priority: 🟠 MEDIUM)
-**ระยะเวลา:** 1 สัปดาห์
-
-```
-├── 1. Role Management
-│   └── สร้าง/แก้ไข Roles
-│
-├── 2. Permission Middleware
-│   └── ตรวจสอบสิทธิ์ใน API
-│
-├── 3. UI Guards
-│   └── ซ่อน/แสดงเมนูตามสิทธิ์
-│
-└── 4. Audit Logs
-    └── บันทึกการใช้งานทั้งหมด
-```
-
-### Phase 4: Advanced Features (Priority: 🟡 LOW)
-**ระยะเวลา:** ตามความจำเป็น
-
-```
-├── 1. Nested BOM
-│   └── Multi-level Bill of Materials
-│
-├── 2. QMS
-│   └── Quality Control & Traceability
-│
-├── 3. Capacity Planning
-│   └── วางแผนกำลังการผลิต
-│
-└── 4. Advanced Reporting
-    └── Dashboard แบบ Real-time
-```
-
----
-
-## 📁 โครงสร้างไฟล์ที่แนะนำ
+## 📁 Project Structure
 
 ```
 CRM-BOM-Stock/
 ├── backend/
 │   ├── src/
+│   │   ├── db/
+│   │   │   └── sqlite.ts              # Database schema & migrations
 │   │   ├── routes/
-│   │   │   ├── accounting/          # NEW
-│   │   │   │   ├── accounts.routes.ts
-│   │   │   │   ├── journal.routes.ts
-│   │   │   │   └── reports.routes.ts
+│   │   │   ├── pos-menu.routes.ts     # POS Menu API
+│   │   │   ├── pos-bill.routes.ts     # POS Bill API
+│   │   │   ├── accounts.routes.ts     # Chart of Accounts
+│   │   │   ├── journal.routes.ts      # Journal Entries
 │   │   │   └── ...
-│   │   │
 │   │   ├── services/
-│   │   │   ├── accounting/          # NEW
-│   │   │   │   ├── ledger.service.ts
-│   │   │   │   └── report.service.ts
-│   │   │   ├── mrp/                 # NEW
-│   │   │   │   └── mrp.service.ts
+│   │   │   ├── pos-stock.service.ts   # Stock deduction logic
+│   │   │   ├── pos-accounting.service.ts  # Accounting integration
 │   │   │   └── ...
-│   │   │
-│   │   ├── middleware/
-│   │   │   ├── auth.middleware.ts
-│   │   │   └── rbac.middleware.ts   # NEW
-│   │   │
-│   │   └── utils/
-│   │       └── permissions.ts       # NEW
-│   │
-│   └── prisma/
-│       └── schema.prisma            # ADD models
+│   │   └── index.ts                   # Express app entry
+│   └── dev.db                         # SQLite database
 │
-└── frontend/
-    └── src/
-        ├── pages/
-        │   ├── Accounting/          # NEW
-        │   │   ├── ChartOfAccounts.tsx
-        │   │   ├── JournalEntries.tsx
-        │   │   └── FinancialReports.tsx
-        │   └── ...
-        │
-        ├── components/
-        │   └── rbac/                # NEW
-        │       ├── ProtectedRoute.tsx
-        │       └── PermissionGuard.tsx
-        │
-        └── hooks/
-            └── usePermissions.ts    # NEW
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Cashier.tsx            # POS main page
+│   │   │   ├── settings/
+│   │   │   │   └── POSMenuSettings.tsx    # Menu config with BOM
+│   │   │   ├── Accounting/
+│   │   │   │   ├── ChartOfAccounts.tsx
+│   │   │   │   └── JournalEntries.tsx
+│   │   │   └── ...
+│   │   ├── services/
+│   │   │   ├── pos.service.ts
+│   │   │   └── pos-bill.service.ts
+│   │   └── App.tsx
+│   └── package.json
+│
+└── carbontome.md                      # This file
 ```
 
 ---
 
-## 🔗 Quick Links
+## 🔌 Module Integration
+
+### 1. BOM → POS Integration
+```typescript
+// When BOM is linked to POS Menu
+pos_menu_configs.bom_id = boms.id
+
+// On Sale: Stock deduct from BOM items
+bom_items → material_id → stock_items
+```
+
+### 2. POS → Stock Integration
+```typescript
+// Real-time stock deduction
+pos_bill.payment → posStockService.deductStockOnPayment()
+    → stock_items.quantity -= qty
+    → stock_movements.create({ type: 'SALE' })
+```
+
+### 3. POS → Accounting Integration
+```typescript
+// Journal entry on payment
+pos_bill.payment → posAccountingService.recordSale()
+    → journal_entries.create()
+    → vat_entries.create({ isOutputVat: true })
+```
+
+### 4. Sales → Production Integration
+```typescript
+// Sales order can create Work Order
+sales_orders → work_orders
+    → bom_items → material deduction
+```
+
+---
+
+## 🚀 Development Roadmap
+
+### ✅ Phase 1: Foundation (COMPLETED)
+- [x] Core CRM (Customers, Orders)
+- [x] BOM Management (Multi-level support)
+- [x] Stock/Inventory
+- [x] Purchase Orders
+- [x] Work Orders
+
+### ✅ Phase 2: POS System (COMPLETED)
+- [x] Menu Management with Categories
+- [x] Open Bill System (No table binding)
+- [x] Stock auto-deduct on payment
+- [x] BOM integration for ingredients
+- [x] Clearing Account for accounting
+
+### 🚧 Phase 3: Accounting Enhancement (IN PROGRESS)
+- [x] Chart of Accounts
+- [x] Journal Entries (Double Entry)
+- [x] VAT Recording
+- [ ] COGS auto-calculation on sale
+- [ ] POS Clearing Transfer UI (End-of-day)
+
+### 📋 Phase 4: Advanced Features (PLANNED)
+- [ ] MRP (Material Requirements Planning)
+- [ ] RBAC (Role-Based Access Control)
+- [ ] Advanced Reports & Dashboard
+- [ ] Multi-warehouse support
+- [ ] API for external integrations
+
+---
+
+## 💡 Key Design Decisions
+
+### 1. Why Open Bill instead of Table-based?
+- ยืดหยุ่นกว่า - ใช้ได้ทั้งร้านอาหาร, ร้านกาแฟ, ขายส่ง
+- ไม่ต้องจัดการ master data โต๊ะ
+- ตั้งชื่อตาม context ได้ (Grab, Lineman, คุณxxx)
+
+### 2. Why BOM-POS Linkage?
+- ลด duplication ของ ingredients
+- BOM ใช้ทั้ง Production และ Sales
+- เปลี่ยน recipe ที่ BOM แล้ว POS ได้ผลทันที
+
+### 3. Why Clearing Account (1180)?
+- แยกระหว่าง "ยอดขาย" กับ "เงินที่รับจริง"
+- กันคนลักษณะอ่อน (หากบันทึกเงินสดทันที)
+- ตรวจสอบยอดคงค้างระหว่างระบบ POS กับบัญชี
+
+---
+
+## 📝 Development Guidelines
+
+### Backend
+- ใช้ Repository Pattern สำหรับ database operations
+- Services สำหรับ business logic
+- Routes สำหรับ API endpoints เท่านั้น
+- ใช้ snake_case ใน database, camelCase ใน TypeScript
+
+### Frontend
+- Functional components with hooks
+- Zustand สำหรับ global state
+- React Query สำหรับ server state
+- Tailwind สำหรับ styling
+- Cyberpunk theme colors
+
+### Database
+- SQLite with better-sqlite3 (synchronous)
+- Foreign keys enabled
+- Migrations ใน sqlite.ts
+- Index สำหรับ query ที่ใช้บ่อย
+
+---
+
+## 🔗 Related Documentation
+
+- [AGENTS.md](./AGENTS.md) - Agent-specific guidelines
+- [README.md](./README.md) - Project overview (Thai)
+- [QUICKSTART.md](./QUICKSTART.md) - Quick start guide
+
+---
+
+## 🏭 Carbon ERP Reference
 
 | Resource | URL |
 |----------|-----|
 | Carbon ERP GitHub | https://github.com/crbnos/carbon |
 | Carbon ERP Docs | https://learn.carbon.ms |
 | Carbon ERP Website | https://carbon.ms |
-| Database Schema Ref | https://github.com/crbnos/carbon/tree/main/packages/database/src |
 
 ---
 
-## 📝 Notes
-
-- Carbon ERP ใช้ **AGPL License** - สามารถเรียนรู้และดึงแนวคิดมาใช้ได้ แต่ต้องเปิดเผย source code ถ้าแจกจ่าย
-- ระบบคุณใช้ **SQLite** ส่วน Carbon ใช้ **PostgreSQL (Supabase)**
-- ควรเริ่มจาก **Phase 1: Accounting** เพราะเป็นพื้นฐานของ ERP ที่แท้จริง
-- ใช้ไฟล์นี้เป็น reference ในการพัฒนา - อัปเดตเมื่อมีการเพิ่มฟีเจอร์ใหม่
-
----
-
-*Last Updated: 2026-02-02*
-*Next Review: เมื่อเริ่ม Phase 2*
+*Last Updated: 2025-02-28*
+*Maintained by: Development Team*

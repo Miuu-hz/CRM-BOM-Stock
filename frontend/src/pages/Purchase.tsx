@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  ShoppingCart, 
-  FileText, 
-  Package, 
-  Receipt, 
-  CreditCard, 
+import {
+  ShoppingCart,
+  FileText,
+  Package,
+  Receipt,
+  CreditCard,
   RotateCcw,
-  Plus, 
-  Search, 
+  Plus,
+  Search,
   Filter,
   CheckCircle,
   Clock,
@@ -98,6 +98,8 @@ interface GoodsReceipt {
   notes: string
   item_count?: number
   items?: any[]
+  journal_entry_id?: string
+  journal_entry_number?: string
 }
 
 interface PurchaseInvoice {
@@ -120,6 +122,8 @@ interface PurchaseInvoice {
   status: string
   payment_status: string
   notes: string
+  journal_entry_id?: string
+  journal_entry_number?: string
 }
 
 interface SupplierPayment {
@@ -136,6 +140,8 @@ interface SupplierPayment {
   withholding_tax: number
   net_amount: number
   notes: string
+  journal_entry_id?: string
+  journal_entry_number?: string
 }
 
 interface PurchaseReturn {
@@ -214,7 +220,7 @@ const Purchase = () => {
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  
+
   // Modal states
   const [modalOpen, setModalOpen] = useState<string | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
@@ -382,7 +388,7 @@ const Purchase = () => {
         ...item,
         estimated_total_price: item.quantity * item.estimated_unit_price
       }))
-      
+
       const { data } = await api.post('/purchase/requests', { ...requestForm, items })
       if (data.success) {
         toast.success('สร้างใบขอซื้อสำเร็จ')
@@ -436,7 +442,7 @@ const Purchase = () => {
     try {
       const supplierId = prompt('กรุณาระบุ Supplier ID:')
       if (!supplierId) return
-      
+
       const res = await fetch(`/api/purchase/requests/${requestId}/convert-to-po`, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -467,12 +473,12 @@ const Purchase = () => {
       const res = await fetch('/api/purchase-orders', {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ 
-          ...orderForm, 
-          items, 
-          subtotal, 
-          taxAmount, 
-          totalAmount 
+        body: JSON.stringify({
+          ...orderForm,
+          items,
+          subtotal,
+          taxAmount,
+          totalAmount
         })
       })
       const data = await res.json()
@@ -654,7 +660,7 @@ const Purchase = () => {
     setModalOpen(type)
     setModalMode(mode)
     setModalData(data)
-    
+
     if (data) {
       if (type === 'request') {
         setRequestForm({
@@ -918,7 +924,7 @@ const Purchase = () => {
   // Modal Components
   const RequestModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-4xl max-h-[90vh] overflow-auto"
@@ -931,13 +937,13 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">แผนก</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={requestForm.department}
                 onChange={e => setRequestForm(prev => ({ ...prev, department: e.target.value }))}
                 disabled={modalMode === 'view'}
@@ -946,8 +952,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">ต้องการวันที่</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={requestForm.required_date}
                 onChange={e => setRequestForm(prev => ({ ...prev, required_date: e.target.value }))}
                 disabled={modalMode === 'view'}
@@ -956,7 +962,7 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">ความสำคัญ</label>
-              <select 
+              <select
                 value={requestForm.priority}
                 onChange={e => setRequestForm(prev => ({ ...prev, priority: e.target.value }))}
                 disabled={modalMode === 'view'}
@@ -972,7 +978,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={requestForm.notes}
               onChange={e => setRequestForm(prev => ({ ...prev, notes: e.target.value }))}
               disabled={modalMode === 'view'}
@@ -985,7 +991,7 @@ const Purchase = () => {
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm text-gray-400">รายการ</label>
               {modalMode !== 'view' && (
-                <button 
+                <button
                   onClick={addRequestItem}
                   className="text-sm text-cyber-primary hover:underline flex items-center gap-1"
                 >
@@ -997,7 +1003,7 @@ const Purchase = () => {
               {requestForm.items.map((item, index) => (
                 <div key={index} className="grid grid-cols-12 gap-2 p-3 bg-cyber-dark rounded-lg">
                   <div className="col-span-3">
-                    <select 
+                    <select
                       value={item.material_id}
                       onChange={e => updateRequestItem(index, 'material_id', e.target.value)}
                       disabled={modalMode === 'view'}
@@ -1010,8 +1016,8 @@ const Purchase = () => {
                     </select>
                   </div>
                   <div className="col-span-3">
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="รายละเอียด"
                       value={item.description}
                       onChange={e => updateRequestItem(index, 'description', e.target.value)}
@@ -1020,8 +1026,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="จำนวน"
                       value={item.quantity}
                       onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
@@ -1030,8 +1036,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="ราคาต่อหน่วย"
                       value={item.estimated_unit_price}
                       onChange={e => updateRequestItem(index, 'estimated_unit_price', parseFloat(e.target.value) || 0)}
@@ -1044,7 +1050,7 @@ const Purchase = () => {
                   </div>
                   {modalMode !== 'view' && (
                     <div className="col-span-1 flex items-center justify-center">
-                      <button 
+                      <button
                         onClick={() => removeRequestItem(index)}
                         className="p-1 hover:bg-red-500/20 rounded text-red-400"
                       >
@@ -1065,13 +1071,13 @@ const Purchase = () => {
 
         {modalMode !== 'view' && (
           <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-            <button 
+            <button
               onClick={closeModal}
               className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
             >
               ยกเลิก
             </button>
-            <button 
+            <button
               onClick={modalMode === 'create' ? handleCreateRequest : handleUpdateRequest}
               disabled={formLoading}
               className="px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2"
@@ -1087,7 +1093,7 @@ const Purchase = () => {
 
   const OrderModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-4xl max-h-[90vh] overflow-auto"
@@ -1100,12 +1106,12 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">ผู้ขาย <span className="text-red-400">*</span></label>
-              <select 
+              <select
                 value={orderForm.supplier_id}
                 onChange={e => setOrderForm(prev => ({ ...prev, supplier_id: e.target.value }))}
                 disabled={modalMode === 'view'}
@@ -1119,8 +1125,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">กำหนดส่ง</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={orderForm.expected_date}
                 onChange={e => setOrderForm(prev => ({ ...prev, expected_date: e.target.value }))}
                 disabled={modalMode === 'view'}
@@ -1129,8 +1135,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">อัตราภาษี (%)</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={orderForm.tax_rate}
                 onChange={e => setOrderForm(prev => ({ ...prev, tax_rate: parseFloat(e.target.value) || 0 }))}
                 disabled={modalMode === 'view'}
@@ -1141,7 +1147,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={orderForm.notes}
               onChange={e => setOrderForm(prev => ({ ...prev, notes: e.target.value }))}
               disabled={modalMode === 'view'}
@@ -1154,7 +1160,7 @@ const Purchase = () => {
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm text-gray-400">รายการ</label>
               {modalMode !== 'view' && (
-                <button 
+                <button
                   onClick={addOrderItem}
                   className="text-sm text-cyber-primary hover:underline flex items-center gap-1"
                 >
@@ -1166,7 +1172,7 @@ const Purchase = () => {
               {orderForm.items.map((item, index) => (
                 <div key={index} className="grid grid-cols-12 gap-2 p-3 bg-cyber-dark rounded-lg">
                   <div className="col-span-3">
-                    <select 
+                    <select
                       value={item.material_id}
                       onChange={e => updateOrderItem(index, 'material_id', e.target.value)}
                       disabled={modalMode === 'view'}
@@ -1179,8 +1185,8 @@ const Purchase = () => {
                     </select>
                   </div>
                   <div className="col-span-3">
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="รายละเอียด"
                       value={item.description}
                       onChange={e => updateOrderItem(index, 'description', e.target.value)}
@@ -1189,8 +1195,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="จำนวน"
                       value={item.quantity}
                       onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
@@ -1199,8 +1205,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="ราคาต่อหน่วย"
                       value={item.unit_price}
                       onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
@@ -1213,7 +1219,7 @@ const Purchase = () => {
                   </div>
                   {modalMode !== 'view' && (
                     <div className="col-span-1 flex items-center justify-center">
-                      <button 
+                      <button
                         onClick={() => removeOrderItem(index)}
                         className="p-1 hover:bg-red-500/20 rounded text-red-400"
                       >
@@ -1227,7 +1233,7 @@ const Purchase = () => {
             <div className="flex justify-between mt-2 text-sm">
               <span className="text-gray-400">ราคาก่อนภาษี: {formatCurrency(orderForm.items.reduce((sum, i) => sum + i.total_price, 0))}</span>
               <span className="text-cyber-primary font-bold">
-                รวม: {formatCurrency(orderForm.items.reduce((sum, i) => sum + i.total_price, 0) * (1 + orderForm.tax_rate/100))}
+                รวม: {formatCurrency(orderForm.items.reduce((sum, i) => sum + i.total_price, 0) * (1 + orderForm.tax_rate / 100))}
               </span>
             </div>
           </div>
@@ -1235,13 +1241,13 @@ const Purchase = () => {
 
         {modalMode !== 'view' && (
           <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-            <button 
+            <button
               onClick={closeModal}
               className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
             >
               ยกเลิก
             </button>
-            <button 
+            <button
               onClick={handleCreateOrder}
               disabled={formLoading || !orderForm.supplier_id}
               className="px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2"
@@ -1257,7 +1263,7 @@ const Purchase = () => {
 
   const ReceiptModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-3xl max-h-[90vh] overflow-auto"
@@ -1268,11 +1274,11 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">เลือกใบสั่งซื้อ</label>
-            <select 
+            <select
               value={receiptForm.purchase_order_id}
               onChange={e => {
                 const poId = e.target.value
@@ -1291,8 +1297,8 @@ const Purchase = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">วันที่รับ</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={receiptForm.receipt_date}
                 onChange={e => setReceiptForm(prev => ({ ...prev, receipt_date: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1300,8 +1306,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">ผู้รับ</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={receiptForm.received_by}
                 onChange={e => setReceiptForm(prev => ({ ...prev, received_by: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1324,7 +1330,7 @@ const Purchase = () => {
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-xs text-gray-500">รับ</label>
-                        <input 
+                        <input
                           type="number"
                           value={item.received_qty}
                           onChange={e => {
@@ -1339,7 +1345,7 @@ const Purchase = () => {
                       </div>
                       <div>
                         <label className="text-xs text-gray-500">รับเข้า</label>
-                        <input 
+                        <input
                           type="number"
                           value={item.accepted_qty}
                           onChange={e => setReceiptForm(prev => ({
@@ -1351,7 +1357,7 @@ const Purchase = () => {
                       </div>
                       <div>
                         <label className="text-xs text-gray-500">เสียหาย</label>
-                        <input 
+                        <input
                           type="number"
                           value={item.rejected_qty}
                           onChange={e => setReceiptForm(prev => ({
@@ -1370,7 +1376,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={receiptForm.notes}
               onChange={e => setReceiptForm(prev => ({ ...prev, notes: e.target.value }))}
               rows={2}
@@ -1380,13 +1386,13 @@ const Purchase = () => {
         </div>
 
         <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-          <button 
+          <button
             onClick={closeModal}
             className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
           >
             ยกเลิก
           </button>
-          <button 
+          <button
             onClick={handleCreateReceipt}
             disabled={formLoading || !receiptForm.purchase_order_id}
             className="px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2"
@@ -1401,7 +1407,7 @@ const Purchase = () => {
 
   const InvoiceModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-lg"
@@ -1412,17 +1418,17 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">เลือกใบสั่งซื้อ</label>
-            <select 
+            <select
               value={invoiceForm.purchase_order_id}
               onChange={e => {
                 const poId = e.target.value
                 const po = orders.find(o => o.id === poId)
-                setInvoiceForm(prev => ({ 
-                  ...prev, 
+                setInvoiceForm(prev => ({
+                  ...prev,
                   purchase_order_id: poId,
                   due_date: po?.expected_date?.split('T')[0] || ''
                 }))
@@ -1438,8 +1444,8 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">เลขที่ใบแจ้งหนี้ผู้ขาย</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={invoiceForm.supplier_invoice_number}
               onChange={e => setInvoiceForm(prev => ({ ...prev, supplier_invoice_number: e.target.value }))}
               placeholder="INV-XXXX"
@@ -1450,8 +1456,8 @@ const Purchase = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">วันที่ใบแจ้งหนี้</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={invoiceForm.invoice_date}
                 onChange={e => setInvoiceForm(prev => ({ ...prev, invoice_date: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1459,8 +1465,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">วันครบกำหนด</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={invoiceForm.due_date}
                 onChange={e => setInvoiceForm(prev => ({ ...prev, due_date: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1470,8 +1476,8 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">อัตราภาษี (%)</label>
-            <input 
-              type="number" 
+            <input
+              type="number"
               value={invoiceForm.tax_rate}
               onChange={e => setInvoiceForm(prev => ({ ...prev, tax_rate: parseFloat(e.target.value) || 0 }))}
               className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1480,7 +1486,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={invoiceForm.notes}
               onChange={e => setInvoiceForm(prev => ({ ...prev, notes: e.target.value }))}
               rows={2}
@@ -1490,13 +1496,13 @@ const Purchase = () => {
         </div>
 
         <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-          <button 
+          <button
             onClick={closeModal}
             className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
           >
             ยกเลิก
           </button>
-          <button 
+          <button
             onClick={handleCreateInvoice}
             disabled={formLoading || !invoiceForm.purchase_order_id}
             className="px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2"
@@ -1511,7 +1517,7 @@ const Purchase = () => {
 
   const PaymentModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-lg"
@@ -1522,11 +1528,11 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">ผู้ขาย</label>
-            <select 
+            <select
               value={paymentForm.supplier_id}
               onChange={e => setPaymentForm(prev => ({ ...prev, supplier_id: e.target.value }))}
               className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1540,13 +1546,13 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">ใบแจ้งหนี้</label>
-            <select 
+            <select
               value={paymentForm.purchase_invoice_id}
               onChange={e => {
                 const invId = e.target.value
                 const inv = invoices.find(i => i.id === invId)
-                setPaymentForm(prev => ({ 
-                  ...prev, 
+                setPaymentForm(prev => ({
+                  ...prev,
                   purchase_invoice_id: invId,
                   amount: inv?.balance_amount || 0
                 }))
@@ -1563,8 +1569,8 @@ const Purchase = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">วันที่จ่าย</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={paymentForm.payment_date}
                 onChange={e => setPaymentForm(prev => ({ ...prev, payment_date: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1572,7 +1578,7 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">วิธีการจ่าย</label>
-              <select 
+              <select
                 value={paymentForm.payment_method}
                 onChange={e => setPaymentForm(prev => ({ ...prev, payment_method: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1588,8 +1594,8 @@ const Purchase = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">จำนวนเงิน</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={paymentForm.amount}
                 onChange={e => setPaymentForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1597,8 +1603,8 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">หัก ณ ที่จ่าย</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={paymentForm.withholding_tax}
                 onChange={e => setPaymentForm(prev => ({ ...prev, withholding_tax: parseFloat(e.target.value) || 0 }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1608,8 +1614,8 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">เลขที่อ้างอิง</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={paymentForm.payment_reference}
               onChange={e => setPaymentForm(prev => ({ ...prev, payment_reference: e.target.value }))}
               placeholder="เลขที่สลิป/เช็ค"
@@ -1628,7 +1634,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={paymentForm.notes}
               onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))}
               rows={2}
@@ -1638,13 +1644,13 @@ const Purchase = () => {
         </div>
 
         <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-          <button 
+          <button
             onClick={closeModal}
             className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
           >
             ยกเลิก
           </button>
-          <button 
+          <button
             onClick={handleCreatePayment}
             disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount}
             className="px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2"
@@ -1659,7 +1665,7 @@ const Purchase = () => {
 
   const ReturnModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-cyber-card rounded-xl border border-cyber-border w-full max-w-4xl max-h-[90vh] overflow-auto"
@@ -1670,12 +1676,12 @@ const Purchase = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">ใบสั่งซื้อ</label>
-              <select 
+              <select
                 value={returnForm.purchase_order_id}
                 onChange={e => setReturnForm(prev => ({ ...prev, purchase_order_id: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1688,7 +1694,7 @@ const Purchase = () => {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">ใบรับสินค้า</label>
-              <select 
+              <select
                 value={returnForm.goods_receipt_id}
                 onChange={e => setReturnForm(prev => ({ ...prev, goods_receipt_id: e.target.value }))}
                 className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1703,7 +1709,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">เหตุผลการคืน</label>
-            <select 
+            <select
               value={returnForm.reason}
               onChange={e => setReturnForm(prev => ({ ...prev, reason: e.target.value }))}
               className="w-full px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white"
@@ -1720,7 +1726,7 @@ const Purchase = () => {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
-            <textarea 
+            <textarea
               value={returnForm.notes}
               onChange={e => setReturnForm(prev => ({ ...prev, notes: e.target.value }))}
               rows={2}
@@ -1731,7 +1737,7 @@ const Purchase = () => {
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm text-gray-400">รายการคืน</label>
-              <button 
+              <button
                 onClick={addReturnItem}
                 className="text-sm text-cyber-primary hover:underline flex items-center gap-1"
               >
@@ -1742,7 +1748,7 @@ const Purchase = () => {
               {returnForm.items.map((item, index) => (
                 <div key={index} className="grid grid-cols-12 gap-2 p-3 bg-cyber-dark rounded-lg">
                   <div className="col-span-4">
-                    <select 
+                    <select
                       value={item.material_id}
                       onChange={e => updateReturnItem(index, 'material_id', e.target.value)}
                       className="w-full px-2 py-1 bg-cyber-card border border-cyber-border rounded text-sm text-white"
@@ -1754,8 +1760,8 @@ const Purchase = () => {
                     </select>
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="จำนวน"
                       value={item.quantity}
                       onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
@@ -1763,8 +1769,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-2">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       placeholder="ราคา"
                       value={item.unit_price}
                       onChange={e => updateReturnItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
@@ -1772,8 +1778,8 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-3">
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="เหตุผล"
                       value={item.reason}
                       onChange={e => updateReturnItem(index, 'reason', e.target.value)}
@@ -1781,7 +1787,7 @@ const Purchase = () => {
                     />
                   </div>
                   <div className="col-span-1 flex items-center justify-center">
-                    <button 
+                    <button
                       onClick={() => removeReturnItem(index)}
                       className="p-1 hover:bg-red-500/20 rounded text-red-400"
                     >
@@ -1800,13 +1806,13 @@ const Purchase = () => {
         </div>
 
         <div className="p-6 border-t border-cyber-border flex justify-end gap-2">
-          <button 
+          <button
             onClick={closeModal}
             className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
           >
             ยกเลิก
           </button>
-          <button 
+          <button
             onClick={handleCreateReturn}
             disabled={formLoading || !returnForm.reason || returnForm.items.length === 0}
             className="px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center gap-2"
@@ -2051,7 +2057,7 @@ const Purchase = () => {
       </div>
 
       <DataTable
-        columns={[{ key: 'number', label: 'เลขที่ GR' }, { key: 'po', label: 'ใบสั่งซื้อ' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'date', label: 'วันที่รับ' }, { key: 'status', label: 'สถานะ', align: 'text-center' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
+        columns={[{ key: 'number', label: 'เลขที่ GR' }, { key: 'po', label: 'ใบสั่งซื้อ' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'date', label: 'วันที่รับ' }, { key: 'journal', label: 'สมุดรายวัน' }, { key: 'status', label: 'สถานะ', align: 'text-center' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
         data={receipts.filter(r => r.gr_number?.toLowerCase().includes(searchQuery.toLowerCase()) || r.po_number?.toLowerCase().includes(searchQuery.toLowerCase()))}
         renderRow={(receipt) => (
           <tr key={receipt.id} className="border-b border-cyber-border/50 hover:bg-cyber-dark/50 transition-colors">
@@ -2059,6 +2065,15 @@ const Purchase = () => {
             <td className="px-6 py-4 text-gray-300">{receipt.po_number}</td>
             <td className="px-6 py-4 text-white">{receipt.supplier_name}</td>
             <td className="px-6 py-4 text-gray-300">{formatDate(receipt.receipt_date)}</td>
+            <td className="px-6 py-4">
+              {receipt.journal_entry_number ? (
+                <a href={`/accounting/journal?entry=${receipt.journal_entry_id}`} className="text-cyber-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                  {receipt.journal_entry_number}
+                </a>
+              ) : (
+                <span className="text-gray-500">-</span>
+              )}
+            </td>
             <td className="px-6 py-4 text-center"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium text-white ${getStatusColor(receipt.status)}`}>{getStatusText(receipt.status)}</span></td>
             <td className="px-6 py-4">
               <div className="flex justify-center gap-2">
@@ -2091,7 +2106,7 @@ const Purchase = () => {
       </div>
 
       <DataTable
-        columns={[{ key: 'number', label: 'เลขที่ PI' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'po', label: 'ใบสั่งซื้อ' }, { key: 'amount', label: 'ยอดรวม', align: 'text-right' }, { key: 'balance', label: 'คงค้าง', align: 'text-right' }, { key: 'status', label: 'สถานะ', align: 'text-center' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
+        columns={[{ key: 'number', label: 'เลขที่ PI' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'po', label: 'ใบสั่งซื้อ' }, { key: 'amount', label: 'ยอดรวม', align: 'text-right' }, { key: 'balance', label: 'คงค้าง', align: 'text-right' }, { key: 'journal', label: 'สมุดรายวัน' }, { key: 'status', label: 'สถานะ', align: 'text-center' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
         data={invoices.filter(i => i.pi_number?.toLowerCase().includes(searchQuery.toLowerCase()) || i.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))}
         renderRow={(invoice) => (
           <tr key={invoice.id} className="border-b border-cyber-border/50 hover:bg-cyber-dark/50 transition-colors">
@@ -2100,6 +2115,15 @@ const Purchase = () => {
             <td className="px-6 py-4 text-gray-300">{invoice.po_number}</td>
             <td className="px-6 py-4 text-right font-medium text-white">{formatCurrency(invoice.total_amount)}</td>
             <td className="px-6 py-4 text-right"><span className={invoice.balance_amount > 0 ? 'text-red-400 font-medium' : 'text-green-400'}>{formatCurrency(invoice.balance_amount)}</span></td>
+            <td className="px-6 py-4">
+              {invoice.journal_entry_number ? (
+                <a href={`/accounting/journal?entry=${invoice.journal_entry_id}`} className="text-cyber-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                  {invoice.journal_entry_number}
+                </a>
+              ) : (
+                <span className="text-gray-500">-</span>
+              )}
+            </td>
             <td className="px-6 py-4 text-center"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium text-white ${getStatusColor(invoice.payment_status)}`}>{getStatusText(invoice.payment_status)}</span></td>
             <td className="px-6 py-4">
               <div className="flex justify-center gap-2">
@@ -2132,7 +2156,7 @@ const Purchase = () => {
       </div>
 
       <DataTable
-        columns={[{ key: 'number', label: 'เลขที่' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'date', label: 'วันที่จ่าย' }, { key: 'method', label: 'วิธีการ' }, { key: 'amount', label: 'จำนวนเงิน', align: 'text-right' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
+        columns={[{ key: 'number', label: 'เลขที่' }, { key: 'supplier', label: 'ผู้ขาย' }, { key: 'date', label: 'วันที่จ่าย' }, { key: 'method', label: 'วิธีการ' }, { key: 'amount', label: 'จำนวนเงิน', align: 'text-right' }, { key: 'journal', label: 'สมุดรายวัน' }, { key: 'actions', label: 'จัดการ', align: 'text-center' }]}
         data={payments.filter(p => p.payment_number?.toLowerCase().includes(searchQuery.toLowerCase()) || p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))}
         renderRow={(payment) => (
           <tr key={payment.id} className="border-b border-cyber-border/50 hover:bg-cyber-dark/50 transition-colors">
@@ -2141,6 +2165,15 @@ const Purchase = () => {
             <td className="px-6 py-4 text-gray-300">{formatDate(payment.payment_date)}</td>
             <td className="px-6 py-4 text-gray-300">{payment.payment_method}</td>
             <td className="px-6 py-4 text-right font-medium text-cyber-green">{formatCurrency(payment.amount)}</td>
+            <td className="px-6 py-4">
+              {payment.journal_entry_number ? (
+                <a href={`/accounting/journal?entry=${payment.journal_entry_id}`} className="text-cyber-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                  {payment.journal_entry_number}
+                </a>
+              ) : (
+                <span className="text-gray-500">-</span>
+              )}
+            </td>
             <td className="px-6 py-4"><div className="flex justify-center gap-2"><button onClick={() => openModal('payment', 'view', payment)} className="p-2 hover:bg-cyber-primary/20 rounded-lg transition-colors" title="ดูรายละเอียด"><Eye className="w-4 h-4 text-cyber-primary" /></button></div></td>
           </tr>
         )}

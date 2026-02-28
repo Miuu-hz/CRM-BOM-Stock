@@ -34,6 +34,8 @@ import reportsRoutes from './routes/reports.routes'
 import importRoutes from './routes/import.routes'
 import customerRecommendationsRoutes from './routes/customerRecommendations.routes'
 import taxRoutes from './routes/tax.routes'
+import posMenuRoutes from './routes/pos-menu.routes'
+import posBillRoutes from './routes/pos-bill.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -80,6 +82,8 @@ app.use('/api/reports', reportsRoutes)
 app.use('/api/import', importRoutes)
 app.use('/api/customer-recommendations', customerRecommendationsRoutes)
 app.use('/api/tax', taxRoutes)
+app.use('/api/pos', posMenuRoutes)
+app.use('/api/pos', posBillRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

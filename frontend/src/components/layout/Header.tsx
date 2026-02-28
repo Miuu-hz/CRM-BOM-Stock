@@ -13,6 +13,7 @@ import {
   Box,
   Loader2,
   X,
+  Store,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import searchService from '../../services/search'
@@ -283,6 +284,18 @@ function Header({ onMenuClick }: HeaderProps) {
           >
             <Bell className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-cyber-green rounded-full animate-pulse" />
+          </motion.button>
+
+          {/* Cashier - Quick Access */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => navigate('/cashier')}
+            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
+            title="ระบบขายหน้าร้าน"
+          >
+            <Store className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyber-green rounded-full animate-pulse" />
           </motion.button>
 
           {/* Settings */}
