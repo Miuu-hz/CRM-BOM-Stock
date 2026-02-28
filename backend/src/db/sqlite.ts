@@ -1324,7 +1324,165 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
   CREATE INDEX IF NOT EXISTS idx_vat_entries_date ON vat_entries(tenant_id, document_date);
   CREATE INDEX IF NOT EXISTS idx_wht_entries_date ON withholding_tax_entries(tenant_id, document_date);
+
+  -- ==================== POS SYSTEM (Cashier) ====================
+  -- ❌ ลบ pos_tables ออก - ไม่ใช้โต๊ะแล้ว
+  -- DROP TABLE IF EXISTS pos_tables;
+
+  -- POS Categories (หมวดหมู่เมนู)
+  CREATE TABLE IF NOT EXISTS pos_categories (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    name TEXT NOT NULL,                -- เช่น อาหารจานหลัก, เครื่องดื่ม
+    color TEXT DEFAULT '#00f0ff',      -- สีประจำหมวดหมู่
+    icon TEXT,                         -- ชื่อ icon
+    sort_order INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- POS Menu Configs (เมนูที่เปิดขายใน POS)
+  CREATE TABLE IF NOT EXISTS pos_menu_configs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    product_id TEXT NOT NULL,          -- เชื่อมกับ products
+    bom_id TEXT,                       -- เชื่อมกับ BOM (ใช้วัตถุดิบจาก BOM แทน pos_menu_ingredients)
+    category_id TEXT,                  -- หมวดหมู่ POS
+    pos_price REAL NOT NULL,           -- ราคาขายใน POS (อาจต่างจากราคาปกติ)
+    cost_price REAL DEFAULT 0,         -- ต้นทุน
+    is_available BOOLEAN DEFAULT 1,    -- เปิด/ปิดการขาย
+    is_pos_enabled BOOLEAN DEFAULT 1,  -- แสดงใน POS หรือไม่
+    display_order INTEGER DEFAULT 0,   -- ลำดับการแสดง
+    quick_code TEXT,                   -- รหัสลัด เช่น A01
+    image_url TEXT,
+    preparation_time INTEGER DEFAULT 10, -- นาที
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES pos_categories(id),
+    UNIQUE(tenant_id, product_id)
+  );
+
+  -- POS Menu Ingredients (วัตถุดิบที่ใช้ต่อ 1 ชิ้น - สำหรับหักสต็อก)
+  CREATE TABLE IF NOT EXISTS pos_menu_ingredients (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    pos_menu_id TEXT NOT NULL,         -- เชื่อมกับ pos_menu_configs
+    stock_item_id TEXT NOT NULL,       -- เชื่อมกับ stock_items
+    quantity_used REAL NOT NULL,       -- จำนวนที่ใช้ต่อ 1 ชิ้น
+    unit_id TEXT,                      -- หน่วยนับ
+    is_optional BOOLEAN DEFAULT 0,     -- เป็นวัตถุดิบเสริมหรือไม่
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (pos_menu_id) REFERENCES pos_menu_configs(id) ON DELETE CASCADE,
+    FOREIGN KEY (stock_item_id) REFERENCES stock_items(id)
+  );
+
+  -- Running Bills (Open Bill/Tab - ไม่ผูกกับโต๊ะ)
+  CREATE TABLE IF NOT EXISTS pos_running_bills (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    bill_number TEXT NOT NULL,         -- เลขที่บิล POS-2024-00001
+    display_name TEXT NOT NULL,        -- ชื่อที่แสดง: "โต๊ะ 1", "บิล 1", "คุณสมชาย"
+    customer_name TEXT,                -- ชื่อลูกค้า (optional)
+    customer_phone TEXT,               -- เบอร์โทร (optional)
+    customer_count INTEGER DEFAULT 1,  -- จำนวนลูกค้า
+    status TEXT DEFAULT 'OPEN',        -- OPEN, PENDING_PAYMENT, PAID, CANCELLED
+    opened_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    closed_at TEXT,
+    subtotal REAL DEFAULT 0,
+    tax_rate REAL DEFAULT 7,
+    tax_amount REAL DEFAULT 0,
+    service_charge_rate REAL DEFAULT 10,
+    service_charge_amount REAL DEFAULT 0,
+    discount_amount REAL DEFAULT 0,
+    total_amount REAL DEFAULT 0,
+    notes TEXT,
+    created_by TEXT,
+    closed_by TEXT,
+    UNIQUE(tenant_id, bill_number)
+  );
+
+  -- Bill Items (รายการในบิล)
+  CREATE TABLE IF NOT EXISTS pos_bill_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    bill_id TEXT NOT NULL,             -- อ้างอิง pos_running_bills
+    pos_menu_id TEXT NOT NULL,         -- อ้างอิง pos_menu_configs
+    product_name TEXT NOT NULL,        -- cache ชื่อสินค้า
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_price REAL NOT NULL,
+    total_price REAL NOT NULL,
+    special_instructions TEXT,         -- เช่น "ไม่ใส่ผัก", "พิเศษ"
+    status TEXT DEFAULT 'PENDING',     -- PENDING, PREPARING, READY, SERVED
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    served_at TEXT,
+    created_by TEXT,
+    FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id) ON DELETE CASCADE,
+    FOREIGN KEY (pos_menu_id) REFERENCES pos_menu_configs(id)
+  );
+
+  -- POS Payments (การชำระเงิน)
+  CREATE TABLE IF NOT EXISTS pos_payments (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    bill_id TEXT NOT NULL,             -- อ้างอิง pos_running_bills
+    payment_method TEXT NOT NULL,      -- CASH, QR_CODE, CREDIT_CARD, TRANSFER
+    amount REAL NOT NULL,
+    received_amount REAL,              -- สำหรับเงินสด (เงินที่รับมา)
+    change_amount REAL,                -- เงินทอน
+    reference TEXT,                    -- เลขอ้างอิง (สลิป, ใบเสร็จ)
+    paid_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    received_by TEXT NOT NULL,
+    FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id) ON DELETE CASCADE
+  );
+
+  -- POS Stock Deductions (บันทึกการตัดสต็อก)
+  CREATE TABLE IF NOT EXISTS pos_stock_deductions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    bill_item_id TEXT NOT NULL,        -- อ้างอิง pos_bill_items
+    stock_item_id TEXT NOT NULL,       -- อ้างอิง stock_items
+    quantity_deducted REAL NOT NULL,
+    unit_id TEXT,
+    deducted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    returned BOOLEAN DEFAULT 0,        -- คืนสต็อกหรือยัง (ตอนยกเลิก)
+    returned_at TEXT,
+    FOREIGN KEY (bill_item_id) REFERENCES pos_bill_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (stock_item_id) REFERENCES stock_items(id)
+  );
+
+  -- ==================== POS INDEXES ====================
+  CREATE INDEX IF NOT EXISTS idx_pos_categories_tenant ON pos_categories(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_menu_tenant ON pos_menu_configs(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_menu_category ON pos_menu_configs(category_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_menu_product ON pos_menu_configs(product_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_menu_bom ON pos_menu_configs(bom_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_menu_enabled ON pos_menu_configs(tenant_id, is_pos_enabled);
+  CREATE INDEX IF NOT EXISTS idx_pos_ingredients_menu ON pos_menu_ingredients(pos_menu_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_bills_tenant ON pos_running_bills(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_bills_status ON pos_running_bills(tenant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_pos_bills_open ON pos_running_bills(tenant_id, status) WHERE status = 'OPEN';
+  CREATE INDEX IF NOT EXISTS idx_pos_bill_items_bill ON pos_bill_items(bill_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_payments_bill ON pos_payments(bill_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_stock_deductions_bill_item ON pos_stock_deductions(bill_item_id);
 `)
+
+// ==================== MIGRATIONS ====================
+// Add bom_id column to pos_menu_configs (for existing databases)
+try {
+  const tableInfo = db.prepare(`PRAGMA table_info(pos_menu_configs)`).all() as any[]
+  const hasBomId = tableInfo.some(col => col.name === 'bom_id')
+  
+  if (!hasBomId) {
+    db.exec(`ALTER TABLE pos_menu_configs ADD COLUMN bom_id TEXT REFERENCES boms(id) ON DELETE SET NULL`)
+    console.log('✅ Migration: Added bom_id column to pos_menu_configs')
+  }
+} catch (error) {
+  console.log('ℹ️ Migration check skipped (table may not exist yet)')
+}
 
 console.log('✅ SQLite database initialized at:', dbPath)
 

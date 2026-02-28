@@ -54,7 +54,7 @@ function Stock() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
-  
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
@@ -73,10 +73,10 @@ function Stock() {
     type: 'IN' | 'OUT'
     item: StockItem | null
   }>({ open: false, type: 'IN', item: null })
-  
+
   // Add New Item Modal
   const [showAddModal, setShowAddModal] = useState(false)
-  
+
   // Import Modal
   const [showImportModal, setShowImportModal] = useState(false)
 
@@ -118,25 +118,25 @@ function Stock() {
     const matchesStatus = selectedStatus === 'all' || status === selectedStatus
     return matchesSearch && matchesCategory && matchesStatus
   })
-  
+
   // Pagination logic
   const totalItems = filteredItems.length
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedItems = filteredItems.slice(startIndex, endIndex)
-  
+
   // Reset to page 1 when filters change
   const handleSearchChange = (value: string) => {
     setSearchTerm(value)
     setCurrentPage(1)
   }
-  
+
   const handleCategoryChange = (value: string) => {
     setSelectedCategory(value)
     setCurrentPage(1)
   }
-  
+
   const handleStatusChange = (value: string) => {
     setSelectedStatus(value)
     setCurrentPage(1)
@@ -399,11 +399,10 @@ function Stock() {
                           <button
                             onClick={() => handleStockMovement('OUT', item)}
                             disabled={item.quantity === 0}
-                            className={`p-2 rounded-lg transition-colors ${
-                              item.quantity === 0
-                                ? 'text-gray-600 cursor-not-allowed'
-                                : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${item.quantity === 0
+                              ? 'text-gray-600 cursor-not-allowed'
+                              : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10'
+                              }`}
                             title={item.quantity === 0 ? 'Out of Stock' : 'Stock Out'}
                           >
                             <ArrowDownCircle className="w-4 h-4" />
@@ -417,14 +416,14 @@ function Stock() {
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination Controls */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-cyber-border">
           <div className="flex items-center gap-4">
             <span className="text-gray-400 text-sm">
               แสดง <span className="text-cyber-primary font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-cyber-primary font-semibold">{totalItems}</span> รายการ
             </span>
-            
+
             {/* Items Per Page Selector */}
             <select
               value={itemsPerPage}
@@ -439,7 +438,7 @@ function Stock() {
               <option value={100}>100 / หน้า</option>
             </select>
           </div>
-          
+
           {/* Page Navigation */}
           <div className="flex items-center gap-2">
             <button
@@ -456,11 +455,11 @@ function Stock() {
             >
               ก่อนหน้า
             </button>
-            
+
             <span className="px-4 py-1 text-sm text-cyber-primary font-semibold bg-cyber-primary/10 rounded border border-cyber-primary/30">
               หน้า {currentPage} / {totalPages || 1}
             </span>
-            
+
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalPages === 0}
@@ -504,7 +503,7 @@ function Stock() {
         onSave={loadData}
         setShowAddModal={setShowAddModal}
       />
-      
+
       {/* Add New Item Modal */}
       <AddStockModal
         open={showAddModal}
@@ -547,117 +546,122 @@ function DetailModal({
         onClick={(e) => e.stopPropagation()}
         className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn"
       >
-            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-100">Stock Item Details</h2>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
+        <div className="p-6 border-b border-cyber-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-100">Stock Item Details</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Item Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-400 mb-1">Name</p>
+              <p className="text-gray-200 font-medium">{item.name}</p>
             </div>
-
-            <div className="p-6 space-y-6">
-              {/* Item Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Name</p>
-                  <p className="text-gray-200 font-medium">{item.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">SKU</p>
-                  <p className="text-gray-200 font-mono">{item.sku}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Category</p>
-                  <CategoryBadge category={item.category} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Current Stock</p>
-                  <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                    {item.quantity} {item.unit}
-                    {item.quantity === 0 && (
-                      <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
-                        OUT OF STOCK
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Min Stock</p>
-                  <p className="text-gray-200">{item.minStock} {item.unit}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400 mb-1">Max Stock</p>
-                  <p className="text-gray-200">{item.maxStock} {item.unit}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-400 mb-1">Location</p>
-                  <div className="flex items-center gap-2 text-gray-200">
-                    <MapPin className="w-4 h-4 text-cyber-primary" />
-                    {item.location || 'Not specified'}
-                  </div>
-                </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">SKU</p>
+              <p className="text-gray-200 font-mono">{item.sku}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">Category</p>
+              <CategoryBadge category={item.category} />
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">Current Stock</p>
+              <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                {item.quantity} {item.unit}
+                {item.quantity === 0 && (
+                  <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                    OUT OF STOCK
+                  </span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">Min Stock</p>
+              <p className="text-gray-200">{item.minStock} {item.unit}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">Max Stock</p>
+              <p className="text-gray-200">{item.maxStock} {item.unit}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-sm text-gray-400 mb-1">Location</p>
+              <div className="flex items-center gap-2 text-gray-200">
+                <MapPin className="w-4 h-4 text-cyber-primary" />
+                {item.location || 'Not specified'}
               </div>
-
-              {/* Related Material/Product */}
-              {item.material && (
-                <div className="p-4 bg-cyber-darker rounded-lg">
-                  <p className="text-sm text-gray-400 mb-2">Related Material</p>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-gray-200 font-medium">{item.material.name}</p>
-                      <p className="text-gray-400 text-sm">{item.material.code}</p>
-                    </div>
-                    <p className="text-cyber-green font-semibold">
-                      ฿{Number(item.material.unitCost).toLocaleString()}/unit
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Movement History */}
-              {item.movements && item.movements.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-200 mb-3">Recent Movements</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {item.movements.slice(0, 10).map((movement) => (
-                      <div
-                        key={movement.id}
-                        className="flex items-center justify-between p-3 bg-cyber-darker rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          {movement.type === 'IN' ? (
-                            <ArrowUpCircle className="w-5 h-5 text-cyber-green" />
-                          ) : movement.type === 'OUT' ? (
-                            <ArrowDownCircle className="w-5 h-5 text-red-400" />
-                          ) : (
-                            <Package className="w-5 h-5 text-yellow-400" />
-                          )}
-                          <div>
-                            <p className="text-gray-200">
-                              {movement.type === 'IN' ? '+' : movement.type === 'OUT' ? '-' : ''}
-                              {movement.quantity} {item.unit}
-                            </p>
-                            {movement.notes && (
-                              <p className="text-gray-400 text-sm">{movement.notes}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-gray-400 text-sm flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(movement.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
+
+          {/* Related Material/Product */}
+          {item.material && (
+            <div className="p-4 bg-cyber-darker rounded-lg">
+              <p className="text-sm text-gray-400 mb-2">Related Material</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-gray-200 font-medium">{item.material.name}</p>
+                  <p className="text-gray-400 text-sm">{item.material.code}</p>
+                </div>
+                <p className="text-cyber-green font-semibold">
+                  ฿{Number(item.material.unitCost).toLocaleString()}/unit
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Movement History */}
+          {item.movements && item.movements.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-200 mb-3">Recent Movements</h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {item.movements.slice(0, 10).map((movement) => (
+                  <div
+                    key={movement.id}
+                    className="flex items-center justify-between p-3 bg-cyber-darker rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      {movement.type === 'IN' ? (
+                        <ArrowUpCircle className="w-5 h-5 text-cyber-green" />
+                      ) : movement.type === 'OUT' ? (
+                        <ArrowDownCircle className="w-5 h-5 text-red-400" />
+                      ) : (
+                        <Package className="w-5 h-5 text-yellow-400" />
+                      )}
+                      <div>
+                        <p className="text-gray-200">
+                          {movement.type === 'IN' ? '+' : movement.type === 'OUT' ? '-' : ''}
+                          {movement.quantity} {item.unit}
+                        </p>
+                        {movement.notes && (
+                          <p className="text-gray-400 text-sm">{movement.notes}</p>
+                        )}
+                        {movement.journalNumber && (
+                          <a href={`/accounting/journal?entry=${movement.journalId}`} className="text-cyber-primary text-sm hover:underline" target="_blank" rel="noopener noreferrer">
+                            {movement.journalNumber}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-gray-400 text-sm flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(movement.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+    </div>
   )
 }
 
@@ -722,101 +726,101 @@ function EditModal({
         onClick={(e) => e.stopPropagation()}
         className="cyber-card w-full max-w-lg animate-scaleIn"
       >
-            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-100">Edit Stock Item</h2>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="cyber-input w-full"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="cyber-input w-full"
-                  required
-                >
-                  <option value="raw">Raw Material</option>
-                  <option value="wip">WIP</option>
-                  <option value="finished">Finished</option>
-                  <option value="material">Material</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
-                  <input
-                    type="number"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                    className="cyber-input w-full"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
-                  <input
-                    type="number"
-                    value={formData.maxStock}
-                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                    className="cyber-input w-full"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Location</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="cyber-input w-full"
-                  placeholder="e.g., Warehouse A - Zone 1"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="cyber-btn-primary flex items-center gap-2"
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Edit2 className="w-4 h-4" />
-                  )}
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
+        <div className="p-6 border-b border-cyber-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-100">Edit Stock Item</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="cyber-input w-full"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Category</label>
+            <select
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              className="cyber-input w-full"
+              required
+            >
+              <option value="raw">Raw Material</option>
+              <option value="wip">WIP</option>
+              <option value="finished">Finished</option>
+              <option value="material">Material</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
+              <input
+                type="number"
+                value={formData.minStock}
+                onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                className="cyber-input w-full"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
+              <input
+                type="number"
+                value={formData.maxStock}
+                onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                className="cyber-input w-full"
+                min="0"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Location</label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              className="cyber-input w-full"
+              placeholder="e.g., Warehouse A - Zone 1"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="cyber-btn-primary flex items-center gap-2"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Edit2 className="w-4 h-4" />
+              )}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
@@ -912,164 +916,162 @@ function MovementModal({
         onClick={(e) => e.stopPropagation()}
         className="cyber-card w-full max-w-lg animate-scaleIn"
       >
-            <div className={`p-6 border-b border-cyber-border flex items-center justify-between ${
-              type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
-            }`}>
-              <div className="flex items-center gap-3">
-                {type === 'IN' ? (
-                  <ArrowUpCircle className="w-6 h-6 text-cyber-green" />
-                ) : (
-                  <ArrowDownCircle className="w-6 h-6 text-red-400" />
-                )}
-                <h2 className="text-xl font-bold text-gray-100">
-                  Stock {type === 'IN' ? 'In' : 'Out'}
-                </h2>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
+        <div className={`p-6 border-b border-cyber-border flex items-center justify-between ${type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
+          }`}>
+          <div className="flex items-center gap-3">
+            {type === 'IN' ? (
+              <ArrowUpCircle className="w-6 h-6 text-cyber-green" />
+            ) : (
+              <ArrowDownCircle className="w-6 h-6 text-red-400" />
+            )}
+            <h2 className="text-xl font-bold text-gray-100">
+              Stock {type === 'IN' ? 'In' : 'Out'}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Select Item</label>
-                <SearchableDropdown
-                  value={selectedItemId}
-                  onChange={setSelectedItemId}
-                  options={availableItems.map((stockItem) => ({
-                    id: stockItem.id,
-                    label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
-                    searchText: `${stockItem.name} ${stockItem.sku}`,
-                  }))}
-                  placeholder="-- Select Item --"
-                  disabled={!!item}
-                />
-                {type === 'OUT' && availableItems.length === 0 && (
-                  <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
-                    <AlertCircle className="w-4 h-4" />
-                    No items available for Stock Out
-                  </p>
-                )}
-                {type === 'IN' && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className="text-sm text-gray-500">Item not found?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose()
-                        setShowAddModal(true)
-                      }}
-                      className="text-sm text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Create New Item
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {selectedItem && (
-                <div className="p-4 bg-cyber-darker rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Current Stock:</span>
-                    <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                      {selectedItem.quantity} {selectedItem.unit}
-                      {selectedItem.quantity === 0 && (
-                        <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
-                          OUT OF STOCK
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {isOutOfStock && (
-                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
-                  <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0" />
-                  <div>
-                    <p className="text-red-400 font-medium">Cannot Proceed</p>
-                    <p className="text-red-400/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Quantity</label>
-                <input
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
-                  className="cyber-input w-full"
-                  min="1"
-                  max={type === 'OUT' && selectedItem ? selectedItem.quantity : undefined}
-                  required
-                  disabled={isOutOfStock}
-                />
-                {exceedsStock && (
-                  <p className="text-red-400 text-sm mt-1">
-                    Cannot exceed available stock ({selectedItem?.quantity})
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
-                <input
-                  type="text"
-                  value={reference}
-                  onChange={(e) => setReference(e.target.value)}
-                  className="cyber-input w-full"
-                  placeholder="e.g., PO-2024-001"
-                  disabled={isOutOfStock}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Notes (Optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="cyber-input w-full"
-                  rows={3}
-                  placeholder="Additional notes..."
-                  disabled={isOutOfStock}
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Select Item</label>
+            <SearchableDropdown
+              value={selectedItemId}
+              onChange={setSelectedItemId}
+              options={availableItems.map((stockItem) => ({
+                id: stockItem.id,
+                label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
+                searchText: `${stockItem.name} ${stockItem.sku}`,
+              }))}
+              placeholder="-- Select Item --"
+              disabled={!!item}
+            />
+            {type === 'OUT' && availableItems.length === 0 && (
+              <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                No items available for Stock Out
+              </p>
+            )}
+            {type === 'IN' && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-sm text-gray-500">Item not found?</span>
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+                  onClick={() => {
+                    onClose()
+                    setShowAddModal(true)
+                  }}
+                  className="text-sm text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving || isOutOfStock || exceedsStock || !selectedItemId}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
-                    type === 'IN'
-                      ? 'bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50'
-                      : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
-                  }`}
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : type === 'IN' ? (
-                    <ArrowUpCircle className="w-4 h-4" />
-                  ) : (
-                    <ArrowDownCircle className="w-4 h-4" />
-                  )}
-                  Record {type === 'IN' ? 'Stock In' : 'Stock Out'}
+                  <Plus className="w-4 h-4" />
+                  Create New Item
                 </button>
               </div>
-            </form>
+            )}
           </div>
-        </div>
+
+          {selectedItem && (
+            <div className="p-4 bg-cyber-darker rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Current Stock:</span>
+                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                  {selectedItem.quantity} {selectedItem.unit}
+                  {selectedItem.quantity === 0 && (
+                    <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                      OUT OF STOCK
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {isOutOfStock && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0" />
+              <div>
+                <p className="text-red-400 font-medium">Cannot Proceed</p>
+                <p className="text-red-400/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+              className="cyber-input w-full"
+              min="1"
+              max={type === 'OUT' && selectedItem ? selectedItem.quantity : undefined}
+              required
+              disabled={isOutOfStock}
+            />
+            {exceedsStock && (
+              <p className="text-red-400 text-sm mt-1">
+                Cannot exceed available stock ({selectedItem?.quantity})
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className="cyber-input w-full"
+              placeholder="e.g., PO-2024-001"
+              disabled={isOutOfStock}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Notes (Optional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="cyber-input w-full"
+              rows={3}
+              placeholder="Additional notes..."
+              disabled={isOutOfStock}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || isOutOfStock || exceedsStock || !selectedItemId}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${type === 'IN'
+                ? 'bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50'
+                : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
+                }`}
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : type === 'IN' ? (
+                <ArrowUpCircle className="w-4 h-4" />
+              ) : (
+                <ArrowDownCircle className="w-4 h-4" />
+              )}
+              Record {type === 'IN' ? 'Stock In' : 'Stock Out'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
@@ -1118,11 +1120,10 @@ function FilterButton({
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
-        active
-          ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
-          : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
-      }`}
+      className={`px-4 py-2 rounded-lg transition-all whitespace-nowrap ${active
+        ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
+        : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
+        }`}
     >
       {label}
     </button>
@@ -1262,202 +1263,202 @@ function AddStockModal({
         onClick={(e) => e.stopPropagation()}
         className="cyber-card w-full max-w-lg animate-scaleIn"
       >
-            <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10">
-              <div className="flex items-center gap-3">
-                <Package className="w-6 h-6 text-cyber-green" />
-                <h2 className="text-xl font-bold text-gray-100">Create New Stock Item</h2>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10">
+          <div className="flex items-center gap-3">
+            <Package className="w-6 h-6 text-cyber-green" />
+            <h2 className="text-xl font-bold text-gray-100">Create New Stock Item</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">SKU *</label>
+              <input
+                type="text"
+                value={formData.sku}
+                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                className="cyber-input w-full"
+                placeholder="e.g., RAW-001"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Category</label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="cyber-input w-full"
               >
-                <X className="w-5 h-5 text-gray-400" />
+                <option value="raw">Raw Material</option>
+                <option value="wip">WIP</option>
+                <option value="finished">Finished</option>
+                <option value="material">Material</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Item Name *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="cyber-input w-full"
+              placeholder="Enter item name"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">หน่วย</label>
+              <select
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                className="cyber-input w-full"
+              >
+                {getUnits().map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowUnitModal(true)}
+                className="text-xs text-cyber-primary hover:underline mt-1"
+              >
+                + เพิ่มหน่วยใหม่
               </button>
             </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
+              <input
+                type="number"
+                value={formData.quantity}
+                onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                className="cyber-input w-full"
+                min="0"
+              />
+            </div>
+          </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
+              <input
+                type="number"
+                value={formData.minStock}
+                onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                className="cyber-input w-full"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
+              <input
+                type="number"
+                value={formData.maxStock}
+                onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                className="cyber-input w-full"
+                min="0"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Location</label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              className="cyber-input w-full"
+              placeholder="e.g., Main Warehouse, A-12"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              สร้างรายการ
+            </button>
+          </div>
+        </form>
+
+        {/* Add Unit Modal */}
+        {showUnitModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 animate-fadeIn">
+            <div className="cyber-card w-full max-w-sm animate-scaleIn">
+              <div className="p-4 border-b border-cyber-border flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
+                <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded">
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">SKU *</label>
+                  <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
                   <input
                     type="text"
-                    value={formData.sku}
-                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                    className="cyber-input w-full"
-                    placeholder="e.g., RAW-001"
-                    required
+                    value={newUnit.value}
+                    onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
+                    placeholder="เช่น ลัง"
+                    className="cyber-input w-full text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Category</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="cyber-input w-full"
-                  >
-                    <option value="raw">Raw Material</option>
-                    <option value="wip">WIP</option>
-                    <option value="finished">Finished</option>
-                    <option value="material">Material</option>
-                  </select>
+                  <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
+                  <input
+                    type="text"
+                    value={newUnit.label}
+                    onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
+                    placeholder="เช่น ลัง"
+                    className="cyber-input w-full text-sm"
+                  />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Item Name *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="cyber-input w-full"
-                  placeholder="Enter item name"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">หน่วย</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="cyber-input w-full"
-                  >
-                    {getUnits().map((u) => (
-                      <option key={u.value} value={u.value}>
-                        {u.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex justify-end gap-2 pt-2">
                   <button
-                    type="button"
-                    onClick={() => setShowUnitModal(true)}
-                    className="text-xs text-cyber-primary hover:underline mt-1"
+                    onClick={() => setShowUnitModal(false)}
+                    className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
                   >
-                    + เพิ่มหน่วยใหม่
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={handleAddUnit}
+                    disabled={!newUnit.value || !newUnit.label}
+                    className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50"
+                  >
+                    บันทึก
                   </button>
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
-                  <input
-                    type="number"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
-                    className="cyber-input w-full"
-                    min="0"
-                  />
-                </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
-                  <input
-                    type="number"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                    className="cyber-input w-full"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
-                  <input
-                    type="number"
-                    value={formData.maxStock}
-                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                    className="cyber-input w-full"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Location</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="cyber-input w-full"
-                  placeholder="e.g., Main Warehouse, A-12"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50"
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Plus className="w-4 h-4" />
-                  )}
-                  สร้างรายการ
-                </button>
-              </div>
-            </form>
-
-            {/* Add Unit Modal */}
-            {showUnitModal && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 animate-fadeIn">
-                <div className="cyber-card w-full max-w-sm animate-scaleIn">
-                  <div className="p-4 border-b border-cyber-border flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
-                    <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded">
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
-                      <input
-                        type="text"
-                        value={newUnit.value}
-                        onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
-                        placeholder="เช่น ลัง"
-                        className="cyber-input w-full text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
-                      <input
-                        type="text"
-                        value={newUnit.label}
-                        onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
-                        placeholder="เช่น ลัง"
-                        className="cyber-input w-full text-sm"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => setShowUnitModal(false)}
-                        className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
-                      >
-                        ยกเลิก
-                      </button>
-                      <button
-                        onClick={handleAddUnit}
-                        disabled={!newUnit.value || !newUnit.label}
-                        className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50"
-                      >
-                        บันทึก
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+    </div>
   )
 }
 

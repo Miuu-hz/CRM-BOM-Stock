@@ -13,7 +13,9 @@ import {
   RefreshCw,
   Key,
   Building2,
+  Store,
 } from 'lucide-react'
+import POSMenuSettings from './settings/POSMenuSettings'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -28,7 +30,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { user, isMaster, children, loadChildren, createChildUser, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -90,6 +92,12 @@ export default function SettingsPage() {
           icon={Shield}
           label="ความปลอดภัย"
         />
+        <TabButton
+          active={activeTab === 'pos'}
+          onClick={() => setActiveTab('pos')}
+          icon={Store}
+          label="POS Menu"
+        />
       </div>
 
       {/* Content */}
@@ -107,6 +115,8 @@ export default function SettingsPage() {
         )}
         
         {activeTab === 'security' && <SecuritySettings />}
+        
+        {activeTab === 'pos' && <POSMenuSettings />}
       </div>
 
       {/* Add User Modal */}

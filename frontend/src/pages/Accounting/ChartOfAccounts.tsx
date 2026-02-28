@@ -163,7 +163,7 @@ const ChartOfAccounts = () => {
         setTreeData(response.data.data.tree)
         
         // Auto-expand root accounts
-        const rootIds = new Set(response.data.data.tree.map((a: Account) => a.id))
+        const rootIds = new Set<string>(response.data.data.tree.map((a: Account) => a.id))
         setExpandedIds(rootIds)
       }
     } catch (error: any) {
