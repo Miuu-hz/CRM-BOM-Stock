@@ -1,0 +1,185 @@
+/* Bill Viewer Styles */
+
+.bill-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.bill-viewer-modal {
+  width: 100%;
+  max-width: 900px;
+  height: 90vh;
+  background: #0a0e27;
+  border-radius: 16px;
+  border: 1px solid #2d3250;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bill-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 2px solid;
+  background: #151932;
+}
+
+.bill-viewer-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bill-viewer-title h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.bill-viewer-title p {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.bill-type-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.bill-viewer-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bill-size-select {
+  padding: 8px 12px;
+  background: #1a1d35;
+  border: 1px solid #2d3250;
+  border-radius: 6px;
+  color: #e5e7eb;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.bill-size-select:focus {
+  outline: none;
+  border-color: #00f0ff;
+}
+
+.bill-viewer-content {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  background: #f3f4f6;
+}
+
+.bill-viewer-content .unified-bill-container {
+  background: transparent;
+  padding: 0;
+  min-height: auto;
+}
+
+.bill-viewer-content .unified-bill-paper {
+  margin: 0 auto;
+}
+
+/* Demo Page Styles */
+.bill-demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.bill-demo-card {
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  background: #151932;
+}
+
+.bill-demo-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 240, 255, 0.15);
+}
+
+.bill-demo-card.active {
+  background: rgba(0, 240, 255, 0.1);
+}
+
+/* Print Button Variants */
+.bill-print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: 1px solid;
+  background: transparent;
+}
+
+.bill-print-btn:hover {
+  opacity: 0.8;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .bill-viewer-modal {
+    height: 100vh;
+    max-width: 100%;
+    border-radius: 0;
+  }
+  
+  .bill-viewer-header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  
+  .bill-viewer-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .bill-viewer-content {
+    padding: 10px;
+  }
+}
+
+/* Animation */
+@keyframes billSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.bill-viewer-modal {
+  animation: billSlideIn 0.3s ease;
+}

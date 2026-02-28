@@ -1,32 +1,10 @@
 {
-  "name": "crm-bom-stock",
+  "name": "crm-root",
   "version": "1.0.0",
-  "description": "CRM-BOM-Stock Management System for Bedding Factory",
-  "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
-    "dev": "concurrently -n \"FRONTEND,BACKEND\" -c \"cyan,green\" \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
-    "dev:frontend": "npm run dev --workspace=frontend",
-    "dev:backend": "npm run dev --workspace=backend",
-    "build": "npm run build:frontend && npm run build:backend",
-    "build:frontend": "npm run build --workspace=frontend",
-    "build:backend": "npm run build --workspace=backend",
-    "install:all": "npm install && npm install --workspace=frontend && npm install --workspace=backend"
+    "dev": "npx kill-port 5000 3000 && npx concurrently --kill-others --kill-others-on-fail --prefix-colors \"cyan.bold,magenta.bold\" --names \"BACKEND,FRONTEND\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
   },
-  "keywords": [
-    "crm",
-    "bom",
-    "stock",
-    "inventory",
-    "bedding",
-    "factory"
-  ],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^9.2.1"
   }
 }
