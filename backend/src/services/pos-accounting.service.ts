@@ -37,7 +37,81 @@ class POSAccountingService {
   }
 
   /**
-   * Record sale transaction (Journal Entry + VAT)
+   * Calculate COGS from bill items using BOM
+   */
+  private async calculateCOGS(billId: string, tenantId: string): Promise<{
+    totalCost: number
+    items: { menuId: string; menuName: string; quantity: number; unitCost: number; totalCost: number }[]
+  }> {
+    // Get bill items with their BOM info
+    const itemsStmt = db.prepare(`
+      SELECT 
+        bi.id as bill_item_id,
+        bi.pos_menu_id,
+        bi.product_name,
+        bi.quantity,
+        pmc.bom_id
+      FROM pos_bill_items bi
+      JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+      WHERE bi.bill_id = ? AND bi.tenant_id = ?
+    `)
+    const items = itemsStmt.all(billId, tenantId) as any[]
+
+    let totalCost = 0
+    const costItems = []
+
+    for (const item of items) {
+      let itemCost = 0
+
+      if (item.bom_id) {
+        // Calculate cost from BOM items
+        const bomItemsStmt = db.prepare(`
+          SELECT 
+            bi.quantity,
+            si.unit_cost
+          FROM bom_items bi
+          JOIN stock_items si ON bi.material_id = si.id
+          WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
+        `)
+        const bomItems = bomItemsStmt.all(item.bom_id, tenantId) as any[]
+
+        for (const bomItem of bomItems) {
+          itemCost += (bomItem.quantity * bomItem.unit_cost)
+        }
+      } else {
+        // Fallback: use pos_menu_ingredients
+        const ingStmt = db.prepare(`
+          SELECT 
+            pmi.quantity_used,
+            si.unit_cost
+          FROM pos_menu_ingredients pmi
+          JOIN stock_items si ON pmi.stock_item_id = si.id
+          WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
+        `)
+        const ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
+
+        for (const ing of ingredients) {
+          itemCost += (ing.quantity_used * ing.unit_cost)
+        }
+      }
+
+      const totalItemCost = itemCost * item.quantity
+      totalCost += totalItemCost
+
+      costItems.push({
+        menuId: item.pos_menu_id,
+        menuName: item.product_name,
+        quantity: item.quantity,
+        unitCost: itemCost,
+        totalCost: totalItemCost
+      })
+    }
+
+    return { totalCost, items: costItems }
+  }
+
+  /**
+   * Record sale transaction (Journal Entry + VAT + COGS)
    */
   async recordSale(
     bill: {
@@ -56,11 +130,14 @@ class POSAccountingService {
     },
     tenantId: string,
     userId: string
-  ): Promise<{ success: boolean; journalEntryId?: string; errors: string[] }> {
+  ): Promise<{ success: boolean; journalEntryId?: string; cogsEntryId?: string; errors: string[] }> {
     const errors: string[] = []
 
     try {
-      // 1. Create Journal Entry
+      // Calculate COGS
+      const cogs = await this.calculateCOGS(bill.id, tenantId)
+
+      // 1. Create Revenue Journal Entry
       const entryNumber = this.generateEntryNumber(tenantId)
       const entryId = generateId()
       const today = now().split('T')[0]
@@ -164,7 +241,75 @@ class POSAccountingService {
         )
       }
 
-      // 2. Record VAT Entry
+      // 2. Record COGS Journal Entry (if cost > 0)
+      let cogsEntryId: string | undefined
+      if (cogs.totalCost > 0) {
+        const cogsEntryNumber = this.generateEntryNumber(tenantId)
+        cogsEntryId = generateId()
+
+        const cogsEntryStmt = db.prepare(`
+          INSERT INTO journal_entries (
+            id, tenant_id, entry_number, date, reference_type, reference_id,
+            description, total_debit, total_credit, is_auto_generated, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `)
+
+        cogsEntryStmt.run(
+          cogsEntryId,
+          tenantId,
+          cogsEntryNumber,
+          today,
+          'POS_COGS',
+          bill.id,
+          `ต้นทุนขาย - ${bill.bill_number}`,
+          cogs.totalCost,
+          cogs.totalCost,
+          userId,
+          now()
+        )
+
+        // COGS Line 1: Debit COGS
+        const cogsLine1Id = generateId()
+        const cogsAccountId = getAccountId('5100', 'ต้นทุนขาย', 'EXPENSE', 'OPERATING_EXPENSE')
+        const cogsLineStmt = db.prepare(`
+          INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+          VALUES (?, ?, ?, ?, 1, ?, ?, 0)
+        `)
+
+        cogsLineStmt.run(
+          cogsLine1Id,
+          tenantId,
+          cogsEntryId,
+          cogsAccountId,
+          `ต้นทุนขาย ${bill.bill_number}`,
+          cogs.totalCost
+        )
+
+        // COGS Line 2: Credit Inventory
+        const cogsLine2Id = generateId()
+        const inventoryAccountId = getAccountId('1160', 'สินค้าคงคลัง', 'ASSET', 'CURRENT_ASSET')
+        const cogsLine2Stmt = db.prepare(`
+          INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+          VALUES (?, ?, ?, ?, 2, ?, 0, ?)
+        `)
+
+        cogsLine2Stmt.run(
+          cogsLine2Id,
+          tenantId,
+          cogsEntryId,
+          inventoryAccountId,
+          `ลดสินค้าคงคลัง ${bill.bill_number}`,
+          cogs.totalCost
+        )
+
+        // Update balances for COGS
+        await this.updateAccountBalances(tenantId, today, [
+          { accountCode: '5100', debit: cogs.totalCost, credit: 0 },
+          { accountCode: '1160', debit: 0, credit: cogs.totalCost }
+        ])
+      }
+
+      // 3. Record VAT Entry
       const vatId = generateId()
       const vatStmt = db.prepare(`
         INSERT INTO vat_entries (
@@ -189,7 +334,7 @@ class POSAccountingService {
         now()
       )
 
-      // 3. Update Account Balances (optional - can be done via batch job)
+      // 4. Update Account Balances for Revenue
       await this.updateAccountBalances(tenantId, today, [
         { accountCode: cashAccountCode, debit: bill.total_amount, credit: 0 },
         { accountCode: '4100', debit: 0, credit: totalRevenue },
@@ -199,6 +344,7 @@ class POSAccountingService {
       return {
         success: true,
         journalEntryId: entryId,
+        cogsEntryId,
         errors: []
       }
     } catch (error: any) {

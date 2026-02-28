@@ -93,6 +93,7 @@ const menuItems = [
     subMenu: [
       { path: '/accounting/chart-of-accounts', label: 'Chart of Accounts', icon: BookOpen },
       { path: '/accounting/journal-entries', label: 'Journal Entries', icon: FileText },
+      { path: '/accounting/pos-clearing', label: 'POS Clearing', icon: Store },
       { path: '/accounting/reports', label: 'Financial Reports', icon: BarChart3 },
     ]
   },

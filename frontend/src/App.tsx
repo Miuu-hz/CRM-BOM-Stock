@@ -15,6 +15,7 @@ import Login from './pages/Login'
 import { ChartOfAccounts, JournalEntries, FinancialReports } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
+import POSClearing from './pages/Accounting/POSClearing'
 
 function AppContent() {
   const { user, isReady } = useAuth()
@@ -61,6 +62,9 @@ function AppContent() {
         
         {/* Cashier Route */}
         <Route path="/cashier" element={<Cashier />} />
+        
+        {/* POS Clearing Route */}
+        <Route path="/accounting/pos-clearing" element={<POSClearing />} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

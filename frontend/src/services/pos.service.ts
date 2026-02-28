@@ -148,6 +148,39 @@ const posService = {
     })
     return response.data
   },
+
+  // ==================== Clearing Transfer ====================
+  
+  getClearingBalance: async () => {
+    const response = await api.get('/pos/clearing/balance')
+    return response.data
+  },
+
+  getPendingClearingBills: async () => {
+    const response = await api.get('/pos/clearing/pending-bills')
+    return response.data
+  },
+
+  createClearingTransfer: async (data: {
+    transfer_date: string
+    cash_amount: number
+    bank_amount: number
+    bill_ids: string[]
+    reference?: string
+    notes?: string
+  }) => {
+    const response = await api.post('/pos/clearing/transfer', data)
+    return response.data
+  },
+
+  getClearingTransfers: async (params?: {
+    date_from?: string
+    date_to?: string
+    limit?: number
+  }) => {
+    const response = await api.get('/pos/clearing/transfers', { params })
+    return response.data
+  },
 }
 
 export default posService

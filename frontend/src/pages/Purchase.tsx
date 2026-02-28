@@ -10,19 +10,14 @@ import {
   Plus,
   Search,
   Filter,
-  CheckCircle,
-  Clock,
   AlertCircle,
   DollarSign,
   TrendingUp,
-  Truck,
   Eye,
   Edit,
   X,
   Check,
-  Trash2,
-  ChevronDown,
-  Calendar
+  Trash2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -408,12 +403,7 @@ const Purchase = () => {
     if (!modalData?.id) return
     setFormLoading(true)
     try {
-      const res = await fetch(`/api/purchase/requests/${modalData.id}/status`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status: requestForm.status || modalData.status })
-      })
-      const data = await res.json()
+      const { data } = await api.put(`/purchase/requests/${modalData.id}/status`, { status: (requestForm as any).status || modalData.status })
       if (data.success) {
         toast.success('อัปเดตสถานะสำเร็จ')
         closeModal()
@@ -443,12 +433,7 @@ const Purchase = () => {
       const supplierId = prompt('กรุณาระบุ Supplier ID:')
       if (!supplierId) return
 
-      const res = await fetch(`/api/purchase/requests/${requestId}/convert-to-po`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ supplierId })
-      })
-      const data = await res.json()
+      const { data } = await api.post(`/purchase/requests/${requestId}/convert-to-po`, { supplierId })
       if (data.success) {
         toast.success('แปลงเป็นใบสั่งซื้อสำเร็จ')
         fetchRequests()
@@ -470,18 +455,13 @@ const Purchase = () => {
       const taxAmount = subtotal * (orderForm.tax_rate / 100)
       const totalAmount = subtotal + taxAmount
 
-      const res = await fetch('/api/purchase-orders', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...orderForm,
-          items,
-          subtotal,
-          taxAmount,
-          totalAmount
-        })
+      const { data } = await api.post('/purchase-orders', {
+        ...orderForm,
+        items,
+        subtotal,
+        taxAmount,
+        totalAmount
       })
-      const data = await res.json()
       if (data.success) {
         toast.success('สร้างใบสั่งซื้อสำเร็จ')
         closeModal()
@@ -499,14 +479,9 @@ const Purchase = () => {
   const handleDeleteOrder = async (id: string) => {
     if (!confirm('ต้องการลบใบสั่งซื้อนี้?')) return
     try {
-      const res = await fetch(`/api/purchase-orders/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
-      if (res.ok) {
-        toast.success('ลบใบสั่งซื้อสำเร็จ')
-        fetchOrders()
-      }
+      await api.delete(`/purchase-orders/${id}`)
+      toast.success('ลบใบสั่งซื้อสำเร็จ')
+      fetchOrders()
     } catch (error) {
       toast.error('ไม่สามารถลบใบสั่งซื้อได้')
     }
@@ -515,12 +490,7 @@ const Purchase = () => {
   const handleCreateReceipt = async () => {
     setFormLoading(true)
     try {
-      const res = await fetch('/api/purchase/goods-receipts', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(receiptForm)
-      })
-      const data = await res.json()
+      const { data } = await api.post('/purchase/goods-receipts', receiptForm)
       if (data.success) {
         toast.success('สร้างใบรับสินค้าสำเร็จ')
         closeModal()
@@ -537,11 +507,7 @@ const Purchase = () => {
 
   const handleConfirmReceipt = async (id: string) => {
     try {
-      const res = await fetch(`/api/purchase/goods-receipts/${id}/confirm`, {
-        method: 'PUT',
-        headers: getAuthHeaders()
-      })
-      const data = await res.json()
+      const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`)
       if (data.success) {
         toast.success('ยืนยันการรับสินค้าสำเร็จ')
         fetchReceipts()
@@ -555,12 +521,7 @@ const Purchase = () => {
   const handleCreateInvoice = async () => {
     setFormLoading(true)
     try {
-      const res = await fetch('/api/purchase/invoices', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(invoiceForm)
-      })
-      const data = await res.json()
+      const { data } = await api.post('/purchase/invoices', invoiceForm)
       if (data.success) {
         toast.success('สร้างใบแจ้งหนี้สำเร็จ')
         closeModal()
@@ -578,15 +539,10 @@ const Purchase = () => {
   const handleCreatePayment = async () => {
     setFormLoading(true)
     try {
-      const res = await fetch('/api/purchase/payments', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...paymentForm,
-          net_amount: paymentForm.amount - paymentForm.withholding_tax
-        })
+      const { data } = await api.post('/purchase/payments', {
+        ...paymentForm,
+        net_amount: paymentForm.amount - paymentForm.withholding_tax
       })
-      const data = await res.json()
       if (data.success) {
         toast.success('บันทึกการจ่ายเงินสำเร็จ')
         closeModal()
@@ -613,18 +569,13 @@ const Purchase = () => {
       const taxAmount = subtotal * (returnForm.tax_rate / 100)
       const totalAmount = subtotal + taxAmount
 
-      const res = await fetch('/api/purchase/returns', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...returnForm,
-          items,
-          subtotal,
-          taxAmount,
-          totalAmount
-        })
+      const { data } = await api.post('/purchase/returns', {
+        ...returnForm,
+        items,
+        subtotal,
+        taxAmount,
+        totalAmount
       })
-      const data = await res.json()
       if (data.success) {
         toast.success('สร้างใบคืนสินค้าสำเร็จ')
         closeModal()
@@ -641,11 +592,7 @@ const Purchase = () => {
 
   const handleConfirmReturn = async (id: string) => {
     try {
-      const res = await fetch(`/api/purchase/returns/${id}/confirm`, {
-        method: 'PUT',
-        headers: getAuthHeaders()
-      })
-      const data = await res.json()
+      const { data } = await api.put(`/purchase/returns/${id}/confirm`)
       if (data.success) {
         toast.success('ยืนยันการคืนสินค้าสำเร็จ')
         fetchReturns()
