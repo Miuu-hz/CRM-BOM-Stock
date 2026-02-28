@@ -23,7 +23,11 @@ import {
   Eye,
   Edit,
   ArrowLeftRight,
-  X
+  X,
+  Store,
+  Calendar,
+  Printer,
+  ShoppingBag
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -131,9 +135,49 @@ interface QuotationTemplate {
   expiration_days: number
 }
 
+interface POSDailySales {
+  id: string
+  summary_number: string
+  sales_date: string
+  total_revenue: number
+  total_tax: number
+  total_service_charge: number
+  total_discount: number
+  estimated_cogs: number
+  net_profit: number
+  cash_amount: number
+  bank_amount: number
+  other_amount: number
+  bill_count: number
+  notes?: string
+  closed_by_name?: string
+  created_at: string
+}
+
+interface POSDailySalesDetail extends POSDailySales {
+  bills: {
+    bill_number: string
+    display_name: string
+    total_amount: number
+    payment_method: string
+    closed_at: string
+  }[]
+  products: {
+    product_name: string
+    total_qty: number
+    total_amount: number
+    product_category?: string
+  }[]
+  payments: {
+    payment_method: string
+    count: number
+    total_amount: number
+  }[]
+}
+
 const Sales = () => {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'orders' | 'invoices' | 'credit-notes' | 'backorders' | 'templates'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'orders' | 'invoices' | 'credit-notes' | 'backorders' | 'templates' | 'pos-daily'>('overview')
   const [summary, setSummary] = useState<SalesSummary | null>(null)
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([])
@@ -141,12 +185,18 @@ const Sales = () => {
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([])
   const [backorders, setBackorders] = useState<Backorder[]>([])
   const [templates, setTemplates] = useState<QuotationTemplate[]>([])
+  const [posDailySales, setPosDailySales] = useState<POSDailySales[]>([])
+  const [posDailyDetail, setPosDailyDetail] = useState<POSDailySalesDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   
   // Modal states
   const [showModal, setShowModal] = useState<string | null>(null)
   const [modalData, setModalData] = useState<any>(null)
+  
+  // POS Daily Sales states
+  const [showPOSDailyModal, setShowPOSDailyModal] = useState(false)
+  const [selectedPOSDaily, setSelectedPOSDaily] = useState<POSDailySales | null>(null)
 
   // Fetch data based on active tab
   useEffect(() => {
@@ -164,6 +214,8 @@ const Sales = () => {
       fetchBackorders()
     } else if (activeTab === 'templates') {
       fetchTemplates()
+    } else if (activeTab === 'pos-daily') {
+      fetchPOSDailySales()
     }
   }, [activeTab])
 
@@ -270,6 +322,47 @@ const Sales = () => {
       handleApiError(error, 'ไม่สามารถดึงข้อมูลเทมเพลตได้')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPOSDailySales = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/sales/pos-daily-sales')
+      if (data.success) {
+        setPosDailySales(data.data)
+      }
+    } catch (error: any) {
+      handleApiError(error, 'ไม่สามารถดึงข้อมูลยอดขายประจำวันได้')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchPOSDailyDetail = async (id: string) => {
+    try {
+      const { data } = await api.get(`/sales/pos-daily-sales/${id}`)
+      if (data.success) {
+        setPosDailyDetail(data.data)
+      }
+    } catch (error: any) {
+      handleApiError(error, 'ไม่สามารถดึงรายละเอียดได้')
+    }
+  }
+
+  const handleCreatePOSDaily = async (salesDate: string, notes: string) => {
+    try {
+      const { data } = await api.post('/sales/pos-daily-sales', {
+        sales_date: salesDate,
+        notes
+      })
+      if (data.success) {
+        toast.success(`ปิดกะสำเร็จ: ${data.data.summary_number}`)
+        fetchPOSDailySales()
+        setShowPOSDailyModal(false)
+      }
+    } catch (error: any) {
+      handleApiError(error, error.response?.data?.message || 'ไม่สามารถปิดกะได้')
     }
   }
 
@@ -1092,6 +1185,7 @@ const Sales = () => {
     { id: 'credit-notes', label: 'ใบลดหนี้', icon: RotateCcw },
     { id: 'backorders', label: 'ค้างส่ง', icon: Package },
     { id: 'templates', label: 'เทมเพลต', icon: LayoutTemplate },
+    { id: 'pos-daily', label: 'POS ยอดขาย', icon: Store },
   ]
 
   return (
@@ -1152,10 +1246,258 @@ const Sales = () => {
           {activeTab === 'credit-notes' && <CreditNotesContent />}
           {activeTab === 'backorders' && <BackordersContent />}
           {activeTab === 'templates' && <TemplatesContent />}
+          {activeTab === 'pos-daily' && <POSDailyContent />}
         </motion.div>
       )}
     </div>
   )
 }
+
+  // POS Daily Content Component
+  const POSDailyContent = () => {
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+    const [notes, setNotes] = useState('')
+    const [showCloseDayModal, setShowCloseDayModal] = useState(false)
+
+    const formatCurrency = (amount: number) => {
+      return `฿${(amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
+    }
+
+    const formatDate = (dateStr: string) => {
+      return new Date(dateStr).toLocaleDateString('th-TH', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Header Actions */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-semibold text-white">สรุปยอดขายประจำวัน (Z-Report)</h2>
+            <p className="text-gray-400 text-sm">ปิดกะรายวัน สรุปยอดขาย รายได้ ต้นทุน และกำไร</p>
+          </div>
+          <button
+            onClick={() => setShowPOSDailyModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 transition-colors"
+          >
+            <ShoppingBag className="w-4 h-4" />
+            ปิดกะ/สรุปยอด
+          </button>
+        </div>
+
+        {/* Summary List */}
+        {posDailySales.length === 0 ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl p-8 text-center">
+            <Store className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+            <p className="text-gray-400">ยังไม่มีสรุปยอดขาย</p>
+            <p className="text-gray-500 text-sm mt-1">คลิก "ปิดกะ/สรุปยอด" เพื่อสรุปยอดขายประจำวัน</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {posDailySales.map((summary) => (
+              <motion.div
+                key={summary.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-cyber-card border border-cyber-border rounded-xl p-6 hover:border-cyber-primary/50 transition-colors cursor-pointer"
+                onClick={() => {
+                  setSelectedPOSDaily(summary)
+                  fetchPOSDailyDetail(summary.id)
+                  setShowPOSDailyModal(true)
+                }}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-semibold text-white">{summary.summary_number}</span>
+                      <span className="text-sm text-gray-400">{formatDate(summary.sales_date)}</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      ปิดโดย {summary.closed_by_name || 'System'} • {summary.bill_count} บิล
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-cyber-primary">{formatCurrency(summary.total_revenue)}</p>
+                    <p className="text-sm text-gray-400">รายได้รวม</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-cyber-border">
+                  <div>
+                    <p className="text-xs text-gray-500">ต้นทุนขาย (COGS)</p>
+                    <p className="text-sm font-medium text-red-400">{formatCurrency(summary.estimated_cogs)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">กำไรขาด</p>
+                    <p className="text-sm font-medium text-cyber-green">{formatCurrency(summary.net_profit)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">เงินสด</p>
+                    <p className="text-sm font-medium text-white">{formatCurrency(summary.cash_amount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">โอน/ธนาคาร</p>
+                    <p className="text-sm font-medium text-white">{formatCurrency(summary.bank_amount)}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        {/* Modal */}
+        {showPOSDailyModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-auto"
+            >
+              {selectedPOSDaily ? (
+                // Detail View
+                <>
+                  <div className="p-6 border-b border-cyber-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-xl font-bold text-white">{selectedPOSDaily.summary_number}</h2>
+                        <p className="text-gray-400">{formatDate(selectedPOSDaily.sales_date)}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowPOSDailyModal(false)
+                          setSelectedPOSDaily(null)
+                          setPosDailyDetail(null)
+                        }}
+                        className="p-2 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-6 space-y-6">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-cyber-dark rounded-lg text-center">
+                        <p className="text-sm text-gray-400">รายได้</p>
+                        <p className="text-xl font-bold text-cyber-primary">{formatCurrency(selectedPOSDaily.total_revenue)}</p>
+                      </div>
+                      <div className="p-4 bg-cyber-dark rounded-lg text-center">
+                        <p className="text-sm text-gray-400">COGS</p>
+                        <p className="text-xl font-bold text-red-400">{formatCurrency(selectedPOSDaily.estimated_cogs)}</p>
+                      </div>
+                      <div className="p-4 bg-cyber-dark rounded-lg text-center">
+                        <p className="text-sm text-gray-400">กำไร</p>
+                        <p className="text-xl font-bold text-cyber-green">{formatCurrency(selectedPOSDaily.net_profit)}</p>
+                      </div>
+                    </div>
+
+                    {posDailyDetail?.payments && posDailyDetail.payments.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-3">การชำระเงิน</h3>
+                        <div className="space-y-2">
+                          {posDailyDetail.payments.map((payment, idx) => (
+                            <div key={idx} className="flex justify-between p-3 bg-cyber-dark rounded-lg">
+                              <span className="text-white">{payment.payment_method}</span>
+                              <span className="text-white font-medium">{formatCurrency(payment.total_amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {posDailyDetail?.products && posDailyDetail.products.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-3">สินค้าขายดี</h3>
+                        <div className="space-y-2">
+                          {posDailyDetail.products.slice(0, 5).map((product, idx) => (
+                            <div key={idx} className="flex justify-between p-3 bg-cyber-dark rounded-lg">
+                              <div>
+                                <span className="text-white">{product.product_name}</span>
+                                <span className="text-gray-500 text-sm ml-2">x{product.total_qty}</span>
+                              </div>
+                              <span className="text-white font-medium">{formatCurrency(product.total_amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-6 border-t border-cyber-border flex justify-end gap-3">
+                    <button
+                      onClick={() => toast('พิมพ์รายงาน: กำลังพัฒนาา...')}
+                      className="flex items-center gap-2 px-4 py-2 bg-cyber-dark border border-cyber-border text-white rounded-lg hover:border-cyber-primary"
+                    >
+                      <Printer className="w-4 h-4" />
+                      พิมพ์
+                    </button>
+                  </div>
+                </>
+              ) : (
+                // Create New Summary View
+                <>
+                  <div className="p-6 border-b border-cyber-border">
+                    <h2 className="text-xl font-bold text-white">ปิดกะ/สรุปยอดขายประจำวัน</h2>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">วันที่ขาย</label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          className="w-full pl-10 pr-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">หมายเหตุ (optional)</label>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary resize-none"
+                        placeholder="บันทึกเพิ่มเติม..."
+                      />
+                    </div>
+
+                    <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                      <p className="text-sm text-yellow-400">
+                        <strong>คำเตือน:</strong> การปิดกะจะสรุปยอดขายทุกบิลที่ชำระเงินแล้วในวันที่ที่เลือก และคำนวณต้นทุนขายอัตโนมัติ
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-6 border-t border-cyber-border flex justify-end gap-3">
+                    <button
+                      onClick={() => setShowPOSDailyModal(false)}
+                      className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      onClick={() => handleCreatePOSDaily(selectedDate, notes)}
+                      className="flex items-center gap-2 px-6 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      ยืนยันปิดกะ
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
 export default Sales

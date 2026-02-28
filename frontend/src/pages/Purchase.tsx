@@ -1896,7 +1896,7 @@ const Purchase = () => {
         <thead className="bg-cyber-dark border-b border-cyber-border">
           <tr>{columns.map((col) => <th key={col.key} className={`px-6 py-4 text-sm font-medium text-gray-400 ${col.align || 'text-left'}`}>{col.label}</th>)}</tr>
         </thead>
-        <tbody>{data.map((item, idx) => renderRow(item))}</tbody>
+        <tbody>{data.map((item) => renderRow(item))}</tbody>
       </table>
     </div>
   )

@@ -1387,4 +1387,331 @@ router.get('/summary', async (req: Request, res: Response) => {
   }
 })
 
+// ============================================
+// POS DAILY SALES SUMMARY (Z-Report)
+// ============================================
+
+// GET all POS daily sales summaries
+router.get('/pos-daily-sales', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { date_from, date_to, limit = 50 } = req.query
+
+    let query = `
+      SELECT 
+        ds.*,
+        u.name as closed_by_name,
+        COUNT(dsb.id) as bill_count
+      FROM pos_daily_sales ds
+      LEFT JOIN users u ON ds.closed_by = u.id
+      LEFT JOIN pos_daily_sales_bills dsb ON ds.id = dsb.daily_sales_id
+      WHERE ds.tenant_id = ?
+    `
+    const params: any[] = [tenantId]
+
+    if (date_from) {
+      query += ' AND ds.sales_date >= ?'
+      params.push(date_from)
+    }
+
+    if (date_to) {
+      query += ' AND ds.sales_date <= ?'
+      params.push(date_to)
+    }
+
+    query += ' GROUP BY ds.id ORDER BY ds.sales_date DESC LIMIT ?'
+    params.push(parseInt(limit as string))
+
+    const summaries = db.prepare(query).all(...params)
+
+    res.json({ success: true, data: summaries })
+  } catch (error) {
+    console.error('Get POS daily sales error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch daily sales' })
+  }
+})
+
+// GET single POS daily sales summary with details
+router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+
+    // Get summary
+    const summary = db.prepare(`
+      SELECT ds.*, u.name as closed_by_name
+      FROM pos_daily_sales ds
+      LEFT JOIN users u ON ds.closed_by = u.id
+      WHERE ds.id = ? AND ds.tenant_id = ?
+    `).get(id, tenantId)
+
+    if (!summary) {
+      return res.status(404).json({ success: false, message: 'Daily sales summary not found' })
+    }
+
+    // Get linked bills
+    const bills = db.prepare(`
+      SELECT 
+        b.bill_number,
+        b.display_name,
+        b.total_amount,
+        b.closed_at,
+        p.payment_method
+      FROM pos_daily_sales_bills dsb
+      JOIN pos_running_bills b ON dsb.bill_id = b.id
+      LEFT JOIN pos_payments p ON b.id = p.bill_id
+      WHERE dsb.daily_sales_id = ?
+      ORDER BY b.closed_at ASC
+    `).all(id)
+
+    // Get sales by product
+    const products = db.prepare(`
+      SELECT 
+        bi.product_name,
+        SUM(bi.quantity) as total_qty,
+        SUM(bi.total_price) as total_amount,
+        p.category as product_category
+      FROM pos_daily_sales_bills dsb
+      JOIN pos_running_bills b ON dsb.bill_id = b.id
+      JOIN pos_bill_items bi ON b.id = bi.bill_id
+      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+      LEFT JOIN products p ON pmc.product_id = p.id
+      WHERE dsb.daily_sales_id = ?
+      GROUP BY bi.product_name
+      ORDER BY total_amount DESC
+    `).all(id)
+
+    // Get payment breakdown
+    const payments = db.prepare(`
+      SELECT 
+        p.payment_method,
+        COUNT(*) as count,
+        SUM(p.amount) as total_amount
+      FROM pos_daily_sales_bills dsb
+      JOIN pos_running_bills b ON dsb.bill_id = b.id
+      JOIN pos_payments p ON b.id = p.bill_id
+      WHERE dsb.daily_sales_id = ?
+      GROUP BY p.payment_method
+    `).all(id)
+
+    res.json({
+      success: true,
+      data: {
+        ...summary,
+        bills,
+        products,
+        payments
+      }
+    })
+  } catch (error) {
+    console.error('Get POS daily sales detail error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch daily sales detail' })
+  }
+})
+
+// POST create daily sales summary (Close Day)
+router.post('/pos-daily-sales', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.id
+    const { sales_date, notes } = req.body
+
+    const targetDate = sales_date || new Date().toISOString().split('T')[0]
+
+    // Check if already closed for this date
+    const existingCheck = db.prepare(`
+      SELECT id FROM pos_daily_sales 
+      WHERE tenant_id = ? AND sales_date = ?
+    `).get(tenantId, targetDate)
+
+    if (existingCheck) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This date has already been closed. Please use a different date.' 
+      })
+    }
+
+    // Get all paid bills for this date that haven't been included in any summary
+    const bills = db.prepare(`
+      SELECT 
+        b.*,
+        p.payment_method,
+        p.amount as payment_amount
+      FROM pos_running_bills b
+      JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.tenant_id = ? 
+        AND b.status = 'PAID'
+        AND DATE(b.closed_at) = ?
+        AND b.id NOT IN (
+          SELECT bill_id FROM pos_daily_sales_bills
+        )
+    `).all(tenantId, targetDate) as any[]
+
+    if (bills.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No paid bills found for this date' 
+      })
+    }
+
+    // Calculate totals
+    let totalRevenue = 0
+    let totalTax = 0
+    let totalServiceCharge = 0
+    let totalDiscount = 0
+    let estimatedCOGS = 0
+
+    // Payment method breakdown
+    const paymentBreakdown: Record<string, number> = {}
+
+    for (const bill of bills) {
+      totalRevenue += bill.total_amount
+      totalTax += bill.tax_amount || 0
+      totalServiceCharge += bill.service_charge_amount || 0
+      totalDiscount += bill.discount_amount || 0
+
+      // Calculate estimated COGS from bill items
+      const items = db.prepare(`
+        SELECT bi.*, pmc.bom_id
+        FROM pos_bill_items bi
+        LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+        WHERE bi.bill_id = ?
+      `).all(bill.id) as any[]
+
+      for (const item of items) {
+        let itemCost = 0
+
+        if (item.bom_id) {
+          const bomItems = db.prepare(`
+            SELECT bi.quantity, si.unit_cost
+            FROM bom_items bi
+            JOIN stock_items si ON bi.material_id = si.id
+            WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'
+          `).all(item.bom_id) as any[]
+
+          for (const bi of bomItems) {
+            itemCost += (bi.quantity * bi.unit_cost)
+          }
+        } else {
+          const ingItems = db.prepare(`
+            SELECT pmi.quantity_used, si.unit_cost
+            FROM pos_menu_ingredients pmi
+            JOIN stock_items si ON pmi.stock_item_id = si.id
+            WHERE pmi.pos_menu_id = ?
+          `).all(item.pos_menu_id) as any[]
+
+          for (const ing of ingItems) {
+            itemCost += (ing.quantity_used * ing.unit_cost)
+          }
+        }
+
+        estimatedCOGS += (itemCost * item.quantity)
+      }
+
+      // Payment breakdown
+      const method = bill.payment_method || 'CASH'
+      paymentBreakdown[method] = (paymentBreakdown[method] || 0) + bill.payment_amount
+    }
+
+    const netProfit = totalRevenue - estimatedCOGS
+
+    // Generate summary number
+    const count = (db.prepare(`SELECT COUNT(*) as count FROM pos_daily_sales WHERE tenant_id = ?`).get(tenantId) as any).count
+    const summaryNumber = `POS-SUM-${targetDate.replace(/-/g, '')}-${String(count + 1).padStart(3, '0')}`
+
+    // Create summary
+    const summaryId = generateId()
+    const now = new Date().toISOString()
+
+    db.prepare(`
+      INSERT INTO pos_daily_sales (
+        id, tenant_id, summary_number, sales_date,
+        total_revenue, total_tax, total_service_charge, total_discount,
+        estimated_cogs, net_profit,
+        cash_amount, bank_amount, other_amount,
+        bill_count, notes, closed_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      summaryId,
+      tenantId,
+      summaryNumber,
+      targetDate,
+      totalRevenue,
+      totalTax,
+      totalServiceCharge,
+      totalDiscount,
+      estimatedCOGS,
+      netProfit,
+      paymentBreakdown['CASH'] || 0,
+      paymentBreakdown['QR_CODE'] || paymentBreakdown['TRANSFER'] || 0,
+      paymentBreakdown['CREDIT_CARD'] || 0,
+      bills.length,
+      notes || null,
+      userId,
+      now
+    )
+
+    // Link bills to summary
+    const linkStmt = db.prepare(`
+      INSERT INTO pos_daily_sales_bills (id, tenant_id, daily_sales_id, bill_id, amount)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+
+    for (const bill of bills) {
+      linkStmt.run(generateId(), tenantId, summaryId, bill.id, bill.total_amount)
+    }
+
+    res.json({
+      success: true,
+      message: 'Daily sales summary created successfully',
+      data: {
+        id: summaryId,
+        summary_number: summaryNumber,
+        sales_date: targetDate,
+        total_revenue: totalRevenue,
+        estimated_cogs: estimatedCOGS,
+        net_profit: netProfit,
+        bill_count: bills.length
+      }
+    })
+  } catch (error) {
+    console.error('Create POS daily sales error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create daily sales summary' })
+  }
+})
+
+// GET pending bills for daily sales (bills not yet included in any summary)
+router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { date } = req.query
+
+    const targetDate = date || new Date().toISOString().split('T')[0]
+
+    const bills = db.prepare(`
+      SELECT 
+        b.id,
+        b.bill_number,
+        b.display_name,
+        b.total_amount,
+        b.closed_at,
+        p.payment_method
+      FROM pos_running_bills b
+      JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.tenant_id = ? 
+        AND b.status = 'PAID'
+        AND DATE(b.closed_at) = ?
+        AND b.id NOT IN (
+          SELECT bill_id FROM pos_daily_sales_bills
+        )
+      ORDER BY b.closed_at ASC
+    `).all(tenantId, targetDate)
+
+    res.json({ success: true, data: bills })
+  } catch (error) {
+    console.error('Get pending bills error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch pending bills' })
+  }
+})
+
 export default router
