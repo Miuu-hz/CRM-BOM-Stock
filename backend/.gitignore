@@ -1,0 +1,26 @@
+########################
+# Backend specific
+########################
+
+# Node modules (backend)
+node_modules/
+
+# Local env for backend
+.env
+.env.*
+.env.local
+.env.*.local
+
+# SQLite / Prisma databases
+*.db
+*.sqlite
+
+# Prisma generated / transient
+prisma/migrations/
+
+# Uploaded files (marketing CSV, etc.)
+uploads/
+
+# Logs
+logs/
+*.log

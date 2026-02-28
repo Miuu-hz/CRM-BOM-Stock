@@ -70,7 +70,7 @@ function StockAlerts() {
       </div>
 
       <div className="space-y-3 max-h-[500px] overflow-y-auto cyber-scrollbar">
-        {alerts.map((alert, index) => (
+        {(alerts || []).map((alert, index) => (
           <motion.div
             key={alert.id}
             initial={{ opacity: 0, y: 20 }}

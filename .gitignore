@@ -1,36 +1,63 @@
-# Dependencies
+########################
+# Root / monorepo
+########################
+
+# Package managers
 node_modules/
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+########################
 # Environment variables
+########################
+
 .env
+.env.*
 .env.local
 .env.*.local
 
+########################
 # Build outputs
+########################
+
 dist/
 build/
 *.log
 
-# IDE
+########################
+# IDE / Editor
+########################
+
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+########################
+# OS junk
+########################
+
 .DS_Store
 Thumbs.db
 
-# Database
+########################
+# Databases / data
+########################
+
 *.db
 *.sqlite
+
+# Uploads
+backend/uploads/
 
 # Testing
 coverage/
 
-# Prisma
-prisma/migrations/
+########################
+# Local tooling
+########################
+
+*.local.json
+*.local.yml

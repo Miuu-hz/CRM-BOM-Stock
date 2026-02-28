@@ -20,7 +20,8 @@
     "recharts": "^2.10.3",
     "lucide-react": "^0.303.0",
     "date-fns": "^3.0.6",
-    "react-hot-toast": "^2.4.1"
+    "react-hot-toast": "^2.4.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",
