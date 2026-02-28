@@ -4,12 +4,10 @@ import {
   FileText,
   Plus,
   Search,
-  Calendar,
   CheckCircle,
   Lock,
   Unlock,
   Trash2,
-  ArrowRightLeft,
   Calculator,
 } from 'lucide-react'
 import { journalApi, accountsApi, JournalEntry, Account } from '../../services/accounting'
@@ -23,7 +21,7 @@ const JournalEntries = () => {
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [showModal, setShowModal] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
-  
+
   // Form state
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -38,7 +36,7 @@ const JournalEntries = () => {
       const params: any = {}
       if (dateRange.start) params.startDate = dateRange.start
       if (dateRange.end) params.endDate = dateRange.end
-      
+
       const response = await journalApi.getAll(params)
       if (response.data.success) {
         setEntries(response.data.data)
@@ -76,15 +74,15 @@ const JournalEntries = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const totalDebit = formData.lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0)
     const totalCredit = formData.lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0)
-    
+
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       toast.error(`ยอดไม่สมดุล: เดบิต ${totalDebit} ≠ เครดิต ${totalCredit}`)
       return
     }
-    
+
     try {
       const response = await journalApi.create({
         date: formData.date,
@@ -92,7 +90,7 @@ const JournalEntries = () => {
         notes: formData.notes,
         lines: formData.lines.filter(l => l.accountId && (l.debit || l.credit)),
       })
-      
+
       if (response.data.success) {
         toast.success('สร้างรายการสำเร็จ')
         setShowModal(false)
@@ -126,9 +124,9 @@ const JournalEntries = () => {
       toast.error('ไม่สามารถลบรายการที่ยืนยันแล้ว')
       return
     }
-    
+
     if (!confirm('ต้องการลบรายการนี้?')) return
-    
+
     try {
       const response = await journalApi.delete(id)
       if (response.data.success) {
@@ -190,7 +188,7 @@ const JournalEntries = () => {
             บันทึกรายการคู่ (Double Entry) - {entries.length} รายการ
           </p>
         </div>
-        
+
         <button
           onClick={() => setShowModal(true)}
           className="cyber-btn-primary flex items-center gap-2"
@@ -213,7 +211,7 @@ const JournalEntries = () => {
               className="cyber-input pl-10 w-full"
             />
           </div>
-          
+
           <div className="flex gap-2">
             <input
               type="date"
@@ -308,7 +306,7 @@ const JournalEntries = () => {
             ))}
           </tbody>
         </table>
-        
+
         {filteredEntries.length === 0 && (
           <div className="text-center py-12">
             <FileText className="w-12 h-12 text-gray-600 mx-auto mb-4" />
@@ -328,7 +326,7 @@ const JournalEntries = () => {
             <div className="p-6 border-b border-cyber-border">
               <h2 className="text-xl font-bold text-white">บันทึกรายการคู่</h2>
             </div>
-            
+
             <form onSubmit={handleCreate} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -342,7 +340,7 @@ const JournalEntries = () => {
                   />
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm text-gray-400 mb-1">คำอธิบาย</label>
                 <input
@@ -353,7 +351,7 @@ const JournalEntries = () => {
                   required
                 />
               </div>
-              
+
               {/* Journal Lines */}
               <div>
                 <div className="flex justify-between items-center mb-2">
@@ -366,7 +364,7 @@ const JournalEntries = () => {
                     + เพิ่มรายการ
                   </button>
                 </div>
-                
+
                 <div className="space-y-2">
                   {formData.lines.map((line, index) => (
                     <div key={index} className="grid grid-cols-12 gap-2 p-3 bg-cyber-dark rounded-lg">
@@ -388,9 +386,9 @@ const JournalEntries = () => {
                             return (
                               <optgroup key={type} label={
                                 type === 'ASSET' ? 'สินทรัพย์' :
-                                type === 'LIABILITY' ? 'หนี้สิน' :
-                                type === 'EQUITY' ? 'ส่วนของผู้ถือหุ้น' :
-                                type === 'REVENUE' ? 'รายได้' : 'ค่าใช้จ่าย'
+                                  type === 'LIABILITY' ? 'หนี้สิน' :
+                                    type === 'EQUITY' ? 'ส่วนของผู้ถือหุ้น' :
+                                      type === 'REVENUE' ? 'รายได้' : 'ค่าใช้จ่าย'
                               }>
                                 {typeAccounts.map(acc => (
                                   <option key={acc.id} value={acc.id}>
@@ -441,11 +439,11 @@ const JournalEntries = () => {
                     </div>
                   ))}
                 </div>
-                
+
                 {/* Balance Check */}
                 <div className="flex justify-between items-center p-3 bg-cyber-dark/50 rounded-lg">
                   <span className="text-sm text-gray-400">
-                    ยอดรวม: เดบิต {formData.lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0).toLocaleString()} 
+                    ยอดรวม: เดบิต {formData.lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0).toLocaleString()}
                     {' = '}
                     เครดิต {formData.lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0).toLocaleString()}
                   </span>
@@ -464,7 +462,7 @@ const JournalEntries = () => {
                   </span>
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm text-gray-400 mb-1">หมายเหตุ</label>
                 <textarea
@@ -474,7 +472,7 @@ const JournalEntries = () => {
                   className="cyber-input w-full"
                 />
               </div>
-              
+
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
@@ -516,10 +514,10 @@ const JournalEntries = () => {
                 ✕
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <p className="text-gray-300">{selectedEntry.description}</p>
-              
+
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-cyber-border">
@@ -552,14 +550,14 @@ const JournalEntries = () => {
                   </tr>
                 </tfoot>
               </table>
-              
+
               {selectedEntry.notes && (
                 <div className="pt-4 border-t border-cyber-border">
                   <span className="text-gray-500">หมายเหตุ: </span>
                   <span className="text-gray-300">{selectedEntry.notes}</span>
                 </div>
               )}
-              
+
               {selectedEntry.isPosted && (
                 <div className="flex items-center gap-2 text-green-400 pt-4">
                   <CheckCircle className="w-5 h-5" />

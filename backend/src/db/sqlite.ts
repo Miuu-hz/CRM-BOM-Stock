@@ -1454,6 +1454,31 @@ db.exec(`
     FOREIGN KEY (stock_item_id) REFERENCES stock_items(id)
   );
 
+  -- POS Clearing Transfers (การโอนยอดจาก Clearing สู่ Cash/Bank)
+  CREATE TABLE IF NOT EXISTS pos_clearing_transfers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    transfer_date TEXT NOT NULL,       -- วันที่โอน
+    total_amount REAL NOT NULL,        -- ยอดรวมที่โอน
+    cash_amount REAL DEFAULT 0,        -- ยอดที่เป็นเงินสด
+    bank_amount REAL DEFAULT 0,        -- ยอดที่โอนเข้าธนาคาร
+    reference TEXT,                    -- เลขที่อ้างอิง/สลิป
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- POS Clearing Transfer Items (รายการบิลที่โอนในแต่ละครั้ง)
+  CREATE TABLE IF NOT EXISTS pos_clearing_transfer_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    transfer_id TEXT NOT NULL,         -- อ้างอิง pos_clearing_transfers
+    bill_id TEXT NOT NULL,             -- อ้างอิง pos_running_bills
+    amount REAL NOT NULL,
+    FOREIGN KEY (transfer_id) REFERENCES pos_clearing_transfers(id) ON DELETE CASCADE,
+    FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id)
+  );
+
   -- ==================== POS INDEXES ====================
   CREATE INDEX IF NOT EXISTS idx_pos_categories_tenant ON pos_categories(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_pos_menu_tenant ON pos_menu_configs(tenant_id);
@@ -1468,6 +1493,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pos_bill_items_bill ON pos_bill_items(bill_id);
   CREATE INDEX IF NOT EXISTS idx_pos_payments_bill ON pos_payments(bill_id);
   CREATE INDEX IF NOT EXISTS idx_pos_stock_deductions_bill_item ON pos_stock_deductions(bill_item_id);
+  CREATE INDEX IF NOT EXISTS idx_pos_clearing_transfers_date ON pos_clearing_transfers(tenant_id, transfer_date);
+  CREATE INDEX IF NOT EXISTS idx_pos_clearing_transfer_items_transfer ON pos_clearing_transfer_items(transfer_id);
 `)
 
 // ==================== MIGRATIONS ====================
