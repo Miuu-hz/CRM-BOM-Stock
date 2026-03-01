@@ -1519,7 +1519,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pos_menu_tenant ON pos_menu_configs(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_pos_menu_category ON pos_menu_configs(category_id);
   CREATE INDEX IF NOT EXISTS idx_pos_menu_product ON pos_menu_configs(product_id);
-  CREATE INDEX IF NOT EXISTS idx_pos_menu_bom ON pos_menu_configs(bom_id);
+  -- Note: idx_pos_menu_bom จะถูกสร้างหลัง migration 
   CREATE INDEX IF NOT EXISTS idx_pos_menu_enabled ON pos_menu_configs(tenant_id, is_pos_enabled);
   CREATE INDEX IF NOT EXISTS idx_pos_ingredients_menu ON pos_menu_ingredients(pos_menu_id);
   CREATE INDEX IF NOT EXISTS idx_pos_bills_tenant ON pos_running_bills(tenant_id);
@@ -1543,6 +1543,13 @@ try {
   if (!hasBomId) {
     db.exec(`ALTER TABLE pos_menu_configs ADD COLUMN bom_id TEXT REFERENCES boms(id) ON DELETE SET NULL`)
     console.log('✅ Migration: Added bom_id column to pos_menu_configs')
+  }
+  
+  // Create index for bom_id after column exists
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_pos_menu_bom ON pos_menu_configs(bom_id)`)
+  } catch (indexError) {
+    // Index might already exist or column doesn't exist yet
   }
 } catch (error) {
   console.log('ℹ️ Migration check skipped (table may not exist yet)')
