@@ -1513,7 +1513,7 @@ router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
 router.post('/pos-daily-sales', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const userId = req.user!.id
+    const userId = req.user!.userId
     const { sales_date, notes } = req.body
 
     const targetDate = sales_date || new Date().toISOString().split('T')[0]

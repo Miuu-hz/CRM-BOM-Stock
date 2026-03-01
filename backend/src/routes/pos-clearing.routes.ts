@@ -30,7 +30,7 @@ router.get('/clearing/balance', (req, res) => {
       FROM pos_running_bills
       WHERE tenant_id = ? AND status = 'PAID'
         AND id NOT IN (
-          SELECT DISTINCT bill_id FROM pos_clearing_transfers 
+          SELECT DISTINCT bill_id FROM pos_clearing_transfer_items 
           WHERE tenant_id = ?
         )
     `)
