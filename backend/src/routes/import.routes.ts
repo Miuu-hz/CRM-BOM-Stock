@@ -137,7 +137,6 @@ router.post('/stock', async (req: Request, res: Response) => {
 
     console.log('TenantId:', tenantId)
     console.log('Data received:', data?.length, 'rows')
-    console.log('First row sample:', JSON.stringify(data?.[0], null, 2))
 
     if (!Array.isArray(data) || data.length === 0) {
       return res.status(400).json({
@@ -152,7 +151,12 @@ router.post('/stock', async (req: Request, res: Response) => {
       errors: [] as string[]
     }
 
-    // Get existing stock count for SKU generation
+    // Get existing SKUs for duplicate check
+    const existingSkus = new Set(
+      (db.prepare('SELECT sku FROM stock_items WHERE tenant_id = ?').all(tenantId) as any[])
+        .map(r => r.sku)
+    )
+
     const existingCount = (db.prepare('SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ?').get(tenantId) as any).count
 
     const insertStock = db.prepare(`
@@ -161,57 +165,63 @@ router.post('/stock', async (req: Request, res: Response) => {
     `)
 
     const now = new Date().toISOString()
-
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i]
-      
-      // Log first few rows for debugging
-      if (i < 3) {
-        console.log(`Row ${i + 1}:`, JSON.stringify(row))
-      }
-      
-      try {
-        // Validate required fields
-        if (!row.name) {
-          results.failed++
-          results.errors.push(`Row ${i + 1}: Name is required`)
-          continue
-        }
-
-        const category = row.category || 'GENERAL'
-        const sku = row.sku || generateSKU(category, existingCount + i)
+    
+    // Use transaction for batch insert
+    const insertMany = db.transaction((items: any[]) => {
+      for (let i = 0; i < items.length; i++) {
+        const row = items[i]
         
-        // Check for duplicate SKU
-        const existing = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(sku, tenantId)
-        if (existing) {
+        try {
+          if (!row.name) {
+            results.failed++
+            results.errors.push(`Row ${i + 1}: Name is required`)
+            continue
+          }
+
+          const category = row.category || 'GENERAL'
+          let sku = row.sku
+          
+          // Generate SKU if not provided or duplicate
+          if (!sku || existingSkus.has(sku)) {
+            sku = generateSKU(category, existingCount + i)
+          }
+          
+          // Check for duplicate SKU again (in case generated one also exists)
+          if (existingSkus.has(sku)) {
+            results.failed++
+            results.errors.push(`Row ${i + 1}: SKU ${sku} already exists`)
+            continue
+          }
+
+          insertStock.run(
+            generateId(),
+            tenantId,
+            sku,
+            row.name,
+            category,
+            row.quantity || 0,
+            row.unit || 'PCS',
+            row.min_stock || 0,
+            row.max_stock || 1000,
+            row.location || 'MAIN',
+            row.status || 'ACTIVE',
+            now,
+            now
+          )
+          
+          existingSkus.add(sku)
+          results.success++
+        } catch (error: any) {
+          console.error(`Row ${i + 1} error:`, error.message)
           results.failed++
-          results.errors.push(`Row ${i + 1}: SKU ${sku} already exists`)
-          continue
+          results.errors.push(`Row ${i + 1}: ${error.message}`)
         }
-
-        insertStock.run(
-          generateId(),
-          tenantId,
-          sku,
-          row.name,
-          category,
-          row.quantity || 0,
-          row.unit || 'PCS',
-          row.min_stock || 0,
-          row.max_stock || 1000,
-          row.location || 'MAIN',
-          row.status || 'ACTIVE',
-          now,
-          now
-        )
-
-        results.success++
-      } catch (error: any) {
-        console.error(`Row ${i + 1} error:`, error.message, 'Row data:', row)
-        results.failed++
-        results.errors.push(`Row ${i + 1}: ${error.message}`)
       }
-    }
+    })
+
+    console.log('Starting batch insert...')
+    insertMany(data)
+    console.log('Batch insert completed:', results)
 
     res.json({
       success: true,
