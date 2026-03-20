@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square } from 'lucide-react'
+import { X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, AlertTriangle } from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
 import { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
+import api from '../../services/api'
 
 interface BOMModalProps {
   isOpen: boolean
@@ -22,25 +23,32 @@ interface BOMItemRow {
   notes: string
 }
 
-// Helper: แปลง category เป็นภาษาไทย
+// Helper: แปลง category เป็นป้ายสั้น (ไม่มีวงเล็บ)
 const getCategoryLabel = (category: string): string => {
   const labels: Record<string, string> = {
-    raw: 'วัตถุดิบ',
-    wip: 'ระหว่างผลิต',
-    finished: 'สำเร็จรูป',
-    material: 'วัตถุดิบกึ่งสำเร็จรูป',
+    // English keys
+    'raw': 'วัตถุดิบ',
+    'wip': 'กึ่งสำเร็จรูป',
+    'finished': 'สำเร็จรูป',
+    'material': 'วัสดุ',
+    // Thai keys (ตัดวงเล็บออกแล้วแสดงตรงๆ)
+    '[สินค้า]': 'สินค้า',
+    '[สินค้าสำเร็จรูป]': 'สำเร็จรูป',
+    '[สินค้ากึ่งสำเร็จรูป]': 'กึ่งสำเร็จรูป',
+    '[วัตถุดิบ]': 'วัตถุดิบ',
+    '[วัสดุย่อย]': 'วัสดุย่อย',
+    '[สินค้าไม่มีตัวตน]': 'ไม่มีตัวตน',
   }
-  return labels[category?.toLowerCase()] || category
+  return labels[category] || labels[category?.toLowerCase()] || category.replace(/^\[|\]$/g, '')
 }
 
-// Helper: กรองเฉพาะสินค้าที่ใช้ทำ BOM ได้ (สำเร็จรูปและกึ่งสำเร็จรูป)
-// รองรับทั้ง category ภาษาไทยและภาษาอังกฤษ
-const BOM_PRODUCT_CATEGORIES = [
-  '[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]',
-  'finished', 'wip', 'FINISHED', 'WIP', 'material',
-]
+// Helper: ตรวจสอบว่า category ต้องเปลี่ยนก่อนใช้เป็น BOM product หรือไม่
+const SAFE_BOM_CATEGORIES = ['[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]', 'finished', 'wip', 'FINISHED', 'WIP']
+const needsCategoryChange = (category: string): boolean => !SAFE_BOM_CATEGORIES.includes(category)
+
+const BOM_PRODUCT_CATEGORIES = [...SAFE_BOM_CATEGORIES, 'material', 'Material', 'Raw Material', 'raw']
 const getValidBOMProducts = (products: Product[]): Product[] => {
-  return products.filter((p) => BOM_PRODUCT_CATEGORIES.includes(p.category))
+  return products.filter((p) => BOM_PRODUCT_CATEGORIES.includes(p.category) || !SAFE_BOM_CATEGORIES.includes(p.category))
 }
 
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
@@ -49,19 +57,48 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [availableChildBOMs, setAvailableChildBOMs] = useState<BOM[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  
+
   // Modals
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false)
+  const [categoryChangeModal, setCategoryChangeModal] = useState<{ productId: string; productName: string } | null>(null)
+  const [changingCategory, setChangingCategory] = useState(false)
 
   // Form state
   const [productId, setProductId] = useState('')
   const [version, setVersion] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE' | 'ARCHIVED'>('DRAFT')
   const [isSemiFinished, setIsSemiFinished] = useState(false)
-  
+
+  const handleProductSelect = (id: string) => {
+    const product = products.find(p => p.id === id)
+    if (product && needsCategoryChange(product.category)) {
+      setCategoryChangeModal({ productId: id, productName: product.name })
+    } else {
+      setProductId(id)
+    }
+  }
+
+  const handleConfirmCategoryChange = async (newCategory: 'finished' | 'wip') => {
+    if (!categoryChangeModal) return
+    setChangingCategory(true)
+    try {
+      await api.patch(`/data/products/${categoryChangeModal.productId}/category`, { category: newCategory })
+      // Update local products list
+      setProducts(prev => prev.map(p =>
+        p.id === categoryChangeModal.productId ? { ...p, category: newCategory } : p
+      ))
+      setProductId(categoryChangeModal.productId)
+      setCategoryChangeModal(null)
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'ไม่สามารถเปลี่ยนประเภทสินค้าได้')
+    } finally {
+      setChangingCategory(false)
+    }
+  }
+
   // Generate unique id helper
   const generateRowId = () => `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`
-  
+
   const [itemRows, setItemRows] = useState<BOMItemRow[]>([
     { id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' },
   ])
@@ -76,51 +113,73 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     }
   }, [isOpen])
 
+  // Helper to transform API items to form rows
+  const transformItemsToRows = (items: any[], preserveIds: boolean = true) => {
+    if (items.length === 0) {
+      return [{ id: generateRowId(), itemType: 'MATERIAL' as const, materialId: '', childBomId: '', quantity: 0, notes: '' }]
+    }
+    return items.map((item: any) => ({
+      id: preserveIds && item.id && item.id.trim() !== '' ? item.id : generateRowId(),
+      itemType: (item.itemType || item.item_type || 'MATERIAL') as 'MATERIAL' | 'CHILD_BOM',
+      materialId: item.materialId || item.material_id || '',
+      childBomId: item.childBomId || item.child_bom_id || '',
+      quantity: Number(item.quantity),
+      notes: item.notes || '',
+    }))
+  }
+
   // Populate form when editing or copying
   useEffect(() => {
     if (editBOM) {
-      setProductId(editBOM.productId)
-      setVersion(editBOM.version)
-      setStatus(editBOM.status)
-      setIsSemiFinished(editBOM.isSemiFinished || editBOM.is_semi_finished === 1)
-      
-      // Transform items to rows
-      const items = editBOM.items || editBOM.materials || []
-      if (items.length > 0) {
-        setItemRows(
-          items.map((item: any) => ({
-            id: item.id && item.id.trim() !== '' ? item.id : generateRowId(),
-            itemType: item.itemType || 'MATERIAL',
-            materialId: item.materialId || item.material_id || '',
-            childBomId: item.childBomId || item.child_bom_id || '',
-            quantity: Number(item.quantity),
-            notes: item.notes || '',
-          }))
-        )
-      } else {
-        setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
+      // Fetch full BOM data (with items) from API since list endpoint doesn't include items
+      const fetchFullBOM = async () => {
+        try {
+          const fullBOM = await bomService.getById(editBOM.id)
+          setProductId(fullBOM.productId || (fullBOM as any).product_id || editBOM.productId)
+          setVersion(fullBOM.version || editBOM.version)
+          setStatus(fullBOM.status || editBOM.status)
+          setIsSemiFinished(
+            fullBOM.isSemiFinished || (fullBOM as any).is_semi_finished === 1 ||
+            editBOM.isSemiFinished || editBOM.is_semi_finished === 1
+          )
+
+          const items = fullBOM.items || fullBOM.materials || []
+          setItemRows(transformItemsToRows(items, true))
+        } catch (err) {
+          console.error('Failed to fetch full BOM data, using list data:', err)
+          // Fallback to editBOM data from list
+          setProductId(editBOM.productId)
+          setVersion(editBOM.version)
+          setStatus(editBOM.status)
+          setIsSemiFinished(editBOM.isSemiFinished || editBOM.is_semi_finished === 1)
+          const items = editBOM.items || editBOM.materials || []
+          setItemRows(transformItemsToRows(items, true))
+        }
       }
+      fetchFullBOM()
     } else if (copyFrom) {
-      setProductId(copyFrom.productId)
-      setVersion(`${copyFrom.version}-copy`)
-      setStatus('DRAFT')
-      setIsSemiFinished(false)
-      
-      const items = copyFrom.items || copyFrom.materials || []
-      if (items.length > 0) {
-        setItemRows(
-          items.map((item: any) => ({
-            id: generateRowId(),
-            itemType: item.itemType || 'MATERIAL',
-            materialId: item.materialId || item.material_id || '',
-            childBomId: item.childBomId || item.child_bom_id || '',
-            quantity: Number(item.quantity),
-            notes: item.notes || '',
-          }))
-        )
-      } else {
-        setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
+      // For copy, also fetch full BOM data to get items
+      const fetchFullBOMForCopy = async () => {
+        try {
+          const fullBOM = await bomService.getById(copyFrom.id)
+          setProductId(fullBOM.productId || (fullBOM as any).product_id || copyFrom.productId)
+          setVersion(`${fullBOM.version || copyFrom.version}-copy`)
+          setStatus('DRAFT')
+          setIsSemiFinished(false)
+
+          const items = fullBOM.items || fullBOM.materials || []
+          setItemRows(transformItemsToRows(items, false))
+        } catch (err) {
+          console.error('Failed to fetch full BOM data for copy, using list data:', err)
+          setProductId(copyFrom.productId)
+          setVersion(`${copyFrom.version}-copy`)
+          setStatus('DRAFT')
+          setIsSemiFinished(false)
+          const items = copyFrom.items || copyFrom.materials || []
+          setItemRows(transformItemsToRows(items, false))
+        }
       }
+      fetchFullBOMForCopy()
     } else {
       resetForm()
     }
@@ -137,7 +196,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         console.error('Failed to load products:', err?.message || err)
         setProducts([])
       }
-      
+
       // Load materials separately with error handling
       try {
         const materialsData = await bomService.getMaterials()
@@ -146,7 +205,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         console.error('Failed to load materials:', err?.message || err)
         setMaterials([])
       }
-      
+
       // Load child BOMs separately with error handling
       try {
         const childBOMsData = await bomService.getAvailableChildren(editBOM?.id)
@@ -210,7 +269,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       alert('กรุณาระบุเวอร์ชัน')
       return
     }
-    
+
     const validItems = (itemRows || []).filter((row) => {
       if (row.itemType === 'MATERIAL') {
         return row.materialId && row.quantity > 0
@@ -218,7 +277,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         return row.childBomId && row.quantity > 0
       }
     })
-    
+
     if (validItems.length === 0) {
       alert('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ')
       return
@@ -309,8 +368,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     {isEdit
                       ? 'แก้ไขสูตรการผลิต'
                       : isCopy
-                      ? 'สร้างสูตรใหม่จากสูตรที่มีอยู่'
-                      : 'กำหนดวัตถุดิบสำหรับสินค้า'}
+                        ? 'สร้างสูตรใหม่จากสูตรที่มีอยู่'
+                        : 'กำหนดวัตถุดิบสำหรับสินค้า'}
                   </p>
                 </div>
               </div>
@@ -338,8 +397,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       </label>
                       <SearchableDropdown
                         value={productId}
-                        onChange={setProductId}
-                        options={getValidBOMProducts(products || []).map((p) => ({
+                        onChange={handleProductSelect}
+                        options={(products || []).map((p) => ({
                           id: p.id,
                           label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
                           searchText: `${p.code} ${p.name} ${p.category}`,
@@ -384,11 +443,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       <button
                         type="button"
                         onClick={() => setIsSemiFinished(!isSemiFinished)}
-                        className={`flex items-center gap-2 w-full p-2.5 rounded-lg border transition-all ${
-                          isSemiFinished
+                        className={`flex items-center gap-2 w-full p-2.5 rounded-lg border transition-all ${isSemiFinished
                             ? 'bg-cyber-purple/20 border-cyber-purple text-cyber-purple'
                             : 'bg-cyber-dark/50 border-cyber-border text-gray-400 hover:text-gray-300'
-                        }`}
+                          }`}
                       >
                         {isSemiFinished ? (
                           <CheckSquare className="w-5 h-5" />
@@ -440,17 +498,15 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                         return (
                           <div
                             key={row.id}
-                            className={`grid grid-cols-12 gap-3 items-start p-3 rounded-lg border ${
-                              isMaterial
+                            className={`grid grid-cols-12 gap-3 items-start p-3 rounded-lg border ${isMaterial
                                 ? 'bg-cyber-dark/50 border-cyber-border'
                                 : 'bg-cyber-purple/5 border-cyber-purple/30'
-                            }`}
+                              }`}
                           >
                             {/* Type Indicator */}
                             <div className="col-span-1">
-                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${
-                                isMaterial ? 'bg-cyber-primary/10' : 'bg-cyber-purple/20'
-                              }`}>
+                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${isMaterial ? 'bg-cyber-primary/10' : 'bg-cyber-purple/20'
+                                }`}>
                                 {isMaterial ? (
                                   <Box className="w-4 h-4 text-cyber-primary" />
                                 ) : (
@@ -522,8 +578,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 {isMaterial
                                   ? getMaterialUnit(row.materialId)
                                   : selectedChildBOM
-                                  ? 'ชุด'
-                                  : '-'}
+                                    ? 'ชุด'
+                                    : '-'}
                               </div>
                             </div>
 
@@ -597,7 +653,72 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
             </div>
           </motion.div>
         </motion.div>
-        
+
+        {/* Category Change Required Modal */}
+        <AnimatePresence>
+          {categoryChangeModal && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
+              onClick={() => setCategoryChangeModal(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="cyber-card w-full max-w-md"
+              >
+                <div className="p-5 border-b border-cyber-border flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-100">ต้องเปลี่ยนประเภทสินค้าก่อน</h3>
+                    <p className="text-sm text-gray-400">สินค้านี้ถูกตั้งเป็น "วัตถุดิบ"</p>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <p className="text-sm text-gray-300">
+                    <span className="text-cyber-primary font-semibold">{categoryChangeModal.productName}</span>{' '}
+                    ถูกตั้งค่าเป็น วัตถุดิบ (Material) ซึ่งไม่สามารถใช้เป็น output ของ BOM ได้
+                  </p>
+                  <p className="text-sm text-gray-400">กรุณาเลือกประเภทที่ถูกต้องสำหรับสินค้าที่จะผลิต:</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleConfirmCategoryChange('finished')}
+                      disabled={changingCategory}
+                      className="p-4 rounded-lg border border-cyber-primary/30 bg-cyber-primary/10 hover:bg-cyber-primary/20 text-left transition-all group"
+                    >
+                      <div className="text-cyber-primary font-semibold text-sm mb-1">✅ สินค้าสำเร็จรูป</div>
+                      <div className="text-xs text-gray-400">Finished Good</div>
+                      <div className="text-xs text-gray-500 mt-2">สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง</div>
+                    </button>
+                    <button
+                      onClick={() => handleConfirmCategoryChange('wip')}
+                      disabled={changingCategory}
+                      className="p-4 rounded-lg border border-cyber-purple/30 bg-cyber-purple/10 hover:bg-cyber-purple/20 text-left transition-all"
+                    >
+                      <div className="text-cyber-purple font-semibold text-sm mb-1">🔧 กึ่งสำเร็จรูป</div>
+                      <div className="text-xs text-gray-400">Semi-Finished Good</div>
+                      <div className="text-xs text-gray-500 mt-2">ผ่านการผลิตขั้นต้น ใช้เป็น Child BOM ต่อได้</div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-cyber-border flex justify-end">
+                  <button
+                    onClick={() => setCategoryChangeModal(null)}
+                    className="px-4 py-2 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Create Material Modal */}
         <CreateMaterialModal
           isOpen={isMaterialModalOpen}

@@ -4,6 +4,7 @@ export interface StockItem {
   id: string
   sku: string
   name: string
+  gs1Barcode?: string
   category: string
   productId?: string
   materialId?: string
@@ -12,6 +13,13 @@ export interface StockItem {
   minStock: number
   maxStock: number
   location: string
+  isPosEnabled?: boolean
+  unitCost?: number
+  unit_cost?: number
+  unitPrice?: number
+  unit_price?: number
+  imageUrl?: string
+  image_url?: string
   status: string
   createdAt: string
   updatedAt: string
@@ -32,7 +40,7 @@ export interface StockItem {
 export interface StockMovement {
   id: string
   stockItemId: string
-  type: 'IN' | 'OUT' | 'ADJUST'
+  type: 'IN' | 'OUT' | 'ADJUST' | 'PRICE_CHANGE'
   quantity: number
   reference?: string
   notes?: string
@@ -52,6 +60,7 @@ export interface StockStats {
 export interface CreateStockInput {
   sku: string
   name: string
+  gs1Barcode?: string
   category: string
   productId?: string
   materialId?: string
@@ -60,14 +69,21 @@ export interface CreateStockInput {
   minStock?: number
   maxStock?: number
   location?: string
+  isPosEnabled?: boolean
+  unitCost?: number
+  unitPrice?: number
 }
 
 export interface UpdateStockInput {
   name?: string
+  gs1Barcode?: string
   category?: string
   minStock?: number
   maxStock?: number
   location?: string
+  isPosEnabled?: boolean
+  unitCost?: number
+  unitPrice?: number
 }
 
 export interface StockMovementInput {
@@ -76,6 +92,7 @@ export interface StockMovementInput {
   quantity: number
   notes?: string
   reference?: string
+  unitCost?: number
 }
 
 export const stockService = {
@@ -135,6 +152,21 @@ export const stockService = {
       throw new Error('Failed to record movement')
     }
     return response.data?.data
+  },
+
+  // Upload image for stock item
+  uploadImage: async (id: string, file: File): Promise<{ image_url: string }> => {
+    const formData = new FormData()
+    formData.append('image', file)
+    const response = await api.post(`/stock/${id}/image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data.data
+  },
+
+  // Delete image for stock item
+  deleteImage: async (id: string): Promise<void> => {
+    await api.delete(`/stock/${id}/image`)
   },
 
   // Get movements for a stock item

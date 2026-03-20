@@ -17,6 +17,24 @@ function generateNumber(prefix: string, tenantId: string, table: string) {
   return `${prefix}-${year}-${String(count + 1).padStart(5, '0')}`
 }
 
+function generateEntryNumber(tenantId: string, date: string): string {
+  const year = new Date(date).getFullYear()
+  const count = (db.prepare(
+    "SELECT COUNT(*) as count FROM journal_entries WHERE strftime('%Y', date) = ? AND tenant_id = ?"
+  ).get(year.toString(), tenantId) as any).count
+  return `JV-${year}-${String(count + 1).padStart(5, '0')}`
+}
+
+function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
+  const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
+  if (existing) return existing.id
+  const id = generateId()
+  const now = new Date().toISOString()
+  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, code, name, type, category, normalBalance, now, now)
+  return id
+}
+
 // ============================================
 // PURCHASE REQUESTS (PR)
 // ============================================
@@ -65,6 +83,24 @@ router.get('/requests/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get purchase request error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch purchase request' })
+  }
+})
+
+// DELETE purchase request (DRAFT only)
+router.delete('/requests/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!pr) return res.status(404).json({ success: false, message: 'Purchase request not found' })
+    if (pr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT requests can be deleted' })
+    db.transaction(() => {
+      db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM purchase_requests WHERE id = ?').run(req.params.id)
+    })()
+    res.json({ success: true, message: 'Purchase request deleted' })
+  } catch (error) {
+    console.error('Delete purchase request error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete purchase request' })
   }
 })
 
@@ -290,7 +326,7 @@ router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
 router.post('/goods-receipts', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { purchaseOrderId, receiptDate, receivedBy, notes, items } = req.body
+    const { purchaseOrderId, receiptDate, receivedBy, notes, items, deliveryNoteNo } = req.body
     
     if (!purchaseOrderId) {
       return res.status(400).json({ success: false, message: 'Purchase order is required' })
@@ -302,6 +338,22 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
+    // Block if PO already fully received
+    if (po.status === 'RECEIVED') {
+      return res.status(400).json({ success: false, message: 'ใบสั่งซื้อนี้รับสินค้าครบแล้ว' })
+    }
+
+    // Block if there is already a DRAFT GR waiting to be confirmed for this PO
+    const existingDraft = db.prepare(
+      "SELECT id, gr_number FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ? AND status = 'DRAFT'"
+    ).get(purchaseOrderId, tenantId) as any
+    if (existingDraft) {
+      return res.status(400).json({
+        success: false,
+        message: `มีใบรับสินค้าร่าง ${existingDraft.gr_number} รออยู่ — กรุณายืนยันหรือลบก่อนสร้างใหม่`,
+      })
+    }
+
     const id = generateId()
     const grNumber = generateNumber('GR', tenantId, 'goods_receipts')
     const now = new Date().toISOString()
@@ -309,23 +361,25 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
     const transaction = db.transaction(() => {
       // Create GR
       db.prepare(`
-        INSERT INTO goods_receipts (id, tenant_id, gr_number, purchase_order_id, supplier_id, receipt_date, 
-          received_by, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
-      `).run(id, tenantId, grNumber, purchaseOrderId, po.supplier_id, receiptDate || now, 
-        receivedBy || req.user!.email, notes || '', now, now)
+        INSERT INTO goods_receipts (id, tenant_id, gr_number, purchase_order_id, supplier_id, receipt_date,
+          received_by, status, notes, delivery_note_no, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
+      `).run(id, tenantId, grNumber, purchaseOrderId, po.supplier_id, receiptDate || now,
+        receivedBy || req.user!.email, notes || '', deliveryNoteNo || null, now, now)
 
       // Create GR items
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO goods_receipt_items (id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id, 
-            ordered_qty, received_qty, accepted_qty, rejected_qty, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO goods_receipt_items (id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id,
+            ordered_qty, received_qty, accepted_qty, rejected_qty, lot_number, location, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
-          insertItem.run(generateId(), tenantId, id, item.poItemId, item.materialId,
-            item.orderedQty, item.receivedQty, item.acceptedQty || item.receivedQty, 
-            item.rejectedQty || 0, item.notes || '')
+          insertItem.run(
+            generateId(), tenantId, id, item.poItemId, item.materialId,
+            item.orderedQty, item.receivedQty, item.acceptedQty || item.receivedQty,
+            item.rejectedQty || 0, item.lotNumber || null, item.location || null, item.notes || ''
+          )
         }
       }
     })
@@ -339,6 +393,23 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create goods receipt error:', error)
     res.status(500).json({ success: false, message: 'Failed to create goods receipt' })
+  }
+})
+
+// DELETE GR (DRAFT only)
+router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!gr) return res.status(404).json({ success: false, message: 'Not found' })
+    if (gr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะ GR ที่ยังเป็นร่างเท่านั้น' })
+    db.transaction(() => {
+      db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM goods_receipts WHERE id = ?').run(req.params.id)
+    })()
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete goods receipt' })
   }
 })
 
@@ -367,31 +438,42 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
       // Update stock and PO received qty
       for (const item of items) {
         if (item.material_id && item.accepted_qty > 0) {
-          // Find or create stock item
+          // Get actual unit_price from PO item to update stock cost
+          const poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+          const unitPrice = poItem?.unit_price || 0
+
+          // Find stock item: first by material_id (BOM flow), then directly by id (standalone stock flow)
           let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-          
-          if (stockItem) {
-            // Update existing stock
-            db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
-              .run(Math.floor(item.accepted_qty), now, stockItem.id)
-          } else {
-            // Create new stock item
-            const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
-            const newStockId = generateId()
-            db.prepare(`
-              INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, location, status, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'STOCK', 'ACTIVE', ?, ?)
-            `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
-              Math.floor(item.accepted_qty), material.unit || 'pcs', now, now)
-            stockItem = { id: newStockId }
+          if (!stockItem) {
+            stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           }
 
-          // Record stock movement
-          db.prepare(`
-            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-            VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
-          `).run(generateId(), tenantId, stockItem.id, Math.floor(item.accepted_qty), `GR: ${gr.gr_number}`, 
-            `Received from purchase`, now, req.user!.userId)
+          if (stockItem) {
+            // Update quantity + unit_cost (latest purchase price)
+            db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+              .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+          } else {
+            // Create new stock item (BOM material not yet in stock)
+            const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
+            if (material) {
+              const newStockId = generateId()
+              db.prepare(`
+                INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, unit_cost, location, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK', 'ACTIVE', ?, ?)
+              `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
+                Math.floor(item.accepted_qty), material.unit || 'pcs', unitPrice, now, now)
+              stockItem = { id: newStockId }
+            }
+          }
+
+          if (stockItem) {
+            // Record stock movement
+            db.prepare(`
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
+            `).run(generateId(), tenantId, stockItem.id, Math.floor(item.accepted_qty), `GR: ${gr.gr_number}`,
+              `Received from purchase`, now, req.user!.userId)
+          }
 
           // Update PO item received qty
           db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
@@ -426,13 +508,20 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
 router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
     const items = db.prepare(`
-      SELECT poi.*, m.name as material_name, m.code as material_code, m.unit,
-        (poi.quantity - poi.received_qty) as pending_qty
+      SELECT
+        poi.id, poi.purchase_order_id, poi.material_id,
+        poi.description, poi.quantity, poi.unit_price, poi.total_price,
+        poi.received_qty,
+        (poi.quantity - poi.received_qty) AS pending_qty,
+        si.name  AS material_name,
+        si.sku   AS material_code,
+        si.unit  AS unit
       FROM purchase_order_items poi
-      LEFT JOIN materials m ON poi.material_id = m.id
-      WHERE poi.purchase_order_id = ? AND poi.quantity > poi.received_qty
+      LEFT JOIN stock_items si ON poi.material_id = si.id
+      WHERE poi.purchase_order_id = ?
+        AND poi.quantity > poi.received_qty
     `).all(req.params.poId)
 
     res.json({ success: true, data: items })
@@ -510,7 +599,12 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
 router.post('/invoices', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { purchaseOrderId, goodsReceiptId, supplierInvoiceNumber, invoiceDate, dueDate, notes, items } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items } = req.body
+    // Support both multi-select (goodsReceiptIds array) and legacy single (goodsReceiptId)
+    const grIds: string[] = Array.isArray(goodsReceiptIds) && goodsReceiptIds.length > 0
+      ? goodsReceiptIds
+      : (goodsReceiptId ? [goodsReceiptId] : [])
+    const grIdsJson = JSON.stringify(grIds)
     
     if (!purchaseOrderId) {
       return res.status(400).json({ success: false, message: 'Purchase order is required' })
@@ -538,19 +632,26 @@ router.post('/invoices', async (req: Request, res: Response) => {
     const taxAmount = subtotal * (taxRate / 100)
     const totalAmount = subtotal + taxAmount
 
+    // Resolve accounts before transaction (auto-create if not yet in chart of accounts)
+    const inventoryAccId = getOrCreateAccount(tenantId, '1107', 'สต็อกวัตถุดิบ', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    const payableAccId   = getOrCreateAccount(tenantId, '2101', 'เจ้าหนี้การค้า', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
+    const vatAccId       = taxAmount > 0 ? getOrCreateAccount(tenantId, '1110', 'ภาษีซื้อ', 'ASSET', 'CURRENT_ASSET', 'DEBIT') : null
+    const journalId      = generateId()
+    const journalNumber  = generateEntryNumber(tenantId, invoiceDate || now)
+
     const transaction = db.transaction(() => {
       db.prepare(`
-        INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id, 
-          supplier_id, goods_receipt_id, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount, 
+        INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
+          supplier_id, goods_receipt_id, goods_receipt_ids, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount,
           balance_amount, status, payment_status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
-      `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id, 
-        goodsReceiptId || null, invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount, 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
+      `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
+        grIds[0] || null, grIdsJson, invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount,
         totalAmount, totalAmount, notes || '', now, now)
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO purchase_invoice_items (id, tenant_id, purchase_invoice_id, purchase_order_item_id, 
+          INSERT INTO purchase_invoice_items (id, tenant_id, purchase_invoice_id, purchase_order_item_id,
             material_id, quantity, unit_price, total_price)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
@@ -560,6 +661,28 @@ router.post('/invoices', async (req: Request, res: Response) => {
             item.quantity, item.unitPrice, total)
         }
       }
+
+      // === POST JOURNAL ENTRY ===
+      // Dr สต็อกวัตถุดิบ (1107)   + Dr ภาษีซื้อ (1110) if VAT
+      // Cr เจ้าหนี้การค้า (2101)
+      db.prepare(`
+        INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
+          description, total_debit, total_credit, notes, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(journalId, tenantId, journalNumber, (invoiceDate || now).substring(0, 10),
+        id, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, notes || null,
+        req.user!.email, now, now)
+
+      const insertLine = db.prepare(`
+        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      let lineNo = 1
+      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `สต็อกวัตถุดิบ - ${piNumber}`, subtotal, 0)
+      if (vatAccId && taxAmount > 0) {
+        insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
+      }
+      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
     })
 
     transaction()
@@ -600,6 +723,25 @@ router.get('/payments', async (req: Request, res: Response) => {
   }
 })
 
+// GET single supplier payment
+router.get('/payments/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const payment = db.prepare(`
+      SELECT sp.*, s.name as supplier_name, s.code as supplier_code,
+        pi.pi_number, pi.supplier_invoice_number
+      FROM supplier_payments sp
+      LEFT JOIN suppliers s ON sp.supplier_id = s.id
+      LEFT JOIN purchase_invoices pi ON sp.purchase_invoice_id = pi.id
+      WHERE sp.id = ? AND sp.tenant_id = ?
+    `).get(req.params.id, tenantId)
+    if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
+    res.json({ success: true, data: payment })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch payment' })
+  }
+})
+
 // POST create supplier payment
 router.post('/payments', async (req: Request, res: Response) => {
   try {
@@ -628,10 +770,17 @@ router.post('/payments', async (req: Request, res: Response) => {
     const wht = withholdingTax || 0
     const netAmount = amount - wht
 
+    // Resolve accounts before transaction
+    const payableAccId = getOrCreateAccount(tenantId, '2101', 'เจ้าหนี้การค้า', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
+    const cashAccId    = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    const whtAccId     = wht > 0 ? getOrCreateAccount(tenantId, '2180', 'ภาษีหัก ณ ที่จ่าย', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT') : null
+    const journalId    = generateId()
+    const journalNumber = generateEntryNumber(tenantId, paymentDate || now)
+
     const transaction = db.transaction(() => {
       // Create payment
       db.prepare(`
-        INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id, 
+        INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id,
           payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, tenantId, paymentNumber, supplierId, purchaseInvoiceId || null, paymentDate || now,
@@ -648,6 +797,28 @@ router.post('/payments', async (req: Request, res: Response) => {
           UPDATE purchase_invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
           WHERE id = ?
         `).run(newPaid, newBalance, paymentStatus, now, purchaseInvoiceId)
+      }
+
+      // === POST JOURNAL ENTRY ===
+      // Dr เจ้าหนี้การค้า (2101)
+      // Cr เงินสด/ธนาคาร (1101)   + Cr ภาษีหัก ณ ที่จ่าย (2180) if WHT > 0
+      db.prepare(`
+        INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
+          description, total_debit, total_credit, notes, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
+        id, `จ่ายชำระ ${paymentNumber}`, amount, amount, notes || null,
+        req.user!.email, now, now)
+
+      const insertLine = db.prepare(`
+        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      let lineNo = 1
+      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${paymentNumber}`, amount, 0)
+      insertLine.run(generateId(), tenantId, journalId, cashAccId, lineNo++, `จ่ายเงิน - ${paymentNumber}`, 0, netAmount)
+      if (whtAccId && wht > 0) {
+        insertLine.run(generateId(), tenantId, journalId, whtAccId, lineNo++, `ภาษีหัก ณ ที่จ่าย - ${paymentNumber}`, 0, wht)
       }
     })
 
@@ -781,7 +952,29 @@ router.post('/returns', async (req: Request, res: Response) => {
   }
 })
 
-// PUT confirm return (deduct stock)
+// PUT update return status (DRAFT→SUBMITTED, SUBMITTED→APPROVED)
+router.put('/returns/:id/status', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { status } = req.body
+    const allowed = ['SUBMITTED', 'APPROVED', 'CANCELLED']
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' })
+    }
+    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!ret) return res.status(404).json({ success: false, message: 'Not found' })
+    if (ret.status === 'CONFIRMED') return res.status(400).json({ success: false, message: 'Already confirmed' })
+
+    db.prepare('UPDATE purchase_returns SET status = ?, updated_at = ? WHERE id = ?')
+      .run(status, new Date().toISOString(), req.params.id)
+
+    res.json({ success: true, data: { id: req.params.id, status } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to update return status' })
+  }
+})
+
+// PUT confirm return (deduct stock) — requires APPROVED status
 router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -793,6 +986,9 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
 
     if (ret.status === 'CONFIRMED') {
       return res.status(400).json({ success: false, message: 'Purchase return already confirmed' })
+    }
+    if (ret.status !== 'APPROVED') {
+      return res.status(400).json({ success: false, message: 'ต้องอนุมัติใบคืนสินค้าก่อนยืนยัน' })
     }
 
     const items = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(req.params.id) as any[]

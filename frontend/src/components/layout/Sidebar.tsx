@@ -18,6 +18,7 @@ import {
   Percent,
   Factory,
   Store,
+  MonitorPlay,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -103,6 +104,12 @@ const menuItems = [
     icon: Store,
     description: 'POS & Quick Sales',
   },
+  {
+    path: '/kds',
+    label: 'Kitchen Display',
+    icon: MonitorPlay,
+    description: 'POS Orders Queue (KDS)',
+  },
 ]
 
 const bottomMenuItems = [
@@ -155,9 +162,8 @@ function Sidebar({ isOpen }: SidebarProps) {
           {/* User Info */}
           <div className="px-6 py-3 border-b border-cyber-border">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                isMaster ? 'bg-gradient-to-br from-cyber-green to-emerald-500' : 'bg-gradient-to-br from-cyber-primary to-cyber-purple'
-              }`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isMaster ? 'bg-gradient-to-br from-cyber-green to-emerald-500' : 'bg-gradient-to-br from-cyber-primary to-cyber-purple'
+                }`}>
                 <span className="text-white font-bold text-sm">
                   {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </span>
@@ -202,10 +208,9 @@ function Sidebar({ isOpen }: SidebarProps) {
                             key={sub.path}
                             to={sub.path}
                             className={({ isActive }) =>
-                              `flex items-center gap-3 px-4 py-2 rounded-lg transition-all group text-sm ${
-                                isActive
-                                  ? 'bg-cyber-primary/20 text-cyber-primary'
-                                  : 'text-gray-400 hover:text-gray-300'
+                              `flex items-center gap-3 px-4 py-2 rounded-lg transition-all group text-sm ${isActive
+                                ? 'bg-cyber-primary/20 text-cyber-primary'
+                                : 'text-gray-400 hover:text-gray-300'
                               }`
                             }
                           >
@@ -221,27 +226,24 @@ function Sidebar({ isOpen }: SidebarProps) {
                       to={item.path}
                       end={item.path === '/'}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${
-                          isActive
-                            ? 'bg-gradient-to-r from-cyber-primary/20 to-cyber-purple/20 border border-cyber-primary/50 shadow-neon'
-                            : 'hover:bg-cyber-card/50 border border-transparent hover:border-cyber-border'
+                        `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${isActive
+                          ? 'bg-gradient-to-r from-cyber-primary/20 to-cyber-purple/20 border border-cyber-primary/50 shadow-neon'
+                          : 'hover:bg-cyber-card/50 border border-transparent hover:border-cyber-border'
                         }`
                       }
                     >
                       {({ isActive }) => (
                         <>
                           <item.icon
-                            className={`w-5 h-5 transition-colors ${
-                              isActive
+                            className={`w-5 h-5 transition-colors ${isActive
                                 ? 'text-cyber-primary'
                                 : 'text-gray-400 group-hover:text-cyber-primary'
-                            }`}
+                              }`}
                           />
                           <div className="flex-1">
                             <p
-                              className={`font-semibold ${
-                                isActive ? 'text-cyber-primary' : 'text-gray-300'
-                              }`}
+                              className={`font-semibold ${isActive ? 'text-cyber-primary' : 'text-gray-300'
+                                }`}
                             >
                               {item.label}
                             </p>
@@ -294,21 +296,19 @@ function Sidebar({ isOpen }: SidebarProps) {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${
-                    isActive
-                      ? 'bg-cyber-primary/20 text-cyber-primary'
-                      : 'hover:bg-cyber-card/50 text-gray-300'
+                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${isActive
+                    ? 'bg-cyber-primary/20 text-cyber-primary'
+                    : 'hover:bg-cyber-card/50 text-gray-300'
                   }`
                 }
               >
-                <item.icon className={`w-5 h-5 ${
-                  'text-gray-400 group-hover:text-cyber-primary transition-colors'
-                }`} />
+                <item.icon className={`w-5 h-5 ${'text-gray-400 group-hover:text-cyber-primary transition-colors'
+                  }`} />
                 <span className="font-medium">{item.label}</span>
               </NavLink>
             ))}
 
-            <button 
+            <button
               onClick={logout}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-500/10 transition-all group mt-2"
             >

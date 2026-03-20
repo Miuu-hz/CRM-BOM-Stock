@@ -17,6 +17,12 @@ import {
   AlertCircle,
   Plus,
   Upload,
+  DollarSign,
+  History,
+  ImagePlus,
+  Trash2,
+  Settings2,
+  Check,
 } from 'lucide-react'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
@@ -54,6 +60,38 @@ function Stock() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+
+  type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
+  const COLUMN_LABELS: Record<ColumnKey, string> = {
+    image: 'รูปภาพ',
+    name: 'ชื่อสินค้า',
+    sku: 'SKU',
+    category: 'ประเภท',
+    quantity: 'จำนวน',
+    minmax: 'Min/Max',
+    unitCost: 'ราคาต้นทุน',
+    unitPrice: 'ราคาขาย',
+    location: 'สถานที่',
+    status: 'สถานะ',
+  }
+  const ALWAYS_VISIBLE: ColumnKey[] = ['name', 'quantity', 'status']
+
+  const getDefaultCols = (): Record<ColumnKey, boolean> => {
+    const saved = localStorage.getItem('stock_columns')
+    if (saved) return JSON.parse(saved)
+    return { image: true, name: true, sku: true, category: true, quantity: true, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
+  }
+  const [visibleCols, setVisibleCols] = useState<Record<ColumnKey, boolean>>(getDefaultCols)
+
+  const toggleCol = (key: ColumnKey) => {
+    if (ALWAYS_VISIBLE.includes(key)) return
+    const next = { ...visibleCols, [key]: !visibleCols[key] }
+    setVisibleCols(next)
+    localStorage.setItem('stock_columns', JSON.stringify(next))
+  }
+
+  const colSpanCount = (Object.keys(visibleCols) as ColumnKey[]).filter(k => visibleCols[k]).length + 1 // +1 for actions
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -113,7 +151,7 @@ function Stock() {
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory =
-      selectedCategory === 'all' || item.category.toLowerCase() === selectedCategory.toLowerCase()
+      selectedCategory === 'all' || getCategoryGroup(item.category) === selectedCategory
     const status = getItemStatus(item)
     const matchesStatus = selectedStatus === 'all' || status === selectedStatus
     return matchesSearch && matchesCategory && matchesStatus
@@ -264,17 +302,17 @@ function Stock() {
               onClick={() => handleCategoryChange('all')}
             />
             <FilterButton
-              label="Raw Material"
+              label="วัตถุดิบ"
               active={selectedCategory === 'raw'}
               onClick={() => handleCategoryChange('raw')}
             />
             <FilterButton
-              label="WIP"
+              label="กึ่งสำเร็จรูป"
               active={selectedCategory === 'wip'}
               onClick={() => handleCategoryChange('wip')}
             />
             <FilterButton
-              label="Finished"
+              label="สินค้าสำเร็จรูป"
               active={selectedCategory === 'finished'}
               onClick={() => handleCategoryChange('finished')}
             />
@@ -308,30 +346,77 @@ function Stock() {
 
       {/* Stock List */}
       <div className="cyber-card p-6">
-        <div className="overflow-x-auto">
+        {/* Table toolbar */}
+        <div className="flex items-center justify-end mb-3 relative">
+          <button
+            onClick={() => setShowColumnPicker(v => !v)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-cyber-primary text-cyber-primary bg-cyber-primary/10' : 'border-cyber-border text-gray-400 hover:border-cyber-primary/50 hover:text-gray-200'}`}
+          >
+            <Settings2 className="w-4 h-4" />
+            ปรับคอลัมน์
+          </button>
+
+          {/* Column picker dropdown */}
+          {showColumnPicker && (
+            <div
+              className="absolute top-10 right-0 z-30 bg-cyber-card border border-cyber-border rounded-xl shadow-xl p-3 min-w-[180px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-xs text-gray-400 mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>
+              {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
+                const always = ALWAYS_VISIBLE.includes(key)
+                const active = visibleCols[key]
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleCol(key)}
+                    disabled={always}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-colors mb-0.5 ${
+                      always ? 'opacity-50 cursor-not-allowed' :
+                      active ? 'bg-cyber-primary/10 text-cyber-primary' : 'text-gray-400 hover:bg-cyber-dark hover:text-gray-200'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-cyber-primary border-cyber-primary' : 'border-gray-600'}`}>
+                      {active && <Check className="w-3 h-3 text-black" />}
+                    </span>
+                    {COLUMN_LABELS[key]}
+                    {always && <span className="ml-auto text-[10px] text-gray-600">บังคับ</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto" onClick={() => setShowColumnPicker(false)}>
           <table className="cyber-table">
             <thead>
               <tr>
-                <th>Item Name</th>
-                <th>SKU</th>
-                <th>Category</th>
-                <th>Current Stock</th>
-                <th>Min / Max</th>
-                <th>Location</th>
-                <th>Status</th>
+                {visibleCols.image && <th className="w-14"></th>}
+                {visibleCols.name && <th>ชื่อสินค้า</th>}
+                {visibleCols.sku && <th>SKU</th>}
+                {visibleCols.category && <th>ประเภท</th>}
+                {visibleCols.quantity && <th>จำนวน</th>}
+                {visibleCols.minmax && <th>Min / Max</th>}
+                {visibleCols.unitCost && <th>ต้นทุน/หน่วย</th>}
+                {visibleCols.unitPrice && <th>ราคาขาย/หน่วย</th>}
+                {visibleCols.location && <th>สถานที่</th>}
+                {visibleCols.status && <th>สถานะ</th>}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-gray-500">
+                  <td colSpan={colSpanCount} className="text-center py-8 text-gray-500">
                     No stock items found
                   </td>
                 </tr>
               ) : (
                 paginatedItems.map((item, index) => {
                   const status = getItemStatus(item)
+                  const cost = item.unitCost ?? item.unit_cost ?? 0
+                  const price = item.unitPrice ?? item.unit_price ?? 0
                   return (
                     <motion.tr
                       key={item.id}
@@ -339,40 +424,68 @@ function Stock() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
                     >
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <Package className="w-5 h-5 text-cyber-primary" />
-                          <span className="text-gray-300 font-medium">
-                            {item.name}
+                      {visibleCols.image && (
+                        <td className="w-14">
+                          {item.image_url || item.imageUrl ? (
+                            <img
+                              src={item.image_url || item.imageUrl}
+                              alt={item.name}
+                              className="w-10 h-10 rounded-lg object-cover border border-cyber-border"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-cyber-dark border border-cyber-border flex items-center justify-center">
+                              <Package className="w-4 h-4 text-gray-600" />
+                            </div>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.name && (
+                        <td>
+                          <span className="text-gray-300 font-medium">{item.name}</span>
+                        </td>
+                      )}
+                      {visibleCols.sku && (
+                        <td>
+                          <span className="text-gray-400 font-mono text-sm">{item.sku}</span>
+                        </td>
+                      )}
+                      {visibleCols.category && (
+                        <td><CategoryBadge category={item.category} /></td>
+                      )}
+                      {visibleCols.quantity && (
+                        <td>
+                          <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                            {item.quantity} {item.unit}
                           </span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="text-gray-400 font-mono text-sm">
-                          {item.sku}
-                        </span>
-                      </td>
-                      <td>
-                        <CategoryBadge category={item.category} />
-                      </td>
-                      <td>
-                        <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                          {item.quantity} {item.unit}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-gray-400 text-sm">
-                          {item.minStock} / {item.maxStock}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-gray-400 text-sm">
-                          {item.location || '-'}
-                        </span>
-                      </td>
-                      <td>
-                        <StatusBadge status={status} />
-                      </td>
+                        </td>
+                      )}
+                      {visibleCols.minmax && (
+                        <td>
+                          <span className="text-gray-400 text-sm">{item.minStock} / {item.maxStock}</span>
+                        </td>
+                      )}
+                      {visibleCols.unitCost && (
+                        <td>
+                          <span className="text-amber-400 text-sm font-medium">
+                            {cost ? `฿${Number(cost).toLocaleString()}` : '-'}
+                          </span>
+                        </td>
+                      )}
+                      {visibleCols.unitPrice && (
+                        <td>
+                          <span className="text-cyber-green text-sm font-medium">
+                            {price ? `฿${Number(price).toLocaleString()}` : '-'}
+                          </span>
+                        </td>
+                      )}
+                      {visibleCols.location && (
+                        <td>
+                          <span className="text-gray-400 text-sm">{item.location || '-'}</span>
+                        </td>
+                      )}
+                      {visibleCols.status && (
+                        <td><StatusBadge status={status} /></td>
+                      )}
                       <td>
                         <div className="flex items-center gap-2">
                           <button
@@ -590,6 +703,14 @@ function DetailModal({
               <p className="text-sm text-gray-400 mb-1">Max Stock</p>
               <p className="text-gray-200">{item.maxStock} {item.unit}</p>
             </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วย</p>
+              <p className="text-cyber-green font-semibold">
+                {item.unitCost || (item as any).unit_cost
+                  ? `฿${Number(item.unitCost || (item as any).unit_cost).toLocaleString()}`
+                  : 'ไม่ระบุ'}
+              </p>
+            </div>
             <div className="col-span-2">
               <p className="text-sm text-gray-400 mb-1">Location</p>
               <div className="flex items-center gap-2 text-gray-200">
@@ -616,49 +737,61 @@ function DetailModal({
           )}
 
           {/* Movement History */}
-          {item.movements && item.movements.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-200 mb-3">Recent Movements</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {item.movements.slice(0, 10).map((movement) => (
+          <div>
+            <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center gap-2">
+              <History className="w-5 h-5 text-cyber-primary" />
+              ประวัติการเคลื่อนไหว
+            </h3>
+            {item.movements && item.movements.length > 0 ? (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {item.movements.map((movement) => (
                   <div
                     key={movement.id}
                     className="flex items-center justify-between p-3 bg-cyber-darker rounded-lg"
                   >
                     <div className="flex items-center gap-3">
                       {movement.type === 'IN' ? (
-                        <ArrowUpCircle className="w-5 h-5 text-cyber-green" />
+                        <ArrowUpCircle className="w-5 h-5 text-cyber-green flex-shrink-0" />
                       ) : movement.type === 'OUT' ? (
-                        <ArrowDownCircle className="w-5 h-5 text-red-400" />
+                        <ArrowDownCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                      ) : movement.type === 'PRICE_CHANGE' ? (
+                        <DollarSign className="w-5 h-5 text-yellow-400 flex-shrink-0" />
                       ) : (
-                        <Package className="w-5 h-5 text-yellow-400" />
+                        <Package className="w-5 h-5 text-blue-400 flex-shrink-0" />
                       )}
                       <div>
-                        <p className="text-gray-200">
-                          {movement.type === 'IN' ? '+' : movement.type === 'OUT' ? '-' : ''}
-                          {movement.quantity} {item.unit}
+                        <p className={`font-medium ${
+                          movement.type === 'IN' ? 'text-cyber-green' :
+                          movement.type === 'OUT' ? 'text-red-400' :
+                          movement.type === 'PRICE_CHANGE' ? 'text-yellow-400' : 'text-blue-400'
+                        }`}>
+                          {movement.type === 'IN' ? `+${movement.quantity} ${item.unit}` :
+                           movement.type === 'OUT' ? `-${movement.quantity} ${item.unit}` :
+                           movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
+                           `${movement.quantity} ${item.unit}`}
                         </p>
                         {movement.notes && (
-                          <p className="text-gray-400 text-sm">{movement.notes}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{movement.notes}</p>
                         )}
-                        {movement.journalNumber && (
-                          <a href={`/accounting/journal?entry=${movement.journalId}`} className="text-cyber-primary text-sm hover:underline" target="_blank" rel="noopener noreferrer">
-                            {movement.journalNumber}
-                          </a>
+                        {movement.reference && (
+                          <p className="text-gray-500 text-xs font-mono">{movement.reference}</p>
                         )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-gray-400 text-sm flex items-center gap-1">
+                    <div className="text-right text-xs text-gray-400 flex-shrink-0">
+                      <p className="flex items-center gap-1 justify-end">
                         <Clock className="w-3 h-3" />
-                        {new Date(movement.createdAt).toLocaleDateString()}
+                        {new Date(movement.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </p>
+                      <p className="text-gray-500">{new Date(movement.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-gray-500 text-sm text-center py-4">ไม่มีประวัติการเคลื่อนไหว</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -679,24 +812,44 @@ function EditModal({
 }) {
   const [formData, setFormData] = useState({
     name: '',
+    gs1Barcode: '',
     category: '',
     minStock: 0,
     maxStock: 0,
     location: '',
+    isPosEnabled: false,
+    unitCost: 0,
+    unitPrice: 0,
   })
   const [saving, setSaving] = useState(false)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   useEffect(() => {
     if (item) {
       setFormData({
         name: item.name || '',
+        gs1Barcode: item.gs1Barcode || '',
         category: item.category || '',
         minStock: item.minStock ?? 0,
         maxStock: item.maxStock ?? 0,
         location: item.location || '',
+        isPosEnabled: !!(item.isPosEnabled || (item as any).is_pos_enabled),
+        unitCost: item.unitCost ?? (item as any).unit_cost ?? 0,
+        unitPrice: item.unitPrice ?? (item as any).unit_price ?? 0,
       })
+      setImagePreview(item.image_url || item.imageUrl || null)
+      setImageFile(null)
     }
   }, [item])
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -705,6 +858,12 @@ function EditModal({
     setSaving(true)
     try {
       await stockService.update(item.id, formData)
+      // Upload image if selected
+      if (imageFile) {
+        setUploadingImage(true)
+        await stockService.uploadImage(item.id, imageFile)
+        setUploadingImage(false)
+      }
       onSave()
       onClose()
     } catch (err) {
@@ -719,103 +878,222 @@ function EditModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
+        className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
+        style={{ maxHeight: 'calc(100vh - 2rem)' }}
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-100">Edit Stock Item</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
-          >
+        {/* Header — sticky */}
+        <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-100">แก้ไขสินค้า</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{item.sku} · {item.name}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="cyber-input w-full"
-              required
-            />
-          </div>
+        {/* Scrollable body */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Category</label>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="cyber-input w-full"
-              required
-            >
-              <option value="raw">Raw Material</option>
-              <option value="wip">WIP</option>
-              <option value="finished">Finished</option>
-              <option value="material">Material</option>
-            </select>
-          </div>
+            {/* Image + Name row */}
+            <div className="flex gap-3 items-start">
+              {/* Image picker */}
+              <label className="cursor-pointer flex-shrink-0">
+                <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cyber-border hover:border-cyber-primary/60 flex items-center justify-center overflow-hidden bg-cyber-dark transition-colors relative group">
+                  {imagePreview ? (
+                    <>
+                      <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Upload className="w-5 h-5 text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <ImagePlus className="w-6 h-6 text-gray-500" />
+                      <span className="text-[10px] text-gray-500">อัปโหลด</span>
+                    </div>
+                  )}
+                </div>
+                <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+              </label>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
-              <input
-                type="number"
-                value={formData.minStock}
-                onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                className="cyber-input w-full"
-                min="0"
-              />
+              {/* Name */}
+              <div className="flex-1">
+                <label className="block text-xs text-gray-400 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="cyber-input w-full"
+                  required
+                />
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!item) return
+                      if (confirm('ลบรูปภาพ?')) {
+                        await stockService.deleteImage(item.id)
+                        setImagePreview(null)
+                        setImageFile(null)
+                        onSave()
+                      }
+                    }}
+                    className="mt-1.5 text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" /> ลบรูปภาพ
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Category */}
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
-              <input
-                type="number"
-                value={formData.maxStock}
-                onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+              <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="cyber-input w-full"
-                min="0"
-              />
+                required
+              >
+                <option value="raw">วัตถุดิบ (Raw)</option>
+                <option value="wip">กำลังผลิต (WIP)</option>
+                <option value="finished">สำเร็จรูป (Finished)</option>
+                <option value="material">วัสดุสิ้นเปลือง</option>
+              </select>
             </div>
+
+            {/* Cost + Price */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">
+                  ราคาต้นทุน/หน่วย (฿)
+                  <span className="ml-1 text-amber-400/70">ต้นทุน</span>
+                </label>
+                <input
+                  type="number"
+                  value={formData.unitCost}
+                  onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                  onFocus={(e) => e.target.select()}
+                  className="cyber-input w-full"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">
+                  ราคาขาย/หน่วย (฿)
+                  <span className="ml-1 text-cyber-green/70">ขาย</span>
+                </label>
+                <input
+                  type="number"
+                  value={formData.unitPrice}
+                  onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                  onFocus={(e) => e.target.select()}
+                  className="cyber-input w-full"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            {/* Min/Max Stock */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">สต็อกขั้นต่ำ</label>
+                <input
+                  type="number"
+                  value={formData.minStock}
+                  onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                  onFocus={(e) => e.target.select()}
+                  className="cyber-input w-full"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">สต็อกสูงสุด</label>
+                <input
+                  type="number"
+                  value={formData.maxStock}
+                  onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                  onFocus={(e) => e.target.select()}
+                  className="cyber-input w-full"
+                  min="0"
+                />
+              </div>
+            </div>
+
+            {/* Location + Barcode */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">สถานที่เก็บ</label>
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="เช่น คลังหลัก"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">GS1 Barcode</label>
+                <input
+                  type="text"
+                  value={formData.gs1Barcode}
+                  onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="ไม่บังคับ"
+                />
+              </div>
+            </div>
+
+            {/* POS toggle */}
+            <label className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-xl border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
+              <input
+                type="checkbox"
+                id="isPosEnabled"
+                checked={formData.isPosEnabled}
+                onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
+                className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+              />
+              <div className="flex-1">
+                <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
+                <p className="text-xs text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
+                {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
+              </span>
+            </label>
+
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Location</label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="cyber-input w-full"
-              placeholder="e.g., Warehouse A - Zone 1"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
+          {/* Footer — sticky */}
+          <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+              className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
             >
-              Cancel
+              ยกเลิก
             </button>
             <button
               type="submit"
-              disabled={saving}
-              className="cyber-btn-primary flex items-center gap-2"
+              disabled={saving || uploadingImage}
+              className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
             >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+              {(saving || uploadingImage) ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก...</>
               ) : (
-                <Edit2 className="w-4 h-4" />
+                <><Edit2 className="w-4 h-4" /> บันทึก</>
               )}
-              Save Changes
             </button>
           </div>
         </form>
@@ -846,6 +1124,7 @@ function MovementModal({
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
   const [reference, setReference] = useState('')
+  const [unitCost, setUnitCost] = useState<number | ''>('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -857,6 +1136,7 @@ function MovementModal({
     setQuantity(1)
     setNotes('')
     setReference('')
+    setUnitCost('')
   }, [item, open])
 
   const selectedItem = stockItems.find((i) => i.id === selectedItemId)
@@ -889,6 +1169,7 @@ function MovementModal({
         quantity,
         notes: notes || undefined,
         reference: reference || undefined,
+        unitCost: unitCost !== '' ? unitCost : undefined,
       })
       onSave()
       onClose()
@@ -1006,6 +1287,7 @@ function MovementModal({
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+              onFocus={(e) => e.target.select()}
               className="cyber-input w-full"
               min="1"
               max={type === 'OUT' && selectedItem ? selectedItem.quantity : undefined}
@@ -1042,6 +1324,24 @@ function MovementModal({
               disabled={isOutOfStock}
             />
           </div>
+
+          {type === 'IN' && (
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                อัปเดตราคาต้นทุน/หน่วย (฿) <span className="text-gray-500">(ไม่บังคับ)</span>
+              </label>
+              <input
+                type="number"
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value ? parseFloat(e.target.value) : '')}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-full"
+                min="0"
+                step="0.01"
+                placeholder="เว้นว่างถ้าไม่ต้องการเปลี่ยนราคา"
+              />
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -1130,18 +1430,28 @@ function FilterButton({
   )
 }
 
+// Map any category value (Thai or English) to a display group
+function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'material' {
+  const raw = ['[วัตถุดิบ]', '[วัสดุย่อย]', 'raw', 'raw material']
+  const wip = ['[สินค้ากึ่งสำเร็จรูป]', 'wip', 'semi-finished']
+  const finished = ['[สินค้าสำเร็จรูป]', '[สินค้า]', '[สินค้าไม่มีตัวตน]', 'finished', 'finish']
+  const c = category.toLowerCase()
+  if (raw.includes(c)) return 'raw'
+  if (wip.includes(c)) return 'wip'
+  if (finished.includes(c)) return 'finished'
+  return 'material'
+}
+
 function CategoryBadge({ category }: { category: string }) {
   const config: Record<string, { label: string; color: string }> = {
-    raw: { label: 'Raw Material', color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
-    wip: { label: 'WIP', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
-    finished: { label: 'Finished', color: 'text-cyber-green bg-cyber-green/20 border-cyber-green/30' },
-    material: { label: 'Material', color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
+    raw:      { label: 'วัตถุดิบ',       color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
+    wip:      { label: 'กึ่งสำเร็จรูป', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
+    finished: { label: 'สินค้าสำเร็จรูป', color: 'text-cyber-green bg-cyber-green/20 border-cyber-green/30' },
+    material: { label: 'วัสดุ/อื่นๆ',   color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
   }
-
-  const selected = config[category.toLowerCase()] || config.material
-
+  const selected = config[getCategoryGroup(category)]
   return (
-    <span className={`status-badge ${selected.color}`}>{selected.label}</span>
+    <span className={`status-badge ${selected.color}`} title={category}>{selected.label}</span>
   )
 }
 
@@ -1192,12 +1502,16 @@ function AddStockModal({
   const [formData, setFormData] = useState({
     sku: '',
     name: '',
+    gs1Barcode: '',
     category: 'raw',
     unit: 'pcs',
     quantity: 0,
     minStock: 10,
     maxStock: 100,
     location: '',
+    isPosEnabled: false,
+    unitCost: 0,
+    unitPrice: 0,
   })
   const [saving, setSaving] = useState(false)
   const [showUnitModal, setShowUnitModal] = useState(false)
@@ -1225,24 +1539,32 @@ function AddStockModal({
       await stockService.create({
         sku: formData.sku,
         name: formData.name,
+        gs1Barcode: formData.gs1Barcode || undefined,
         category: formData.category,
         unit: formData.unit,
         quantity: formData.quantity,
         minStock: formData.minStock,
         maxStock: formData.maxStock,
         location: formData.location || 'Main Warehouse',
+        isPosEnabled: formData.isPosEnabled,
+        unitCost: formData.unitCost || undefined,
+        unitPrice: formData.unitPrice || undefined,
       })
       onSave()
       // Reset form
       setFormData({
         sku: '',
         name: '',
+        gs1Barcode: '',
         category: 'raw',
         unit: 'pcs',
         quantity: 0,
         minStock: 10,
         maxStock: 100,
         location: '',
+        isPosEnabled: false,
+        unitCost: 0,
+        unitPrice: 0,
       })
     } catch (err) {
       console.error('Failed to create stock item:', err)
@@ -1344,8 +1666,43 @@ function AddStockModal({
                 type="number"
                 value={formData.quantity}
                 onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
                 className="cyber-input w-full"
                 min="0"
+              />
+            </div>
+          </div>
+
+          {/* Cost + Price */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span>
+              </label>
+              <input
+                type="number"
+                value={formData.unitCost}
+                onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-full"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                ราคาขาย/หน่วย (฿) <span className="text-cyber-green/70">ขาย</span>
+              </label>
+              <input
+                type="number"
+                value={formData.unitPrice}
+                onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-full"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
               />
             </div>
           </div>
@@ -1357,6 +1714,7 @@ function AddStockModal({
                 type="number"
                 value={formData.minStock}
                 onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
                 className="cyber-input w-full"
                 min="0"
               />
@@ -1367,6 +1725,7 @@ function AddStockModal({
                 type="number"
                 value={formData.maxStock}
                 onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
                 className="cyber-input w-full"
                 min="0"
               />
@@ -1382,6 +1741,31 @@ function AddStockModal({
               className="cyber-input w-full"
               placeholder="e.g., Main Warehouse, A-12"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">GS1 Barcode (Optional)</label>
+            <input
+              type="text"
+              value={formData.gs1Barcode}
+              onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
+              className="cyber-input w-full"
+              placeholder="e.g., 8851234567890"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-lg border border-cyber-border">
+            <input
+              type="checkbox"
+              id="isPosEnabledAdd"
+              checked={formData.isPosEnabled}
+              onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
+              className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+            />
+            <label htmlFor="isPosEnabledAdd" className="text-sm text-gray-300 cursor-pointer flex-1">
+              Enable in POS
+              <span className="block text-xs text-gray-500">Show this item in POS menu selection</span>
+            </label>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

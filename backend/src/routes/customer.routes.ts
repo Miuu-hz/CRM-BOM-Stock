@@ -30,6 +30,35 @@ router.get('/', (req: Request, res: Response) => {
   }
 })
 
+// Search customers by name or phone (for POS member linking)
+// IMPORTANT: must be before /:id to avoid route collision
+router.get('/search', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { q = '', limit = 10 } = req.query as { q?: string; limit?: string }
+
+    if (!q || q.trim().length < 1) {
+      return res.json({ success: true, data: [] })
+    }
+
+    const term = `%${q.trim()}%`
+    const customers = db.prepare(`
+      SELECT id, code, name, contact_name, phone, email,
+             loyalty_points, total_spent, status
+      FROM customers
+      WHERE tenant_id = ? AND status = 'ACTIVE'
+        AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ?)
+      ORDER BY name ASC
+      LIMIT ?
+    `).all(tenantId, term, term, term, term, parseInt(limit as string)) as any[]
+
+    res.json({ success: true, data: customers })
+  } catch (error) {
+    console.error('Customer search error:', error)
+    res.status(500).json({ success: false, message: 'ค้นหาลูกค้าไม่สำเร็จ' })
+  }
+})
+
 // Get customer by ID (ตรวจสอบว่าเป็นของบริษัทนี้จริงๆ)
 router.get('/:id', (req: Request, res: Response) => {
   try {

@@ -2,8 +2,11 @@ import { Router } from 'express'
 import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
+import { authenticate } from '../middleware/auth.middleware'
 
 const router = Router()
+
+router.use(authenticate)
 
 // Helper: Generate ID (24-char hex)
 const generateId = () => {
@@ -44,7 +47,7 @@ const generateBillNumber = (tenantId: string) => {
 // Get all bills
 router.get('/bills', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { status } = req.query
     
     let query = `
@@ -78,7 +81,7 @@ router.get('/bills', (req, res) => {
 // Get open bills only
 router.get('/bills/open', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     
     const stmt = db.prepare(`
       SELECT 
@@ -103,13 +106,15 @@ router.get('/bills/open', (req, res) => {
 // Get single bill with items
 router.get('/bills/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
-    // Get bill
+    // Get bill (JOIN customer loyalty_points if linked)
     const billStmt = db.prepare(`
-      SELECT * FROM pos_running_bills 
-      WHERE id = ? AND tenant_id = ?
+      SELECT b.*, c.loyalty_points as customer_loyalty_points
+      FROM pos_running_bills b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      WHERE b.id = ? AND b.tenant_id = ?
     `)
     const bill = billStmt.get(id, tenantId)
     
@@ -139,24 +144,33 @@ router.get('/bills/:id', (req, res) => {
 // Create new bill
 router.post('/bills', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
-    const userId = (req as any).user?.id || 'system'
-    const { display_name, customer_name, customer_phone, notes } = req.body
-    
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
+    const { display_name, customer_name, customer_phone, customer_id, notes } = req.body
+
+    // If customer_id provided, pull name/phone from CRM
+    let resolvedCustomerName = customer_name || null
+    let resolvedCustomerPhone = customer_phone || null
+    if (customer_id) {
+      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+      if (cust) {
+        resolvedCustomerName = resolvedCustomerName || cust.name
+        resolvedCustomerPhone = resolvedCustomerPhone || cust.phone
+      }
+    }
+
     const id = generateId()
     const billNumber = generateBillNumber(tenantId)
     const defaultDisplayName = display_name || `บิล ${billNumber.split('-')[2]}`
-    
-    const stmt = db.prepare(`
+
+    db.prepare(`
       INSERT INTO pos_running_bills (
         id, tenant_id, bill_number, display_name, customer_name, customer_phone,
-        status, opened_at, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
-    `)
-    
-    stmt.run(
-      id, tenantId, billNumber, defaultDisplayName, 
-      customer_name || null, customer_phone || null,
+        customer_id, status, opened_at, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
+    `).run(
+      id, tenantId, billNumber, defaultDisplayName,
+      resolvedCustomerName, resolvedCustomerPhone, customer_id || null,
       now(), notes || null, userId
     )
     
@@ -178,7 +192,7 @@ router.post('/bills', (req, res) => {
 // Update bill (display_name, customer, notes)
 router.put('/bills/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { display_name, customer_name, customer_phone, notes } = req.body
     
@@ -204,10 +218,49 @@ router.put('/bills/:id', (req, res) => {
   }
 })
 
+// Assign or remove CRM member on open bill
+router.patch('/bills/:id/member', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const { customer_id } = req.body  // null to unassign
+
+    let customerName = null
+    let customerPhone = null
+
+    if (customer_id) {
+      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+      if (!cust) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' })
+      customerName = cust.name
+      customerPhone = cust.phone
+    }
+
+    const result = db.prepare(`
+      UPDATE pos_running_bills
+      SET customer_id = ?, customer_name = ?, customer_phone = ?
+      WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+    `).run(customer_id || null, customerName, customerPhone, id, tenantId)
+
+    if (result.changes === 0) {
+      return res.status(400).json({ success: false, message: 'บิลไม่พบหรือปิดแล้ว' })
+    }
+
+    // Return updated customer info
+    const customer = customer_id
+      ? db.prepare('SELECT id, name, phone, loyalty_points, total_spent FROM customers WHERE id = ?').get(customer_id) as any
+      : null
+
+    res.json({ success: true, message: customer_id ? 'เพิ่มสมาชิกสำเร็จ' : 'ยกเลิกสมาชิกสำเร็จ', data: { customer } })
+  } catch (error) {
+    console.error('Assign member error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถกำหนดสมาชิกได้' })
+  }
+})
+
 // Delete bill (only if OPEN and no items)
 router.delete('/bills/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
     // Check if bill has items
@@ -244,8 +297,8 @@ router.delete('/bills/:id', (req, res) => {
 // Add item to bill
 router.post('/bills/:id/items', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
-    const userId = (req as any).user?.id || 'system'
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
     const { id } = req.params
     const { pos_menu_id, quantity, special_instructions } = req.body
     
@@ -253,26 +306,31 @@ router.post('/bills/:id/items', (req, res) => {
       return res.status(400).json({ success: false, message: 'Menu ID and quantity required' })
     }
     
-    // Get menu details
-    const menuStmt = db.prepare('SELECT * FROM pos_menu_configs WHERE id = ? AND tenant_id = ?')
+    // Get menu details (JOIN stock_items to get product_name)
+    const menuStmt = db.prepare(`
+      SELECT pmc.*, si.name as product_name, si.sku as product_code
+      FROM pos_menu_configs pmc
+      LEFT JOIN stock_items si ON pmc.product_id = si.id
+      WHERE pmc.id = ? AND pmc.tenant_id = ?
+    `)
     const menu = menuStmt.get(pos_menu_id, tenantId)
-    
+
     if (!menu) {
       return res.status(404).json({ success: false, message: 'Menu not found' })
     }
-    
+
     const itemId = generateId()
     const totalPrice = (menu as any).pos_price * quantity
-    
+
     const stmt = db.prepare(`
       INSERT INTO pos_bill_items (
         id, tenant_id, bill_id, pos_menu_id, product_name,
         quantity, unit_price, total_price, special_instructions, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
-    
+
     stmt.run(
-      itemId, tenantId, id, pos_menu_id, (menu as any).product_name || 'Unknown',
+      itemId, tenantId, id, pos_menu_id, (menu as any).product_name || (menu as any).product_code || 'Unknown',
       quantity, (menu as any).pos_price, totalPrice, special_instructions || null, userId
     )
     
@@ -353,11 +411,11 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
 // Process payment (deduct stock + record payment + accounting)
 router.post('/bills/:id/pay', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
-    const userId = (req as any).user?.id || 'system'
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
     const { id } = req.params
-    const { payment_method, received_amount, reference } = req.body
-    
+    const { payment_method, received_amount, reference, earn_rate, redeem_points } = req.body
+
     if (!payment_method) {
       return res.status(400).json({ success: false, message: 'Payment method required' })
     }
@@ -419,16 +477,63 @@ router.post('/bills/:id/pay', async (req, res) => {
     const accountingResult = await posAccountingService.recordSale(
       bill as any, payment, tenantId, userId
     )
-    
-    res.json({ 
-      success: true, 
+
+    // 5. Earn loyalty points (if bill has a CRM customer linked)
+    let pointsEarned = 0
+    let pointsRedeemed = 0
+    if ((bill as any).customer_id) {
+      const customerId = (bill as any).customer_id
+      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ?').get(customerId) as any
+      if (customer) {
+        // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
+        const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
+        pointsEarned = Math.floor(totalAmount / rate)
+        pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
+
+        const balanceBefore = customer.loyalty_points || 0
+        const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
+
+        db.prepare(`
+          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ?
+        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId)
+
+        if (pointsRedeemed > 0) {
+          db.prepare(`
+            INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
+            VALUES (?, ?, ?, ?, 'REDEEM', ?, ?, ?, ?, ?, ?)
+          `).run(
+            generateId(), tenantId, customerId, id,
+            pointsRedeemed, balanceBefore, Math.max(0, balanceBefore - pointsRedeemed),
+            `แลกแต้มลดราคาจากบิล ${(bill as any).bill_number}`,
+            userId, now()
+          )
+        }
+
+        db.prepare(`
+          INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
+          VALUES (?, ?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?)
+        `).run(
+          generateId(), tenantId, customerId, id,
+          pointsEarned,
+          Math.max(0, balanceBefore - pointsRedeemed),
+          balanceAfter,
+          `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
+          userId, now()
+        )
+      }
+    }
+
+    res.json({
+      success: true,
       message: 'Payment processed successfully',
       data: {
         payment_id: paymentId,
         amount: totalAmount,
         change: changeAmount > 0 ? changeAmount : 0,
         stock_deductions: stockResult.deductions.length,
-        journal_entry_id: accountingResult.journalEntryId
+        journal_entry_id: accountingResult.journalEntryId,
+        points_earned: pointsEarned,
+        points_redeemed: pointsRedeemed,
       }
     })
   } catch (error) {
@@ -440,8 +545,8 @@ router.post('/bills/:id/pay', async (req, res) => {
 // Cancel bill (return stock + record accounting)
 router.post('/bills/:id/cancel', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
-    const userId = (req as any).user?.id || 'system'
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
     const { id } = req.params
     const { reason } = req.body
     
@@ -496,7 +601,7 @@ router.post('/bills/:id/cancel', async (req, res) => {
 // Check stock availability for menu item
 router.get('/menu-configs/:id/stock', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { quantity } = req.query
     const qty = parseInt(quantity as string) || 1
@@ -512,7 +617,7 @@ router.get('/menu-configs/:id/stock', async (req, res) => {
 // Get low stock menus
 router.get('/stock/low-stock', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const items = await posStockService.getLowStockMenus(tenantId)
     res.json({ success: true, data: items })
   } catch (error) {
@@ -524,7 +629,7 @@ router.get('/stock/low-stock', async (req, res) => {
 // Get menu stock level (how many can be made)
 router.get('/menu-configs/:id/stock-level', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const maxCanMake = await posStockService.getMenuStockLevel(id, tenantId)
     res.json({ success: true, data: { menu_id: id, max_can_make: maxCanMake } })
@@ -537,13 +642,98 @@ router.get('/menu-configs/:id/stock-level', async (req, res) => {
 // Get daily sales report
 router.get('/reports/daily-sales', async (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { date } = req.query
     const report = await posAccountingService.getDailySalesSummary(tenantId, date as string)
     res.json({ success: true, data: report })
   } catch (error) {
     console.error('Error getting daily sales:', error)
     res.status(500).json({ success: false, message: 'Failed to get daily sales' })
+  }
+})
+
+// ==================== GS1 BARCODE SEARCH ====================
+
+// Search menu by GS1 barcode
+router.get('/search/gs1/:barcode', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { barcode } = req.params
+    
+    // Find stock item by GS1 barcode
+    const stockItem = db.prepare(`
+      SELECT * FROM stock_items 
+      WHERE gs1_barcode = ? AND tenant_id = ? AND is_pos_enabled = 1
+    `).get(barcode, tenantId) as any
+    
+    if (!stockItem) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'ไม่พบสินค้าสำหรับ barcode นี้' 
+      })
+    }
+    
+    // Find corresponding product
+    const product = db.prepare(`
+      SELECT * FROM products 
+      WHERE code = ? AND tenant_id = ?
+    `).get(stockItem.sku, tenantId) as any
+    
+    if (!product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'ไม่พบสินค้าในระบบ' 
+      })
+    }
+    
+    // Find POS menu config for this product
+    const menuConfig = db.prepare(`
+      SELECT 
+        pmc.*,
+        p.name as product_name,
+        p.code as product_code,
+        pc.name as category_name,
+        pc.color as category_color
+      FROM pos_menu_configs pmc
+      JOIN products p ON pmc.product_id = p.id
+      LEFT JOIN pos_categories pc ON pmc.category_id = pc.id
+      WHERE pmc.product_id = ? 
+        AND pmc.tenant_id = ? 
+        AND pmc.is_available = 1
+        AND pmc.is_pos_enabled = 1
+    `).get(product.id, tenantId) as any
+    
+    if (!menuConfig) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'สินค้านี้ไม่ได้เปิดใช้งานใน POS' 
+      })
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        id: menuConfig.id,
+        product_id: menuConfig.product_id,
+        product_name: menuConfig.product_name,
+        product_code: menuConfig.product_code,
+        category_id: menuConfig.category_id,
+        category_name: menuConfig.category_name,
+        category_color: menuConfig.category_color,
+        pos_price: menuConfig.pos_price,
+        gs1_barcode: stockItem.gs1_barcode,
+        stock_item: {
+          id: stockItem.id,
+          sku: stockItem.sku,
+          name: stockItem.name,
+          quantity: stockItem.quantity,
+          unit: stockItem.unit
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Error searching by GS1 barcode:', error)
+    res.status(500).json({ success: false, message: 'Failed to search by barcode' })
   }
 })
 

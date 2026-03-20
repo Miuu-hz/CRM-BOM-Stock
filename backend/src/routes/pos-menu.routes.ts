@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
+import { authenticate } from '../middleware/auth.middleware'
 
 const router = Router()
+
+router.use(authenticate)
 
 // Helper: Generate ID (24-char hex, same as other routes)
 const generateId = () => {
@@ -21,7 +24,7 @@ const now = () => new Date().toISOString()
 // Get all categories
 router.get('/categories', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     
     const stmt = db.prepare(`
       SELECT * FROM pos_categories 
@@ -40,7 +43,7 @@ router.get('/categories', (req, res) => {
 // Create category
 router.post('/categories', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { name, color, icon, sort_order } = req.body
     
     if (!name) {
@@ -69,7 +72,7 @@ router.post('/categories', (req, res) => {
 // Update category
 router.put('/categories/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { name, color, icon, sort_order, is_active } = req.body
     
@@ -91,7 +94,7 @@ router.put('/categories/:id', (req, res) => {
 // Delete category
 router.delete('/categories/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
     // Soft delete
@@ -115,21 +118,21 @@ router.delete('/categories/:id', (req, res) => {
 // Get all menu configs (with product details)
 router.get('/menu-configs', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { category_id, is_available } = req.query
     
     let query = `
-      SELECT 
+      SELECT
         pmc.*,
         p.name as product_name,
-        p.code as product_code,
+        p.sku as product_code,
         p.category as product_category,
         pc.name as category_name,
         pc.color as category_color,
         b.version as bom_version,
         b.status as bom_status
       FROM pos_menu_configs pmc
-      LEFT JOIN products p ON pmc.product_id = p.id
+      LEFT JOIN stock_items p ON pmc.product_id = p.id
       LEFT JOIN pos_categories pc ON pmc.category_id = pc.id
       LEFT JOIN boms b ON pmc.bom_id = b.id
       WHERE pmc.tenant_id = ? AND pmc.is_pos_enabled = 1
@@ -162,20 +165,20 @@ router.get('/menu-configs', (req, res) => {
 // Get single menu config with ingredients
 router.get('/menu-configs/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
     // Get menu config
     const menuStmt = db.prepare(`
-      SELECT 
+      SELECT
         pmc.*,
         p.name as product_name,
-        p.code as product_code,
+        p.sku as product_code,
         pc.name as category_name,
         b.version as bom_version,
         b.status as bom_status
       FROM pos_menu_configs pmc
-      LEFT JOIN products p ON pmc.product_id = p.id
+      LEFT JOIN stock_items p ON pmc.product_id = p.id
       LEFT JOIN pos_categories pc ON pmc.category_id = pc.id
       LEFT JOIN boms b ON pmc.bom_id = b.id
       WHERE pmc.id = ? AND pmc.tenant_id = ?
@@ -234,7 +237,7 @@ router.get('/menu-configs/:id', (req, res) => {
 // Create menu config
 router.post('/menu-configs', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const {
       product_id,
       bom_id,
@@ -304,38 +307,28 @@ router.post('/menu-configs', (req, res) => {
 // Update menu config
 router.put('/menu-configs/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
-    const {
-      bom_id,
-      category_id,
-      pos_price,
-      cost_price,
-      is_available,
-      is_pos_enabled,
-      display_order,
-      quick_code,
-      image_url,
-      preparation_time,
-      description
-    } = req.body
-    
-    const stmt = db.prepare(`
-      UPDATE pos_menu_configs 
-      SET bom_id = ?, category_id = ?, pos_price = ?, cost_price = ?, 
-          is_available = ?, is_pos_enabled = ?, display_order = ?,
-          quick_code = ?, image_url = ?, preparation_time = ?, 
-          description = ?, updated_at = ?
-      WHERE id = ? AND tenant_id = ?
-    `)
-    
-    stmt.run(
-      bom_id || null, category_id || null, pos_price, cost_price,
-      is_available, is_pos_enabled, display_order,
-      quick_code || null, image_url || null, preparation_time,
-      description || null, now(), id, tenantId
-    )
-    
+    const allowed = ['bom_id', 'category_id', 'pos_price', 'cost_price', 'is_available',
+      'is_pos_enabled', 'display_order', 'quick_code', 'image_url', 'preparation_time', 'description']
+
+    const fields: string[] = []
+    const values: any[] = []
+    for (const key of allowed) {
+      if (key in req.body) {
+        fields.push(`${key} = ?`)
+        values.push(req.body[key] ?? null)
+      }
+    }
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields to update' })
+    }
+    fields.push('updated_at = ?')
+    values.push(now(), id, tenantId)
+
+    db.prepare(`UPDATE pos_menu_configs SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`)
+      .run(...values)
+
     res.json({ success: true, message: 'Menu config updated successfully' })
   } catch (error) {
     console.error('Error updating POS menu config:', error)
@@ -346,7 +339,7 @@ router.put('/menu-configs/:id', (req, res) => {
 // Toggle menu availability
 router.patch('/menu-configs/:id/toggle', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { is_available } = req.body
     
@@ -371,7 +364,7 @@ router.patch('/menu-configs/:id/toggle', (req, res) => {
 // Delete menu config
 router.delete('/menu-configs/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
     // Hard delete (or can use soft delete)
@@ -394,7 +387,7 @@ router.delete('/menu-configs/:id', (req, res) => {
 // Add ingredient to menu
 router.post('/menu-configs/:id/ingredients', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { stock_item_id, quantity_used, unit_id, is_optional } = req.body
     
@@ -431,7 +424,7 @@ router.post('/menu-configs/:id/ingredients', (req, res) => {
 // Update ingredient
 router.put('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { ingId } = req.params
     const { quantity_used, unit_id, is_optional } = req.body
     
@@ -453,7 +446,7 @@ router.put('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
 // Delete ingredient
 router.delete('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { ingId } = req.params
     
     const stmt = db.prepare(`
@@ -475,16 +468,16 @@ router.delete('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
 // Get products that can be added to POS
 router.get('/available-products', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { search } = req.query
     
     let query = `
-      SELECT p.id, p.code, p.name, p.category, p.description
-      FROM products p
-      WHERE p.tenant_id = ? 
+      SELECT p.id, p.sku as code, p.name, p.category, NULL as description
+      FROM stock_items p
+      WHERE p.tenant_id = ?
         AND p.status = 'ACTIVE'
         AND p.id NOT IN (
-          SELECT product_id FROM pos_menu_configs 
+          SELECT product_id FROM pos_menu_configs
           WHERE tenant_id = ? AND is_pos_enabled = 1
         )
     `
@@ -513,7 +506,7 @@ router.get('/available-products', (req, res) => {
 // Check stock availability for menu item
 router.get('/menu-configs/:id/stock', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { quantity } = req.query
     const qty = parseInt(quantity as string) || 1

@@ -142,6 +142,32 @@ router.get('/materials', (req: Request, res: Response) => {
 })
 
 /**
+ * PATCH /api/data/products/:id/category
+ * เปลี่ยนประเภทสินค้าเป็น Finished Good หรือ Semi-Finished Good
+ */
+router.patch('/products/:id/category', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { category } = req.body
+    const validCategories = ['finished', 'wip', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]']
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ success: false, message: 'Invalid category. Must be finished or wip.' })
+    }
+    const now = new Date().toISOString()
+    const result = db.prepare('UPDATE stock_items SET category = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(category, now, req.params.id, tenantId)
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found' })
+    }
+    const updated = db.prepare('SELECT id, sku as code, name, category, unit, unit_cost FROM stock_items WHERE id = ?').get(req.params.id)
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    console.error('Update product category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update category' })
+  }
+})
+
+/**
  * GET /api/data/boms
  * ดึงรายการ BOM ทั้งหมด
  */

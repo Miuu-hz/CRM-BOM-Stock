@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: February 2025
+> อัปเดตล่าสุด: March 2026
 
 ---
 
@@ -19,7 +19,10 @@
 | **Marketing** | ✅ | Campaign Analytics (Shopee/Lazada integration) |
 | **Calculator** | ✅ | Cost & Profit Analysis |
 | **POS/Cashier** | ✅ | Open Bill System, Stock Integration, Accounting Link |
-| **Accounting** | ✅ | Chart of Accounts, Journal Entries, VAT |
+| **POS Shift System** | ✅ | เปิด/ปิดกะ, กรอกเงินเปิดกะ, นับเงินปิดกะ, ผลต่าง |
+| **POS Clearing Transfer** | ✅ | นำเงินเข้าบัญชีประจำวัน, เลือกวันที่, Cash Over/Short (5901) |
+| **Bill Void** | ✅ | ยกเลิกบิล (PAID→VOID) + Reversal Journal Entry อัตโนมัติ |
+| **Accounting** | ✅ | Chart of Accounts, Journal Entries (T-account UX), VAT |
 | **Tax Management** | ✅ | VAT, Withholding Tax, Tax Periods |
 | **Approval System** | ✅ | Multi-level approval workflow |
 
@@ -29,13 +32,16 @@
 |--------|--------|------------|
 | **MRP** | 🚧 | Material Requirements Planning |
 | **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
-| **POS Clearing Transfer** | 🚧 | End-of-day cash/bank transfer UI |
+| **POS KDS** | 🚧 | Kitchen Display System for POS queue |
 
 ### ❌ ยังไม่มี (Planned)
 
 | โมดูล | ความสำคัญ | รายละเอียด |
 |--------|-----------|---------|
 | **RBAC** | 🟠 ปานกลาง | Role-Based Access Control |
+| **Credit Note** | 🟠 ปานกลาง | ใบลดหนี้ (คืนสินค้าบางส่วน, ไม่ใช่ยกเลิกทั้งบิล) |
+| **Period Closing** | 🟠 ปานกลาง | ปิดงวดบัญชี + ยอดยกมาอัตโนมัติ |
+| **Financial Statements** | 🟠 ปานกลาง | งบดุล + งบกำไรขาดทุน auto-generate |
 | **QMS** | 🟡 ต่ำ | Quality Management System |
 | **Capacity Planning** | 🟡 ต่ำ | Production capacity planning |
 
@@ -118,19 +124,39 @@
 
 4. **Accounting Integration (Clearing Account)**
    ```
-   ตอนขาย:
+   ตอนขาย (auto):
    Dr. ลูกหนี้การค้า-POS (1180)     ฿107
       Cr. รายได้จากการขาย (4100)     ฿100
       Cr. ภาษีขาย (2150)             ฿7
-   
-   ตอนโอนยอด (End of Day):
-   Dr. เงินสด/ธนาคาร (1101/1102)
-      Cr. ลูกหนี้การค้า-POS (1180)
+
+   ตอนนำเงินเข้าบัญชี (POSClearing):
+   Dr. เงินสด (1101) / ธนาคาร (1102)     ฿xxx  ← ที่นับได้จริง
+   [Dr. 5901 เงินขาด/เงินเกิน            ฿yyy] ← ถ้ายอดไม่ตรง
+      Cr. ลูกหนี้การค้า-POS (1180)       ฿zzz  ← ยอดบิลจริง
+
+   ตอนยกเลิกบิล (Bill Void):
+   Dr. รายได้จากการขาย (4100)            ฿xxx  ← reverse รายได้
+      Cr. ลูกหนี้การค้า-POS (1180)       ฿xxx  ← reverse clearing
    ```
+
+5. **POS Shift System**
+   - กรอกเงินสดเปิดกะก่อนเริ่มรับออเดอร์
+   - ติดตาม total_revenue / cash_revenue / bank_revenue แบบ realtime
+   - ปิดกะ: นับเงินจริง → คำนวณ expected = เปิดกะ + cash_revenue → แสดงผลต่าง
 
 ### Database Tables
 
 ```sql
+-- POS Shifts (กะการขาย)
+pos_shifts
+├── id, tenant_id, shift_number
+├── status: OPEN|CLOSED
+├── opened_at, closed_at
+├── opening_cash, closing_cash_counted
+├── expected_cash, cash_difference
+├── total_revenue, cash_revenue, bank_revenue, bill_count
+└── opened_by, closed_by, notes
+
 -- POS Menu Configuration (with BOM linkage)
 pos_menu_configs
 ├── id, tenant_id
@@ -147,7 +173,7 @@ pos_running_bills
 ├── bill_number               -- POS-2024-00001
 ├── display_name              -- Custom name (editable)
 ├── customer_name, customer_phone
-├── status: OPEN|PENDING_PAYMENT|PAID|CANCELLED
+├── status: OPEN|PENDING_PAYMENT|PAID|CANCELLED|VOID
 ├── subtotal, tax_amount, service_charge_amount
 ├── discount_amount, total_amount
 └── created_by, closed_by
@@ -189,6 +215,22 @@ POST   /api/pos/bills/:id/cancel         // + stock return
 // Stock Check
 GET    /api/pos/menu-configs/:id/stock
 GET    /api/pos/menu-configs/:id/stock-check
+
+// POS Shifts (กะการขาย)
+GET    /api/sales/pos-shifts              // ประวัติกะทั้งหมด
+GET    /api/sales/pos-shifts/current      // กะที่เปิดอยู่ + live sales
+POST   /api/sales/pos-shifts/open         // เปิดกะ (ต้องกรอก opening_cash)
+POST   /api/sales/pos-shifts/:id/close    // ปิดกะ (กรอก closing_cash_counted)
+
+// Bill Void
+POST   /api/sales/pos-running-bills/:id/void  // ยกเลิกบิล PAID → VOID + reversal JE
+
+// POS Clearing
+GET    /api/pos/clearing/balance
+GET    /api/pos/clearing/pending-bills?date=YYYY-MM-DD
+POST   /api/pos/clearing/transfer         // นำเงินเข้าบัญชี (รองรับ over/short)
+GET    /api/pos/clearing/transfers
+GET    /api/pos/clearing/transfers/:id
 ```
 
 ---
@@ -287,16 +329,23 @@ sales_orders → work_orders
 - [x] BOM integration for ingredients
 - [x] Clearing Account for accounting
 
-### 🚧 Phase 3: Accounting Enhancement (IN PROGRESS)
+### ✅ Phase 3: Accounting Enhancement (COMPLETED)
 - [x] Chart of Accounts
-- [x] Journal Entries (Double Entry)
+- [x] Journal Entries (Double Entry, T-account UX)
 - [x] VAT Recording
+- [x] POS Clearing Transfer UI (นำเงินเข้าบัญชีประจำวัน)
+- [x] Cash Over/Short Recording (account 5901)
+- [x] Bill Void + Reversal Journal Entry
+- [x] POS Shift System (เปิด/ปิดกะ + นับเงิน)
+- [ ] POS Kitchen Display System (KDS)
 - [ ] COGS auto-calculation on sale
-- [ ] POS Clearing Transfer UI (End-of-day)
 
 ### 📋 Phase 4: Advanced Features (PLANNED)
 - [ ] MRP (Material Requirements Planning)
 - [ ] RBAC (Role-Based Access Control)
+- [ ] Credit Note (ใบลดหนี้)
+- [ ] Period Closing (ปิดงวดบัญชี)
+- [ ] Financial Statements (งบดุล / P&L)
 - [ ] Advanced Reports & Dashboard
 - [ ] Multi-warehouse support
 - [ ] API for external integrations
@@ -363,5 +412,5 @@ sales_orders → work_orders
 
 ---
 
-*Last Updated: 2025-02-28*
+*Last Updated: 2026-03-16*
 *Maintained by: Development Team*

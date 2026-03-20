@@ -85,7 +85,7 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
-    ORDER BY bi.sort_order, bi.created_at
+    ORDER BY bi.sort_order
   `).all(bomId, tenantId) as any[]
 
   const processedItems = items.map(item => {
@@ -316,7 +316,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
       LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
       WHERE bi.bom_id = ? AND bi.tenant_id = ?
-      ORDER BY bi.sort_order, bi.created_at
+      ORDER BY bi.sort_order
     `).all(req.params.id, tenantId) as any[]
 
     const totalCost = calculateBOMCost(bom.id, tenantId)

@@ -156,6 +156,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     tenant_id TEXT,
     sku TEXT NOT NULL,
+    gs1_barcode TEXT,                  -- GS1 barcode สำหรับยิงค้นหา (optional)
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     product_id TEXT,
@@ -167,6 +168,8 @@ db.exec(`
     max_stock INTEGER DEFAULT 1000,
     location TEXT NOT NULL,
     status TEXT NOT NULL,
+    is_pos_enabled BOOLEAN DEFAULT 0,  -- แสดงใน POS หรือไม่
+    image_url TEXT,                     -- URL รูปภาพสินค้า
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id),
@@ -346,10 +349,9 @@ db.exec(`
     material_name TEXT,
     required_qty REAL DEFAULT 0,
     issued_qty REAL DEFAULT 0,
-    -- unit ถูกลบออก - ดึงจาก materials แทน
     status TEXT DEFAULT 'PENDING',
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (material_id) REFERENCES materials(id)
+    FOREIGN KEY (material_id) REFERENCES stock_items(id)
   );
 
   -- ==================== SAVED BOMs (Calculator) ====================
@@ -886,6 +888,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_bom_items_bom ON bom_items(bom_id);
   CREATE INDEX IF NOT EXISTS idx_stock_items_material ON stock_items(material_id);
   CREATE INDEX IF NOT EXISTS idx_stock_items_product ON stock_items(product_id);
+  -- index for gs1 is created down in the migration block if column exists
+  -- index for is_pos_enabled is created down in the migration block if column exists
   CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(stock_item_id);
   CREATE INDEX IF NOT EXISTS idx_metrics_shop_date ON marketing_metrics(shop_id, date);
   CREATE INDEX IF NOT EXISTS idx_metrics_file ON marketing_metrics(file_id);
@@ -1417,6 +1421,7 @@ db.exec(`
     total_price REAL NOT NULL,
     special_instructions TEXT,         -- เช่น "ไม่ใส่ผัก", "พิเศษ"
     status TEXT DEFAULT 'PENDING',     -- PENDING, PREPARING, READY, SERVED
+    sent_to_kds BOOLEAN DEFAULT 0,     -- ส่งไปครัวแล้วหรือยัง
     added_at TEXT DEFAULT CURRENT_TIMESTAMP,
     served_at TEXT,
     created_by TEXT,
@@ -1532,6 +1537,61 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pos_clearing_transfer_items_transfer ON pos_clearing_transfer_items(transfer_id);
   CREATE INDEX IF NOT EXISTS idx_pos_daily_sales_date ON pos_daily_sales(tenant_id, sales_date);
   CREATE INDEX IF NOT EXISTS idx_pos_daily_sales_bills_summary ON pos_daily_sales_bills(daily_sales_id);
+
+  -- ==================== KDS TICKETS ====================
+  CREATE TABLE IF NOT EXISTS pos_kds_tickets (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    bill_id TEXT NOT NULL,
+    bill_number TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    round INTEGER NOT NULL DEFAULT 1,
+    status TEXT DEFAULT 'PENDING',     -- PENDING, IN_PROGRESS, DONE
+    sent_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS pos_kds_ticket_items (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL,
+    bill_item_id TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    special_instructions TEXT,
+    status TEXT DEFAULT 'PENDING',     -- PENDING, DONE
+    FOREIGN KEY (ticket_id) REFERENCES pos_kds_tickets(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_kds_tickets_tenant ON pos_kds_tickets(tenant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_kds_tickets_bill ON pos_kds_tickets(bill_id);
+  CREATE INDEX IF NOT EXISTS idx_kds_ticket_items_ticket ON pos_kds_ticket_items(ticket_id);
+
+  -- ==================== LINE BOT CONFIG ====================
+  CREATE TABLE IF NOT EXISTS line_channels (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    channel_secret TEXT NOT NULL,
+    channel_access_token TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS line_user_mappings (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,             -- อ้างอิงตาราง users
+    line_user_id TEXT NOT NULL,        -- LINE user ID จาก webhook
+    role TEXT NOT NULL,                -- MASTER, MANAGER, USER (copy from users)
+    notify_events TEXT DEFAULT '[]',   -- JSON array of events to notify
+    linked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(tenant_id, user_id),
+    UNIQUE(tenant_id, line_user_id)
+  );
 `)
 
 // ==================== MIGRATIONS ====================
@@ -1539,12 +1599,12 @@ db.exec(`
 try {
   const tableInfo = db.prepare(`PRAGMA table_info(pos_menu_configs)`).all() as any[]
   const hasBomId = tableInfo.some(col => col.name === 'bom_id')
-  
+
   if (!hasBomId) {
     db.exec(`ALTER TABLE pos_menu_configs ADD COLUMN bom_id TEXT REFERENCES boms(id) ON DELETE SET NULL`)
     console.log('✅ Migration: Added bom_id column to pos_menu_configs')
   }
-  
+
   // Create index for bom_id after column exists
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_pos_menu_bom ON pos_menu_configs(bom_id)`)
@@ -1554,6 +1614,317 @@ try {
 } catch (error) {
   console.log('ℹ️ Migration check skipped (table may not exist yet)')
 }
+
+// Add gs1_barcode and is_pos_enabled columns to stock_items (for existing databases)
+try {
+  const stockTableInfo = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+  const hasGs1Barcode = stockTableInfo.some(col => col.name === 'gs1_barcode')
+  const hasPosEnabled = stockTableInfo.some(col => col.name === 'is_pos_enabled')
+
+  if (!hasGs1Barcode) {
+    db.exec(`ALTER TABLE stock_items ADD COLUMN gs1_barcode TEXT`)
+    console.log('✅ Migration: Added gs1_barcode column to stock_items')
+  }
+
+  if (!hasPosEnabled) {
+    db.exec(`ALTER TABLE stock_items ADD COLUMN is_pos_enabled BOOLEAN DEFAULT 0`)
+    console.log('✅ Migration: Added is_pos_enabled column to stock_items')
+  }
+
+  // Create indexes after columns exist
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_items_gs1 ON stock_items(gs1_barcode)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_items_pos ON stock_items(tenant_id, is_pos_enabled) WHERE is_pos_enabled = 1`)
+  } catch (indexError) {
+    // Index might already exist
+  }
+} catch (error) {
+  console.error('ℹ️ Stock items migration error:', error)
+}
+
+// Fix work_order_materials FK: change from REFERENCES materials(id) to REFERENCES stock_items(id)
+try {
+  const womSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='work_order_materials'`).get() as any
+  if (womSQL && womSQL.sql && womSQL.sql.includes('REFERENCES materials(id)')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE work_order_materials_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        work_order_id TEXT NOT NULL,
+        material_id TEXT,
+        material_name TEXT,
+        required_qty REAL DEFAULT 0,
+        issued_qty REAL DEFAULT 0,
+        status TEXT DEFAULT 'PENDING',
+        FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (material_id) REFERENCES stock_items(id)
+      );
+      INSERT INTO work_order_materials_new SELECT id, tenant_id, work_order_id, material_id, material_name, required_qty, issued_qty, status FROM work_order_materials;
+      DROP TABLE work_order_materials;
+      ALTER TABLE work_order_materials_new RENAME TO work_order_materials;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: Fixed work_order_materials FK to reference stock_items')
+  }
+} catch (error) {
+  console.error('⚠️ work_order_materials migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Fix pos_menu_configs FK: change from REFERENCES products(id) to REFERENCES stock_items(id)
+try {
+  const pmcSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='pos_menu_configs'`).get() as any
+  if (pmcSQL && pmcSQL.sql && pmcSQL.sql.includes('REFERENCES products(id)')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE pos_menu_configs_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        product_id TEXT NOT NULL,
+        bom_id TEXT,
+        category_id TEXT,
+        pos_price REAL NOT NULL,
+        cost_price REAL DEFAULT 0,
+        is_available BOOLEAN DEFAULT 1,
+        is_pos_enabled BOOLEAN DEFAULT 1,
+        display_order INTEGER DEFAULT 0,
+        quick_code TEXT,
+        image_url TEXT,
+        preparation_time INTEGER DEFAULT 10,
+        description TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (product_id) REFERENCES stock_items(id) ON DELETE CASCADE,
+        FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE SET NULL,
+        FOREIGN KEY (category_id) REFERENCES pos_categories(id),
+        UNIQUE(tenant_id, product_id)
+      );
+      INSERT OR IGNORE INTO pos_menu_configs_new SELECT * FROM pos_menu_configs;
+      DROP TABLE pos_menu_configs;
+      ALTER TABLE pos_menu_configs_new RENAME TO pos_menu_configs;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: Fixed pos_menu_configs FK to reference stock_items')
+  }
+} catch (error) {
+  console.error('⚠️ pos_menu_configs migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: add sent_to_kds to pos_bill_items
+try {
+  const cols = db.prepare(`PRAGMA table_info(pos_bill_items)`).all() as any[]
+  if (!cols.some(c => c.name === 'sent_to_kds')) {
+    db.exec(`ALTER TABLE pos_bill_items ADD COLUMN sent_to_kds BOOLEAN DEFAULT 0`)
+    console.log('✅ Migration: added sent_to_kds to pos_bill_items')
+  }
+} catch (e) { console.error('⚠️ sent_to_kds migration error:', e) }
+
+// Migration: add image_url to stock_items
+try {
+  const cols = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'image_url')) {
+    db.exec(`ALTER TABLE stock_items ADD COLUMN image_url TEXT`)
+    console.log('✅ Migration: added image_url to stock_items')
+  }
+} catch (e) { console.error('⚠️ image_url migration error:', e) }
+
+// Migration: add unit_price (selling price) to stock_items
+try {
+  const cols = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'unit_price')) {
+    db.exec(`ALTER TABLE stock_items ADD COLUMN unit_price REAL DEFAULT 0`)
+    console.log('✅ Migration: added unit_price to stock_items')
+  }
+} catch (e) { console.error('⚠️ unit_price migration error:', e) }
+
+// Migration: create pos_shifts table
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pos_shifts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      shift_number TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      opened_at TEXT NOT NULL,
+      closed_at TEXT,
+      opening_cash REAL NOT NULL DEFAULT 0,
+      closing_cash_counted REAL,
+      expected_cash REAL,
+      cash_difference REAL,
+      total_revenue REAL DEFAULT 0,
+      cash_revenue REAL DEFAULT 0,
+      bank_revenue REAL DEFAULT 0,
+      bill_count INTEGER DEFAULT 0,
+      opened_by TEXT,
+      closed_by TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  console.log('✅ Migration: pos_shifts table ready')
+} catch (e) { console.error('⚠️ pos_shifts migration error:', e) }
+
+// Migration: CRM Loyalty Points system
+try {
+  db.exec(`ALTER TABLE customers ADD COLUMN loyalty_points REAL DEFAULT 0`)
+  console.log('✅ Migration: added loyalty_points to customers')
+} catch (e) { /* already exists */ }
+
+try {
+  db.exec(`ALTER TABLE customers ADD COLUMN total_spent REAL DEFAULT 0`)
+  console.log('✅ Migration: added total_spent to customers')
+} catch (e) { /* already exists */ }
+
+try {
+  db.exec(`ALTER TABLE pos_running_bills ADD COLUMN customer_id TEXT`)
+  console.log('✅ Migration: added customer_id to pos_running_bills')
+} catch (e) { /* already exists */ }
+
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS crm_points_transactions (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      bill_id TEXT,
+      type TEXT NOT NULL DEFAULT 'EARN',
+      points REAL NOT NULL,
+      balance_before REAL NOT NULL DEFAULT 0,
+      balance_after REAL NOT NULL DEFAULT 0,
+      description TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id)
+    )
+  `)
+  console.log('✅ Migration: crm_points_transactions table ready')
+} catch (e) { console.error('⚠️ crm_points_transactions migration error:', e) }
+
+// Migration: add over/short tracking to pos_clearing_transfers
+try {
+  db.exec(`ALTER TABLE pos_clearing_transfers ADD COLUMN original_clearing_amount REAL DEFAULT 0`)
+  console.log('✅ Migration: added original_clearing_amount to pos_clearing_transfers')
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE pos_clearing_transfers ADD COLUMN cash_difference REAL DEFAULT 0`)
+  console.log('✅ Migration: added cash_difference to pos_clearing_transfers')
+} catch (e) { /* column already exists */ }
+
+// Migration: add VOID support note (pos_running_bills.status already TEXT, VOID is just a new value)
+// No schema change needed — status field accepts any TEXT value
+
+// Migration: add linked_pr_id to purchase_orders
+try {
+  const cols = db.prepare(`PRAGMA table_info(purchase_orders)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'linked_pr_id')) {
+    db.exec(`ALTER TABLE purchase_orders ADD COLUMN linked_pr_id TEXT`)
+    console.log('✅ Migration: added linked_pr_id to purchase_orders')
+  }
+} catch (e) { console.error('⚠️ linked_pr_id migration error:', e) }
+
+// Migration: Fix purchase_order_items FK — change material_id from REFERENCES materials(id) to REFERENCES stock_items(id)
+// Needed because stock is stored as standalone stock_items (materials table is empty)
+try {
+  const poiSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_order_items'`).get() as any
+  if (poiSQL && poiSQL.sql && poiSQL.sql.includes('REFERENCES materials(id)')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE purchase_order_items_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        purchase_order_id TEXT NOT NULL,
+        material_id TEXT,
+        description TEXT,
+        quantity REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        total_price REAL DEFAULT 0,
+        received_qty REAL DEFAULT 0,
+        notes TEXT,
+        FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (material_id) REFERENCES stock_items(id)
+      );
+      INSERT OR IGNORE INTO purchase_order_items_new SELECT id, tenant_id, purchase_order_id, material_id, description, quantity, unit_price, total_price, received_qty, notes FROM purchase_order_items;
+      DROP TABLE purchase_order_items;
+      ALTER TABLE purchase_order_items_new RENAME TO purchase_order_items;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: Fixed purchase_order_items FK to reference stock_items')
+  }
+} catch (error) {
+  console.error('⚠️ purchase_order_items migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: Fix goods_receipt_items FK — material_id from REFERENCES materials(id) to REFERENCES stock_items(id)
+try {
+  const griSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='goods_receipt_items'`).get() as any
+  if (griSQL && griSQL.sql && griSQL.sql.includes('REFERENCES materials(id)')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE goods_receipt_items_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        goods_receipt_id TEXT NOT NULL,
+        purchase_order_item_id TEXT NOT NULL,
+        material_id TEXT,
+        ordered_qty REAL DEFAULT 0,
+        received_qty REAL DEFAULT 0,
+        accepted_qty REAL DEFAULT 0,
+        rejected_qty REAL DEFAULT 0,
+        lot_number TEXT,
+        location TEXT,
+        notes TEXT,
+        FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts(id) ON DELETE CASCADE,
+        FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id),
+        FOREIGN KEY (material_id) REFERENCES stock_items(id)
+      );
+      INSERT OR IGNORE INTO goods_receipt_items_new
+        SELECT id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id,
+               ordered_qty, received_qty, accepted_qty, rejected_qty, NULL, NULL, notes
+        FROM goods_receipt_items;
+      DROP TABLE goods_receipt_items;
+      ALTER TABLE goods_receipt_items_new RENAME TO goods_receipt_items;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: Fixed goods_receipt_items FK + added lot_number, location')
+  } else {
+    // Table already fixed — just add columns if missing
+    const cols = db.prepare(`PRAGMA table_info(goods_receipt_items)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'lot_number')) {
+      db.exec(`ALTER TABLE goods_receipt_items ADD COLUMN lot_number TEXT`)
+      console.log('✅ Migration: added lot_number to goods_receipt_items')
+    }
+    if (!cols.some((c: any) => c.name === 'location')) {
+      db.exec(`ALTER TABLE goods_receipt_items ADD COLUMN location TEXT`)
+      console.log('✅ Migration: added location to goods_receipt_items')
+    }
+  }
+} catch (error) {
+  console.error('⚠️ goods_receipt_items migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: add delivery_note_no to goods_receipts
+try {
+  const cols = db.prepare(`PRAGMA table_info(goods_receipts)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'delivery_note_no')) {
+    db.exec(`ALTER TABLE goods_receipts ADD COLUMN delivery_note_no TEXT`)
+    console.log('✅ Migration: added delivery_note_no to goods_receipts')
+  }
+} catch (e) { console.error('⚠️ delivery_note_no migration error:', e) }
+
+// Migration: add goods_receipt_ids (JSON array) to purchase_invoices for multi-GR reference
+try {
+  const cols = db.prepare(`PRAGMA table_info(purchase_invoices)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'goods_receipt_ids')) {
+    db.exec(`ALTER TABLE purchase_invoices ADD COLUMN goods_receipt_ids TEXT DEFAULT '[]'`)
+    console.log('✅ Migration: added goods_receipt_ids to purchase_invoices')
+  }
+} catch (e) { console.error('⚠️ goods_receipt_ids migration error:', e) }
 
 console.log('✅ SQLite database initialized at:', dbPath)
 
