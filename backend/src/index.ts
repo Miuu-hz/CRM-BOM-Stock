@@ -37,17 +37,28 @@ import taxRoutes from './routes/tax.routes'
 import posMenuRoutes from './routes/pos-menu.routes'
 import posBillRoutes from './routes/pos-bill.routes'
 import posClearingRoutes from './routes/pos-clearing.routes'
+import kdsRoutes from './routes/kds.routes'
+import lineBotRoutes from './routes/line-bot.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
 
 // Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
 }))
+// Webhook needs raw body for LINE signature validation
+app.use('/api/line/webhook', express.raw({ type: 'application/json' }), lineBotRoutes)
+
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// Register the rest of LINE bot routes (config, test)
+app.use('/api/line', lineBotRoutes)
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -86,6 +97,7 @@ app.use('/api/tax', taxRoutes)
 app.use('/api/pos', posMenuRoutes)
 app.use('/api/pos', posBillRoutes)
 app.use('/api/pos', posClearingRoutes)
+app.use('/api/pos/kds', kdsRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

@@ -15,11 +15,12 @@ import Login from './pages/Login'
 import { ChartOfAccounts, JournalEntries, FinancialReports } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
+import KDS from './pages/KDS'
 import POSClearing from './pages/Accounting/POSClearing'
 
 function AppContent() {
   const { user, isReady } = useAuth()
-  
+
   // รอให้ auth พร้อมก่อน render อะไรก็ตาม
   if (!isReady) {
     return (
@@ -31,7 +32,7 @@ function AppContent() {
       </div>
     )
   }
-  
+
   if (!user) {
     return <Login />
   }
@@ -50,22 +51,23 @@ function AppContent() {
         <Route path="/work-orders" element={<WorkOrders />} />
         <Route path="/production" element={<Navigate to="/bom" replace />} />
         <Route path="/settings" element={<Settings />} />
-        
+
         {/* Accounting Routes */}
         <Route path="/accounting" element={<Navigate to="/accounting/chart-of-accounts" replace />} />
         <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
         <Route path="/accounting/journal-entries" element={<JournalEntries />} />
         <Route path="/accounting/reports" element={<FinancialReports />} />
-        
+
         {/* Tax Route */}
         <Route path="/tax" element={<Tax />} />
-        
-        {/* Cashier Route */}
+
+        {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />
-        
+        <Route path="/kds" element={<KDS />} />
+
         {/* POS Clearing Route */}
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />
-        
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

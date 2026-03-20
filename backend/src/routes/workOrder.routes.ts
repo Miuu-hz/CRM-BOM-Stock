@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { lineBotService } from '../services/line-bot.service'
 
 const router = Router()
 
@@ -21,7 +22,7 @@ function generateWONumber(tenantId: string) {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
     const orders = db.prepare(`
       SELECT wo.*,
         (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
@@ -43,7 +44,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
     const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any
     const inProgress = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'IN_PROGRESS'").get(tenantId) as any
     const planned = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'PLANNED'").get(tenantId) as any
@@ -70,7 +71,7 @@ router.get('/stats', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
     const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     if (!wo) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
@@ -94,22 +95,6 @@ router.post('/', async (req: Request, res: Response) => {
     const woNumber = generateWONumber(tenantId)
     const now = new Date().toISOString()
 
-    // Check stock availability for all materials (scoped to tenant)
-    if (materials && materials.length > 0) {
-      const outOfStock = materials.filter((m: any) => {
-        const stock = db.prepare('SELECT quantity FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(m.materialId, tenantId) as any
-        return !stock || stock.quantity === 0
-      })
-
-      if (outOfStock.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot create work order: some materials are out of stock',
-          outOfStock: outOfStock.map((m: any) => m.materialName),
-        })
-      }
-    }
-
     // Calculate estimated cost
     let estimatedCost = 0
     if (materials) {
@@ -121,16 +106,16 @@ router.post('/', async (req: Request, res: Response) => {
         INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, priority, 
           due_date, assigned_to, notes, estimated_cost, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, woNumber, bomId || null, productName || '', quantity, priority || 'NORMAL', 
+      `).run(id, tenantId, woNumber, bomId || null, productName || '', quantity, priority || 'NORMAL',
         dueDate || null, assignedTo || '', notes || '', estimatedCost, now, now)
 
       if (materials && materials.length > 0) {
         const insertMaterial = db.prepare(`
-          INSERT INTO work_order_materials (id, tenant_id, work_order_id, material_id, material_name, required_qty, unit, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
+          INSERT INTO work_order_materials (id, tenant_id, work_order_id, material_id, material_name, required_qty, status)
+          VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
         `)
         for (const m of materials) {
-          insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty, m.unit || 'units')
+          insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty)
         }
       }
     })
@@ -139,6 +124,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id)
     const woMaterials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(id)
+
+    // Notify via LINE Bot independently
+    lineBotService.notifyWorkOrderCreated(tenantId, wo).catch(e => console.error('LINE Bot error:', e))
+
     res.status(201).json({ success: true, data: { ...wo, materials: woMaterials } })
   } catch (error) {
     console.error('Create work order error:', error)
@@ -169,7 +158,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       // Check stock availability first (scoped to tenant)
       for (const m of materials) {
         if (m.material_id) {
-          const stock = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
+          const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
           if (!stock || stock.quantity < m.required_qty) {
             return res.status(400).json({
               success: false,
@@ -186,7 +175,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
         for (const m of materials) {
           if (m.material_id) {
-            const stock = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
+            const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
             if (stock) {
               db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
                 .run(Math.floor(m.required_qty), now, stock.id)
@@ -205,14 +194,39 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
       deductStock()
     } else if (status === 'COMPLETED') {
-      db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
-        .run(status, now, now, req.params.id, tenantId)
+      const completeTransaction = db.transaction(() => {
+        db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(status, now, now, req.params.id, tenantId)
+
+        // Add finished product to stock
+        if (wo.bom_id) {
+          const bom = db.prepare('SELECT product_id FROM boms WHERE id = ?').get(wo.bom_id) as any
+          if (bom?.product_id) {
+            const finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
+            if (finishedStock) {
+              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
+                .run(wo.quantity, now, finishedStock.id)
+              db.prepare(`
+                INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'system')
+              `).run(generateId(), tenantId, finishedStock.id, wo.quantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+            }
+          }
+        }
+      })
+      completeTransaction()
     } else {
       db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(status, now, req.params.id, tenantId)
     }
 
     const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+
+    // Notify via LINE Bot independently
+    if (updated && status !== wo.status) {
+      lineBotService.notifyWorkOrderStatusChanged(tenantId, updated).catch(e => console.error('LINE Bot status change error:', e))
+    }
+
     res.json({ success: true, data: updated })
   } catch (error) {
     console.error('Update WO status error:', error)
@@ -252,7 +266,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
     const wo = db.prepare('SELECT status FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!wo) {
       return res.status(404).json({ success: false, message: 'Work order not found' })

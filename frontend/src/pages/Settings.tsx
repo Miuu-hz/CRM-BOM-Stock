@@ -14,8 +14,18 @@ import {
   Key,
   Building2,
   Store,
+  MessageSquare,
+  Receipt,
+  Percent,
+  ToggleLeft,
+  ToggleRight,
+  Star,
+  Gift,
+  ArrowLeftRight,
+  Info,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
+import LineSettings from './settings/LineSettings'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -30,7 +40,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { user, isMaster, children, loadChildren, createChildUser, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -98,12 +108,30 @@ export default function SettingsPage() {
           icon={Store}
           label="POS Menu"
         />
+        <TabButton
+          active={activeTab === 'line'}
+          onClick={() => setActiveTab('line')}
+          icon={MessageSquare}
+          label="LINE Bot"
+        />
+        <TabButton
+          active={activeTab === 'billing'}
+          onClick={() => setActiveTab('billing')}
+          icon={Receipt}
+          label="การชำระเงิน"
+        />
+        <TabButton
+          active={activeTab === 'loyalty'}
+          onClick={() => setActiveTab('loyalty')}
+          icon={Star}
+          label="สะสมแต้ม"
+        />
       </div>
 
       {/* Content */}
       <div className="space-y-6">
         {activeTab === 'general' && <GeneralSettings />}
-        
+
         {activeTab === 'users' && isMaster && (
           <UserManagement
             children={localChildren}
@@ -113,10 +141,16 @@ export default function SettingsPage() {
             onDelete={deleteChildUser}
           />
         )}
-        
+
         {activeTab === 'security' && <SecuritySettings />}
-        
+
         {activeTab === 'pos' && <POSMenuSettings />}
+
+        {activeTab === 'line' && <LineSettings />}
+
+        {activeTab === 'billing' && <BillingSettings />}
+
+        {activeTab === 'loyalty' && <LoyaltySettings />}
       </div>
 
       {/* Add User Modal */}
@@ -140,11 +174,10 @@ function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
-        active
+      className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${active
           ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
           : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
-      }`}
+        }`}
     >
       <Icon className="w-5 h-5" />
       <span>{label}</span>
@@ -154,6 +187,397 @@ function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
         </span>
       )}
     </button>
+  )
+}
+
+// Shop / Receipt Info
+export interface ShopConfig {
+  name: string
+  address: string
+  phone: string
+  taxId: string
+  footer: string
+}
+export const DEFAULT_SHOP: ShopConfig = {
+  name: '',
+  address: '',
+  phone: '',
+  taxId: '',
+  footer: 'ขอบคุณที่ใช้บริการ',
+}
+export function loadShopConfig(): ShopConfig {
+  try {
+    const saved = localStorage.getItem('pos_shop_settings')
+    return saved ? { ...DEFAULT_SHOP, ...JSON.parse(saved) } : DEFAULT_SHOP
+  } catch {
+    return DEFAULT_SHOP
+  }
+}
+
+// Billing Settings — VAT & Service Charge
+export interface BillingConfig {
+  vatEnabled: boolean
+  vatRate: number
+  serviceEnabled: boolean
+  serviceRate: number
+}
+
+export const DEFAULT_BILLING: BillingConfig = {
+  vatEnabled: false,
+  vatRate: 7,
+  serviceEnabled: false,
+  serviceRate: 10,
+}
+
+export function loadBillingConfig(): BillingConfig {
+  try {
+    const saved = localStorage.getItem('pos_billing_settings')
+    return saved ? { ...DEFAULT_BILLING, ...JSON.parse(saved) } : DEFAULT_BILLING
+  } catch {
+    return DEFAULT_BILLING
+  }
+}
+
+function BillingSettings() {
+  const [cfg, setCfg] = useState<BillingConfig>(loadBillingConfig)
+  const [saved, setSaved] = useState(false)
+
+  const save = () => {
+    localStorage.setItem('pos_billing_settings', JSON.stringify(cfg))
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const ToggleSwitch = ({ enabled, onChange, label, sub }: { enabled: boolean; onChange: (v: boolean) => void; label: string; sub: string }) => (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-cyber-primary/60 bg-cyber-primary/5' : 'border-cyber-border bg-cyber-darker'}`}
+    >
+      <div className="text-left">
+        <p className={`font-medium ${enabled ? 'text-cyber-primary' : 'text-gray-300'}`}>{label}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+      </div>
+      {enabled
+        ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
+        : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+      }
+    </button>
+  )
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <div>
+        <h2 className="text-lg font-bold text-gray-100 mb-1">การชำระเงิน POS</h2>
+        <p className="text-sm text-gray-400">ตั้งค่า VAT และค่าบริการที่คิดเพิ่มในบิล</p>
+      </div>
+
+      {/* VAT */}
+      <div className="space-y-3">
+        <ToggleSwitch
+          enabled={cfg.vatEnabled}
+          onChange={(v) => setCfg({ ...cfg, vatEnabled: v })}
+          label="VAT (ภาษีมูลค่าเพิ่ม)"
+          sub="คิด VAT จากยอดรวมสินค้า"
+        />
+        {cfg.vatEnabled && (
+          <div className="pl-2">
+            <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+              <Percent className="w-4 h-4" /> อัตรา VAT (%)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={cfg.vatRate}
+                onChange={(e) => setCfg({ ...cfg, vatRate: parseFloat(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-32 text-center text-lg font-bold"
+                min="0"
+                max="100"
+                step="0.5"
+              />
+              <span className="text-gray-400 text-sm">%</span>
+              <div className="flex gap-2">
+                {[3, 5, 7, 10].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setCfg({ ...cfg, vatRate: r })}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                  >
+                    {r}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Service Charge */}
+      <div className="space-y-3">
+        <ToggleSwitch
+          enabled={cfg.serviceEnabled}
+          onChange={(v) => setCfg({ ...cfg, serviceEnabled: v })}
+          label="Service Charge (ค่าบริการ)"
+          sub="คิดค่าบริการจากยอดรวมสินค้า"
+        />
+        {cfg.serviceEnabled && (
+          <div className="pl-2">
+            <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+              <Percent className="w-4 h-4" /> อัตราค่าบริการ (%)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={cfg.serviceRate}
+                onChange={(e) => setCfg({ ...cfg, serviceRate: parseFloat(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-32 text-center text-lg font-bold"
+                min="0"
+                max="100"
+                step="0.5"
+              />
+              <span className="text-gray-400 text-sm">%</span>
+              <div className="flex gap-2">
+                {[5, 10, 12.5, 15].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setCfg({ ...cfg, serviceRate: r })}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                  >
+                    {r}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Preview */}
+      {(cfg.vatEnabled || cfg.serviceEnabled) && (
+        <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-1.5 text-sm">
+          <p className="text-gray-400 font-medium mb-2">ตัวอย่าง (ยอดสินค้า ฿1,000)</p>
+          <div className="flex justify-between text-gray-400">
+            <span>ยอดสินค้า</span><span>฿1,000.00</span>
+          </div>
+          {cfg.serviceEnabled && (
+            <div className="flex justify-between text-blue-400">
+              <span>Service Charge ({cfg.serviceRate}%)</span>
+              <span>+฿{(1000 * cfg.serviceRate / 100).toFixed(2)}</span>
+            </div>
+          )}
+          {cfg.vatEnabled && (
+            <div className="flex justify-between text-yellow-400">
+              <span>VAT ({cfg.vatRate}%)</span>
+              <span>+฿{(1000 * cfg.vatRate / 100).toFixed(2)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-cyber-green font-bold border-t border-cyber-border pt-1.5">
+            <span>ยอดสุทธิ</span>
+            <span>฿{(1000 + (cfg.serviceEnabled ? 1000 * cfg.serviceRate / 100 : 0) + (cfg.vatEnabled ? 1000 * cfg.vatRate / 100 : 0)).toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={save}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/50' : 'cyber-btn-primary'}`}
+      >
+        {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
+      </button>
+    </div>
+  )
+}
+
+// Loyalty Points Config
+export interface LoyaltyConfig {
+  enabled: boolean
+  earnRate: number       // spend X baht → earn 1 point
+  redeemRate: number     // X points → 1 baht discount
+  minRedeemPoints: number
+}
+
+export const DEFAULT_LOYALTY: LoyaltyConfig = {
+  enabled: true,
+  earnRate: 100,
+  redeemRate: 10,
+  minRedeemPoints: 100,
+}
+
+export function loadLoyaltyConfig(): LoyaltyConfig {
+  try {
+    const saved = localStorage.getItem('pos_loyalty_settings')
+    return saved ? { ...DEFAULT_LOYALTY, ...JSON.parse(saved) } : DEFAULT_LOYALTY
+  } catch {
+    return DEFAULT_LOYALTY
+  }
+}
+
+function LoyaltySettings() {
+  const [cfg, setCfg] = useState<LoyaltyConfig>(loadLoyaltyConfig)
+  const [saved, setSaved] = useState(false)
+
+  const save = () => {
+    localStorage.setItem('pos_loyalty_settings', JSON.stringify(cfg))
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const ToggleSwitch = ({ enabled, onChange, label, sub }: { enabled: boolean; onChange: (v: boolean) => void; label: string; sub: string }) => (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-cyber-primary/60 bg-cyber-primary/5' : 'border-cyber-border bg-cyber-darker'}`}
+    >
+      <div className="text-left">
+        <p className={`font-medium ${enabled ? 'text-cyber-primary' : 'text-gray-300'}`}>{label}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+      </div>
+      {enabled
+        ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
+        : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+      }
+    </button>
+  )
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <div>
+        <h2 className="text-lg font-bold text-gray-100 mb-1 flex items-center gap-2">
+          <Star className="w-5 h-5 text-yellow-400" />
+          ระบบสะสมแต้มสมาชิก (CRM)
+        </h2>
+        <p className="text-sm text-gray-400">ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS</p>
+      </div>
+
+      {/* Enable Toggle */}
+      <ToggleSwitch
+        enabled={cfg.enabled}
+        onChange={(v) => setCfg({ ...cfg, enabled: v })}
+        label="เปิดใช้ระบบสะสมแต้ม"
+        sub="เมื่อเปิด ลูกค้าที่ผูกบิลจะได้รับแต้มทุกครั้งที่ชำระเงิน"
+      />
+
+      {cfg.enabled && (
+        <>
+          {/* Earn Rate */}
+          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-cyber-primary" />
+              <p className="font-medium text-gray-200">อัตราสะสมแต้ม</p>
+            </div>
+            <p className="text-xs text-gray-500">ซื้อสินค้าครบ X บาท ได้ 1 แต้ม</p>
+            <div className="flex items-center gap-3">
+              <span className="text-gray-400 text-sm">ใช้จ่าย</span>
+              <input
+                type="number"
+                value={cfg.earnRate}
+                onChange={(e) => setCfg({ ...cfg, earnRate: Math.max(1, parseFloat(e.target.value) || 1) })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-28 text-center text-lg font-bold"
+                min="1"
+                step="1"
+              />
+              <span className="text-gray-400 text-sm">บาท = 1 แต้ม</span>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {[10, 25, 50, 100, 200].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setCfg({ ...cfg, earnRate: r })}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                >
+                  {r} บาท
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Redeem Rate */}
+          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+            <div className="flex items-center gap-2">
+              <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
+              <p className="font-medium text-gray-200">อัตราแลกแต้ม</p>
+            </div>
+            <p className="text-xs text-gray-500">ใช้ X แต้ม แลกส่วนลด 1 บาท</p>
+            <div className="flex items-center gap-3">
+              <span className="text-gray-400 text-sm">ใช้</span>
+              <input
+                type="number"
+                value={cfg.redeemRate}
+                onChange={(e) => setCfg({ ...cfg, redeemRate: Math.max(1, parseFloat(e.target.value) || 1) })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-28 text-center text-lg font-bold"
+                min="1"
+                step="1"
+              />
+              <span className="text-gray-400 text-sm">แต้ม = ส่วนลด 1 บาท</span>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {[1, 5, 10, 20, 50].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setCfg({ ...cfg, redeemRate: r })}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-yellow-400' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                >
+                  {r} แต้ม
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Minimum Redeem */}
+          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-gray-400" />
+              <p className="font-medium text-gray-200">แต้มขั้นต่ำในการแลก</p>
+            </div>
+            <p className="text-xs text-gray-500">ลูกค้าต้องมีแต้มอย่างน้อยเท่านี้จึงจะแลกได้</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={cfg.minRedeemPoints}
+                onChange={(e) => setCfg({ ...cfg, minRedeemPoints: Math.max(0, parseFloat(e.target.value) || 0) })}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-28 text-center text-lg font-bold"
+                min="0"
+                step="1"
+              />
+              <span className="text-gray-400 text-sm">แต้ม</span>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-2 text-sm">
+            <p className="text-gray-400 font-medium mb-2">ตัวอย่างการคำนวณ</p>
+            <div className="flex justify-between text-gray-400">
+              <span>ซื้อ ฿{(cfg.earnRate * 10).toLocaleString()}</span>
+              <span className="text-cyber-primary">ได้ 10 แต้ม</span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>แลก {cfg.redeemRate * 10} แต้ม</span>
+              <span className="text-yellow-400">ลด ฿10</span>
+            </div>
+            <div className="flex justify-between text-gray-500 text-xs border-t border-cyber-border pt-2">
+              <span>ค่าแต้มสะสม 1 แต้ม</span>
+              <span>≈ ฿{(1 / cfg.redeemRate).toFixed(2)}</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      <button
+        onClick={save}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/50' : 'cyber-btn-primary'}`}
+      >
+        {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
+      </button>
+    </div>
   )
 }
 
@@ -233,7 +657,7 @@ function GeneralSettings() {
           <p className="flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
             <span>
-              หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้ 
+              หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้
               {isMaster && <strong className="text-cyber-green"> (ยกเว้น Master Account)</strong>}
             </span>
           </p>
@@ -255,11 +679,11 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
 
   const handleDelete = async (id: string) => {
     if (!confirm('ต้องการลบผู้ใช้งานนี้?')) return
-    
+
     setDeleting(id)
     const result = await onDelete(id)
     setDeleting(null)
-    
+
     if (!result.success) {
       alert(result.message || 'ลบไม่สำเร็จ')
     }
@@ -328,7 +752,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
                     {new Date(child.created_at).toLocaleDateString('th-TH')}
                   </td>
                   <td className="py-3 px-4 text-gray-400 text-sm">
-                    {child.last_login_at 
+                    {child.last_login_at
                       ? new Date(child.last_login_at).toLocaleDateString('th-TH')
                       : '-'
                     }
@@ -365,7 +789,7 @@ function RoleBadge({ role }: { role: string }) {
     USER: 'bg-blue-500/20 text-blue-400',
     VIEWER: 'bg-gray-500/20 text-gray-400',
   }
-  
+
   return (
     <span className={`px-2 py-1 rounded text-xs font-medium ${colors[role] || colors.USER}`}>
       {role}
@@ -388,16 +812,16 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    
+
     if (!form.email || !form.password || !form.name) {
       setError('กรุณากรอกข้อมูลให้ครบ')
       return
     }
-    
+
     setSaving(true)
     const result = await createChildUser(form.email, form.password, form.name, form.role)
     setSaving(false)
-    
+
     if (result.success) {
       onSuccess()
     } else {

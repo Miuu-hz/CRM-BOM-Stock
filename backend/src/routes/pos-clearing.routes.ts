@@ -79,28 +79,35 @@ router.get('/clearing/balance', (req, res) => {
   }
 })
 
-// Get pending bills for transfer
+// Get pending bills for transfer (optionally filtered by date)
 router.get('/clearing/pending-bills', (req, res) => {
   try {
     const tenantId = (req as any).user?.tenantId || 'default'
-    
-    const stmt = db.prepare(`
-      SELECT 
+    const { date } = req.query as { date?: string }
+
+    let query = `
+      SELECT
         b.*,
         p.payment_method
       FROM pos_running_bills b
       LEFT JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ? 
+      WHERE b.tenant_id = ?
         AND b.status = 'PAID'
         AND b.id NOT IN (
-          SELECT DISTINCT bill_id FROM pos_clearing_transfers 
+          SELECT DISTINCT bill_id FROM pos_clearing_transfer_items
           WHERE tenant_id = ?
         )
-      ORDER BY b.closed_at ASC
-    `)
-    
-    const bills = stmt.all(tenantId, tenantId)
-    
+    `
+    const params: any[] = [tenantId, tenantId]
+
+    if (date) {
+      query += ' AND DATE(b.closed_at) = ?'
+      params.push(date)
+    }
+
+    query += ' ORDER BY b.closed_at ASC'
+
+    const bills = db.prepare(query).all(...params)
     res.json({ success: true, data: bills })
   } catch (error) {
     console.error('Error fetching pending bills:', error)
@@ -132,73 +139,60 @@ router.post('/clearing/transfer', (req, res) => {
     }
     
     const totalAmount = (cash_amount || 0) + (bank_amount || 0)
-    
-    // Validate bill_ids if provided
+
+    // Validate bill_ids if provided, compute billsTotal for clearing credit
+    let billsTotal = totalAmount // default: no bills provided → use entered amount
     if (bill_ids && bill_ids.length > 0) {
       const checkStmt = db.prepare(`
-        SELECT id, total_amount FROM pos_running_bills 
-        WHERE id IN (${bill_ids.map(() => '?').join(',')}) 
-          AND tenant_id = ? 
+        SELECT id, total_amount FROM pos_running_bills
+        WHERE id IN (${bill_ids.map(() => '?').join(',')})
+          AND tenant_id = ?
           AND status = 'PAID'
       `)
       const validBills = checkStmt.all(...bill_ids, tenantId) as any[]
-      
+
       if (validBills.length !== bill_ids.length) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Some bills are invalid or not paid' 
+        return res.status(400).json({
+          success: false,
+          message: 'Some bills are invalid or not paid'
         })
       }
-      
-      const billsTotal = validBills.reduce((sum, b) => sum + b.total_amount, 0)
-      if (Math.abs(billsTotal - totalAmount) > 0.01) {
-        return res.status(400).json({ 
-          success: false, 
-          message: `Amount mismatch: bills total ฿${billsTotal}, transfer ฿${totalAmount}` 
-        })
-      }
+
+      billsTotal = validBills.reduce((sum: number, b: any) => sum + b.total_amount, 0)
+      // Difference (totalAmount - billsTotal) is allowed — recorded as over/short in journal
     }
-    
+
+    const cashDifference = totalAmount - billsTotal  // + = over, - = short
+
     // Create transfer record
     const transferId = generateId()
-    const transferStmt = db.prepare(`
+    db.prepare(`
       INSERT INTO pos_clearing_transfers (
-        id, tenant_id, transfer_date, total_amount, 
-        cash_amount, bank_amount, reference, notes, created_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    
-    transferStmt.run(
-      transferId,
-      tenantId,
-      transfer_date,
-      totalAmount,
-      cash_amount || 0,
-      bank_amount || 0,
-      reference || null,
-      notes || null,
-      userId,
-      now()
+        id, tenant_id, transfer_date, total_amount,
+        cash_amount, bank_amount, original_clearing_amount, cash_difference,
+        reference, notes, created_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      transferId, tenantId, transfer_date, totalAmount,
+      cash_amount || 0, bank_amount || 0, billsTotal, cashDifference,
+      reference || null, notes || null, userId, now()
     )
-    
+
     // Link bills to transfer
     if (bill_ids && bill_ids.length > 0) {
       const linkStmt = db.prepare(`
         INSERT INTO pos_clearing_transfer_items (id, tenant_id, transfer_id, bill_id, amount)
         VALUES (?, ?, ?, ?, ?)
       `)
-      
       for (const billId of bill_ids) {
         const bill = db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ?').get(billId) as any
         linkStmt.run(generateId(), tenantId, transferId, billId, bill?.total_amount || 0)
       }
     }
-    
-    // Create journal entries for the transfer
-    // Dr. Cash (1101) / Bank (1102)
-    // Cr. Clearing (1180)
-    createTransferJournalEntries(transferId, tenantId, userId, transfer_date, cash_amount || 0, bank_amount || 0, reference)
-    
+
+    // Dr. Cash/Bank (entered amount) ± Dr/Cr 5901 (over/short), Cr. Clearing (billsTotal)
+    createTransferJournalEntries(transferId, tenantId, userId, transfer_date, cash_amount || 0, bank_amount || 0, billsTotal, reference)
+
     res.json({
       success: true,
       message: 'Transfer recorded successfully',
@@ -206,7 +200,9 @@ router.post('/clearing/transfer', (req, res) => {
         transfer_id: transferId,
         total_amount: totalAmount,
         cash_amount: cash_amount || 0,
-        bank_amount: bank_amount || 0
+        bank_amount: bank_amount || 0,
+        bills_total: billsTotal,
+        cash_difference: cashDifference
       }
     })
   } catch (error) {
@@ -307,6 +303,7 @@ function createTransferJournalEntries(
   date: string,
   cashAmount: number,
   bankAmount: number,
+  billsTotal: number,
   reference?: string
 ) {
   const getAccountId = (code: string, name: string, type: string, category: string) => {
@@ -325,120 +322,105 @@ function createTransferJournalEntries(
     return account.id
   }
   
-  const totalAmount = cashAmount + bankAmount
-  
-  // Create journal entry
-  const entryId = generateId()
-  const year = new Date().getFullYear()
-  
+  const enteredTotal = cashAmount + bankAmount
+  const difference = enteredTotal - billsTotal  // + = over, - = short
+  // Journal totals must balance: debit side = credit side
+  // Short: Dr.Cash(entered) + Dr.5901(|diff|) = Cr.Clearing(billsTotal)  → total = billsTotal
+  // Over:  Dr.Cash(entered) = Cr.Clearing(billsTotal) + Cr.5901(diff)    → total = enteredTotal
+  const journalTotal = Math.abs(difference) < 0.01 ? enteredTotal : Math.max(enteredTotal, billsTotal)
+
   // Get next entry number
+  const year = new Date().getFullYear()
   const prefix = `JV-${year}-`
-  const lastStmt = db.prepare(`
-    SELECT entry_number FROM journal_entries 
+  const last = db.prepare(`
+    SELECT entry_number FROM journal_entries
     WHERE tenant_id = ? AND entry_number LIKE ?
     ORDER BY entry_number DESC LIMIT 1
-  `)
-  const last = lastStmt.get(tenantId, `${prefix}%`) as { entry_number: string } | undefined
+  `).get(tenantId, `${prefix}%`) as { entry_number: string } | undefined
   let seq = 1
   if (last) {
     const match = last.entry_number.match(/-(\d+)$/)
     if (match) seq = parseInt(match[1]) + 1
   }
   const entryNumber = `${prefix}${String(seq).padStart(6, '0')}`
-  
-  // Insert journal entry header
-  const entryStmt = db.prepare(`
+
+  const entryId = generateId()
+  db.prepare(`
     INSERT INTO journal_entries (
       id, tenant_id, entry_number, date, reference_type, reference_id,
       description, total_debit, total_credit, is_auto_generated, created_by, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-  `)
-  
-  entryStmt.run(
-    entryId,
-    tenantId,
-    entryNumber,
-    date,
-    'POS_CLEARING_TRANSFER',
-    transferId,
+  `).run(
+    entryId, tenantId, entryNumber, date,
+    'POS_CLEARING_TRANSFER', transferId,
     `โอนยอด POS Clearing - ${reference || transferId}`,
-    totalAmount,
-    totalAmount,
-    userId,
-    now()
+    journalTotal, journalTotal, userId, now()
   )
-  
+
+  const insertLine = (accountId: string, lineNo: number, desc: string, debit: number, credit: number) => {
+    db.prepare(`
+      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(generateId(), tenantId, entryId, accountId, lineNo, desc, debit, credit)
+  }
+
   let lineNumber = 1
-  
-  // Line 1: Debit Cash (if > 0)
+
+  // Dr. Cash (entered)
   if (cashAmount > 0) {
-    const lineId = generateId()
-    const cashAccountId = getAccountId('1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
-    const lineStmt = db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    `)
-    lineStmt.run(lineId, tenantId, entryId, cashAccountId, lineNumber++, `เงินสดจาก POS`, cashAmount)
+    const id = getAccountId('1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
+    insertLine(id, lineNumber++, 'เงินสดจาก POS', cashAmount, 0)
   }
-  
-  // Line 2: Debit Bank (if > 0)
+  // Dr. Bank (entered)
   if (bankAmount > 0) {
-    const lineId = generateId()
-    const bankAccountId = getAccountId('1102', 'เงินฝากธนาคาร', 'ASSET', 'CURRENT_ASSET')
-    const lineStmt = db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    `)
-    lineStmt.run(lineId, tenantId, entryId, bankAccountId, lineNumber++, `เงินโอน/ธนาคารจาก POS`, bankAmount)
+    const id = getAccountId('1102', 'เงินฝากธนาคาร', 'ASSET', 'CURRENT_ASSET')
+    insertLine(id, lineNumber++, 'เงินโอน/ธนาคารจาก POS', bankAmount, 0)
   }
-  
-  // Line 3: Credit Clearing
-  const lineId = generateId()
-  const clearingAccountId = getAccountId('1180', 'ลูกหนี้การค้า-POS', 'ASSET', 'CURRENT_ASSET')
-  const lineStmt = db.prepare(`
-    INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-    VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-  `)
-  lineStmt.run(lineId, tenantId, entryId, clearingAccountId, lineNumber, `โอนยอดจาก Clearing`, totalAmount)
-  
+  // Dr. 5901 if short (entered < bills)
+  if (difference < -0.01) {
+    const id = getAccountId('5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+    insertLine(id, lineNumber++, 'เงินขาดจาก POS Clearing', Math.abs(difference), 0)
+  }
+  // Cr. Clearing (billsTotal — full clearing amount)
+  const clearingId = getAccountId('1180', 'ลูกหนี้การค้า-POS', 'ASSET', 'CURRENT_ASSET')
+  insertLine(clearingId, lineNumber++, 'โอนยอดจาก Clearing', 0, billsTotal)
+  // Cr. 5901 if over (entered > bills)
+  if (difference > 0.01) {
+    const id = getAccountId('5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+    insertLine(id, lineNumber++, 'เงินเกินจาก POS Clearing', 0, difference)
+  }
+
   // Update account balances
   const updateBalance = (accountCode: string, debit: number, credit: number) => {
-    const year = parseInt(date.split('-')[0])
+    const yr = parseInt(date.split('-')[0])
     const month = parseInt(date.split('-')[1])
-    
-    const accountStmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-    const account = accountStmt.get(accountCode, tenantId) as any
-    
+    const account = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(accountCode, tenantId) as any
     if (!account) return
-    
-    const checkStmt = db.prepare(`
-      SELECT id FROM account_balances 
-      WHERE account_id = ? AND fiscal_year = ? AND period = ?
-    `)
-    const existing = checkStmt.get(account.id, year, month)
-    
+    const existing = db.prepare(`
+      SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
+    `).get(account.id, yr, month)
     if (existing) {
-      const updateStmt = db.prepare(`
-        UPDATE account_balances 
-        SET debit_amount = debit_amount + ?,
-            credit_amount = credit_amount + ?,
+      db.prepare(`
+        UPDATE account_balances
+        SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
             ending_balance = ending_balance + ? - ?
         WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `)
-      updateStmt.run(debit, credit, debit, credit, account.id, year, month)
+      `).run(debit, credit, debit, credit, account.id, yr, month)
     } else {
-      const balanceId = generateId()
-      const insertStmt = db.prepare(`
+      db.prepare(`
         INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-      `)
-      insertStmt.run(balanceId, tenantId, account.id, year, month, debit, credit, debit - credit)
+      `).run(generateId(), tenantId, account.id, yr, month, debit, credit, debit - credit)
     }
   }
-  
+
   updateBalance('1101', cashAmount, 0)
   updateBalance('1102', bankAmount, 0)
-  updateBalance('1180', 0, totalAmount)
+  updateBalance('1180', 0, billsTotal)
+  if (Math.abs(difference) > 0.01) {
+    // Short → Dr. 5901 (expense debit increases); Over → Cr. 5901 (expense credit decreases)
+    updateBalance('5901', difference < 0 ? Math.abs(difference) : 0, difference > 0 ? difference : 0)
+  }
 }
 
 export default router

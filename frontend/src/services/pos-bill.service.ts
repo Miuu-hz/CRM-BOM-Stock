@@ -22,9 +22,20 @@ const posBillService = {
     display_name?: string
     customer_name?: string
     customer_phone?: string
+    customer_id?: string
     notes?: string
   }) => {
     const response = await api.post('/pos/bills', data)
+    return response.data
+  },
+
+  assignMember: async (billId: string, customerId: string | null) => {
+    const response = await api.patch(`/pos/bills/${billId}/member`, { customer_id: customerId })
+    return response.data
+  },
+
+  searchCustomers: async (q: string) => {
+    const response = await api.get('/customers/search', { params: { q, limit: 8 } })
     return response.data
   },
 
@@ -73,6 +84,8 @@ const posBillService = {
     payment_method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD' | 'TRANSFER'
     received_amount?: number
     reference?: string
+    earn_rate?: number
+    redeem_points?: number
   }) => {
     const response = await api.post(`/pos/bills/${billId}/pay`, data)
     return response.data
@@ -80,6 +93,13 @@ const posBillService = {
 
   cancelBill: async (billId: string, data?: { reason?: string }) => {
     const response = await api.post(`/pos/bills/${billId}/cancel`, data)
+    return response.data
+  },
+
+  // ==================== GS1 Barcode Search ====================
+  
+  searchByGs1Barcode: async (barcode: string) => {
+    const response = await api.get(`/pos/search/gs1/${barcode}`)
     return response.data
   },
 }

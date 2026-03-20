@@ -1431,6 +1431,38 @@ router.get('/pos-daily-sales', async (req: Request, res: Response) => {
   }
 })
 
+// GET pending bills for daily sales (bills not yet included in any summary)
+// IMPORTANT: must be defined BEFORE /pos-daily-sales/:id to avoid route collision
+router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+
+    const bills = (db.prepare(`
+      SELECT
+        b.id,
+        b.bill_number,
+        b.display_name,
+        b.total_amount,
+        b.closed_at,
+        p.payment_method
+      FROM pos_running_bills b
+      JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.tenant_id = ?
+        AND b.status = 'PAID'
+        AND b.id NOT IN (
+          SELECT bill_id FROM pos_daily_sales_bills
+        )
+      ORDER BY b.closed_at DESC
+      LIMIT 100
+    `).all(tenantId) as any[])
+
+    res.json({ success: true, data: bills })
+  } catch (error) {
+    console.error('Get pending bills error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch pending bills' })
+  }
+})
+
 // GET single POS daily sales summary with details
 router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
   try {
@@ -1531,26 +1563,26 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
       })
     }
 
-    // Get all paid bills for this date that haven't been included in any summary
+    // Get all paid bills not yet included in any summary (regardless of date)
+    // User selects the sales_date for the shift — don't filter by closed_at date
     const bills = db.prepare(`
-      SELECT 
+      SELECT
         b.*,
         p.payment_method,
         p.amount as payment_amount
       FROM pos_running_bills b
       JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ? 
+      WHERE b.tenant_id = ?
         AND b.status = 'PAID'
-        AND DATE(b.closed_at) = ?
         AND b.id NOT IN (
           SELECT bill_id FROM pos_daily_sales_bills
         )
-    `).all(tenantId, targetDate) as any[]
+    `).all(tenantId) as any[]
 
     if (bills.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No paid bills found for this date' 
+      return res.status(400).json({
+        success: false,
+        message: 'ไม่มีบิลที่ชำระแล้วที่รอปิดกะ'
       })
     }
 
@@ -1680,37 +1712,289 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
   }
 })
 
-// GET pending bills for daily sales (bills not yet included in any summary)
-router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response) => {
+// ============================================
+// POS SHIFTS (เปิด/ปิดกะ)
+// ============================================
+
+// GET current open shift
+router.get('/pos-shifts/current', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { date } = req.query
+    const shift = db.prepare(`
+      SELECT s.*, u.name as opened_by_name
+      FROM pos_shifts s
+      LEFT JOIN users u ON s.opened_by = u.id
+      WHERE s.tenant_id = ? AND s.status = 'OPEN'
+      ORDER BY s.opened_at DESC LIMIT 1
+    `).get(tenantId) as any
 
-    const targetDate = date || new Date().toISOString().split('T')[0]
+    if (!shift) return res.json({ success: true, data: null })
 
-    const bills = db.prepare(`
-      SELECT 
-        b.id,
-        b.bill_number,
-        b.display_name,
-        b.total_amount,
-        b.closed_at,
-        p.payment_method
+    // Attach current sales summary from bills since shift opened
+    const sales = db.prepare(`
+      SELECT
+        COUNT(*) as bill_count,
+        COALESCE(SUM(b.total_amount), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
+        COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
       FROM pos_running_bills b
-      JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ? 
-        AND b.status = 'PAID'
-        AND DATE(b.closed_at) = ?
-        AND b.id NOT IN (
-          SELECT bill_id FROM pos_daily_sales_bills
-        )
-      ORDER BY b.closed_at ASC
-    `).all(tenantId, targetDate)
+      LEFT JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.closed_at >= ?
+    `).get(tenantId, shift.opened_at) as any
 
-    res.json({ success: true, data: bills })
+    res.json({ success: true, data: { ...shift, live: sales } })
   } catch (error) {
-    console.error('Get pending bills error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch pending bills' })
+    console.error('Get current shift error:', error)
+    res.status(500).json({ success: false, message: 'Failed to get current shift' })
+  }
+})
+
+// GET shift list
+router.get('/pos-shifts', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { limit = 20 } = req.query
+    const shifts = db.prepare(`
+      SELECT s.*, uo.name as opened_by_name, uc.name as closed_by_name
+      FROM pos_shifts s
+      LEFT JOIN users uo ON s.opened_by = uo.id
+      LEFT JOIN users uc ON s.closed_by = uc.id
+      WHERE s.tenant_id = ?
+      ORDER BY s.opened_at DESC
+      LIMIT ?
+    `).all(tenantId, parseInt(limit as string)) as any[]
+
+    res.json({ success: true, data: shifts })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to get shifts' })
+  }
+})
+
+// POST open shift
+router.post('/pos-shifts/open', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+    const { opening_cash, notes } = req.body
+
+    if (opening_cash === undefined || opening_cash === null) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุเงินสดเปิดกะ' })
+    }
+
+    // Check no open shift already
+    const existing = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN'`).get(tenantId)
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'มีกะที่เปิดอยู่แล้ว กรุณาปิดกะก่อน' })
+    }
+
+    const count = (db.prepare(`SELECT COUNT(*) as c FROM pos_shifts WHERE tenant_id = ?`).get(tenantId) as any).c
+    const shiftNumber = `SHIFT-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+    const id = generateId()
+    const nowStr = new Date().toISOString()
+
+    db.prepare(`
+      INSERT INTO pos_shifts (id, tenant_id, shift_number, status, opened_at, opening_cash, opened_by, notes, created_at)
+      VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)
+    `).run(id, tenantId, shiftNumber, nowStr, opening_cash, userId, notes || null, nowStr)
+
+    res.json({ success: true, message: 'เปิดกะสำเร็จ', data: { id, shift_number: shiftNumber, opened_at: nowStr } })
+  } catch (error) {
+    console.error('Open shift error:', error)
+    res.status(500).json({ success: false, message: 'Failed to open shift' })
+  }
+})
+
+// POST close shift
+router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+    const { id } = req.params
+    const { closing_cash_counted, notes } = req.body
+
+    if (closing_cash_counted === undefined || closing_cash_counted === null) {
+      return res.status(400).json({ success: false, message: 'กรุณานับและกรอกเงินสดในลิ้นชัก' })
+    }
+
+    const shift = db.prepare(`SELECT * FROM pos_shifts WHERE id = ? AND tenant_id = ? AND status = 'OPEN'`).get(id, tenantId) as any
+    if (!shift) return res.status(404).json({ success: false, message: 'ไม่พบกะที่เปิดอยู่' })
+
+    // Calculate sales in this shift
+    const sales = db.prepare(`
+      SELECT
+        COUNT(*) as bill_count,
+        COALESCE(SUM(b.total_amount), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
+        COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
+      FROM pos_running_bills b
+      LEFT JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.closed_at >= ?
+    `).get(tenantId, shift.opened_at) as any
+
+    const expectedCash = (shift.opening_cash || 0) + (sales.cash_revenue || 0)
+    const cashDifference = closing_cash_counted - expectedCash
+    const nowStr = new Date().toISOString()
+
+    db.prepare(`
+      UPDATE pos_shifts SET
+        status = 'CLOSED', closed_at = ?,
+        closing_cash_counted = ?, expected_cash = ?, cash_difference = ?,
+        total_revenue = ?, cash_revenue = ?, bank_revenue = ?,
+        bill_count = ?, closed_by = ?,
+        notes = COALESCE(?, notes)
+      WHERE id = ?
+    `).run(
+      nowStr, closing_cash_counted, expectedCash, cashDifference,
+      sales.total_revenue, sales.cash_revenue, sales.bank_revenue,
+      sales.bill_count, userId, notes || null, id
+    )
+
+    res.json({
+      success: true,
+      message: 'ปิดกะสำเร็จ',
+      data: {
+        shift_number: shift.shift_number,
+        total_revenue: sales.total_revenue,
+        cash_revenue: sales.cash_revenue,
+        bank_revenue: sales.bank_revenue,
+        bill_count: sales.bill_count,
+        expected_cash: expectedCash,
+        closing_cash_counted,
+        cash_difference: cashDifference
+      }
+    })
+  } catch (error) {
+    console.error('Close shift error:', error)
+    res.status(500).json({ success: false, message: 'Failed to close shift' })
+  }
+})
+
+// ============================================
+// POS BILL VOID
+// ============================================
+
+// Void a paid POS bill (only if not yet cleared)
+router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+    const { id } = req.params
+    const { reason } = req.body
+
+    const bill = db.prepare(`
+      SELECT b.*, p.payment_method
+      FROM pos_running_bills b
+      LEFT JOIN pos_payments p ON b.id = p.bill_id
+      WHERE b.id = ? AND b.tenant_id = ?
+    `).get(id, tenantId) as any
+
+    if (!bill) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบิล' })
+    }
+    if (bill.status !== 'PAID') {
+      return res.status(400).json({ success: false, message: 'ยกเลิกได้เฉพาะบิลที่ชำระแล้วเท่านั้น' })
+    }
+
+    const alreadyCleared = db.prepare(`
+      SELECT id FROM pos_clearing_transfer_items WHERE bill_id = ? AND tenant_id = ?
+    `).get(id, tenantId)
+    if (alreadyCleared) {
+      return res.status(400).json({ success: false, message: 'บิลนี้นำเงินเข้าบัญชีแล้ว ไม่สามารถยกเลิกได้' })
+    }
+
+    const nowStr = new Date().toISOString()
+    const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
+
+    db.prepare(`
+      UPDATE pos_running_bills SET status = 'VOID', updated_at = ? WHERE id = ?
+    `).run(nowStr, id)
+
+    // Reversal journal: Dr. Revenue 4100, Cr. Clearing 1180
+    const getOrCreate = (code: string, name: string, type: string, category: string, normalBalance: string) => {
+      const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
+      if (existing) return existing.id
+      const newId = generateId()
+      db.prepare(`
+        INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
+      `).run(newId, tenantId, code, name, type, category, normalBalance)
+      return newId
+    }
+
+    const year = new Date().getFullYear()
+    const prefix = `JV-${year}-`
+    const last = db.prepare(`
+      SELECT entry_number FROM journal_entries
+      WHERE tenant_id = ? AND entry_number LIKE ? ORDER BY entry_number DESC LIMIT 1
+    `).get(tenantId, `${prefix}%`) as any
+    let seq = 1
+    if (last) {
+      const m = last.entry_number.match(/-(\d+)$/)
+      if (m) seq = parseInt(m[1]) + 1
+    }
+    const entryNumber = `${prefix}${String(seq).padStart(6, '0')}`
+    const entryId = generateId()
+    const date = nowStr.split('T')[0]
+
+    db.prepare(`
+      INSERT INTO journal_entries (
+        id, tenant_id, entry_number, date, reference_type, reference_id,
+        description, total_debit, total_credit, is_auto_generated, created_by, created_at
+      ) VALUES (?, ?, ?, ?, 'POS_VOID', ?, ?, ?, ?, 1, ?, ?)
+    `).run(
+      entryId, tenantId, entryNumber, date, id,
+      `ยกเลิกบิล ${bill.bill_number}${reason ? ' - ' + reason : ''}`,
+      bill.total_amount, bill.total_amount, userId, nowStr
+    )
+
+    const revenueId = getOrCreate('4100', 'รายได้ขาย', 'REVENUE', 'REVENUE', 'CREDIT')
+    const clearingId = getOrCreate('1180', 'ลูกหนี้การค้า-POS', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+
+    db.prepare(`
+      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+      VALUES (?, ?, ?, ?, 1, ?, ?, 0)
+    `).run(generateId(), tenantId, entryId, revenueId, `ยกเลิกบิล ${bill.bill_number}`, bill.total_amount)
+
+    db.prepare(`
+      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+      VALUES (?, ?, ?, ?, 2, ?, 0, ?)
+    `).run(generateId(), tenantId, entryId, clearingId, `ยกเลิก Clearing ${bill.bill_number}`, bill.total_amount)
+
+    // Update account balances (reverse)
+    const updateBal = (code: string, debit: number, credit: number) => {
+      const yr = parseInt(date.split('-')[0])
+      const mo = parseInt(date.split('-')[1])
+      const acc = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
+      if (!acc) return
+      const existing = db.prepare(`
+        SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
+      `).get(acc.id, yr, mo)
+      if (existing) {
+        db.prepare(`
+          UPDATE account_balances
+          SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
+              ending_balance = ending_balance + ? - ?
+          WHERE account_id = ? AND fiscal_year = ? AND period = ?
+        `).run(debit, credit, debit, credit, acc.id, yr, mo)
+      } else {
+        db.prepare(`
+          INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
+          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+        `).run(generateId(), tenantId, acc.id, yr, mo, debit, credit, debit - credit)
+      }
+    }
+
+    updateBal('4100', bill.total_amount, 0)  // Dr. Revenue (reduces net revenue)
+    updateBal('1180', 0, bill.total_amount)  // Cr. Clearing (reduces receivable)
+
+    res.json({
+      success: true,
+      message: `ยกเลิกบิล ${bill.bill_number} สำเร็จ`,
+      data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote }
+    })
+  } catch (error) {
+    console.error('Void bill error:', error)
+    res.status(500).json({ success: false, message: 'ยกเลิกบิลไม่สำเร็จ' })
   }
 })
 

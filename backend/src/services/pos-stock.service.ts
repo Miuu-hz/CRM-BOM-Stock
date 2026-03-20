@@ -155,9 +155,9 @@ class POSStockService {
         throw new Error('Bill not found')
       }
 
-      // Get all items with menu config (including bom_id)
+      // Get all items with menu config (including bom_id and product_id)
       const itemsStmt = db.prepare(`
-        SELECT bi.*, pmc.id as menu_config_id, pmc.bom_id
+        SELECT bi.*, pmc.id as menu_config_id, pmc.bom_id, pmc.product_id
         FROM pos_bill_items bi
         JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
         WHERE bi.bill_id = ? AND bi.tenant_id = ?
@@ -168,11 +168,11 @@ class POSStockService {
       for (const item of items) {
         // Get ingredients - ใช้ BOM ถ้ามี bom_id ไม่งันใช้ pos_menu_ingredients
         let ingredients: any[] = []
-        
+
         if (item.bom_id) {
           // ดึงวัตถุดิบจาก BOM items
           const ingStmt = db.prepare(`
-            SELECT 
+            SELECT
               bi.id,
               bi.material_id as stock_item_id,
               bi.quantity as quantity_used
@@ -183,10 +183,15 @@ class POSStockService {
         } else {
           // ใช้ pos_menu_ingredients (แบบเก่า)
           const ingStmt = db.prepare(`
-            SELECT * FROM pos_menu_ingredients 
+            SELECT * FROM pos_menu_ingredients
             WHERE pos_menu_id = ? AND tenant_id = ?
           `)
           ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
+        }
+
+        // ถ้าไม่มี ingredient เลย ให้ตัด stock จาก product_id โดยตรง (1 ชิ้นต่อ 1 ครั้งขาย)
+        if (ingredients.length === 0 && item.product_id) {
+          ingredients = [{ stock_item_id: item.product_id, quantity_used: 1, unit_id: null }]
         }
 
         for (const ing of ingredients) {

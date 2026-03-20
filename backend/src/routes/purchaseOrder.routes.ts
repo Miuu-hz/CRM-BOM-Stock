@@ -94,7 +94,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, expectedDate, notes, items, taxRate } = req.body
+    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId } = req.body
     const id = generateId()
     const poNumber = generatePONumber(tenantId)
     const now = new Date().toISOString()
@@ -109,9 +109,9 @@ router.post('/', async (req: Request, res: Response) => {
     const totalAmount = subtotal + taxAmount
 
     const insertPO = db.prepare(`
-      INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date, 
-        subtotal, tax_rate, tax_amount, total_amount, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
+        subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertItem = db.prepare(`
@@ -121,8 +121,8 @@ router.post('/', async (req: Request, res: Response) => {
     `)
 
     const transaction = db.transaction(() => {
-      insertPO.run(id, tenantId, poNumber, supplierId, now, expectedDate || null, 
-        subtotal, tax, taxAmount, totalAmount, notes || '', now, now)
+      insertPO.run(id, tenantId, poNumber, supplierId, now, expectedDate || null,
+        subtotal, tax, taxAmount, totalAmount, notes || '', linkedPrId || null, now, now)
 
       if (items && items.length > 0) {
         for (const item of items) {

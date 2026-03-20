@@ -156,8 +156,8 @@ const posService = {
     return response.data
   },
 
-  getPendingClearingBills: async () => {
-    const response = await api.get('/pos/clearing/pending-bills')
+  getPendingClearingBills: async (date?: string) => {
+    const response = await api.get('/pos/clearing/pending-bills', { params: date ? { date } : {} })
     return response.data
   },
 
@@ -179,6 +179,11 @@ const posService = {
     limit?: number
   }) => {
     const response = await api.get('/pos/clearing/transfers', { params })
+    return response.data
+  },
+
+  voidBill: async (id: string, reason: string) => {
+    const response = await api.post(`/sales/pos-running-bills/${id}/void`, { reason })
     return response.data
   },
 }

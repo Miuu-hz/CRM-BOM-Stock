@@ -255,6 +255,9 @@ router.post('/validate', async (req: Request, res: Response) => {
       errors: [] as string[]
     }
 
+    // Build duplicate SKU set within the file itself
+    const fileSkus = new Set<string>()
+
     for (let i = 0; i < data.length; i++) {
       const row = data[i]
       const rowErrors = []
@@ -265,6 +268,11 @@ router.post('/validate', async (req: Request, res: Response) => {
       } else if (type === 'stock') {
         if (!row.name) rowErrors.push('Name is required')
         if (!row.unit) rowErrors.push('Unit is required')
+        // Check for duplicate SKU within the file
+        if (row.sku) {
+          if (fileSkus.has(row.sku)) rowErrors.push(`SKU "${row.sku}" ซ้ำในไฟล์`)
+          else fileSkus.add(row.sku)
+        }
       }
 
       if (rowErrors.length > 0) {
