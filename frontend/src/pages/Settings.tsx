@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Settings,
@@ -39,7 +39,7 @@ interface ChildUser {
 }
 
 export default function SettingsPage() {
-  const { user, isMaster, children, loadChildren, createChildUser, deleteChildUser } = useAuth()
+  const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -54,7 +54,7 @@ export default function SettingsPage() {
 
   // Update local state when children changes
   useEffect(() => {
-    setLocalChildren(children as ChildUser[])
+    setLocalChildren((children as unknown) as ChildUser[])
   }, [children])
 
   const loadChildrenData = async () => {
@@ -583,15 +583,122 @@ function LoyaltySettings() {
 
 // General Settings
 function GeneralSettings() {
-  const { user, tenant, isMaster } = useAuth()
+  const { tenant, isMaster } = useAuth()
+  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', logo_base64: '' })
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    import('../services/companySettings.service').then(m => {
+      m.default.get().then(d => {
+        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', logo_base64: d.logo_base64 || '' })
+      }).catch(() => {})
+    })
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveMsg('')
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update(co)
+      setSaveMsg('บันทึกสำเร็จ')
+      setTimeout(() => setSaveMsg(''), 3000)
+    } catch {
+      setSaveMsg('บันทึกไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setCo(prev => ({ ...prev, logo_base64: ev.target?.result as string }))
+    reader.readAsDataURL(file)
+  }
 
   return (
     <div className="space-y-6">
-      {/* Company Info */}
+      {/* Company Profile — editable */}
+      <div className="cyber-card p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-cyber-primary" />
+            ข้อมูลบริษัท (สำหรับใบบิล)
+          </h3>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="cyber-btn-primary flex items-center gap-2 text-sm px-4 py-2"
+          >
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+          </button>
+        </div>
+
+        {saveMsg && (
+          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-cyber-green/10 text-cyber-green border border-cyber-green/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
+            {saveMsg}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Logo */}
+          <div className="md:col-span-2 flex items-center gap-4">
+            <div
+              className="w-20 h-20 rounded-lg border-2 border-dashed border-cyber-border flex items-center justify-center cursor-pointer hover:border-cyber-primary/50 transition-colors overflow-hidden bg-cyber-dark"
+              onClick={() => fileRef.current?.click()}
+            >
+              {co.logo_base64
+                ? <img src={co.logo_base64} alt="logo" className="w-full h-full object-contain" />
+                : <Building2 className="w-8 h-8 text-gray-600" />}
+            </div>
+            <div>
+              <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-cyber-primary hover:underline">
+                อัปโหลดโลโก้
+              </button>
+              {co.logo_base64 && (
+                <button type="button" onClick={() => setCo(p => ({ ...p, logo_base64: '' }))} className="ml-3 text-sm text-red-400 hover:underline">
+                  ลบ
+                </button>
+              )}
+              <p className="text-xs text-gray-500 mt-1">PNG/JPG, แสดงบนหัวใบบิล</p>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">ชื่อบริษัท / ร้าน</label>
+            <input type="text" value={co.name} onChange={e => setCo(p => ({ ...p, name: e.target.value }))} className="cyber-input w-full" placeholder="บริษัท ตัวอย่าง จำกัด" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">เลขผู้เสียภาษี (Tax ID)</label>
+            <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="cyber-input w-full" placeholder="0-0000-00000-00-0" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-400 mb-1">ที่อยู่</label>
+            <textarea value={co.address} onChange={e => setCo(p => ({ ...p, address: e.target.value }))} className="cyber-input w-full resize-none" rows={3} placeholder="เลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">โทรศัพท์</label>
+            <input type="text" value={co.phone} onChange={e => setCo(p => ({ ...p, phone: e.target.value }))} className="cyber-input w-full" placeholder="02-xxx-xxxx" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">อีเมล</label>
+            <input type="email" value={co.email} onChange={e => setCo(p => ({ ...p, email: e.target.value }))} className="cyber-input w-full" placeholder="info@company.com" />
+          </div>
+        </div>
+      </div>
+
+      {/* Tenant meta (read-only) */}
       <div className="cyber-card p-6">
         <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Building2 className="w-5 h-5 text-cyber-primary" />
-          ข้อมูลองค์กร
+          <Shield className="w-5 h-5 text-cyber-primary" />
+          ข้อมูลบัญชี
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -599,20 +706,10 @@ function GeneralSettings() {
             <p className="text-gray-200 font-mono">{tenant?.code || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">ชื่อองค์กร</label>
-            <p className="text-gray-200">{tenant?.name || '-'}</p>
-          </div>
-          <div>
             <label className="block text-sm text-gray-400 mb-1">ประเภทบัญชี</label>
             <p className={`font-semibold ${isMaster ? 'text-cyber-green' : 'text-cyber-primary'}`}>
               {isMaster ? 'Master Account' : 'Standard Account'}
             </p>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">สถานะ</label>
-            <span className="px-2 py-1 bg-cyber-green/20 text-cyber-green rounded text-sm">
-              Active
-            </span>
           </div>
         </div>
       </div>

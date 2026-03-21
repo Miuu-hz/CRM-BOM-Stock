@@ -1926,6 +1926,152 @@ try {
   }
 } catch (e) { console.error('⚠️ goods_receipt_ids migration error:', e) }
 
+// Migration: fix quotation_items — make product_id nullable, add product_name + stock_item_id
+try {
+  const cols = db.prepare(`PRAGMA table_info(quotation_items)`).all() as any[]
+  const hasProductName = cols.some((c: any) => c.name === 'product_name')
+  const hasStockItemId = cols.some((c: any) => c.name === 'stock_item_id')
+  const productIdNotNull = cols.find((c: any) => c.name === 'product_id')?.notnull === 1
+
+  if (!hasProductName || !hasStockItemId || productIdNotNull) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS quotation_items_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        quotation_id TEXT NOT NULL,
+        stock_item_id TEXT,
+        product_id TEXT,
+        product_name TEXT,
+        quantity REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        discount_percent REAL DEFAULT 0,
+        total_price REAL DEFAULT 0,
+        notes TEXT,
+        FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE CASCADE,
+        FOREIGN KEY (stock_item_id) REFERENCES stock_items(id)
+      );
+      INSERT INTO quotation_items_new (id, tenant_id, quotation_id, stock_item_id, product_id, product_name, quantity, unit_price, discount_percent, total_price, notes)
+        SELECT id, tenant_id, quotation_id, NULL, product_id, NULL, quantity, unit_price, discount_percent, total_price, notes FROM quotation_items;
+      DROP TABLE quotation_items;
+      ALTER TABLE quotation_items_new RENAME TO quotation_items;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: rebuilt quotation_items with nullable product_id + product_name + stock_item_id')
+  }
+} catch (error) {
+  console.error('⚠️ quotation_items migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: fix invoice_items — make product_id + sales_order_item_id nullable, add stock_item_id + product_name
+try {
+  const cols = db.prepare(`PRAGMA table_info(invoice_items)`).all() as any[]
+  const hasProductName = cols.some((c: any) => c.name === 'product_name')
+  const hasStockItemId = cols.some((c: any) => c.name === 'stock_item_id')
+  const productIdNotNull = cols.find((c: any) => c.name === 'product_id')?.notnull === 1
+  const soItemNotNull = cols.find((c: any) => c.name === 'sales_order_item_id')?.notnull === 1
+
+  if (!hasProductName || !hasStockItemId || productIdNotNull || soItemNotNull) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_items_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        invoice_id TEXT NOT NULL,
+        sales_order_item_id TEXT,
+        stock_item_id TEXT,
+        product_id TEXT,
+        product_name TEXT,
+        quantity REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        total_price REAL DEFAULT 0,
+        FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+        FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id),
+        FOREIGN KEY (stock_item_id) REFERENCES stock_items(id)
+      );
+      INSERT INTO invoice_items_new (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
+        SELECT id, tenant_id, invoice_id, sales_order_item_id, NULL, product_id, NULL, quantity, unit_price, total_price FROM invoice_items;
+      DROP TABLE invoice_items;
+      ALTER TABLE invoice_items_new RENAME TO invoice_items;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: rebuilt invoice_items with nullable product_id + stock_item_id + product_name')
+  }
+} catch (error) {
+  console.error('⚠️ invoice_items migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: fix sales_order_items — make product_id nullable, add product_name + stock_item_id
+try {
+  const cols = db.prepare(`PRAGMA table_info(sales_order_items)`).all() as any[]
+  const hasProductName = cols.some((c: any) => c.name === 'product_name')
+  const hasStockItemId = cols.some((c: any) => c.name === 'stock_item_id')
+  const productIdNotNull = cols.find((c: any) => c.name === 'product_id')?.notnull === 1
+
+  if (!hasProductName || !hasStockItemId || productIdNotNull) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sales_order_items_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        sales_order_id TEXT NOT NULL,
+        stock_item_id TEXT,
+        product_id TEXT,
+        product_name TEXT,
+        quotation_item_id TEXT,
+        quantity REAL DEFAULT 0,
+        delivered_qty REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        discount_percent REAL DEFAULT 0,
+        total_price REAL DEFAULT 0,
+        notes TEXT,
+        FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (stock_item_id) REFERENCES stock_items(id),
+        FOREIGN KEY (quotation_item_id) REFERENCES quotation_items(id)
+      );
+      INSERT INTO sales_order_items_new (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quotation_item_id, quantity, delivered_qty, unit_price, discount_percent, total_price, notes)
+        SELECT id, tenant_id, sales_order_id, NULL, product_id, NULL, quotation_item_id, quantity, delivered_qty, unit_price, discount_percent, total_price, notes FROM sales_order_items;
+      DROP TABLE sales_order_items;
+      ALTER TABLE sales_order_items_new RENAME TO sales_order_items;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: rebuilt sales_order_items with nullable product_id + product_name + stock_item_id')
+  }
+} catch (error) {
+  console.error('⚠️ sales_order_items migration error:', error)
+  db.pragma('foreign_keys = ON')
+}
+
+// Migration: add source_number + so_number to journal_entries for cross-reference with Sales
+try {
+  db.exec(`ALTER TABLE journal_entries ADD COLUMN source_number TEXT`)
+  console.log('✅ Migration: added source_number to journal_entries')
+} catch (e) { /* already exists */ }
+
+try {
+  db.exec(`ALTER TABLE journal_entries ADD COLUMN so_number TEXT`)
+  console.log('✅ Migration: added so_number to journal_entries')
+} catch (e) { /* already exists */ }
+
+// Migration: create company_settings table
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS company_settings (
+      tenant_id TEXT PRIMARY KEY,
+      name      TEXT,
+      address   TEXT,
+      phone     TEXT,
+      email     TEXT,
+      tax_id    TEXT,
+      logo_base64 TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+  console.log('✅ Migration: company_settings table ready')
+} catch (e) { console.error('⚠️ company_settings migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db

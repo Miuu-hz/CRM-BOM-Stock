@@ -9,6 +9,15 @@ import {
   X,
   Star,
   Loader2,
+  Phone,
+  Mail,
+  MapPin,
+  ShoppingCart,
+  TrendingUp,
+  Package,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
 } from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
 
@@ -20,6 +29,7 @@ export default function SupplierTab() {
   const [selectedType, setSelectedType] = useState('all')
   const [showModal, setShowModal] = useState(false)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
+  const [detailSupplier, setDetailSupplier] = useState<Supplier | null>(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -140,6 +150,8 @@ export default function SupplierTab() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.03 }}
+                    className="cursor-pointer hover:bg-cyber-primary/5 transition-colors"
+                    onClick={() => setDetailSupplier(supplier)}
                   >
                     <td>
                       <div className="flex items-center gap-3">
@@ -147,7 +159,7 @@ export default function SupplierTab() {
                           <Truck className="w-5 h-5 text-cyber-purple" />
                         </div>
                         <div>
-                          <p className="text-gray-200 font-medium">{supplier.name}</p>
+                          <p className="text-gray-200 font-medium hover:text-cyber-primary transition-colors">{supplier.name}</p>
                           <p className="text-gray-500 text-xs">{supplier.code}</p>
                         </div>
                       </div>
@@ -187,7 +199,7 @@ export default function SupplierTab() {
                       </span>
                     </td>
                     <td>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => { setEditingSupplier(supplier); setShowModal(true) }}
                           className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg">
                           <Edit2 className="w-4 h-4" />
@@ -206,13 +218,37 @@ export default function SupplierTab() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Create/Edit Modal */}
       <SupplierModal
         open={showModal}
         supplier={editingSupplier}
         onClose={() => { setShowModal(false); setEditingSupplier(null) }}
         onSave={loadData}
       />
+
+      {/* Detail Modal */}
+      <AnimatePresence>
+        {detailSupplier && (
+          <SupplierDetailModal
+            supplier={detailSupplier}
+            onClose={() => setDetailSupplier(null)}
+            onEdit={() => {
+              setEditingSupplier(detailSupplier)
+              setDetailSupplier(null)
+              setShowModal(true)
+            }}
+            onDelete={async () => {
+              try {
+                await supplierService.delete(detailSupplier.id)
+                setDetailSupplier(null)
+                loadData()
+              } catch (err: any) {
+                alert(err.response?.data?.message || 'ไม่สามารถลบผู้จัดจำหน่ายได้')
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -381,5 +417,426 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
         </motion.div>
       )}
     </AnimatePresence>
+  )
+}
+
+// ─── Supplier Detail Modal ────────────────────────────────────────────────────
+
+function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
+  supplier: Supplier
+  onClose: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [activeTab, setActiveTab] = useState('overview')
+  const [insights, setInsights] = useState<any>(null)
+  const [loadingInsights, setLoadingInsights] = useState(true)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
+
+  useEffect(() => {
+    supplierService.getInsights(supplier.id).then(data => {
+      setInsights(data)
+    }).catch(console.error).finally(() => setLoadingInsights(false))
+  }, [supplier.id])
+
+  const typeColor: Record<string, string> = {
+    RAW_MATERIAL: 'text-blue-400 bg-blue-500/20 border-blue-500/30',
+    PACKAGING: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30',
+    SERVICE: 'text-purple-400 bg-purple-500/20 border-purple-500/30',
+    OTHER: 'text-gray-400 bg-gray-500/20 border-gray-500/30',
+  }
+  const typeLabel: Record<string, string> = {
+    RAW_MATERIAL: 'Raw Material', PACKAGING: 'Packaging', SERVICE: 'Service', OTHER: 'Other',
+  }
+  const statusColor: Record<string, string> = {
+    ACTIVE: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+    INACTIVE: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+    BLOCKED: 'bg-red-500/20 text-red-400 border-red-500/30',
+  }
+
+  const tabs = [
+    { id: 'overview', label: 'ภาพรวม' },
+    { id: 'orders', label: 'คำสั่งซื้อ' },
+    { id: 'materials', label: 'วัตถุดิบ' },
+  ]
+
+  const stats = insights?.stats
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.92, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-5xl max-h-[95vh] flex overflow-hidden rounded-2xl border border-cyber-border shadow-2xl"
+      >
+        {/* ── LEFT SIDEBAR ──────────────────────────────────── */}
+        <div className="w-64 flex-shrink-0 bg-cyber-card border-r border-cyber-border flex flex-col overflow-y-auto">
+          {/* Avatar */}
+          <div className="p-6 flex flex-col items-center text-center border-b border-cyber-border">
+            <div className="w-20 h-20 rounded-2xl bg-cyber-purple/20 border border-cyber-purple/40 flex items-center justify-center mb-3">
+              <Truck className="w-10 h-10 text-cyber-purple" />
+            </div>
+            <p className="text-lg font-bold text-gray-100 leading-tight">{supplier.name}</p>
+            <p className="text-xs text-gray-500 mt-1 font-mono">{supplier.code}</p>
+            <div className="flex gap-1.5 mt-3 flex-wrap justify-center">
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${typeColor[supplier.type] ?? 'text-gray-400 bg-gray-500/20 border-gray-500/30'}`}>
+                {typeLabel[supplier.type] ?? supplier.type}
+              </span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor[supplier.status] ?? ''}`}>
+                {supplier.status}
+              </span>
+            </div>
+
+            {/* Edit / Delete */}
+            <div className="mt-4 flex gap-2 w-full">
+              <button
+                onClick={onEdit}
+                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-cyber-primary/10 text-cyber-primary border border-cyber-primary/30 text-xs hover:bg-cyber-primary/20 transition-colors"
+              >
+                <Pencil className="w-3 h-3" /> แก้ไข
+              </button>
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 text-xs hover:bg-red-500/20 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" /> ลบ
+                </button>
+              ) : (
+                <div className="flex-1 flex flex-col gap-1">
+                  <button
+                    onClick={onDelete}
+                    className="w-full px-2 py-1 rounded-lg bg-red-500/20 text-red-400 border border-red-500/40 text-xs hover:bg-red-500/30"
+                  >
+                    ยืนยันลบ
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="w-full px-2 py-1 rounded-lg bg-cyber-darker text-gray-400 border border-cyber-border text-xs"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Contact Info */}
+          <div className="p-4 border-b border-cyber-border space-y-2.5">
+            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">ผู้ติดต่อ</p>
+            {supplier.contact_name && (
+              <div className="flex items-center gap-2 text-sm text-gray-300">
+                <span className="text-gray-500 text-xs">👤</span> {supplier.contact_name}
+              </div>
+            )}
+            {supplier.phone && (
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <Phone className="w-3.5 h-3.5 text-cyber-primary" /> {supplier.phone}
+              </div>
+            )}
+            {supplier.email && (
+              <div className="flex items-center gap-2 text-sm text-gray-400 truncate">
+                <Mail className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="truncate">{supplier.email}</span>
+              </div>
+            )}
+            {supplier.city && (
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <MapPin className="w-3.5 h-3.5 text-red-400" /> {supplier.city}
+              </div>
+            )}
+          </div>
+
+          {/* Terms + Tax */}
+          <div className="p-4 border-b border-cyber-border space-y-2">
+            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">เงื่อนไข</p>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Payment Terms</span>
+              <span className="text-yellow-400 font-medium">{supplier.payment_terms || '-'}</span>
+            </div>
+            {supplier.tax_id && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Tax ID</span>
+                <span className="text-gray-300 font-mono">{supplier.tax_id}</span>
+              </div>
+            )}
+            <div className="flex gap-0.5 mt-1">
+              {[1,2,3,4,5].map(s => (
+                <Star key={s} className={`w-3.5 h-3.5 ${s <= supplier.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'}`} />
+              ))}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="p-4 space-y-2">
+            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">สถิติ</p>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">คำสั่งซื้อ</span>
+              <span className="text-cyber-primary font-bold">{supplier.total_orders || 0}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">ยอดซื้อรวม</span>
+              <span className="text-cyber-green font-bold">฿{(supplier.total_spent || 0).toLocaleString()}</span>
+            </div>
+            {stats?.avgOrderValue != null && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">เฉลี่ย/ออเดอร์</span>
+                <span className="text-gray-300">฿{Math.round(stats.avgOrderValue).toLocaleString()}</span>
+              </div>
+            )}
+            {stats?.daysSinceLastOrder != null && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">ล่าสุด</span>
+                <span className="text-gray-400">{stats.daysSinceLastOrder} วันที่แล้ว</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RIGHT PANEL ───────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-cyber-border bg-cyber-card/30">
+            <div className="flex gap-1">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/40'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-cyber-border/20'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-cyber-border/30 rounded-lg">
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto p-5">
+            {loadingInsights ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-cyber-purple animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* OVERVIEW TAB */}
+                {activeTab === 'overview' && (
+                  <div className="space-y-5">
+                    {/* Stats cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { label: 'คำสั่งซื้อทั้งหมด', value: stats?.totalOrders ?? 0, suffix: 'ครั้ง', color: 'text-cyber-primary' },
+                        { label: 'ยอดซื้อรวม', value: `฿${(stats?.totalSpent ?? 0).toLocaleString()}`, suffix: '', color: 'text-cyber-green' },
+                        { label: 'เฉลี่ย/ออเดอร์', value: `฿${Math.round(stats?.avgOrderValue ?? 0).toLocaleString()}`, suffix: '', color: 'text-yellow-400' },
+                        { label: 'ห่างจากออเดอร์ล่าสุด', value: stats?.daysSinceLastOrder ?? '-', suffix: stats?.daysSinceLastOrder != null ? 'วัน' : '', color: 'text-cyber-purple' },
+                      ].map((item, i) => (
+                        <div key={i} className="cyber-card p-4">
+                          <p className="text-xs text-gray-500 mb-1">{item.label}</p>
+                          <p className={`text-xl font-bold ${item.color} font-['Orbitron']`}>
+                            {item.value}{item.suffix && <span className="text-sm ml-1 font-normal">{item.suffix}</span>}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Spending Trend */}
+                    {insights?.spendingTrend?.length > 0 && (
+                      <div className="cyber-card p-4">
+                        <p className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-cyber-purple" /> ยอดซื้อรายเดือน (12 เดือนล่าสุด)
+                        </p>
+                        <SpendingTrendBars trend={insights.spendingTrend} />
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {supplier.notes && (
+                      <div className="cyber-card p-4">
+                        <p className="text-xs text-gray-500 mb-2">หมายเหตุ</p>
+                        <p className="text-sm text-gray-300">{supplier.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ORDERS TAB */}
+                {activeTab === 'orders' && (
+                  <div className="space-y-3">
+                    {!insights?.recentOrders?.length ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                        <p>ยังไม่มีคำสั่งซื้อ</p>
+                      </div>
+                    ) : (
+                      insights.recentOrders.map((order: any) => (
+                        <div key={order.id} className="cyber-card overflow-hidden">
+                          <div
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-cyber-border/10 transition-colors"
+                            onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="text-cyber-primary font-mono text-sm font-bold">{order.poNumber}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                                order.status === 'COMPLETED' ? 'bg-cyber-green/20 text-cyber-green border-cyber-green/30' :
+                                order.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                                order.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                                'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                              }`}>{order.status}</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs text-gray-500">{order.orderDate?.slice(0, 10)}</span>
+                              <span className="text-cyber-green font-bold text-sm">฿{(order.totalAmount ?? 0).toLocaleString()}</span>
+                              {expandedOrder === order.id
+                                ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                                : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                            </div>
+                          </div>
+                          {expandedOrder === order.id && order.items?.length > 0 && (
+                            <div className="border-t border-cyber-border bg-cyber-darker/50">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-cyber-border">
+                                    <th className="px-4 py-2 text-left text-gray-500 font-medium">วัตถุดิบ</th>
+                                    <th className="px-4 py-2 text-right text-gray-500 font-medium">จำนวน</th>
+                                    <th className="px-4 py-2 text-right text-gray-500 font-medium">ราคา/หน่วย</th>
+                                    <th className="px-4 py-2 text-right text-gray-500 font-medium">รวม</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {order.items.map((item: any, idx: number) => (
+                                    <tr key={idx} className="border-b border-cyber-border/40 last:border-0">
+                                      <td className="px-4 py-2 text-gray-300">{item.materialName || item.materialId || '-'}</td>
+                                      <td className="px-4 py-2 text-right text-gray-400">{item.quantity}</td>
+                                      <td className="px-4 py-2 text-right text-gray-400">฿{(item.unitPrice ?? 0).toLocaleString()}</td>
+                                      <td className="px-4 py-2 text-right text-cyber-green">฿{(item.totalPrice ?? 0).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* MATERIALS TAB */}
+                {activeTab === 'materials' && (
+                  <div className="space-y-4">
+                    {!insights?.topMaterials?.length ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                        <p>ยังไม่มีข้อมูลวัตถุดิบ</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-400 flex items-center gap-2">
+                          <Package className="w-4 h-4 text-cyber-purple" /> วัตถุดิบที่สั่งซื้อบ่อย
+                        </p>
+                        <TopMaterialsChart materials={insights.topMaterials} />
+                        <div className="cyber-card overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-cyber-border">
+                                <th className="px-4 py-3 text-left text-gray-500 font-medium">วัตถุดิบ</th>
+                                <th className="px-4 py-3 text-right text-gray-500 font-medium">จำนวนรวม</th>
+                                <th className="px-4 py-3 text-right text-gray-500 font-medium">ราคาเฉลี่ย</th>
+                                <th className="px-4 py-3 text-right text-gray-500 font-medium">ยอดรวม</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {insights.topMaterials.map((m: any, i: number) => (
+                                <tr key={i} className="border-b border-cyber-border/40 last:border-0 hover:bg-cyber-border/10">
+                                  <td className="px-4 py-3 text-gray-200 font-medium">{m.materialName || m.materialId || '-'}</td>
+                                  <td className="px-4 py-3 text-right text-cyber-primary font-semibold">{m.totalQuantity}</td>
+                                  <td className="px-4 py-3 text-right text-gray-400">฿{Math.round(m.avgUnitPrice ?? 0).toLocaleString()}</td>
+                                  <td className="px-4 py-3 text-right text-cyber-green font-semibold">฿{(m.totalSpent ?? 0).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ── Spending Trend Bars (simple SVG-free bar chart) ──────────────────────────
+function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: number; totalAmount: number }[] }) {
+  const max = Math.max(...trend.map(t => t.totalAmount), 1)
+  return (
+    <div className="flex items-end gap-1.5 h-28">
+      {trend.map((t, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+          <div
+            className="w-full rounded-t bg-cyber-purple/40 group-hover:bg-cyber-purple/70 transition-all cursor-default"
+            style={{ height: `${Math.max((t.totalAmount / max) * 96, 4)}px` }}
+          />
+          <span className="text-[9px] text-gray-600 whitespace-nowrap">{t.month.slice(5)}</span>
+          {/* Tooltip */}
+          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-cyber-card border border-cyber-border rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+            <p className="text-gray-300">{t.month}</p>
+            <p className="text-cyber-green">฿{t.totalAmount.toLocaleString()}</p>
+            <p className="text-gray-500">{t.orderCount} ออเดอร์</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Top Materials Horizontal Bars ─────────────────────────────────────────────
+const MATERIAL_COLORS = ['#a855f7','#06b6d4','#10b981','#f59e0b','#3b82f6','#ef4444','#8b5cf6','#14b8a6','#f97316','#6366f1']
+
+function TopMaterialsChart({ materials }: { materials: any[] }) {
+  const top5 = materials.slice(0, 5)
+  const maxQty = Math.max(...top5.map(m => m.totalQuantity), 1)
+  return (
+    <div className="cyber-card p-4 space-y-3">
+      {top5.map((m, i) => {
+        const pct = Math.round((m.totalQuantity / maxQty) * 100)
+        return (
+          <div key={i} className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-300 font-medium">{m.materialName || m.materialId || `วัตถุดิบ ${i+1}`}</span>
+              <span className="text-gray-500">{m.totalQuantity} หน่วย</span>
+            </div>
+            <div className="h-2 bg-cyber-darker rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, delay: i * 0.1 }}
+                className="h-full rounded-full"
+                style={{ backgroundColor: MATERIAL_COLORS[i] }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }

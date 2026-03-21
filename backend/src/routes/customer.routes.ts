@@ -15,9 +15,13 @@ router.get('/', (req: Request, res: Response) => {
     
     // ดึงเฉพาะลูกค้าของบริษัทนี้เท่านั้น (tenant_id filter)
     const customers = db.prepare(`
-      SELECT c.*, 
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.id) as total_orders,
-        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE customer_id = c.id) as total_revenue
+      SELECT c.*,
+        (SELECT COUNT(*) FROM orders WHERE customer_id = c.id)
+          + (SELECT COUNT(*) FROM sales_orders WHERE customer_id = c.id AND tenant_id = c.tenant_id AND status != 'CANCELLED')
+          as total_orders,
+        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE customer_id = c.id)
+          + (SELECT COALESCE(SUM(paid_amount), 0) FROM invoices WHERE customer_id = c.id AND tenant_id = c.tenant_id)
+          as total_revenue
       FROM customers c
       WHERE c.tenant_id = ?
       ORDER BY c.created_at DESC
@@ -67,8 +71,12 @@ router.get('/:id', (req: Request, res: Response) => {
     
     const customer = db.prepare(`
       SELECT c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.id) as total_orders,
-        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE customer_id = c.id) as total_revenue
+        (SELECT COUNT(*) FROM orders WHERE customer_id = c.id)
+          + (SELECT COUNT(*) FROM sales_orders WHERE customer_id = c.id AND tenant_id = c.tenant_id AND status != 'CANCELLED')
+          as total_orders,
+        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE customer_id = c.id)
+          + (SELECT COALESCE(SUM(paid_amount), 0) FROM invoices WHERE customer_id = c.id AND tenant_id = c.tenant_id)
+          as total_revenue
       FROM customers c
       WHERE c.id = ? AND c.tenant_id = ?
     `).get(id, tenantId) as any
@@ -192,109 +200,131 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), (req: Request, res: Respo
   }
 })
 
-// Get customer insights (orders, favourites, recommendations, proposals)
+// Get customer insights — includes Sales module stats + Quotations + stock links
 router.get('/:id/insights', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    
-    // Check customer exists and belongs to tenant
+
     const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    if (!customer) {
-      return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
-    }
-    
-    // Get order stats
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+
+    // ── Order stats (legacy orders table) ──────────────────────────────────────
     const orderStats = db.prepare(`
-      SELECT 
-        COUNT(*) as totalOrders,
+      SELECT COUNT(*) as totalOrders,
         COALESCE(SUM(total_amount), 0) as totalRevenue,
         MAX(order_date) as lastOrderDate,
-        CASE 
-          WHEN MAX(order_date) IS NOT NULL 
-          THEN julianday('now') - julianday(MAX(order_date))
-          ELSE NULL 
-        END as daysSinceLastOrder,
-        CASE 
-          WHEN COUNT(*) > 0 THEN COALESCE(SUM(total_amount), 0) / COUNT(*)
-          ELSE 0 
-        END as avgOrderValue
-      FROM orders 
-      WHERE customer_id = ?
+        CASE WHEN MAX(order_date) IS NOT NULL THEN julianday('now') - julianday(MAX(order_date)) ELSE NULL END as daysSinceLastOrder,
+        CASE WHEN COUNT(*) > 0 THEN COALESCE(SUM(total_amount), 0) / COUNT(*) ELSE 0 END as avgOrderValue
+      FROM orders WHERE customer_id = ?
     `).get(id) as any
-    
-    // Get recent orders with items
+
+    // ── Sales-module stats (sales_orders, invoices) ────────────────────────────
+    const soStats = db.prepare(`
+      SELECT COUNT(*) as totalSO,
+        COALESCE(SUM(total_amount), 0) as totalSOAmount,
+        MAX(order_date) as lastSODate
+      FROM sales_orders WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+    `).get(id, tenantId) as any
+
+    const invStats = db.prepare(`
+      SELECT COUNT(*) as totalInvoices,
+        COALESCE(SUM(total_amount), 0) as totalInvoiced,
+        COALESCE(SUM(CASE WHEN status = 'PAID' THEN total_amount ELSE 0 END), 0) as totalPaid,
+        COALESCE(SUM(CASE WHEN status IN ('ISSUED','PARTIAL','OVERDUE') THEN balance_amount ELSE 0 END), 0) as totalOutstanding
+      FROM invoices WHERE customer_id = ? AND tenant_id = ?
+    `).get(id, tenantId) as any
+
+    const qtStats = db.prepare(`
+      SELECT COUNT(*) as totalQT, COALESCE(SUM(total_amount), 0) as totalQTAmount
+      FROM quotations WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+    `).get(id, tenantId) as any
+
+    // ── Recent orders (fixed 10 for overview; paginated via /orders endpoint) ──
     const recentOrders = db.prepare(`
-      SELECT 
-        o.id, o.order_number as orderNumber, o.order_date as orderDate, 
+      SELECT o.id, o.order_number as orderNumber, o.order_date as orderDate,
         o.total_amount as totalAmount, o.status, o.notes
-      FROM orders o
-      WHERE o.customer_id = ?
-      ORDER BY o.order_date DESC
-      LIMIT 10
+      FROM orders o WHERE o.customer_id = ?
+      ORDER BY o.order_date DESC LIMIT 10
     `).all(id) as any[]
-    
-    // Get order items for each order
+
     for (const order of recentOrders) {
       order.items = db.prepare(`
-        SELECT 
-          oi.product_id as productId, 
-          COALESCE(p.name, oi.product_name) as productName,
-          COALESCE(p.category, 'ทั่วไป') as category,
+        SELECT oi.product_id as productId,
+          COALESCE(si.name, p.name, oi.product_id) as productName,
+          COALESCE(si.category, p.category, 'ทั่วไป') as category,
           oi.quantity, oi.total_price as totalPrice
         FROM order_items oi
+        LEFT JOIN stock_items si ON oi.product_id = si.id
         LEFT JOIN products p ON oi.product_id = p.id
         WHERE oi.order_id = ?
       `).all(order.id) || []
     }
-    
-    // Get favourite products (most ordered)
+
+    // ── Favourites — รวม legacy orders + sales_orders ──────────────────────────
     const favouriteProducts = db.prepare(`
-      SELECT 
-        oi.product_id as productId,
-        COALESCE(p.name, oi.product_name) as name,
-        COALESCE(p.category, 'ทั่วไป') as category,
-        SUM(oi.quantity) as totalQuantity,
-        SUM(oi.total_price) as totalRevenue
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      LEFT JOIN products p ON oi.product_id = p.id
-      WHERE o.customer_id = ?
-      GROUP BY oi.product_id
-      ORDER BY totalQuantity DESC
-      LIMIT 10
-    `).all(id) || []
-    
-    // Get product recommendations (popular products not yet ordered by this customer)
-    const recommendations = db.prepare(`
-      SELECT 
-        p.id as productId, p.name, p.category,
-        COUNT(DISTINCT oi.order_id) as popularity
-      FROM products p
-      JOIN order_items oi ON p.id = oi.product_id
-      WHERE p.id NOT IN (
-        SELECT DISTINCT oi2.product_id 
-        FROM order_items oi2 
-        JOIN orders o2 ON oi2.order_id = o2.id 
-        WHERE o2.customer_id = ?
+      SELECT name, category,
+        SUM(qty) as totalQuantity,
+        SUM(revenue) as totalRevenue
+      FROM (
+        SELECT COALESCE(si.name, p.name, oi.product_id) as name,
+          COALESCE(si.category, p.category, 'ทั่วไป') as category,
+          oi.quantity as qty, oi.total_price as revenue
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        LEFT JOIN stock_items si ON oi.product_id = si.id
+        LEFT JOIN products p ON oi.product_id = p.id
+        WHERE o.customer_id = ?
+        UNION ALL
+        SELECT COALESCE(si.name, soi.product_name, soi.product_id) as name,
+          COALESCE(si.category, 'ทั่วไป') as category,
+          soi.quantity as qty, soi.total_price as revenue
+        FROM sales_order_items soi
+        JOIN sales_orders so ON soi.sales_order_id = so.id
+        LEFT JOIN stock_items si ON soi.stock_item_id = si.id
+        WHERE so.customer_id = ? AND so.tenant_id = ? AND so.status != 'CANCELLED'
       )
-      GROUP BY p.id
-      ORDER BY popularity DESC
-      LIMIT 5
-    `).all(id) || []
-    
-    // Get proposals history (from order notes)
-    const proposalsHistory = db.prepare(`
-      SELECT 
-        order_number as orderNumber,
-        COALESCE(notes, '') as note,
-        created_at as createdAt
-      FROM orders
-      WHERE customer_id = ? AND notes IS NOT NULL AND notes != ''
-      ORDER BY created_at DESC
-      LIMIT 10
-    `).all(id) || []
-    
+      GROUP BY name
+      ORDER BY totalQuantity DESC LIMIT 10
+    `).all(id, id, tenantId) || []
+
+    // ── Auto-recommendations from stock_items ──────────────────────────────────
+    const autoRecommendations = db.prepare(`
+      SELECT si.id as productId, si.name, si.category, si.sku,
+        si.quantity as stockQty, si.unit,
+        COUNT(DISTINCT oi.order_id) as popularity
+      FROM stock_items si
+      JOIN order_items oi ON si.id = oi.product_id
+      WHERE si.tenant_id = ?
+        AND si.id NOT IN (
+          SELECT DISTINCT oi2.product_id FROM order_items oi2
+          JOIN orders o2 ON oi2.order_id = o2.id WHERE o2.customer_id = ?
+        )
+      GROUP BY si.id ORDER BY popularity DESC LIMIT 5
+    `).all(tenantId, id) || []
+
+    // ── Quotations from Sales module (proposals tab) ───────────────────────────
+    const quotations = db.prepare(`
+      SELECT q.id, q.quotation_number, q.quotation_date, q.expiry_date,
+        q.status, q.total_amount, q.notes
+      FROM quotations q
+      WHERE q.customer_id = ? AND q.tenant_id = ?
+      ORDER BY q.quotation_date DESC LIMIT 25
+    `).all(id, tenantId) as any[]
+
+    for (const qt of quotations) {
+      try {
+        qt.items = db.prepare(`
+          SELECT COALESCE(si.name, p.name, 'สินค้า') as productName,
+            qi.quantity, qi.unit_price, qi.total_price, qi.discount_percent
+          FROM quotation_items qi
+          LEFT JOIN stock_items si ON qi.product_id = si.id
+          LEFT JOIN products p ON qi.product_id = p.id
+          WHERE qi.quotation_id = ?
+        `).all(qt.id) || []
+      } catch { qt.items = [] }
+    }
+
     res.json({
       success: true,
       data: {
@@ -303,20 +333,95 @@ router.get('/:id/insights', (req: Request, res: Response) => {
           totalRevenue: orderStats.totalRevenue || 0,
           lastOrderDate: orderStats.lastOrderDate,
           daysSinceLastOrder: orderStats.daysSinceLastOrder ? Math.floor(orderStats.daysSinceLastOrder) : undefined,
-          avgOrderValue: orderStats.avgOrderValue || 0
+          avgOrderValue: orderStats.avgOrderValue || 0,
+          totalSO: soStats?.totalSO || 0,
+          totalSOAmount: soStats?.totalSOAmount || 0,
+          lastSODate: soStats?.lastSODate,
+          totalInvoices: invStats?.totalInvoices || 0,
+          totalInvoiced: invStats?.totalInvoiced || 0,
+          totalPaid: invStats?.totalPaid || 0,
+          totalOutstanding: invStats?.totalOutstanding || 0,
+          totalQT: qtStats?.totalQT || 0,
+          totalQTAmount: qtStats?.totalQTAmount || 0,
         },
-        recentOrders: recentOrders.map(o => ({
-          ...o,
-          items: o.items || []
-        })),
+        recentOrders: recentOrders.map(o => ({ ...o, items: o.items || [] })),
         favouriteProducts,
-        recommendations,
-        proposalsHistory
+        recommendations: autoRecommendations,
+        quotations,
+        // backward compat
+        proposalsHistory: quotations.map(q => ({ orderNumber: q.quotation_number, note: q.notes || '', createdAt: q.quotation_date })),
       }
     })
   } catch (error) {
     console.error('Get customer insights error:', error)
     res.status(500).json({ success: false, message: 'ไม่สามารถดึงข้อมูล insights ได้' })
+  }
+})
+
+// GET /customers/:id/orders?page=1&limit=25 — paginated order history
+router.get('/:id/orders', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const page  = Math.max(1, parseInt(req.query.page  as string) || 1)
+    const limit = [25, 50, 100].includes(parseInt(req.query.limit as string)) ? parseInt(req.query.limit as string) : 25
+    const offset = (page - 1) * limit
+
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+
+    const { total } = db.prepare(`
+      SELECT (
+        SELECT COUNT(*) FROM orders WHERE customer_id = ?
+      ) + (
+        SELECT COUNT(*) FROM sales_orders WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+      ) as total
+    `).get(id, id, tenantId) as any
+
+    const orders = db.prepare(`
+      SELECT id, orderNumber, orderDate, totalAmount, status, notes, source
+      FROM (
+        SELECT o.id, o.order_number as orderNumber, o.order_date as orderDate,
+          o.total_amount as totalAmount, o.status, o.notes, 'legacy' as source
+        FROM orders o WHERE o.customer_id = ?
+        UNION ALL
+        SELECT so.id, so.so_number as orderNumber, so.order_date as orderDate,
+          so.total_amount as totalAmount, so.status, so.notes, 'SO' as source
+        FROM sales_orders so
+        WHERE so.customer_id = ? AND so.tenant_id = ? AND so.status != 'CANCELLED'
+      )
+      ORDER BY orderDate DESC LIMIT ? OFFSET ?
+    `).all(id, id, tenantId, limit, offset) as any[]
+
+    for (const order of orders) {
+      if (order.source === 'SO') {
+        order.items = db.prepare(`
+          SELECT COALESCE(si.name, soi.product_name, soi.product_id) as productName,
+            soi.quantity, soi.total_price as totalPrice
+          FROM sales_order_items soi
+          LEFT JOIN stock_items si ON soi.stock_item_id = si.id
+          WHERE soi.sales_order_id = ?
+        `).all(order.id) || []
+      } else {
+        order.items = db.prepare(`
+          SELECT COALESCE(si.name, p.name, oi.product_id) as productName,
+            oi.quantity, oi.total_price as totalPrice
+          FROM order_items oi
+          LEFT JOIN stock_items si ON oi.product_id = si.id
+          LEFT JOIN products p ON oi.product_id = p.id
+          WHERE oi.order_id = ?
+        `).all(order.id) || []
+      }
+    }
+
+    res.json({
+      success: true,
+      data: orders,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    })
+  } catch (error) {
+    console.error('Get customer orders error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถดึงข้อมูลออเดอร์ได้' })
   }
 })
 
@@ -334,28 +439,35 @@ router.get('/summary/stats', (req: Request, res: Response) => {
       WHERE tenant_id = ?
     `).get(tenantId) as any
     
-    // นับ orders และ revenue
+    // นับ orders และ revenue (legacy + sales module)
     const orderStats = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(*) as total_orders,
         COALESCE(SUM(total_amount), 0) as total_revenue
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE c.tenant_id = ?
     `).get(tenantId) as any
-    
-    // คำนวณ avg order value
-    const avgOrderValue = orderStats.total_orders > 0 
-      ? orderStats.total_revenue / orderStats.total_orders 
-      : 0
-    
-    res.json({ 
-      success: true, 
+
+    const soStats = db.prepare(`
+      SELECT
+        COUNT(*) as total_so,
+        COALESCE(SUM(paid_amount), 0) as total_paid
+      FROM invoices
+      WHERE tenant_id = ?
+    `).get(tenantId) as any
+
+    const combinedOrders = (orderStats.total_orders || 0) + (soStats.total_so || 0)
+    const combinedRevenue = (orderStats.total_revenue || 0) + (soStats.total_paid || 0)
+    const avgOrderValue = combinedOrders > 0 ? combinedRevenue / combinedOrders : 0
+
+    res.json({
+      success: true,
       data: {
         total_customers: customerStats.total_customers,
         active_customers: customerStats.active_customers,
-        total_orders: orderStats.total_orders,
-        total_revenue: orderStats.total_revenue,
+        total_orders: combinedOrders,
+        total_revenue: combinedRevenue,
         avg_customer_value: avgOrderValue
       }
     })

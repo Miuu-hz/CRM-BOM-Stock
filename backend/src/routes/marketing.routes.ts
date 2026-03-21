@@ -5,6 +5,23 @@ import fs from 'fs'
 import { authenticate } from '../middleware/auth.middleware'
 import { parseMarketingCSV } from '../services/csvParser.service'
 import * as marketingRepo from '../repositories/marketing.repository'
+import db from '../db/sqlite'
+import { randomUUID } from 'crypto'
+
+function genId() { return randomUUID().replace(/-/g, '').substring(0, 25) }
+
+// Ensure ad_spends table exists
+db.prepare(`CREATE TABLE IF NOT EXISTS ad_spends (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  channel TEXT,
+  amount REAL NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`).run()
 
 const router = Router()
 
@@ -506,6 +523,137 @@ router.delete('/files/:id', (req: Request, res: Response) => {
       success: false,
       message: 'Failed to delete file',
     })
+  }
+})
+
+// ─── Ad Spend CRUD ─────────────────────────────────────────────────────────
+
+// GET /marketing/ad-spends
+router.get('/ad-spends', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { startDate, endDate, platform } = req.query as any
+    let sql = 'SELECT * FROM ad_spends WHERE tenant_id = ?'
+    const params: any[] = [tenantId]
+    if (startDate) { sql += ' AND date >= ?'; params.push(startDate) }
+    if (endDate)   { sql += ' AND date <= ?'; params.push(endDate) }
+    if (platform)  { sql += ' AND platform = ?'; params.push(platform) }
+    sql += ' ORDER BY date DESC'
+    const rows = db.prepare(sql).all(...params)
+    res.json({ success: true, data: rows })
+  } catch (err) {
+    console.error('Get ad-spends error:', err)
+    res.status(500).json({ success: false, message: 'Failed to fetch ad spends' })
+  }
+})
+
+// POST /marketing/ad-spends
+router.post('/ad-spends', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { date, platform, channel, amount, notes } = req.body
+    if (!date || !platform || amount == null) {
+      return res.status(400).json({ success: false, message: 'date, platform, amount are required' })
+    }
+    const id = genId()
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO ad_spends (id, tenant_id, date, platform, channel, amount, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, date, platform, channel || null, Number(amount), notes || null, now, now)
+    const row = db.prepare('SELECT * FROM ad_spends WHERE id = ?').get(id)
+    res.status(201).json({ success: true, data: row })
+  } catch (err) {
+    console.error('Create ad-spend error:', err)
+    res.status(500).json({ success: false, message: 'Failed to create ad spend' })
+  }
+})
+
+// DELETE /marketing/ad-spends/:id
+router.delete('/ad-spends/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const existing = db.prepare('SELECT id FROM ad_spends WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    if (!existing) return res.status(404).json({ success: false, message: 'Not found' })
+    db.prepare('DELETE FROM ad_spends WHERE id = ?').run(req.params.id)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Delete ad-spend error:', err)
+    res.status(500).json({ success: false, message: 'Failed to delete' })
+  }
+})
+
+// GET /marketing/profit-report  —  P&L by date
+router.get('/profit-report', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { startDate, endDate } = req.query as any
+
+    // 1. Daily revenue + COGS from invoices
+    let invSql = `
+      SELECT
+        substr(i.invoice_date, 1, 10) as date,
+        COALESCE(SUM(i.total_amount), 0) as revenue,
+        COALESCE(SUM(
+          (SELECT COALESCE(SUM(ii.quantity * COALESCE(si.unit_cost, 0)), 0)
+           FROM invoice_items ii
+           LEFT JOIN stock_items si ON ii.stock_item_id = si.id
+           WHERE ii.invoice_id = i.id)
+        ), 0) as cogs
+      FROM invoices i
+      WHERE i.tenant_id = ?`
+    const invParams: any[] = [tenantId]
+    if (startDate) { invSql += ' AND substr(i.invoice_date,1,10) >= ?'; invParams.push(startDate) }
+    if (endDate)   { invSql += ' AND substr(i.invoice_date,1,10) <= ?'; invParams.push(endDate) }
+    invSql += ' GROUP BY substr(i.invoice_date,1,10)'
+    const invRows = db.prepare(invSql).all(...invParams) as any[]
+
+    // 2. Daily ad spend from marketing_metrics (CSV uploads)
+    let mmSql = `
+      SELECT date, COALESCE(SUM(ad_cost), 0) as csv_ad_spend
+      FROM marketing_metrics
+      WHERE tenant_id = ?`
+    const mmParams: any[] = [tenantId]
+    if (startDate) { mmSql += ' AND date >= ?'; mmParams.push(startDate) }
+    if (endDate)   { mmSql += ' AND date <= ?'; mmParams.push(endDate) }
+    mmSql += ' GROUP BY date'
+    const mmRows = db.prepare(mmSql).all(...mmParams) as any[]
+
+    // 3. Daily ad spend from manual ad_spends
+    let asSql = `
+      SELECT date, platform, COALESCE(SUM(amount), 0) as manual_ad_spend
+      FROM ad_spends
+      WHERE tenant_id = ?`
+    const asParams: any[] = [tenantId]
+    if (startDate) { asSql += ' AND date >= ?'; asParams.push(startDate) }
+    if (endDate)   { asSql += ' AND date <= ?'; asParams.push(endDate) }
+    asSql += ' GROUP BY date, platform'
+    const asRows = db.prepare(asSql).all(...asParams) as any[]
+
+    // Merge by date
+    const byDate: Record<string, any> = {}
+    const ensure = (d: string) => {
+      if (!byDate[d]) byDate[d] = { date: d, revenue: 0, cogs: 0, csvAdSpend: 0, manualAdSpend: 0, adByPlatform: {} }
+    }
+    for (const r of invRows) { ensure(r.date); byDate[r.date].revenue = r.revenue; byDate[r.date].cogs = r.cogs }
+    for (const r of mmRows)  { ensure(r.date); byDate[r.date].csvAdSpend = r.csv_ad_spend }
+    for (const r of asRows)  {
+      ensure(r.date)
+      byDate[r.date].manualAdSpend += r.manual_ad_spend
+      byDate[r.date].adByPlatform[r.platform] = (byDate[r.date].adByPlatform[r.platform] || 0) + r.manual_ad_spend
+    }
+
+    const report = Object.values(byDate).map((d: any) => {
+      const totalAdSpend = d.csvAdSpend + d.manualAdSpend
+      const grossProfit = d.revenue - d.cogs
+      const netProfit = grossProfit - totalAdSpend
+      const netMargin = d.revenue > 0 ? (netProfit / d.revenue) * 100 : 0
+      const roas = totalAdSpend > 0 ? d.revenue / totalAdSpend : 0
+      return { ...d, totalAdSpend, grossProfit, netProfit, netMargin, roas }
+    }).sort((a: any, b: any) => a.date.localeCompare(b.date))
+
+    res.json({ success: true, data: report })
+  } catch (err) {
+    console.error('Profit report error:', err)
+    res.status(500).json({ success: false, message: 'Failed to generate report' })
   }
 })
 

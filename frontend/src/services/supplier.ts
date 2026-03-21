@@ -58,6 +58,11 @@ const supplierService = {
   async delete(id: string): Promise<void> {
     await api.delete(`/suppliers/${id}`)
   },
+
+  async getInsights(id: string): Promise<any> {
+    const res = await api.get(`/suppliers/${id}/insights`)
+    return res.data?.data
+  },
 }
 
 export default supplierService

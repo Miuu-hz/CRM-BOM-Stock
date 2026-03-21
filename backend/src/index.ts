@@ -39,6 +39,7 @@ import posBillRoutes from './routes/pos-bill.routes'
 import posClearingRoutes from './routes/pos-clearing.routes'
 import kdsRoutes from './routes/kds.routes'
 import lineBotRoutes from './routes/line-bot.routes'
+import settingsRoutes from './routes/settings.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -98,6 +99,7 @@ app.use('/api/pos', posMenuRoutes)
 app.use('/api/pos', posBillRoutes)
 app.use('/api/pos', posClearingRoutes)
 app.use('/api/pos/kds', kdsRoutes)
+app.use('/api/settings', settingsRoutes)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

@@ -13,6 +13,9 @@ import {
   Calendar,
   Settings,
   Table,
+  Trash2,
+  X,
+  Calculator,
 } from 'lucide-react'
 import {
   LineChart,
@@ -75,6 +78,29 @@ interface Summary {
   recordCount: number
 }
 
+interface AdSpend {
+  id: string
+  date: string
+  platform: string
+  channel?: string
+  amount: number
+  notes?: string
+}
+
+interface ProfitRow {
+  date: string
+  revenue: number
+  cogs: number
+  csvAdSpend: number
+  manualAdSpend: number
+  totalAdSpend: number
+  grossProfit: number
+  netProfit: number
+  netMargin: number
+  roas: number
+  adByPlatform: Record<string, number>
+}
+
 interface PivotConfig {
   rowBy: 'date' | 'product' | 'campaign' | 'sku'
   metrics: string[]
@@ -130,6 +156,12 @@ function Marketing() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showAddShopModal, setShowAddShopModal] = useState(false)
   const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart')
+  const [mainTab, setMainTab] = useState<'analytics' | 'profit'>('analytics')
+  const [adSpends, setAdSpends] = useState<AdSpend[]>([])
+  const [profitReport, setProfitReport] = useState<ProfitRow[]>([])
+  const [profitLoading, setProfitLoading] = useState(false)
+  const [adForm, setAdForm] = useState({ date: '', platform: 'FACEBOOK', channel: '', amount: '', notes: '' })
+  const [adFormSaving, setAdFormSaving] = useState(false)
   const [showPivotSettings, setShowPivotSettings] = useState(false)
   const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
     rowBy: 'date',
@@ -190,6 +222,71 @@ function Marketing() {
       fetchMetrics()
     }
   }, [selectedShop, fetchMetrics])
+
+  // Fetch P&L data
+  const fetchProfitData = useCallback(async () => {
+    setProfitLoading(true)
+    try {
+      const params: any = {}
+      if (dateRange.start) params.startDate = dateRange.start
+      if (dateRange.end) params.endDate = dateRange.end
+
+      const [adSpendsRes, profitRes] = await Promise.all([
+        api.get('/marketing/ad-spends', { params }),
+        api.get('/marketing/profit-report', { params }),
+      ])
+
+      setAdSpends(adSpendsRes.data.data || adSpendsRes.data || [])
+      setProfitReport(profitRes.data.data || profitRes.data || [])
+    } catch (error) {
+      console.error('Failed to fetch profit data:', error)
+      toast.error('ไม่สามารถโหลดข้อมูล P&L')
+    } finally {
+      setProfitLoading(false)
+    }
+  }, [dateRange])
+
+  useEffect(() => {
+    if (mainTab === 'profit') {
+      fetchProfitData()
+    }
+  }, [mainTab, dateRange, fetchProfitData])
+
+  // Handle add ad spend
+  const handleAddAdSpend = async () => {
+    if (!adForm.date || !adForm.platform || !adForm.amount) {
+      toast.error('กรุณากรอกวันที่ แพลตฟอร์ม และจำนวนเงิน')
+      return
+    }
+    setAdFormSaving(true)
+    try {
+      await api.post('/marketing/ad-spends', {
+        date: adForm.date,
+        platform: adForm.platform,
+        channel: adForm.channel || undefined,
+        amount: parseFloat(adForm.amount),
+        notes: adForm.notes || undefined,
+      })
+      setAdForm({ date: '', platform: 'FACEBOOK', channel: '', amount: '', notes: '' })
+      await fetchProfitData()
+      toast.success('บันทึกค่าโฆษณาสำเร็จ')
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'บันทึกไม่สำเร็จ')
+    } finally {
+      setAdFormSaving(false)
+    }
+  }
+
+  // Handle delete ad spend
+  const handleDeleteAdSpend = async (id: string) => {
+    try {
+      await api.delete(`/marketing/ad-spends/${id}`)
+      await fetchProfitData()
+      toast.success('ลบข้อมูลสำเร็จ')
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'ลบไม่สำเร็จ')
+    }
+  }
 
   // Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -428,404 +525,692 @@ function Marketing() {
         </div>
       </motion.div>
 
-      {/* Platform Tabs */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="cyber-card p-1"
-      >
-        <div className="flex gap-2">
-          {PLATFORMS.map(platform => (
-            <button
-              key={platform.id}
-              onClick={() => {
-                setSelectedPlatform(platform.id)
-                setSelectedShop('')
-              }}
-              className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
-                selectedPlatform === platform.id
-                  ? `bg-gradient-to-r ${platform.color} shadow-neon`
-                  : 'bg-cyber-card/50 hover:bg-cyber-card text-gray-400 hover:text-white'
-              }`}
-            >
-              {platform.name}
-            </button>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Shop Selector & Filters */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="cyber-card p-4 flex flex-wrap gap-4 items-center"
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-          <Store className="w-5 h-5 text-cyber-primary" />
-          <select
-            value={selectedShop}
-            onChange={(e) => setSelectedShop(e.target.value)}
-            className="flex-1 bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
-          >
-            <option value="">เลือกร้านค้า</option>
-            {(shops || []).map(shop => (
-              <option key={shop.id} value={shop.id}>
-                {shop.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-cyber-primary" />
-          <input
-            type="date"
-            value={dateRange.start}
-            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-            className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
-          />
-          <span className="text-gray-400">ถึง</span>
-          <input
-            type="date"
-            value={dateRange.end}
-            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-            className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          {/* View Mode Toggle */}
-          <button
-            onClick={() => setViewMode('chart')}
-            className={`p-2 rounded-lg transition-all ${
-              viewMode === 'chart'
-                ? 'bg-cyber-primary text-white'
-                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
-            }`}
-            title="Chart View"
-          >
-            <BarChart3 className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setViewMode('table')}
-            className={`p-2 rounded-lg transition-all ${
-              viewMode === 'table'
-                ? 'bg-cyber-primary text-white'
-                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
-            }`}
-            title="Table View"
-          >
-            <Table className="w-5 h-5" />
-          </button>
-
-          <div className="w-px h-8 bg-cyber-border mx-1" />
-
-          {/* Chart Types (only show when in chart mode) */}
-          {viewMode === 'chart' && CHART_TYPES.map(type => (
-            <button
-              key={type.id}
-              onClick={() => setChartType(type.id as any)}
-              className={`p-2 rounded-lg transition-all ${
-                chartType === type.id
-                  ? 'bg-cyber-primary text-white'
-                  : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
-              }`}
-              title={type.name}
-            >
-              <type.icon className="w-5 h-5" />
-            </button>
-          ))}
-
-          <div className="w-px h-8 bg-cyber-border mx-1" />
-
-          {/* Pivot Settings */}
-          <button
-            onClick={() => setShowPivotSettings(!showPivotSettings)}
-            className={`p-2 rounded-lg transition-all ${
-              showPivotSettings
-                ? 'bg-cyber-primary text-white'
-                : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
-            }`}
-            title="Pivot Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-        </div>
-      </motion.div>
-
-      {/* Summary Cards */}
-      {summary && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+      {/* Main Tab Switcher */}
+      <div className="flex gap-1 bg-cyber-card border border-cyber-border rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setMainTab('analytics')}
+          className={mainTab === 'analytics' ? 'px-4 py-2 rounded-lg bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
         >
-          <StatCard
-            title="ยอดขายรวม"
-            value={`฿${summary.totalSales.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
-            icon={DollarSign}
-            color="from-cyber-primary to-cyber-green"
-            subtitle={`${summary.totalOrders} คำสั่งซื้อ`}
-          />
-
-          <StatCard
-            title="ค่าโฆษณารวม"
-            value={`฿${summary.totalAdCost.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
-            icon={TrendingUp}
-            color="from-cyber-purple to-pink-500"
-            subtitle={`ROAS: ${summary.totalROAS.toFixed(2)}`}
-          />
-
-          <StatCard
-            title="Impressions"
-            value={summary.totalImpressions.toLocaleString('th-TH')}
-            icon={Eye}
-            color="from-blue-500 to-cyan-500"
-            subtitle={`CTR: ${(summary.avgCTR * 100).toFixed(2)}%`}
-          />
-
-          <StatCard
-            title="Clicks"
-            value={summary.totalClicks.toLocaleString('th-TH')}
-            icon={MousePointer}
-            color="from-orange-500 to-red-500"
-            subtitle={`Conv: ${(summary.avgConversionRate * 100).toFixed(2)}%`}
-          />
-        </motion.div>
-      )}
-
-      {/* Pivot Settings Panel */}
-      {showPivotSettings && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="cyber-card p-4"
+          📊 Analytics
+        </button>
+        <button
+          onClick={() => setMainTab('profit')}
+          className={mainTab === 'profit' ? 'px-4 py-2 rounded-lg bg-cyber-green/20 text-cyber-green border border-cyber-green/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
         >
-          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <Settings className="w-5 h-5 text-cyber-primary" />
-            Pivot Table Configuration
-          </h3>
+          <Calculator className="w-4 h-4 inline mr-1" /> ต้นทุน &amp; กำไร
+        </button>
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Row By */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มตาม</label>
+      {/* ===== ANALYTICS TAB ===== */}
+      {mainTab === 'analytics' && (
+        <>
+          {/* Platform Tabs */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="cyber-card p-1"
+          >
+            <div className="flex gap-2">
+              {PLATFORMS.map(platform => (
+                <button
+                  key={platform.id}
+                  onClick={() => {
+                    setSelectedPlatform(platform.id)
+                    setSelectedShop('')
+                  }}
+                  className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+                    selectedPlatform === platform.id
+                      ? `bg-gradient-to-r ${platform.color} shadow-neon`
+                      : 'bg-cyber-card/50 hover:bg-cyber-card text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {platform.name}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Shop Selector & Filters */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="cyber-card p-4 flex flex-wrap gap-4 items-center"
+          >
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <Store className="w-5 h-5 text-cyber-primary" />
               <select
-                value={pivotConfig.rowBy}
-                onChange={(e) => setPivotConfig({ ...pivotConfig, rowBy: e.target.value as any })}
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                value={selectedShop}
+                onChange={(e) => setSelectedShop(e.target.value)}
+                className="flex-1 bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
               >
-                {ROW_OPTIONS.map(opt => (
-                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                <option value="">เลือกร้านค้า</option>
+                {(shops || []).map(shop => (
+                  <option key={shop.id} value={shop.id}>
+                    {shop.name}
+                  </option>
                 ))}
               </select>
             </div>
 
-            {/* Metrics Selection */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Metrics</label>
-              <div className="space-y-1 bg-cyber-card border border-cyber-border rounded-lg p-2 max-h-32 overflow-y-auto">
-                {METRIC_OPTIONS.map(metric => (
-                  <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-cyber-card/50 p-1 rounded">
-                    <input
-                      type="checkbox"
-                      checked={pivotConfig.metrics.includes(metric.key)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setPivotConfig({ ...pivotConfig, metrics: [...pivotConfig.metrics, metric.key] })
-                        } else {
-                          setPivotConfig({ ...pivotConfig, metrics: (pivotConfig.metrics || []).filter(m => m !== metric.key) })
-                        }
-                      }}
-                      className="rounded border-cyber-border text-cyber-primary focus:ring-cyber-primary"
-                    />
-                    <span className="text-sm">{metric.label}</span>
-                  </label>
-                ))}
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-cyber-primary" />
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              />
+              <span className="text-gray-400">ถึง</span>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              {/* View Mode Toggle */}
+              <button
+                onClick={() => setViewMode('chart')}
+                className={`p-2 rounded-lg transition-all ${
+                  viewMode === 'chart'
+                    ? 'bg-cyber-primary text-white'
+                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                }`}
+                title="Chart View"
+              >
+                <BarChart3 className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-2 rounded-lg transition-all ${
+                  viewMode === 'table'
+                    ? 'bg-cyber-primary text-white'
+                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                }`}
+                title="Table View"
+              >
+                <Table className="w-5 h-5" />
+              </button>
+
+              <div className="w-px h-8 bg-cyber-border mx-1" />
+
+              {/* Chart Types (only show when in chart mode) */}
+              {viewMode === 'chart' && CHART_TYPES.map(type => (
+                <button
+                  key={type.id}
+                  onClick={() => setChartType(type.id as any)}
+                  className={`p-2 rounded-lg transition-all ${
+                    chartType === type.id
+                      ? 'bg-cyber-primary text-white'
+                      : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                  }`}
+                  title={type.name}
+                >
+                  <type.icon className="w-5 h-5" />
+                </button>
+              ))}
+
+              <div className="w-px h-8 bg-cyber-border mx-1" />
+
+              {/* Pivot Settings */}
+              <button
+                onClick={() => setShowPivotSettings(!showPivotSettings)}
+                className={`p-2 rounded-lg transition-all ${
+                  showPivotSettings
+                    ? 'bg-cyber-primary text-white'
+                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                }`}
+                title="Pivot Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
+
+          {/* Summary Cards */}
+          {summary && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+            >
+              <StatCard
+                title="ยอดขายรวม"
+                value={`฿${summary.totalSales.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
+                icon={DollarSign}
+                color="from-cyber-primary to-cyber-green"
+                subtitle={`${summary.totalOrders} คำสั่งซื้อ`}
+              />
+              <StatCard
+                title="ค่าโฆษณารวม"
+                value={`฿${summary.totalAdCost.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
+                icon={TrendingUp}
+                color="from-cyber-purple to-pink-500"
+                subtitle={`ROAS: ${summary.totalROAS.toFixed(2)}`}
+              />
+              <StatCard
+                title="Impressions"
+                value={summary.totalImpressions.toLocaleString('th-TH')}
+                icon={Eye}
+                color="from-blue-500 to-cyan-500"
+                subtitle={`CTR: ${(summary.avgCTR * 100).toFixed(2)}%`}
+              />
+              <StatCard
+                title="Clicks"
+                value={summary.totalClicks.toLocaleString('th-TH')}
+                icon={MousePointer}
+                color="from-orange-500 to-red-500"
+                subtitle={`Conv: ${(summary.avgConversionRate * 100).toFixed(2)}%`}
+              />
+            </motion.div>
+          )}
+
+          {/* Pivot Settings Panel */}
+          {showPivotSettings && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="cyber-card p-4"
+            >
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-cyber-primary" />
+                Pivot Table Configuration
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มตาม</label>
+                  <select
+                    value={pivotConfig.rowBy}
+                    onChange={(e) => setPivotConfig({ ...pivotConfig, rowBy: e.target.value as any })}
+                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                  >
+                    {ROW_OPTIONS.map(opt => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Metrics</label>
+                  <div className="space-y-1 bg-cyber-card border border-cyber-border rounded-lg p-2 max-h-32 overflow-y-auto">
+                    {METRIC_OPTIONS.map(metric => (
+                      <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-cyber-card/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={pivotConfig.metrics.includes(metric.key)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPivotConfig({ ...pivotConfig, metrics: [...pivotConfig.metrics, metric.key] })
+                            } else {
+                              setPivotConfig({ ...pivotConfig, metrics: (pivotConfig.metrics || []).filter(m => m !== metric.key) })
+                            }
+                          }}
+                          className="rounded border-cyber-border text-cyber-primary focus:ring-cyber-primary"
+                        />
+                        <span className="text-sm">{metric.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">การคำนวณ</label>
+                  <select
+                    value={pivotConfig.aggregation}
+                    onChange={(e) => setPivotConfig({ ...pivotConfig, aggregation: e.target.value as any })}
+                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                  >
+                    <option value="sum">รวม (Sum)</option>
+                    <option value="avg">เฉลี่ย (Average)</option>
+                    <option value="count">นับ (Count)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มช่วง</label>
+                  <select
+                    value={pivotConfig.groupBy}
+                    onChange={(e) => setPivotConfig({ ...pivotConfig, groupBy: e.target.value as any })}
+                    disabled={pivotConfig.rowBy !== 'date'}
+                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                  >
+                    <option value="day">รายวัน</option>
+                    <option value="week">รายสัปดาห์</option>
+                    <option value="month">รายเดือน</option>
+                  </select>
+                </div>
               </div>
-            </div>
+            </motion.div>
+          )}
 
-            {/* Aggregation */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">การคำนวณ</label>
-              <select
-                value={pivotConfig.aggregation}
-                onChange={(e) => setPivotConfig({ ...pivotConfig, aggregation: e.target.value as any })}
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
-              >
-                <option value="sum">รวม (Sum)</option>
-                <option value="avg">เฉลี่ย (Average)</option>
-                <option value="count">นับ (Count)</option>
-              </select>
-            </div>
+          {/* Chart View */}
+          {metrics.length > 0 && viewMode === 'chart' && pivotData.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="cyber-card p-6"
+            >
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-cyber-primary" />
+                Performance Trends
+              </h2>
+              <ResponsiveContainer width="100%" height={400}>
+                {renderChart()}
+              </ResponsiveContainer>
+            </motion.div>
+          )}
 
-            {/* Group By (for date only) */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มช่วง</label>
-              <select
-                value={pivotConfig.groupBy}
-                onChange={(e) => setPivotConfig({ ...pivotConfig, groupBy: e.target.value as any })}
-                disabled={pivotConfig.rowBy !== 'date'}
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
-              >
-                <option value="day">รายวัน</option>
-                <option value="week">รายสัปดาห์</option>
-                <option value="month">รายเดือน</option>
-              </select>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Chart View */}
-      {metrics.length > 0 && viewMode === 'chart' && pivotData.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="cyber-card p-6"
-        >
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-cyber-primary" />
-            Performance Trends
-          </h2>
-          <ResponsiveContainer width="100%" height={400}>
-            {renderChart()}
-          </ResponsiveContainer>
-        </motion.div>
-      )}
-
-      {/* Table View */}
-      {metrics.length > 0 && viewMode === 'table' && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="cyber-card p-6"
-        >
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <Table className="w-6 h-6 text-cyber-primary" />
-            Pivot Table View
-          </h2>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-cyber-border">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-300">
-                    {ROW_OPTIONS.find(opt => opt.key === pivotConfig.rowBy)?.label || 'Key'}
-                  </th>
-                  {pivotConfig.metrics.map(metricKey => {
-                    const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
-                    return (
-                      <th key={metricKey} className="text-right py-3 px-4 text-sm font-semibold text-gray-300">
-                        {metric?.label || metricKey}
+          {/* Table View */}
+          {metrics.length > 0 && viewMode === 'table' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="cyber-card p-6"
+            >
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Table className="w-6 h-6 text-cyber-primary" />
+                Pivot Table View
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-cyber-border">
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-300">
+                        {ROW_OPTIONS.find(opt => opt.key === pivotConfig.rowBy)?.label || 'Key'}
                       </th>
+                      {pivotConfig.metrics.map(metricKey => {
+                        const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+                        return (
+                          <th key={metricKey} className="text-right py-3 px-4 text-sm font-semibold text-gray-300">
+                            {metric?.label || metricKey}
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(pivotData || []).map((row, idx) => (
+                      <tr
+                        key={idx}
+                        className="border-b border-cyber-border/30 hover:bg-cyber-card/30 transition-colors"
+                      >
+                        <td className="py-3 px-4 text-sm font-medium text-white">{row.key}</td>
+                        {pivotConfig.metrics.map(metricKey => {
+                          const value = row[metricKey]
+                          const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+                          let formatted = ''
+                          if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
+                            formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
+                            formatted = value.toFixed(2)
+                          } else {
+                            formatted = Math.round(value).toLocaleString('th-TH')
+                          }
+                          return (
+                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || '#9ca3af' }}>
+                              {formatted}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                    {pivotData.length > 1 && (
+                      <tr className="border-t-2 border-cyber-primary/50 bg-cyber-card/50 font-bold">
+                        <td className="py-3 px-4 text-sm text-white">
+                          รวมทั้งหมด ({pivotConfig.aggregation === 'avg' ? 'เฉลี่ย' : 'รวม'})
+                        </td>
+                        {pivotConfig.metrics.map(metricKey => {
+                          const total = pivotData.reduce((sum, row) => sum + (row[metricKey] || 0), 0)
+                          const avg = total / pivotData.length
+                          const value = pivotConfig.aggregation === 'avg' ? avg : total
+                          const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
+                          let formatted = ''
+                          if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
+                            formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
+                            formatted = value.toFixed(2)
+                          } else {
+                            formatted = Math.round(value).toLocaleString('th-TH')
+                          }
+                          return (
+                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || '#9ca3af' }}>
+                              {formatted}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {pivotData.length === 0 && (
+                <div className="text-center py-12 text-gray-400">
+                  <Table className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                  <p>ไม่มีข้อมูลให้แสดง</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* No Data Message */}
+          {!loading && metrics.length === 0 && selectedShop && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="cyber-card p-12 text-center"
+            >
+              <Upload className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-400 mb-2">ยังไม่มีข้อมูล</h3>
+              <p className="text-gray-500 mb-6">อัพโหลดไฟล์ CSV เพื่อเริ่มวิเคราะห์ข้อมูลการตลาด</p>
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="px-6 py-3 bg-gradient-to-r from-cyber-primary to-cyber-green rounded-lg font-semibold hover:shadow-neon transition-all"
+              >
+                อัพโหลดไฟล์
+              </button>
+            </motion.div>
+          )}
+        </>
+      )}
+
+      {/* ===== P&L TAB ===== */}
+      {mainTab === 'profit' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* Date Range Filter */}
+          <div className="cyber-card p-4 flex flex-wrap gap-4 items-center">
+            <Calendar className="w-5 h-5 text-cyber-green" />
+            <span className="text-gray-400 text-sm">ช่วงวันที่:</span>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-green"
+            />
+            <span className="text-gray-400">ถึง</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-green"
+            />
+          </div>
+
+          {/* Two-column: Form + History */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Ad Spend Form */}
+            <div className="cyber-card p-5 space-y-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-green">
+                <Plus className="w-5 h-5" />
+                บันทึกค่าโฆษณา
+                <button
+                  type="button"
+                  onClick={() => setAdForm({ date: '', platform: 'FACEBOOK', channel: '', amount: '', notes: '' })}
+                  className="ml-auto text-gray-500 hover:text-gray-300 transition-colors"
+                  title="ล้างฟอร์ม"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </h3>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">วันที่ *</label>
+                  <input
+                    type="date"
+                    value={adForm.date}
+                    onChange={(e) => setAdForm({ ...adForm, date: e.target.value })}
+                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">แพลตฟอร์ม *</label>
+                  <select
+                    value={adForm.platform}
+                    onChange={(e) => setAdForm({ ...adForm, platform: e.target.value })}
+                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                  >
+                    <option value="FACEBOOK">Facebook</option>
+                    <option value="GOOGLE">Google</option>
+                    <option value="LINE_OA">LINE OA</option>
+                    <option value="TIKTOK_ADS">TikTok Ads</option>
+                    <option value="INSTAGRAM">Instagram</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">ชื่อ Campaign (ไม่บังคับ)</label>
+                <input
+                  type="text"
+                  placeholder="เช่น Summer Sale Campaign"
+                  value={adForm.channel}
+                  onChange={(e) => setAdForm({ ...adForm, channel: e.target.value })}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">จำนวนเงิน (฿) *</label>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  value={adForm.amount}
+                  onChange={(e) => setAdForm({ ...adForm, amount: e.target.value })}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">หมายเหตุ (ไม่บังคับ)</label>
+                <textarea
+                  placeholder="รายละเอียดเพิ่มเติม..."
+                  value={adForm.notes}
+                  onChange={(e) => setAdForm({ ...adForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm resize-none"
+                />
+              </div>
+
+              <button
+                onClick={handleAddAdSpend}
+                disabled={adFormSaving}
+                className="w-full py-2 bg-gradient-to-r from-cyber-green to-emerald-500 rounded-lg font-semibold hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
+              >
+                {adFormSaving ? (
+                  <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                {adFormSaving ? 'กำลังบันทึก...' : 'บันทึกค่าโฆษณา'}
+              </button>
+            </div>
+
+            {/* Right: Ad Spend History */}
+            <div className="cyber-card p-5">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-primary mb-4">
+                <DollarSign className="w-5 h-5" />
+                ประวัติค่าโฆษณา (Manual)
+              </h3>
+              {adSpends.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">ยังไม่มีข้อมูลค่าโฆษณา</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {adSpends.map((spend) => {
+                    const badgeColors: Record<string, string> = {
+                      FACEBOOK: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                      GOOGLE: 'bg-red-500/20 text-red-400 border-red-500/30',
+                      LINE_OA: 'bg-green-500/20 text-green-400 border-green-500/30',
+                      TIKTOK_ADS: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+                      INSTAGRAM: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+                      OTHER: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+                    }
+                    return (
+                      <div key={spend.id} className="flex items-center gap-2 p-2 bg-cyber-card/50 rounded-lg border border-cyber-border/30 hover:border-cyber-border transition-colors">
+                        <span className="text-xs text-gray-400 w-20 shrink-0">{spend.date}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${badgeColors[spend.platform] || badgeColors.OTHER}`}>
+                          {spend.platform}
+                        </span>
+                        <span className="text-xs text-gray-300 flex-1 truncate">{spend.channel || '-'}</span>
+                        <span className="text-xs font-mono text-cyber-green shrink-0">
+                          ฿{spend.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteAdSpend(spend.id)}
+                          className="text-red-400 hover:text-red-300 transition-colors shrink-0"
+                          title="ลบ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )
                   })}
-                </tr>
-              </thead>
-              <tbody>
-                {(pivotData || []).map((row, idx) => (
-                  <tr
-                    key={idx}
-                    className="border-b border-cyber-border/30 hover:bg-cyber-card/30 transition-colors"
-                  >
-                    <td className="py-3 px-4 text-sm font-medium text-white">
-                      {row.key}
-                    </td>
-                    {pivotConfig.metrics.map(metricKey => {
-                      const value = row[metricKey]
-                      const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
-
-                      // Format based on metric type
-                      let formatted = ''
-                      if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
-                        formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
-                        formatted = value.toFixed(2)
-                      } else {
-                        formatted = Math.round(value).toLocaleString('th-TH')
-                      }
-
-                      return (
-                        <td
-                          key={metricKey}
-                          className="py-3 px-4 text-sm text-right font-mono"
-                          style={{ color: metric?.color || '#9ca3af' }}
-                        >
-                          {formatted}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-
-                {/* Totals Row */}
-                {pivotData.length > 1 && (
-                  <tr className="border-t-2 border-cyber-primary/50 bg-cyber-card/50 font-bold">
-                    <td className="py-3 px-4 text-sm text-white">
-                      รวมทั้งหมด ({pivotConfig.aggregation === 'avg' ? 'เฉลี่ย' : 'รวม'})
-                    </td>
-                    {pivotConfig.metrics.map(metricKey => {
-                      const total = pivotData.reduce((sum, row) => sum + (row[metricKey] || 0), 0)
-                      const avg = total / pivotData.length
-                      const value = pivotConfig.aggregation === 'avg' ? avg : total
-                      const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
-
-                      // Format based on metric type
-                      let formatted = ''
-                      if (metricKey === 'sales' || metricKey === 'adCost' || metricKey.includes('cost')) {
-                        formatted = `฿${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      } else if (metricKey === 'roas' || metricKey === 'acos' || metricKey.includes('rate') || metricKey === 'ctr') {
-                        formatted = value.toFixed(2)
-                      } else {
-                        formatted = Math.round(value).toLocaleString('th-TH')
-                      }
-
-                      return (
-                        <td
-                          key={metricKey}
-                          className="py-3 px-4 text-sm text-right font-mono"
-                          style={{ color: metric?.color || '#9ca3af' }}
-                        >
-                          {formatted}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </div>
+              )}
+            </div>
           </div>
 
-          {pivotData.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <Table className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p>ไม่มีข้อมูลให้แสดง</p>
-            </div>
-          )}
-        </motion.div>
-      )}
+          {/* P&L Summary Cards */}
+          {profitReport.length > 0 && (() => {
+            const totalRevenue = profitReport.reduce((s, r) => s + r.revenue, 0)
+            const totalCogs = profitReport.reduce((s, r) => s + r.cogs, 0)
+            const totalAdSpend = profitReport.reduce((s, r) => s + r.totalAdSpend, 0)
+            const totalNetProfit = profitReport.reduce((s, r) => s + r.netProfit, 0)
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
+                  <p className="text-xs text-gray-400 mb-1">ยอดขายรวม</p>
+                  <p className="text-xl font-bold text-cyan-400">฿{totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
+                  <p className="text-xs text-gray-400 mb-1">ต้นทุนสินค้ารวม</p>
+                  <p className="text-xl font-bold text-orange-400">฿{totalCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
+                  <p className="text-xs text-gray-400 mb-1">ค่าโฆษณารวม</p>
+                  <p className="text-xl font-bold text-purple-400">฿{totalAdSpend.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
+                  <p className="text-xs text-gray-400 mb-1">กำไรสุทธิรวม</p>
+                  <p className={`text-xl font-bold ${totalNetProfit >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                    ฿{totalNetProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                  </p>
+                </motion.div>
+              </div>
+            )
+          })()}
 
-      {/* No Data Message */}
-      {!loading && metrics.length === 0 && selectedShop && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="cyber-card p-12 text-center"
-        >
-          <Upload className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-400 mb-2">ยังไม่มีข้อมูล</h3>
-          <p className="text-gray-500 mb-6">อัพโหลดไฟล์ CSV เพื่อเริ่มวิเคราะห์ข้อมูลการตลาด</p>
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="px-6 py-3 bg-gradient-to-r from-cyber-primary to-cyber-green rounded-lg font-semibold hover:shadow-neon transition-all"
-          >
-            อัพโหลดไฟล์
-          </button>
+          {/* P&L Report Table */}
+          <div className="cyber-card p-5">
+            <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
+              <Calculator className="w-5 h-5 text-cyber-green" />
+              รายงาน P&amp;L รายวัน
+            </h3>
+
+            {profitLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin w-8 h-8 border-2 border-cyber-green border-t-transparent rounded-full" />
+                <span className="ml-3 text-gray-400">กำลังโหลด...</span>
+              </div>
+            ) : profitReport.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Calculator className="w-14 h-14 mx-auto mb-3 opacity-20" />
+                <p className="text-sm">ไม่มีข้อมูล P&amp;L ในช่วงเวลานี้</p>
+                <p className="text-xs mt-1 text-gray-600">เลือกช่วงวันที่และตรวจสอบข้อมูลยอดขาย</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-cyber-border">
+                      <th className="text-left py-2 px-3 text-gray-400 font-semibold">วันที่</th>
+                      <th className="text-right py-2 px-3 text-cyan-400 font-semibold">ยอดขาย</th>
+                      <th className="text-right py-2 px-3 text-orange-400 font-semibold">COGS</th>
+                      <th className="text-right py-2 px-3 text-green-400 font-semibold">กำไรขั้นต้น</th>
+                      <th className="text-right py-2 px-3 text-purple-400 font-semibold">โฆษณา CSV</th>
+                      <th className="text-right py-2 px-3 text-purple-300 font-semibold">โฆษณา Manual</th>
+                      <th className="text-right py-2 px-3 text-purple-500 font-semibold">โฆษณารวม</th>
+                      <th className="text-right py-2 px-3 text-green-400 font-semibold">กำไรสุทธิ</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-semibold">Net Margin</th>
+                      <th className="text-right py-2 px-3 text-blue-400 font-semibold">ROAS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitReport.map((row, idx) => (
+                      <tr key={idx} className="border-b border-cyber-border/20 hover:bg-cyber-card/30 transition-colors">
+                        <td className="py-2 px-3 text-gray-300 font-medium">{row.date}</td>
+                        <td className="py-2 px-3 text-right font-mono text-cyan-400">
+                          ฿{row.revenue.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-orange-400">
+                          ฿{row.cogs.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className={`py-2 px-3 text-right font-mono ${row.grossProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ฿{row.grossProfit.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-purple-400">
+                          ฿{row.csvAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-purple-300">
+                          ฿{row.manualAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-purple-500">
+                          ฿{row.totalAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className={`py-2 px-3 text-right font-mono font-bold ${row.netProfit >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                          ฿{row.netProfit.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className={`py-2 px-3 text-right font-mono ${row.netMargin >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {row.netMargin.toFixed(1)}%
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-blue-400">
+                          {row.roas.toFixed(2)}x
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Totals Row */}
+                    {profitReport.length > 1 && (() => {
+                      const tRev = profitReport.reduce((s, r) => s + r.revenue, 0)
+                      const tCogs = profitReport.reduce((s, r) => s + r.cogs, 0)
+                      const tGross = profitReport.reduce((s, r) => s + r.grossProfit, 0)
+                      const tCsvAd = profitReport.reduce((s, r) => s + r.csvAdSpend, 0)
+                      const tManAd = profitReport.reduce((s, r) => s + r.manualAdSpend, 0)
+                      const tTotAd = profitReport.reduce((s, r) => s + r.totalAdSpend, 0)
+                      const tNet = profitReport.reduce((s, r) => s + r.netProfit, 0)
+                      const tMargin = tRev > 0 ? (tNet / tRev) * 100 : 0
+                      const tRoas = tTotAd > 0 ? tRev / tTotAd : 0
+                      return (
+                        <tr className="border-t-2 border-cyber-green/40 bg-cyber-card/50 font-bold">
+                          <td className="py-2 px-3 text-white text-xs">รวมทั้งหมด</td>
+                          <td className="py-2 px-3 text-right font-mono text-cyan-400">฿{tRev.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-orange-400">฿{tCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className={`py-2 px-3 text-right font-mono ${tGross >= 0 ? 'text-green-400' : 'text-red-400'}`}>฿{tGross.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-purple-400">฿{tCsvAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-purple-300">฿{tManAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-purple-500">฿{tTotAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className={`py-2 px-3 text-right font-mono ${tNet >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>฿{tNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className={`py-2 px-3 text-right font-mono ${tMargin >= 0 ? 'text-green-400' : 'text-red-400'}`}>{tMargin.toFixed(1)}%</td>
+                          <td className="py-2 px-3 text-right font-mono text-blue-400">{tRoas.toFixed(2)}x</td>
+                        </tr>
+                      )
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 
