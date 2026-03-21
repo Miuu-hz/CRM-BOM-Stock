@@ -121,11 +121,15 @@ const fmtDate = (s: string) =>
   new Date(s).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
 const SOURCE_BADGE: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  POS_SALE:             { label: 'POS ขาย',    color: 'bg-cyan-500/20 text-cyan-400',    icon: <ShoppingBag className="w-3 h-3" /> },
-  POS_CLEARING_TRANSFER:{ label: 'POS Clearing',color: 'bg-purple-500/20 text-purple-400',icon: <ArrowUpDown className="w-3 h-3" /> },
-  PURCHASE_ORDER:       { label: 'ซื้อ',         color: 'bg-orange-500/20 text-orange-400',icon: <ShoppingCart className="w-3 h-3" /> },
-  SALES_ORDER:          { label: 'ขาย',          color: 'bg-green-500/20 text-green-400',  icon: <ShoppingCart className="w-3 h-3" /> },
-  MANUAL:               { label: 'Manual',       color: 'bg-gray-500/20 text-gray-400',    icon: <FileText className="w-3 h-3" /> },
+  POS_SALE:             { label: 'POS ขาย',      color: 'bg-cyan-500/20 text-cyan-400',    icon: <ShoppingBag className="w-3 h-3" /> },
+  POS_CLEARING_TRANSFER:{ label: 'POS Clearing',  color: 'bg-purple-500/20 text-purple-400',icon: <ArrowUpDown className="w-3 h-3" /> },
+  PURCHASE_ORDER:       { label: 'ซื้อ',           color: 'bg-orange-500/20 text-orange-400',icon: <ShoppingCart className="w-3 h-3" /> },
+  SALES_ORDER:          { label: 'SO ขาย',         color: 'bg-green-500/20 text-green-400',  icon: <ShoppingCart className="w-3 h-3" /> },
+  INVOICE:              { label: 'ใบแจ้งหนี้',     color: 'bg-blue-500/20 text-blue-400',    icon: <FileText className="w-3 h-3" /> },
+  PAYMENT:              { label: 'รับชำระ',         color: 'bg-emerald-500/20 text-emerald-400', icon: <Zap className="w-3 h-3" /> },
+  PURCHASE_INVOICE:     { label: 'ใบแจ้งหนี้ซื้อ', color: 'bg-orange-500/20 text-orange-400',icon: <FileText className="w-3 h-3" /> },
+  SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-red-500/20 text-red-400',   icon: <ShoppingCart className="w-3 h-3" /> },
+  MANUAL:               { label: 'Manual',         color: 'bg-gray-500/20 text-gray-400',    icon: <FileText className="w-3 h-3" /> },
 }
 
 const getSourceBadge = (refType?: string, isAuto?: boolean) => {

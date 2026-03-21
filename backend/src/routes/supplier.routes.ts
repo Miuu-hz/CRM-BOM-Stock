@@ -201,10 +201,10 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
     // Get PO items for each order
     for (const order of recentOrders) {
       order.items = db.prepare(`
-        SELECT 
-          poi.material_id as materialId, 
-          m.name as materialName,
-          poi.quantity, 
+        SELECT
+          poi.material_id as materialId,
+          COALESCE(m.name, poi.description, poi.material_id) as materialName,
+          poi.quantity,
           poi.unit_price as unitPrice,
           poi.total_price as totalPrice
         FROM purchase_order_items poi
@@ -215,10 +215,9 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
     
     // Get most purchased materials from this supplier
     const topMaterials = db.prepare(`
-      SELECT 
+      SELECT
         poi.material_id as materialId,
-        m.name as materialName,
-        m.category as materialCategory,
+        COALESCE(m.name, MAX(poi.description), poi.material_id) as materialName,
         SUM(poi.quantity) as totalQuantity,
         SUM(poi.total_price) as totalSpent,
         AVG(poi.unit_price) as avgUnitPrice

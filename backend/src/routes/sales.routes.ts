@@ -17,6 +17,116 @@ function generateNumber(prefix: string, tenantId: string, table: string) {
   return `${prefix}-${year}-${String(count + 1).padStart(5, '0')}`
 }
 
+// ─── Accounting helpers ────────────────────────────────────────────────────────
+
+function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
+  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
+  if (existing) return existing.id
+  const id = generateId()
+  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
+  return id
+}
+
+function updateAccountBalance(tenantId: string, accountId: string, debit: number, credit: number) {
+  const now = new Date()
+  const yr = now.getFullYear()
+  const mo = now.getMonth() + 1
+  const existing = db.prepare('SELECT id, debit_amount, credit_amount FROM account_balances WHERE tenant_id = ? AND account_id = ? AND fiscal_year = ? AND period = ?').get(tenantId, accountId, yr, mo) as any
+  if (existing) {
+    const newDebit = (existing.debit_amount || 0) + debit
+    const newCredit = (existing.credit_amount || 0) + credit
+    db.prepare('UPDATE account_balances SET debit_amount = ?, credit_amount = ?, ending_balance = ? WHERE id = ?')
+      .run(newDebit, newCredit, newDebit - newCredit, existing.id)
+  } else {
+    db.prepare(`INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`).run(generateId(), tenantId, accountId, yr, mo, debit, credit, debit - credit)
+  }
+}
+
+function createSalesJournal(
+  tenantId: string, referenceType: string, referenceId: string,
+  description: string, totalAmount: number, taxAmount: number,
+  paymentMethod?: string, sourceNumber?: string, soNumber?: string
+) {
+  try {
+    const now = new Date().toISOString()
+    const dateStr = now.split('T')[0]
+    const yr = new Date().getFullYear()
+    const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
+    const jvNumber = `JV-${yr}-${String(jvCount + 1).padStart(5, '0')}`
+
+    // Accounts
+    const arId   = getOrCreateAccount(tenantId, '1180', 'ลูกหนี้การค้า', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    const revId  = getOrCreateAccount(tenantId, '4100', 'รายได้จากการขาย', 'REVENUE', 'REVENUE', 'CREDIT')
+    const vatId  = getOrCreateAccount(tenantId, '2210', 'ภาษีขายค้างจ่าย', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
+    const cashId = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    const bankId = getOrCreateAccount(tenantId, '1102', 'เงินฝากธนาคาร', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+
+    const entryId = generateId()
+    const netRevenue = totalAmount - taxAmount
+
+    if (referenceType === 'INVOICE') {
+      // DR ลูกหนี้การค้า / CR รายได้ขาย + CR ภาษีขาย
+      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'INVOICE', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?)`)
+        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
+
+      let lineNum = 1
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+        .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+        .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue)
+      if (taxAmount > 0) {
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+          .run(generateId(), tenantId, entryId, vatId, lineNum++, 'ภาษีขาย', taxAmount)
+      }
+
+      updateAccountBalance(tenantId, arId, totalAmount, 0)
+      updateAccountBalance(tenantId, revId, 0, netRevenue)
+      if (taxAmount > 0) updateAccountBalance(tenantId, vatId, 0, taxAmount)
+
+    } else if (referenceType === 'RECEIPT') {
+      // DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า
+      const cashAccId = (paymentMethod === 'TRANSFER' || paymentMethod === 'CHEQUE') ? bankId : cashId
+      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'PAYMENT', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?)`)
+        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
+
+      let lineNum = 1
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+        .run(generateId(), tenantId, entryId, cashAccId, lineNum++, description, totalAmount)
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+        .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+
+      updateAccountBalance(tenantId, cashAccId, totalAmount, 0)
+      updateAccountBalance(tenantId, arId, 0, totalAmount)
+    }
+  } catch (err) {
+    console.error('⚠️ createSalesJournal error:', err)
+    // Non-fatal — don't throw
+  }
+}
+
+function deductStockForSO(tenantId: string, soId: string, soNumber: string) {
+  try {
+    const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
+    for (const item of items) {
+      const stockItemId = item.stock_item_id
+      if (!stockItemId) continue
+      const qty = Math.floor(item.quantity || 0)
+      if (qty <= 0) continue
+      db.prepare('UPDATE stock_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(qty, new Date().toISOString(), stockItemId, tenantId)
+      db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')`).run(
+        generateId(), tenantId, stockItemId, qty, `SO: ${soNumber}`, `ขายสินค้า SO ${soNumber}`, new Date().toISOString())
+    }
+  } catch (err) {
+    console.error('⚠️ deductStockForSO error:', err)
+  }
+}
+
 // ============================================
 // QUOTATIONS
 // ============================================
@@ -110,13 +220,14 @@ router.post('/quotations', async (req: Request, res: Response) => {
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO quotation_items (id, tenant_id, quotation_id, product_id, quantity, unit_price, discount_percent, total_price, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO quotation_items (id, tenant_id, quotation_id, stock_item_id, product_id, product_name, quantity, unit_price, discount_percent, total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
           const itemTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
-          insertItem.run(generateId(), tenantId, id, item.productId, item.quantity,
-            item.unitPrice, item.discountPercent || 0, itemTotal, item.notes || '')
+          insertItem.run(generateId(), tenantId, id,
+            item.productId || null, null, item.productName || null,
+            item.quantity, item.unitPrice, item.discountPercent || 0, itemTotal, item.notes || '')
         }
       }
     })
@@ -208,9 +319,12 @@ router.get('/sales-orders/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT soi.*, p.name as product_name, p.code as product_code
+      SELECT soi.*,
+        COALESCE(soi.product_name, si.name) as product_name,
+        COALESCE(si.sku, si.name) as product_code,
+        si.quantity as stock_qty
       FROM sales_order_items soi
-      LEFT JOIN products p ON soi.product_id = p.id
+      LEFT JOIN stock_items si ON soi.stock_item_id = si.id
       WHERE soi.sales_order_id = ?
     `).all(req.params.id)
 
@@ -259,12 +373,14 @@ router.post('/sales-orders', async (req: Request, res: Response) => {
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO sales_order_items (id, tenant_id, sales_order_id, product_id, quotation_item_id, quantity, unit_price, discount_percent, total_price, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quotation_item_id, quantity, unit_price, discount_percent, total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
           const itemTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
-          insertItem.run(generateId(), tenantId, id, item.productId, item.quotationItemId || null,
+          insertItem.run(generateId(), tenantId, id,
+            item.productId || null, null, item.productName || null,
+            item.quotationItemId || null,
             item.quantity, item.unitPrice, item.discountPercent || 0, itemTotal, item.notes || '')
         }
       }
@@ -304,11 +420,33 @@ router.put('/sales-orders/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
     }
 
+    // เช็ค stock ก่อน CONFIRMED
+    if (status === 'CONFIRMED') {
+      const soItems = db.prepare(`
+        SELECT soi.*, si.quantity as stock_qty, COALESCE(soi.product_name, si.name) as item_name
+        FROM sales_order_items soi
+        LEFT JOIN stock_items si ON soi.stock_item_id = si.id
+        WHERE soi.sales_order_id = ?
+      `).all(req.params.id) as any[]
+
+      const shortItems = soItems.filter(it => it.stock_item_id && (it.stock_qty ?? 0) < it.quantity)
+      if (shortItems.length > 0) {
+        const details = shortItems.map((it: any) => `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} มีในสต็อก ${it.stock_qty ?? 0}`).join(', ')
+        return res.status(400).json({ success: false, message: `สต็อกไม่เพียงพอ: ${details}` })
+      }
+    }
+
     const now = new Date().toISOString()
     db.prepare("UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(status, now, req.params.id, tenantId)
 
-    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id)
+    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id) as any
+
+    // ตัด stock เมื่อยืนยัน SO
+    if (status === 'CONFIRMED' && salesOrder) {
+      deductStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
+    }
+
     res.json({ success: true, data: salesOrder })
   } catch (error) {
     console.error('Update sales order status error:', error)
@@ -701,18 +839,26 @@ router.post('/invoices', async (req: Request, res: Response) => {
 
       // Create invoice items from sales order items
       const insertItem = db.prepare(`
-        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, product_id, quantity, unit_price, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       for (const item of salesOrderItems) {
-        insertItem.run(generateId(), tenantId, id, item.id, item.product_id, item.quantity, item.unit_price, item.total_price)
+        insertItem.run(generateId(), tenantId, id, item.id,
+          item.stock_item_id || null, null, item.product_name || null,
+          item.quantity, item.unit_price, item.total_price)
       }
     })
 
     transaction()
 
-    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id)
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id) as any
     const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)
+
+    // Journal: DR ลูกหนี้การค้า / CR รายได้ขาย + ภาษีขาย
+    createSalesJournal(tenantId, 'INVOICE', id,
+      `ขายสินค้า INV ${invoiceNumber}`,
+      salesOrder.total_amount, salesOrder.tax_amount || 0,
+      undefined, invoiceNumber, salesOrder.so_number)
 
     res.status(201).json({ success: true, data: { ...invoice, items: invoiceItems } })
   } catch (error) {
@@ -944,8 +1090,13 @@ router.post('/receipts', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invoice and valid amount are required' })
     }
 
-    // Get invoice details
-    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(invoiceId, tenantId) as any
+    // Get invoice details (join SO for so_number cross-reference)
+    const invoice = db.prepare(`
+      SELECT i.*, so.so_number, i.invoice_number
+      FROM invoices i
+      LEFT JOIN sales_orders so ON i.sales_order_id = so.id
+      WHERE i.id = ? AND i.tenant_id = ?
+    `).get(invoiceId, tenantId) as any
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
@@ -990,11 +1141,16 @@ router.post('/receipts', async (req: Request, res: Response) => {
 
     transaction()
 
-    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(id)
+    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(id) as any
     const updatedInvoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)
 
-    res.status(201).json({ 
-      success: true, 
+    // Journal: DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า
+    createSalesJournal(tenantId, 'RECEIPT', id,
+      `รับชำระเงิน ${receiptNumber} (${paymentMethod || 'CASH'})`,
+      amount, 0, paymentMethod, receiptNumber, invoice.so_number)
+
+    res.status(201).json({
+      success: true,
       data: { receipt, invoice: updatedInvoice },
       message: 'Payment recorded successfully'
     })
