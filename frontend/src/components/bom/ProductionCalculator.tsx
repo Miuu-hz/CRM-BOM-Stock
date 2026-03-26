@@ -82,12 +82,12 @@ function ProductionCalculator() {
       }
 
       return {
-        materialId: bomItem.materialId,
-        materialName: bomItem.material.name,
-        materialCode: bomItem.material.code,
+        materialId: bomItem.materialId ?? '',
+        materialName: bomItem.material?.name ?? '',
+        materialCode: bomItem.material?.code ?? '',
         requiredQuantity: requiredQty,
         availableStock,
-        unit: bomItem.unit,
+        unit: bomItem.unit ?? '',
         unitCost,
         totalCost: requiredQty * unitCost,
         status,

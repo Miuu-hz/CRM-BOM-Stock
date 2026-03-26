@@ -6,19 +6,58 @@ import { getDb } from '../db/sqlite'
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
 
-// Hardcoded master accounts
-const MASTER_ACCOUNTS: Record<string, { password: string; tenantId: string; name: string }> = {
-  'BB-pillow': { 
-    password: 'BB0918033688', 
-    tenantId: 'tenant_bb_pillow', 
-    name: 'BB Pillow Master' 
-  },
-  'Kidshosuecafe': { 
-    password: 'Kids0834516669', 
-    tenantId: 'tenant_kids_house', 
-    name: 'Kids House Master' 
+// Master accounts loaded from environment variables (no hardcoded credentials)
+function loadMasterAccounts(): Record<string, { passwordHash: string; tenantId: string; name: string }> {
+  const accounts: Record<string, { passwordHash: string; tenantId: string; name: string }> = {}
+  const prefixes = ['BB', 'KIDS']
+  for (const prefix of prefixes) {
+    const username = process.env[`MASTER_${prefix}_USERNAME`]
+    const hash     = process.env[`MASTER_${prefix}_PASSWORD_HASH`]
+    const tenantId = process.env[`MASTER_${prefix}_TENANT_ID`]
+    const name     = process.env[`MASTER_${prefix}_NAME`]
+    if (username && hash && tenantId && name) {
+      accounts[username] = { passwordHash: hash, tenantId, name }
+    }
   }
+  return accounts
 }
+const MASTER_ACCOUNTS = loadMasterAccounts()
+
+// ── Rate Limiting: 3 attempts then 5-minute lockout ─────────────────────────
+interface AttemptRecord { count: number; lockedUntil: number }
+const loginAttempts = new Map<string, AttemptRecord>()
+const MAX_ATTEMPTS   = 3
+const LOCKOUT_MS     = 5 * 60 * 1000 // 5 minutes
+
+function checkRateLimit(key: string): { blocked: boolean; retryAfterSec?: number } {
+  const now = Date.now()
+  const rec  = loginAttempts.get(key)
+  if (!rec) return { blocked: false }
+  if (rec.lockedUntil > now) {
+    return { blocked: true, retryAfterSec: Math.ceil((rec.lockedUntil - now) / 1000) }
+  }
+  if (rec.lockedUntil > 0 && rec.lockedUntil <= now) {
+    // lockout expired — reset
+    loginAttempts.delete(key)
+    return { blocked: false }
+  }
+  return { blocked: false }
+}
+
+function recordFailedAttempt(key: string): void {
+  const now = Date.now()
+  const rec  = loginAttempts.get(key) ?? { count: 0, lockedUntil: 0 }
+  rec.count += 1
+  if (rec.count >= MAX_ATTEMPTS) {
+    rec.lockedUntil = now + LOCKOUT_MS
+  }
+  loginAttempts.set(key, rec)
+}
+
+function clearAttempts(key: string): void {
+  loginAttempts.delete(key)
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Generate JWT token
 const generateToken = (payload: any) => {
@@ -35,66 +74,73 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, message: 'กรุณากรอกอีเมลและรหัสผ่าน' })
     }
 
-    // Check hardcoded master accounts
+    // Rate limit check per email
+    const rl = checkRateLimit(email)
+    if (rl.blocked) {
+      return res.status(429).json({
+        success: false,
+        message: `เข้าสู่ระบบผิดพลาดหลายครั้ง กรุณารอ ${Math.ceil(rl.retryAfterSec! / 60)} นาที แล้วลองใหม่`,
+        retryAfterSec: rl.retryAfterSec,
+      })
+    }
+
+    // Check master accounts (loaded from env, compared with bcrypt)
     const masterAccount = MASTER_ACCOUNTS[email]
     if (masterAccount) {
-      if (masterAccount.password === password) {
+      const isMatch = await bcrypt.compare(password, masterAccount.passwordHash)
+      if (isMatch) {
+        clearAttempts(email)
         const token = generateToken({
           userId: `master_${email}`,
           email,
           role: 'MASTER',
-          tenantId: masterAccount.tenantId
+          tenantId: masterAccount.tenantId,
         })
-
         return res.json({
           success: true,
           data: {
-            user: {
-              id: `master_${email}`,
-              email,
-              name: masterAccount.name,
-              role: 'MASTER',
-              tenant_id: masterAccount.tenantId
-            },
-            token
-          }
+            user: { id: `master_${email}`, email, name: masterAccount.name, role: 'MASTER', tenant_id: masterAccount.tenantId },
+            token,
+          },
         })
       }
-      return res.status(401).json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' })
+      recordFailedAttempt(email)
+      const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count ?? MAX_ATTEMPTS)
+      const msg = remaining > 0 ? `รหัสผ่านไม่ถูกต้อง (เหลือ ${remaining} ครั้ง)` : 'รหัสผ่านไม่ถูกต้อง กรุณารอ 5 นาที'
+      return res.status(401).json({ success: false, message: msg })
     }
 
-    // Check database for regular users
+    // Check database for regular/child users
     const db = getDb()
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any
 
     if (!user) {
+      recordFailedAttempt(email)
       return res.status(401).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
     }
 
     const isMatch = await bcrypt.compare(password, user.password)
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' })
+      recordFailedAttempt(email)
+      const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count ?? MAX_ATTEMPTS)
+      const msg = remaining > 0 ? `รหัสผ่านไม่ถูกต้อง (เหลือ ${remaining} ครั้ง)` : 'รหัสผ่านไม่ถูกต้อง กรุณารอ 5 นาที'
+      return res.status(401).json({ success: false, message: msg })
     }
 
+    clearAttempts(email)
     const token = generateToken({
       userId: user.id,
       email: user.email,
       role: user.role,
-      tenantId: user.tenant_id
+      tenantId: user.tenant_id,
     })
 
     res.json({
       success: true,
       data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          tenant_id: user.tenant_id
-        },
-        token
-      }
+        user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id },
+        token,
+      },
     })
 
   } catch (error) {

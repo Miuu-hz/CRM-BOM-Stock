@@ -88,7 +88,7 @@ export const checkTimeLock = async (req: Request, res: Response, next: NextFunct
     }
     
     // ตรวจสอบว่าเป็น Master หรือไม่
-    const isMaster = await isMasterAccount(req.user!.id)
+    const isMaster = await isMasterAccount(req.user!.userId)
     
     // Master สามารถแก้ไขได้เสมอ
     if (isMaster) {

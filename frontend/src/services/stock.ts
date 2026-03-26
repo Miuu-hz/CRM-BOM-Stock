@@ -104,7 +104,7 @@ export const stockService = {
 
   // Get stock item by ID
   getById: async (id: string): Promise<StockItem> => {
-    const response = await api.get<StockItem>(`/stock/${id}`)
+    const response = await api.get<any>(`/stock/${id}`)
     if (!response.data?.data) {
       throw new Error('Stock item not found')
     }
@@ -113,7 +113,7 @@ export const stockService = {
 
   // Get stock statistics
   getStats: async (): Promise<StockStats> => {
-    const response = await api.get<StockStats>('/stock/stats')
+    const response = await api.get<any>('/stock/stats')
     return response.data?.data || {
       totalItems: 0,
       lowStockCount: 0,
@@ -124,7 +124,7 @@ export const stockService = {
 
   // Create stock item
   create: async (input: CreateStockInput): Promise<StockItem> => {
-    const response = await api.post<StockItem>('/stock', input)
+    const response = await api.post<any>('/stock', input)
     if (!response.data?.data) {
       throw new Error('Failed to create stock item')
     }
@@ -133,7 +133,7 @@ export const stockService = {
 
   // Update stock item
   update: async (id: string, input: UpdateStockInput): Promise<StockItem> => {
-    const response = await api.put<StockItem>(`/stock/${id}`, input)
+    const response = await api.put<any>(`/stock/${id}`, input)
     if (!response.data?.data) {
       throw new Error('Failed to update stock item')
     }
@@ -147,7 +147,7 @@ export const stockService = {
 
   // Record stock movement
   recordMovement: async (input: StockMovementInput): Promise<StockItem> => {
-    const response = await api.post<StockItem>('/stock/movement', input)
+    const response = await api.post<any>('/stock/movement', input)
     if (!response.data?.data) {
       throw new Error('Failed to record movement')
     }
@@ -171,7 +171,7 @@ export const stockService = {
 
   // Get movements for a stock item
   getMovements: async (id: string): Promise<StockMovement[]> => {
-    const response = await api.get<StockMovement[]>(`/stock/${id}/movements`)
+    const response = await api.get<any>(`/stock/${id}/movements`)
     return response.data?.data || []
   },
 }

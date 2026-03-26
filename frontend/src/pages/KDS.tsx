@@ -6,8 +6,25 @@ const KDS: React.FC = () => {
   const [tickets, setTickets] = useState<KDSTicket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(false)
   const isFirstLoad = useRef(true)
   const lastCount = useRef(0)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  const unlockAudio = () => {
+    if (soundEnabled) return
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioCtxRef.current = ctx
+      // play silent buffer to unlock
+      const buf = ctx.createBuffer(1, 1, 22050)
+      const src = ctx.createBufferSource()
+      src.buffer = buf
+      src.connect(ctx.destination)
+      src.start(0)
+      setSoundEnabled(true)
+    } catch {}
+  }
 
   const fetchTickets = async () => {
     try {
@@ -36,18 +53,28 @@ const KDS: React.FC = () => {
 
   const playNotificationSound = () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const osc = audioCtx.createOscillator()
-      const gain = audioCtx.createGain()
-      osc.type = 'sine'
-      osc.frequency.value = 880
-      gain.gain.setValueAtTime(0, audioCtx.currentTime)
-      gain.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.05)
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5)
-      osc.connect(gain)
-      gain.connect(audioCtx.destination)
-      osc.start(audioCtx.currentTime)
-      osc.stop(audioCtx.currentTime + 0.5)
+      const ctx = audioCtxRef.current
+      if (!ctx) return
+      if (ctx.state === 'suspended') ctx.resume()
+
+      const playBeep = (startTime: number, freq: number, duration: number) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0, startTime)
+        gain.gain.linearRampToValueAtTime(0.6, startTime + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(startTime)
+        osc.stop(startTime + duration)
+      }
+
+      const t = ctx.currentTime
+      playBeep(t, 880, 0.15)
+      playBeep(t + 0.2, 1100, 0.15)
+      playBeep(t + 0.4, 880, 0.2)
     } catch {}
   }
 
@@ -81,7 +108,7 @@ const KDS: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-full bg-cyber-dark text-gray-200">
+    <div className="flex flex-col h-full bg-cyber-dark text-gray-200" onClick={unlockAudio}>
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -92,6 +119,16 @@ const KDS: React.FC = () => {
           <p className="text-gray-400 text-sm mt-1">Polling ทุก 3 วินาที · {tickets.length} ticket ที่รอดำเนินการ</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={unlockAudio}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${
+              soundEnabled
+                ? 'bg-cyber-green/10 border-cyber-green/40 text-cyber-green'
+                : 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400 animate-pulse'
+            }`}
+          >
+            {soundEnabled ? '🔔 เสียงเปิด' : '🔕 กดเพื่อเปิดเสียง'}
+          </button>
           <div className="px-4 py-2 bg-cyber-card border border-cyber-border rounded-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-cyber-green animate-pulse" />
             <span className="text-sm font-medium">Live</span>
