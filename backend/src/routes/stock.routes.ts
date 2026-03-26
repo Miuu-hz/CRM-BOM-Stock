@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 })
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true)
     else cb(new Error('Only image files allowed'))
@@ -350,7 +350,15 @@ router.get('/:id/movements', async (req: Request, res: Response) => {
 })
 
 // Upload image for stock item
-router.post('/:id/image', upload.single('image'), async (req: Request, res: Response) => {
+router.post('/:id/image', (req: Request, res: Response, next: any) => {
+  upload.single('image')(req, res, (err: any) => {
+    if (err?.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, message: 'ไฟล์ใหญ่เกินไป (สูงสุด 10MB)' })
+    }
+    if (err) return res.status(400).json({ success: false, message: err.message })
+    next()
+  })
+}, async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const file = req.file

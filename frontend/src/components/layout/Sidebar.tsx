@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import {
   LayoutDashboard,
   Users,
@@ -21,6 +22,7 @@ import {
   MonitorPlay,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import api from '../../utils/api'
 
 interface SidebarProps {
   isOpen: boolean
@@ -123,6 +125,27 @@ const bottomMenuItems = [
 function Sidebar({ isOpen }: SidebarProps) {
   const { user, isMaster, logout } = useAuth()
   const location = useLocation()
+  const [sysStats, setSysStats] = useState({ activeOrders: 0, lowStock: 0, pendingPO: 0 })
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [stats, stock, po] = await Promise.all([
+          api.get('/dashboard/stats'),
+          api.get('/dashboard/low-stock'),
+          api.get('/purchase-orders?status=PENDING').catch(() => ({ data: { data: [] } })),
+        ])
+        setSysStats({
+          activeOrders: stats.data.data?.activeOrders ?? 0,
+          lowStock: Array.isArray(stock.data.data) ? stock.data.data.length : 0,
+          pendingPO: Array.isArray(po.data.data) ? po.data.data.length : 0,
+        })
+      } catch {}
+    }
+    load()
+    const interval = setInterval(load, 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <AnimatePresence>
@@ -275,15 +298,15 @@ function Sidebar({ isOpen }: SidebarProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-400">Active Orders</span>
-                  <span className="text-cyber-green font-semibold">24</span>
+                  <span className="text-cyber-green font-semibold">{sysStats.activeOrders}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-400">Low Stock Items</span>
-                  <span className="text-yellow-400 font-semibold">5</span>
+                  <span className="text-yellow-400 font-semibold">{sysStats.lowStock}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Pending Tasks</span>
-                  <span className="text-cyber-primary font-semibold">12</span>
+                  <span className="text-gray-400">Pending PO</span>
+                  <span className="text-cyber-primary font-semibold">{sysStats.pendingPO}</span>
                 </div>
               </div>
             </motion.div>

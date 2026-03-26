@@ -2,10 +2,44 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import multer from 'multer'
+import path from 'path'
+import fs from 'fs'
 
 const router = Router()
 
 router.use(authenticate)
+
+// ─── Invoice Attachments Setup ────────────────────────────────────────────────
+const invoiceUploadDir = path.join(__dirname, '..', '..', 'uploads', 'invoice-attachments')
+if (!fs.existsSync(invoiceUploadDir)) fs.mkdirSync(invoiceUploadDir, { recursive: true })
+
+const invoiceStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, invoiceUploadDir),
+  filename: (req, _file, cb) => {
+    const ext = path.extname(_file.originalname).toLowerCase() || '.jpg'
+    cb(null, `inv-${req.params.id}-${Date.now()}${ext}`)
+  },
+})
+const invoiceUpload = multer({
+  storage: invoiceStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true)
+    else cb(new Error('Only image files allowed'))
+  },
+})
+
+// Create invoice_attachments table if not exists
+db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  invoice_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  file_size INTEGER,
+  created_at TEXT NOT NULL
+)`).run()
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
@@ -790,7 +824,11 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
       SELECT * FROM withholding_tax WHERE invoice_id = ?
     `).all(req.params.id)
 
-    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax } })
+    const attachments = db.prepare(`
+      SELECT * FROM invoice_attachments WHERE invoice_id = ? ORDER BY created_at ASC
+    `).all(req.params.id)
+
+    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax, attachments } })
   } catch (error) {
     console.error('Get invoice error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch invoice' })
@@ -2151,6 +2189,56 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
   } catch (error) {
     console.error('Void bill error:', error)
     res.status(500).json({ success: false, message: 'ยกเลิกบิลไม่สำเร็จ' })
+  }
+})
+
+// ─── Invoice Attachment Endpoints ─────────────────────────────────────────────
+
+// POST upload attachment
+router.post('/invoices/:id/attachments', (req: Request, res: Response, next: any) => {
+  invoiceUpload.single('image')(req, res, (err: any) => {
+    if (err?.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ success: false, message: 'ไฟล์ใหญ่เกินไป (สูงสุด 10MB)' })
+    if (err) return res.status(400).json({ success: false, message: err.message })
+    next()
+  })
+}, async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const file = req.file
+    if (!file) return res.status(400).json({ success: false, message: 'ไม่พบไฟล์' })
+
+    const invoice = db.prepare('SELECT id FROM invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' })
+
+    const attachmentId = generateId()
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO invoice_attachments (id, tenant_id, invoice_id, file_path, original_name, file_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(attachmentId, tenantId, id, file.filename, file.originalname, file.size, now)
+
+    res.json({ success: true, data: { id: attachmentId, file_path: file.filename, original_name: file.originalname, file_size: file.size, created_at: now } })
+  } catch (error) {
+    console.error('Upload attachment error:', error)
+    res.status(500).json({ success: false, message: 'Upload failed' })
+  }
+})
+
+// DELETE attachment
+router.delete('/invoices/:id/attachments/:attachmentId', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { attachmentId } = req.params
+    const row = db.prepare('SELECT * FROM invoice_attachments WHERE id = ? AND tenant_id = ?').get(attachmentId, tenantId) as any
+    if (!row) return res.status(404).json({ success: false, message: 'Attachment not found' })
+
+    const filePath = path.join(invoiceUploadDir, row.file_path)
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    db.prepare('DELETE FROM invoice_attachments WHERE id = ?').run(attachmentId)
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete attachment error:', error)
+    res.status(500).json({ success: false, message: 'Delete failed' })
   }
 })
 
