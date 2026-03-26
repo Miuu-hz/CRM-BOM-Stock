@@ -27,6 +27,10 @@ import {
   Banknote,
   QrCode,
   Printer,
+  Upload,
+  ImageIcon,
+  Trash2,
+  Eye,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -2652,11 +2656,15 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const [payMethod, setPayMethod] = useState('CASH')
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   const [payRef, setPayRef] = useState('')
+  const [payNote, setPayNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadDetail = () => {
     salesService.getInvoice(invoice.id).then(r => { setDetail(r.data); setLoading(false) })
-  }, [invoice.id])
+  }
+  useEffect(() => { loadDetail() }, [invoice.id])
 
   const handlePrintInv = (format: 'a4' | 'thermal') => {
     if (!detail) return
@@ -2689,6 +2697,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
         paymentMethod: payMethod,
         receiptDate: payDate,
         paymentReference: payRef || undefined,
+        notes: payNote || undefined,
       })
       toast.success('บันทึกการรับเงินสำเร็จ')
       onRefresh()
@@ -2697,19 +2706,53 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     finally { setSaving(false) }
   }
 
+  const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 10MB'); return }
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      await api.post(`/sales/invoices/${invoice.id}/attachments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      toast.success('อัปโหลดสำเร็จ')
+      loadDetail()
+    } catch { toast.error('อัปโหลดไม่สำเร็จ') }
+    finally { setUploading(false); e.target.value = '' }
+  }
+
+  const handleDeleteAttachment = async (attId: string) => {
+    if (!confirm('ลบรูปนี้?')) return
+    try {
+      await api.delete(`/sales/invoices/${invoice.id}/attachments/${attId}`)
+      toast.success('ลบสำเร็จ')
+      loadDetail()
+    } catch { toast.error('ลบไม่สำเร็จ') }
+  }
+
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
   const isUnpaid = invoice.payment_status === 'UNPAID' || invoice.payment_status === 'OVERDUE' || invoice.payment_status === 'PARTIAL'
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+
+        {/* Header */}
+        <div className="p-5 border-b border-cyber-border flex justify-between items-start shrink-0">
           <div>
-            <p className="font-mono text-sm text-yellow-400 font-semibold">{invoice.invoice_number}</p>
-            <p className="text-white font-bold">{invoice.customer_name}</p>
-            {invoice.so_number && <p className="text-xs text-gray-500">SO: {invoice.so_number}</p>}
+            <div className="flex items-center gap-3 mb-1">
+              <p className="font-mono text-base text-yellow-400 font-bold">{invoice.invoice_number}</p>
+              {invoice.so_number && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="px-1.5 py-0.5 bg-cyber-dark rounded font-mono">SO: {invoice.so_number}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-white font-semibold text-lg">{invoice.customer_name}</p>
+            {invoice.customer_code && <p className="text-xs text-gray-500 font-mono">{invoice.customer_code}</p>}
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={invoice.payment_status} />
@@ -2717,67 +2760,146 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
           </div>
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-4">
+        <div className="overflow-y-auto p-5 space-y-5 flex-1">
           {loading ? (
-            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary mx-auto" /></div>
+            <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary mx-auto" /></div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-cyber-dark rounded-lg p-3">
-                  <p className="text-gray-500 text-xs mb-1">วันที่ออกใบ</p><p className="text-white">{fmtD(detail?.invoice_date)}</p>
+              {/* Info row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="bg-cyber-dark rounded-xl p-3">
+                  <p className="text-gray-500 text-xs mb-1">วันที่ออกใบ</p>
+                  <p className="text-white font-medium">{fmtD(detail?.invoice_date)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-lg p-3">
+                <div className="bg-cyber-dark rounded-xl p-3">
                   <p className="text-gray-500 text-xs mb-1">ครบกำหนด</p>
-                  <p className={detail?.payment_status === 'OVERDUE' ? 'text-red-400 font-medium' : 'text-white'}>{fmtD(detail?.due_date)}</p>
+                  <p className={detail?.payment_status === 'OVERDUE' ? 'text-red-400 font-medium' : 'text-white font-medium'}>{fmtD(detail?.due_date)}</p>
+                </div>
+                <div className="bg-cyber-dark rounded-xl p-3">
+                  <p className="text-gray-500 text-xs mb-1">ยอดรวมทั้งหมด</p>
+                  <p className="text-white font-bold">{fmt(detail?.total_amount)}</p>
+                </div>
+                <div className="bg-cyber-dark rounded-xl p-3">
+                  <p className="text-gray-500 text-xs mb-1">ยอดคงค้าง</p>
+                  <p className={invoice.balance_amount > 0 ? 'text-red-400 font-bold' : 'text-cyber-green font-bold'}>{fmt(invoice.balance_amount)}</p>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                {(detail?.items || []).map((it: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center py-2 px-3 bg-cyber-darker rounded-lg text-sm">
-                    <div>
-                      <p className="text-white">{it.product_name || `รายการ ${i + 1}`}</p>
-                      <p className="text-xs text-gray-500">{it.quantity} × {fmt(it.unit_price)}</p>
-                    </div>
-                    <p className="text-white font-medium">{fmt(it.total_price)}</p>
+              {/* Items list */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">รายการสินค้า</p>
+                <div className="border border-cyber-border rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-12 px-3 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+                    <span className="col-span-5">สินค้า</span>
+                    <span className="col-span-2 text-center">จำนวน</span>
+                    <span className="col-span-2 text-right">ราคา/หน่วย</span>
+                    <span className="col-span-1 text-right">ส่วนลด</span>
+                    <span className="col-span-2 text-right">รวม</span>
                   </div>
-                ))}
-              </div>
-
-              <div className="bg-cyber-darker rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-gray-400"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
-                {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-cyber-green"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
-                  <span className="text-gray-100">ยอดคงค้าง</span>
-                  <span className={invoice.balance_amount > 0 ? 'text-red-400' : 'text-cyber-green'}>{fmt(invoice.balance_amount)}</span>
-                </div>
-              </div>
-
-              {/* Payment receipts */}
-              {(detail?.receipts || []).length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-gray-300">ประวัติการรับเงิน</p>
-                  {detail.receipts.map((r: any) => (
-                    <div key={r.id} className="flex justify-between items-center py-2 px-3 bg-cyber-darker rounded-lg text-sm">
-                      <div>
-                        <p className="text-white font-mono text-xs">{r.receipt_number}</p>
-                        <p className="text-xs text-gray-500">{fmtD(r.receipt_date)} · {r.payment_method}</p>
-                        <div className="flex gap-1 mt-1">
-                          <button onClick={() => handlePrintReceipt(r, 'a4')} title="พิมพ์ใบเสร็จ A4"
-                            className="px-1.5 py-0.5 text-gray-500 hover:text-white border border-cyber-border/50 rounded text-xs flex items-center gap-1">
-                            <Printer className="w-3 h-3" /> A4
-                          </button>
-                          <button onClick={() => handlePrintReceipt(r, 'thermal')} title="พิมพ์ใบเสร็จ Thermal"
-                            className="px-1.5 py-0.5 text-gray-500 hover:text-white border border-cyber-border/50 rounded text-xs flex items-center gap-1">
-                            <Printer className="w-3 h-3" /> 80mm
-                          </button>
-                        </div>
+                  {(detail?.items || []).map((it: any, i: number) => (
+                    <div key={i} className={`grid grid-cols-12 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-cyber-darker/40'} border-b border-cyber-border/30 last:border-0`}>
+                      <div className="col-span-5">
+                        <p className="text-white font-medium">{it.product_name || `รายการ ${i + 1}`}</p>
+                        {it.product_code && <p className="text-xs text-gray-500 font-mono">{it.product_code}</p>}
                       </div>
-                      <p className="text-cyber-green font-medium">{fmt(r.amount)}</p>
+                      <p className="col-span-2 text-center text-gray-300">{it.quantity} {it.unit || ''}</p>
+                      <p className="col-span-2 text-right text-gray-300">{fmt(it.unit_price)}</p>
+                      <p className="col-span-1 text-right text-gray-500 text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
+                      <p className="col-span-2 text-right text-white font-semibold">{fmt(it.total_price)}</p>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
+
+              {/* Totals + Payment history — 2 columns on wide screen */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Totals */}
+                <div className="bg-cyber-darker rounded-xl p-4 space-y-1.5 text-sm">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">สรุปยอด</p>
+                  <div className="flex justify-between text-gray-400"><span>ยอดก่อนภาษี</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
+                  {detail?.vat_amount > 0 && <div className="flex justify-between text-gray-400"><span>VAT {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
+                  <div className="flex justify-between text-gray-300 border-t border-cyber-border/50 pt-1.5"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
+                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-cyber-green"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
+                  <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
+                    <span className="text-gray-100">ยอดคงค้าง</span>
+                    <span className={invoice.balance_amount > 0 ? 'text-red-400' : 'text-cyber-green'}>{fmt(invoice.balance_amount)}</span>
+                  </div>
+                </div>
+
+                {/* Payment receipts */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ประวัติการรับเงิน</p>
+                  {(detail?.receipts || []).length === 0 ? (
+                    <div className="bg-cyber-darker rounded-xl p-4 text-center text-sm text-gray-600">ยังไม่มีการรับเงิน</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {detail.receipts.map((r: any) => (
+                        <div key={r.id} className="bg-cyber-darker rounded-xl px-4 py-3 text-sm">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className="text-white font-mono text-xs font-semibold">{r.receipt_number}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{fmtD(r.receipt_date)} · {r.payment_method}{r.payment_reference ? ` · ${r.payment_reference}` : ''}</p>
+                              {r.notes && <p className="text-xs text-gray-400 mt-1 italic">"{r.notes}"</p>}
+                            </div>
+                            <p className="text-cyber-green font-bold ml-3">{fmt(r.amount)}</p>
+                          </div>
+                          <div className="flex gap-1 mt-2">
+                            <button onClick={() => handlePrintReceipt(r, 'a4')}
+                              className="px-2 py-1 text-gray-500 hover:text-white border border-cyber-border/50 rounded-lg text-xs flex items-center gap-1">
+                              <Printer className="w-3 h-3" /> A4
+                            </button>
+                            <button onClick={() => handlePrintReceipt(r, 'thermal')}
+                              className="px-2 py-1 text-gray-500 hover:text-white border border-cyber-border/50 rounded-lg text-xs flex items-center gap-1">
+                              <Printer className="w-3 h-3" /> 80mm
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Attachments */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">เอกสารแนบ / รูปภาพ</p>
+                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${uploading ? 'bg-cyber-dark text-gray-500' : 'bg-cyber-primary/20 text-cyber-primary hover:bg-cyber-primary/30'}`}>
+                    {uploading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป (สูงสุด 10MB)'}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleUploadAttachment} disabled={uploading} />
+                  </label>
+                </div>
+                {(detail?.attachments || []).length === 0 ? (
+                  <div className="border-2 border-dashed border-cyber-border/50 rounded-xl p-6 text-center text-gray-600 text-sm">
+                    <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    ยังไม่มีเอกสารแนบ
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                    {detail.attachments.map((att: any) => (
+                      <div key={att.id} className="relative group rounded-xl overflow-hidden border border-cyber-border/50 bg-cyber-darker aspect-square">
+                        <img src={`/uploads/invoice-attachments/${att.file_path.split('/').pop()}`}
+                          alt={att.original_name}
+                          className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <button onClick={() => setPreviewUrl(`/uploads/invoice-attachments/${att.file_path.split('/').pop()}`)}
+                            className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30">
+                            <Eye className="w-3.5 h-3.5 text-white" />
+                          </button>
+                          <button onClick={() => handleDeleteAttachment(att.id)}
+                            className="p-1.5 bg-red-500/30 rounded-lg hover:bg-red-500/50">
+                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          </button>
+                        </div>
+                        <p className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-black/60 text-[10px] text-gray-300 truncate">{att.original_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Record Payment Form */}
               {isUnpaid && showPayment && (
@@ -2812,6 +2934,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                         className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
                     </div>
                   </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">หมายเหตุ</label>
+                    <textarea value={payNote} onChange={e => setPayNote(e.target.value)} rows={2}
+                      placeholder="เช่น ชำระบางส่วน / โอนเข้าบัญชี xxx..."
+                      className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary resize-none" />
+                  </div>
                   <div className="flex gap-2">
                     <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-gray-400 text-sm hover:text-white">ยกเลิก</button>
                     <button onClick={handleRecordPayment} disabled={saving}
@@ -2826,28 +2954,39 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
           )}
         </div>
 
+        {/* Footer */}
         {!loading && (
-          <div className="px-5 pt-4 border-t border-cyber-border shrink-0 flex gap-2">
+          <div className="px-5 py-4 border-t border-cyber-border shrink-0 flex items-center gap-2">
             <button onClick={() => handlePrintInv('a4')} title="พิมพ์ใบแจ้งหนี้ A4"
-              className="px-2.5 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors">
-              <Printer className="w-4 h-4" />
+              className="px-3 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors flex items-center gap-1.5 text-sm">
+              <Printer className="w-4 h-4" /> A4
             </button>
             <button onClick={() => handlePrintInv('thermal')} title="พิมพ์ Thermal"
-              className="px-2 py-2 text-gray-500 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors text-xs flex items-center gap-1">
+              className="px-3 py-2 text-gray-500 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors text-sm flex items-center gap-1">
               <Printer className="w-3.5 h-3.5" /> 80mm
             </button>
-          </div>
-        )}
-        {isUnpaid && !showPayment && (
-          <div className="p-5 shrink-0">
-            <button onClick={() => setShowPayment(true)}
-              className="w-full py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-lg hover:bg-cyber-green/80 text-sm flex items-center justify-center gap-2">
-              <DollarSign className="w-4 h-4" /> บันทึกการรับเงิน
-            </button>
+            <div className="flex-1" />
+            {isUnpaid && !showPayment && (
+              <button onClick={() => setShowPayment(true)}
+                className="px-5 py-2 bg-cyber-green text-cyber-dark font-semibold rounded-lg hover:bg-cyber-green/80 text-sm flex items-center gap-2">
+                <DollarSign className="w-4 h-4" /> บันทึกการรับเงิน
+              </button>
+            )}
           </div>
         )}
       </motion.div>
     </div>
+
+    {/* Image Preview Lightbox */}
+    {previewUrl && (
+      <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
+        <button className="absolute top-4 right-4 p-2 bg-white/10 rounded-lg text-white hover:bg-white/20">
+          <X className="w-5 h-5" />
+        </button>
+        <img src={previewUrl} alt="preview" className="max-w-full max-h-full rounded-xl object-contain" onClick={e => e.stopPropagation()} />
+      </div>
+    )}
+    </>
   )
 }
 

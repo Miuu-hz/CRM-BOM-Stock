@@ -19,6 +19,8 @@ import {
   ChevronRight,
   ArrowRight,
   Printer,
+  LayoutGrid,
+  LayoutList,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -640,6 +642,9 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
 const Purchase = () => {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
+  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
+  const [currentPage, setCurrentPage] = useState(1)
   const [summary, setSummary] = useState<PurchaseSummary | null>(null)
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
@@ -1605,24 +1610,105 @@ const Purchase = () => {
     <div className="text-center py-16 text-gray-500 bg-cyber-card border border-cyber-border rounded-xl">{text}</div>
   )
 
+  const ViewToggle = () => (
+    <div className="flex items-center gap-1 bg-cyber-dark border border-cyber-border rounded-lg p-0.5 shrink-0">
+      <button onClick={() => setViewMode('card')}
+        className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-500 hover:text-white'}`}
+        title="มุมมองการ์ด"><LayoutGrid className="w-3.5 h-3.5" /></button>
+      <button onClick={() => setViewMode('list')}
+        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-500 hover:text-white'}`}
+        title="มุมมองรายการ"><LayoutList className="w-3.5 h-3.5" /></button>
+    </div>
+  )
+
+  const PageSizeSelect = () => (
+    <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
+      className="px-2 py-1.5 bg-cyber-dark border border-cyber-border rounded-lg text-xs text-gray-300 focus:outline-none focus:border-cyber-primary">
+      <option value={25}>25 / หน้า</option>
+      <option value={50}>50 / หน้า</option>
+      <option value={100}>100 / หน้า</option>
+    </select>
+  )
+
+  const Pagination = ({ total }: { total: number }) => {
+    const totalPages = Math.ceil(total / pageSize)
+    if (totalPages <= 1) return null
+    const pages: (number | '...')[] = []
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (currentPage > 3) pages.push('...')
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i)
+      if (currentPage < totalPages - 2) pages.push('...')
+      pages.push(totalPages)
+    }
+    return (
+      <div className="flex items-center justify-between pt-3 border-t border-cyber-border/40">
+        <p className="text-xs text-gray-500">
+          แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
+        </p>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">‹</button>
+          {pages.map((p, i) => p === '...'
+            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-600">…</span>
+            : <button key={p} onClick={() => setCurrentPage(p as number)}
+                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-cyber-primary text-cyber-dark font-bold' : 'text-gray-400 bg-cyber-dark hover:text-white'}`}>
+                {p}
+              </button>
+          )}
+          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">›</button>
+        </div>
+      </div>
+    )
+  }
+
   // ─── Document list content components ────────────────────────────
   const RequestsContent = () => {
     const filtered = requests.filter(r =>
       r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.requester_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <SearchBar placeholder="ค้นหาใบขอซื้อ..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('request', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
-          </button>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('request', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบขอซื้อ" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบขอซื้อ" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขอ</span><span className="col-span-2">แผนก</span>
+              <span className="col-span-2">วันที่ขอ</span><span className="col-span-1">สถานะ</span>
+              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-1"></span>
+            </div>
+            {paginated.map((req, i) => (
+              <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{req.pr_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{req.requester_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs truncate">{req.department || '-'}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{formatDate(req.request_date)}</p>
+                <div className="col-span-1"><StatusBadge status={req.status} /></div>
+                <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(req.total_amount)}</p>
+                <div className="col-span-1 flex justify-end gap-1">
+                  <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(req => (
+            {paginated.map(req => (
               <div key={req.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -1648,8 +1734,7 @@ const Purchase = () => {
                     className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
-                  <button onClick={() => handlePrint('pr', req.id)}
-                    title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('pr', req.id)} title="พิมพ์ A4"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
@@ -1676,6 +1761,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -1685,18 +1771,44 @@ const Purchase = () => {
       o.po_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       o.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <SearchBar placeholder="ค้นหาใบสั่งซื้อ..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('order', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบสั่งซื้อ
-          </button>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('order', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบสั่งซื้อ
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่ PO</span><span className="col-span-3">ผู้ขาย</span><span className="col-span-2">วันสั่ง</span>
+              <span className="col-span-2">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
+              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-1"></span>
+            </div>
+            {paginated.map((order, i) => (
+              <div key={order.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{order.po_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{order.supplier_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{formatDate(order.order_date)}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{formatDate(order.expected_date)}</p>
+                <div className="col-span-1"><StatusBadge status={order.status} /></div>
+                <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(order.total_amount)}</p>
+                <div className="col-span-1 flex justify-end gap-1">
+                  <button onClick={() => openModalWithDetail('order', 'view', order.id, order)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(order => (
+            {paginated.map(order => (
               <div key={order.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -1785,6 +1897,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -1794,18 +1907,43 @@ const Purchase = () => {
       r.gr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.po_number?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <SearchBar placeholder="ค้นหาใบรับสินค้า..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('receipt', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> บันทึกรับสินค้า
-          </button>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('receipt', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> บันทึกรับสินค้า
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการรับสินค้า" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการรับสินค้า" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่ GR</span><span className="col-span-3">ผู้ขาย</span>
+              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">วันที่รับ</span>
+              <span className="col-span-2">สถานะ</span><span className="col-span-1"></span>
+            </div>
+            {paginated.map((receipt, i) => (
+              <div key={receipt.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{receipt.gr_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{receipt.supplier_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs font-mono">{receipt.po_number}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{formatDate(receipt.receipt_date)}</p>
+                <div className="col-span-2"><StatusBadge status={receipt.status} /></div>
+                <div className="col-span-1 flex justify-end gap-1">
+                  <button onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(receipt => (
+            {paginated.map(receipt => (
               <div key={receipt.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -1824,13 +1962,11 @@ const Purchase = () => {
                     className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')}
-                    title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')}
-                    title="พิมพ์สลิป 80mm"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-yellow-400 bg-cyber-dark rounded-lg transition-colors text-xs leading-none">
                     🧾
                   </button>
@@ -1849,6 +1985,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -1858,18 +1995,53 @@ const Purchase = () => {
       i.pi_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       i.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบแจ้งหนี้..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('invoice', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบแจ้งหนี้
-          </button>
+          <SearchBar placeholder="ค้นหาใบวางบิล..." value={searchQuery} onChange={setSearchQuery} />
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('invoice', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบวางบิล
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบแจ้งหนี้" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบวางบิล" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่ PI</span><span className="col-span-3">ผู้ขาย</span>
+              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">ครบกำหนด</span>
+              <span className="col-span-1">สถานะ</span>
+              <span className="col-span-1 text-right">ค้างชำระ</span><span className="col-span-1"></span>
+            </div>
+            {paginated.map((invoice, i) => (
+              <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{invoice.pi_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{invoice.supplier_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs font-mono">{invoice.po_number}</p>
+                <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-red-400' : 'text-gray-400'}`}>{formatDate(invoice.due_date)}</p>
+                <div className="col-span-1"><StatusBadge status={invoice.payment_status} /></div>
+                <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                  {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
+                </p>
+                <div className="col-span-1 flex justify-end gap-1">
+                  {invoice.payment_status !== 'PAID' && (
+                    <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
+                      className="p-1 text-cyber-green hover:text-white bg-cyber-green/10 rounded" title="จ่ายเงิน">
+                      <DollarSign className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(invoice => (
+            {paginated.map(invoice => (
               <div key={invoice.id} className={`bg-cyber-card border rounded-xl p-4 transition-colors flex flex-col ${invoice.payment_status === 'UNPAID' ? 'border-red-500/30 hover:border-red-400/50' : 'border-cyber-border hover:border-cyber-primary/40'}`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -1894,8 +2066,7 @@ const Purchase = () => {
                     className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
-                  <button onClick={() => handlePrint('pi', invoice.id)}
-                    title="พิมพ์ใบสำคัญรับ A4"
+                  <button onClick={() => handlePrint('pi', invoice.id)} title="พิมพ์ A4"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
@@ -1910,6 +2081,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -1919,19 +2091,44 @@ const Purchase = () => {
       p.payment_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const methodLabel: Record<string, string> = { CASH: 'เงินสด', TRANSFER: 'โอนเงิน', CHEQUE: 'เช็ค', CREDIT_CARD: 'บัตรเครดิต' }
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <SearchBar placeholder="ค้นหาการจ่ายเงิน..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('payment', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> บันทึกจ่ายเงิน
-          </button>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('payment', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> บันทึกจ่ายเงิน
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการจ่ายเงิน" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการจ่ายเงิน" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
+              <span className="col-span-2">วิธีชำระ</span><span className="col-span-2">วันที่</span>
+              <span className="col-span-2">JV</span>
+              <span className="col-span-1 text-right">ยอด</span>
+            </div>
+            {paginated.map((payment, i) => (
+              <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{payment.payment_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{payment.supplier_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
+                <p className="col-span-2 text-gray-400 text-xs">{formatDate(payment.payment_date)}</p>
+                <p className="col-span-2 text-cyber-primary/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
+                <p className="col-span-1 text-right text-cyber-green font-bold text-xs">{formatCurrency(payment.amount)}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(payment => (
+            {paginated.map(payment => (
               <div key={payment.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -1953,8 +2150,7 @@ const Purchase = () => {
                     className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
-                  <button onClick={() => handlePrint('payment', payment.id)}
-                    title="พิมพ์ใบสำคัญจ่าย A4"
+                  <button onClick={() => handlePrint('payment', payment.id)} title="พิมพ์ A4"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
@@ -1963,6 +2159,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -1972,6 +2169,7 @@ const Purchase = () => {
       r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const reasonLabel: Record<string, string> = {
       DEFECTIVE: 'สินค้าเสียหาย', WRONG_ITEM: 'ส่งผิดรายการ',
       WRONG_QUANTITY: 'ส่งผิดจำนวน', QUALITY_ISSUE: 'คุณภาพไม่ตรง',
@@ -1981,14 +2179,36 @@ const Purchase = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <SearchBar placeholder="ค้นหาใบคืนสินค้า..." value={searchQuery} onChange={setSearchQuery} />
-          <button onClick={() => openModal('return', 'create')}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 whitespace-nowrap text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบคืนสินค้า
-          </button>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect />
+            <ViewToggle />
+            <button onClick={() => openModal('return', 'create')}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 whitespace-nowrap text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบคืนสินค้า
+            </button>
+          </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการคืนสินค้า" /> : (
+        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการคืนสินค้า" /> : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
+              <span className="col-span-2">PO อ้างอิง</span><span className="col-span-3">สาเหตุ</span>
+              <span className="col-span-1">สถานะ</span><span className="col-span-1 text-right">ยอด</span>
+            </div>
+            {paginated.map((ret, i) => (
+              <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-gray-400">{ret.pr_number}</p>
+                <p className="col-span-3 text-white font-medium truncate">{ret.supplier_name}</p>
+                <p className="col-span-2 text-gray-400 text-xs font-mono">{ret.po_number}</p>
+                <p className="col-span-3 text-orange-400/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
+                <div className="col-span-1"><StatusBadge status={ret.status} /></div>
+                <p className="col-span-1 text-right text-red-400 font-bold text-xs">{formatCurrency(ret.total_amount)}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(ret => (
+            {paginated.map(ret => (
               <div key={ret.id} className="bg-cyber-card border border-cyber-border hover:border-red-400/30 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
@@ -2005,26 +2225,22 @@ const Purchase = () => {
                     className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
-                  <button onClick={() => handlePrint('return', ret.id)}
-                    title="พิมพ์ใบส่งคืน A4"
+                  <button onClick={() => handlePrint('return', ret.id)} title="พิมพ์ A4"
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  {/* DRAFT → ส่งอนุมัติ */}
                   {ret.status === 'DRAFT' && (
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'SUBMITTED')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-blue-500/20 font-medium transition-colors">
                       ส่งอนุมัติ
                     </button>
                   )}
-                  {/* SUBMITTED → อนุมัติ */}
                   {ret.status === 'SUBMITTED' && (
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'APPROVED')}
                       className="flex-1 py-1.5 text-xs text-green-400 bg-green-500/10 rounded-lg hover:bg-green-500/20 font-medium transition-colors flex items-center justify-center gap-1">
                       <Check className="w-3 h-3" /> อนุมัติ
                     </button>
                   )}
-                  {/* APPROVED → ยืนยันคืนสินค้า (ตัดสต็อก) */}
                   {ret.status === 'APPROVED' && (
                     <button onClick={() => handleConfirmReturn(ret.id)}
                       className="flex-1 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 font-medium transition-colors flex items-center justify-center gap-1">
@@ -2036,6 +2252,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
+        <Pagination total={filtered.length} />
       </div>
     )
   }
@@ -3092,7 +3309,7 @@ const Purchase = () => {
     { id: 'requests',  label: 'ใบขอซื้อ',  icon: FileText,   badge: pendingCounts.requests },
     { id: 'orders',    label: 'ใบสั่งซื้อ', icon: ShoppingCart, badge: pendingCounts.orders },
     { id: 'receipts',  label: 'รับสินค้า',  icon: Package,    badge: 0 },
-    { id: 'invoices',  label: 'ใบแจ้งหนี้', icon: Receipt,    badge: pendingCounts.invoices },
+    { id: 'invoices',  label: 'ใบวางบิล',   icon: Receipt,    badge: pendingCounts.invoices },
     { id: 'payments',  label: 'จ่ายเงิน',   icon: CreditCard, badge: 0 },
     { id: 'returns',   label: 'คืนสินค้า',  icon: RotateCcw,  badge: 0 },
   ]
@@ -3118,7 +3335,7 @@ const Purchase = () => {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-wrap gap-1.5 bg-cyber-card p-2 rounded-2xl border border-cyber-border">
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery('') }}
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1) }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all relative ${
               activeTab === tab.id ? 'bg-cyber-primary text-cyber-dark shadow-lg' : 'text-gray-400 hover:text-white hover:bg-cyber-dark'
             }`}>
