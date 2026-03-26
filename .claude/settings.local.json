@@ -5,7 +5,10 @@
       "Bash(node -e:*)",
       "Bash(node:*)",
       "Bash(npm install)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(find c:/demo/crm/CRM-BOM-Stock/backend/src/routes -type f -name *.ts)",
+      "Bash(sqlite3 dev.db \"SELECT COUNT\\(*\\) as total FROM materials; SELECT id, code, name, unit FROM materials LIMIT 5;\")",
+      "Bash(find /c/demo/crm/CRM-BOM-Stock/backend/src/routes -type f -name *purchase*)"
     ]
   }
 }
