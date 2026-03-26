@@ -101,12 +101,11 @@ app.use('/api/pos', posClearingRoutes)
 app.use('/api/pos/kds', kdsRoutes)
 app.use('/api/settings', settingsRoutes)
 
-// 404 handler
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found',
-  })
+// Serve frontend (production) — must be after all API routes
+const frontendDist = path.join(__dirname, '../../frontend/dist')
+app.use(express.static(frontendDist))
+app.get('*', (_req: Request, res: Response) => {
+  res.sendFile(path.join(frontendDist, 'index.html'))
 })
 
 // Error handler

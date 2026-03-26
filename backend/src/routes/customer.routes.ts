@@ -477,4 +477,116 @@ router.get('/summary/stats', (req: Request, res: Response) => {
   }
 })
 
+// ── Loyalty Points ────────────────────────────────────────────────────────────
+// Init table at startup
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS loyalty_transactions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('EARN', 'REDEEM', 'ADJUST')),
+    points INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reference_type TEXT,
+    reference_id TEXT,
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL
+  )
+`).run()
+
+// GET /customers/:id/loyalty
+router.get('/:id/loyalty', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+      .get(id, tenantId) as any
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    const transactions = db.prepare(`
+      SELECT * FROM loyalty_transactions WHERE customer_id = ? AND tenant_id = ? ORDER BY created_at DESC
+    `).all(id, tenantId)
+    res.json({ success: true, data: { points: customer.loyalty_points || 0, transactions } })
+  } catch (error) {
+    console.error('Get loyalty error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// POST /customers/:id/loyalty/earn
+router.post('/:id/loyalty/earn', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const { points, note, reference_type = 'MANUAL', reference_id } = req.body
+    const pts = parseInt(points)
+    if (!pts || pts <= 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มต้องมากกว่า 0' })
+    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+      .get(id, tenantId) as any
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    const balanceAfter = (customer.loyalty_points || 0) + pts
+    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
+    db.prepare(`
+      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+      VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?, ?)
+    `).run(txId, tenantId, id, pts, balanceAfter, reference_type, reference_id || null, note || null, (req.user as any)?.email || null, new Date().toISOString())
+    res.json({ success: true, data: { points: balanceAfter } })
+  } catch (error) {
+    console.error('Earn loyalty error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// POST /customers/:id/loyalty/redeem
+router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const { points, note } = req.body
+    const pts = parseInt(points)
+    if (!pts || pts <= 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มต้องมากกว่า 0' })
+    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+      .get(id, tenantId) as any
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    if ((customer.loyalty_points || 0) < pts) return res.status(400).json({ success: false, message: 'แต้มไม่เพียงพอ' })
+    const balanceAfter = (customer.loyalty_points || 0) - pts
+    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
+    db.prepare(`
+      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+      VALUES (?, ?, ?, 'REDEEM', ?, ?, 'MANUAL', NULL, ?, ?, ?)
+    `).run(txId, tenantId, id, -pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
+    res.json({ success: true, data: { points: balanceAfter } })
+  } catch (error) {
+    console.error('Redeem loyalty error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// POST /customers/:id/loyalty/adjust (admin correction with note)
+router.post('/:id/loyalty/adjust', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const { points, note } = req.body
+    const pts = parseInt(points)
+    if (isNaN(pts) || pts === 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มไม่ถูกต้อง' })
+    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+      .get(id, tenantId) as any
+    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    const balanceAfter = Math.max(0, (customer.loyalty_points || 0) + pts)
+    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
+    db.prepare(`
+      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+      VALUES (?, ?, ?, 'ADJUST', ?, ?, 'MANUAL', NULL, ?, ?, ?)
+    `).run(txId, tenantId, id, pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
+    res.json({ success: true, data: { points: balanceAfter } })
+  } catch (error) {
+    console.error('Adjust loyalty error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
 export default router

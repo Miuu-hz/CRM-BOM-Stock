@@ -59,6 +59,7 @@ interface TaxTransaction {
   description: string
   base_amount: number
   tax_amount: number
+  tax_rate?: number
   is_deductible: number
 }
 

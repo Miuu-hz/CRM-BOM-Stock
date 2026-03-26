@@ -92,4 +92,55 @@ router.get('/activities', async (req: Request, res: Response) => {
   }
 })
 
+// Get monthly sales chart data (last 6 months)
+router.get('/charts', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+
+    const months: { month: string; label: string; revenue: number; orders: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const yyyy = String(d.getFullYear())
+      const label = d.toLocaleString('th-TH', { month: 'short', year: '2-digit' })
+
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(o.total_amount), 0) as revenue, COUNT(*) as orders
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.id
+        WHERE c.tenant_id = ?
+          AND strftime('%m', o.order_date) = ?
+          AND strftime('%Y', o.order_date) = ?
+      `).get(tenantId, mm, yyyy) as any
+
+      months.push({ month: `${yyyy}-${mm}`, label, revenue: row.revenue || 0, orders: row.orders || 0 })
+    }
+
+    res.json({ success: true, data: months })
+  } catch (error) {
+    console.error('Dashboard charts error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch chart data' })
+  }
+})
+
+// Get low stock items
+router.get('/low-stock', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const items = db.prepare(`
+      SELECT id, name, sku, quantity, min_stock, unit
+      FROM stock_items
+      WHERE tenant_id = ? AND quantity <= min_stock
+      ORDER BY (quantity * 1.0 / NULLIF(min_stock, 0)) ASC
+      LIMIT 8
+    `).all(tenantId)
+
+    res.json({ success: true, data: items })
+  } catch (error) {
+    console.error('Dashboard low-stock error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch low stock' })
+  }
+})
+
 export default router

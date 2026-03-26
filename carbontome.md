@@ -25,6 +25,20 @@
 | **Accounting** | ✅ | Chart of Accounts, Journal Entries (T-account UX), VAT |
 | **Tax Management** | ✅ | VAT, Withholding Tax, Tax Periods |
 | **Approval System** | ✅ | Multi-level approval workflow |
+| **Platform Order Fulfillment** | ✅ | CSV Upload, SKU Matching, Auto Stock Deduction, Ad Spend JE Approval |
+
+### ✅ Online Channel / Platform Integration
+
+| Feature | Status |
+|---------|--------|
+| Platform CSV Upload (Shopee Ads) | ✅ |
+| SKU Matching & Manual Linking | ✅ |
+| Auto Stock Deduction (PLATFORM_SALE) | ✅ |
+| Ad Spend → Pending JE Queue | ✅ |
+| JE Approval Workflow | ✅ |
+| Import History | ✅ |
+| Organic vs Paid Analytics | 🚧 (ไฟล์ organic ยังไม่มี) |
+| Business Unit P&L (Retail/Wholesale/Online) | 📋 Planned |
 
 ### 🚧 อยู่ระหว่างพัฒนา (In Progress)
 
@@ -85,6 +99,12 @@
 │  ├── purchase_orders│  ├── tax_periods   │  ├── users            │
 │  ├── goods_receipts │  ├── tax_transactions│  └── user_approval_permissions│
 │  └── suppliers      │  └── tax_filings   │
+├─────────────────────────────────────────────────────────────────┤
+│  🛒 PLATFORM (Online Channel)                                    │
+│  ├── platform_imports      (import header per CSV upload)        │
+│  ├── platform_import_items (per-SKU rows with match status)      │
+│  ├── sku_mappings          (platform SKU → stock_item mapping)   │
+│  └── platform_pending_je   (ad spend JE approval queue)          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

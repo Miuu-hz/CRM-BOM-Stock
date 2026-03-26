@@ -142,35 +142,6 @@ function Login() {
           </motion.button>
         </form>
 
-        {/* Divider */}
-        <div className="flex items-center gap-4 my-6">
-          <div className="flex-1 h-px bg-cyber-border"></div>
-          <span className="text-sm text-gray-400">MASTER ACCOUNTS</span>
-          <div className="flex-1 h-px bg-cyber-border"></div>
-        </div>
-
-        {/* Master Credentials */}
-        <div className="space-y-3">
-          <div className="p-3 rounded-lg bg-cyber-green/10 border border-cyber-green/30">
-            <p className="text-sm text-cyber-green font-semibold">BB Pillow Master</p>
-            <p className="text-xs text-gray-400 font-mono mt-1">
-              User: BB-pillow
-            </p>
-            <p className="text-xs text-gray-400 font-mono">
-              Pass: BB0918033688
-            </p>
-          </div>
-          <div className="p-3 rounded-lg bg-cyber-primary/10 border border-cyber-primary/30">
-            <p className="text-sm text-cyber-primary font-semibold">Kids House Master</p>
-            <p className="text-xs text-gray-400 font-mono mt-1">
-              User: Kidshosuecafe
-            </p>
-            <p className="text-xs text-gray-400 font-mono">
-              Pass: Kids0834516669
-            </p>
-          </div>
-        </div>
-
         {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500">

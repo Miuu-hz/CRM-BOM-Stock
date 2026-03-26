@@ -30,6 +30,11 @@ import {
   Pencil,
   LayoutList,
   LayoutGrid,
+  Star,
+  Gift,
+  ArrowLeftRight,
+  History,
+  RefreshCw,
 } from 'lucide-react'
 import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
@@ -55,6 +60,7 @@ interface Customer {
   segment?: CustomerSegment
   daysSinceLastOrder?: number
   creditUsed?: number
+  loyalty_points?: number
 }
 
 interface ActivityLog {
@@ -156,7 +162,7 @@ function CRM() {
   const [insights, setInsights] = useState<CustomerInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
+    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty'
   >('overview')
   const [showModal, setShowModal] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -870,8 +876,8 @@ function CustomerDetailModal({
   insights: CustomerInsights | null
   insightsLoading: boolean
   activities: ActivityLog[]
-  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities'
-  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities') => void
+  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty'
+  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty') => void
   onClose: () => void
   onAddActivity: (type: string, note: string) => Promise<void>
   orderPage: OrderPage | null
@@ -975,6 +981,7 @@ function CustomerDetailModal({
     { id: 'recommendations',  label: 'แนะนำสินค้า',   icon: Lightbulb },
     { id: 'proposals',        label: 'ใบเสนอราคา',    icon: FileText },
     { id: 'activities',       label: 'ติดตาม',        icon: Clock },
+    { id: 'loyalty',          label: 'แต้มสะสม',      icon: Star },
   ] as const
 
   const totalRevenue = (insights?.stats?.totalRevenue ?? 0) + (insights?.stats?.totalPaid ?? 0)
@@ -1128,6 +1135,19 @@ function CustomerDetailModal({
                 </div>
               </div>
             )}
+
+            {/* Loyalty Points */}
+            <button
+              onClick={() => setActiveTab('loyalty')}
+              className={`w-full bg-yellow-500/5 border rounded-lg p-3 text-left transition-all hover:bg-yellow-500/10 ${activeTab === 'loyalty' ? 'border-yellow-500/50' : 'border-yellow-500/20'}`}
+            >
+              <div className="flex items-center justify-between mb-0.5">
+                <p className="text-[10px] text-gray-500 flex items-center gap-1"><Star className="w-3 h-3 text-yellow-400" />แต้มสะสม</p>
+                <span className="text-[10px] text-yellow-400/60">คลิกดูรายละเอียด →</span>
+              </div>
+              <p className="text-xl font-bold text-yellow-400">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
+              <p className="text-[10px] text-gray-500">แต้ม</p>
+            </button>
           </div>
         </div>
 
@@ -1481,10 +1501,14 @@ function CustomerDetailModal({
           )}
 
           {!insightsLoading && activeTab === 'activities' && (
-            <ActivityLogTab 
+            <ActivityLogTab
               activities={activities}
               onAddActivity={onAddActivity}
             />
+          )}
+
+          {activeTab === 'loyalty' && (
+            <LoyaltyTab customerId={customer.id} initialPoints={customer.loyalty_points ?? 0} />
           )}
         </div>
         {/* end tab content */}
@@ -1976,6 +2000,286 @@ function CustomerCard({
         </div>
       </div>
     </motion.div>
+  )
+}
+
+// ── Loyalty Points Tab ─────────────────────────────────────────────────────────
+interface LoyaltyTransaction {
+  id: string
+  type: 'EARN' | 'REDEEM' | 'ADJUST'
+  points: number
+  balance_after: number
+  reference_type: string | null
+  note: string | null
+  created_by: string | null
+  created_at: string
+}
+
+function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initialPoints: number }) {
+  const [points, setPoints] = useState(initialPoints)
+  const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<'earn' | 'redeem' | null>(null)
+  const [inputPoints, setInputPoints] = useState('')
+  const [inputAmount, setInputAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // Read loyalty config from localStorage (same as Settings page)
+  const loyaltyCfg = (() => {
+    try {
+      const s = localStorage.getItem('pos_loyalty_settings')
+      return s ? JSON.parse(s) : { enabled: true, earnRate: 100, redeemRate: 10, minRedeemPoints: 100 }
+    } catch { return { enabled: true, earnRate: 100, redeemRate: 10, minRedeemPoints: 100 } }
+  })()
+
+  const fetchLoyalty = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get(`/customers/${customerId}/loyalty`)
+      setPoints(res.data.data.points)
+      setTransactions(res.data.data.transactions)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchLoyalty() }, [customerId])
+
+  // Auto-calc points from amount
+  const calcPointsFromAmount = (amt: number) =>
+    Math.floor(amt / loyaltyCfg.earnRate)
+
+  const handleEarn = async () => {
+    const pts = parseInt(inputPoints)
+    if (!pts || pts <= 0) { setError('กรอกจำนวนแต้มที่ถูกต้อง'); return }
+    setSaving(true); setError('')
+    try {
+      await api.post(`/customers/${customerId}/loyalty/earn`, { points: pts, note })
+      await fetchLoyalty()
+      setMode(null); setInputPoints(''); setInputAmount(''); setNote('')
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+    } finally { setSaving(false) }
+  }
+
+  const handleRedeem = async () => {
+    const pts = parseInt(inputPoints)
+    if (!pts || pts <= 0) { setError('กรอกจำนวนแต้มที่ถูกต้อง'); return }
+    if (pts < loyaltyCfg.minRedeemPoints) { setError(`แต้มขั้นต่ำในการแลก ${loyaltyCfg.minRedeemPoints} แต้ม`); return }
+    if (pts > points) { setError('แต้มไม่เพียงพอ'); return }
+    setSaving(true); setError('')
+    try {
+      await api.post(`/customers/${customerId}/loyalty/redeem`, { points: pts, note })
+      await fetchLoyalty()
+      setMode(null); setInputPoints(''); setNote('')
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+    } finally { setSaving(false) }
+  }
+
+  const typeLabel = { EARN: 'รับแต้ม', REDEEM: 'แลกแต้ม', ADJUST: 'ปรับแต้ม' }
+  const typeBadge = {
+    EARN:   'bg-green-500/15 text-green-400 border border-green-500/20',
+    REDEEM: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20',
+    ADJUST: 'bg-blue-500/15 text-blue-400 border border-blue-500/20',
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+          <Star className="w-5 h-5 text-yellow-400" />
+          ระบบแต้มสะสม
+        </h3>
+        <button onClick={fetchLoyalty} className="p-1.5 text-gray-400 hover:text-cyber-primary rounded-lg hover:bg-cyber-primary/10 transition-colors">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Points balance card */}
+      <div className="bg-gradient-to-br from-yellow-500/10 to-amber-500/5 border border-yellow-500/20 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs text-gray-400 mb-1">แต้มสะสมคงเหลือ</p>
+            <p className="text-4xl font-bold text-yellow-400">{points.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-0.5">แต้ม</p>
+          </div>
+          <div className="w-16 h-16 rounded-2xl bg-yellow-500/20 flex items-center justify-center">
+            <Star className="w-8 h-8 text-yellow-400" />
+          </div>
+        </div>
+
+        {/* Config info */}
+        <div className="grid grid-cols-2 gap-2 text-xs border-t border-yellow-500/10 pt-3">
+          <div className="flex items-center gap-1.5 text-gray-400">
+            <Gift className="w-3.5 h-3.5 text-green-400" />
+            ซื้อ ฿{loyaltyCfg.earnRate.toLocaleString()} = 1 แต้ม
+          </div>
+          <div className="flex items-center gap-1.5 text-gray-400">
+            <ArrowLeftRight className="w-3.5 h-3.5 text-yellow-400" />
+            {loyaltyCfg.redeemRate} แต้ม = ลด ฿1
+          </div>
+        </div>
+
+        {/* Redeem value */}
+        {points > 0 && (
+          <div className="mt-2 text-xs text-yellow-400/70">
+            มูลค่าแต้มปัจจุบัน ≈ ฿{(points / loyaltyCfg.redeemRate).toLocaleString('th-TH', { maximumFractionDigits: 2 })}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={() => { setMode(mode === 'earn' ? null : 'earn'); setError(''); setInputPoints(''); setInputAmount(''); setNote('') }}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 transition-all border ${
+              mode === 'earn' ? 'bg-green-500/20 text-green-400 border-green-500/40' : 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20'
+            }`}
+          >
+            <Gift className="w-4 h-4" /> เพิ่มแต้ม
+          </button>
+          <button
+            onClick={() => { setMode(mode === 'redeem' ? null : 'redeem'); setError(''); setInputPoints(''); setNote('') }}
+            disabled={points < loyaltyCfg.minRedeemPoints}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 transition-all border disabled:opacity-40 disabled:cursor-not-allowed ${
+              mode === 'redeem' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20'
+            }`}
+          >
+            <ArrowLeftRight className="w-4 h-4" /> แลกแต้ม
+          </button>
+        </div>
+      </div>
+
+      {/* Earn form */}
+      {mode === 'earn' && (
+        <div className="cyber-card p-4 space-y-3 border border-green-500/20">
+          <h4 className="font-semibold text-green-400 text-sm flex items-center gap-2">
+            <Gift className="w-4 h-4" /> เพิ่มแต้มให้ลูกค้า
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">ยอดซื้อ (บาท) — คำนวณแต้มอัตโนมัติ</label>
+              <input
+                type="number" min="0" value={inputAmount}
+                onChange={e => { setInputAmount(e.target.value); setInputPoints(String(calcPointsFromAmount(parseFloat(e.target.value) || 0))) }}
+                className="cyber-input w-full" placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">จำนวนแต้ม</label>
+              <input
+                type="number" min="1" value={inputPoints}
+                onChange={e => { setInputPoints(e.target.value); setInputAmount('') }}
+                className="cyber-input w-full" placeholder="0"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+            <input type="text" value={note} onChange={e => setNote(e.target.value)}
+              className="cyber-input w-full" placeholder="เช่น ซื้อสินค้า SO-2026-00001" />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-cyber-card text-gray-400 rounded-lg hover:bg-cyber-card/80">ยกเลิก</button>
+            <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 font-semibold">
+              {saving ? 'กำลังบันทึก...' : 'เพิ่มแต้ม'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Redeem form */}
+      {mode === 'redeem' && (
+        <div className="cyber-card p-4 space-y-3 border border-yellow-500/20">
+          <h4 className="font-semibold text-yellow-400 text-sm flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4" /> แลกแต้มเป็นส่วนลด
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">จำนวนแต้มที่ต้องการแลก</label>
+              <input
+                type="number" min="1" max={points} value={inputPoints}
+                onChange={e => setInputPoints(e.target.value)}
+                className="cyber-input w-full" placeholder={`สูงสุด ${points}`}
+              />
+            </div>
+            <div className="flex flex-col justify-end">
+              <p className="text-xs text-gray-400 mb-1">มูลค่าส่วนลด</p>
+              <p className="text-xl font-bold text-yellow-400">
+                ฿{inputPoints ? (parseInt(inputPoints || '0') / loyaltyCfg.redeemRate).toFixed(2) : '0.00'}
+              </p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+            <input type="text" value={note} onChange={e => setNote(e.target.value)}
+              className="cyber-input w-full" placeholder="เช่น แลกส่วนลดสำหรับ SO-2026-00002" />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-cyber-card text-gray-400 rounded-lg hover:bg-cyber-card/80">ยกเลิก</button>
+            <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 font-semibold">
+              {saving ? 'กำลังบันทึก...' : 'แลกแต้ม'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction history */}
+      <div>
+        <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2 mb-3">
+          <History className="w-4 h-4 text-gray-400" />
+          ประวัติการใช้งานแต้ม
+          {transactions.length > 0 && <span className="text-xs bg-cyber-card px-2 py-0.5 rounded-full text-gray-400">{transactions.length} รายการ</span>}
+        </h4>
+
+        {loading ? (
+          <p className="text-center text-gray-400 py-6 text-sm">กำลังโหลด...</p>
+        ) : transactions.length === 0 ? (
+          <div className="text-center py-10">
+            <Star className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">ยังไม่มีประวัติการใช้แต้ม</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {transactions.map(tx => (
+              <div key={tx.id} className="flex items-start gap-3 p-3 bg-cyber-darker/60 rounded-lg border border-cyber-border/50 hover:border-cyber-border transition-colors">
+                {/* Icon */}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-green-500/15' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
+                  {tx.type === 'EARN' ? <Gift className="w-4 h-4 text-green-400" />
+                    : tx.type === 'REDEEM' ? <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
+                    : <Star className="w-4 h-4 text-blue-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeBadge[tx.type]}`}>
+                      {typeLabel[tx.type]}
+                    </span>
+                    <span className={`text-sm font-bold ${tx.points > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {tx.points > 0 ? '+' : ''}{tx.points.toLocaleString()} แต้ม
+                    </span>
+                  </div>
+                  {tx.note && <p className="text-xs text-gray-300 mt-1">{tx.note}</p>}
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-gray-500">
+                      {new Date(tx.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      {tx.created_by && ` · ${tx.created_by}`}
+                    </span>
+                    <span className="text-[10px] text-gray-500">คงเหลือ {tx.balance_after.toLocaleString()} แต้ม</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

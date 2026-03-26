@@ -59,7 +59,7 @@ function CostSimulation() {
     if (selectedBom) {
       const initialPrices: Record<string, number> = {}
       selectedBom.materials.forEach((item) => {
-        initialPrices[item.materialId] = Number(item.material.unitCost)
+        initialPrices[item.materialId!] = Number(item.material?.unitCost)
       })
       setPriceChanges(initialPrices)
     } else {
@@ -75,8 +75,8 @@ function CostSimulation() {
     }
 
     const costs: SimulatedCost[] = (selectedBom.materials || []).map((item) => {
-      const originalCost = Number(item.material.unitCost)
-      const simulatedCost = priceChanges[item.materialId] ?? originalCost
+      const originalCost = Number(item.material?.unitCost)
+      const simulatedCost = priceChanges[item.materialId!] ?? originalCost
       const quantity = Number(item.quantity)
       const originalTotal = originalCost * quantity
       const simulatedTotal = simulatedCost * quantity
@@ -84,8 +84,8 @@ function CostSimulation() {
       const changePercent = originalTotal > 0 ? (change / originalTotal) * 100 : 0
 
       return {
-        materialId: item.materialId,
-        materialName: item.material.name,
+        materialId: item.materialId ?? '',
+        materialName: item.material?.name ?? '',
         originalCost,
         simulatedCost,
         quantity,
@@ -110,7 +110,7 @@ function CostSimulation() {
     if (selectedBom) {
       const initialPrices: Record<string, number> = {}
       selectedBom.materials.forEach((item) => {
-        initialPrices[item.materialId] = Number(item.material.unitCost)
+        initialPrices[item.materialId!] = Number(item.material?.unitCost)
       })
       setPriceChanges(initialPrices)
     }
@@ -120,8 +120,8 @@ function CostSimulation() {
     if (selectedBom) {
       const newPrices: Record<string, number> = {}
       selectedBom.materials.forEach((item) => {
-        const original = Number(item.material.unitCost)
-        newPrices[item.materialId] = Math.round(original * (1 + percent / 100) * 100) / 100
+        const original = Number(item.material?.unitCost)
+        newPrices[item.materialId!] = Math.round(original * (1 + percent / 100) * 100) / 100
       })
       setPriceChanges(newPrices)
     }

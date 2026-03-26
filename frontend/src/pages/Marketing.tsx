@@ -156,13 +156,33 @@ function Marketing() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showAddShopModal, setShowAddShopModal] = useState(false)
   const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart')
-  const [mainTab, setMainTab] = useState<'analytics' | 'profit'>('analytics')
+  const [mainTab, setMainTab] = useState<'analytics' | 'profit' | 'platform'>('analytics')
   const [adSpends, setAdSpends] = useState<AdSpend[]>([])
   const [profitReport, setProfitReport] = useState<ProfitRow[]>([])
   const [profitLoading, setProfitLoading] = useState(false)
   const [adForm, setAdForm] = useState({ date: '', platform: 'FACEBOOK', channel: '', amount: '', notes: '' })
   const [adFormSaving, setAdFormSaving] = useState(false)
   const [showPivotSettings, setShowPivotSettings] = useState(false)
+
+  // Platform tab state
+  const [platPlatform, setPlatPlatform] = useState('SHOPEE')
+  const [platImportDate, setPlatImportDate] = useState('')
+  const [platFile, setPlatFile] = useState<File | null>(null)
+  const [platUploading, setPlatUploading] = useState(false)
+  const [platPreview, setPlatPreview] = useState<any>(null)
+  const [platImports, setPlatImports] = useState<any[]>([])
+  const [platPendingJE, setPlatPendingJE] = useState<any[]>([])
+  const [platAccounts, setPlatAccounts] = useState<any[]>([])
+  const [platJEModal, setPlatJEModal] = useState<any>(null)
+  const [platJEDr, setPlatJEDr] = useState('')
+  const [platJECr, setPlatJECr] = useState('')
+  const [platJENotes, setPlatJENotes] = useState('')
+  const [platJESaving, setPlatJESaving] = useState(false)
+  const [platSkuSearchMap, setPlatSkuSearchMap] = useState<Record<string, string>>({})
+  const [platSkuResults, setPlatSkuResults] = useState<Record<string, any[]>>({})
+  const [platSkuSaving, setPlatSkuSaving] = useState<Record<string, boolean>>({})
+  const [platConfirming, setPlatConfirming] = useState(false)
+
   const [pivotConfig, setPivotConfig] = useState<PivotConfig>({
     rowBy: 'date',
     metrics: ['sales', 'adCost'],
@@ -251,6 +271,170 @@ function Marketing() {
       fetchProfitData()
     }
   }, [mainTab, dateRange, fetchProfitData])
+
+  // Platform tab data fetchers
+  const fetchPlatImports = useCallback(async () => {
+    try {
+      const res = await api.get('/marketing/platform/imports')
+      setPlatImports(res.data.data || [])
+    } catch { /* silent */ }
+  }, [])
+
+  const fetchPlatPendingJE = useCallback(async () => {
+    try {
+      const res = await api.get('/marketing/platform/pending-je')
+      setPlatPendingJE(res.data.data || [])
+    } catch { /* silent */ }
+  }, [])
+
+  const fetchPlatAccounts = useCallback(async () => {
+    try {
+      const res = await api.get('/accounts')
+      setPlatAccounts(res.data.data || [])
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => {
+    if (mainTab === 'platform') {
+      fetchPlatImports()
+      fetchPlatPendingJE()
+      fetchPlatAccounts()
+    }
+  }, [mainTab, fetchPlatImports, fetchPlatPendingJE, fetchPlatAccounts])
+
+  const handlePlatPreview = async () => {
+    if (!platFile || !platImportDate) {
+      toast.error('กรุณาเลือกไฟล์และวันที่นำเข้า')
+      return
+    }
+    setPlatUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', platFile)
+      formData.append('platform', platPlatform)
+      formData.append('importDate', platImportDate)
+      const res = await api.post('/marketing/platform/preview', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPlatPreview(res.data.data)
+      toast.success(`โหลดตัวอย่างสำเร็จ! พบ ${res.data.data.summary.totalRows} รายการ`)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'อัปโหลดล้มเหลว')
+    } finally {
+      setPlatUploading(false)
+    }
+  }
+
+  const handlePlatConfirm = async () => {
+    if (!platPreview?.importId) return
+    setPlatConfirming(true)
+    try {
+      const res = await api.post(`/marketing/platform/confirm/${platPreview.importId}`)
+      const d = res.data.data
+      toast.success(`ยืนยันสำเร็จ! ตัดสต๊อก ${d.deducted} รายการ | ข้าม ${d.skipped} | ไม่พอ ${d.insufficient}`)
+      setPlatPreview(null)
+      setPlatFile(null)
+      fetchPlatImports()
+      fetchPlatPendingJE()
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'ยืนยันล้มเหลว')
+    } finally {
+      setPlatConfirming(false)
+    }
+  }
+
+  const handlePlatSkuSearch = async (sku: string, query: string) => {
+    setPlatSkuSearchMap(prev => ({ ...prev, [sku]: query }))
+    if (!query || query.length < 2) {
+      setPlatSkuResults(prev => ({ ...prev, [sku]: [] }))
+      return
+    }
+    try {
+      const res = await api.get('/stock', { params: { search: query } })
+      setPlatSkuResults(prev => ({ ...prev, [sku]: (res.data.data || []).slice(0, 8) }))
+    } catch { /* silent */ }
+  }
+
+  const handlePlatSaveMapping = async (sku: string, stockItemId: string) => {
+    setPlatSkuSaving(prev => ({ ...prev, [sku]: true }))
+    try {
+      await api.post('/marketing/platform/sku-mapping', {
+        platformSku: sku,
+        platform: platPlatform,
+        stockItemId,
+      })
+      toast.success(`เชื่อม SKU ${sku} สำเร็จ`)
+      setPlatSkuResults(prev => ({ ...prev, [sku]: [] }))
+      setPlatSkuSearchMap(prev => ({ ...prev, [sku]: '' }))
+      // Refresh preview items to show updated match status
+      if (platPreview?.importId) {
+        try {
+          const res = await api.get(`/marketing/platform/imports/${platPreview.importId}`)
+          const imp = res.data.data
+          const items = (imp.items || []).map((it: any) => ({
+            sku: it.sku,
+            productName: it.product_name,
+            itemsSold: it.items_sold,
+            revenue: it.revenue,
+            adCost: it.ad_cost,
+            roas: it.roas,
+            stockItemId: it.stock_item_id,
+            stockItemName: it.stock_item_name,
+            currentStock: it.current_stock,
+            matchStatus: it.stock_item_id ? 'MATCHED' : 'UNMATCHED',
+          }))
+          setPlatPreview((prev: any) => ({
+            ...prev,
+            items,
+            summary: {
+              ...prev.summary,
+              matched: imp.matched_rows,
+              unmatched: imp.unmatched_rows,
+            },
+          }))
+        } catch { /* silent */ }
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'บันทึก mapping ล้มเหลว')
+    } finally {
+      setPlatSkuSaving(prev => ({ ...prev, [sku]: false }))
+    }
+  }
+
+  const handlePlatApproveJE = async () => {
+    if (!platJEModal || !platJEDr || !platJECr) {
+      toast.error('กรุณาเลือกบัญชี Dr. และ Cr.')
+      return
+    }
+    setPlatJESaving(true)
+    try {
+      const res = await api.post(`/marketing/platform/approve-je/${platJEModal.id}`, {
+        drAccountId: platJEDr,
+        crAccountId: platJECr,
+        notes: platJENotes,
+      })
+      toast.success(`อนุมัติ JE สำเร็จ! เลขที่: ${res.data.data?.entryNumber || ''}`)
+      setPlatJEModal(null)
+      setPlatJEDr('')
+      setPlatJECr('')
+      setPlatJENotes('')
+      fetchPlatPendingJE()
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'อนุมัติล้มเหลว')
+    } finally {
+      setPlatJESaving(false)
+    }
+  }
+
+  const handlePlatRejectJE = async (id: string) => {
+    try {
+      await api.post(`/marketing/platform/reject-je/${id}`, { notes: 'ปฏิเสธโดยผู้ใช้' })
+      toast.success('ปฏิเสธ JE แล้ว')
+      fetchPlatPendingJE()
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'ปฏิเสธล้มเหลว')
+    }
+  }
 
   // Handle add ad spend
   const handleAddAdSpend = async () => {
@@ -538,6 +722,12 @@ function Marketing() {
           className={mainTab === 'profit' ? 'px-4 py-2 rounded-lg bg-cyber-green/20 text-cyber-green border border-cyber-green/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
         >
           <Calculator className="w-4 h-4 inline mr-1" /> ต้นทุน &amp; กำไร
+        </button>
+        <button
+          onClick={() => setMainTab('platform')}
+          className={mainTab === 'platform' ? 'px-4 py-2 rounded-lg bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
+        >
+          <Upload className="w-4 h-4 inline mr-1" /> Platform Orders
         </button>
       </div>
 
@@ -1212,6 +1402,392 @@ function Marketing() {
             )}
           </div>
         </motion.div>
+      )}
+
+      {/* ===== PLATFORM TAB ===== */}
+      {mainTab === 'platform' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* A. Upload & Preview Panel */}
+          <div className="cyber-card p-5 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-purple">
+              <Upload className="w-5 h-5" />
+              อัปโหลด CSV จาก Platform
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Platform</label>
+                <select
+                  value={platPlatform}
+                  onChange={e => setPlatPlatform(e.target.value)}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm"
+                >
+                  <option value="SHOPEE">Shopee</option>
+                  <option value="LAZADA">Lazada</option>
+                  <option value="TIKTOK">TikTok Shop</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">วันที่นำเข้า</label>
+                <input
+                  type="date"
+                  value={platImportDate}
+                  onChange={e => setPlatImportDate(e.target.value)}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">ไฟล์ CSV</label>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={e => setPlatFile(e.target.files?.[0] || null)}
+                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-cyber-purple/20 file:text-cyber-purple"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handlePlatPreview}
+              disabled={platUploading || !platFile || !platImportDate}
+              className="px-5 py-2 bg-gradient-to-r from-cyber-purple to-pink-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {platUploading ? (
+                <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              {platUploading ? 'กำลังโหลด...' : 'โหลดตัวอย่าง'}
+            </button>
+
+            {/* Preview Table */}
+            {platPreview && (
+              <div className="space-y-3">
+                {/* Summary */}
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <span className="px-3 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded-full">
+                    จับคู่แล้ว {platPreview.summary.matched} รายการ
+                  </span>
+                  <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full">
+                    ยังไม่จับคู่ {platPreview.summary.unmatched} รายการ
+                  </span>
+                  <span className="px-3 py-1 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 rounded-full">
+                    ตัดสต๊อกรวม {platPreview.summary.totalItemsSold} ชิ้น
+                  </span>
+                  <span className="px-3 py-1 bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/30 rounded-full">
+                    ค่าโฆษณา ฿{(platPreview.summary.totalAdCost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-cyber-border">
+                        <th className="text-left py-2 px-2 text-gray-400">SKU</th>
+                        <th className="text-left py-2 px-2 text-gray-400">สินค้า</th>
+                        <th className="text-right py-2 px-2 text-gray-400">ขายแล้ว</th>
+                        <th className="text-right py-2 px-2 text-gray-400">ยอดขาย</th>
+                        <th className="text-right py-2 px-2 text-gray-400">ค่าโฆษณา</th>
+                        <th className="text-right py-2 px-2 text-gray-400">ROAS</th>
+                        <th className="text-right py-2 px-2 text-gray-400">สต๊อก</th>
+                        <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(platPreview.items || []).map((item: any, idx: number) => (
+                        <tr key={idx} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
+                          <td className="py-2 px-2 font-mono text-gray-300">{item.sku}</td>
+                          <td className="py-2 px-2 text-gray-300 max-w-[140px] truncate">{item.productName}</td>
+                          <td className="py-2 px-2 text-right text-cyber-primary font-mono">{item.itemsSold}</td>
+                          <td className="py-2 px-2 text-right text-cyan-400 font-mono">
+                            ฿{(item.revenue || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-2 text-right text-purple-400 font-mono">
+                            ฿{(item.adCost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="py-2 px-2 text-right text-blue-400 font-mono">{(item.roas || 0).toFixed(2)}x</td>
+                          <td className="py-2 px-2 text-right text-gray-300 font-mono">{item.currentStock ?? '-'}</td>
+                          <td className="py-2 px-2 text-center">
+                            {item.matchStatus === 'MATCHED' ? (
+                              <span className="px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">
+                                ✅ พบสินค้า
+                              </span>
+                            ) : (
+                              <div className="space-y-1">
+                                <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded text-xs block text-center">
+                                  ⚠️ ไม่พบ SKU
+                                </span>
+                                <div className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    placeholder="ค้นหาสินค้า..."
+                                    value={platSkuSearchMap[item.sku] || ''}
+                                    onChange={e => handlePlatSkuSearch(item.sku, e.target.value)}
+                                    className="flex-1 bg-cyber-card border border-cyber-border rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-yellow-400 min-w-0"
+                                  />
+                                </div>
+                                {(platSkuResults[item.sku] || []).length > 0 && (
+                                  <div className="bg-cyber-card border border-cyber-border rounded shadow-lg z-10 max-h-32 overflow-y-auto">
+                                    {(platSkuResults[item.sku] || []).map((si: any) => (
+                                      <button
+                                        key={si.id}
+                                        onClick={() => handlePlatSaveMapping(item.sku, si.id)}
+                                        disabled={platSkuSaving[item.sku]}
+                                        className="w-full text-left px-2 py-1 hover:bg-cyber-primary/20 text-xs text-gray-300 hover:text-white transition-colors border-b border-cyber-border/30 last:border-0 flex justify-between items-center gap-1"
+                                      >
+                                        <span className="truncate">{si.name}</span>
+                                        <span className="text-gray-500 shrink-0 font-mono">{si.sku}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <button
+                  onClick={handlePlatConfirm}
+                  disabled={platConfirming}
+                  className="w-full py-2.5 bg-gradient-to-r from-cyber-green to-emerald-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {platConfirming ? (
+                    <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                  ) : null}
+                  {platConfirming ? 'กำลังยืนยัน...' : 'ยืนยันและตัดสต๊อก'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* B. Pending JE Approval */}
+          <div className="cyber-card p-5 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-yellow-400">
+              <DollarSign className="w-5 h-5" />
+              รออนุมัติ JE ค่าโฆษณา
+            </h3>
+            {platPendingJE.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 text-sm">
+                <DollarSign className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                ไม่มีรายการรออนุมัติ
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-cyber-border">
+                      <th className="text-left py-2 px-2 text-gray-400">วันที่</th>
+                      <th className="text-left py-2 px-2 text-gray-400">Platform</th>
+                      <th className="text-left py-2 px-2 text-gray-400">รายการ</th>
+                      <th className="text-right py-2 px-2 text-gray-400">จำนวน</th>
+                      <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
+                      <th className="text-center py-2 px-2 text-gray-400">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {platPendingJE.map((pje: any) => (
+                      <tr key={pje.id} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
+                        <td className="py-2 px-2 text-gray-300">{pje.import_date}</td>
+                        <td className="py-2 px-2">
+                          <span className="px-2 py-0.5 bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/30 rounded text-xs">
+                            {pje.platform}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-gray-300 max-w-[200px] truncate">{pje.description}</td>
+                        <td className="py-2 px-2 text-right font-mono text-yellow-400">
+                          ฿{(pje.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded text-xs">
+                            {pje.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() => {
+                                setPlatJEModal(pje)
+                                setPlatJEDr('')
+                                setPlatJECr('')
+                                setPlatJENotes('')
+                              }}
+                              className="px-2 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs hover:bg-green-500/30 transition-colors"
+                            >
+                              อนุมัติ
+                            </button>
+                            <button
+                              onClick={() => handlePlatRejectJE(pje.id)}
+                              className="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs hover:bg-red-500/30 transition-colors"
+                            >
+                              ปฏิเสธ
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* C. Import History */}
+          <div className="cyber-card p-5 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-primary">
+              <BarChart3 className="w-5 h-5" />
+              ประวัติการนำเข้า
+            </h3>
+            {platImports.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 text-sm">
+                <BarChart3 className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                ยังไม่มีประวัติการนำเข้า
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-cyber-border">
+                      <th className="text-left py-2 px-2 text-gray-400">วันที่</th>
+                      <th className="text-left py-2 px-2 text-gray-400">Platform</th>
+                      <th className="text-left py-2 px-2 text-gray-400">ไฟล์</th>
+                      <th className="text-right py-2 px-2 text-gray-400">จับคู่</th>
+                      <th className="text-right py-2 px-2 text-gray-400">ตัดสต๊อก</th>
+                      <th className="text-right py-2 px-2 text-gray-400">ค่าโฆษณา</th>
+                      <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {platImports.map((imp: any) => (
+                      <tr key={imp.id} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
+                        <td className="py-2 px-2 text-gray-300">{imp.import_date}</td>
+                        <td className="py-2 px-2">
+                          <span className="px-2 py-0.5 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 rounded text-xs">
+                            {imp.platform}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-gray-400 max-w-[160px] truncate">{imp.filename}</td>
+                        <td className="py-2 px-2 text-right text-green-400 font-mono">
+                          {imp.matched_rows}/{imp.total_rows}
+                        </td>
+                        <td className="py-2 px-2 text-right text-cyber-primary font-mono">{imp.total_items_sold}</td>
+                        <td className="py-2 px-2 text-right text-purple-400 font-mono">
+                          ฿{(imp.total_ad_cost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs border ${
+                            imp.status === 'CONFIRMED'
+                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                              : imp.status === 'CANCELLED'
+                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                              : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                          }`}>
+                            {imp.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* JE Approval Modal */}
+      {platJEModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="cyber-card p-6 max-w-md w-full space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-yellow-400">อนุมัติ JE ค่าโฆษณา</h3>
+              <button onClick={() => setPlatJEModal(null)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-cyber-card/50 rounded-lg p-3 border border-cyber-border/30 text-sm space-y-1">
+              <p className="text-gray-400 text-xs">รายการ</p>
+              <p className="text-white">{platJEModal.description}</p>
+              <p className="text-yellow-400 font-bold text-lg font-mono">
+                ฿{(platJEModal.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Dr. บัญชีค่าโฆษณา (Expense)</label>
+              <select
+                value={platJEDr}
+                onChange={e => setPlatJEDr(e.target.value)}
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+              >
+                <option value="">-- เลือกบัญชี --</option>
+                {platAccounts
+                  .filter((a: any) => a.type === 'EXPENSE' || a.normal_balance === 'DEBIT')
+                  .map((a: any) => (
+                    <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Cr. บัญชีเจ้าหนี้ / เงินสด</label>
+              <select
+                value={platJECr}
+                onChange={e => setPlatJECr(e.target.value)}
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+              >
+                <option value="">-- เลือกบัญชี --</option>
+                {platAccounts
+                  .filter((a: any) => a.type === 'LIABILITY' || a.type === 'ASSET' || a.normal_balance === 'CREDIT')
+                  .map((a: any) => (
+                    <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+              <textarea
+                value={platJENotes}
+                onChange={e => setPlatJENotes(e.target.value)}
+                rows={2}
+                placeholder="หมายเหตุเพิ่มเติม (ไม่บังคับ)"
+                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handlePlatApproveJE}
+                disabled={platJESaving || !platJEDr || !platJECr}
+                className="flex-1 py-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {platJESaving ? (
+                  <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                ) : null}
+                {platJESaving ? 'กำลังบันทึก...' : 'อนุมัติ JE'}
+              </button>
+              <button
+                onClick={() => setPlatJEModal(null)}
+                className="px-4 py-2 bg-cyber-card hover:bg-red-500/20 rounded-lg text-sm transition-all"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* Upload Modal */}

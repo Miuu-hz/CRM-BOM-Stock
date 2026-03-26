@@ -19,38 +19,16 @@ declare global {
   }
 }
 
-// Hardcoded master accounts
-const MASTER_ACCOUNTS = ['BB-pillow', 'Kidshosuecafe']
-
-// DEV MODE: Allow dev_token without verification
-const DEV_TOKEN = 'dev_token'
-
 export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const authHeader = req.headers.authorization
-    
-    console.log('🔍 Auth Header:', authHeader)
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
       return
     }
 
     const token = authHeader.split(' ')[1]
-    console.log('🔍 Token:', token)
-    
-    // DEV MODE: Accept dev_token
-    if (token === DEV_TOKEN) {
-      console.log('✅ DEV TOKEN ACCEPTED')
-      req.user = {
-        userId: 'master_BB-pillow',
-        email: 'BB-pillow',
-        role: 'MASTER',
-        tenantId: 'tenant_bb_pillow'
-      }
-      next()
-      return
-    }
 
     const decoded = jwt.verify(token, JWT_SECRET) as any
 
@@ -84,16 +62,14 @@ export const requireRole = (...roles: string[]) => {
   }
 }
 
-// Check if user is master (either hardcoded or has MASTER role)
+// Check if user is master
 export const requireMaster = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user) {
     res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
     return
   }
 
-  const isMaster = req.user.role === 'MASTER' || MASTER_ACCOUNTS.includes(req.user.email)
-  
-  if (!isMaster) {
+  if (req.user.role !== 'MASTER') {
     res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้น' })
     return
   }
@@ -110,8 +86,7 @@ export const canEditRecord = (tableName: string) => {
     }
 
     // Master can always edit
-    const isMaster = req.user.role === 'MASTER' || MASTER_ACCOUNTS.includes(req.user.email)
-    if (isMaster) {
+    if (req.user.role === 'MASTER') {
       next()
       return
     }
@@ -153,8 +128,7 @@ export const canEditRecord = (tableName: string) => {
 
 // Helper function to check edit permission (for use in controllers)
 export const checkEditPermission = (user: any, createdAt: string): boolean => {
-  const isMaster = user.role === 'MASTER' || MASTER_ACCOUNTS.includes(user.email)
-  if (isMaster) return true
+  if (user.role === 'MASTER') return true
 
   const recordTime = new Date(createdAt).getTime()
   const now = Date.now()

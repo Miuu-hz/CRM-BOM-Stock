@@ -73,25 +73,25 @@ export interface StockAdjustment {
 export const materialsService = {
   // Get all material categories
   getCategories: async (): Promise<MaterialCategory[]> => {
-    const response = await api.get<MaterialCategory[]>('/materials/categories')
+    const response = await api.get<any>('/materials/categories')
     return response.data?.data || []
   },
 
   // Create new category (admin only)
   createCategory: async (input: { code: string; name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
-    const response = await api.post<MaterialCategory>('/materials/categories', input)
+    const response = await api.post<any>('/materials/categories', input)
     return response.data?.data
   },
 
   // Get all materials with stock info
   getAll: async (): Promise<Material[]> => {
-    const response = await api.get<Material[]>('/materials')
+    const response = await api.get<any>('/materials')
     return response.data?.data || []
   },
 
   // Get material by ID
   getById: async (id: string): Promise<Material> => {
-    const response = await api.get<Material>(`/materials/${id}`)
+    const response = await api.get<any>(`/materials/${id}`)
     if (!response.data?.data) {
       throw new Error('Material not found')
     }
@@ -100,7 +100,7 @@ export const materialsService = {
 
   // Get materials statistics
   getStats: async (): Promise<MaterialStats> => {
-    const response = await api.get<MaterialStats>('/materials/stats')
+    const response = await api.get<any>('/materials/stats')
     return response.data?.data || {
       totalMaterials: 0,
       lowStockCount: 0,
@@ -111,7 +111,7 @@ export const materialsService = {
 
   // Create new material
   create: async (input: CreateMaterialInput): Promise<Material> => {
-    const response = await api.post<Material>('/materials', input)
+    const response = await api.post<any>('/materials', input)
     if (!response.data?.data) {
       throw new Error('Failed to create material')
     }
@@ -120,7 +120,7 @@ export const materialsService = {
 
   // Update material
   update: async (id: string, input: UpdateMaterialInput): Promise<Material> => {
-    const response = await api.put<Material>(`/materials/${id}`, input)
+    const response = await api.put<any>(`/materials/${id}`, input)
     if (!response.data?.data) {
       throw new Error('Failed to update material')
     }
