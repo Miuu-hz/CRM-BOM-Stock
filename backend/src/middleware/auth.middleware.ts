@@ -33,6 +33,24 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
 
     const token = authHeader.split(' ')[1]
 
+    // AI service account via static API key (for Paperclip AI integration)
+    const aiApiKeys = process.env.AI_API_KEYS ? process.env.AI_API_KEYS.split(',').map(k => k.trim()) : []
+    const aiTenantId = process.env.AI_TENANT_ID || ''
+    if (aiApiKeys.length > 0 && aiApiKeys.includes(token)) {
+      if (!aiTenantId) {
+        res.status(500).json({ success: false, message: 'AI_TENANT_ID not configured' })
+        return
+      }
+      req.user = {
+        userId: 'ai-agent',
+        email: 'ai@system',
+        role: 'AI_AGENT',
+        tenantId: aiTenantId
+      }
+      next()
+      return
+    }
+
     const decoded = jwt.verify(token, JWT_SECRET) as any
 
     req.user = {
