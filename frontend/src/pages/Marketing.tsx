@@ -34,6 +34,7 @@ import {
 import api from '../utils/api'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
+import { useModalClose } from '../hooks/useModalClose'
 
 
 interface Shop {
@@ -1850,12 +1851,14 @@ function StatCard({
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  useModalClose(onClose)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
+        onClick={e => e.stopPropagation()}
         className="cyber-card p-6 max-w-lg w-full"
       >
         {children}
@@ -1891,6 +1894,7 @@ function UploadModal({
   onClose: () => void
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
 }) {
+  useModalClose(onClose)
   const [searchTerm, setSearchTerm] = useState('')
 
   const filteredShops = (shops || []).filter(shop =>
@@ -1994,6 +1998,7 @@ function AddShopModal({
   onClose: () => void
   onSubmit: (name: string, shopId: string) => void
 }) {
+  useModalClose(onClose)
   const [name, setName] = useState('')
   const [shopId, setShopId] = useState('')
 

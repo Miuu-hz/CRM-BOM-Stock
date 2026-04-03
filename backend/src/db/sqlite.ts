@@ -2072,6 +2072,164 @@ try {
   console.log('✅ Migration: company_settings table ready')
 } catch (e) { console.error('⚠️ company_settings migration error:', e) }
 
+// Migration: add pos_bom_deduct to company_settings (default 1 = enabled)
+try {
+  db.exec(`ALTER TABLE company_settings ADD COLUMN pos_bom_deduct INTEGER DEFAULT 1`)
+  console.log('✅ Migration: company_settings.pos_bom_deduct added')
+} catch { /* column already exists */ }
+
+// Migration: fix accounts with NULL is_active (manually created accounts missed the column)
+try {
+  db.exec(`UPDATE accounts SET is_active = 1 WHERE is_active IS NULL`)
+  console.log('✅ Migration: accounts is_active NULL → 1')
+} catch { /* ignore */ }
+
+// Migration: Purchase Requests (PR) — created from LINE, filled on web
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+      id                    TEXT PRIMARY KEY,
+      tenant_id             TEXT NOT NULL,
+      pr_number             TEXT NOT NULL,
+      supplier_name         TEXT NOT NULL,       -- ชื่อที่พิมพ์มาจาก LINE
+      supplier_id           TEXT,                -- FK ที่ map บน web (optional)
+      status                TEXT DEFAULT 'DRAFT', -- DRAFT | PENDING | APPROVED | REJECTED | CONVERTED
+      source                TEXT DEFAULT 'LINE',  -- LINE | WEB
+      requester_line_user_id TEXT,               -- LINE userId ของคนสร้าง
+      requester_name        TEXT,               -- ชื่อจาก LINE profile
+      source_group_id       TEXT,               -- groupId ถ้าสร้างจากกลุ่ม
+      notes                 TEXT,
+      approved_by           TEXT,               -- userId ใน system ที่อนุมัติ
+      approved_at           TEXT,
+      rejection_reason      TEXT,
+      created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, pr_number),
+      FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pr_tenant_status ON purchase_requests(tenant_id, status);
+
+    CREATE TABLE IF NOT EXISTS purchase_request_items (
+      id            TEXT PRIMARY KEY,
+      pr_id         TEXT NOT NULL,
+      item_name     TEXT NOT NULL,    -- ชื่อจาก LINE (free text)
+      material_id   TEXT,            -- map กับ materials/stock_items บน web
+      quantity      REAL,            -- กรอกบน web
+      unit          TEXT,            -- กรอกบน web
+      unit_price    REAL,            -- กรอกบน web
+      total_price   REAL GENERATED ALWAYS AS (COALESCE(quantity,0) * COALESCE(unit_price,0)) VIRTUAL,
+      sort_order    INTEGER DEFAULT 0,
+      FOREIGN KEY (pr_id) REFERENCES purchase_requests(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pr_items_pr ON purchase_request_items(pr_id);
+  `)
+  console.log('✅ Migration: purchase_requests tables ready')
+} catch (e) { /* already exists */ }
+
+// Migration: Add LINE-specific columns to existing purchase_requests table
+;[
+  "ALTER TABLE purchase_requests ADD COLUMN supplier_name TEXT",
+  "ALTER TABLE purchase_requests ADD COLUMN source TEXT DEFAULT 'WEB'",
+  "ALTER TABLE purchase_requests ADD COLUMN requester_line_user_id TEXT",
+  "ALTER TABLE purchase_requests ADD COLUMN source_group_id TEXT",
+  "ALTER TABLE purchase_requests ADD COLUMN rejection_reason TEXT",
+  "ALTER TABLE purchase_requests ADD COLUMN approved_at TEXT",
+].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
+
+// Migration: Add LINE-specific columns to existing purchase_request_items table
+;[
+  "ALTER TABLE purchase_request_items ADD COLUMN pr_id TEXT",
+  "ALTER TABLE purchase_request_items ADD COLUMN item_name TEXT",
+  "ALTER TABLE purchase_request_items ADD COLUMN sort_order INTEGER DEFAULT 0",
+  "ALTER TABLE purchase_request_items ADD COLUMN unit_price REAL",
+].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
+
+console.log('✅ Migration: purchase_requests LINE columns ready')
+
+// Migration: LINE group mappings — track LINE groups per tenant for push notifications
+// Recreate without FK on tenant_id (no tenants table in this schema)
+try {
+  const grpSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='line_group_mappings'").get() as any
+  if (!grpSchema) {
+    db.exec(`
+      CREATE TABLE line_group_mappings (
+        id         TEXT PRIMARY KEY,
+        tenant_id  TEXT NOT NULL,
+        group_id   TEXT NOT NULL,
+        group_name TEXT,
+        is_active  INTEGER DEFAULT 1,
+        joined_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_line_groups_tenant ON line_group_mappings(tenant_id, is_active);
+    `)
+    console.log('✅ Migration: line_group_mappings table created')
+  } else if (grpSchema.sql?.includes('REFERENCES tenants')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE line_group_mappings_new (
+        id         TEXT PRIMARY KEY,
+        tenant_id  TEXT NOT NULL,
+        group_id   TEXT NOT NULL,
+        group_name TEXT,
+        is_active  INTEGER DEFAULT 1,
+        joined_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, group_id)
+      );
+      INSERT OR IGNORE INTO line_group_mappings_new SELECT * FROM line_group_mappings;
+      DROP TABLE line_group_mappings;
+      ALTER TABLE line_group_mappings_new RENAME TO line_group_mappings;
+      CREATE INDEX IF NOT EXISTS idx_line_groups_tenant ON line_group_mappings(tenant_id, is_active);
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: line_group_mappings FK removed')
+  }
+} catch (e) { console.error('line_group_mappings migration error:', e) }
+
+// Migration: LINE link tokens — temporary codes for linking LINE userId to system user
+// No FK on user_id: master accounts use synthetic IDs (master_${email}) not in users table
+try {
+  db.exec(`
+    DROP TABLE IF EXISTS line_link_tokens;
+    CREATE TABLE line_link_tokens (
+      id         TEXT PRIMARY KEY,
+      tenant_id  TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      token      TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_line_link_tokens_token ON line_link_tokens(token);
+  `)
+  console.log('✅ Migration: line_link_tokens table ready')
+} catch (e) { console.error('line_link_tokens migration error:', e) }
+
+// Migration: Remove FK from line_user_mappings (master accounts use synthetic IDs not in users table)
+try {
+  const schema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='line_user_mappings'").get() as any
+  if (schema?.sql?.includes('REFERENCES users')) {
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE line_user_mappings_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        line_user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        notify_events TEXT DEFAULT '[]',
+        linked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, user_id),
+        UNIQUE(tenant_id, line_user_id)
+      );
+      INSERT OR IGNORE INTO line_user_mappings_new SELECT * FROM line_user_mappings;
+      DROP TABLE line_user_mappings;
+      ALTER TABLE line_user_mappings_new RENAME TO line_user_mappings;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: line_user_mappings FK removed')
+  }
+} catch (e) { console.error('line_user_mappings migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db

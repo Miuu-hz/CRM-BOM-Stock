@@ -24,9 +24,11 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
+import { accountsApi, type Account } from '../services/accounting'
 import { stockService } from '../services/stock'
 import { printDocument } from '../utils/purchasePrint'
 import toast from 'react-hot-toast'
+import { useModalClose } from '../hooks/useModalClose'
 
 // Types
 interface Supplier {
@@ -70,6 +72,8 @@ interface PurchaseRequest {
   notes: string
   item_count?: number
   items?: any[]
+  source?: string
+  supplier_name?: string
 }
 
 interface PurchaseOrder {
@@ -225,11 +229,14 @@ interface ReturnItem {
 
 const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH')}`
 
-const ModalShell = ({ title, onClose, children, footer }: {
+function ModalShell({ title, onClose, children, footer }: {
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode
-}) => (
-  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+}) {
+  useModalClose(onClose)
+  return (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+      onClick={e => e.stopPropagation()}
       className="bg-cyber-card rounded-2xl border border-cyber-border w-full max-w-4xl max-h-[90vh] flex flex-col">
       <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white">{title}</h2>
@@ -237,11 +244,12 @@ const ModalShell = ({ title, onClose, children, footer }: {
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="overflow-y-auto p-5 space-y-4 flex-1">{children}</div>
+      <div className="overflow-y-auto modal-scroll p-5 space-y-4 flex-1">{children}</div>
       <div className="p-5 border-t border-cyber-border shrink-0">{footer}</div>
     </motion.div>
   </div>
-)
+  )
+}
 
 const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
   <div>
@@ -568,6 +576,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
   onClose: () => void
   onCreated: (supplier: { id: string; code: string; name: string }) => void
 }) => {
+  useModalClose(onClose)
   const [form, setForm] = useState({ code: `SUP-${Date.now().toString().slice(-4)}`, name: '', contactName: '', phone: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -582,8 +591,9 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
     setSaving(false)
   }
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-4 border-b border-cyber-border flex items-center justify-between">
           <h3 className="text-white font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
@@ -656,6 +666,7 @@ const Purchase = () => {
   const [showQuickAddSupplier, setShowQuickAddSupplier] = useState(false)
   const [quickAddSupplierCallback, setQuickAddSupplierCallback] = useState<((id: string) => void) | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
+  const [drAccounts, setDrAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -707,7 +718,8 @@ const Purchase = () => {
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
     tax_rate: 7,
-    notes: ''
+    notes: '',
+    dr_account_id: ''   // '' = default 1107 สต็อกวัตถุดิบ
   })
 
   const [paymentForm, setPaymentForm] = useState({
@@ -739,6 +751,13 @@ const Purchase = () => {
     fetchReceipts()
     fetchInvoices()
     fetchRequests()
+    // Load ASSET + EXPENSE accounts for DR dropdown in invoice form
+    accountsApi.getAll({ active: true }).then(res => {
+      if (res.data.success) {
+        const list: Account[] = res.data.data.list.filter((a: Account) => a.level >= 2)
+        setDrAccounts(list.filter(a => a.type === 'ASSET' || a.type === 'EXPENSE'))
+      }
+    }).catch(() => {})
   }, [])
 
   // Fetch tab-specific list data when switching tabs
@@ -1086,6 +1105,7 @@ const Purchase = () => {
         dueDate: invoiceForm.due_date,
         taxRate: invoiceForm.tax_rate,
         notes: invoiceForm.notes,
+        drAccountId: invoiceForm.dr_account_id || undefined,
       })
       if (data.success) {
         toast.success('สร้างใบแจ้งหนี้สำเร็จ')
@@ -1205,7 +1225,8 @@ const Purchase = () => {
           invoice_date: data.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
           due_date: data.due_date?.split('T')[0] || '',
           tax_rate: data.tax_rate || 7,
-          notes: data.notes || ''
+          notes: data.notes || '',
+          dr_account_id: ''
         })
       } else if (type === 'payment') {
         setPaymentForm({
@@ -1233,7 +1254,7 @@ const Purchase = () => {
       setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
       setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '' })
+      setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '' })
       setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -1694,8 +1715,11 @@ const Purchase = () => {
             </div>
             {paginated.map((req, i) => (
               <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{req.pr_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{req.requester_name}</p>
+                <div className="col-span-2 flex items-center gap-1.5">
+                  <p className="font-mono text-xs text-gray-400">{req.pr_number}</p>
+                  {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 leading-none">LINE</span>}
+                </div>
+                <p className="col-span-3 text-white font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
                 <p className="col-span-2 text-gray-400 text-xs truncate">{req.department || '-'}</p>
                 <p className="col-span-2 text-gray-400 text-xs">{formatDate(req.request_date)}</p>
                 <div className="col-span-1"><StatusBadge status={req.status} /></div>
@@ -1712,9 +1736,12 @@ const Purchase = () => {
               <div key={req.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{req.pr_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{req.requester_name}</p>
-                    <p className="text-sm text-gray-400">{req.department || '-'}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs text-gray-500 font-mono">{req.pr_number}</p>
+                      {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 leading-none">LINE</span>}
+                    </div>
+                    <p className="font-semibold text-white mt-0.5 truncate">{req.requester_name || req.supplier_name || '-'}</p>
+                    <p className="text-sm text-gray-400">{req.department || req.supplier_name || '-'}</p>
                   </div>
                   <StatusBadge status={req.status} />
                 </div>
@@ -2975,14 +3002,38 @@ const Purchase = () => {
           rows={2} className={`${inputCls()} resize-none`} placeholder="หมายเหตุเพิ่มเติม..." />
       </Field>
 
+      {/* DR Account override */}
+      <Field label="บัญชี DR (เดบิต)">
+        <select value={invoiceForm.dr_account_id}
+          onChange={e => setInvoiceForm(p => ({ ...p, dr_account_id: e.target.value }))}
+          className={inputCls()}>
+          <option value="">1107 สต็อกวัตถุดิบ (ค่าเริ่มต้น)</option>
+          {['ASSET', 'EXPENSE'].map(type => {
+            const group = drAccounts.filter(a => a.type === type)
+            if (!group.length) return null
+            const label = type === 'ASSET' ? 'สินทรัพย์' : 'ค่าใช้จ่าย'
+            return (
+              <optgroup key={type} label={label}>
+                {group.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
+              </optgroup>
+            )
+          })}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">เปลี่ยนได้หากซื้อของสำนักงาน / ค่าใช้จ่าย ที่ไม่เข้า stock</p>
+      </Field>
+
       {/* Journal preview */}
-      {selectedPO && (
-        <JournalPreview entries={[
-          { dr: true,  account: '1107 สต็อกวัตถุดิบ',    label: 'มูลค่าสินค้า', amount: subtotal },
-          { dr: true,  account: '1110 ภาษีซื้อ',          label: 'VAT',          amount: taxAmt },
-          { dr: false, account: '2101 เจ้าหนี้การค้า',    label: 'ยอดรวม',       amount: total },
-        ]} />
-      )}
+      {selectedPO && (() => {
+        const selectedDrAcc = drAccounts.find(a => a.id === invoiceForm.dr_account_id)
+        const drLabel = selectedDrAcc ? `${selectedDrAcc.code} ${selectedDrAcc.name}` : '1107 สต็อกวัตถุดิบ'
+        return (
+          <JournalPreview entries={[
+            { dr: true,  account: drLabel,                  label: 'มูลค่าสินค้า', amount: subtotal },
+            { dr: true,  account: '1110 ภาษีซื้อ',         label: 'VAT',          amount: taxAmt },
+            { dr: false, account: '2101 เจ้าหนี้การค้า',   label: 'ยอดรวม',       amount: total },
+          ]} />
+        )
+      })()}
     </ModalShell>
     )
   }

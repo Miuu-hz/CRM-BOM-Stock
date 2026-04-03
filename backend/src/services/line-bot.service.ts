@@ -1,149 +1,632 @@
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
 
-// We will load line SDK dynamically or wrap it to handle missing dependency initially.
-// We'll define types as `any` if the module isn't strictly imported yet.
-let Client: any;
-let validateSignature: any;
+// ─── BOM Command Parser ───────────────────────────────────────────────────────
+// รองรับรูปแบบ (ส่วนตัวเท่านั้น):
+//   บอม [ชื่อสินค้า]
+//   [วัตถุดิบ 1] [จำนวน] [หน่วย]
+//   [วัตถุดิบ 2] [จำนวน] [หน่วย]
+export function parseBOMCommand(text: string): { productName: string; items: { name: string; qty: number; unit: string }[] } | null {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    if (lines.length < 2) return null
+
+    const firstLine = lines[0]
+    if (!/^บอม\s+/i.test(firstLine)) return null
+
+    const productName = firstLine.replace(/^บอม\s+/i, '').trim()
+    if (!productName) return null
+
+    const items = lines.slice(1).map(line => {
+        const parts = line.split(/\s+/)
+        // รูปแบบ: "ชื่อ qty unit"
+        if (parts.length >= 3) {
+            const maybeQty = parseFloat(parts[parts.length - 2])
+            const maybeUnit = parts[parts.length - 1]
+            if (!isNaN(maybeQty) && maybeQty > 0 && !/^\d/.test(maybeUnit)) {
+                return { name: parts.slice(0, -2).join(' '), qty: maybeQty, unit: maybeUnit }
+            }
+        }
+        // รูปแบบ: "ชื่อ qty"
+        if (parts.length >= 2) {
+            const maybeQty = parseFloat(parts[parts.length - 1])
+            if (!isNaN(maybeQty) && maybeQty > 0) {
+                return { name: parts.slice(0, -1).join(' '), qty: maybeQty, unit: 'ชิ้น' }
+            }
+        }
+        // ไม่มีจำนวน → default 1
+        return { name: line.trim(), qty: 1, unit: 'ชิ้น' }
+    }).filter(i => i.name.length > 0)
+
+    if (items.length === 0) return null
+    return { productName, items }
+}
+
+// ─── PR Command Parser ────────────────────────────────────────────────────────
+// รองรับรูปแบบ:
+//   ขอซื้อ PR กับ [ซัพพลายเออร์]    หรือ    ขอซื้อ [ซัพพลายเออร์]
+//   [รายการ 1]
+//   [รายการ 2]
+//   ...
+export function parsePRCommand(text: string): { supplierName: string; items: string[] } | null {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    if (lines.length < 2) return null
+
+    const firstLine = lines[0]
+    const isPR = /^ขอซื้อ/i.test(firstLine)
+    if (!isPR) return null
+
+    // ดึงชื่อซัพพลายเออร์: "ขอซื้อ PR กับ ABC" หรือ "ขอซื้อ กับ ABC" หรือ "ขอซื้อ ABC"
+    const withMatch = firstLine.match(/กับ\s+(.+)$/i)
+    const supplierName = withMatch
+        ? withMatch[1].trim()
+        : firstLine.replace(/^ขอซื้อ\s*(PR\s*)?/i, '').trim() || 'ไม่ระบุซัพพลายเออร์'
+
+    const items = lines.slice(1).filter(l => l.length > 0)
+    if (items.length === 0) return null
+
+    return { supplierName, items }
+}
+
+// ─── PR Number Generator ──────────────────────────────────────────────────────
+function generatePRNumber(tenantId: string): string {
+    const db = getDb()
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const count = (db.prepare(
+        "SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ? AND pr_number LIKE ?"
+    ).get(tenantId, `PR-${today}-%`) as any).c + 1
+    return `PR-${today}-${String(count).padStart(3, '0')}`
+}
+
+let Client: any
+let validateSignature: any
 try {
-    const line = require('@line/bot-sdk');
-    Client = line.Client;
-    validateSignature = line.validateSignature;
+    const line = require('@line/bot-sdk')
+    Client = line.Client
+    validateSignature = line.validateSignature
 } catch (e) {
-    console.warn('⚠️ @line/bot-sdk is not installed. LINE Bot functionality will be disabled.');
+    console.warn('⚠️ @line/bot-sdk is not installed. LINE Bot functionality will be disabled.')
 }
 
 import { flexTemplates } from './line-flex-templates'
 
-/**
- * Service สำหรับจัดการ LINE Messaging API แบบ Multi-Tenant
- */
+// ─── Quick Reply Items ────────────────────────────────────────────────────────
+function quickReplyItems(isPersonal: boolean) {
+    const items: any[] = [
+        { type: 'action', action: { type: 'message', label: '📊 สถานะงาน', text: 'สถานะ' } },
+        { type: 'action', action: { type: 'message', label: '📦 เช็คสต็อก', text: 'สต็อก ' } },
+        { type: 'action', action: { type: 'message', label: '🛒 ออเดอร์',   text: 'ออเดอร์' } },
+        { type: 'action', action: { type: 'message', label: '❓ ช่วยเหลือ', text: '-help' } },
+    ]
+    if (isPersonal) {
+        items.splice(3, 0, {
+            type: 'action', action: { type: 'message', label: '🔗 เชื่อมบัญชี', text: 'วิธีเชื่อมบัญชี' }
+        })
+    }
+    return items.slice(0, 13) // LINE max 13 items
+}
+
+// ─── Source helpers ────────────────────────────────────────────────────────────
+function sourceType(event: any): 'user' | 'group' | 'room' {
+    return event.source?.type ?? 'user'
+}
+function replyTarget(event: any): string {
+    return sourceType(event) === 'group'
+        ? event.source.groupId
+        : sourceType(event) === 'room'
+            ? event.source.roomId
+            : event.source.userId
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
 class LineBotService {
 
-    /**
-     * สร้าง LINE Client สำหรับ tenant
-     */
-    private getClient(tenantId: string) {
-        if (!Client) return null;
-
-        const db = getDb();
-        const config = db.prepare('SELECT * FROM line_channels WHERE tenant_id = ? AND is_active = 1').get(tenantId);
-
-        if (!config) return null;
-
+    // ── Client factory ────────────────────────────────────────────────────────
+    private getClient(tenantId: string): any | null {
+        if (!Client) return null
+        const db = getDb()
+        const config = db.prepare(
+            'SELECT * FROM line_channels WHERE tenant_id = ? AND is_active = 1'
+        ).get(tenantId) as any
+        if (!config) return null
         return new Client({
             channelAccessToken: config.channel_access_token,
-            channelSecret: config.channel_secret
-        });
+            channelSecret:      config.channel_secret,
+        })
     }
 
-    /**
-     * ค้นหา Tenant ID จาก Webhook Signature (โดยลอง validate กับทุก channel_secret ที่มี)
-     */
+    // ── Tenant resolution ─────────────────────────────────────────────────────
     public getTenantFromSignature(signature: string, bodyRaw: Buffer | string): string | null {
-        if (!validateSignature) return null;
-
-        const db = getDb();
-        const channels = db.prepare('SELECT tenant_id, channel_secret FROM line_channels WHERE is_active = 1').all() as any[];
-
-        for (const channel of channels) {
+        if (!validateSignature) return null
+        const db = getDb()
+        const channels = db.prepare(
+            'SELECT tenant_id, channel_secret FROM line_channels WHERE is_active = 1'
+        ).all() as any[]
+        for (const ch of channels) {
             try {
-                if (validateSignature(bodyRaw, channel.channel_secret, signature)) {
-                    return channel.tenant_id;
-                }
-            } catch (err) {
-                // signature invalid for this secret, try next
-                continue;
-            }
+                if (validateSignature(bodyRaw, ch.channel_secret, signature)) return ch.tenant_id
+            } catch { /* try next */ }
         }
-        return null;
+        return null
     }
 
-    /**
-     * ส่ง Message ไปหาผู้ใช้ทุกคนที่มี Role นี้ใน Tenant นั้น
-     */
+    // ── Push helpers ──────────────────────────────────────────────────────────
     public async pushToRole(tenantId: string, role: string, message: any) {
-        const client = this.getClient(tenantId);
-        if (!client) return;
-
-        const db = getDb();
-        const users = db.prepare('SELECT line_user_id FROM line_user_mappings WHERE tenant_id = ? AND role = ?').all(tenantId, role) as any[];
-
-        if (users.length === 0) return;
-
-        for (const user of users) {
-            try {
-                await client.pushMessage(user.line_user_id, message);
-            } catch (err) {
-                console.error(`Failed to push message to ${user.line_user_id}:`, err);
+        const client = this.getClient(tenantId)
+        if (!client) return
+        const db = getDb()
+        const users = db.prepare(
+            'SELECT line_user_id FROM line_user_mappings WHERE tenant_id = ? AND role = ?'
+        ).all(tenantId, role) as any[]
+        for (const u of users) {
+            try { await client.pushMessage(u.line_user_id, message) } catch (err) {
+                console.error(`pushToRole failed for ${u.line_user_id}:`, err)
             }
         }
     }
 
-    /**
-     * แจ้งเตือน Work Order สร้างใหม่ (Push ไปยังพนักงานผลิต - USER)
-     */
+    public async pushToAllGroups(tenantId: string, message: any) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+        const db = getDb()
+        const groups = db.prepare(
+            'SELECT group_id FROM line_group_mappings WHERE tenant_id = ? AND is_active = 1'
+        ).all(tenantId) as any[]
+        for (const g of groups) {
+            try { await client.pushMessage(g.group_id, message) } catch (err) {
+                console.error(`pushToAllGroups failed for ${g.group_id}:`, err)
+            }
+        }
+    }
+
+    // ── Work Order notifications ───────────────────────────────────────────────
+    // ── PR status notification (called from web API after approve/reject) ────
+    public async notifyPRStatus(
+        tenantId: string,
+        pr: {
+            id: string; prNumber: string; supplierName: string
+            status: 'APPROVED' | 'REJECTED'
+            requesterLineUserId?: string; sourceGroupId?: string
+            approverName: string; rejectionReason?: string
+        }
+    ) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+
+        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/purchase-requests/${pr.id}`
+        const card = flexTemplates.prStatusCard({ ...pr, webUrl })
+
+        const targets = new Set<string>()
+        if (pr.requesterLineUserId) targets.add(pr.requesterLineUserId)
+        if (pr.sourceGroupId)       targets.add(pr.sourceGroupId)
+
+        for (const target of targets) {
+            try { await client.pushMessage(target, card) } catch (err) {
+                console.error(`notifyPRStatus push failed → ${target}:`, err)
+            }
+        }
+    }
+
     public async notifyWorkOrderCreated(tenantId: string, wo: any) {
-        const message = flexTemplates.workOrderCard(wo);
-        // ส่งให้ 'USER' (พนักงานผลิต)
-        await this.pushToRole(tenantId, 'USER', message);
-        // ส่งให้ 'MANAGER' และ 'MASTER' เพื่อรับรู้
-        await this.pushToRole(tenantId, 'MANAGER', message);
-        await this.pushToRole(tenantId, 'MASTER', message);
+        const msg = flexTemplates.workOrderCard(wo)
+        await Promise.all([
+            this.pushToRole(tenantId, 'USER',    msg),
+            this.pushToRole(tenantId, 'MANAGER', msg),
+            this.pushToRole(tenantId, 'MASTER',  msg),
+            this.pushToAllGroups(tenantId, msg),
+        ])
     }
 
-    /**
-     * แจ้งเตือนสถานะ Work Order เปลี่ยน (Push ไปยังหัวหน้า - MASTER/MANAGER)
-     */
     public async notifyWorkOrderStatusChanged(tenantId: string, wo: any) {
-        const message = flexTemplates.statusChangedCard(wo);
-        await this.pushToRole(tenantId, 'MASTER', message);
-        await this.pushToRole(tenantId, 'MANAGER', message);
+        const msg = flexTemplates.statusChangedCard(wo)
+        await Promise.all([
+            this.pushToRole(tenantId, 'MASTER',  msg),
+            this.pushToRole(tenantId, 'MANAGER', msg),
+            this.pushToAllGroups(tenantId, msg),
+        ])
     }
 
-    /**
-     * จัดการ Webhook Events (ข้อความเข้า, กดปุ่ม)
-     */
-    public async handleEvent(tenantId: string, event: any) {
-        const client = this.getClient(tenantId);
-        if (!client) return;
+    // ── Account linking ───────────────────────────────────────────────────────
+    /** Generate a short-lived 6-digit token; returns the plain token */
+    public generateLinkToken(tenantId: string, userId: string): string {
+        const db = getDb()
+        // Invalidate previous tokens for this user
+        db.prepare('DELETE FROM line_link_tokens WHERE user_id = ?').run(userId)
+        const token = Math.floor(100000 + Math.random() * 900000).toString()
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+        db.prepare(
+            'INSERT INTO line_link_tokens (id, tenant_id, user_id, token, expires_at) VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)'
+        ).run(tenantId, userId, token, expiresAt)
+        return token
+    }
 
-        // 1. Text Commands
-        if (event.type === 'message' && event.message.type === 'text') {
-            const text = event.message.text.trim();
+    private tryLinkAccount(tenantId: string, lineUserId: string, token: string): 'ok' | 'invalid' | 'expired' | 'already_linked' {
+        const db = getDb()
+        const row = db.prepare(
+            'SELECT * FROM line_link_tokens WHERE token = ? AND tenant_id = ?'
+        ).get(token, tenantId) as any
+        if (!row) return 'invalid'
+        if (new Date(row.expires_at) < new Date()) {
+            db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+            return 'expired'
+        }
+        // Check already linked
+        const existing = db.prepare(
+            'SELECT id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+        ).get(tenantId, lineUserId)
+        if (existing) return 'already_linked'
+        // Fetch user role
+        const user = db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id) as any
+        const role = user?.role ?? 'USER'
+        // Upsert mapping
+        db.prepare(`
+            INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+            VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)
+            ON CONFLICT(tenant_id, user_id) DO UPDATE SET line_user_id = excluded.line_user_id, role = excluded.role
+        `).run(tenantId, row.user_id, lineUserId, role)
+        db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+        return 'ok'
+    }
 
-            if (text === 'สถานะ' || text.toLowerCase() === 'status') {
-                const db = getDb();
-                const inProgress = db.prepare("SELECT * FROM work_orders WHERE tenant_id = ? AND status = 'IN_PROGRESS' ORDER BY created_at DESC").all(tenantId) as any[];
-                await client.replyMessage(event.replyToken, flexTemplates.statusSummaryCard(inProgress));
-                return;
+    // ── Group membership ──────────────────────────────────────────────────────
+    private saveGroup(tenantId: string, groupId: string) {
+        const db = getDb()
+        db.prepare(`
+            INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active)
+            VALUES (lower(hex(randomblob(12))), ?, ?, 1)
+            ON CONFLICT(tenant_id, group_id) DO UPDATE SET is_active = 1
+        `).run(tenantId, groupId)
+    }
+
+    private deactivateGroup(tenantId: string, groupId: string) {
+        const db = getDb()
+        db.prepare(
+            'UPDATE line_group_mappings SET is_active = 0 WHERE tenant_id = ? AND group_id = ?'
+        ).run(tenantId, groupId)
+    }
+
+    // ── Profile helper (works for both personal and group source) ────────────
+    private async getDisplayName(client: any, event: any): Promise<string> {
+        try {
+            if (event.source.type === 'group') {
+                const p = await client.getGroupMemberProfile(event.source.groupId, event.source.userId)
+                return p.displayName
             }
+            if (event.source.type === 'room') {
+                const p = await client.getRoomMemberProfile(event.source.roomId, event.source.userId)
+                return p.displayName
+            }
+            const p = await client.getProfile(event.source.userId)
+            return p.displayName
+        } catch {
+            return 'LINE User'
+        }
+    }
 
-            await client.replyMessage(event.replyToken, {
-                type: 'text',
-                text: 'คำสั่งที่ไม่รู้จัก พิมพ์ "สถานะ" เพื่อดูใบสั่งผลิตที่กำลังดำเนินการ'
-            });
+    // ── PR command ────────────────────────────────────────────────────────────
+    private async handlePRCommand(
+        tenantId: string, event: any, client: any,
+        parsed: { supplierName: string; items: string[] }
+    ) {
+        const db = getDb()
+
+        const requesterName = await this.getDisplayName(client, event)
+
+        const prNumber = generatePRNumber(tenantId)
+        const sourceGroupId = event.source.groupId ?? event.source.roomId ?? null
+
+        // สร้าง PR ใน DB
+        // ใช้ชื่อ column ที่ compatible กับทั้ง original schema และ LINE schema
+        const prId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        const lineUserId = event.source.userId
+        db.prepare(`
+            INSERT INTO purchase_requests
+              (id, tenant_id, pr_number, supplier_name, status, source,
+               requester_id, requester_line_user_id, requester_name, source_group_id)
+            VALUES (?, ?, ?, ?, 'DRAFT', 'LINE', ?, ?, ?, ?)
+        `).run(prId, tenantId, prNumber, parsed.supplierName,
+               lineUserId, lineUserId, requesterName, sourceGroupId)
+
+        // สร้าง items — ต้องส่ง purchase_request_id และ description ด้วย (NOT NULL ใน original schema)
+        const insertItem = db.prepare(`
+            INSERT INTO purchase_request_items (id, purchase_request_id, pr_id, description, item_name, sort_order)
+            VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?)
+        `)
+        parsed.items.forEach((name, i) => insertItem.run(prId, prId, name, name, i))
+
+        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/purchase-requests/${prId}`
+
+        const card = flexTemplates.prDraftCard({
+            prNumber,
+            supplierName: parsed.supplierName,
+            items: parsed.items,
+            webUrl,
+        })
+
+        await client.replyMessage(event.replyToken, card)
+    }
+
+    // ── BOM Draft command (personal chat only) ───────────────────────────────
+    private async handleBOMCommand(
+        tenantId: string, event: any, client: any,
+        parsed: { productName: string; items: { name: string; qty: number; unit: string }[] }
+    ) {
+        const db = getDb()
+
+        // ── Helper: find existing stock_item by name, or create placeholder ──
+        const findOrCreate = (name: string, unit: string, category: string): { id: string; isNew: boolean } => {
+            const existing = db.prepare(
+                'SELECT id FROM stock_items WHERE tenant_id = ? AND name = ? LIMIT 1'
+            ).get(tenantId, name) as any
+            if (existing) return { id: existing.id, isNew: false }
+
+            const id  = `si_${crypto.randomBytes(6).toString('hex')}`
+            const sku = `LINE-${crypto.randomBytes(4).toString('hex').toUpperCase()}`
+            const now = new Date().toISOString()
+            db.prepare(`
+                INSERT INTO stock_items
+                  (id, tenant_id, sku, name, category, unit, location, status, quantity, unit_cost, min_stock, max_stock, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'ไม่ระบุ', 'ACTIVE', 0, 0, 0, 1000, ?, ?)
+            `).run(id, tenantId, sku, name, category, unit, now, now)
+            return { id, isNew: true }
         }
 
-        // 2. Button Postbacks
+        // 1. สินค้าหลัก (product)
+        const product = findOrCreate(parsed.productName, 'ชิ้น', 'PRODUCT')
+
+        // 2. Auto-version: นับ BOM ที่มีอยู่ของ product นี้
+        const existingCount = (db.prepare(
+            'SELECT COUNT(*) as c FROM boms WHERE product_id = ? AND tenant_id = ?'
+        ).get(product.id, tenantId) as any).c
+        const version = `v${existingCount + 1}`
+
+        // 3. สร้าง BOM (DRAFT)
+        const bomId = `bom_${crypto.randomBytes(7).toString('hex')}`
+        const now   = new Date().toISOString()
+        db.prepare(`
+            INSERT INTO boms (id, tenant_id, product_id, version, status, level, is_semi_finished, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'DRAFT', 0, 0, ?, ?)
+        `).run(bomId, tenantId, product.id, version, now, now)
+
+        // 4. สร้าง bom_items — find/create วัตถุดิบแต่ละตัว
+        const insertItem = db.prepare(`
+            INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, quantity, notes, sort_order)
+            VALUES (?, ?, ?, 'MATERIAL', ?, ?, '', ?)
+        `)
+        const newItems: string[] = []
+        parsed.items.forEach((item, i) => {
+            const mat = findOrCreate(item.name, item.unit, 'MATERIAL')
+            if (mat.isNew) newItems.push(item.name)
+            insertItem.run(`bi_${crypto.randomBytes(6).toString('hex')}`, tenantId, bomId, mat.id, item.qty, i)
+        })
+
+        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/bom`
+        const card = flexTemplates.bomDraftCard({
+            productName: parsed.productName,
+            version,
+            items: parsed.items,
+            newItems,
+            webUrl,
+        })
+        await client.replyMessage(event.replyToken, card)
+    }
+
+    // ── Text command handlers ─────────────────────────────────────────────────
+    private async handleStatusCommand(tenantId: string, replyToken: string, client: any) {
+        const db = getDb()
+        const inProgress = db.prepare(
+            "SELECT wo.*, si.name as product_name FROM work_orders wo LEFT JOIN stock_items si ON wo.bom_id = si.id WHERE wo.tenant_id = ? AND wo.status = 'IN_PROGRESS' ORDER BY wo.created_at DESC LIMIT 10"
+        ).all(tenantId) as any[]
+        const msg = flexTemplates.statusSummaryCard(inProgress) as any
+        msg.quickReply = { items: quickReplyItems(false) }
+        await client.replyMessage(replyToken, msg)
+    }
+
+    private async handleStockCommand(tenantId: string, query: string, replyToken: string, client: any) {
+        const db = getDb()
+        const items = db.prepare(
+            "SELECT name, sku, quantity, unit, status FROM stock_items WHERE tenant_id = ? AND name LIKE ? LIMIT 5"
+        ).all(tenantId, `%${query}%`) as any[]
+        const msg = flexTemplates.stockQueryCard(query, items) as any
+        msg.quickReply = { items: quickReplyItems(false) }
+        await client.replyMessage(replyToken, msg)
+    }
+
+    private async handleOrderCommand(tenantId: string, replyToken: string, client: any) {
+        const db = getDb()
+        const orders = db.prepare(
+            "SELECT order_number, status, total_amount, created_at FROM orders WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 5"
+        ).all(tenantId) as any[]
+        const msg = flexTemplates.recentOrdersCard(orders) as any
+        msg.quickReply = { items: quickReplyItems(false) }
+        await client.replyMessage(replyToken, msg)
+    }
+
+    private async handleLinkCommand(
+        tenantId: string, lineUserId: string,
+        token: string, replyToken: string, client: any
+    ) {
+        const result = this.tryLinkAccount(tenantId, lineUserId, token)
+        const texts: Record<string, string> = {
+            ok:            '✅ เชื่อมบัญชีสำเร็จ!\nตอนนี้คุณจะได้รับแจ้งเตือนและสั่งงานผ่าน LINE ได้แล้ว 🎉',
+            invalid:       '❌ รหัสไม่ถูกต้อง\nกรุณาขอรหัสใหม่จากหน้าตั้งค่าในระบบ',
+            expired:       '⏰ รหัสหมดอายุแล้ว (มีอายุ 10 นาที)\nกรุณาขอรหัสใหม่จากหน้าตั้งค่า',
+            already_linked:'ℹ️ LINE นี้เชื่อมบัญชีไว้แล้ว',
+        }
+        await client.replyMessage(replyToken, {
+            type: 'text', text: texts[result],
+            quickReply: { items: quickReplyItems(true) }
+        })
+    }
+
+    private async handleHowToLinkCommand(replyToken: string, client: any) {
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '🔗 วิธีเชื่อมบัญชี LINE กับระบบ\n\n1️⃣ เปิดเว็บ crm.phopy.net\n2️⃣ ไปที่ ตั้งค่า → LINE Bot\n3️⃣ กดปุ่ม "สร้างรหัสเชื่อม"\n4️⃣ ส่งข้อความนี้มาที่นี่:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456\n\n⏰ รหัสมีอายุ 10 นาที',
+            quickReply: { items: quickReplyItems(true) }
+        })
+    }
+
+    // ── Main event dispatcher ─────────────────────────────────────────────────
+    public async handleEvent(tenantId: string, event: any) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+
+        const src = sourceType(event)
+
+        // ── follow: user added the bot as friend ──────────────────────────────
+        if (event.type === 'follow') {
+            await client.replyMessage(event.replyToken, flexTemplates.welcomeCard())
+            return
+        }
+
+        // ── unfollow: user blocked/removed the bot (no reply token) ──────────
+        if (event.type === 'unfollow') {
+            const db = getDb()
+            db.prepare(
+                'DELETE FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+            ).run(tenantId, event.source.userId)
+            return
+        }
+
+        // ── join: bot added to a group/room ───────────────────────────────────
+        if (event.type === 'join') {
+            const groupId = event.source.groupId ?? event.source.roomId
+            if (groupId) {
+                this.saveGroup(tenantId, groupId)
+                // pushMessage instead of replyMessage — replyToken expires in 30s
+                // and may already be stale when we get here
+                try {
+                    await client.pushMessage(groupId, {
+                        type: 'text',
+                        text: '👋 สวัสดีครับ! บอทเชื่อมต่อระบบแล้ว\nพิมพ์ "-help" เพื่อดูคำสั่งที่ใช้ได้'
+                    })
+                } catch { /* ignore push failures */ }
+            }
+            return
+        }
+
+        // ── leave: bot removed from group/room ───────────────────────────────
+        if (event.type === 'leave') {
+            const groupId = event.source.groupId ?? event.source.roomId
+            if (groupId) this.deactivateGroup(tenantId, groupId)
+            return
+        }
+
+        // ── text message ──────────────────────────────────────────────────────
+        if (event.type === 'message' && event.message.type === 'text') {
+            const text = event.message.text.trim()
+            const lower = text.toLowerCase()
+
+            // ── BOM Draft (personal chat only) ───────────────────────────────
+            if (src === 'user') {
+                const bomParsed = parseBOMCommand(text)
+                if (bomParsed) {
+                    await this.handleBOMCommand(tenantId, event, client, bomParsed)
+                    return
+                }
+            }
+
+            // ── PR request (group + personal) ────────────────────────────────
+            const prParsed = parsePRCommand(text)
+            if (prParsed) {
+                await this.handlePRCommand(tenantId, event, client, prParsed)
+                return
+            }
+
+            // ── Account linking (personal chat only) ─────────────────────────
+            if (src === 'user' && (lower.startsWith('/ลิงก์ ') || lower.startsWith('ลิงก์ '))) {
+                const token = text.split(' ')[1]?.trim()
+                if (token) {
+                    await this.handleLinkCommand(tenantId, event.source.userId, token, event.replyToken, client)
+                    return
+                }
+            }
+
+            // ── คำสั่ง: วิธีเชื่อมบัญชี (personal only) ─────────────────────
+            if (src === 'user' && ['วิธีเชื่อมบัญชี', 'เชื่อมบัญชี', 'link', '-link'].includes(lower)) {
+                await this.handleHowToLinkCommand(event.replyToken, client)
+                return
+            }
+
+            // ── คำสั่ง: -help / /help / help / ช่วยเหลือ / ? ────────────────
+            const isHelp = ['-help', '/help', 'help', 'ช่วยเหลือ', '?', 'menu', 'เมนู'].includes(lower)
+            if (isHelp) {
+                const msg = flexTemplates.helpCard(src === 'user') as any
+                msg.quickReply = { items: quickReplyItems(src === 'user') }
+                await client.replyMessage(event.replyToken, msg)
+                return
+            }
+
+            // ── คำสั่ง: สถานะ / status / -status ─────────────────────────────
+            if (['สถานะ', 'status', '-status'].includes(lower)) {
+                await this.handleStatusCommand(tenantId, event.replyToken, client)
+                return
+            }
+
+            // ── คำสั่ง: สต็อก [ชื่อ] / stock [name] ─────────────────────────
+            if (lower.startsWith('สต็อก ') || lower.startsWith('stock ') || lower.startsWith('-stock ')) {
+                const query = text.split(' ').slice(1).join(' ').trim()
+                if (query) {
+                    await this.handleStockCommand(tenantId, query, event.replyToken, client)
+                    return
+                }
+            }
+
+            // ── คำสั่ง: ออเดอร์ / orders / -orders ───────────────────────────
+            if (['ออเดอร์', 'orders', '-orders'].includes(lower)) {
+                await this.handleOrderCommand(tenantId, event.replyToken, client)
+                return
+            }
+
+            // ── fallback ──────────────────────────────────────────────────────
+            // กลุ่ม: เงียบ (ไม่ตอบทุก message)
+            // ส่วนตัว: แนะนำ -help พร้อม Quick Reply
+            if (src === 'user') {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: 'พิมพ์ -help เพื่อดูคำสั่งทั้งหมด 👇',
+                    quickReply: { items: quickReplyItems(false) }
+                })
+            }
+            return
+        }
+
+        // ── postback ──────────────────────────────────────────────────────────
         if (event.type === 'postback' && event.postback.data) {
-            const data = new URLSearchParams(event.postback.data);
-            const action = data.get('action');
-            const id = data.get('id');
+            const params = new URLSearchParams(event.postback.data)
+            const action = params.get('action')
+            const id     = params.get('id')
+            const db     = getDb()
 
             if (action === 'start_wo' && id) {
-                await client.replyMessage(event.replyToken, { type: 'text', text: 'ระบบกำลังดำเนินการ...' });
-                // จริงๆ ควรเรียก service ภายในเพื่อ update status
-                // db.prepare("UPDATE work_orders SET status = 'IN_PROGRESS' WHERE id = ?").run(id)
-                // แล้ว client จะ push แจ้งกลับผ่าน notifyWorkOrderStatusChanged
+                db.prepare(
+                    "UPDATE work_orders SET status = 'IN_PROGRESS', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                ).run(id)
+                const wo = db.prepare(
+                    "SELECT wo.*, si.name as product_name FROM work_orders wo LEFT JOIN stock_items si ON wo.bom_id = si.id WHERE wo.id = ?"
+                ).get(id) as any
+                await client.replyMessage(event.replyToken, {
+                    type: 'text', text: `🏭 เริ่มผลิต ${wo?.wo_number ?? id} แล้วครับ`
+                })
+                if (wo) await this.notifyWorkOrderStatusChanged(tenantId, wo)
+                return
             }
 
             if (action === 'complete_wo' && id) {
-                await client.replyMessage(event.replyToken, { type: 'text', text: 'ระบบบันทึกว่าผลิตเสร็จเรียบร้อย' });
-                // Update DB
+                db.prepare(
+                    "UPDATE work_orders SET status = 'COMPLETED', completed_date = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                ).run(id)
+                const wo = db.prepare(
+                    "SELECT wo.*, si.name as product_name FROM work_orders wo LEFT JOIN stock_items si ON wo.bom_id = si.id WHERE wo.id = ?"
+                ).get(id) as any
+                await client.replyMessage(event.replyToken, {
+                    type: 'text', text: `✅ บันทึกว่าผลิตเสร็จ ${wo?.wo_number ?? id} แล้วครับ`
+                })
+                if (wo) await this.notifyWorkOrderStatusChanged(tenantId, wo)
+                return
             }
         }
     }
 }
 
-export const lineBotService = new LineBotService();
+export const lineBotService = new LineBotService()

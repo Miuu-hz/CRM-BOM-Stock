@@ -40,6 +40,7 @@ import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
+import { useModalClose } from '../hooks/useModalClose'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -707,6 +708,7 @@ function CRM() {
 function CustomerModal({ open, customer, onClose, onSave }: {
   open: boolean; customer: Customer | null; onClose: () => void; onSave: () => void
 }) {
+  useModalClose(onClose)
   const [form, setForm] = useState({
     code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
     city: '', creditLimit: 0, status: 'ACTIVE'
@@ -889,6 +891,7 @@ function CustomerDetailModal({
   onEdit: () => void
   onDelete: () => void
 }) {
+  useModalClose(onClose)
   // State for recommendations
   const [recommendations, setRecommendations] = useState<any[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
@@ -993,15 +996,16 @@ function CustomerDetailModal({
   })()
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-darker border border-cyber-primary/40 rounded-2xl shadow-2xl shadow-cyber-primary/10 w-full max-w-5xl max-h-[95vh] flex overflow-hidden"
       >
         {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-cyber-card/40 border-r border-cyber-border flex flex-col overflow-y-auto">
+        <div className="w-64 flex-shrink-0 bg-cyber-card/40 border-r border-cyber-border flex flex-col overflow-y-auto modal-scroll">
           {/* Avatar + Name */}
           <div className="relative p-5 text-center bg-gradient-to-b from-cyber-primary/10 to-transparent border-b border-cyber-border/50">
             <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-cyber-card/60 transition-colors">

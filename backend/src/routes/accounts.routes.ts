@@ -304,12 +304,22 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, nameEn, type, category, parentId, normalBalance, description, taxRelated } = req.body
-    
-    if (!code || !name || !type || !category || !normalBalance) {
+    const { code, name, nameEn, type, parentId, normalBalance, description, taxRelated } = req.body
+    let { category } = req.body
+
+    // default category from type when not provided
+    if (!category) {
+      const defaultCategory: Record<string, string> = {
+        ASSET: 'CURRENT_ASSET', LIABILITY: 'CURRENT_LIABILITY',
+        EQUITY: 'CAPITAL', REVENUE: 'SALES', EXPENSE: 'ADMIN_EXPENSE',
+      }
+      category = defaultCategory[type] ?? type
+    }
+
+    if (!code || !name || !type || !normalBalance) {
       return res.status(400).json({
         success: false,
-        message: 'Code, name, type, category, and normalBalance are required'
+        message: 'Code, name, type, and normalBalance are required'
       })
     }
     
@@ -333,8 +343,8 @@ router.post('/', async (req: Request, res: Response) => {
     
     db.prepare(`
       INSERT INTO accounts (id, tenant_id, code, name, name_en, type, category, parent_id, level,
-                           normal_balance, description, tax_related, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           is_active, normal_balance, description, tax_related, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `).run(id, tenantId, code, name, nameEn || null, type, category, parentId || null, level,
            normalBalance, description || null, taxRelated ? 1 : 0, now, now)
     

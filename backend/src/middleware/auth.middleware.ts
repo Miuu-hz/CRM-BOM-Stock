@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { getDb } from '../db/sqlite'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
+}
 const HOURS_LIMIT = 24
 
 // Extend Express Request type to include user
@@ -137,8 +140,29 @@ export const checkEditPermission = (user: any, createdAt: string): boolean => {
   return diffHours <= HOURS_LIMIT
 }
 
+// Reject any column name that is not a plain SQL identifier (letters, digits, underscore).
+// This prevents SQL injection via key names passed from request bodies.
+function assertSafeColumnName(name: string): void {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Unsafe column name rejected: "${name}"`)
+  }
+}
+
 // Add tenant_id filter to query helpers
-export const withTenant = (tableName: string) => {
+export const withTenant = (tableName: string, allowedColumns: string[]) => {
+  // Validate the allowlist itself once at call-time so misconfiguration is caught early.
+  allowedColumns.forEach(assertSafeColumnName)
+
+  function pickAllowed(data: Record<string, unknown>): Record<string, unknown> {
+    const safe: Record<string, unknown> = {}
+    for (const key of Object.keys(data)) {
+      if (allowedColumns.includes(key)) {
+        safe[key] = data[key]
+      }
+    }
+    return safe
+  }
+
   return {
     getAll: (tenantId: string) => {
       const db = getDb()
@@ -148,19 +172,27 @@ export const withTenant = (tableName: string) => {
       const db = getDb()
       return db.prepare(`SELECT * FROM ${tableName} WHERE id = ? AND tenant_id = ?`).get(id, tenantId)
     },
-    create: (data: any, tenantId: string) => {
+    create: (data: Record<string, unknown>, tenantId: string) => {
       const db = getDb()
-      const columns = Object.keys(data).concat(['tenant_id', 'created_at', 'updated_at'])
+      const filtered = pickAllowed(data)
+      if (Object.keys(filtered).length === 0) {
+        throw new Error('No allowed columns provided for insert')
+      }
+      const columns = Object.keys(filtered).concat(['tenant_id', 'created_at', 'updated_at'])
       const placeholders = columns.map(() => '?').join(', ')
-      const values = Object.values(data).concat([tenantId, new Date().toISOString(), new Date().toISOString()])
-      
+      const values = Object.values(filtered).concat([tenantId, new Date().toISOString(), new Date().toISOString()])
+
       return db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
     },
-    update: (id: string, data: any, tenantId: string) => {
+    update: (id: string, data: Record<string, unknown>, tenantId: string) => {
       const db = getDb()
-      const setClause = Object.keys(data).map(k => `${k} = ?`).join(', ')
-      const values = Object.values(data).concat([new Date().toISOString(), id, tenantId])
-      
+      const filtered = pickAllowed(data)
+      if (Object.keys(filtered).length === 0) {
+        throw new Error('No allowed columns provided for update')
+      }
+      const setClause = Object.keys(filtered).map(k => `${k} = ?`).join(', ')
+      const values = Object.values(filtered).concat([new Date().toISOString(), id, tenantId])
+
       return db.prepare(`UPDATE ${tableName} SET ${setClause}, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(...values)
     },
     delete: (id: string, tenantId: string) => {

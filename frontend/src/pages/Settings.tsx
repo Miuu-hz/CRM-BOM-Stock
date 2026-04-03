@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Settings,
@@ -896,6 +897,7 @@ function RoleBadge({ role }: { role: string }) {
 
 // Add Child Modal
 function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  useModalClose(onClose)
   const { createChildUser } = useAuth()
   const [form, setForm] = useState({
     email: '',

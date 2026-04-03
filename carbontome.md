@@ -26,6 +26,9 @@
 | **Tax Management** | ✅ | VAT, Withholding Tax, Tax Periods |
 | **Approval System** | ✅ | Multi-level approval workflow |
 | **Platform Order Fulfillment** | ✅ | CSV Upload, SKU Matching, Auto Stock Deduction, Ad Spend JE Approval |
+| **Sales Invoice Attachments** | ✅ | อัปโหลดรูป/ไฟล์แนบใบแจ้งหนี้ (max 10MB), gallery preview, lightbox |
+| **Invoice Detail Modal** | ✅ | redesign max-w-4xl, items table, payment history, attachment gallery |
+| **Purchase List/Card View** | ✅ | สลับ list/card view (list default), pagination 25/50/100 per page |
 
 ### ✅ Online Channel / Platform Integration
 
@@ -47,6 +50,7 @@
 | **MRP** | 🚧 | Material Requirements Planning |
 | **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
 | **POS KDS** | 🚧 | Kitchen Display System for POS queue |
+| **Sales Journal Preview** | 🚧 | Dr/Cr preview + เลือก account ก่อนบันทึก (3 จุด: Invoice/Receipt/CreditNote) |
 
 ### ❌ ยังไม่มี (Planned)
 
@@ -412,6 +416,18 @@ sales_orders → work_orders
 - Migrations ใน sqlite.ts
 - Index สำหรับ query ที่ใช้บ่อย
 
+### Scripts (จาก root `CRM-BOM-Stock/`)
+```
+npm run dev           — รัน backend + frontend พร้อมกัน (kill-port 5000/3000 ก่อน)
+npm run dev:tunnel    — รัน Cloudflare tunnel ก่อน → delay 5s → รัน dev
+npm run tunnel        — รัน Cloudflare tunnel อย่างเดียว (crm.phopy.net → localhost:5000)
+npm run build         — build frontend (Vite)
+npm run build:backend — build backend (tsc)
+npm run build:all     — build backend แล้ว frontend
+npm run start         — start backend production (node dist/)
+npm run install:all   — npm install ทั้ง backend + frontend
+```
+
 ---
 
 ## 🔗 Related Documentation
@@ -432,5 +448,5 @@ sales_orders → work_orders
 
 ---
 
-*Last Updated: 2026-03-16*
+*Last Updated: 2026-03-26*
 *Maintained by: Development Team*

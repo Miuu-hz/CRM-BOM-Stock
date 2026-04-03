@@ -34,6 +34,7 @@ import posBillService from '../services/pos-bill.service'
 import kdsService from '../services/kds.service'
 import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyConfig, loadShopConfig } from './Settings'
 import { printPOSReceipt } from '../utils/purchasePrint'
+import { useModalClose } from '../hooks/useModalClose'
 
 // ==================== Types ====================
 
@@ -1058,6 +1059,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
   onClose: () => void
   onCreate: (name?: string, customerId?: string) => void
 }) {
+  useModalClose(onClose)
   const [name, setName] = useState('')
   const [memberQuery, setMemberQuery] = useState('')
   const [memberResults, setMemberResults] = useState<CRMCustomer[]>([])
@@ -1085,10 +1087,11 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6"
       >
         <h2 className="text-xl font-bold text-white mb-4">สร้างบิลใหม่</h2>
@@ -1169,6 +1172,7 @@ function AssignMemberModal({ onClose, onAssign }: {
   onClose: () => void
   onAssign: (customer: CRMCustomer) => void
 }) {
+  useModalClose(onClose)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CRMCustomer[]>([])
   const [searching, setSearching] = useState(false)
@@ -1186,10 +1190,11 @@ function AssignMemberModal({ onClose, onAssign }: {
   }, [query])
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm"
       >
         <div className="p-5 border-b border-cyber-border flex items-center justify-between">
@@ -1248,6 +1253,7 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
   currentName: string
   onSave: (name: string) => void
 }) {
+  useModalClose(onClose)
   const [name, setName] = useState(currentName)
 
   useEffect(() => {
@@ -1257,10 +1263,11 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6"
       >
         <h2 className="text-xl font-bold text-white mb-4">แก้ไขชื่อบิล</h2>
@@ -1305,6 +1312,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   categories: POSCategory[]
   onRefresh: () => void
 }) {
+  useModalClose(onClose)
   const [tab, setTab] = useState<'cats' | 'assign'>('cats')
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[0])
@@ -1372,10 +1380,11 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col"
       >
         {/* Header */}
@@ -1572,6 +1581,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
   loyalty: LoyaltyConfig
   customerPoints: number | null
 }) {
+  useModalClose(onClose)
   const [redeemInput, setRedeemInput] = useState(0)
 
   if (!isOpen) return null
@@ -1589,10 +1599,11 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl max-w-md w-full p-6"
       >
         <div className="flex items-center justify-between mb-6">

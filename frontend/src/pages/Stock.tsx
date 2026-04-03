@@ -27,6 +27,7 @@ import {
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
+import { useModalClose } from '../hooks/useModalClose'
 
 // รายการหน่วยพื้นฐาน
 const DEFAULT_UNITS = [
@@ -648,6 +649,7 @@ function DetailModal({
   item: StockItem | null
   onClose: () => void
 }) {
+  useModalClose(onClose)
   if (!open || !item) return null
 
   return (
@@ -810,6 +812,7 @@ function EditModal({
   onClose: () => void
   onSave: () => void
 }) {
+  useModalClose(onClose)
   const [formData, setFormData] = useState({
     name: '',
     gs1Barcode: '',
@@ -1120,6 +1123,7 @@ function MovementModal({
   onSave: () => void
   setShowAddModal: (show: boolean) => void
 }) {
+  useModalClose(onClose)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
@@ -1499,6 +1503,7 @@ function AddStockModal({
   onClose: () => void
   onSave: () => void
 }) {
+  useModalClose(onClose)
   const [formData, setFormData] = useState({
     sku: '',
     name: '',

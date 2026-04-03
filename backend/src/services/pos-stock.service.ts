@@ -143,6 +143,13 @@ class POSStockService {
     const deductions: any[] = []
 
     try {
+      // Check tenant setting: pos_bom_deduct (default ON)
+      const setting = db.prepare('SELECT pos_bom_deduct FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const bomDeductEnabled = !setting || setting.pos_bom_deduct !== 0
+      if (!bomDeductEnabled) {
+        return { success: true, deductions: [], errors: [] }
+      }
+
       // Get bill details
       const billStmt = db.prepare(`
         SELECT bill_number, display_name 

@@ -32,6 +32,7 @@ import accountsRoutes from './routes/accounts.routes'
 import journalRoutes from './routes/journal.routes'
 import reportsRoutes from './routes/reports.routes'
 import importRoutes from './routes/import.routes'
+import purchaseRequestRoutes from './routes/purchase-request.routes'
 import customerRecommendationsRoutes from './routes/customerRecommendations.routes'
 import taxRoutes from './routes/tax.routes'
 import posMenuRoutes from './routes/pos-menu.routes'
@@ -44,6 +45,11 @@ import settingsRoutes from './routes/settings.routes'
 const app: Express = express()
 const PORT = process.env.PORT || 5000
 
+// Trust the first reverse proxy (nginx / Cloudflare).
+// Required so express-rate-limit reads the real client IP from X-Forwarded-For
+// instead of the proxy's IP. Set to the number of proxies in front of this server.
+app.set('trust proxy', 1)
+
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
 
@@ -55,8 +61,15 @@ app.use(cors({
 // Webhook needs raw body for LINE signature validation
 app.use('/api/line/webhook', express.raw({ type: 'application/json' }), lineBotRoutes)
 
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+// Import routes receive parsed Excel/CSV arrays — allow up to 10 MB only for that prefix.
+// Must be registered BEFORE the 1 MB global limit so body-parser skips re-parsing.
+app.use('/api/import', express.json({ limit: '10mb' }))
+app.use('/api/import', express.urlencoded({ extended: true, limit: '10mb' }))
+
+// All other routes: 1 MB is more than enough for any normal API payload.
+// Keeping this low prevents a single large request from blocking the Node.js event loop.
+app.use(express.json({ limit: '1mb' }))
+app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
 // Register the rest of LINE bot routes (config, test)
 app.use('/api/line', lineBotRoutes)
@@ -93,6 +106,7 @@ app.use('/api/accounts', accountsRoutes)
 app.use('/api/journal', journalRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/import', importRoutes)
+app.use('/api/purchase-requests', purchaseRequestRoutes)
 app.use('/api/customer-recommendations', customerRecommendationsRoutes)
 app.use('/api/tax', taxRoutes)
 app.use('/api/pos', posMenuRoutes)
@@ -111,9 +125,13 @@ app.get('*', (_req: Request, res: Response) => {
 // Error handler
 app.use((err: any, _req: Request, res: Response, _next: any) => {
   console.error('Error:', err)
-  res.status(err.status || 500).json({
+  const status = err.status || 500
+  // Only expose err.message for deliberate 4xx errors raised by our own code.
+  // Server errors (5xx) must never leak DB schema, constraint names, or stack traces.
+  const isClientError = status >= 400 && status < 500
+  res.status(status).json({
     success: false,
-    message: err.message || 'Internal server error',
+    message: isClientError ? (err.message || 'Bad request') : 'Internal server error',
   })
 })
 

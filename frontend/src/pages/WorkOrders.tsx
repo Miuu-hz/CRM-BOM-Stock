@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
 import api from '../services/api'
+import { useModalClose } from '../hooks/useModalClose'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   DRAFT: { label: 'Draft', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30', icon: FileText },
@@ -283,6 +284,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 function CreateWOModal({ open, onClose, onSave }: {
   open: boolean; onClose: () => void; onSave: () => void
 }) {
+  useModalClose(onClose)
   const [productName, setProductName] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [priority, setPriority] = useState('NORMAL')
@@ -589,6 +591,7 @@ function CreateWOModal({ open, onClose, onSave }: {
 function WODetailModal({ wo, onClose, onStatusChange }: {
   wo: WorkOrder | null; onClose: () => void; onStatusChange: (id: string, status: string) => void
 }) {
+  useModalClose(onClose)
   if (!wo) return null
   const statusConf = STATUS_CONFIG[wo.status] || STATUS_CONFIG.DRAFT
   const priorityConf = PRIORITY_CONFIG[wo.priority] || PRIORITY_CONFIG.NORMAL

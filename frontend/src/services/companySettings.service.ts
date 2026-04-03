@@ -8,6 +8,7 @@ export interface CompanySettings {
   email?: string
   tax_id?: string
   logo_base64?: string
+  pos_bom_deduct?: number | boolean  // 1=ตัด stock ตาม BOM, 0=ไม่ตัด (default 1)
 }
 
 const LS_KEY = 'crm_company_settings'
