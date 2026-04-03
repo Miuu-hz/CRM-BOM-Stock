@@ -39,6 +39,7 @@ import salesService, { type Customer, type Product } from '../services/sales.ser
 import { printSalesDoc } from '../utils/salesPrint'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import toast from 'react-hot-toast'
+import { useModalClose } from '../hooks/useModalClose'
 
 // Types
 interface SalesSummary {
@@ -225,11 +226,14 @@ const StatusBadge = ({ status }: { status: string }) => {
   )
 }
 
-const ModalShell = ({ title, icon: Icon, iconColor = 'text-cyber-primary', onClose, children, footer }: {
+function ModalShell({ title, icon: Icon, iconColor = 'text-cyber-primary', onClose, children, footer }: {
   title: string; icon: any; iconColor?: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode
-}) => (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+}) {
+  useModalClose(onClose)
+  return (
+  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
     <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+      onClick={e => e.stopPropagation()}
       className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
       <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -239,11 +243,12 @@ const ModalShell = ({ title, icon: Icon, iconColor = 'text-cyber-primary', onClo
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="overflow-y-auto p-5 space-y-4">{children}</div>
+      <div className="overflow-y-auto modal-scroll p-5 space-y-4">{children}</div>
       <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">{footer}</div>
     </motion.div>
   </div>
-)
+  )
+}
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
@@ -1739,6 +1744,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
   onClose: () => void
   onCreated: (c: Customer) => void
 }) {
+  useModalClose(onClose)
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [phone, setPhone] = useState('')
@@ -1779,8 +1785,9 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm">
         <div className="p-4 border-b border-cyber-border flex justify-between items-center">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -2104,6 +2111,7 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
 
 // ─── Create Quotation Modal ───────────────────────────────────────────────────
 function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useModalClose(onClose)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [expiryDate, setExpiryDate] = useState('')
   const [taxRate, setTaxRate] = useState(0)
@@ -2147,8 +2155,9 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -2210,6 +2219,7 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
 function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, companyName }: {
   quotation: Quotation; onClose: () => void; onRefresh: () => void; onConvert: (q: Quotation) => void; companyName?: string
 }) {
+  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -2240,8 +2250,9 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
   const formatDate = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <div>
@@ -2353,6 +2364,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
 function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
   sourceQuotation?: Quotation; onClose: () => void; onSaved: () => void
 }) {
+  useModalClose(onClose)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [deliveryDate, setDeliveryDate] = useState('')
   const [taxRate, setTaxRate] = useState(0)
@@ -2428,8 +2440,9 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -2490,6 +2503,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
 function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName }: {
   salesOrder: SalesOrder; onClose: () => void; onRefresh: () => void; onCreateInvoice: () => void; companyName?: string
 }) {
+  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -2535,8 +2549,9 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const nextLabel: Record<string, string> = { DRAFT: 'ยืนยัน SO', CONFIRMED: 'เริ่มดำเนินการ', PROCESSING: 'พร้อมส่ง', READY: 'ส่งของแล้ว', DELIVERED: 'เสร็จสิ้น' }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <div>
@@ -2649,6 +2664,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
 function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   invoice: Invoice; onClose: () => void; onRefresh: () => void; companyName?: string
 }) {
+  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
@@ -2736,8 +2752,9 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
@@ -2992,6 +3009,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
 // ─── Create Credit Note Modal ─────────────────────────────────────────────────
 function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useModalClose(onClose)
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceId, setInvoiceId] = useState('')
   const [reason, setReason] = useState('')
@@ -3021,8 +3039,9 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -3081,6 +3100,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   onRefresh: () => void
   companyName?: string
 }) {
+  useModalClose(onClose)
   const [saving, setSaving] = useState(false)
   const fmt = (v: number) => `฿${Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (d: string) => d ? new Date(d).toLocaleDateString('th-TH') : '-'
@@ -3115,8 +3135,9 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <div>
@@ -3180,6 +3201,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   onClose: () => void
   onRefresh: () => void
 }) {
+  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
@@ -3215,8 +3237,9 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   const items: any[] = detail?.items || []
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
           <div>

@@ -99,6 +99,16 @@
     @apply bg-cyber-primary/30 rounded-full hover:bg-cyber-primary/50;
   }
 
+  /* Modal scrollbar — บาง เรียบ ไม่กวนสายตา */
+  .modal-scroll::-webkit-scrollbar { width: 3px; }
+  .modal-scroll::-webkit-scrollbar-track { background: transparent; }
+  .modal-scroll::-webkit-scrollbar-thumb { background: rgba(100,100,120,0.35); border-radius: 9999px; }
+  .modal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(130,130,160,0.55); }
+
+  /* ซ่อน scrollbar แต่ยังเลื่อนได้ */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
   /* Status Badges */
   .status-badge {
     @apply px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;

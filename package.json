@@ -2,7 +2,14 @@
   "name": "crm-root",
   "version": "1.0.0",
   "scripts": {
-    "dev": "npx kill-port 5000 3000 && npx concurrently --kill-others --kill-others-on-fail --prefix-colors \"cyan.bold,magenta.bold\" --names \"BACKEND,FRONTEND\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
+    "dev": "npx kill-port 5000 3000 && npx concurrently --kill-others-on-fail --prefix-colors \"cyan.bold,magenta.bold,yellow.bold\" --names \"BACKEND,FRONTEND,TUNNEL\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\" \"cloudflared tunnel run\"",
+    "build": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "build:all": "npm run build --prefix backend && npm run build --prefix frontend",
+    "start": "npm run start --prefix backend",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "tunnel": "cloudflared tunnel run",
+    "dev:tunnel": "cloudflared tunnel run & sleep 5 && npm run dev"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

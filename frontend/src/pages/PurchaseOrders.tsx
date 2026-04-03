@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ShoppingCart,
@@ -253,6 +254,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 function CreatePOModal({ open, suppliers, onClose, onSave }: {
   open: boolean; suppliers: Supplier[]; onClose: () => void; onSave: () => void
 }) {
+  useModalClose(onClose)
   const [supplierId, setSupplierId] = useState('')
   const [expectedDate, setExpectedDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -456,6 +458,7 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
 function PODetailModal({ po, onClose, onStatusChange }: {
   po: PurchaseOrder | null; onClose: () => void; onStatusChange: (id: string, status: string) => void
 }) {
+  useModalClose(onClose)
   if (!po) return null
   const statusConf = STATUS_CONFIG[po.status] || STATUS_CONFIG.DRAFT
 

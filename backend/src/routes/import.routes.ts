@@ -1,9 +1,43 @@
 import { Router, Request, Response } from 'express'
+import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 
 const router = Router()
+const MAX_IMPORT_ROWS = 5_000
+
+// ── Zod schemas ───────────────────────────────────────────────────────────────
+// Unknown keys are stripped by default (Zod's strip mode).
+// z.coerce.number() handles Excel-exported numeric strings ("100" → 100).
+// Max lengths prevent oversized strings from reaching the DB.
+const CustomerRowSchema = z.object({
+  name:         z.string().min(1, 'Name is required').max(255),
+  code:         z.string().max(50).optional(),
+  type:         z.string().max(50).optional(),
+  contact_name: z.string().max(255).optional(),
+  email:        z.string().max(255).optional(),
+  phone:        z.string().max(50).optional(),
+  address:      z.string().max(500).optional(),
+  city:         z.string().max(100).optional(),
+  credit_limit: z.coerce.number().min(0).optional(),
+})
+
+const StockRowSchema = z.object({
+  name:      z.string().min(1, 'Name is required').max(255),
+  sku:       z.string().max(100).optional(),
+  category:  z.string().max(100).optional(),
+  quantity:  z.coerce.number().int().min(0).optional(),
+  unit:      z.string().max(50).optional(),
+  min_stock: z.coerce.number().int().min(0).optional(),
+  max_stock: z.coerce.number().int().min(0).optional(),
+  location:  z.string().max(100).optional(),
+  status:    z.string().max(50).optional(),
+})
+
+type CustomerRow = z.infer<typeof CustomerRowSchema>
+type StockRow    = z.infer<typeof StockRowSchema>
+// ─────────────────────────────────────────────────────────────────────────────
 
 router.use(authenticate)
 
@@ -45,6 +79,13 @@ router.post('/customers', async (req: Request, res: Response) => {
       })
     }
 
+    if (data.length > MAX_IMPORT_ROWS) {
+      return res.status(400).json({
+        success: false,
+        message: `Too many rows. Maximum allowed is ${MAX_IMPORT_ROWS}.`
+      })
+    }
+
     const results = {
       success: 0,
       failed: 0,
@@ -64,25 +105,17 @@ router.post('/customers', async (req: Request, res: Response) => {
     console.log(`Processing ${data.length} rows, tenantId: ${tenantId}`)
     
     for (let i = 0; i < data.length; i++) {
-      const row = data[i]
-      
-      // Log first row for debugging
-      if (i === 0) {
-        console.log('First row sample:', JSON.stringify(row))
+      const parsed = CustomerRowSchema.safeParse(data[i])
+      if (!parsed.success) {
+        results.failed++
+        results.errors.push(`Row ${i + 1}: ${parsed.error.issues.map(e => e.message).join(', ')}`)
+        continue
       }
-      
-      try {
-        // Validate required fields
-        if (!row.name) {
-          results.failed++
-          results.errors.push(`Row ${i + 1}: Name is required`)
-          continue
-        }
+      const row: CustomerRow = parsed.data
 
-        // Generate unique code
+      try {
         const code = row.code || generateCustomerCode(existingCount + i)
-        
-        // Check for duplicate code
+
         const existing = db.prepare('SELECT id FROM customers WHERE code = ? AND tenant_id = ?').get(code, tenantId)
         if (existing) {
           results.failed++
@@ -109,8 +142,9 @@ router.post('/customers', async (req: Request, res: Response) => {
 
         results.success++
       } catch (error: any) {
+        console.error(`Import customers row ${i + 1} error:`, error)
         results.failed++
-        results.errors.push(`Row ${i + 1}: ${error.message}`)
+        results.errors.push(`Row ${i + 1}: Failed to save record`)
       }
     }
 
@@ -121,7 +155,7 @@ router.post('/customers', async (req: Request, res: Response) => {
     })
   } catch (error: any) {
     console.error('Import customers error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to import customers' })
+    res.status(500).json({ success: false, message: 'Failed to import customers' })
   }
 })
 
@@ -142,6 +176,13 @@ router.post('/stock', async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'No data provided'
+      })
+    }
+
+    if (data.length > MAX_IMPORT_ROWS) {
+      return res.status(400).json({
+        success: false,
+        message: `Too many rows. Maximum allowed is ${MAX_IMPORT_ROWS}.`
       })
     }
 
@@ -166,27 +207,29 @@ router.post('/stock', async (req: Request, res: Response) => {
 
     const now = new Date().toISOString()
     
-    // Use transaction for batch insert
-    const insertMany = db.transaction((items: any[]) => {
-      for (let i = 0; i < items.length; i++) {
-        const row = items[i]
-        
-        try {
-          if (!row.name) {
-            results.failed++
-            results.errors.push(`Row ${i + 1}: Name is required`)
-            continue
-          }
+    // Validate all rows with Zod first, collect pre-validated data
+    const validatedRows: { index: number; row: StockRow }[] = []
+    for (let i = 0; i < data.length; i++) {
+      const parsed = StockRowSchema.safeParse(data[i])
+      if (!parsed.success) {
+        results.failed++
+        results.errors.push(`Row ${i + 1}: ${parsed.error.issues.map(e => e.message).join(', ')}`)
+      } else {
+        validatedRows.push({ index: i, row: parsed.data })
+      }
+    }
 
+    // Use transaction for batch insert of validated rows only
+    const insertMany = db.transaction((items: typeof validatedRows) => {
+      for (const { index: i, row } of items) {
+        try {
           const category = row.category || 'GENERAL'
           let sku = row.sku
-          
-          // Generate SKU if not provided or duplicate
+
           if (!sku || existingSkus.has(sku)) {
             sku = generateSKU(category, existingCount + i)
           }
-          
-          // Check for duplicate SKU again (in case generated one also exists)
+
           if (existingSkus.has(sku)) {
             results.failed++
             results.errors.push(`Row ${i + 1}: SKU ${sku} already exists`)
@@ -208,20 +251,18 @@ router.post('/stock', async (req: Request, res: Response) => {
             now,
             now
           )
-          
+
           existingSkus.add(sku)
           results.success++
         } catch (error: any) {
-          console.error(`Row ${i + 1} error:`, error.message)
+          console.error(`Import stock row ${i + 1} error:`, error)
           results.failed++
-          results.errors.push(`Row ${i + 1}: ${error.message}`)
+          results.errors.push(`Row ${i + 1}: Failed to save record`)
         }
       }
     })
 
-    console.log('Starting batch insert...')
-    insertMany(data)
-    console.log('Batch insert completed:', results)
+    insertMany(validatedRows)
 
     res.json({
       success: true,
@@ -230,7 +271,7 @@ router.post('/stock', async (req: Request, res: Response) => {
     })
   } catch (error: any) {
     console.error('Import stock error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to import stock items' })
+    res.status(500).json({ success: false, message: 'Failed to import stock items' })
   }
 })
 
@@ -289,7 +330,7 @@ router.post('/validate', async (req: Request, res: Response) => {
     })
   } catch (error: any) {
     console.error('Validation error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Validation failed' })
+    res.status(500).json({ success: false, message: 'Validation failed' })
   }
 })
 

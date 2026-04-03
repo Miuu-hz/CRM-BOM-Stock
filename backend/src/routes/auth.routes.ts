@@ -1,10 +1,14 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
 
 const router = Router()
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
+}
 
 // Master accounts loaded from environment variables (no hardcoded credentials)
 function loadMasterAccounts(): Record<string, { passwordHash: string; tenantId: string; name: string }> {
@@ -23,7 +27,20 @@ function loadMasterAccounts(): Record<string, { passwordHash: string; tenantId: 
 }
 const MASTER_ACCOUNTS = loadMasterAccounts()
 
-// ── Rate Limiting: 3 attempts then 5-minute lockout ─────────────────────────
+// ── IP-level rate limit (express-rate-limit) ─────────────────────────────────
+// Limits each IP to 20 login attempts per 15-minute window.
+// NOTE: This uses the default in-memory store. For multi-process / clustered
+// deployments, replace the store with a Redis adapter (rate-limit-redis) so
+// the counter is shared across all instances and survives restarts.
+const loginIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'คำขอมากเกินไป กรุณารอ 15 นาที แล้วลองใหม่' },
+})
+
+// ── Credential-level rate limit: 3 attempts then 5-minute lockout ─────────────
 interface AttemptRecord { count: number; lockedUntil: number }
 const loginAttempts = new Map<string, AttemptRecord>()
 const MAX_ATTEMPTS   = 3
@@ -66,7 +83,7 @@ const generateToken = (payload: any) => {
 
 // @route   POST /api/auth/login
 // @desc    Login user
-router.post('/login', async (req, res) => {
+router.post('/login', loginIpLimiter, async (req, res) => {
   try {
     const { email, password } = req.body
 

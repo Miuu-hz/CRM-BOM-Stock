@@ -599,7 +599,7 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
 router.post('/invoices', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId } = req.body
     // Support both multi-select (goodsReceiptIds array) and legacy single (goodsReceiptId)
     const grIds: string[] = Array.isArray(goodsReceiptIds) && goodsReceiptIds.length > 0
       ? goodsReceiptIds
@@ -633,7 +633,12 @@ router.post('/invoices', async (req: Request, res: Response) => {
     const totalAmount = subtotal + taxAmount
 
     // Resolve accounts before transaction (auto-create if not yet in chart of accounts)
-    const inventoryAccId = getOrCreateAccount(tenantId, '1107', 'สต็อกวัตถุดิบ', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    // drAccountId: optional override — if supplied, use it; otherwise default to 1107 สต็อกวัตถุดิบ
+    const resolvedDrAccId = drAccountId
+      ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(drAccountId, tenantId) as any)?.id ?? null
+      : null
+    const inventoryAccId = resolvedDrAccId
+      ?? getOrCreateAccount(tenantId, '1107', 'สต็อกวัตถุดิบ', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
     const payableAccId   = getOrCreateAccount(tenantId, '2101', 'เจ้าหนี้การค้า', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
     const vatAccId       = taxAmount > 0 ? getOrCreateAccount(tenantId, '1110', 'ภาษีซื้อ', 'ASSET', 'CURRENT_ASSET', 'DEBIT') : null
     const journalId      = generateId()
@@ -678,7 +683,10 @@ router.post('/invoices', async (req: Request, res: Response) => {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       let lineNo = 1
-      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `สต็อกวัตถุดิบ - ${piNumber}`, subtotal, 0)
+      const drAccLabel = resolvedDrAccId
+        ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
+        : 'สต็อกวัตถุดิบ'
+      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, subtotal, 0)
       if (vatAccId && taxAmount > 0) {
         insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
       }

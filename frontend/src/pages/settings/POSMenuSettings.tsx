@@ -19,7 +19,9 @@ import {
   Grid,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useModalClose } from '../../hooks/useModalClose'
 import posService from '../../services/pos.service'
+import api from '../../services/api'
 
 // ==================== Types ====================
 
@@ -74,6 +76,8 @@ export default function POSMenuSettings() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [posBomDeduct, setPosBomDeduct] = useState(true)
+  const [savingBomSetting, setSavingBomSetting] = useState(false)
   
   const [showMenuModal, setShowMenuModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
@@ -99,7 +103,25 @@ export default function POSMenuSettings() {
 
   useEffect(() => {
     fetchData()
+    // Load BOM deduct setting
+    api.get('/settings/company').then(res => {
+      if (res.data.success) setPosBomDeduct(res.data.data?.pos_bom_deduct !== 0)
+    }).catch(() => {})
   }, [fetchData])
+
+  const handleToggleBomDeduct = async (value: boolean) => {
+    setPosBomDeduct(value)
+    setSavingBomSetting(true)
+    try {
+      await api.put('/settings/company', { pos_bom_deduct: value })
+      toast.success(value ? 'เปิดการตัด stock ตาม BOM แล้ว' : 'ปิดการตัด stock ตาม BOM แล้ว')
+    } catch {
+      toast.error('บันทึกไม่สำเร็จ')
+      setPosBomDeduct(!value) // revert
+    } finally {
+      setSavingBomSetting(false)
+    }
+  }
 
   const filteredMenus = menus.filter(menu => {
     const matchesSearch = 
@@ -190,6 +212,30 @@ export default function POSMenuSettings() {
           </button>
         </div>
       </div>
+
+      {/* BOM Deduct Setting */}
+      <button
+        type="button"
+        onClick={() => !savingBomSetting && handleToggleBomDeduct(!posBomDeduct)}
+        disabled={savingBomSetting}
+        className="w-full flex items-center justify-between gap-4 p-4 bg-cyber-card border border-cyber-border rounded-xl hover:border-cyber-primary/40 transition-colors text-left disabled:opacity-60"
+      >
+        <div>
+          <p className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+            <Package className="w-4 h-4 text-cyber-primary" />
+            ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5 ml-6">
+            เปิด = ร้านที่ผลิตเอง (ร้านอาหาร / โรงงาน) ·  ปิด = ร้านค้าที่ขายของสำเร็จรูปโดยตรง
+          </p>
+        </div>
+        {savingBomSetting
+          ? <div className="w-5 h-5 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          : posBomDeduct
+            ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
+            : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+        }
+      </button>
 
       {/* Menus Tab */}
       {activeTab === 'menus' && (
@@ -465,6 +511,7 @@ interface MenuModalProps {
 }
 
 function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProps) {
+  useModalClose(onClose)
   const [step, setStep] = useState<1 | 2>(1)
   const [products, setProducts] = useState<Product[]>([])
   const [productSearch, setProductSearch] = useState('')
@@ -612,11 +659,12 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between p-6 border-b border-cyber-border">
@@ -883,6 +931,7 @@ interface CategoryModalProps {
 }
 
 function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProps) {
+  useModalClose(onClose)
   const [name, setName] = useState('')
   const [color, setColor] = useState('#00f0ff')
   const [icon, setIcon] = useState('')
@@ -941,11 +990,12 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
         className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md"
       >
         <div className="flex items-center justify-between p-6 border-b border-cyber-border">
