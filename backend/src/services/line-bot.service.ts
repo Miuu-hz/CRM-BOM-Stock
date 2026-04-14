@@ -90,16 +90,47 @@ try {
 
 import { flexTemplates } from './line-flex-templates'
 
+// ─── Paperclip API ────────────────────────────────────────────────────────────
+const PAPERCLIP_URL        = process.env.PAPERCLIP_URL        ?? 'http://100.96.174.42:3100'
+const PAPERCLIP_API_KEY    = process.env.PAPERCLIP_API_KEY    ?? 'pcp_dce7e732c947e995243ffac7af546776d8542c1751b60f56'
+const PAPERCLIP_COMPANY_ID = process.env.PAPERCLIP_COMPANY_ID ?? '08de03c2-f5fc-4f81-baf5-52f3a6675e6f'
+const PAPERCLIP_AGENT_ID   = process.env.PAPERCLIP_AGENT_ID   ?? '84136f5d-618a-4898-b406-89bd13a9c7da'
+
+async function createPaperclipTask(title: string, description: string): Promise<string> {
+    try {
+        const res = await fetch(`${PAPERCLIP_URL}/api/companies/${PAPERCLIP_COMPANY_ID}/issues`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${PAPERCLIP_API_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                title,
+                description,
+                assigneeAgentId: PAPERCLIP_AGENT_ID,
+                priority: 'medium',
+                status: 'todo',
+            }),
+        })
+        const data: any = await res.json()
+        return data.identifier ?? data.id ?? '?'
+    } catch (err) {
+        console.error('Paperclip createTask error:', err)
+        return '?'
+    }
+}
+
 // ─── Quick Reply Items ────────────────────────────────────────────────────────
 function quickReplyItems(isPersonal: boolean) {
     const items: any[] = [
-        { type: 'action', action: { type: 'message', label: '📊 สถานะงาน', text: 'สถานะ' } },
-        { type: 'action', action: { type: 'message', label: '📦 เช็คสต็อก', text: 'สต็อก ' } },
-        { type: 'action', action: { type: 'message', label: '🛒 ออเดอร์',   text: 'ออเดอร์' } },
-        { type: 'action', action: { type: 'message', label: '❓ ช่วยเหลือ', text: '-help' } },
+        { type: 'action', action: { type: 'message', label: '📊 สถานะงาน',    text: 'สถานะ' } },
+        { type: 'action', action: { type: 'message', label: '📦 เช็คสต็อก',   text: 'สต็อก ' } },
+        { type: 'action', action: { type: 'message', label: '📋 ดูสูตร',       text: 'สูตร ' } },
+        { type: 'action', action: { type: 'message', label: '🛒 ออเดอร์',      text: 'ออเดอร์' } },
+        { type: 'action', action: { type: 'message', label: '❓ ช่วยเหลือ',    text: '-help' } },
     ]
     if (isPersonal) {
-        items.splice(3, 0, {
+        items.splice(4, 0, {
             type: 'action', action: { type: 'message', label: '🔗 เชื่อมบัญชี', text: 'วิธีเชื่อมบัญชี' }
         })
     }
@@ -443,6 +474,97 @@ class LineBotService {
         await client.replyMessage(replyToken, msg)
     }
 
+    // ── BOM Query: สูตร [ชื่อสินค้า] ─────────────────────────────────────────
+    private async handleBOMQueryCommand(tenantId: string, query: string, replyToken: string, client: any) {
+        const db = getDb()
+        const product = db.prepare(
+            'SELECT id, name FROM stock_items WHERE tenant_id = ? AND name LIKE ? LIMIT 1'
+        ).get(tenantId, `%${query}%`) as any
+
+        if (!product) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `ไม่พบสินค้า "${query}" ในระบบ\nลองพิมพ์ชื่อสั้นลง หรือตรวจสอบชื่อใหม่อีกครั้ง`,
+                quickReply: { items: quickReplyItems(false) }
+            })
+            return
+        }
+
+        const bom = db.prepare(
+            "SELECT id, version FROM boms WHERE product_id = ? AND tenant_id = ? ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, created_at DESC LIMIT 1"
+        ).get(product.id, tenantId) as any
+
+        if (!bom) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `ยังไม่มีสูตรการผลิตสำหรับ "${product.name}"\nสามารถสร้างสูตรได้ที่ erp.phopy.net`,
+                quickReply: { items: quickReplyItems(false) }
+            })
+            return
+        }
+
+        const items = db.prepare(`
+            SELECT bi.quantity, si.name, si.unit, si.unit_cost
+            FROM bom_items bi
+            LEFT JOIN stock_items si ON bi.material_id = si.id
+            WHERE bi.bom_id = ?
+            ORDER BY bi.sort_order
+        `).all(bom.id) as any[]
+
+        const totalCost = items.reduce((sum: number, i: any) => sum + (i.quantity * (i.unit_cost ?? 0)), 0)
+        const lines = items.map((i: any) =>
+            `• ${i.name ?? '?'}: ${i.quantity} ${i.unit ?? ''} — ฿${((i.unit_cost ?? 0) * i.quantity).toFixed(2)}`
+        )
+        const text = [
+            `📋 สูตร: ${product.name} (${bom.version})`,
+            '',
+            ...lines,
+            '',
+            `💰 ต้นทุนรวม: ฿${totalCost.toFixed(2)}`,
+        ].join('\n')
+
+        await client.replyMessage(replyToken, {
+            type: 'text', text,
+            quickReply: { items: quickReplyItems(false) }
+        })
+    }
+
+    // ── Create Paperclip Task: งาน [คำอธิบาย] ────────────────────────────────
+    private async handleTaskCommand(
+        tenantId: string, lineUserId: string,
+        taskText: string, replyToken: string, client: any
+    ) {
+        const db = getDb()
+        // Only registered (linked) users can create tasks
+        const mapping = db.prepare(
+            'SELECT user_id, role FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+        ).get(tenantId, lineUserId) as any
+
+        if (!mapping) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: '🔒 ต้องเชื่อมบัญชีก่อนถึงจะสร้างงานได้\nพิมพ์ "วิธีเชื่อมบัญชี" เพื่อดูวิธี',
+                quickReply: { items: quickReplyItems(true) }
+            })
+            return
+        }
+
+        const user = db.prepare('SELECT name FROM users WHERE id = ?').get(mapping.user_id) as any
+        const requesterName = user?.name ?? lineUserId
+        const description = `สร้างจาก LINE โดย ${requesterName} (${mapping.role})\n\n${taskText}`
+
+        const identifier = await createPaperclipTask(taskText, description)
+        const success = identifier !== '?'
+
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: success
+                ? `✅ สร้างงาน ${identifier} แล้วครับ\n\n"${taskText}"\n\nทีม AI จะรับงานและแจ้งความคืบหน้าให้ทราบ 🚀`
+                : `❌ สร้างงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง`,
+            quickReply: { items: quickReplyItems(true) }
+        })
+    }
+
     private async handleOrderCommand(tenantId: string, replyToken: string, client: any) {
         const db = getDb()
         const orders = db.prepare(
@@ -580,6 +702,24 @@ class LineBotService {
                 const query = text.split(' ').slice(1).join(' ').trim()
                 if (query) {
                     await this.handleStockCommand(tenantId, query, event.replyToken, client)
+                    return
+                }
+            }
+
+            // ── คำสั่ง: สูตร [ชื่อสินค้า] ──────────────────────────────────
+            if (text.startsWith('สูตร ') || lower.startsWith('-สูตร ')) {
+                const query = text.split(' ').slice(1).join(' ').trim()
+                if (query) {
+                    await this.handleBOMQueryCommand(tenantId, query, event.replyToken, client)
+                    return
+                }
+            }
+
+            // ── คำสั่ง: งาน [คำอธิบาย] → Paperclip task (registered only) ──
+            if (src === 'user' && text.startsWith('งาน ')) {
+                const taskText = text.slice(3).trim()
+                if (taskText) {
+                    await this.handleTaskCommand(tenantId, event.source.userId, taskText, event.replyToken, client)
                     return
                 }
             }

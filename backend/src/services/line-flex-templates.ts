@@ -393,7 +393,13 @@ export const flexTemplates = {
                     { type: 'separator', margin: 'md' },
                     { type: 'text', text: 'ออเดอร์', weight: 'bold', size: 'sm', margin: 'md' },
                     { type: 'text', text: '→ ดูคำสั่งซื้อล่าสุด 5 รายการ', size: 'sm', color: '#666666', margin: 'xs' },
+                    { type: 'separator', margin: 'md' },
+                    { type: 'text', text: 'สูตร [ชื่อสินค้า]', weight: 'bold', size: 'sm', margin: 'md' },
+                    { type: 'text', text: '→ ดูส่วนผสม + ต้นทุนการผลิต', size: 'sm', color: '#666666', margin: 'xs' },
                     ...(isPersonal ? [
+                        { type: 'separator' as const, margin: 'md' as const },
+                        { type: 'text' as const, text: 'งาน [คำอธิบาย]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
+                        { type: 'text' as const, text: '→ สร้างงานเข้า Paperclip AI (ต้องเชื่อมบัญชี)', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
                         { type: 'separator' as const, margin: 'md' as const },
                         { type: 'text' as const, text: 'บอม [ชื่อสินค้า]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
                         { type: 'text' as const, text: '[วัตถุดิบ] [จำนวน] [หน่วย]', size: 'xs' as const, color: '#888888', margin: 'xs' as const },
