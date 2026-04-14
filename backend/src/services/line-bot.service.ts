@@ -81,7 +81,8 @@ let Client: any
 let validateSignature: any
 try {
     const line = require('@line/bot-sdk')
-    Client = line.Client
+    // @line/bot-sdk v11 moved Client to messagingApi.MessagingApiClient
+    Client = line.messagingApi?.MessagingApiClient ?? line.Client
     validateSignature = line.validateSignature
 } catch (e) {
     console.warn('⚠️ @line/bot-sdk is not installed. LINE Bot functionality will be disabled.')
@@ -121,6 +122,7 @@ function replyTarget(event: any): string {
 class LineBotService {
 
     // ── Client factory ────────────────────────────────────────────────────────
+    // Returns a v8-compatible wrapper around @line/bot-sdk v11 MessagingApiClient
     private getClient(tenantId: string): any | null {
         if (!Client) return null
         const db = getDb()
@@ -128,10 +130,20 @@ class LineBotService {
             'SELECT * FROM line_channels WHERE tenant_id = ? AND is_active = 1'
         ).get(tenantId) as any
         if (!config) return null
-        return new Client({
-            channelAccessToken: config.channel_access_token,
-            channelSecret:      config.channel_secret,
-        })
+        const inner = new Client({ channelAccessToken: config.channel_access_token })
+        // Wrap v11 API to be compatible with v8 call signatures used throughout this service
+        const wrap = (msgs: any) => Array.isArray(msgs) ? msgs : [msgs]
+        return {
+            replyMessage: (replyToken: string, messages: any) =>
+                inner.replyMessage({ replyToken, messages: wrap(messages) }),
+            pushMessage: (to: string, messages: any) =>
+                inner.pushMessage({ to, messages: wrap(messages) }),
+            getProfile: (userId: string) => inner.getProfile(userId),
+            getGroupMemberProfile: (groupId: string, userId: string) =>
+                inner.getGroupMemberProfile(groupId, userId),
+            getRoomMemberProfile: (roomId: string, userId: string) =>
+                inner.getRoomMemberProfile(roomId, userId),
+        }
     }
 
     // ── Tenant resolution ─────────────────────────────────────────────────────
@@ -192,7 +204,7 @@ class LineBotService {
         const client = this.getClient(tenantId)
         if (!client) return
 
-        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/purchase-requests/${pr.id}`
+        const webUrl = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/purchase-requests/${pr.id}`
         const card = flexTemplates.prStatusCard({ ...pr, webUrl })
 
         const targets = new Set<string>()
@@ -333,7 +345,7 @@ class LineBotService {
         `)
         parsed.items.forEach((name, i) => insertItem.run(prId, prId, name, name, i))
 
-        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/purchase-requests/${prId}`
+        const webUrl = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/purchase-requests/${prId}`
 
         const card = flexTemplates.prDraftCard({
             prNumber,
@@ -399,7 +411,7 @@ class LineBotService {
             insertItem.run(`bi_${crypto.randomBytes(6).toString('hex')}`, tenantId, bomId, mat.id, item.qty, i)
         })
 
-        const webUrl = `${process.env.APP_URL ?? 'https://crm.phopy.net'}/bom`
+        const webUrl = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/bom`
         const card = flexTemplates.bomDraftCard({
             productName: parsed.productName,
             version,
@@ -461,7 +473,7 @@ class LineBotService {
     private async handleHowToLinkCommand(replyToken: string, client: any) {
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '🔗 วิธีเชื่อมบัญชี LINE กับระบบ\n\n1️⃣ เปิดเว็บ crm.phopy.net\n2️⃣ ไปที่ ตั้งค่า → LINE Bot\n3️⃣ กดปุ่ม "สร้างรหัสเชื่อม"\n4️⃣ ส่งข้อความนี้มาที่นี่:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456\n\n⏰ รหัสมีอายุ 10 นาที',
+            text: '🔗 วิธีเชื่อมบัญชี LINE กับระบบ\n\n1️⃣ เปิดเว็บ erp.phopy.net\n2️⃣ ไปที่ ตั้งค่า → LINE Bot\n3️⃣ กดปุ่ม "สร้างรหัสเชื่อม"\n4️⃣ ส่งข้อความนี้มาที่นี่:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456\n\n⏰ รหัสมีอายุ 10 นาที',
             quickReply: { items: quickReplyItems(true) }
         })
     }
