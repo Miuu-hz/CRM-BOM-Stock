@@ -141,13 +141,6 @@ function quickReplyItems(isPersonal: boolean) {
 function sourceType(event: any): 'user' | 'group' | 'room' {
     return event.source?.type ?? 'user'
 }
-function replyTarget(event: any): string {
-    return sourceType(event) === 'group'
-        ? event.source.groupId
-        : sourceType(event) === 'room'
-            ? event.source.roomId
-            : event.source.userId
-}
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 class LineBotService {
@@ -650,6 +643,26 @@ class LineBotService {
         if (event.type === 'message' && event.message.type === 'text') {
             const text = event.message.text.trim()
             const lower = text.toLowerCase()
+
+            // ── Registration gate ─────────────────────────────────────────────
+            // Allow only "ลิงก์ XXXXXX" to pass — everything else requires a linked account
+            const isLinkAttempt = lower.startsWith('ลิงก์ ') || lower.startsWith('/ลิงก์ ')
+            if (!isLinkAttempt) {
+                const db = getDb()
+                const linked = db.prepare(
+                    'SELECT id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+                ).get(tenantId, event.source.userId)
+                if (!linked) {
+                    if (src === 'user') {
+                        await client.replyMessage(event.replyToken, {
+                            type: 'text',
+                            text: '🔒 คุณยังไม่ได้ลงทะเบียนในระบบ ERP\n\nกรุณาติดต่อผู้ดูแลระบบเพื่อขอรหัสเชื่อมบัญชี แล้วส่ง:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456',
+                        })
+                    }
+                    // กลุ่ม: เงียบ ไม่ตอบคนที่ไม่ได้ลงทะเบียน
+                    return
+                }
+            }
 
             // ── BOM Draft (personal chat only) ───────────────────────────────
             if (src === 'user') {
