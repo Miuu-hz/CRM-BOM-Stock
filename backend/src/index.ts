@@ -59,7 +59,7 @@ app.use(cors({
   credentials: true,
 }))
 // Webhook needs raw body for LINE signature validation
-app.use('/api/line/webhook', express.raw({ type: 'application/json' }), lineBotRoutes)
+app.use('/api/line/webhook', express.raw({ type: 'application/json' }))
 
 // Import routes receive parsed Excel/CSV arrays — allow up to 10 MB only for that prefix.
 // Must be registered BEFORE the 1 MB global limit so body-parser skips re-parsing.

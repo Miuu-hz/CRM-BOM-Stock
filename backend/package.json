@@ -19,6 +19,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@line/bot-sdk": "^11.0.0",
     "@prisma/client": "^5.8.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/papaparse": "^5.5.2",
