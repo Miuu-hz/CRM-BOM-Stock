@@ -55,7 +55,7 @@ function Login() {
           >
             <Zap className="w-8 h-8 text-white" />
           </motion.div>
-          <h1 className="text-3xl font-bold neon-text font-['Orbitron']">
+          <h1 className="text-3xl font-bold neon-text">
             CRM-BOM-STOCK
           </h1>
           <p className="text-gray-400 mt-2">Bedding Factory Management</p>

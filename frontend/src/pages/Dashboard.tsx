@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   TrendingUp, TrendingDown, RefreshCw, DollarSign, BarChart2,
   ArrowDownCircle, ArrowUpCircle, Package, Truck, Users, AlertTriangle,
-  FileText, ShoppingBag, Receipt,
+  FileText, ShoppingBag, Receipt, ChevronRight,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -91,12 +92,18 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
         <span className={`text-sm font-bold ${color}`}>{fmt(total)}</span>
       </div>
       {/* Tabs */}
-      <div className="flex gap-1 mb-3">
+      <div className="flex gap-1 mb-3" role="tablist">
         {CF_TABS.map(t => (
           <button
             key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-1 text-xs rounded transition-colors ${tab === t.key ? `${color.replace('text-','bg-').replace('400','500')}/20 border border-current ${color}` : 'text-gray-500 hover:text-gray-300'}`}
+            className={`flex-1 py-1.5 text-xs rounded transition-colors cursor-pointer min-h-[36px] ${
+              tab === t.key
+                ? `bg-white/10 border border-white/20 ${color}`
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
           >
             {t.label}
             {t.key === 'overdue' && items.length > 0 && (
@@ -128,6 +135,7 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
 
 // ---- Main Dashboard ----
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [period, setPeriod] = useState<Period>('month')
   const [arTab, setArTab] = useState<CFTab>('week')
   const [apTab, setApTab] = useState<CFTab>('week')
@@ -186,23 +194,28 @@ export default function Dashboard() {
       {/* Header */}
       <motion.div variants={item} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold neon-text font-['Orbitron']">Executive Dashboard</h1>
-          <p className="text-gray-500 text-xs mt-1">อัพเดท {lastUpdated.toLocaleTimeString('th-TH')}</p>
+          <h1 className="text-2xl font-bold neon-text">Executive Dashboard</h1>
+          <p className="text-gray-500 text-xs mt-1">อัปเดต {lastUpdated.toLocaleTimeString('th-TH')}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Period Toggle */}
-          <div className="flex bg-cyber-darker border border-cyber-border rounded-lg overflow-hidden">
+          <div className="flex bg-cyber-darker border border-cyber-border rounded-lg overflow-hidden" role="group" aria-label="เลือกช่วงเวลา">
             {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${period === p ? 'bg-cyber-primary/20 text-cyber-primary' : 'text-gray-400 hover:text-gray-200'}`}
+                aria-pressed={period === p}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer min-h-[36px] ${period === p ? 'bg-cyber-primary/20 text-cyber-primary' : 'text-gray-400 hover:text-gray-200'}`}
               >
                 {PERIOD_LABELS[p]}
               </button>
             ))}
           </div>
-          <button onClick={() => { loadAll(); loadRevenue(period) }} className="p-2 rounded-lg border border-cyber-border text-gray-400 hover:text-cyber-primary hover:border-cyber-primary/50 transition-colors">
+          <button
+            onClick={() => { loadAll(); loadRevenue(period) }}
+            aria-label="รีเฟรชข้อมูล"
+            className="p-2 rounded-lg border border-cyber-border text-gray-400 hover:text-cyber-primary hover:border-cyber-primary/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
+          >
             <RefreshCw className={`w-4 h-4 ${loading || revLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -370,10 +383,15 @@ export default function Dashboard() {
       {/* Section 4: Operations Row */}
       <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Pending Delivery */}
-        <div className="cyber-card p-4 border border-orange-500/20">
+        <button
+          onClick={() => navigate('/sales')}
+          className="cyber-card p-4 border border-orange-500/20 text-left cursor-pointer hover:border-orange-500/50 transition-colors group"
+          aria-label="ดูรายการรอจัดส่งทั้งหมด"
+        >
           <div className="flex items-center gap-2 mb-2">
             <Truck className="w-4 h-4 text-orange-400" />
             <h3 className="text-sm font-bold text-gray-200">รอจัดส่ง</h3>
+            <ChevronRight className="w-3 h-3 text-gray-600 ml-auto group-hover:text-orange-400 transition-colors" />
           </div>
           {loading || !funnel ? <Skeleton className="h-8 w-20" /> : (
             <>
@@ -381,13 +399,18 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 mt-1">มูลค่ารอส่ง {fmt(funnel.pendingDelivery.value)}</p>
             </>
           )}
-        </div>
+        </button>
 
         {/* Critical Stock */}
-        <div className="cyber-card p-4 border border-yellow-500/20">
+        <button
+          onClick={() => navigate('/stock')}
+          className="cyber-card p-4 border border-yellow-500/20 text-left cursor-pointer hover:border-yellow-500/50 transition-colors group"
+          aria-label="ดูรายการสต๊อกวิกฤตทั้งหมด"
+        >
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-yellow-400" />
             <h3 className="text-sm font-bold text-gray-200">สต๊อกวิกฤต</h3>
+            <ChevronRight className="w-3 h-3 text-gray-600 ml-auto group-hover:text-yellow-400 transition-colors" />
           </div>
           {loading ? <Skeleton className="h-8 w-20" /> : (
             <>
@@ -397,13 +420,18 @@ export default function Dashboard() {
               ))}
             </>
           )}
-        </div>
+        </button>
 
         {/* Overdue Invoices */}
-        <div className="cyber-card p-4 border border-red-500/20">
+        <button
+          onClick={() => navigate('/sales')}
+          className="cyber-card p-4 border border-red-500/20 text-left cursor-pointer hover:border-red-500/50 transition-colors group"
+          aria-label="ดู Invoice เกินกำหนดทั้งหมด"
+        >
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-red-400" />
             <h3 className="text-sm font-bold text-gray-200">Invoice เกินกำหนด</h3>
+            <ChevronRight className="w-3 h-3 text-gray-600 ml-auto group-hover:text-red-400 transition-colors" />
           </div>
           {loading || !cf ? <Skeleton className="h-8 w-20" /> : (
             <>
@@ -414,7 +442,7 @@ export default function Dashboard() {
               ))}
             </>
           )}
-        </div>
+        </button>
       </motion.div>
 
     </motion.div>

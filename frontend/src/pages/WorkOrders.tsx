@@ -107,7 +107,7 @@ function WorkOrders() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">Work Orders</span>
           </h1>
           <p className="text-gray-400">จัดการใบสั่งผลิตและติดตามสถานะ</p>
@@ -276,7 +276,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   return (
     <div className="cyber-card p-4">
       <p className="text-sm text-gray-400 mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${color} font-['Orbitron']`}>{value}</p>
+      <p className={`text-2xl font-bold ${color}`}>{value}</p>
     </div>
   )
 }

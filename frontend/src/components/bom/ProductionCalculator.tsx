@@ -241,6 +241,7 @@ function ProductionCalculator() {
             <div className="p-4 border-b border-cyber-border">
               <h3 className="text-lg font-semibold text-gray-100">Material Requirements</h3>
             </div>
+            <div className="overflow-x-auto">
             <table className="cyber-table w-full">
               <thead>
                 <tr>
@@ -307,6 +308,7 @@ function ProductionCalculator() {
                 </tr>
               </tfoot>
             </table>
+            </div>
           </motion.div>
 
           {/* Zero Stock Warning */}

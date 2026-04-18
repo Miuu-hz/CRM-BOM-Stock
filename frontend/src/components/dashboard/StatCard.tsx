@@ -74,7 +74,7 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
 
         {/* Stats */}
         <h3 className="text-gray-400 text-sm font-medium mb-2">{title}</h3>
-        <p className={`text-3xl font-bold ${selectedColor.text} font-['Orbitron']`}>
+        <p className={`text-3xl font-bold ${selectedColor.text}`}>
           {value}
         </p>
       </div>

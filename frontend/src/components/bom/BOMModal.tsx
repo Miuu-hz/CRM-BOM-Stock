@@ -625,7 +625,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   {/* Total Cost */}
                   <div className="flex items-center justify-end gap-4 pt-4 border-t border-cyber-border">
                     <span className="text-gray-400">ต้นทุนรวม:</span>
-                    <span className="text-2xl font-bold text-cyber-primary font-['Orbitron']">
+                    <span className="text-2xl font-bold text-cyber-primary">
                       ฿{totalCost.toLocaleString()}
                     </span>
                   </div>

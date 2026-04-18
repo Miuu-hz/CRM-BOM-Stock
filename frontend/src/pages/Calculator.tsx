@@ -321,7 +321,7 @@ function Calculator() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">Cost Calculator</span>
           </h1>
           <p className="text-gray-400">
@@ -343,7 +343,7 @@ function Calculator() {
         <div className="cyber-card p-4">
           <div className="flex items-center gap-3 mb-6">
             <Package className="w-6 h-6 text-cyber-primary" />
-            <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+            <h2 className="text-xl font-bold text-gray-100">
               ค้นหาสินค้า
             </h2>
           </div>
@@ -403,7 +403,7 @@ function Calculator() {
           <div className="cyber-card p-4">
             <div className="flex items-center gap-3 mb-6">
               <Package className="w-6 h-6 text-cyber-green" />
-              <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+              <h2 className="text-xl font-bold text-gray-100">
                 รายการวัตถุดิบ
               </h2>
             </div>
@@ -459,7 +459,7 @@ function Calculator() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <DollarSign className="w-6 h-6 text-cyber-purple" />
-                <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+                <h2 className="text-xl font-bold text-gray-100">
                   ค่าดำเนินการ
                 </h2>
               </div>
@@ -573,7 +573,7 @@ function Calculator() {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <TrendingUp className="w-6 h-6 text-cyber-green" />
-                <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+                <h2 className="text-xl font-bold text-gray-100">
                   ผลการคำนวณ
                 </h2>
               </div>
@@ -626,7 +626,7 @@ function Calculator() {
           <div className="cyber-card p-4">
             <div className="flex items-center gap-3 mb-6">
               <ShoppingCart className="w-6 h-6 text-cyber-purple" />
-              <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+              <h2 className="text-xl font-bold text-gray-100">
                 เปรียบเทียบกำไร E-commerce
               </h2>
             </div>

@@ -25,7 +25,7 @@ function ProductionChart() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Activity className="w-6 h-6 text-cyber-purple" />
-          <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+          <h2 className="text-xl font-bold text-gray-100">
             Production Status
           </h2>
         </div>

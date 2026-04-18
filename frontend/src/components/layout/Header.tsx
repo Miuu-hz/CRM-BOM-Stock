@@ -150,29 +150,32 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={onMenuClick}
-            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors"
+            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label="เปิด/ปิดเมนู"
           >
             <Menu className="w-6 h-6 text-cyber-primary" />
           </motion.button>
 
           {/* Search Bar */}
-          <div ref={searchRef} className="relative hidden md:block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div ref={searchRef} className="relative hidden md:block" role="search">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
             <input
               ref={inputRef}
-              type="text"
-              placeholder="Search orders, customers, products, materials... (Ctrl+K)"
+              type="search"
+              placeholder="ค้นหา orders, ลูกค้า, สินค้า... (Ctrl+K)"
+              aria-label="ค้นหาในระบบ"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
               className="cyber-input pl-10 pr-10 w-64 lg:w-96"
             />
             {isSearching ? (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-cyber-primary animate-spin" />
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-cyber-primary animate-spin" aria-hidden="true" />
             ) : searchQuery ? (
               <button
                 onClick={clearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-cyber-dark rounded"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-cyber-dark rounded cursor-pointer"
+                aria-label="ล้างการค้นหา"
               >
                 <X className="w-4 h-4 text-gray-400 hover:text-gray-300" />
               </button>
@@ -280,10 +283,11 @@ function Header({ onMenuClick }: HeaderProps) {
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
-            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
+            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label="แจ้งเตือน"
           >
             <Bell className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-cyber-green rounded-full animate-pulse" />
+            <span className="absolute top-1 right-1 w-2 h-2 bg-cyber-green rounded-full animate-pulse" aria-hidden="true" />
           </motion.button>
 
           {/* Cashier - Quick Access */}
@@ -291,11 +295,11 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => navigate('/cashier')}
-            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
-            title="ระบบขายหน้าร้าน"
+            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label="ระบบขายหน้าร้าน"
           >
             <Store className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyber-green rounded-full animate-pulse" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyber-green rounded-full animate-pulse" aria-hidden="true" />
           </motion.button>
 
           {/* Settings */}
@@ -303,7 +307,8 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.1, rotate: 90 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
+            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label="การตั้งค่า"
           >
             <Settings className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
           </motion.button>

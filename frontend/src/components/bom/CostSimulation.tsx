@@ -300,6 +300,7 @@ function CostSimulation() {
                 Adjust Material Prices
               </h3>
             </div>
+            <div className="overflow-x-auto">
             <table className="cyber-table w-full">
               <thead>
                 <tr>
@@ -367,6 +368,7 @@ function CostSimulation() {
                 ))}
               </tbody>
             </table>
+            </div>
           </motion.div>
 
           {/* Impact Analysis */}
