@@ -181,6 +181,7 @@ const FinancialReports = () => {
               </p>
             </div>
             
+            <div className="overflow-x-auto">
             <table className="cyber-table w-full">
               <thead>
                 <tr>
@@ -220,6 +221,7 @@ const FinancialReports = () => {
                 </tr>
               </tfoot>
             </table>
+            </div>
           </div>
         )}
 

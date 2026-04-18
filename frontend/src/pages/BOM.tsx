@@ -399,7 +399,7 @@ function BOMPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+            <h1 className="text-3xl font-bold text-gray-100 mb-2">
               <span className="neon-text">Bill of Materials</span>
             </h1>
             <p className="text-gray-400">Manage product formulas and materials with nested BOM support</p>
@@ -649,6 +649,7 @@ function BOMPage() {
             {/* List View */}
             {bomFilter !== 'tree-view' && viewMode === 'list' && filteredBOMs.length > 0 && (
               <div className="cyber-card overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="cyber-table w-full">
                   <thead>
                     <tr>
@@ -750,6 +751,7 @@ function BOMPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </>
@@ -1133,7 +1135,7 @@ function BOMCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-gray-400">Total Production Cost:</span>
-          <span className="text-2xl font-bold text-cyber-primary font-['Orbitron']">
+          <span className="text-2xl font-bold text-cyber-primary">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>
         </div>
@@ -1217,7 +1219,7 @@ function StatCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-400 mb-1">{label}</p>
-          <p className={`text-2xl font-bold font-['Orbitron'] ${colorClasses[color] || 'text-cyber-primary'}`}>
+          <p className={`text-2xl font-bold ${colorClasses[color] || 'text-cyber-primary'}`}>
             {value}
           </p>
         </div>

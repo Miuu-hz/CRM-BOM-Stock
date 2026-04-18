@@ -216,7 +216,7 @@ function Stock() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">Inventory Management</span>
           </h1>
           <p className="text-gray-400">Track and manage your stock levels</p>
@@ -1402,7 +1402,7 @@ function StatCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-400 mb-1">{label}</p>
-          <p className={`text-2xl font-bold ${colorClass} font-['Orbitron']`}>
+          <p className={`text-2xl font-bold ${colorClass}`}>
             {value}
           </p>
         </div>

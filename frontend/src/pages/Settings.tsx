@@ -73,7 +73,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">Settings</span>
           </h1>
           <p className="text-gray-400">ตั้งค่าระบบและจัดการผู้ใช้งาน</p>
@@ -827,6 +827,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
         </div>
       ) : (
         <div className="cyber-card overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-cyber-dark/50">
               <tr>
@@ -873,6 +874,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

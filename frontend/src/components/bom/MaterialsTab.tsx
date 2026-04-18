@@ -227,6 +227,7 @@ function MaterialsTab() {
 
       {/* Materials Table */}
       <div className="cyber-card overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="cyber-table w-full">
           <thead>
             <tr>
@@ -301,6 +302,7 @@ function MaterialsTab() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Material Modal */}

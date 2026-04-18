@@ -135,7 +135,7 @@ function Tax() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">Tax Management</span>
           </h1>
           <p className="text-gray-400">ระบบจัดการภาษีมูลค่าเพิ่ม ภาษีหัก ณ ที่จ่าย และภาษีเงินได้นิติบุคคล</p>
@@ -623,7 +623,7 @@ function TaxCard({ title, amount, icon: Icon, color, description }: { title: str
         </div>
       </div>
       <p className="text-sm text-gray-400 mb-1">{title}</p>
-      <p className={`text-2xl font-bold ${colorClasses[color]} font-['Orbitron']`}>
+      <p className={`text-2xl font-bold ${colorClasses[color]}`}>
         ฿{(amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </p>
       <p className="text-xs text-gray-500 mt-1">{description}</p>
@@ -673,7 +673,7 @@ function FilingCard({ formCode, formName, dueDate, status, onGenerate }: { formC
     <div className="p-4 bg-cyber-darker border border-cyber-border rounded-lg">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <span className="text-2xl font-bold text-cyber-primary font-['Orbitron']">{formCode}</span>
+          <span className="text-2xl font-bold text-cyber-primary">{formCode}</span>
           <span className={`ml-2 px-2 py-0.5 rounded text-xs ${statusColors[status]}`}>
             {status === 'pending' ? 'รอดำเนินการ' : status === 'ready' ? 'พร้อมยื่น' : 'ยื่นแล้ว'}
           </span>

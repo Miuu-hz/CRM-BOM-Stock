@@ -64,7 +64,7 @@ function StockAlerts() {
     <div className="cyber-card p-6">
       <div className="flex items-center gap-3 mb-6">
         <AlertTriangle className="w-6 h-6 text-yellow-400" />
-        <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+        <h2 className="text-xl font-bold text-gray-100">
           Stock Alerts
         </h2>
       </div>

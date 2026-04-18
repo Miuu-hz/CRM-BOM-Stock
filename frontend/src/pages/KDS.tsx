@@ -112,7 +112,7 @@ const KDS: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-cyber-primary font-['Orbitron'] flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-cyber-primary flex items-center gap-2">
             <MonitorPlay className="w-6 h-6" />
             Kitchen Display System
           </h1>

@@ -351,7 +351,7 @@ function CRM() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 font-['Orbitron']">
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">
             <span className="neon-text">CRM</span>
           </h1>
           <p className="text-gray-400">
@@ -532,6 +532,7 @@ function CRM() {
 
       {!loading && viewMode === 'list' && (
         <div className="cyber-card overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="cyber-table">
             <thead>
               <tr>
@@ -593,6 +594,7 @@ function CRM() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -1870,7 +1872,7 @@ function StatCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-400 mb-1">{label}</p>
-          <p className="text-2xl font-bold text-cyber-primary font-['Orbitron']">
+          <p className="text-2xl font-bold text-cyber-primary">
             {value}
           </p>
         </div>

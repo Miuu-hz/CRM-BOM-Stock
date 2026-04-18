@@ -156,25 +156,19 @@ function Sidebar({ isOpen }: SidebarProps) {
           exit={{ x: -280 }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="w-[280px] bg-gradient-card backdrop-blur-xl border-r border-cyber-border flex flex-col relative z-50"
+          aria-label="เมนูหลัก"
         >
           {/* Logo Section */}
           <div className="p-6 border-b border-cyber-border">
             <div className="flex items-center gap-3">
-              <motion.div
-                animate={{
-                  rotate: [0, 360],
-                }}
-                transition={{
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: 'linear',
-                }}
+              <div
                 className="w-10 h-10 bg-gradient-to-br from-cyber-primary via-cyber-purple to-cyber-green rounded-lg flex items-center justify-center shadow-neon"
+                aria-hidden="true"
               >
                 <Zap className="w-6 h-6 text-white" />
-              </motion.div>
+              </div>
               <div>
-                <h1 className="text-xl font-bold neon-text font-['Orbitron']">
+                <h1 className="text-xl font-bold neon-text tracking-wide">
                   CRM-BOM
                 </h1>
                 <p className="text-xs text-gray-400">Bedding Factory</p>
@@ -204,7 +198,7 @@ function Sidebar({ isOpen }: SidebarProps) {
           </div>
 
           {/* Navigation Menu */}
-          <nav className="flex-1 py-6 px-3 overflow-y-auto cyber-scrollbar">
+          <nav className="flex-1 py-6 px-3 overflow-y-auto cyber-scrollbar" role="navigation" aria-label="เมนูระบบ">
             <div className="space-y-2">
               {menuItems.map((item) => (
                 <div key={item.path}>

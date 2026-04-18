@@ -257,7 +257,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   return (
     <div className="cyber-card p-4">
       <p className="text-sm text-gray-400 mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${color} font-['Orbitron']`}>{value}</p>
+      <p className={`text-2xl font-bold ${color}`}>{value}</p>
     </div>
   )
 }
@@ -647,7 +647,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                       ].map((item, i) => (
                         <div key={i} className="cyber-card p-4">
                           <p className="text-xs text-gray-500 mb-1">{item.label}</p>
-                          <p className={`text-xl font-bold ${item.color} font-['Orbitron']`}>
+                          <p className={`text-xl font-bold ${item.color}`}>
                             {item.value}{item.suffix && <span className="text-sm ml-1 font-normal">{item.suffix}</span>}
                           </p>
                         </div>

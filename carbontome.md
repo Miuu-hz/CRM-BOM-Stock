@@ -448,5 +448,61 @@ npm run install:all   — npm install ทั้ง backend + frontend
 
 ---
 
-*Last Updated: 2026-03-26*
+---
+
+## 🎨 UI/UX Review & Guidelines
+
+> วิเคราะห์โดย UI/UX Pro Max Skill | อัปเดต: April 2026
+
+### Design System (Recommended)
+- **Pattern**: Data-Dense Dashboard (Enterprise Gateway)
+- **Style**: Dark professional with minimal neon accents
+- **Typography**: Orbitron → Inter (headings), Inter (body) — Orbitron ยากอ่านสำหรับข้อความยาว
+- **Colors**: Dark bg `#0a0e27` + cyan accent `#00f0ff` + green positive `#00ff88`
+
+### ✅ แก้ไขแล้ว (April 2026)
+
+| ปัญหา | ไฟล์ | การแก้ไข |
+|-------|------|---------|
+| `background-attachment: fixed` lag บน mobile | `index.css:16` | เปลี่ยนเป็น `scroll` |
+| `hover:scale-105` ทำ layout shift | `index.css:36,44` | เปลี่ยนเป็น `hover:brightness-110` |
+| ไม่มี `prefers-reduced-motion` | `index.css` | เพิ่ม media query ท้ายไฟล์ |
+| Logo icon หมุน infinite | `Sidebar.tsx:163` | เปลี่ยนเป็น static div |
+| Icon buttons ไม่มี `aria-label` | `Header.tsx` | เพิ่ม aria-label ทุกปุ่ม |
+| ไม่มี `role="navigation"` | `Sidebar.tsx:207` | เพิ่ม role + aria-label |
+| Search input ไม่มี `role="search"` | `Header.tsx:159` | เพิ่ม role="search" + aria-label |
+| Touch targets เล็กเกิน 44px | `Header.tsx` | เพิ่ม `min-h-[44px] min-w-[44px]` |
+| Buttons ไม่มี focus-visible | `index.css` | เพิ่ม `focus-visible:ring-2` |
+
+### ⚠️ ยังต้องแก้ (Backlog)
+
+| ปัญหา | Priority | ไฟล์เป้าหมาย |
+|-------|----------|-------------|
+| ~~Orbitron font ยากอ่านสำหรับ heading ภาษาไทย~~ | ✅ แก้แล้ว | เปลี่ยนเป็น Inter + Noto Sans Thai ทุกไฟล์ |
+| Tables ในหน้า BOM/Stock ต้องตรวจ overflow-x-auto | MEDIUM | `BOM.tsx`, `Stock.tsx` |
+| `scan-line-effect` animation ยังรันบน browser ที่ไม่รองรับ reduced-motion | LOW | `index.css` |
+| Skip link "ข้ามไปเนื้อหาหลัก" ยังไม่มี | LOW | `Layout.tsx` |
+| Status badges ขนาดเล็ก (py-1) บน mobile | LOW | `index.css:114` |
+
+### Mobile Compatibility
+- **Viewport meta**: ✅ มีแล้ว
+- **Responsive breakpoints**: ✅ md: lg: ใช้งานได้
+- **Touch targets**: ✅ แก้แล้วใน Header buttons
+- **Background attachment**: ✅ แก้แล้ว (scroll แทน fixed)
+- **Sidebar on mobile**: ⚠️ 280px fixed width — ควรพิจารณา overlay mode บน sm:
+
+*Last Updated: 2026-04-18*
 *Maintained by: Development Team*
+
+
+Phase 2 — Medium Risk · High Impact
+#	ปัญหา	ไฟล์	Risk	Impact
+2.1	679 onClick elements ไม่มี cursor-pointer — ผู้ใช้ไม่รู้ว่ากดได้	ทุกไฟล์	🟡 Medium	High — UX พื้นฐาน
+2.2	Mobile sidebar ไม่ใช่ overlay — sidebar 280px ดัน content เหลือ ~95px บนจอเล็ก	Layout.tsx	🟡 Medium	High — mobile unusable
+2.3	aria-label มีแค่ 8 จุดใน app ทั้งหมด — ต้องเพิ่มให้ icon buttons ทุกหน้า	ทุกหน้า	🟡 Medium	Medium — accessibility
+2.4	Status badge py-1 (~8px) เล็กกว่า 44px minimum touch target	index.css:114	🟡 Medium	Medium — mobile tap accuracy
+Phase 3 — Higher Risk · Architecture Change
+#	ปัญหา	ไฟล์	Risk	Impact
+3.1	Sidebar ไม่มี mobile breakpoint logic — ควรเปิดเป็น overlay บน < lg และปิดอัตโนมัติหลัง navigate	Layout.tsx + Sidebar.tsx	🔴 High	High — mobile experience
+3.2	Z-index ไม่มีระบบ — มี z-[9999], z-[60], z-50, z-40 ปนกัน ทำให้ modal ซ้อน modal ผิดพลาดได้	App.tsx, BOMModal.tsx	🔴 High	Medium — modal stacking bugs
+3.3	Background glow effects ใช้ animate-pulse-slow infinite บน Layout.tsx:32-33 — รันตลอดทุกหน้า	Layout.tsx	🟡 Medium	Low — battery/CP

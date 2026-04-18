@@ -56,7 +56,7 @@ function RecentOrders() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <ShoppingCart className="w-6 h-6 text-cyber-primary" />
-          <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+          <h2 className="text-xl font-bold text-gray-100">
             Recent Orders
           </h2>
         </div>

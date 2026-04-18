@@ -26,7 +26,7 @@ function SalesChart() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <TrendingUp className="w-6 h-6 text-cyber-green" />
-          <h2 className="text-xl font-bold text-gray-100 font-['Orbitron']">
+          <h2 className="text-xl font-bold text-gray-100">
             Sales Overview
           </h2>
         </div>
