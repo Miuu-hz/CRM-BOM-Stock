@@ -263,8 +263,9 @@ const Field = ({ label, required, children }: { label: string; required?: boolea
 const inputCls = (disabled?: boolean) =>
   `w-full px-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-white text-sm focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
 
-const MaterialSearchInput = ({ materials, value, onChange, disabled = false }: {
+const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onAddNew }: {
   materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
+  onAddNew?: (query: string) => void
 }) => {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -280,7 +281,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false }: {
           value={open ? query : (selected ? `${selected.code} · ${selected.name}` : '')}
           onChange={e => setQuery(e.target.value)}
           onFocus={() => { setOpen(true); setQuery('') }}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
           disabled={disabled}
           placeholder="ค้นหา รหัส / ชื่อวัสดุ..."
           className={`w-full pl-8 pr-7 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -293,12 +294,28 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false }: {
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">ไม่พบวัสดุ</p>
+            <div className="px-3 py-3 text-center">
+              <p className="text-xs text-gray-500 mb-2">ไม่พบสินค้า "{query}"</p>
+              {onAddNew && (
+                <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
+                  className="flex items-center gap-1.5 mx-auto px-3 py-1.5 text-xs bg-cyber-green/15 text-cyber-green border border-cyber-green/30 rounded-lg hover:bg-cyber-green/25 transition-colors">
+                  <Plus className="w-3 h-3" /> สร้างสินค้าใหม่เข้า Stock
+                </button>
+              )}
+            </div>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} รายการ</div>
+              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500 flex items-center justify-between">
+                <span>{filtered.length} รายการ</span>
+                {onAddNew && (
+                  <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
+                    className="flex items-center gap-1 text-cyber-green hover:text-cyber-green/80 transition-colors">
+                    <Plus className="w-3 h-3" /> สินค้าใหม่
+                  </button>
+                )}
+              </div>
               {filtered.map(m => (
                 <button key={m.id} onMouseDown={() => { onChange(m.id, m); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === m.id ? 'bg-cyber-primary/10' : ''}`}>
@@ -649,6 +666,172 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
   )
 }
 
+const STOCK_UNITS = [
+  { value: 'pcs', label: 'ชิ้น' }, { value: 'kg', label: 'กิโลกรัม' }, { value: 'g', label: 'กรัม' },
+  { value: 'm', label: 'เมตร' }, { value: 'cm', label: 'เซนติเมตร' }, { value: 'yard', label: 'หลา' },
+  { value: 'roll', label: 'ม้วน' }, { value: 'box', label: 'กล่อง' }, { value: 'pack', label: 'แพ็ค' },
+  { value: 'set', label: 'ชุด' }, { value: 'ltr', label: 'ลิตร' }, { value: 'bottle', label: 'ขวด' },
+  { value: 'sheet', label: 'แผ่น' }, { value: 'pair', label: 'คู่' },
+]
+
+const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
+  onClose: () => void
+  onCreated: (item: { id: string; code: string; name: string; unit: string }) => void
+  prefill?: { name?: string; unitCost?: number }
+}) => {
+  useModalClose(onClose)
+  const [form, setForm] = useState({
+    sku: `SKU-${Date.now().toString().slice(-5)}`,
+    name: prefill?.name || '',
+    category: 'raw',
+    unit: 'pcs',
+    unitCost: prefill?.unitCost || 0,
+    unitPrice: 0,
+    minStock: 10,
+    maxStock: 100,
+    location: '',
+    quantity: 0,
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async () => {
+    if (!form.sku.trim() || !form.name.trim()) { setErr('กรุณากรอก SKU และชื่อสินค้า'); return }
+    setSaving(true); setErr('')
+    try {
+      const created = await stockService.create({
+        sku: form.sku,
+        name: form.name,
+        category: form.category,
+        unit: form.unit,
+        unitCost: form.unitCost || undefined,
+        unitPrice: form.unitPrice || undefined,
+        minStock: form.minStock,
+        maxStock: form.maxStock,
+        location: form.location || 'Main Warehouse',
+        quantity: form.quantity,
+      })
+      onCreated({ id: created.id, code: created.sku, name: created.name, unit: created.unit })
+      onClose()
+    } catch (e: any) {
+      setErr(e.response?.data?.message || 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง')
+    }
+    setSaving(false)
+  }
+
+  const inp = 'w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary'
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="p-4 border-b border-cyber-border flex items-center justify-between">
+          <div>
+            <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+              <Package className="w-4 h-4 text-cyber-green" />
+              เพิ่มสินค้าใหม่เข้า Stock
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">สินค้าจะถูกบันทึกใน Stock ทันที และเลือกได้ใน PO</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+          {err && <p className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2">{err}</p>}
+
+          {/* SKU + ชื่อสินค้า */}
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs text-gray-400 mb-1">SKU <span className="text-red-400">*</span></label>
+              <input value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
+                placeholder="เช่น MAT-001" className={inp} />
+            </div>
+            <div className="col-span-3">
+              <label className="block text-xs text-gray-400 mb-1">ชื่อสินค้า <span className="text-red-400">*</span></label>
+              <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                placeholder="ชื่อวัตถุดิบ / สินค้า" className={inp} />
+            </div>
+          </div>
+
+          {/* ประเภท + หน่วย */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">ประเภท</label>
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className={inp}>
+                <option value="raw">วัตถุดิบ (Raw)</option>
+                <option value="wip">กึ่งสำเร็จรูป (WIP)</option>
+                <option value="finished">สินค้าสำเร็จรูป</option>
+                <option value="material">วัสดุ/อื่นๆ</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">หน่วย</label>
+              <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} className={inp}>
+                {STOCK_UNITS.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* ราคาต้นทุน + ราคาขาย */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span></label>
+              <input type="number" min="0" step="0.01" value={form.unitCost}
+                onChange={e => setForm(p => ({ ...p, unitCost: parseFloat(e.target.value) || 0 }))}
+                onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วย (฿) <span className="text-cyber-green/70">ขาย</span></label>
+              <input type="number" min="0" step="0.01" value={form.unitPrice}
+                onChange={e => setForm(p => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
+                onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
+            </div>
+          </div>
+
+          {/* Min/Max + จำนวนเริ่มต้น */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Min Stock</label>
+              <input type="number" min="0" value={form.minStock}
+                onChange={e => setForm(p => ({ ...p, minStock: parseInt(e.target.value) || 0 }))}
+                onFocus={e => e.target.select()} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Max Stock</label>
+              <input type="number" min="0" value={form.maxStock}
+                onChange={e => setForm(p => ({ ...p, maxStock: parseInt(e.target.value) || 0 }))}
+                onFocus={e => e.target.select()} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">จำนวนเริ่มต้น</label>
+              <input type="number" min="0" value={form.quantity}
+                onChange={e => setForm(p => ({ ...p, quantity: parseInt(e.target.value) || 0 }))}
+                onFocus={e => e.target.select()} className={inp} />
+            </div>
+          </div>
+
+          {/* สถานที่เก็บ */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">สถานที่เก็บ</label>
+            <input value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))}
+              placeholder="เช่น คลังหลัก, A-12" className={inp} />
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-cyber-border flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">ยกเลิก</button>
+          <button onClick={save} disabled={saving}
+            className="px-5 py-2 text-sm bg-cyber-green text-cyber-dark font-semibold rounded-lg hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2">
+            {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+            บันทึกเข้า Stock
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 const Purchase = () => {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
@@ -665,6 +848,9 @@ const Purchase = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [showQuickAddSupplier, setShowQuickAddSupplier] = useState(false)
   const [quickAddSupplierCallback, setQuickAddSupplierCallback] = useState<((id: string) => void) | null>(null)
+  const [showQuickAddStock, setShowQuickAddStock] = useState(false)
+  const [quickAddStockPrefill, setQuickAddStockPrefill] = useState<{ name?: string; unitCost?: number } | undefined>()
+  const [quickAddStockCallback, setQuickAddStockCallback] = useState<((item: { id: string; code: string; name: string; unit: string }) => void) | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [drAccounts, setDrAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -797,6 +983,24 @@ const Purchase = () => {
     if (quickAddSupplierCallback) quickAddSupplierCallback(s.id)
     setShowQuickAddSupplier(false)
     setQuickAddSupplierCallback(null)
+  }
+
+  const openQuickAddStock = (
+    onSelect: (item: { id: string; code: string; name: string; unit: string }) => void,
+    prefill?: { name?: string; unitCost?: number }
+  ) => {
+    setQuickAddStockPrefill(prefill)
+    setQuickAddStockCallback(() => onSelect)
+    setShowQuickAddStock(true)
+  }
+
+  const handleQuickAddStockCreated = async (item: { id: string; code: string; name: string; unit: string }) => {
+    await fetchMaterials()
+    if (quickAddStockCallback) quickAddStockCallback(item)
+    setShowQuickAddStock(false)
+    setQuickAddStockCallback(null)
+    setQuickAddStockPrefill(undefined)
+    toast.success(`เพิ่ม "${item.name}" เข้า Stock แล้ว`)
   }
 
   const fetchMaterials = async () => {
@@ -2380,6 +2584,14 @@ const Purchase = () => {
                     unit: mat?.unit || item.unit,
                     description: mat ? mat.name : ''
                   })}
+                  onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
+                    (newItem) => updateRequestItemFields(index, {
+                      material_id: newItem.id,
+                      description: newItem.name,
+                      unit: newItem.unit,
+                    }),
+                    { name: q }
+                  ) : undefined}
                 />
                 <input type="text" placeholder="รายละเอียดเพิ่มเติม" value={item.description}
                   onChange={e => updateRequestItem(index, 'description', e.target.value)}
@@ -2555,9 +2767,18 @@ const Purchase = () => {
                   onChange={(id, mat) => updateOrderItemFields(index, {
                     material_id: id,
                     description: mat ? mat.name : '',
-                    // suggest last purchase cost from stock — user can override
                     unit_price: mat?.unitCost && item.unit_price === 0 ? mat.unitCost : item.unit_price,
-                  })} />
+                  })}
+                  onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
+                    (newItem) => {
+                      updateOrderItemFields(index, {
+                        material_id: newItem.id,
+                        description: newItem.name,
+                      })
+                    },
+                    { name: q }
+                  ) : undefined}
+                />
                 <input type="text" placeholder="รายละเอียด" value={item.description}
                   onChange={e => updateOrderItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
@@ -3436,6 +3657,15 @@ const Purchase = () => {
         <QuickAddSupplierModal
           onClose={() => { setShowQuickAddSupplier(false); setQuickAddSupplierCallback(null) }}
           onCreated={handleQuickAddSupplierCreated}
+        />
+      )}
+
+      {/* Quick add stock item from PO */}
+      {showQuickAddStock && (
+        <QuickAddStockItemModal
+          onClose={() => { setShowQuickAddStock(false); setQuickAddStockCallback(null); setQuickAddStockPrefill(undefined) }}
+          onCreated={handleQuickAddStockCreated}
+          prefill={quickAddStockPrefill}
         />
       )}
     </div>

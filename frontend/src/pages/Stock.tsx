@@ -23,7 +23,14 @@ import {
   Trash2,
   Settings2,
   Check,
+  FileDown,
+  SlidersHorizontal,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
+import toast from 'react-hot-toast'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
@@ -54,6 +61,8 @@ const getUnits = () => {
   return [...DEFAULT_UNITS, ...customUnits]
 }
 
+type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
+
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
   const [stats, setStats] = useState<StockStats | null>(null)
@@ -63,7 +72,6 @@ function Stock() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [showColumnPicker, setShowColumnPicker] = useState(false)
 
-  type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
   const COLUMN_LABELS: Record<ColumnKey, string> = {
     image: 'รูปภาพ',
     name: 'ชื่อสินค้า',
@@ -97,6 +105,36 @@ function Stock() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
+
+  // Sort states
+  const [sortKey, setSortKey] = useState<ColumnKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const handleSort = (key: ColumnKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // Adjust modal
+  const [adjustModal, setAdjustModal] = useState<{ open: boolean; item: StockItem | null }>({
+    open: false,
+    item: null,
+  })
 
   // Modal states
   const [detailModal, setDetailModal] = useState<{ open: boolean; item: StockItem | null }>({
@@ -158,12 +196,29 @@ function Stock() {
     return matchesSearch && matchesCategory && matchesStatus
   })
 
+  const sortedItems = sortKey ? [...filteredItems].sort((a, b) => {
+    let aVal: any, bVal: any
+    switch (sortKey) {
+      case 'name': aVal = a.name; bVal = b.name; break
+      case 'sku': aVal = a.sku; bVal = b.sku; break
+      case 'category': aVal = getCategoryGroup(a.category); bVal = getCategoryGroup(b.category); break
+      case 'quantity': aVal = a.quantity; bVal = b.quantity; break
+      case 'unitCost': aVal = a.unitCost ?? a.unit_cost ?? 0; bVal = b.unitCost ?? b.unit_cost ?? 0; break
+      case 'unitPrice': aVal = a.unitPrice ?? a.unit_price ?? 0; bVal = b.unitPrice ?? b.unit_price ?? 0; break
+      case 'location': aVal = a.location || ''; bVal = b.location || ''; break
+      case 'status': aVal = getItemStatus(a); bVal = getItemStatus(b); break
+      default: return 0
+    }
+    if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal, 'th') : bVal.localeCompare(aVal, 'th')
+    return sortDir === 'asc' ? aVal - bVal : bVal - aVal
+  }) : filteredItems
+
   // Pagination logic
-  const totalItems = filteredItems.length
+  const totalItems = sortedItems.length
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = filteredItems.slice(startIndex, endIndex)
+  const paginatedItems = sortedItems.slice(startIndex, endIndex)
 
   // Reset to page 1 when filters change
   const handleSearchChange = (value: string) => {
@@ -181,6 +236,49 @@ function Stock() {
     setCurrentPage(1)
   }
 
+  const handleExport = () => {
+    const rows = sortedItems.map(item => ({
+      'SKU': item.sku,
+      'ชื่อสินค้า': item.name,
+      'GS1 Barcode': item.gs1Barcode || '',
+      'ประเภท': item.category,
+      'จำนวน': item.quantity,
+      'หน่วย': item.unit,
+      'Min Stock': item.minStock,
+      'Max Stock': item.maxStock,
+      'ต้นทุน/หน่วย (฿)': item.unitCost ?? item.unit_cost ?? 0,
+      'ราคาขาย/หน่วย (฿)': item.unitPrice ?? item.unit_price ?? 0,
+      'สถานที่': item.location || '',
+      'สถานะ': getItemStatus(item),
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Stock')
+    XLSX.writeFile(wb, `stock_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    toast.success(`ส่งออก ${rows.length} รายการเรียบร้อย`)
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`ยืนยันลบ ${selectedIds.size} รายการ? การกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+    try {
+      await Promise.all([...selectedIds].map(id => stockService.delete(id)))
+      toast.success(`ลบ ${selectedIds.size} รายการเรียบร้อย`)
+      setSelectedIds(new Set())
+      loadData()
+    } catch {
+      toast.error('ลบบางรายการไม่สำเร็จ กรุณาลองใหม่')
+    }
+  }
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === paginatedItems.length && paginatedItems.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(paginatedItems.map(i => i.id)))
+    }
+  }
+
   const handleOpenDetail = async (item: StockItem) => {
     try {
       const movements = await stockService.getMovements(item.id)
@@ -193,7 +291,7 @@ function Stock() {
 
   const handleStockMovement = (type: 'IN' | 'OUT', item: StockItem) => {
     if (type === 'OUT' && item.quantity === 0) {
-      alert('Cannot perform Stock Out - item is out of stock!')
+      toast.error('สต๊อกหมด ไม่สามารถทำ Stock Out ได้')
       return
     }
     setMovementModal({ open: true, type, item })
@@ -217,37 +315,71 @@ function Stock() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-100 mb-2">
-            <span className="neon-text">Inventory Management</span>
+            <span className="neon-text">จัดการสต๊อกสินค้า</span>
           </h1>
-          <p className="text-gray-400">Track and manage your stock levels</p>
+          <p className="text-gray-400">ติดตามและจัดการระดับสต๊อกสินค้า</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 flex-wrap justify-end items-center">
+          {/* Utility */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleExport}
+            className="cyber-btn-secondary flex items-center gap-2 text-sm"
+          >
+            <FileDown className="w-4 h-4" />
+            Export
+          </motion.button>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowImportModal(true)}
-            className="cyber-btn-secondary flex items-center gap-2"
+            className="cyber-btn-secondary flex items-center gap-2 text-sm"
           >
-            <Upload className="w-5 h-5" />
+            <Upload className="w-4 h-4" />
             Import
           </motion.button>
+
+          {/* Divider */}
+          <div className="w-px h-8 bg-cyber-border" />
+
+          {/* Stock movement group */}
+          <div className="flex rounded-xl overflow-hidden border border-cyber-border">
+            <button
+              onClick={() => setMovementModal({ open: true, type: 'IN', item: null })}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-cyber-green hover:bg-cyber-green/10 transition-colors border-r border-cyber-border"
+              title="Stock In"
+            >
+              <ArrowUpCircle className="w-4 h-4" />
+              รับเข้า
+            </button>
+            <button
+              onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors border-r border-cyber-border"
+              title="Stock Out"
+            >
+              <ArrowDownCircle className="w-4 h-4" />
+              ตัดออก
+            </button>
+            <button
+              onClick={() => setAdjustModal({ open: true, item: null })}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-400 hover:bg-blue-400/10 transition-colors"
+              title="ปรับสต๊อก"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              ปรับสต๊อก
+            </button>
+          </div>
+
+          {/* Add Item — primary CTA */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setMovementModal({ open: true, type: 'IN', item: null })}
-            className="cyber-btn-secondary flex items-center gap-2"
+            onClick={() => setShowAddModal(true)}
+            className="cyber-btn-primary flex items-center gap-2 text-sm"
           >
-            <ArrowUpCircle className="w-5 h-5" />
-            Stock In
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
-            className="cyber-btn-primary flex items-center gap-2"
-          >
-            <ArrowDownCircle className="w-5 h-5" />
-            Stock Out
+            <Plus className="w-4 h-4" />
+            เพิ่มสินค้า
           </motion.button>
         </div>
       </div>
@@ -255,25 +387,25 @@ function Stock() {
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
-          label="Total Items"
+          label="สินค้าทั้งหมด"
           value={(stats?.totalItems ?? 0).toString()}
           icon={Package}
           color="primary"
         />
         <StatCard
-          label="Critical Stock"
+          label="สต๊อกวิกฤต"
           value={(stats?.criticalCount ?? 0).toString()}
           icon={AlertTriangle}
           color="red"
         />
         <StatCard
-          label="Low Stock"
+          label="สต๊อกต่ำ"
           value={(stats?.lowStockCount ?? 0).toString()}
           icon={TrendingDown}
           color="yellow"
         />
         <StatCard
-          label="Total Value"
+          label="มูลค่ารวม"
           value={`฿${(stats?.totalValue ?? 0).toLocaleString()}`}
           icon={TrendingUp}
           color="green"
@@ -282,71 +414,72 @@ function Stock() {
 
       {/* Filters */}
       <div className="cyber-card p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex flex-col gap-4">
           {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
             <input
-              type="text"
-              placeholder="Search items by name or SKU..."
+              type="search"
+              placeholder="ค้นหาชื่อสินค้า หรือ SKU..."
+              aria-label="ค้นหาสินค้า"
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="cyber-input pl-10 w-full"
             />
           </div>
 
-          {/* Category Filter */}
-          <div className="flex gap-2 flex-wrap">
-            <FilterButton
-              label="All"
-              active={selectedCategory === 'all'}
-              onClick={() => handleCategoryChange('all')}
-            />
-            <FilterButton
-              label="วัตถุดิบ"
-              active={selectedCategory === 'raw'}
-              onClick={() => handleCategoryChange('raw')}
-            />
-            <FilterButton
-              label="กึ่งสำเร็จรูป"
-              active={selectedCategory === 'wip'}
-              onClick={() => handleCategoryChange('wip')}
-            />
-            <FilterButton
-              label="สินค้าสำเร็จรูป"
-              active={selectedCategory === 'finished'}
-              onClick={() => handleCategoryChange('finished')}
-            />
-          </div>
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Category Filter */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">ประเภทสินค้า</p>
+              <div className="flex gap-2 flex-wrap">
+                <FilterButton label="ทั้งหมด" active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
+                <FilterButton label="วัตถุดิบ" active={selectedCategory === 'raw'} onClick={() => handleCategoryChange('raw')} />
+                <FilterButton label="กึ่งสำเร็จรูป" active={selectedCategory === 'wip'} onClick={() => handleCategoryChange('wip')} />
+                <FilterButton label="สินค้าสำเร็จรูป" active={selectedCategory === 'finished'} onClick={() => handleCategoryChange('finished')} />
+              </div>
+            </div>
 
-          {/* Status Filter */}
-          <div className="flex gap-2 flex-wrap">
-            <FilterButton
-              label="All Status"
-              active={selectedStatus === 'all'}
-              onClick={() => handleStatusChange('all')}
-            />
-            <FilterButton
-              label="Out of Stock"
-              active={selectedStatus === 'out'}
-              onClick={() => handleStatusChange('out')}
-            />
-            <FilterButton
-              label="Critical"
-              active={selectedStatus === 'critical'}
-              onClick={() => handleStatusChange('critical')}
-            />
-            <FilterButton
-              label="Low"
-              active={selectedStatus === 'low'}
-              onClick={() => handleStatusChange('low')}
-            />
+            {/* Divider */}
+            <div className="hidden sm:block w-px bg-cyber-border self-stretch" />
+
+            {/* Status Filter */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">สถานะสต๊อก</p>
+              <div className="flex gap-2 flex-wrap">
+                <FilterButton label="ทั้งหมด" active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
+                <FilterButton label="หมด" active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
+                <FilterButton label="วิกฤต" active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
+                <FilterButton label="ต่ำ" active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
+                <FilterButton label="เกิน" active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Stock List */}
       <div className="cyber-card p-6">
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 mb-3 p-3 bg-cyber-primary/10 border border-cyber-primary/30 rounded-xl">
+            <span className="text-cyber-primary text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-sm hover:bg-red-500/30 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              ลบที่เลือก
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-sm text-gray-400 hover:text-gray-200 transition-colors ml-auto"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        )}
+
         {/* Table toolbar */}
         <div className="flex items-center justify-end mb-3 relative">
           <button
@@ -393,24 +526,33 @@ function Stock() {
           <table className="cyber-table">
             <thead>
               <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={paginatedItems.length > 0 && selectedIds.size === paginatedItems.length}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary cursor-pointer"
+                    aria-label="เลือกทั้งหมด"
+                  />
+                </th>
                 {visibleCols.image && <th className="w-14"></th>}
-                {visibleCols.name && <th>ชื่อสินค้า</th>}
-                {visibleCols.sku && <th>SKU</th>}
-                {visibleCols.category && <th>ประเภท</th>}
-                {visibleCols.quantity && <th>จำนวน</th>}
+                {visibleCols.name && <SortTh label="ชื่อสินค้า" colKey="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.sku && <SortTh label="SKU" colKey="sku" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.minmax && <th>Min / Max</th>}
-                {visibleCols.unitCost && <th>ต้นทุน/หน่วย</th>}
-                {visibleCols.unitPrice && <th>ราคาขาย/หน่วย</th>}
-                {visibleCols.location && <th>สถานที่</th>}
-                {visibleCols.status && <th>สถานะ</th>}
+                {visibleCols.unitCost && <SortTh label="ต้นทุน/หน่วย" colKey="unitCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.location && <SortTh label="สถานที่" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.status && <SortTh label="สถานะ" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.length === 0 ? (
+              {sortedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={colSpanCount} className="text-center py-8 text-gray-500">
-                    No stock items found
+                  <td colSpan={colSpanCount + 1} className="text-center py-8 text-gray-500">
+                    ไม่พบสินค้าที่ค้นหา
                   </td>
                 </tr>
               ) : (
@@ -418,13 +560,24 @@ function Stock() {
                   const status = getItemStatus(item)
                   const cost = item.unitCost ?? item.unit_cost ?? 0
                   const price = item.unitPrice ?? item.unit_price ?? 0
+                  const isSelected = selectedIds.has(item.id)
                   return (
                     <motion.tr
                       key={item.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
+                      transition={{ delay: Math.min(index * 0.03, 0.3) }}
+                      className={isSelected ? 'bg-cyber-primary/5' : ''}
                     >
+                      <td className="w-10">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(item.id)}
+                          className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary cursor-pointer"
+                          aria-label={`เลือก ${item.name}`}
+                        />
+                      </td>
                       {visibleCols.image && (
                         <td className="w-14">
                           {item.image_url || item.imageUrl ? (
@@ -488,25 +641,25 @@ function Stock() {
                         <td><StatusBadge status={status} /></td>
                       )}
                       <td>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleOpenDetail(item)}
-                            className="p-2 text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10 rounded-lg transition-colors"
-                            title="View Details"
+                            className="p-2 text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10 rounded-lg transition-colors cursor-pointer"
+                            aria-label={`ดูรายละเอียด ${item.name}`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setEditModal({ open: true, item })}
-                            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors"
-                            title="Edit"
+                            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors cursor-pointer"
+                            aria-label={`แก้ไข ${item.name}`}
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleStockMovement('IN', item)}
-                            className="p-2 text-gray-400 hover:text-cyber-green hover:bg-cyber-green/10 rounded-lg transition-colors"
-                            title="Stock In"
+                            className="p-2 text-gray-400 hover:text-cyber-green hover:bg-cyber-green/10 rounded-lg transition-colors cursor-pointer"
+                            aria-label={`รับสินค้าเข้า ${item.name}`}
                           >
                             <ArrowUpCircle className="w-4 h-4" />
                           </button>
@@ -515,11 +668,19 @@ function Stock() {
                             disabled={item.quantity === 0}
                             className={`p-2 rounded-lg transition-colors ${item.quantity === 0
                               ? 'text-gray-600 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10'
+                              : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10 cursor-pointer'
                               }`}
-                            title={item.quantity === 0 ? 'Out of Stock' : 'Stock Out'}
+                            aria-label={item.quantity === 0 ? `${item.name} สต๊อกหมด` : `ตัดสินค้าออก ${item.name}`}
                           >
                             <ArrowDownCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setAdjustModal({ open: true, item })}
+                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors cursor-pointer"
+                            aria-label={`ปรับสต๊อก ${item.name}`}
+                            title="ปรับสต๊อก"
+                          >
+                            <SlidersHorizontal className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -616,6 +777,15 @@ function Stock() {
         onClose={() => setMovementModal({ open: false, type: 'IN', item: null })}
         onSave={loadData}
         setShowAddModal={setShowAddModal}
+      />
+
+      {/* Adjust Modal */}
+      <AdjustModal
+        open={adjustModal.open}
+        item={adjustModal.item}
+        stockItems={stockItems}
+        onClose={() => setAdjustModal({ open: false, item: null })}
+        onSave={loadData}
       />
 
       {/* Add New Item Modal */}
@@ -817,6 +987,7 @@ function EditModal({
     name: '',
     gs1Barcode: '',
     category: '',
+    unit: 'pcs',
     minStock: 0,
     maxStock: 0,
     location: '',
@@ -828,6 +999,19 @@ function EditModal({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [showUnitModal, setShowUnitModal] = useState(false)
+  const [newUnit, setNewUnit] = useState({ value: '', label: '' })
+
+  const handleAddUnit = () => {
+    if (!newUnit.value || !newUnit.label) return
+    const saved = localStorage.getItem('customUnits')
+    const customUnits = saved ? JSON.parse(saved) : []
+    const updated = [...customUnits, newUnit]
+    localStorage.setItem('customUnits', JSON.stringify(updated))
+    setFormData(f => ({ ...f, unit: newUnit.value }))
+    setNewUnit({ value: '', label: '' })
+    setShowUnitModal(false)
+  }
 
   useEffect(() => {
     if (item) {
@@ -835,6 +1019,7 @@ function EditModal({
         name: item.name || '',
         gs1Barcode: item.gs1Barcode || '',
         category: item.category || '',
+        unit: item.unit || 'pcs',
         minStock: item.minStock ?? 0,
         maxStock: item.maxStock ?? 0,
         location: item.location || '',
@@ -871,7 +1056,7 @@ function EditModal({
       onClose()
     } catch (err) {
       console.error('Failed to update stock item:', err)
-      alert('Failed to update stock item')
+      toast.error('บันทึกไม่สำเร็จ กรุณาลองใหม่')
     } finally {
       setSaving(false)
     }
@@ -956,20 +1141,41 @@ function EditModal({
               </div>
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="cyber-input w-full"
-                required
-              >
-                <option value="raw">วัตถุดิบ (Raw)</option>
-                <option value="wip">กำลังผลิต (WIP)</option>
-                <option value="finished">สำเร็จรูป (Finished)</option>
-                <option value="material">วัสดุสิ้นเปลือง</option>
-              </select>
+            {/* Category + Unit */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="cyber-input w-full"
+                  required
+                >
+                  <option value="raw">วัตถุดิบ (Raw)</option>
+                  <option value="wip">กำลังผลิต (WIP)</option>
+                  <option value="finished">สำเร็จรูป (Finished)</option>
+                  <option value="material">วัสดุสิ้นเปลือง</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า</label>
+                <select
+                  value={formData.unit}
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  className="cyber-input w-full"
+                >
+                  {getUnits().map((u) => (
+                    <option key={u.value} value={u.value}>{u.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowUnitModal(true)}
+                  className="text-xs text-cyber-primary hover:underline mt-1 cursor-pointer"
+                >
+                  + เพิ่มหน่วยใหม่
+                </button>
+              </div>
             </div>
 
             {/* Cost + Price */}
@@ -1100,6 +1306,46 @@ function EditModal({
             </button>
           </div>
         </form>
+
+        {/* Add Unit Modal */}
+        {showUnitModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+            <div className="cyber-card w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 border-b border-cyber-border flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
+                <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded cursor-pointer">
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
+                  <input
+                    type="text"
+                    value={newUnit.value}
+                    onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
+                    placeholder="เช่น crate"
+                    className="cyber-input w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
+                  <input
+                    type="text"
+                    value={newUnit.label}
+                    onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
+                    placeholder="เช่น ลัง"
+                    className="cyber-input w-full text-sm"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setShowUnitModal(false)} className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300 cursor-pointer">ยกเลิก</button>
+                  <button onClick={handleAddUnit} disabled={!newUnit.value || !newUnit.label} className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50 cursor-pointer">บันทึก</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1490,6 +1736,209 @@ function StatusBadge({ status }: { status: string }) {
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
       {selected.label}
     </span>
+  )
+}
+
+// Sortable table header helper
+function SortTh({
+  label,
+  colKey,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string
+  colKey: ColumnKey
+  sortKey: ColumnKey | null
+  sortDir: 'asc' | 'desc'
+  onSort: (key: ColumnKey) => void
+}) {
+  const active = sortKey === colKey
+  return (
+    <th
+      onClick={() => onSort(colKey)}
+      className="cursor-pointer select-none hover:text-cyber-primary transition-colors"
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {active ? (
+          sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-cyber-primary" /> : <ChevronDown className="w-3.5 h-3.5 text-cyber-primary" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 text-gray-600" />
+        )}
+      </span>
+    </th>
+  )
+}
+
+// Stock Adjustment Modal
+function AdjustModal({
+  open,
+  item,
+  stockItems,
+  onClose,
+  onSave,
+}: {
+  open: boolean
+  item: StockItem | null
+  stockItems: StockItem[]
+  onClose: () => void
+  onSave: () => void
+}) {
+  useModalClose(onClose)
+  const [selectedItemId, setSelectedItemId] = useState('')
+  const [physicalCount, setPhysicalCount] = useState(0)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (item) {
+      setSelectedItemId(item.id)
+      setPhysicalCount(item.quantity)
+    } else {
+      setSelectedItemId('')
+      setPhysicalCount(0)
+    }
+    setNotes('')
+  }, [item, open])
+
+  const selectedItem = stockItems.find(i => i.id === selectedItemId)
+
+  useEffect(() => {
+    if (selectedItem && !item) {
+      setPhysicalCount(selectedItem.quantity)
+    }
+  }, [selectedItemId])
+
+  const diff = physicalCount - (selectedItem?.quantity ?? 0)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedItemId) { toast.error('กรุณาเลือกสินค้า'); return }
+    if (physicalCount < 0) { toast.error('จำนวนต้องไม่ติดลบ'); return }
+    if (diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
+
+    setSaving(true)
+    try {
+      await stockService.recordMovement({
+        stockItemId: selectedItemId,
+        type: 'ADJUST',
+        quantity: physicalCount,
+        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${physicalCount} ${selectedItem?.unit || ''}`,
+      })
+      onSave()
+      onClose()
+      toast.success('ปรับสต๊อกเรียบร้อย')
+    } catch {
+      toast.error('ปรับสต๊อกไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="cyber-card w-full max-w-lg animate-scaleIn"
+      >
+        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-blue-500/10">
+          <div className="flex items-center gap-3">
+            <SlidersHorizontal className="w-6 h-6 text-blue-400" />
+            <div>
+              <h2 className="text-xl font-bold text-gray-100">ปรับสต๊อก (Physical Count)</h2>
+              <p className="text-xs text-gray-400 mt-0.5">ตรวจนับและปรับยอดสต๊อกให้ตรงกับความจริง</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">เลือกสินค้า</label>
+            <SearchableDropdown
+              value={selectedItemId}
+              onChange={setSelectedItemId}
+              options={stockItems.map(si => ({
+                id: si.id,
+                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${si.unit}`,
+                searchText: `${si.name} ${si.sku}`,
+              }))}
+              placeholder="-- เลือกสินค้า --"
+              disabled={!!item}
+            />
+          </div>
+
+          {selectedItem && (
+            <div className="p-4 bg-cyber-darker rounded-lg space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400 text-sm">ยอดในระบบ:</span>
+                <span className="font-bold text-cyber-primary">{selectedItem.quantity} {selectedItem.unit}</span>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">จำนวนที่นับได้จริง</label>
+                <input
+                  type="number"
+                  value={physicalCount}
+                  onChange={(e) => setPhysicalCount(parseInt(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
+                  className="cyber-input w-full text-lg font-bold"
+                  min="0"
+                  required
+                />
+              </div>
+              {diff !== 0 && (
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-cyber-green/10 border-cyber-green/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                  <span className="text-sm text-gray-300">ผลต่าง:</span>
+                  <span className={`font-bold text-lg ${diff > 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                    {diff > 0 ? '+' : ''}{diff} {selectedItem.unit}
+                  </span>
+                </div>
+              )}
+              {diff === 0 && physicalCount === selectedItem.quantity && (
+                <p className="text-gray-500 text-sm text-center">จำนวนเท่ากับยอดในระบบ</p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">หมายเหตุ (ไม่บังคับ)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="cyber-input w-full"
+              rows={2}
+              placeholder="เช่น ตรวจนับประจำเดือน, เจอสินค้าหาย..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !selectedItemId}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <SlidersHorizontal className="w-4 h-4" />}
+              ยืนยันปรับสต๊อก
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 

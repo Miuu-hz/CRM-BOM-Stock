@@ -181,7 +181,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { name, gs1Barcode, category, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
+    const { name, gs1Barcode, category, unit, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
 
     const existing = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     if (!existing) {
@@ -197,6 +197,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         name = COALESCE(?, name),
         gs1_barcode = COALESCE(?, gs1_barcode),
         category = COALESCE(?, category),
+        unit = COALESCE(?, unit),
         unit_cost = COALESCE(?, unit_cost),
         unit_price = COALESCE(?, unit_price),
         min_stock = COALESCE(?, min_stock),
@@ -205,7 +206,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         is_pos_enabled = COALESCE(?, is_pos_enabled),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, gs1Barcode, category, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
+    `).run(name, gs1Barcode, category, unit || undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
 
     // Record price change in movements
     if (unitCost !== undefined && currentItem && Number(unitCost) !== Number(currentItem.unit_cost)) {
@@ -304,6 +305,8 @@ router.post('/movement', async (req: Request, res: Response) => {
         return res.status(400).json({ success: false, message: 'Insufficient stock' })
       }
       newQuantity -= quantity
+    } else if (type === 'ADJUST') {
+      newQuantity = quantity
     }
 
     const now = new Date().toISOString()
