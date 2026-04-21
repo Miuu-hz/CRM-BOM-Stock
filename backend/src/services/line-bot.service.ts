@@ -89,6 +89,7 @@ try {
 }
 
 import { flexTemplates } from './line-flex-templates'
+import { detectIntent } from './llm.service'
 
 // ─── Paperclip API ────────────────────────────────────────────────────────────
 const PAPERCLIP_URL        = process.env.PAPERCLIP_URL        ?? 'http://100.96.174.42:3100'
@@ -113,7 +114,18 @@ async function createPaperclipTask(title: string, description: string): Promise<
             }),
         })
         const data: any = await res.json()
-        return data.identifier ?? data.id ?? '?'
+        const identifier = data.identifier ?? data.id ?? '?'
+
+        // Trigger agent heartbeat so it picks up the task immediately
+        if (identifier !== '?') {
+            fetch(`${PAPERCLIP_URL}/api/agents/${PAPERCLIP_AGENT_ID}/heartbeat/invoke`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${PAPERCLIP_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            }).catch(e => console.error('Paperclip heartbeat error:', e))
+        }
+
+        return identifier
     } catch (err) {
         console.error('Paperclip createTask error:', err)
         return '?'
@@ -593,6 +605,114 @@ class LineBotService {
         })
     }
 
+    // ── LLM Fallback: วิเคราะห์ intent → route ───────────────────────────────
+    private async handleLLMFallback(
+        tenantId: string, lineUserId: string,
+        text: string, replyToken: string, client: any
+    ) {
+        const db = getDb()
+        const mapping = db.prepare(
+            'SELECT user_id, role FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+        ).get(tenantId, lineUserId) as any
+        const user = db.prepare('SELECT name FROM users WHERE id = ?').get(mapping?.user_id) as any
+        const requesterName = user?.name ?? 'ผู้ใช้'
+
+        let intent
+        try {
+            intent = await detectIntent(text)
+        } catch {
+            await client.replyMessage(replyToken, {
+                type: 'text', text: 'ขออภัย ระบบวิเคราะห์คำสั่งขัดข้อง กรุณาลองใหม่หรือพิมพ์ -help',
+                quickReply: { items: quickReplyItems(true) }
+            })
+            return
+        }
+
+        switch (intent.intent) {
+
+            case 'CREATE_BOM': {
+                const p = intent.params
+                if (p.productName && Array.isArray(p.items) && p.items.length > 0) {
+                    // Re-use existing parseBOMCommand flow by constructing a parsed object
+                    await this.handleBOMCommand(tenantId, { replyToken, source: { userId: lineUserId } } as any, client, {
+                        productName: p.productName,
+                        items: p.items.map((i: any) => ({
+                            name:  String(i.name ?? ''),
+                            qty:   Number(i.qty  ?? 1),
+                            unit:  String(i.unit ?? 'ชิ้น'),
+                        })),
+                    })
+                } else {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: 'กรุณาระบุชื่อสินค้าและวัตถุดิบให้ครบครับ\nตัวอย่าง:\nบอม หมอนใหม่\nใยโพลี 500 g\nผ้า 1 m',
+                    })
+                }
+                break
+            }
+
+            case 'SUGGEST_MENU': {
+                // ดึง stock มาเป็น context แล้วส่ง Paperclip
+                const stock = db.prepare(
+                    "SELECT name, quantity, unit FROM stock_items WHERE tenant_id = ? AND quantity > 0 AND status = 'ACTIVE' ORDER BY quantity DESC LIMIT 20"
+                ).all(tenantId) as any[]
+                const stockList = stock.map((s: any) => `${s.name} (${s.quantity} ${s.unit})`).join(', ')
+                const title = intent.params.description ?? text
+                const description = `คำขอจาก LINE: "${text}"\nโดย: ${requesterName}\n\nวัตถุดิบในคลังปัจจุบัน:\n${stockList || 'ไม่พบข้อมูล'}`
+                const identifier = await createPaperclipTask(`แนะนำเมนู: ${title}`, description)
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: identifier !== '?'
+                        ? `✅ ส่งคำขอให้ทีม AI แล้วครับ (${identifier})\n\nกำลังวิเคราะห์วัตถุดิบในคลังเพื่อแนะนำเมนู จะแจ้งผลให้ทราบ 🍽️`
+                        : '❌ ส่งคำขอไม่สำเร็จ กรุณาลองใหม่',
+                    quickReply: { items: quickReplyItems(true) }
+                })
+                break
+            }
+
+            case 'QUERY_ERP': {
+                const { queryType, keyword } = intent.params
+                if (queryType === 'stock' && keyword) {
+                    await this.handleStockCommand(tenantId, keyword, replyToken, client)
+                } else if (queryType === 'bom' && keyword) {
+                    await this.handleBOMQueryCommand(tenantId, keyword, replyToken, client)
+                } else if (queryType === 'order') {
+                    await this.handleOrderCommand(tenantId, replyToken, client)
+                } else {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: 'ต้องการข้อมูลส่วนใดครับ? ลองพิมพ์:\n• สต็อก [ชื่อสินค้า]\n• สูตร [ชื่อสินค้า]\n• ออเดอร์',
+                        quickReply: { items: quickReplyItems(true) }
+                    })
+                }
+                break
+            }
+
+            case 'CREATE_TASK': {
+                const title = intent.params.title ?? text
+                const desc  = `${intent.params.description ?? text}\n\nโดย: ${requesterName}`
+                const identifier = await createPaperclipTask(title, desc)
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: identifier !== '?'
+                        ? `✅ สร้างงาน ${identifier} แล้วครับ\n"${title}"\n\nทีม AI รับงานแล้ว 🚀`
+                        : '❌ สร้างงานไม่สำเร็จ กรุณาลองใหม่',
+                    quickReply: { items: quickReplyItems(true) }
+                })
+                break
+            }
+
+            case 'CHAT':
+            default: {
+                const reply = intent.replyDirect || 'ขออภัย ไม่เข้าใจคำสั่ง พิมพ์ -help เพื่อดูคำสั่งที่รองรับครับ'
+                await client.replyMessage(replyToken, {
+                    type: 'text', text: reply,
+                    quickReply: { items: quickReplyItems(true) }
+                })
+            }
+        }
+    }
+
     // ── Main event dispatcher ─────────────────────────────────────────────────
     public async handleEvent(tenantId: string, event: any) {
         const client = this.getClient(tenantId)
@@ -743,15 +863,10 @@ class LineBotService {
                 return
             }
 
-            // ── fallback ──────────────────────────────────────────────────────
-            // กลุ่ม: เงียบ (ไม่ตอบทุก message)
-            // ส่วนตัว: แนะนำ -help พร้อม Quick Reply
+            // ── LLM fallback — วิเคราะห์ intent ด้วย ThaiLLM ──────────────────
+            // กลุ่ม: เงียบ ถ้าไม่ match คำสั่งใด
             if (src === 'user') {
-                await client.replyMessage(event.replyToken, {
-                    type: 'text',
-                    text: 'พิมพ์ -help เพื่อดูคำสั่งทั้งหมด 👇',
-                    quickReply: { items: quickReplyItems(false) }
-                })
+                await this.handleLLMFallback(tenantId, event.source.userId, text, event.replyToken, client)
             }
             return
         }
