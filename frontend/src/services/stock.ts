@@ -78,6 +78,7 @@ export interface UpdateStockInput {
   name?: string
   gs1Barcode?: string
   category?: string
+  unit?: string
   minStock?: number
   maxStock?: number
   location?: string
