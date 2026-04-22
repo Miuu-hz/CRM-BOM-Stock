@@ -605,6 +605,57 @@ class LineBotService {
         })
     }
 
+    // ── Pending task: save + send confirm card ────────────────────────────────
+    private async askConfirmTask(
+        tenantId: string, lineUserId: string,
+        type: 'task' | 'menu', title: string, description: string,
+        replyToken: string, client: any, stockContext?: string
+    ) {
+        const db = getDb()
+        const id = `pt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 นาที
+        db.prepare(`
+            INSERT INTO line_pending_tasks (id, tenant_id, line_user_id, type, title, description, stock_context, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, tenantId, lineUserId, type, title, description, stockContext ?? null, expiresAt)
+
+        const emoji = type === 'menu' ? '🍽️' : '📋'
+        const typeLabel = type === 'menu' ? 'แนะนำเมนู' : 'สร้างงาน'
+
+        await client.replyMessage(replyToken, {
+            type: 'flex',
+            altText: `ยืนยัน${typeLabel}: ${title}`,
+            contents: {
+                type: 'bubble',
+                header: {
+                    type: 'box', layout: 'vertical', backgroundColor: '#1a73e8',
+                    contents: [{ type: 'text', text: `${emoji} ยืนยัน${typeLabel}?`, weight: 'bold', color: '#ffffff', size: 'md' }]
+                },
+                body: {
+                    type: 'box', layout: 'vertical', spacing: 'sm',
+                    contents: [
+                        { type: 'text', text: title, wrap: true, weight: 'bold', size: 'sm' },
+                        ...(stockContext ? [{ type: 'text' as const, text: `วัตถุดิบในคลัง: ${stockContext.slice(0, 80)}...`, wrap: true, size: 'xs' as const, color: '#888888', margin: 'sm' as const }] : []),
+                        { type: 'text', text: '⏰ ยืนยันภายใน 5 นาที', size: 'xs', color: '#aaaaaa', margin: 'md' },
+                    ]
+                },
+                footer: {
+                    type: 'box', layout: 'horizontal', spacing: 'sm',
+                    contents: [
+                        {
+                            type: 'button', style: 'primary', color: '#1a73e8', flex: 1,
+                            action: { type: 'postback', label: '✅ ยืนยัน', data: `action=confirm_task&id=${id}` }
+                        },
+                        {
+                            type: 'button', style: 'secondary', flex: 1,
+                            action: { type: 'postback', label: '❌ ยกเลิก', data: `action=cancel_task&id=${id}` }
+                        },
+                    ]
+                }
+            }
+        })
+    }
+
     // ── LLM Fallback: วิเคราะห์ intent → route ───────────────────────────────
     private async handleLLMFallback(
         tenantId: string, lineUserId: string,
@@ -630,16 +681,16 @@ class LineBotService {
 
         switch (intent.intent) {
 
+            // ── ทำทันที: BOM มี structure ชัดเจน ────────────────────────────
             case 'CREATE_BOM': {
                 const p = intent.params
                 if (p.productName && Array.isArray(p.items) && p.items.length > 0) {
-                    // Re-use existing parseBOMCommand flow by constructing a parsed object
                     await this.handleBOMCommand(tenantId, { replyToken, source: { userId: lineUserId } } as any, client, {
                         productName: p.productName,
                         items: p.items.map((i: any) => ({
-                            name:  String(i.name ?? ''),
-                            qty:   Number(i.qty  ?? 1),
-                            unit:  String(i.unit ?? 'ชิ้น'),
+                            name: String(i.name ?? ''),
+                            qty:  Number(i.qty  ?? 1),
+                            unit: String(i.unit ?? 'ชิ้น'),
                         })),
                     })
                 } else {
@@ -651,25 +702,19 @@ class LineBotService {
                 break
             }
 
+            // ── ถามยืนยัน: แนะนำเมนู ─────────────────────────────────────
             case 'SUGGEST_MENU': {
-                // ดึง stock มาเป็น context แล้วส่ง Paperclip
                 const stock = db.prepare(
                     "SELECT name, quantity, unit FROM stock_items WHERE tenant_id = ? AND quantity > 0 AND status = 'ACTIVE' ORDER BY quantity DESC LIMIT 20"
                 ).all(tenantId) as any[]
-                const stockList = stock.map((s: any) => `${s.name} (${s.quantity} ${s.unit})`).join(', ')
+                const stockCtx = stock.map((s: any) => `${s.name} ${s.quantity}${s.unit}`).join(', ')
                 const title = intent.params.description ?? text
-                const description = `คำขอจาก LINE: "${text}"\nโดย: ${requesterName}\n\nวัตถุดิบในคลังปัจจุบัน:\n${stockList || 'ไม่พบข้อมูล'}`
-                const identifier = await createPaperclipTask(`แนะนำเมนู: ${title}`, description)
-                await client.replyMessage(replyToken, {
-                    type: 'text',
-                    text: identifier !== '?'
-                        ? `✅ ส่งคำขอให้ทีม AI แล้วครับ (${identifier})\n\nกำลังวิเคราะห์วัตถุดิบในคลังเพื่อแนะนำเมนู จะแจ้งผลให้ทราบ 🍽️`
-                        : '❌ ส่งคำขอไม่สำเร็จ กรุณาลองใหม่',
-                    quickReply: { items: quickReplyItems(true) }
-                })
+                const desc  = `คำขอจาก LINE: "${text}"\nโดย: ${requesterName}\n\nวัตถุดิบในคลัง:\n${stockCtx || 'ไม่พบข้อมูล'}`
+                await this.askConfirmTask(tenantId, lineUserId, 'menu', `แนะนำเมนู: ${title}`, desc, replyToken, client, stockCtx)
                 break
             }
 
+            // ── ตอบทันที: query ERP ──────────────────────────────────────
             case 'QUERY_ERP': {
                 const { queryType, keyword } = intent.params
                 if (queryType === 'stock' && keyword) {
@@ -688,20 +733,15 @@ class LineBotService {
                 break
             }
 
+            // ── ถามยืนยัน: งานซับซ้อน ────────────────────────────────────
             case 'CREATE_TASK': {
                 const title = intent.params.title ?? text
                 const desc  = `${intent.params.description ?? text}\n\nโดย: ${requesterName}`
-                const identifier = await createPaperclipTask(title, desc)
-                await client.replyMessage(replyToken, {
-                    type: 'text',
-                    text: identifier !== '?'
-                        ? `✅ สร้างงาน ${identifier} แล้วครับ\n"${title}"\n\nทีม AI รับงานแล้ว 🚀`
-                        : '❌ สร้างงานไม่สำเร็จ กรุณาลองใหม่',
-                    quickReply: { items: quickReplyItems(true) }
-                })
+                await this.askConfirmTask(tenantId, lineUserId, 'task', title, desc, replyToken, client)
                 break
             }
 
+            // ── ตอบตรง: chat ─────────────────────────────────────────────
             case 'CHAT':
             default: {
                 const reply = intent.replyDirect || 'ขออภัย ไม่เข้าใจคำสั่ง พิมพ์ -help เพื่อดูคำสั่งที่รองรับครับ'
@@ -903,6 +943,43 @@ class LineBotService {
                     type: 'text', text: `✅ บันทึกว่าผลิตเสร็จ ${wo?.wo_number ?? id} แล้วครับ`
                 })
                 if (wo) await this.notifyWorkOrderStatusChanged(tenantId, wo)
+                return
+            }
+
+            // ── ยืนยัน/ยกเลิก pending task ───────────────────────────────────
+            if ((action === 'confirm_task' || action === 'cancel_task') && id) {
+                const pending = db.prepare(
+                    "SELECT * FROM line_pending_tasks WHERE id = ? AND tenant_id = ? AND line_user_id = ?"
+                ).get(id, tenantId, event.source.userId) as any
+
+                if (!pending) {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text', text: '⏰ คำขอนี้หมดอายุหรือถูกดำเนินการไปแล้วครับ'
+                    })
+                    return
+                }
+
+                // ลบ pending เสมอ (ไม่ว่าจะยืนยันหรือยกเลิก)
+                db.prepare('DELETE FROM line_pending_tasks WHERE id = ?').run(id)
+
+                if (action === 'cancel_task') {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text', text: '❌ ยกเลิกแล้วครับ',
+                        quickReply: { items: quickReplyItems(true) }
+                    })
+                    return
+                }
+
+                // confirm → สร้าง Paperclip issue
+                const identifier = await createPaperclipTask(pending.title, pending.description)
+                const emoji = pending.type === 'menu' ? '🍽️' : '🚀'
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: identifier !== '?'
+                        ? `✅ สร้างงาน ${identifier} แล้วครับ\n"${pending.title}"\n\nทีม AI รับงานแล้ว ${emoji}`
+                        : '❌ สร้างงานไม่สำเร็จ กรุณาลองใหม่',
+                    quickReply: { items: quickReplyItems(true) }
+                })
                 return
             }
         }

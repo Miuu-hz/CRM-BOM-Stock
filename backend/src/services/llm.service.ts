@@ -100,10 +100,11 @@ export async function detectIntent(userMessage: string): Promise<LLMIntent> {
     }
 }
 
-// Fallback เมื่อ LLM ไม่ตอบหรือ error
-function fallbackIntent(message: string): LLMIntent {
+// Fallback เมื่อ LLM ไม่ตอบหรือ error — ตอบ CHAT ธรรมดา ไม่สร้าง task อัตโนมัติ
+function fallbackIntent(_message: string): LLMIntent {
     return {
-        intent: 'CREATE_TASK',
-        params: { title: message, description: `ข้อความจาก LINE: "${message}"` },
+        intent: 'CHAT',
+        params: {},
+        replyDirect: 'ขออภัย ระบบวิเคราะห์คำสั่งขัดข้องชั่วคราว\nลองพิมพ์ใหม่อีกครั้ง หรือพิมพ์ -help เพื่อดูคำสั่งที่รองรับครับ',
     }
 }

@@ -2230,6 +2230,28 @@ try {
   }
 } catch (e) { console.error('line_user_mappings migration error:', e) }
 
+// Migration: pending LINE tasks awaiting user confirmation
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS line_pending_tasks (
+      id          TEXT PRIMARY KEY,
+      tenant_id   TEXT NOT NULL,
+      line_user_id TEXT NOT NULL,
+      type        TEXT NOT NULL DEFAULT 'task',  -- 'task' | 'menu'
+      title       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      stock_context TEXT,
+      expires_at  TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_tasks_user
+      ON line_pending_tasks(tenant_id, line_user_id);
+  `)
+  // Clean up expired pending tasks on startup
+  db.prepare("DELETE FROM line_pending_tasks WHERE expires_at < datetime('now')").run()
+  console.log('✅ Migration: line_pending_tasks table ready')
+} catch (e) { console.error('line_pending_tasks migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db
