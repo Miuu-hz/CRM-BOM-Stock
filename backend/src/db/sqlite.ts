@@ -2252,6 +2252,37 @@ try {
   console.log('✅ Migration: line_pending_tasks table ready')
 } catch (e) { console.error('line_pending_tasks migration error:', e) }
 
+// Migration: Unit Conversions — แปลงหน่วยระหว่างหน่วยนับ (เช่น 1 แพ็ค = 24 ชิ้น)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS unit_conversions (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      material_id TEXT,                   -- NULL = ใช้ได้กับทุก material (global)
+      from_unit TEXT NOT NULL,            -- หน่วยต้นทาง เช่น 'pack'
+      to_unit TEXT NOT NULL,              -- หน่วยปลายทาง/base เช่น 'pcs'
+      conversion_factor REAL NOT NULL,    -- ตัวคูณ: 1 from_unit = X to_unit
+      is_global INTEGER DEFAULT 0,        -- 1 = มาตราสากล (ล็อคแก้ไขไม่ได้)
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, material_id, from_unit, to_unit)
+    );
+    CREATE INDEX IF NOT EXISTS idx_unit_conversions_material
+      ON unit_conversions(tenant_id, material_id);
+  `)
+  console.log('✅ Migration: unit_conversions table ready')
+} catch (e) { console.error('unit_conversions migration error:', e) }
+
+// Migration: add base_unit to materials (หน่วยนับหลักที่ใช้ตัดสต็อก)
+try {
+  const cols = db.prepare(`PRAGMA table_info(materials)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'base_unit')) {
+    db.exec(`ALTER TABLE materials ADD COLUMN base_unit TEXT`)
+    console.log('✅ Migration: added base_unit to materials')
+  }
+} catch (e) { console.error('⚠️ base_unit migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db
