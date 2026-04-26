@@ -33,23 +33,8 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
 
     const token = authHeader.split(' ')[1]
 
-    // AI service account via static API key (for Paperclip AI integration)
-    const aiApiKeys = process.env.AI_API_KEYS ? process.env.AI_API_KEYS.split(',').map(k => k.trim()) : []
-    const aiTenantId = process.env.AI_TENANT_ID || ''
-    if (aiApiKeys.length > 0 && aiApiKeys.includes(token)) {
-      if (!aiTenantId) {
-        res.status(500).json({ success: false, message: 'AI_TENANT_ID not configured' })
-        return
-      }
-      req.user = {
-        userId: 'ai-agent',
-        email: 'ai@system',
-        role: 'AI_AGENT',
-        tenantId: aiTenantId
-      }
-      next()
-      return
-    }
+    // Note: legacy AI_API_KEYS global bypass removed for security.
+    // Agent auth now uses authenticateAgent middleware with per-tenant JWT.
 
     const decoded = jwt.verify(token, JWT_SECRET) as any
 
@@ -96,6 +81,34 @@ export const requireMaster = (req: Request, res: Response, next: NextFunction): 
   }
 
   next()
+}
+
+// Agent authentication (per-tenant JWT, separate from user JWT)
+const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET || JWT_SECRET
+
+export const authenticateAgent = (req: Request, res: Response, next: NextFunction): void => {
+  try {
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, message: 'Missing agent token' })
+      return
+    }
+    const token = authHeader.split(' ')[1]
+    const decoded = jwt.verify(token, AGENT_JWT_SECRET) as any
+    if (decoded.role !== 'AI_AGENT') {
+      res.status(403).json({ success: false, message: 'Not an agent token' })
+      return
+    }
+    req.user = {
+      userId: decoded.agentId || 'ai-agent',
+      email: decoded.email || 'ai@system',
+      role: 'AI_AGENT',
+      tenantId: decoded.tenantId,
+    }
+    next()
+  } catch (error) {
+    res.status(401).json({ success: false, message: 'Invalid agent token' })
+  }
 }
 
 // Check if record is within 24h for editing

@@ -2283,6 +2283,67 @@ try {
   }
 } catch (e) { console.error('⚠️ base_unit migration error:', e) }
 
+// Migration: Calculator presets (was previously in-memory from mockData.ts)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS calculator_presets (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      operating_cost REAL DEFAULT 0,
+      scrap_value REAL DEFAULT 0,
+      total_cost REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS calculator_preset_materials (
+      id TEXT PRIMARY KEY,
+      preset_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      unit_price REAL NOT NULL,
+      unit TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (preset_id) REFERENCES calculator_presets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_calc_preset_tenant ON calculator_presets(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_calc_preset_materials_preset ON calculator_preset_materials(preset_id);
+  `)
+  console.log('✅ Migration: calculator_presets table ready')
+} catch (e) { console.error('calculator_presets migration error:', e) }
+
+// Migration: Paperclip company mapping + agent job queue
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS paperclip_companies (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL UNIQUE,
+      paperclip_company_id TEXT NOT NULL UNIQUE,
+      paperclip_api_key TEXT NOT NULL,
+      webhook_secret TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS agent_jobs (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      command TEXT NOT NULL,
+      payload TEXT,
+      paperclip_company_id TEXT,
+      paperclip_issue_id TEXT,
+      status TEXT DEFAULT 'pending',
+      result TEXT,
+      error TEXT,
+      attempts INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_jobs_status ON agent_jobs(status, created_at);
+  `)
+  console.log('✅ Migration: paperclip_companies + agent_jobs ready')
+} catch (e) { console.error('agent_jobs migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db

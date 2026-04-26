@@ -92,10 +92,14 @@ import { flexTemplates } from './line-flex-templates'
 import { detectIntent } from './llm.service'
 
 // ─── Paperclip API ────────────────────────────────────────────────────────────
-const PAPERCLIP_URL        = process.env.PAPERCLIP_URL        ?? 'http://100.96.174.42:3100'
-const PAPERCLIP_API_KEY    = process.env.PAPERCLIP_API_KEY    ?? 'pcp_dce7e732c947e995243ffac7af546776d8542c1751b60f56'
-const PAPERCLIP_COMPANY_ID = process.env.PAPERCLIP_COMPANY_ID ?? '08de03c2-f5fc-4f81-baf5-52f3a6675e6f'
-const PAPERCLIP_AGENT_ID   = process.env.PAPERCLIP_AGENT_ID   ?? '84136f5d-618a-4898-b406-89bd13a9c7da'
+const PAPERCLIP_URL        = process.env.PAPERCLIP_URL
+const PAPERCLIP_API_KEY    = process.env.PAPERCLIP_API_KEY
+const PAPERCLIP_COMPANY_ID = process.env.PAPERCLIP_COMPANY_ID
+const PAPERCLIP_AGENT_ID   = process.env.PAPERCLIP_AGENT_ID
+
+if (!PAPERCLIP_URL || !PAPERCLIP_API_KEY || !PAPERCLIP_COMPANY_ID || !PAPERCLIP_AGENT_ID) {
+  console.warn('⚠️ Paperclip credentials not fully configured. LINE→Paperclip task creation disabled.')
+}
 
 async function createPaperclipTask(title: string, description: string): Promise<string> {
     try {

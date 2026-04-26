@@ -2231,8 +2231,8 @@ router.delete('/invoices/:id/attachments/:attachmentId', async (req: Request, re
     const row = db.prepare('SELECT * FROM invoice_attachments WHERE id = ? AND tenant_id = ?').get(attachmentId, tenantId) as any
     if (!row) return res.status(404).json({ success: false, message: 'Attachment not found' })
 
-    const filePath = path.join(invoiceUploadDir, row.file_path)
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    const filePath = path.resolve(invoiceUploadDir, row.file_path)
+    if (filePath.startsWith(path.resolve(invoiceUploadDir)) && fs.existsSync(filePath)) fs.unlinkSync(filePath)
     db.prepare('DELETE FROM invoice_attachments WHERE id = ?').run(attachmentId)
 
     res.json({ success: true })
