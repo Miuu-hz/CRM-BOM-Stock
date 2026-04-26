@@ -372,8 +372,9 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
 
     // Delete old image file if exists
     if (existing.image_url) {
-      const oldPath = path.join(__dirname, '..', '..', existing.image_url.replace(/^\//, ''))
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
+      const baseDir = path.resolve(__dirname, '..', '..', 'uploads')
+      const oldPath = path.resolve(baseDir, existing.image_url.replace(/^\//, ''))
+      if (oldPath.startsWith(baseDir) && fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
     }
 
     const imageUrl = `/uploads/stock-images/${file.filename}`
@@ -401,8 +402,9 @@ router.delete('/:id/image', async (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Stock item not found' })
 
     if (existing.image_url) {
-      const filePath = path.join(__dirname, '..', '..', existing.image_url.replace(/^\//, ''))
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      const baseDir = path.resolve(__dirname, '..', '..', 'uploads')
+      const filePath = path.resolve(baseDir, existing.image_url.replace(/^\//, ''))
+      if (filePath.startsWith(baseDir) && fs.existsSync(filePath)) fs.unlinkSync(filePath)
     }
 
     const now = new Date().toISOString()

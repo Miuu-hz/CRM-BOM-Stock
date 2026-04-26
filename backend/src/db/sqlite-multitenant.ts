@@ -401,8 +401,18 @@ db.exec(`
 
 console.log('✅ Multi-Tenant Database initialized at:', dbPath)
 
+// Validate that a string is a safe SQL identifier (table/column name)
+function assertSafeIdentifier(name: string): void {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Unsafe SQL identifier rejected: "${name}"`)
+  }
+}
+
 // Helper: ดึงข้อมูลตาม Tenant
 export const withTenant = (tableName: string) => {
+  // Validate table name at construction time
+  assertSafeIdentifier(tableName)
+
   return {
     // SELECT ด้วย tenant filter
     all: (tenantId: string, where: string = '', params: any[] = []) => {

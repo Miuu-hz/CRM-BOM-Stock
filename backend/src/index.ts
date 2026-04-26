@@ -2,6 +2,8 @@ import express, { Express, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 
 // Load environment variables from backend/.env
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') })
@@ -41,6 +43,8 @@ import posClearingRoutes from './routes/pos-clearing.routes'
 import kdsRoutes from './routes/kds.routes'
 import lineBotRoutes from './routes/line-bot.routes'
 import settingsRoutes from './routes/settings.routes'
+import { agentRoutes, startWorker } from './agent'
+import analyticsRoutes from './analytics/routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -49,6 +53,41 @@ const PORT = process.env.PORT || 5000
 // Required so express-rate-limit reads the real client IP from X-Forwarded-For
 // instead of the proxy's IP. Set to the number of proxies in front of this server.
 app.set('trust proxy', 1)
+
+// ── Security headers ────────────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // required for styled-components / inline styles
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // allow loading images from same-origin uploads
+}))
+
+// Agent webhook routes must be BEFORE global rate limiter and body parser
+// Paperclip sends raw JSON; we parse it inline in the webhook handler.
+app.use('/api/agent', express.json({ limit: '1mb' }))
+app.use('/api/agent', agentRoutes)
+
+// ── Global rate limiter ─────────────────────────────────────────────────────
+// Apply to all API routes. Stricter limits can be added per-route if needed.
+const globalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 200,                // 200 requests per minute per IP
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please try again later.' },
+  // Skip rate limiting for health checks and agent webhooks
+  skip: (req) => req.path === '/api/health' || req.path.startsWith('/api/agent/webhook'),
+})
+app.use('/api', globalLimiter)
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
@@ -114,6 +153,7 @@ app.use('/api/pos', posBillRoutes)
 app.use('/api/pos', posClearingRoutes)
 app.use('/api/pos/kds', kdsRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/analytics', analyticsRoutes)
 
 // Serve frontend (production) — must be after all API routes
 const frontendDist = path.join(__dirname, '../../frontend/dist')
@@ -140,6 +180,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🌐 API URL: http://localhost:${PORT}/api`)
+  startWorker()
 })
 
 export default app
