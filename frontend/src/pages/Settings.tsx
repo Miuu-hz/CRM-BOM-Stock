@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
+import UnitConversions from './settings/UnitConversions'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -41,7 +42,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -127,6 +128,12 @@ export default function SettingsPage() {
           icon={Star}
           label="สะสมแต้ม"
         />
+        <TabButton
+          active={activeTab === 'units'}
+          onClick={() => setActiveTab('units')}
+          icon={ArrowLeftRight}
+          label="แปลงหน่วย"
+        />
       </div>
 
       {/* Content */}
@@ -152,6 +159,8 @@ export default function SettingsPage() {
         {activeTab === 'billing' && <BillingSettings />}
 
         {activeTab === 'loyalty' && <LoyaltySettings />}
+
+        {activeTab === 'units' && <UnitConversions />}
       </div>
 
       {/* Add User Modal */}

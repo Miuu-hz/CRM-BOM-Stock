@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { getConversionFactor } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -40,12 +41,20 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
 
   for (const item of items) {
     if (item.item_type === 'CHILD_BOM' && item.child_bom_id) {
-      // Recursive: คำนวณต้นทุนของ BOM ลูก
       const childCost = calculateBOMCost(item.child_bom_id, tenantId, visited)
       totalCost += childCost * Number(item.quantity)
     } else {
-      // Raw Material
-      totalCost += Number(item.quantity) * Number(item.unit_cost || 0)
+      // แปลงหน่วยก่อนคำนวณต้นทุน: ถ้า BOM ใช้หน่วยต่างจาก material base unit
+      let qty = Number(item.quantity)
+      const bomUnit: string = item.unit ?? ''
+      const materialUnit: string = item.material_unit ?? ''
+
+      if (bomUnit && materialUnit && bomUnit !== materialUnit) {
+        const factor = getConversionFactor(bomUnit, materialUnit, tenantId, item.material_id)
+        if (factor !== null) qty = qty * factor
+      }
+
+      totalCost += qty * Number(item.unit_cost || 0)
     }
   }
 

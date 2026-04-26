@@ -1002,6 +1002,60 @@ function EditModal({
   const [showUnitModal, setShowUnitModal] = useState(false)
   const [newUnit, setNewUnit] = useState({ value: '', label: '' })
 
+  // Per-material unit conversions
+  const [convExpanded, setConvExpanded] = useState(false)
+  const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
+  const [convForm, setConvForm] = useState({ from_unit: '', to_unit: '', conversion_factor: '' })
+  const [convSaving, setConvSaving] = useState(false)
+
+  const UNIT_LABELS_LOCAL: Record<string, string> = {
+    pcs: 'ชิ้น', kg: 'กก.', g: 'กรัม', m: 'เมตร', cm: 'ซม.', mm: 'มม.',
+    inch: 'นิ้ว', l: 'ลิตร', ltr: 'ลิตร', ml: 'มล.', roll: 'ม้วน',
+    box: 'กล่อง', pack: 'แพ็ค', set: 'ชุด', pair: 'คู่', sheet: 'แผ่น',
+    bottle: 'ขวด', bag: 'ถุง', sachet: 'ซอง', dozen: 'โหล', case: 'ลัง',
+    can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
+  }
+  const ul = (u: string) => UNIT_LABELS_LOCAL[u] ?? u
+
+  const fetchItemConversions = async (itemId: string) => {
+    try {
+      const res = await import('../services/api').then(m => m.default.get(`/materials/unit-conversions?materialId=${itemId}`))
+      setItemConversions(res.data.data ?? [])
+    } catch { /* silent */ }
+  }
+
+  const handleAddConversion = async () => {
+    if (!item || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor) return
+    if (convForm.from_unit === convForm.to_unit) { toast.error('หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน'); return }
+    if (Number(convForm.conversion_factor) <= 0) { toast.error('ค่าแปลงต้องมากกว่า 0'); return }
+    setConvSaving(true)
+    try {
+      const api = await import('../services/api').then(m => m.default)
+      await api.post('/materials/unit-conversions', {
+        material_id: item.id,
+        from_unit: convForm.from_unit.trim().toLowerCase(),
+        to_unit: convForm.to_unit.trim().toLowerCase(),
+        conversion_factor: Number(convForm.conversion_factor),
+      })
+      setConvForm({ from_unit: '', to_unit: '', conversion_factor: '' })
+      fetchItemConversions(item.id)
+      toast.success('เพิ่มการแปลงหน่วยแล้ว')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
+    } finally {
+      setConvSaving(false)
+    }
+  }
+
+  const handleDeleteConversion = async (convId: string) => {
+    try {
+      const api = await import('../services/api').then(m => m.default)
+      await api.delete(`/materials/unit-conversions/${convId}`)
+      setItemConversions(prev => prev.filter(c => c.id !== convId))
+      toast.success('ลบแล้ว')
+    } catch { toast.error('ลบไม่สำเร็จ') }
+  }
+
   const handleAddUnit = () => {
     if (!newUnit.value || !newUnit.label) return
     const saved = localStorage.getItem('customUnits')
@@ -1029,6 +1083,9 @@ function EditModal({
       })
       setImagePreview(item.image_url || item.imageUrl || null)
       setImageFile(null)
+      setConvExpanded(false)
+      setItemConversions([])
+      fetchItemConversions(item.id)
     }
   }, [item])
 
@@ -1281,6 +1338,105 @@ function EditModal({
                 {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
               </span>
             </label>
+
+            {/* Unit Conversions (per-material) */}
+            <div className="rounded-xl border border-cyber-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setConvExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-cyber-dark/50 hover:bg-cyber-dark/70 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <ArrowUpCircle className="w-4 h-4 text-purple-400" style={{ transform: 'rotate(90deg)' }} />
+                  <span className="text-sm font-medium text-gray-200">การแปลงหน่วยเฉพาะสินค้านี้</span>
+                  {itemConversions.length > 0 && (
+                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
+                      {itemConversions.length} รายการ
+                    </span>
+                  )}
+                </div>
+                {convExpanded
+                  ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                  : <ChevronDown className="w-4 h-4 text-gray-500" />}
+              </button>
+
+              {convExpanded && (
+                <div className="p-3 space-y-2 bg-cyber-dark/20">
+                  {/* existing conversions */}
+                  {itemConversions.length > 0 && (
+                    <div className="space-y-1">
+                      {itemConversions.map(c => (
+                        <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-lg">
+                          <span className="text-xs font-mono text-blue-300">1 {ul(c.from_unit)}</span>
+                          <span className="text-gray-600 text-xs">=</span>
+                          <span className="text-xs font-mono text-green-300">{c.conversion_factor} {ul(c.to_unit)}</span>
+                          <span className="text-gray-600 text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteConversion(c.id)}
+                            className="ml-auto p-1 text-gray-500 hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* add form */}
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <p className="text-[10px] text-gray-500 mb-1">จาก (เช่น pack)</p>
+                      <input
+                        type="text"
+                        value={convForm.from_unit}
+                        onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
+                        placeholder={`เช่น ${formData.unit}`}
+                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[10px] text-gray-500 mb-1">เป็น (เช่น pcs)</p>
+                      <input
+                        type="text"
+                        value={convForm.to_unit}
+                        onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
+                        placeholder="pcs"
+                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                      />
+                    </div>
+                    <div className="w-20">
+                      <p className="text-[10px] text-gray-500 mb-1">จำนวน</p>
+                      <input
+                        type="number"
+                        value={convForm.conversion_factor}
+                        onChange={e => setConvForm(f => ({ ...f, conversion_factor: e.target.value }))}
+                        placeholder="24"
+                        min="0.000001"
+                        step="any"
+                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddConversion}
+                      disabled={convSaving || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 flex-shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      เพิ่ม
+                    </button>
+                  </div>
+
+                  {/* preview */}
+                  {convForm.from_unit && convForm.to_unit && convForm.conversion_factor && Number(convForm.conversion_factor) > 0 && (
+                    <p className="text-xs text-purple-300/70 text-center">
+                      1 {ul(convForm.from_unit)} = {convForm.conversion_factor} {ul(convForm.to_unit)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
           </div>
 
