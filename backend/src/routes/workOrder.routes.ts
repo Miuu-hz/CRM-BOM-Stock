@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { lineBotService } from '../services/line-bot.service'
+import { convertQuantity } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -111,11 +112,16 @@ router.post('/', async (req: Request, res: Response) => {
 
       if (materials && materials.length > 0) {
         const insertMaterial = db.prepare(`
-          INSERT INTO work_order_materials (id, tenant_id, work_order_id, material_id, material_name, required_qty, status)
-          VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+          INSERT INTO work_order_materials (id, tenant_id, work_order_id, material_id, material_name, required_qty, unit, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
         `)
         for (const m of materials) {
-          insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty)
+          let unit = m.unit || ''
+          if (!unit && m.materialId) {
+            const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(m.materialId) as any
+            unit = stockItem?.unit || ''
+          }
+          insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty, unit)
         }
       }
     })
@@ -155,14 +161,29 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // When starting production (IN_PROGRESS) - deduct materials from stock
     if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
-      // Check stock availability first (scoped to tenant)
+      // Check stock availability first (scoped to tenant) with unit conversion
       for (const m of materials) {
         if (m.material_id) {
           const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
-          if (!stock || stock.quantity < m.required_qty) {
+          let requiredStockQty = m.required_qty
+          let conversionInfo = ''
+
+          if (stock && m.unit && m.unit !== stock.unit) {
+            const converted = convertQuantity(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
+            if (!converted) {
+              return res.status(400).json({
+                success: false,
+                message: `ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`,
+              })
+            }
+            requiredStockQty = converted.converted
+            conversionInfo = ` (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit})`
+          }
+
+          if (!stock || stock.quantity < requiredStockQty) {
             return res.status(400).json({
               success: false,
-              message: `Insufficient stock for ${m.material_name}. Need ${m.required_qty}, have ${stock?.quantity || 0}`,
+              message: `Insufficient stock for ${m.material_name}. Need ${requiredStockQty}${conversionInfo}, have ${stock?.quantity || 0} ${stock?.unit || ''}`,
             })
           }
         }
@@ -177,13 +198,24 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           if (m.material_id) {
             const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
             if (stock) {
+              let deductQty = m.required_qty
+              let movementNotes = `Material issued for work order`
+
+              if (m.unit && m.unit !== stock.unit) {
+                const converted = convertQuantity(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
+                if (converted) {
+                  deductQty = converted.converted
+                  movementNotes = `Material issued for work order (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
+                }
+              }
+
               db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
-                .run(Math.floor(m.required_qty), now, stock.id)
+                .run(Math.floor(deductQty), now, stock.id)
 
               db.prepare(`
                 INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                 VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, stock.id, Math.floor(m.required_qty), `WO: ${wo.wo_number}`, `Material issued for work order`, now)
+              `).run(generateId(), tenantId, stock.id, Math.floor(deductQty), `WO: ${wo.wo_number}`, movementNotes, now)
 
               db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
                 .run(m.required_qty, m.id)

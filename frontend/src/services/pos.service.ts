@@ -59,6 +59,7 @@ const posService = {
     image_url?: string
     preparation_time?: number
     description?: string
+    sale_unit?: string
   }) => {
     const response = await api.post('/pos/menu-configs', data)
     return response.data
@@ -76,6 +77,7 @@ const posService = {
     image_url?: string
     preparation_time?: number
     description?: string
+    sale_unit?: string
   }) => {
     const response = await api.put(`/pos/menu-configs/${id}`, data)
     return response.data

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, AlertTriangle } from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
-import { MaterialCategory } from '../../services/materials'
+import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
 import api from '../../services/api'
 
@@ -20,6 +20,7 @@ interface BOMItemRow {
   materialId: string
   childBomId: string
   quantity: number
+  unit: string
   notes: string
 }
 
@@ -100,8 +101,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const generateRowId = () => `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 5)}`
 
   const [itemRows, setItemRows] = useState<BOMItemRow[]>([
-    { id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' },
+    { id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, unit: '', notes: '' },
   ])
+  const [compatibleUnits, setCompatibleUnits] = useState<Record<string, { code: string; label: string }[]>>({})
+  const [rowCosts, setRowCosts] = useState<Record<string, number>>({})
 
   const isEdit = !!editBOM
   const isCopy = !!copyFrom
@@ -116,7 +119,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   // Helper to transform API items to form rows
   const transformItemsToRows = (items: any[], preserveIds: boolean = true) => {
     if (items.length === 0) {
-      return [{ id: generateRowId(), itemType: 'MATERIAL' as const, materialId: '', childBomId: '', quantity: 0, notes: '' }]
+      return [{ id: generateRowId(), itemType: 'MATERIAL' as const, materialId: '', childBomId: '', quantity: 0, unit: '', notes: '' }]
     }
     return items.map((item: any) => ({
       id: preserveIds && item.id && item.id.trim() !== '' ? item.id : generateRowId(),
@@ -124,9 +127,27 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       materialId: item.materialId || item.material_id || '',
       childBomId: item.childBomId || item.child_bom_id || '',
       quantity: Number(item.quantity),
+      unit: item.unit || item.material_unit || '',
       notes: item.notes || '',
     }))
   }
+
+  // Load compatible units for rows that have materialId but no units loaded yet
+  useEffect(() => {
+    if (materials.length === 0) return
+    itemRows.forEach((row) => {
+      if (row.itemType === 'MATERIAL' && row.materialId && !compatibleUnits[row.id]) {
+        const material = materials.find((m) => m.id === row.materialId)
+        if (material?.unit) {
+          materialsService.getCompatibleUnits(material.unit, row.materialId)
+            .then((units) => {
+              setCompatibleUnits(prev => ({ ...prev, [row.id]: units }))
+            })
+            .catch(() => {})
+        }
+      }
+    })
+  }, [itemRows, materials])
 
   // Populate form when editing or copying
   useEffect(() => {
@@ -224,13 +245,14 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setVersion('')
     setStatus('DRAFT')
     setIsSemiFinished(false)
-    setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, notes: '' }])
+    setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, unit: '', notes: '' }])
+    setCompatibleUnits({})
   }
 
   const handleAddItem = (itemType: 'MATERIAL' | 'CHILD_BOM') => {
     setItemRows([
       ...itemRows,
-      { id: generateRowId(), itemType, materialId: '', childBomId: '', quantity: 0, notes: '' },
+      { id: generateRowId(), itemType, materialId: '', childBomId: '', quantity: 0, unit: '', notes: '' },
     ])
   }
 
@@ -255,6 +277,36 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const getMaterialUnit = (materialId: string): string => {
     const material = materials.find((m) => m.id === materialId)
     return material?.unit || '-'
+  }
+
+  // โหลด compatible units เมื่อเลือก material
+  const loadCompatibleUnits = async (materialId: string, rowId: string) => {
+    const material = materials.find((m) => m.id === materialId)
+    if (!material?.unit) return
+    try {
+      const units = await materialsService.getCompatibleUnits(material.unit, materialId)
+      setCompatibleUnits(prev => ({ ...prev, [rowId]: units }))
+    } catch (err) {
+      console.error('Failed to load compatible units:', err)
+    }
+  }
+
+  // Get display label for a unit code
+  const getUnitLabel = (code: string): string => {
+    const found = Object.values(compatibleUnits)
+      .flat()
+      .find((u) => u.code === code)
+    return found?.label || code
+  }
+
+  // Handle material selection with unit loading
+  const handleMaterialSelect = (rowId: string, materialId: string) => {
+    const material = materials.find((m) => m.id === materialId)
+    handleItemChange(rowId, 'materialId', materialId)
+    handleItemChange(rowId, 'unit', material?.unit || '')
+    if (material?.unit) {
+      loadCompatibleUnits(materialId, rowId)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -295,6 +347,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           materialId: row.itemType === 'MATERIAL' ? row.materialId : undefined,
           childBomId: row.itemType === 'CHILD_BOM' ? row.childBomId : undefined,
           quantity: row.quantity,
+          unit: row.unit,
           notes: row.notes,
         })),
       }
@@ -316,22 +369,44 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     }
   }
 
-  // Calculate total cost
-  const totalCost = itemRows.reduce((sum, row) => {
-    if (row.itemType === 'MATERIAL') {
-      const material = materials.find((m) => m.id === row.materialId)
-      if (material && row.quantity > 0) {
-        return sum + Number(material.unitCost) * row.quantity
+  // Calculate row costs with unit conversion via backend API
+  useEffect(() => {
+    const calculateCosts = async () => {
+      const costs: Record<string, number> = {}
+      for (const row of itemRows) {
+        if (row.itemType === 'MATERIAL' && row.materialId && row.quantity > 0) {
+          const material = materials.find((m) => m.id === row.materialId)
+          if (!material) continue
+          const stockUnit = material.unit
+          const bomUnit = row.unit || stockUnit
+          let convertedQty = row.quantity
+          if (bomUnit !== stockUnit) {
+            try {
+              const res = await api.post('/materials/unit-conversions/convert', {
+                quantity: row.quantity,
+                from_unit: bomUnit,
+                to_unit: stockUnit,
+                material_id: row.materialId,
+              })
+              if (res.data?.success) {
+                convertedQty = res.data.data.converted
+              }
+            } catch {
+              // fallback: use raw quantity if conversion fails
+            }
+          }
+          costs[row.id] = convertedQty * Number(material.unitCost)
+        } else if (row.itemType === 'CHILD_BOM' && row.childBomId && row.quantity > 0) {
+          const childBOM = availableChildBOMs.find((b) => b.id === row.childBomId)
+          costs[row.id] = (childBOM?.totalCost || 0) * row.quantity
+        }
       }
-    } else {
-      // For child BOM, we would need to fetch the cost, for now show 0
-      const childBOM = availableChildBOMs.find((b) => b.id === row.childBomId)
-      if (childBOM && row.quantity > 0) {
-        return sum + (childBOM.totalCost || 0) * row.quantity
-      }
+      setRowCosts(costs)
     }
-    return sum
-  }, 0)
+    calculateCosts()
+  }, [itemRows, materials, availableChildBOMs])
+
+  const totalCost = itemRows.reduce((sum, row) => sum + (rowCosts[row.id] || 0), 0)
 
   if (!isOpen) return null
 
@@ -491,9 +566,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                         const isMaterial = row.itemType === 'MATERIAL'
                         const selectedMaterial = isMaterial ? materials.find((m) => m.id === row.materialId) : null
                         const selectedChildBOM = !isMaterial ? availableChildBOMs.find((b) => b.id === row.childBomId) : null
-                        const rowTotal = isMaterial
-                          ? (selectedMaterial ? Number(selectedMaterial.unitCost) * row.quantity : 0)
-                          : (selectedChildBOM ? (selectedChildBOM.totalCost || 0) * row.quantity : 0)
+                        const rowTotal = rowCosts[row.id] || 0
 
                         return (
                           <div
@@ -521,7 +594,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 <>
                                   <SearchableDropdown
                                     value={row.materialId}
-                                    onChange={(value) => handleItemChange(row.id, 'materialId', value)}
+                                    onChange={(value) => handleMaterialSelect(row.id, value)}
                                     options={(materials || []).map((m) => ({
                                       id: m.id,
                                       label: `${m.code} - ${m.name}`,
@@ -572,15 +645,23 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               />
                             </div>
 
-                            {/* Unit Display */}
+                            {/* Unit Dropdown */}
                             <div className="col-span-2">
-                              <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
-                                {isMaterial
-                                  ? getMaterialUnit(row.materialId)
-                                  : selectedChildBOM
-                                    ? 'ชุด'
-                                    : '-'}
-                              </div>
+                              {isMaterial && row.materialId ? (
+                                <select
+                                  value={row.unit || getMaterialUnit(row.materialId)}
+                                  onChange={(e) => handleItemChange(row.id, 'unit', e.target.value)}
+                                  className="cyber-input w-full text-sm"
+                                >
+                                  {(compatibleUnits[row.id] || [{ code: getMaterialUnit(row.materialId), label: getMaterialUnit(row.materialId) }]).map((u) => (
+                                    <option key={u.code} value={u.code}>{u.label}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
+                                  {selectedChildBOM ? 'ชุด' : '-'}
+                                </div>
+                              )}
                             </div>
 
                             {/* Unit Cost */}

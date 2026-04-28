@@ -274,12 +274,13 @@ router.post('/menu-configs', (req, res) => {
     }
     
     const id = generateId()
+    const { sale_unit } = req.body
     const stmt = db.prepare(`
       INSERT INTO pos_menu_configs (
         id, tenant_id, product_id, bom_id, category_id, pos_price, cost_price,
         is_available, is_pos_enabled, display_order, quick_code, 
-        image_url, preparation_time, description
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        image_url, preparation_time, description, sale_unit
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     
     stmt.run(
@@ -290,7 +291,8 @@ router.post('/menu-configs', (req, res) => {
       quick_code || null, 
       image_url || null, 
       preparation_time || 10,
-      description || null
+      description || null,
+      sale_unit || null
     )
     
     res.json({ 
@@ -310,7 +312,7 @@ router.put('/menu-configs/:id', (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const allowed = ['bom_id', 'category_id', 'pos_price', 'cost_price', 'is_available',
-      'is_pos_enabled', 'display_order', 'quick_code', 'image_url', 'preparation_time', 'description']
+      'is_pos_enabled', 'display_order', 'quick_code', 'image_url', 'preparation_time', 'description', 'sale_unit']
 
     const fields: string[] = []
     const values: any[] = []

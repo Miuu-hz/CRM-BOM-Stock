@@ -35,33 +35,9 @@ import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
 import { useModalClose } from '../hooks/useModalClose'
+import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
 
-// รายการหน่วยพื้นฐาน
-const DEFAULT_UNITS = [
-  { value: 'pcs', label: 'ชิ้น' },
-  { value: 'kg', label: 'กิโลกรัม' },
-  { value: 'g', label: 'กรัม' },
-  { value: 'm', label: 'เมตร' },
-  { value: 'cm', label: 'เซนติเมตร' },
-  { value: 'yard', label: 'หลา' },
-  { value: 'roll', label: 'ม้วน' },
-  { value: 'box', label: 'กล่อง' },
-  { value: 'pack', label: 'แพ็ค' },
-  { value: 'set', label: 'ชุด' },
-  { value: 'pair', label: 'คู่' },
-  { value: 'sheet', label: 'แผ่น' },
-  { value: 'ltr', label: 'ลิตร' },
-  { value: 'bottle', label: 'ขวด' },
-]
-
-// ดึงหน่วยจาก localStorage
-const getUnits = () => {
-  const saved = localStorage.getItem('customUnits')
-  const customUnits = saved ? JSON.parse(saved) : []
-  return [...DEFAULT_UNITS, ...customUnits]
-}
-
-type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
+type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
 
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
@@ -78,6 +54,9 @@ function Stock() {
     sku: 'SKU',
     category: 'ประเภท',
     quantity: 'จำนวน',
+    displayQty: 'จำนวนแสดงผล',
+    baseUnit: 'หน่วยฐาน',
+    displayUnit: 'หน่วยแสดงผล',
     minmax: 'Min/Max',
     unitCost: 'ราคาต้นทุน',
     unitPrice: 'ราคาขาย',
@@ -89,7 +68,7 @@ function Stock() {
   const getDefaultCols = (): Record<ColumnKey, boolean> => {
     const saved = localStorage.getItem('stock_columns')
     if (saved) return JSON.parse(saved)
-    return { image: true, name: true, sku: true, category: true, quantity: true, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
+    return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
   }
   const [visibleCols, setVisibleCols] = useState<Record<ColumnKey, boolean>>(getDefaultCols)
 
@@ -203,6 +182,9 @@ function Stock() {
       case 'sku': aVal = a.sku; bVal = b.sku; break
       case 'category': aVal = getCategoryGroup(a.category); bVal = getCategoryGroup(b.category); break
       case 'quantity': aVal = a.quantity; bVal = b.quantity; break
+      case 'displayQty': aVal = a.displayQuantity ?? a.quantity ?? 0; bVal = b.displayQuantity ?? b.quantity ?? 0; break
+      case 'baseUnit': aVal = a.baseUnit || a.unit || ''; bVal = b.baseUnit || b.unit || ''; break
+      case 'displayUnit': aVal = a.displayUnit || a.unit || ''; bVal = b.displayUnit || b.unit || ''; break
       case 'unitCost': aVal = a.unitCost ?? a.unit_cost ?? 0; bVal = b.unitCost ?? b.unit_cost ?? 0; break
       case 'unitPrice': aVal = a.unitPrice ?? a.unit_price ?? 0; bVal = b.unitPrice ?? b.unit_price ?? 0; break
       case 'location': aVal = a.location || ''; bVal = b.location || ''; break
@@ -540,6 +522,9 @@ function Stock() {
                 {visibleCols.sku && <SortTh label="SKU" colKey="sku" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.baseUnit && <SortTh label="หน่วยฐาน" colKey="baseUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.displayQty && <SortTh label="จำนวนแสดงผล" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.displayUnit && <SortTh label="หน่วยแสดงผล" colKey="displayUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.minmax && <th>Min / Max</th>}
                 {visibleCols.unitCost && <SortTh label="ต้นทุน/หน่วย" colKey="unitCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
@@ -608,9 +593,37 @@ function Stock() {
                       )}
                       {visibleCols.quantity && (
                         <td>
-                          <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                            {item.quantity} {item.unit}
+                          <div className="flex flex-col">
+                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                              {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
+                                ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
+                                : `${item.quantity} ${item.baseUnit || item.unit}`}
+                            </span>
+                            {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
+                              <span className="text-xs text-gray-500">
+                                {item.quantity} {item.baseUnit || item.unit}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      {visibleCols.baseUnit && (
+                        <td>
+                          <span className="text-gray-300 text-sm">{item.baseUnit || item.unit}</span>
+                        </td>
+                      )}
+                      {visibleCols.displayQty && (
+                        <td>
+                          <span className={`font-semibold ${(item.displayQuantity ?? item.quantity) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                            {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
+                              ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
+                              : `${item.quantity} ${item.baseUnit || item.unit}`}
                           </span>
+                        </td>
+                      )}
+                      {visibleCols.displayUnit && (
+                        <td>
+                          <span className="text-gray-300 text-sm">{item.displayUnit || item.unit}</span>
                         </td>
                       )}
                       {visibleCols.minmax && (
@@ -988,6 +1001,8 @@ function EditModal({
     gs1Barcode: '',
     category: '',
     unit: 'pcs',
+    baseUnit: '',
+    displayUnit: '',
     minStock: 0,
     maxStock: 0,
     location: '',
@@ -999,23 +1014,18 @@ function EditModal({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
-  const [showUnitModal, setShowUnitModal] = useState(false)
-  const [newUnit, setNewUnit] = useState({ value: '', label: '' })
+
+  // Load units from API (global + per-material conversions)
+  const { units: availableUnits } = useUnits(item?.id)
 
   // Per-material unit conversions
   const [convExpanded, setConvExpanded] = useState(false)
   const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
   const [convForm, setConvForm] = useState({ from_unit: '', to_unit: '', conversion_factor: '' })
   const [convSaving, setConvSaving] = useState(false)
+  const [conversionWarning, setConversionWarning] = useState<string | null>(null)
 
-  const UNIT_LABELS_LOCAL: Record<string, string> = {
-    pcs: 'ชิ้น', kg: 'กก.', g: 'กรัม', m: 'เมตร', cm: 'ซม.', mm: 'มม.',
-    inch: 'นิ้ว', l: 'ลิตร', ltr: 'ลิตร', ml: 'มล.', roll: 'ม้วน',
-    box: 'กล่อง', pack: 'แพ็ค', set: 'ชุด', pair: 'คู่', sheet: 'แผ่น',
-    bottle: 'ขวด', bag: 'ถุง', sachet: 'ซอง', dozen: 'โหล', case: 'ลัง',
-    can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
-  }
-  const ul = (u: string) => UNIT_LABELS_LOCAL[u] ?? u
+  const ul = (u: string) => UNIT_LABELS_MAP[u] ?? u
 
   const fetchItemConversions = async (itemId: string) => {
     try {
@@ -1039,6 +1049,7 @@ function EditModal({
       })
       setConvForm({ from_unit: '', to_unit: '', conversion_factor: '' })
       fetchItemConversions(item.id)
+      invalidateUnitsCache()
       toast.success('เพิ่มการแปลงหน่วยแล้ว')
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
@@ -1052,19 +1063,9 @@ function EditModal({
       const api = await import('../services/api').then(m => m.default)
       await api.delete(`/materials/unit-conversions/${convId}`)
       setItemConversions(prev => prev.filter(c => c.id !== convId))
+      invalidateUnitsCache()
       toast.success('ลบแล้ว')
     } catch { toast.error('ลบไม่สำเร็จ') }
-  }
-
-  const handleAddUnit = () => {
-    if (!newUnit.value || !newUnit.label) return
-    const saved = localStorage.getItem('customUnits')
-    const customUnits = saved ? JSON.parse(saved) : []
-    const updated = [...customUnits, newUnit]
-    localStorage.setItem('customUnits', JSON.stringify(updated))
-    setFormData(f => ({ ...f, unit: newUnit.value }))
-    setNewUnit({ value: '', label: '' })
-    setShowUnitModal(false)
   }
 
   useEffect(() => {
@@ -1074,6 +1075,8 @@ function EditModal({
         gs1Barcode: item.gs1Barcode || '',
         category: item.category || '',
         unit: item.unit || 'pcs',
+        baseUnit: item.baseUnit || '',
+        displayUnit: item.displayUnit || '',
         minStock: item.minStock ?? 0,
         maxStock: item.maxStock ?? 0,
         location: item.location || '',
@@ -1085,9 +1088,31 @@ function EditModal({
       setImageFile(null)
       setConvExpanded(false)
       setItemConversions([])
+      setConversionWarning(null)
       fetchItemConversions(item.id)
     }
   }, [item])
+
+  // Check if conversion exists when baseUnit ≠ displayUnit
+  useEffect(() => {
+    if (!item || !formData.baseUnit || !formData.displayUnit) {
+      setConversionWarning(null)
+      return
+    }
+    if (formData.baseUnit === formData.displayUnit) {
+      setConversionWarning(null)
+      return
+    }
+    const hasConversion = itemConversions.some(c =>
+      (c.from_unit === formData.displayUnit && c.to_unit === formData.baseUnit) ||
+      (c.from_unit === formData.baseUnit && c.to_unit === formData.displayUnit)
+    )
+    if (!hasConversion) {
+      setConversionWarning(`⚠️ ไม่พบการแปลงหน่วยจาก "${ul(formData.displayUnit)}" เป็น "${ul(formData.baseUnit)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
+    } else {
+      setConversionWarning(null)
+    }
+  }, [formData.baseUnit, formData.displayUnit, itemConversions])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1215,23 +1240,59 @@ function EditModal({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า</label>
+                <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Display)</label>
                 <select
                   value={formData.unit}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                   className="cyber-input w-full"
                 >
-                  {getUnits().map((u) => (
-                    <option key={u.value} value={u.value}>{u.label}</option>
+                  {/* Ensure current unit always appears even if not in list yet */}
+                  {formData.unit && !availableUnits.find(u => u.value === formData.unit) && (
+                    <option value={formData.unit}>{formData.unit}</option>
+                  )}
+                  {availableUnits.map((u) => (
+                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => setShowUnitModal(true)}
-                  className="text-xs text-cyber-primary hover:underline mt-1 cursor-pointer"
+                <p className="text-xs text-gray-600 mt-1">
+                  เพิ่มหน่วยได้ใน Settings → Unit Conversions
+                </p>
+              </div>
+            </div>
+
+            {/* Base Unit + Display Unit */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">
+                  หน่วยฐาน <span className="text-gray-600">(Base Unit - หน่วยย่อยสุด)</span>
+                </label>
+                <select
+                  value={formData.baseUnit || ''}
+                  onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                  className="cyber-input w-full"
                 >
-                  + เพิ่มหน่วยใหม่
-                </button>
+                  <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                  {availableUnits.map((u) => (
+                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5">
+                  หน่วยแสดงผล <span className="text-gray-600">(Display Unit - บรรจุภัณฑ์)</span>
+                </label>
+                <select
+                  value={formData.displayUnit || ''}
+                  onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
+                  className="cyber-input w-full"
+                >
+                  <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
+                  {availableUnits.map((u) => (
+                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
               </div>
             </div>
 
@@ -1320,6 +1381,23 @@ function EditModal({
                 />
               </div>
             </div>
+
+            {/* Conversion Warning */}
+            {conversionWarning && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-amber-300">{conversionWarning}</p>
+                  <button
+                    type="button"
+                    onClick={() => setConvExpanded(true)}
+                    className="text-xs text-amber-400 hover:text-amber-300 underline mt-1"
+                  >
+                    คลิกเพื่อเพิ่มการแปลงหน่วย
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* POS toggle */}
             <label className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-xl border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
@@ -1463,45 +1541,6 @@ function EditModal({
           </div>
         </form>
 
-        {/* Add Unit Modal */}
-        {showUnitModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-            <div className="cyber-card w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-              <div className="p-4 border-b border-cyber-border flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
-                <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded cursor-pointer">
-                  <X className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-              <div className="p-4 space-y-3">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
-                  <input
-                    type="text"
-                    value={newUnit.value}
-                    onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
-                    placeholder="เช่น crate"
-                    className="cyber-input w-full text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
-                  <input
-                    type="text"
-                    value={newUnit.label}
-                    onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
-                    placeholder="เช่น ลัง"
-                    className="cyber-input w-full text-sm"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setShowUnitModal(false)} className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300 cursor-pointer">ยกเลิก</button>
-                  <button onClick={handleAddUnit} disabled={!newUnit.value || !newUnit.label} className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50 cursor-pointer">บันทึก</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
@@ -1528,6 +1567,7 @@ function MovementModal({
   useModalClose(onClose)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [quantity, setQuantity] = useState(1)
+  const [unit, setUnit] = useState('')
   const [notes, setNotes] = useState('')
   const [reference, setReference] = useState('')
   const [unitCost, setUnitCost] = useState<number | ''>('')
@@ -1536,8 +1576,10 @@ function MovementModal({
   useEffect(() => {
     if (item) {
       setSelectedItemId(item.id)
+      setUnit(item.displayUnit || item.unit || item.baseUnit || '')
     } else {
       setSelectedItemId('')
+      setUnit('')
     }
     setQuantity(1)
     setNotes('')
@@ -1573,6 +1615,7 @@ function MovementModal({
         stockItemId: selectedItemId,
         type,
         quantity,
+        unit: unit || undefined,
         notes: notes || undefined,
         reference: reference || undefined,
         unitCost: unitCost !== '' ? unitCost : undefined,
@@ -1662,11 +1705,13 @@ function MovementModal({
           </div>
 
           {selectedItem && (
-            <div className="p-4 bg-cyber-darker rounded-lg">
+            <div className="p-4 bg-cyber-darker rounded-lg space-y-1">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Current Stock:</span>
                 <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                  {selectedItem.quantity} {selectedItem.unit}
+                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
+                    ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
+                    : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
                   {selectedItem.quantity === 0 && (
                     <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
                       OUT OF STOCK
@@ -1674,6 +1719,12 @@ function MovementModal({
                   )}
                 </span>
               </div>
+              {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
+                <div className="flex justify-between items-center text-xs text-gray-500">
+                  <span></span>
+                  <span>{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1687,25 +1738,50 @@ function MovementModal({
             </div>
           )}
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
-            <input
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
-              onFocus={(e) => e.target.select()}
-              className="cyber-input w-full"
-              min="1"
-              max={type === 'OUT' && selectedItem ? selectedItem.quantity : undefined}
-              required
-              disabled={isOutOfStock}
-            />
-            {exceedsStock && (
-              <p className="text-red-400 text-sm mt-1">
-                Cannot exceed available stock ({selectedItem?.quantity})
-              </p>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+              <input
+                type="number"
+                value={quantity}
+                onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+                onFocus={(e) => e.target.select()}
+                className="cyber-input w-full"
+                min="1"
+                required
+                disabled={isOutOfStock}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Unit</label>
+              <select
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                className="cyber-input w-full"
+                disabled={isOutOfStock}
+              >
+                {selectedItem ? (
+                  <>
+                    <option value={selectedItem.displayUnit || selectedItem.unit}>
+                      {selectedItem.displayUnit || selectedItem.unit} (Display)
+                    </option>
+                    {selectedItem.baseUnit && selectedItem.baseUnit !== (selectedItem.displayUnit || selectedItem.unit) && (
+                      <option value={selectedItem.baseUnit}>
+                        {selectedItem.baseUnit} (Base)
+                      </option>
+                    )}
+                  </>
+                ) : (
+                  <option value="">Select item first</option>
+                )}
+              </select>
+            </div>
           </div>
+          {exceedsStock && (
+            <p className="text-red-400 text-sm mt-1">
+              Cannot exceed available stock ({selectedItem?.quantity} {selectedItem?.baseUnit || selectedItem?.unit})
+            </p>
+          )}
 
           <div>
             <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
@@ -2115,6 +2191,8 @@ function AddStockModal({
     gs1Barcode: '',
     category: 'raw',
     unit: 'pcs',
+    baseUnit: '',
+    displayUnit: '',
     quantity: 0,
     minStock: 10,
     maxStock: 100,
@@ -2124,18 +2202,7 @@ function AddStockModal({
     unitPrice: 0,
   })
   const [saving, setSaving] = useState(false)
-  const [showUnitModal, setShowUnitModal] = useState(false)
-  const [newUnit, setNewUnit] = useState({ value: '', label: '' })
-
-  const handleAddUnit = () => {
-    if (!newUnit.value || !newUnit.label) return
-    const saved = localStorage.getItem('customUnits')
-    const customUnits = saved ? JSON.parse(saved) : []
-    customUnits.push(newUnit)
-    localStorage.setItem('customUnits', JSON.stringify(customUnits))
-    setNewUnit({ value: '', label: '' })
-    setShowUnitModal(false)
-  }
+  const { units: availableUnits } = useUnits()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -2152,6 +2219,8 @@ function AddStockModal({
         gs1Barcode: formData.gs1Barcode || undefined,
         category: formData.category,
         unit: formData.unit,
+        baseUnit: formData.baseUnit || undefined,
+        displayUnit: formData.displayUnit || undefined,
         quantity: formData.quantity,
         minStock: formData.minStock,
         maxStock: formData.maxStock,
@@ -2168,6 +2237,8 @@ function AddStockModal({
         gs1Barcode: '',
         category: 'raw',
         unit: 'pcs',
+        baseUnit: '',
+        displayUnit: '',
         quantity: 0,
         minStock: 10,
         maxStock: 100,
@@ -2250,25 +2321,16 @@ function AddStockModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">หน่วย</label>
+              <label className="block text-sm text-gray-400 mb-2">หน่วยแสดงผล (Display)</label>
               <select
                 value={formData.unit}
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 className="cyber-input w-full"
               >
-                {getUnits().map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                  </option>
+                {availableUnits.map((u) => (
+                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => setShowUnitModal(true)}
-                className="text-xs text-cyber-primary hover:underline mt-1"
-              >
-                + เพิ่มหน่วยใหม่
-              </button>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
@@ -2280,6 +2342,37 @@ function AddStockModal({
                 className="cyber-input w-full"
                 min="0"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">หน่วยฐาน (Base Unit)</label>
+              <select
+                value={formData.baseUnit || ''}
+                onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                className="cyber-input w-full"
+              >
+                <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                {availableUnits.map((u) => (
+                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">หน่วยแสดงผล (Display Unit)</label>
+              <select
+                value={formData.displayUnit || ''}
+                onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
+                className="cyber-input w-full"
+              >
+                <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
+                {availableUnits.map((u) => (
+                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
             </div>
           </div>
 
@@ -2401,56 +2494,6 @@ function AddStockModal({
           </div>
         </form>
 
-        {/* Add Unit Modal */}
-        {showUnitModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 animate-fadeIn">
-            <div className="cyber-card w-full max-w-sm animate-scaleIn">
-              <div className="p-4 border-b border-cyber-border flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-100">เพิ่มหน่วยใหม่</h3>
-                <button onClick={() => setShowUnitModal(false)} className="p-1 hover:bg-cyber-dark rounded">
-                  <X className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-              <div className="p-4 space-y-3">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">รหัสหน่วย (ภาษาอังกฤษ)</label>
-                  <input
-                    type="text"
-                    value={newUnit.value}
-                    onChange={(e) => setNewUnit({ ...newUnit, value: e.target.value })}
-                    placeholder="เช่น ลัง"
-                    className="cyber-input w-full text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">ชื่อหน่วย (ภาษาไทย)</label>
-                  <input
-                    type="text"
-                    value={newUnit.label}
-                    onChange={(e) => setNewUnit({ ...newUnit, label: e.target.value })}
-                    placeholder="เช่น ลัง"
-                    className="cyber-input w-full text-sm"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setShowUnitModal(false)}
-                    className="px-3 py-1.5 text-sm border border-cyber-border rounded text-gray-400 hover:text-gray-300"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    onClick={handleAddUnit}
-                    disabled={!newUnit.value || !newUnit.label}
-                    className="px-3 py-1.5 text-sm bg-cyber-primary text-black rounded hover:shadow-neon disabled:opacity-50"
-                  >
-                    บันทึก
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

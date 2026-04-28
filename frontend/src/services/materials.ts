@@ -137,6 +137,14 @@ export const materialsService = {
     const response = await api.post(`/materials/${id}/stock`, adjustment)
     return response.data
   },
+
+  // Get compatible units for a given unit (same category + custom conversions)
+  getCompatibleUnits: async (unit: string, materialId?: string): Promise<{ code: string; label: string }[]> => {
+    const params = new URLSearchParams({ unit })
+    if (materialId) params.set('materialId', materialId)
+    const response = await api.get<any>(`/materials/unit-conversions/compatible?${params}`)
+    return response.data?.data?.compatible || []
+  },
 }
 
 export default materialsService

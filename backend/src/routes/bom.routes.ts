@@ -37,6 +37,9 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
 
+  // Helper to resolve BOM item unit: use stored bi.unit if available, else fall back to material unit
+  const getBomItemUnit = (item: any): string => item.unit || item.material_unit || ''
+
   let totalCost = 0
 
   for (const item of items) {
@@ -46,7 +49,7 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
     } else {
       // แปลงหน่วยก่อนคำนวณต้นทุน: ถ้า BOM ใช้หน่วยต่างจาก material base unit
       let qty = Number(item.quantity)
-      const bomUnit: string = item.unit ?? ''
+      const bomUnit: string = getBomItemUnit(item)
       const materialUnit: string = item.material_unit ?? ''
 
       if (bomUnit && materialUnit && bomUnit !== materialUnit) {
@@ -316,7 +319,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         m.name as material_name,
         m.sku as material_code,
         m.unit_cost,
-        m.unit,
+        m.unit as material_unit,
         child_bom.version as child_bom_version,
         child_p.name as child_bom_product_name,
         child_p.sku as child_bom_product_code
@@ -408,8 +411,8 @@ router.post('/', async (req: Request, res: Response) => {
       // Insert items
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, child_bom_id, quantity, notes, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, child_bom_id, quantity, unit, notes, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         
         for (let i = 0; i < items.length; i++) {
@@ -425,14 +428,15 @@ router.post('/', async (req: Request, res: Response) => {
               throw new Error('Cannot reference self as child BOM')
             }
             
-            insertItem.run(generateId(), tenantId, id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.notes || '', i)
+            insertItem.run(generateId(), tenantId, id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.unit || null, item.notes || '', i)
           } else {
             // Raw Material - check in stock_items table
-            const material = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
+            const material = db.prepare('SELECT id, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId) as any
             if (!material) {
               throw new Error(`Material ${item.materialId} not found`)
             }
-            insertItem.run(generateId(), tenantId, id, 'MATERIAL', item.materialId, null, item.quantity, item.notes || '', i)
+            const itemUnit = item.unit || material.unit || null
+            insertItem.run(generateId(), tenantId, id, 'MATERIAL', item.materialId, null, item.quantity, itemUnit, item.notes || '', i)
           }
         }
       }
@@ -495,8 +499,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         
         const insertItem = db.prepare(`
-          INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, child_bom_id, quantity, notes, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, child_bom_id, quantity, unit, notes, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         
         for (let i = 0; i < items.length; i++) {
@@ -512,14 +516,15 @@ router.put('/:id', async (req: Request, res: Response) => {
               throw new Error('Cannot reference self as child BOM')
             }
             
-            insertItem.run(generateId(), tenantId, req.params.id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.notes || '', i)
+            insertItem.run(generateId(), tenantId, req.params.id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.unit || null, item.notes || '', i)
           } else {
             // Raw Material - check in stock_items table
-            const material = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId)
+            const material = db.prepare('SELECT id, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId) as any
             if (!material) {
               throw new Error(`Material ${item.materialId} not found`)
             }
-            insertItem.run(generateId(), tenantId, req.params.id, 'MATERIAL', item.materialId, null, item.quantity, item.notes || '', i)
+            const itemUnit = item.unit || material.unit || null
+            insertItem.run(generateId(), tenantId, req.params.id, 'MATERIAL', item.materialId, null, item.quantity, itemUnit, item.notes || '', i)
           }
         }
       }

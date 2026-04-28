@@ -116,8 +116,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const insertItem = db.prepare(`
       INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-        quantity, unit_price, total_price, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quantity, unit, unit_price, total_price, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const transaction = db.transaction(() => {
@@ -128,7 +128,7 @@ router.post('/', async (req: Request, res: Response) => {
         for (const item of items) {
           insertItem.run(
             generateId(), tenantId, id, item.materialId || null, item.description || '',
-            item.quantity, item.unitPrice, item.quantity * item.unitPrice,
+            item.quantity, item.unit || '', item.unitPrice, item.quantity * item.unitPrice,
             item.notes || ''
           )
         }
@@ -242,13 +242,13 @@ router.put('/:id', async (req: Request, res: Response) => {
         db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(req.params.id)
         const insertItem = db.prepare(`
           INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-            quantity, unit_price, total_price, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            quantity, unit, unit_price, total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
           insertItem.run(
             generateId(), tenantId, req.params.id, item.materialId || null, item.description || '',
-            item.quantity, item.unitPrice, item.quantity * item.unitPrice,
+            item.quantity, item.unit || '', item.unitPrice, item.quantity * item.unitPrice,
             item.notes || ''
           )
         }

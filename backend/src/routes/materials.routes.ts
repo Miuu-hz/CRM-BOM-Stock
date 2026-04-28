@@ -10,6 +10,8 @@ import {
   deleteConversion,
   getStandardConversions,
   convertQuantity,
+  getCompatibleUnits,
+  getUnitDisplayName,
 } from '../services/unitConversion.service'
 
 const router = Router()
@@ -113,6 +115,149 @@ router.get('/stats', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get materials stats error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch materials stats' })
+  }
+})
+
+// ===================================================================
+// UNIT CONVERSION ROUTES
+// ===================================================================
+
+// GET /api/materials/unit-conversions/standards — มาตราสากลที่ built-in
+router.get('/unit-conversions/standards', (_req: Request, res: Response) => {
+  res.json({ success: true, data: getStandardConversions() })
+})
+
+// GET /api/materials/unit-conversions/compatible — หน่วยที่อยู่ใน category เดียวกัน + custom conversions
+router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
+  try {
+    const { unit, materialId } = req.query
+    if (!unit || typeof unit !== 'string') {
+      return res.status(400).json({ success: false, message: 'unit query param is required' })
+    }
+    const tenantId = req.user!.tenantId
+
+    // Standard category-based compatible units
+    const compatible = new Set(getCompatibleUnits(unit))
+
+    // Also include units reachable via custom conversions (global + per-material)
+    const customConvs = listConversions(tenantId, materialId as string | undefined)
+    for (const c of customConvs) {
+      if (c.from_unit === unit || c.to_unit === unit) {
+        compatible.add(c.from_unit)
+        compatible.add(c.to_unit)
+      }
+    }
+
+    const mapped = Array.from(compatible).map((u) => ({ code: u, label: getUnitDisplayName(u) }))
+    res.json({ success: true, data: { unit, compatible: mapped } })
+  } catch (error) {
+    console.error('Get compatible units error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch compatible units' })
+  }
+})
+
+// GET /api/materials/unit-conversions/all — ทั้งหมดรวม per-material พร้อมชื่อสินค้า
+router.get('/unit-conversions/all', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const data = listAllConversions(tenantId)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('List all conversions error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch conversions' })
+  }
+})
+
+// GET /api/materials/unit-conversions — custom conversions ของ tenant
+router.get('/unit-conversions', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { materialId } = req.query
+    const data = listConversions(tenantId, materialId as string | undefined)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('List conversions error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch unit conversions' })
+  }
+})
+
+// POST /api/materials/unit-conversions — สร้าง conversion ใหม่
+router.post('/unit-conversions', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { material_id, from_unit, to_unit, conversion_factor, notes } = req.body
+
+    if (!from_unit || !to_unit || conversion_factor == null) {
+      return res.status(400).json({ success: false, message: 'from_unit, to_unit และ conversion_factor จำเป็นต้องระบุ' })
+    }
+    if (Number(conversion_factor) <= 0) {
+      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
+    }
+    if (from_unit === to_unit) {
+      return res.status(400).json({ success: false, message: 'หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน' })
+    }
+
+    const record = createConversion(tenantId, { material_id, from_unit, to_unit, conversion_factor: Number(conversion_factor), notes })
+    res.status(201).json({ success: true, data: record })
+  } catch (error: any) {
+    if (error?.message?.includes('UNIQUE')) {
+      return res.status(409).json({ success: false, message: 'มีการแปลงหน่วยนี้อยู่แล้ว' })
+    }
+    console.error('Create conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create unit conversion' })
+  }
+})
+
+// PUT /api/materials/unit-conversions/:id — แก้ไข conversion
+router.put('/unit-conversions/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { conversion_factor, notes } = req.body
+
+    if (conversion_factor != null && Number(conversion_factor) <= 0) {
+      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
+    }
+
+    const updated = updateConversion(req.params.id, tenantId, { conversion_factor: Number(conversion_factor), notes })
+    if (!updated) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถแก้ไขได้' })
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    console.error('Update conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update unit conversion' })
+  }
+})
+
+// DELETE /api/materials/unit-conversions/:id — ลบ conversion
+router.delete('/unit-conversions/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const ok = deleteConversion(req.params.id, tenantId)
+    if (!ok) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถลบได้' })
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete unit conversion' })
+  }
+})
+
+// POST /api/materials/unit-conversions/convert — คำนวณแปลงหน่วย
+router.post('/unit-conversions/convert', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { quantity, from_unit, to_unit, material_id } = req.body
+
+    if (quantity == null || !from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'quantity, from_unit, to_unit จำเป็นต้องระบุ' })
+    }
+
+    const result = convertQuantity(Number(quantity), from_unit, to_unit, tenantId, material_id)
+    if (!result) {
+      return res.status(404).json({ success: false, message: `ไม่พบวิธีแปลง ${from_unit} → ${to_unit}` })
+    }
+    res.json({ success: true, data: { quantity: Number(quantity), from_unit, to_unit, ...result } })
+  } catch (error) {
+    console.error('Convert error:', error)
+    res.status(500).json({ success: false, message: 'Failed to convert' })
   }
 })
 
@@ -525,120 +670,6 @@ router.post('/:id/stock', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Adjust stock error:', error)
     res.status(500).json({ success: false, message: 'Failed to adjust stock' })
-  }
-})
-
-// ===================================================================
-// UNIT CONVERSION ROUTES
-// ===================================================================
-
-// GET /api/materials/unit-conversions/standards — มาตราสากลที่ built-in
-router.get('/unit-conversions/standards', (_req: Request, res: Response) => {
-  res.json({ success: true, data: getStandardConversions() })
-})
-
-// GET /api/materials/unit-conversions/all — ทั้งหมดรวม per-material พร้อมชื่อสินค้า
-router.get('/unit-conversions/all', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const data = listAllConversions(tenantId)
-    res.json({ success: true, data })
-  } catch (error) {
-    console.error('List all conversions error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch conversions' })
-  }
-})
-
-// GET /api/materials/unit-conversions — custom conversions ของ tenant
-router.get('/unit-conversions', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { materialId } = req.query
-    const data = listConversions(tenantId, materialId as string | undefined)
-    res.json({ success: true, data })
-  } catch (error) {
-    console.error('List conversions error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch unit conversions' })
-  }
-})
-
-// POST /api/materials/unit-conversions — สร้าง conversion ใหม่
-router.post('/unit-conversions', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { material_id, from_unit, to_unit, conversion_factor, notes } = req.body
-
-    if (!from_unit || !to_unit || conversion_factor == null) {
-      return res.status(400).json({ success: false, message: 'from_unit, to_unit และ conversion_factor จำเป็นต้องระบุ' })
-    }
-    if (Number(conversion_factor) <= 0) {
-      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
-    }
-    if (from_unit === to_unit) {
-      return res.status(400).json({ success: false, message: 'หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน' })
-    }
-
-    const record = createConversion(tenantId, { material_id, from_unit, to_unit, conversion_factor: Number(conversion_factor), notes })
-    res.status(201).json({ success: true, data: record })
-  } catch (error: any) {
-    if (error?.message?.includes('UNIQUE')) {
-      return res.status(409).json({ success: false, message: 'มีการแปลงหน่วยนี้อยู่แล้ว' })
-    }
-    console.error('Create conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create unit conversion' })
-  }
-})
-
-// PUT /api/materials/unit-conversions/:id — แก้ไข conversion
-router.put('/unit-conversions/:id', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { conversion_factor, notes } = req.body
-
-    if (conversion_factor != null && Number(conversion_factor) <= 0) {
-      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
-    }
-
-    const updated = updateConversion(req.params.id, tenantId, { conversion_factor: Number(conversion_factor), notes })
-    if (!updated) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถแก้ไขได้' })
-    res.json({ success: true, data: updated })
-  } catch (error) {
-    console.error('Update conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update unit conversion' })
-  }
-})
-
-// DELETE /api/materials/unit-conversions/:id — ลบ conversion
-router.delete('/unit-conversions/:id', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const ok = deleteConversion(req.params.id, tenantId)
-    if (!ok) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถลบได้' })
-    res.json({ success: true })
-  } catch (error) {
-    console.error('Delete conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete unit conversion' })
-  }
-})
-
-// POST /api/materials/unit-conversions/convert — คำนวณแปลงหน่วย
-router.post('/unit-conversions/convert', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { quantity, from_unit, to_unit, material_id } = req.body
-
-    if (quantity == null || !from_unit || !to_unit) {
-      return res.status(400).json({ success: false, message: 'quantity, from_unit, to_unit จำเป็นต้องระบุ' })
-    }
-
-    const result = convertQuantity(Number(quantity), from_unit, to_unit, tenantId, material_id)
-    if (!result) {
-      return res.status(404).json({ success: false, message: `ไม่พบวิธีแปลง ${from_unit} → ${to_unit}` })
-    }
-    res.json({ success: true, data: { quantity: Number(quantity), from_unit, to_unit, ...result } })
-  } catch (error) {
-    console.error('Convert error:', error)
-    res.status(500).json({ success: false, message: 'Failed to convert' })
   }
 })
 
