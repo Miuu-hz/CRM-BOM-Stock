@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { convertQuantity } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -233,13 +234,13 @@ router.post('/requests/:id/convert-to-po', async (req: Request, res: Response) =
       // Create PO items
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-          quantity, unit_price, total_price, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          quantity, unit, unit_price, total_price, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       for (const item of prItems) {
         const total = item.estimated_unit_price * item.quantity
         insertItem.run(generateId(), tenantId, poId, item.material_id, item.description,
-          item.quantity, item.estimated_unit_price, total, item.notes || '')
+          item.quantity, item.unit || '', item.estimated_unit_price, total, item.notes || '')
       }
 
       // Update PR status
@@ -327,8 +328,10 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { purchaseOrderId, receiptDate, receivedBy, notes, items, deliveryNoteNo } = req.body
+    console.log('[GR DEBUG] body:', { purchaseOrderId, receiptDate, receivedBy, deliveryNoteNo, notes, itemCount: items?.length })
     
     if (!purchaseOrderId) {
+      console.log('[GR DEBUG] 400: missing purchaseOrderId')
       return res.status(400).json({ success: false, message: 'Purchase order is required' })
     }
 
@@ -438,9 +441,16 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
       // Update stock and PO received qty
       for (const item of items) {
         if (item.material_id && item.accepted_qty > 0) {
-          // Get actual unit_price from PO item to update stock cost
-          const poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+          // Get PO item details (unit + unit_price)
+          let poItem: any
+          try {
+            poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+          } catch (e) {
+            // Fallback if 'unit' column hasn't been migrated yet
+            poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+          }
           const unitPrice = poItem?.unit_price || 0
+          const poUnit = poItem?.unit || ''
 
           // Find stock item: first by material_id (BOM flow), then directly by id (standalone stock flow)
           let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
@@ -448,10 +458,23 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           }
 
+          let stockQty = item.accepted_qty
+          let movementNotes = `Received from purchase`
+
+          // Unit conversion: PO unit → Stock unit
+          if (stockItem && poUnit && poUnit !== stockItem.unit) {
+            const converted = convertQuantity(Number(item.accepted_qty), poUnit, stockItem.unit, tenantId, item.material_id)
+            if (!converted) {
+              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockItem.unit} สำหรับวัตถุดิบนี้ กรุณาตั้งค่า Unit Conversion ก่อน`)
+            }
+            stockQty = converted.converted
+            movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockItem.unit}, factor: ${converted.factor})`
+          }
+
           if (stockItem) {
             // Update quantity + unit_cost (latest purchase price)
             db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-              .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+              .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id)
           } else {
             // Create new stock item (BOM material not yet in stock)
             const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
@@ -461,7 +484,7 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
                 INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, unit_cost, location, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK', 'ACTIVE', ?, ?)
               `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
-                Math.floor(item.accepted_qty), material.unit || 'pcs', unitPrice, now, now)
+                Math.floor(stockQty), material.unit || 'pcs', unitPrice, now, now)
               stockItem = { id: newStockId }
             }
           }
@@ -471,11 +494,11 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             db.prepare(`
               INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
               VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id, Math.floor(item.accepted_qty), `GR: ${gr.gr_number}`,
-              `Received from purchase`, now, req.user!.userId)
+            `).run(generateId(), tenantId, stockItem.id, Math.floor(stockQty), `GR: ${gr.gr_number}`,
+              movementNotes, now, req.user!.userId)
           }
 
-          // Update PO item received qty
+          // Update PO item received qty (in PO unit)
           db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
             .run(item.accepted_qty, item.purchase_order_item_id)
         }
@@ -498,9 +521,10 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
 
     const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ?').get(req.params.id)
     res.json({ success: true, data: receipt, message: 'Goods receipt confirmed and stock updated' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Confirm goods receipt error:', error)
-    res.status(500).json({ success: false, message: 'Failed to confirm goods receipt' })
+    const message = error?.message || 'Failed to confirm goods receipt'
+    res.status(500).json({ success: false, message })
   }
 })
 
@@ -520,9 +544,11 @@ router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Resp
         si.unit  AS unit
       FROM purchase_order_items poi
       LEFT JOIN stock_items si ON poi.material_id = si.id
+      LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE poi.purchase_order_id = ?
+        AND po.tenant_id = ?
         AND poi.quantity > poi.received_qty
-    `).all(req.params.poId)
+    `).all(req.params.poId, tenantId)
 
     res.json({ success: true, data: items })
   } catch (error) {
@@ -578,9 +604,9 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT pii.*, m.name as material_name, m.code as material_code
+      SELECT pii.*, si.name as material_name, si.sku as material_code
       FROM purchase_invoice_items pii
-      LEFT JOIN materials m ON pii.material_id = m.id
+      LEFT JOIN stock_items si ON pii.material_id = si.id
       WHERE pii.purchase_invoice_id = ?
     `).all(req.params.id)
 
@@ -599,7 +625,7 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
 router.post('/invoices', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, taxRate: reqTaxRate } = req.body
     // Support both multi-select (goodsReceiptIds array) and legacy single (goodsReceiptId)
     const grIds: string[] = Array.isArray(goodsReceiptIds) && goodsReceiptIds.length > 0
       ? goodsReceiptIds
@@ -628,7 +654,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
       subtotal = po.subtotal
     }
     
-    const taxRate = po.tax_rate || 7
+    const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
     const taxAmount = subtotal * (taxRate / 100)
     const totalAmount = subtotal + taxAmount
 

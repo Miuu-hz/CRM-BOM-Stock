@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { invalidateUnitsCache } from '../../hooks/useUnits'
 
 interface UnitConversion {
   id: string
@@ -168,6 +169,7 @@ export default function UnitConversions() {
         })
         toast.success('เพิ่มการแปลงหน่วยแล้ว')
       }
+      invalidateUnitsCache()
       closeForm()
       fetchAll()
     } catch (err: any) {
@@ -182,6 +184,7 @@ export default function UnitConversions() {
     try {
       await api.delete(`/materials/unit-conversions/${id}`)
       toast.success('ลบแล้ว')
+      invalidateUnitsCache()
       setAllConversions(prev => prev.filter(c => c.id !== id))
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')

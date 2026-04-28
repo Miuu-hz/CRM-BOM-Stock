@@ -161,8 +161,11 @@ db.exec(`
     category TEXT NOT NULL,
     product_id TEXT,
     material_id TEXT,
-    quantity INTEGER DEFAULT 0,
-    unit TEXT NOT NULL,
+    quantity INTEGER DEFAULT 0,        -- จำนวนในหน่วยฐาน (base unit)
+    unit TEXT NOT NULL,                -- หน่วยเริ่มต้นสำหรับแสดง/ธุรกรรม
+    base_unit TEXT,                    -- หน่วยย่อยสุด (ขวด, pcs, g, ml)
+    sale_unit TEXT,                    -- หน่วยที่ใช้ขาย (default = base_unit)
+    display_unit TEXT,                 -- หน่วยแสดงผลคลัง (ลัง, กล่อง, ถุง)
     unit_cost REAL DEFAULT 0,
     min_stock INTEGER DEFAULT 0,
     max_stock INTEGER DEFAULT 1000,
@@ -182,7 +185,9 @@ db.exec(`
     tenant_id TEXT,
     stock_item_id TEXT NOT NULL,
     type TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,         -- จำนวนที่แปลงเป็น base_unit แล้ว
+    movement_unit TEXT,                -- หน่วยที่ user กรอก
+    movement_quantity REAL,            -- จำนวนที่ user กรอก
     reference TEXT,
     notes TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1362,6 +1367,7 @@ db.exec(`
     image_url TEXT,
     preparation_time INTEGER DEFAULT 10, -- นาที
     description TEXT,
+    sale_unit TEXT,                    -- หน่วยขาย (default = base_unit ของ stock item)
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id),
@@ -2343,6 +2349,116 @@ try {
   `)
   console.log('✅ Migration: paperclip_companies + agent_jobs ready')
 } catch (e) { console.error('agent_jobs migration error:', e) }
+
+// Migration: add unit column to bom_items
+ try {
+   const cols = db.prepare(`PRAGMA table_info(bom_items)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'unit')) {
+     db.exec(`ALTER TABLE bom_items ADD COLUMN unit TEXT`)
+     console.log('✅ Migration: added unit to bom_items')
+   }
+ } catch (e) { console.error('⚠️ bom_items unit migration error:', e) }
+ 
+ // Migration: add unit column to work_order_materials
+ try {
+   const cols = db.prepare(`PRAGMA table_info(work_order_materials)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'unit')) {
+     db.exec(`ALTER TABLE work_order_materials ADD COLUMN unit TEXT`)
+     console.log('✅ Migration: added unit to work_order_materials')
+   }
+ } catch (e) { console.error('⚠️ work_order_materials unit migration error:', e) }
+ 
+ // Migration: add unit column to purchase_order_items
+ try {
+   const cols = db.prepare(`PRAGMA table_info(purchase_order_items)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'unit')) {
+     db.exec(`ALTER TABLE purchase_order_items ADD COLUMN unit TEXT`)
+     console.log('✅ Migration: added unit to purchase_order_items')
+   }
+ } catch (e) { console.error('⚠️ purchase_order_items unit migration error:', e) }
+
+ // Migration: add unit column to quotation_items
+ try {
+   const cols = db.prepare(`PRAGMA table_info(quotation_items)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'unit')) {
+     db.exec(`ALTER TABLE quotation_items ADD COLUMN unit TEXT`)
+     console.log('✅ Migration: added unit to quotation_items')
+   }
+ } catch (e) { console.error('⚠️ quotation_items unit migration error:', e) }
+
+ // Migration: add unit column to sales_order_items
+ try {
+   const cols = db.prepare(`PRAGMA table_info(sales_order_items)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'unit')) {
+     db.exec(`ALTER TABLE sales_order_items ADD COLUMN unit TEXT`)
+     console.log('✅ Migration: added unit to sales_order_items')
+   }
+ } catch (e) { console.error('⚠️ sales_order_items unit migration error:', e) }
+
+ // Migration: add base_unit, sale_unit, display_unit to stock_items
+ try {
+   const cols = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'base_unit')) {
+     db.exec(`ALTER TABLE stock_items ADD COLUMN base_unit TEXT`)
+     console.log('✅ Migration: added base_unit to stock_items')
+   }
+   if (!cols.some((c: any) => c.name === 'sale_unit')) {
+     db.exec(`ALTER TABLE stock_items ADD COLUMN sale_unit TEXT`)
+     console.log('✅ Migration: added sale_unit to stock_items')
+   }
+   if (!cols.some((c: any) => c.name === 'display_unit')) {
+     db.exec(`ALTER TABLE stock_items ADD COLUMN display_unit TEXT`)
+     console.log('✅ Migration: added display_unit to stock_items')
+   }
+ } catch (e) { console.error('⚠️ stock_items base_unit migration error:', e) }
+
+ // Migration: add movement_unit, movement_quantity to stock_movements
+ try {
+   const cols = db.prepare(`PRAGMA table_info(stock_movements)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'movement_unit')) {
+     db.exec(`ALTER TABLE stock_movements ADD COLUMN movement_unit TEXT`)
+     console.log('✅ Migration: added movement_unit to stock_movements')
+   }
+   if (!cols.some((c: any) => c.name === 'movement_quantity')) {
+     db.exec(`ALTER TABLE stock_movements ADD COLUMN movement_quantity REAL`)
+     console.log('✅ Migration: added movement_quantity to stock_movements')
+   }
+ } catch (e) { console.error('⚠️ stock_movements movement_unit migration error:', e) }
+
+ // Migration: auto-set base_unit and display_unit for existing stock_items
+ try {
+   const updated = db.prepare(`
+     UPDATE stock_items
+     SET base_unit = COALESCE(base_unit, unit),
+         display_unit = COALESCE(display_unit, unit),
+         sale_unit = COALESCE(sale_unit, unit)
+     WHERE base_unit IS NULL OR display_unit IS NULL OR sale_unit IS NULL
+   `).run()
+   if (updated.changes > 0) {
+     console.log(`✅ Migration: auto-set base_unit/display_unit/sale_unit for ${updated.changes} stock_items`)
+   }
+ } catch (e) { console.error('⚠️ stock_items auto-set base_unit migration error:', e) }
+
+ // Migration: add sale_unit to pos_menu_configs
+ try {
+   const cols = db.prepare(`PRAGMA table_info(pos_menu_configs)`).all() as any[]
+   if (!cols.some((c: any) => c.name === 'sale_unit')) {
+     db.exec(`ALTER TABLE pos_menu_configs ADD COLUMN sale_unit TEXT`)
+     console.log('✅ Migration: added sale_unit to pos_menu_configs')
+   }
+ } catch (e) { console.error('⚠️ pos_menu_configs sale_unit migration error:', e) }
+
+ // Migration: auto-set sale_unit for existing pos_menu_configs
+ try {
+   const updated = db.prepare(`
+     UPDATE pos_menu_configs
+     SET sale_unit = COALESCE(sale_unit, (SELECT base_unit FROM stock_items si WHERE si.id = pos_menu_configs.product_id AND si.tenant_id = pos_menu_configs.tenant_id), 'pcs')
+     WHERE sale_unit IS NULL
+   `).run()
+   if (updated.changes > 0) {
+     console.log(`✅ Migration: auto-set sale_unit for ${updated.changes} pos_menu_configs`)
+   }
+ } catch (e) { console.error('⚠️ pos_menu_configs auto-set sale_unit migration error:', e) }
 
 console.log('✅ SQLite database initialized at:', dbPath)
 

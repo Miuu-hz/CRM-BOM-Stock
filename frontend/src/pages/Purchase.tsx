@@ -29,6 +29,7 @@ import { stockService } from '../services/stock'
 import { printDocument } from '../utils/purchasePrint'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
+import { useUnits } from '../hooks/useUnits'
 
 // Types
 interface Supplier {
@@ -192,6 +193,7 @@ interface OrderItem {
   material_id: string
   description: string
   quantity: number
+  unit: string
   unit_price: number
   total_price: number
   received_qty?: number
@@ -392,8 +394,8 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
   )
 }
 
-const POSearchInput = ({ orders, value, onChange, disabled = false }: {
-  orders: PurchaseOrder[]; value: string; onChange: (id: string) => void; disabled?: boolean
+const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage }: {
+  orders: PurchaseOrder[]; value: string; onChange: (id: string) => void; disabled?: boolean; emptyMessage?: string
 }) => {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -425,7 +427,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false }: {
       {open && (
         <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">ไม่พบใบสั่งซื้อที่รอรับสินค้า</p>
+            <p className="px-3 py-3 text-xs text-gray-500 text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
           ) : (
             <>
               <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} รายการ</div>
@@ -434,7 +436,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false }: {
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === o.id ? 'bg-cyber-primary/10' : ''}`}>
                   <span className="text-xs font-mono text-cyber-primary w-28 shrink-0">{o.po_number}</span>
                   <span className="text-sm text-white flex-1 truncate">{o.supplier_name}</span>
-                  <span className="text-xs text-gray-500 shrink-0">{o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออับ'}</span>
+                  <span className="text-xs text-gray-500 shrink-0">{o.status === 'RECEIVED' ? 'รับครบ' : o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออนุมัติ/รับ'}</span>
                 </button>
               ))}
             </>
@@ -563,7 +565,14 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === r.id ? 'bg-cyber-primary/10' : ''}`}>
                   <span className="text-xs font-mono text-cyber-primary w-28 shrink-0">{r.pr_number}</span>
                   <span className="text-sm text-white flex-1 truncate">{r.requester_name}</span>
-                  <span className="text-xs text-gray-500 shrink-0">{r.item_count ?? 0} รายการ</span>
+                  <span className={`text-xs shrink-0 px-1.5 py-0.5 rounded-full ${
+                    r.status === 'APPROVED' ? 'text-green-400 bg-green-500/10' :
+                    r.status === 'PENDING' ? 'text-blue-400 bg-blue-500/10' :
+                    'text-gray-500 bg-gray-500/10'
+                  }`}>{
+                    r.status === 'APPROVED' ? 'อนุมัติแล้ว' :
+                    r.status === 'PENDING' ? 'รออนุมัติ' : 'ร่าง'
+                  }</span>
                 </button>
               ))}
             </>
@@ -666,14 +675,6 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
   )
 }
 
-const STOCK_UNITS = [
-  { value: 'pcs', label: 'ชิ้น' }, { value: 'kg', label: 'กิโลกรัม' }, { value: 'g', label: 'กรัม' },
-  { value: 'm', label: 'เมตร' }, { value: 'cm', label: 'เซนติเมตร' }, { value: 'yard', label: 'หลา' },
-  { value: 'roll', label: 'ม้วน' }, { value: 'box', label: 'กล่อง' }, { value: 'pack', label: 'แพ็ค' },
-  { value: 'set', label: 'ชุด' }, { value: 'ltr', label: 'ลิตร' }, { value: 'bottle', label: 'ขวด' },
-  { value: 'sheet', label: 'แผ่น' }, { value: 'pair', label: 'คู่' },
-]
-
 const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   onClose: () => void
   onCreated: (item: { id: string; code: string; name: string; unit: string }) => void
@@ -693,6 +694,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
     quantity: 0,
   })
   const [saving, setSaving] = useState(false)
+  const { units: availableUnits } = useUnits()
   const [err, setErr] = useState('')
 
   const save = async () => {
@@ -768,7 +770,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
             <div>
               <label className="block text-xs text-gray-400 mb-1">หน่วย</label>
               <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} className={inp}>
-                {STOCK_UNITS.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
+                {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
               </select>
             </div>
           </div>
@@ -834,6 +836,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 
 const Purchase = () => {
   const { user } = useAuth()
+  const { units: availableUnits } = useUnits()
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
@@ -885,7 +888,7 @@ const Purchase = () => {
     tax_rate: 7,
     notes: '',
     linked_pr_id: '',
-    items: [{ material_id: '', description: '', quantity: 1, unit_price: 0, total_price: 0, notes: '' }] as OrderItem[]
+    items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] as OrderItem[]
   })
 
   const [receiptForm, setReceiptForm] = useState({
@@ -905,7 +908,17 @@ const Purchase = () => {
     due_date: '',
     tax_rate: 7,
     notes: '',
-    dr_account_id: ''   // '' = default 1107 สต็อกวัตถุดิบ
+    dr_account_id: '',   // '' = default 1107 สต็อกวัตถุดิบ
+    // view-mode snapshot (populated from invoice data, not from orders state)
+    _subtotal: 0,
+    _tax_amount: 0,
+    _total_amount: 0,
+    _supplier_name: '',
+    _po_number: '',
+    _pi_number: '',
+    _paid_amount: 0,
+    _balance_amount: 0,
+    _payment_status: '',
   })
 
   const [paymentForm, setPaymentForm] = useState({
@@ -1139,6 +1152,18 @@ const Purchase = () => {
     } catch (error) { toast.error('ไม่สามารถลบใบขอซื้อได้') }
   }
 
+  const handleSubmitRequestDirect = async (id: string, toStatus: 'PENDING' | 'APPROVED') => {
+    try {
+      const { data } = await api.put(`/purchase/requests/${id}/status`, { status: toStatus })
+      if (data.success) {
+        toast.success(toStatus === 'PENDING' ? 'ส่งอนุมัติสำเร็จ' : 'อนุมัติสำเร็จ')
+        fetchRequests()
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'เกิดข้อผิดพลาด')
+    }
+  }
+
   // Fixed: replaced prompt() with modal
   const handleConvertRequestToOrder = (requestId: string) => {
     setConvertPRId(requestId)
@@ -1176,6 +1201,7 @@ const Purchase = () => {
         material_id: item.material_id || '',
         description: item.description || '',
         quantity: item.quantity || 1,
+        unit: item.unit || '',
         unit_price: item.estimated_unit_price || 0,
         total_price: (item.quantity || 1) * (item.estimated_unit_price || 0),
         notes: item.notes || '',
@@ -1198,6 +1224,7 @@ const Purchase = () => {
         materialId: item.material_id,
         description: item.description,
         quantity: item.quantity,
+        unit: item.unit,
         unitPrice: item.unit_price,
         notes: item.notes,
       }))
@@ -1248,6 +1275,19 @@ const Purchase = () => {
   }
 
   const handleCreateReceipt = async () => {
+    if (!receiptForm.purchase_order_id) {
+      toast.error('กรุณาเลือกใบสั่งซื้อ (PO)')
+      return
+    }
+    if (!receiptForm.items.length) {
+      toast.error('กรุณาเพิ่มรายการสินค้าที่ต้องรับ')
+      return
+    }
+    const invalidItem = receiptForm.items.find(i => !i.purchase_order_item_id)
+    if (invalidItem) {
+      toast.error('พบรายการที่ไม่มี PO Item ID — กรุณาโหลดรายการใหม่หรือตรวจสอบข้อมูล')
+      return
+    }
     setFormLoading(true)
     try {
       const payload = {
@@ -1273,9 +1313,16 @@ const Purchase = () => {
         toast.success('สร้างใบรับสินค้าสำเร็จ')
         closeModal()
         fetchReceipts()
-      } else { toast.error(data.message || 'ไม่สามารถสร้างใบรับสินค้าได้') }
-    } catch (error) { toast.error('เกิดข้อผิดพลาด') }
-    finally { setFormLoading(false) }
+      } else {
+        toast.error(data.message || 'ไม่สามารถสร้างใบรับสินค้าได้')
+      }
+    } catch (error: any) {
+      console.error('Create GR error:', error)
+      const msg = error.response?.data?.message || error.message || 'เกิดข้อผิดพลาด'
+      toast.error(msg)
+    } finally {
+      setFormLoading(false)
+    }
   }
 
   const handleConfirmReceipt = async (id: string) => {
@@ -1428,9 +1475,18 @@ const Purchase = () => {
           supplier_invoice_number: data.supplier_invoice_number || '',
           invoice_date: data.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
           due_date: data.due_date?.split('T')[0] || '',
-          tax_rate: data.tax_rate || 7,
+          tax_rate: data.tax_rate ?? 7,
           notes: data.notes || '',
-          dr_account_id: ''
+          dr_account_id: '',
+          _subtotal: data.subtotal || 0,
+          _tax_amount: data.tax_amount || 0,
+          _total_amount: data.total_amount || 0,
+          _supplier_name: data.supplier_name || '',
+          _po_number: data.po_number || '',
+          _pi_number: data.pi_number || '',
+          _paid_amount: data.paid_amount || 0,
+          _balance_amount: data.balance_amount || 0,
+          _payment_status: data.payment_status || '',
         })
       } else if (type === 'payment') {
         setPaymentForm({
@@ -1456,9 +1512,9 @@ const Purchase = () => {
       }
     } else {
       setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
-      setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit_price: 0, total_price: 0, notes: '' }] })
+      setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '' })
+      setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -1544,7 +1600,7 @@ const Purchase = () => {
   }
   const removeRequestItem = (index: number) => setRequestForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))
 
-  const addOrderItem = () => setOrderForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', description: '', quantity: 1, unit_price: 0, total_price: 0, notes: '' }] }))
+  const addOrderItem = () => setOrderForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] }))
   const updateOrderItem = (index: number, field: keyof OrderItem, value: any) => {
     setOrderForm(prev => {
       const items = [...prev.items]
@@ -1969,22 +2025,30 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  {req.status === 'DRAFT' && (
+                  {req.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
                       className="flex-1 py-1.5 text-xs text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 transition-colors">
                       แก้ไข
+                    </button>
+                    <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
+                      className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-blue-500/20 font-medium transition-colors">
+                      ส่งอนุมัติ
+                    </button>
+                    <button onClick={() => handleDeleteRequest(req.id)}
+                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </>)}
+                  {req.status === 'PENDING' && (
+                    <button onClick={() => handleSubmitRequestDirect(req.id, 'APPROVED')}
+                      className="flex-1 py-1.5 text-xs text-green-400 bg-green-500/10 rounded-lg hover:bg-green-500/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      <Check className="w-3 h-3" /> อนุมัติ
                     </button>
                   )}
                   {req.status === 'APPROVED' && (
                     <button onClick={() => handleConvertRequestToOrder(req.id)}
                       className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
                       แปลง PO <ArrowRight className="w-3 h-3" />
-                    </button>
-                  )}
-                  {req.status === 'DRAFT' && (
-                    <button onClick={() => handleDeleteRequest(req.id)}
-                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors">
-                      <Trash2 className="w-3 h-3" />
                     </button>
                   )}
                 </div>
@@ -2121,6 +2185,22 @@ const Purchase = () => {
                     }}
                       className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
                       รับสินค้า <Package className="w-3 h-3" />
+                    </button>
+                  )}
+                  {/* RECEIVED → สร้างใบแจ้งหนี้ */}
+                  {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
+                    <button onClick={() => {
+                      setInvoiceForm(p => ({
+                        ...p,
+                        purchase_order_id: order.id,
+                        goods_receipt_ids: [],
+                        tax_rate: order.tax_rate ?? 7,
+                        due_date: order.expected_date?.split('T')[0] || '',
+                      }))
+                      openModal('invoice', 'create')
+                    }}
+                      className="flex-1 py-1.5 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg hover:bg-yellow-500/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      วางบิล
                     </button>
                   )}
                 </div>
@@ -2698,7 +2778,7 @@ const Purchase = () => {
             <FileText className="w-3.5 h-3.5" /> อ้างอิงใบขอซื้อ (ไม่บังคับ — เลือกเพื่อโหลดรายการอัตโนมัติ)
           </label>
           <PRSearchInput
-            requests={requests.filter(r => r.status === 'APPROVED' || r.status === 'PENDING')}
+            requests={requests.filter(r => r.status !== 'REJECTED' && r.status !== 'CANCELLED')}
             value={orderForm.linked_pr_id}
             onChange={(id) => handleSelectPR(id)}
           />
@@ -2767,6 +2847,7 @@ const Purchase = () => {
                   onChange={(id, mat) => updateOrderItemFields(index, {
                     material_id: id,
                     description: mat ? mat.name : '',
+                    unit: mat ? mat.unit : item.unit,
                     unit_price: mat?.unitCost && item.unit_price === 0 ? mat.unitCost : item.unit_price,
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
@@ -2792,7 +2873,19 @@ const Purchase = () => {
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white text-center focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
                 </div>
-                <div className="col-span-4">
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
+                  <select
+                    value={item.unit || ''}
+                    onChange={e => updateOrderItem(index, 'unit', e.target.value)}
+                    disabled={modalMode === 'view'}
+                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                  >
+                    <option value="">เลือกหน่วย</option>
+                    {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
+                  </select>
+                </div>
+                <div className="col-span-3">
                   <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย (บาท)</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">฿</span>
@@ -2886,12 +2979,26 @@ const Purchase = () => {
           </span>
           <div className="flex gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
-            <button onClick={handleCreateReceipt}
-              disabled={formLoading || !receiptForm.purchase_order_id || receiptForm.items.length === 0}
-              className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
-              {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              <Check className="w-4 h-4" /> ยืนยันรับสินค้า
-            </button>
+            {modalMode === 'view' && modalData?.status === 'DRAFT' ? (
+              <button onClick={() => handleConfirmReceipt(modalData.id)}
+                disabled={formLoading}
+                className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+                {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                <Check className="w-4 h-4" /> ยืนยันรับสินค้า
+              </button>
+            ) : modalMode === 'create' ? (
+              <button onClick={handleCreateReceipt}
+                disabled={formLoading || !receiptForm.purchase_order_id || receiptForm.items.length === 0}
+                className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+                {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                <Check className="w-4 h-4" /> ยืนยันรับสินค้า
+              </button>
+            ) : (
+              <button onClick={closeModal}
+                className="px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 flex items-center gap-2 text-sm">
+                ปิด
+              </button>
+            )}
           </div>
         </div>
       }
@@ -2900,9 +3007,10 @@ const Purchase = () => {
       <div className="space-y-3">
         <Field label="เลือกใบสั่งซื้อ (PO)" required>
           <POSearchInput
-            orders={orders.filter(o => !['CANCELLED', 'RECEIVED'].includes(o.status))}
+            orders={orders.filter(o => ['SUBMITTED', 'APPROVED', 'PARTIAL'].includes(o.status))}
             value={receiptForm.purchase_order_id}
             onChange={id => { setReceiptForm(p => ({ ...p, purchase_order_id: id, items: [] })); if (id) loadPendingItems(id) }}
+            emptyMessage="ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ: Submitted/Approved/รับบางส่วน)"
           />
         </Field>
 
@@ -3076,14 +3184,19 @@ const Purchase = () => {
 
   // ─── 4. Invoice Modal ────────────────────────────────────────────────────────
   const InvoiceModal = () => {
+    const isView         = modalMode === 'view'
     const selectedPO     = orders.find(o => o.id === invoiceForm.purchase_order_id)
     const selectedGRs    = invoiceForm.goods_receipt_ids.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
     const linkedPR       = selectedPO?.linked_pr_id ? requests.find(r => r.id === selectedPO.linked_pr_id) : null
     const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED')
     const supplierDetail = selectedPO ? suppliers.find(s => s.id === selectedPO.supplier_id) : null
-    const subtotal    = selectedPO?.subtotal || 0
-    const taxAmt      = subtotal * (invoiceForm.tax_rate / 100)
-    const total       = subtotal + taxAmt
+    // In view mode use the invoice's own stored amounts; in create mode derive from selected PO
+    const subtotal = isView ? invoiceForm._subtotal : (selectedPO?.subtotal ?? 0)
+    const taxAmt   = isView ? invoiceForm._tax_amount : subtotal * (invoiceForm.tax_rate / 100)
+    const total    = isView ? invoiceForm._total_amount : subtotal + taxAmt
+    // supplier/po labels for view mode when PO may not be in orders state
+    const displaySupplier = isView ? (selectedPO?.supplier_name || invoiceForm._supplier_name) : selectedPO?.supplier_name
+    const displayPO       = isView ? (selectedPO?.po_number || invoiceForm._po_number) : selectedPO?.po_number
     return (
     <ModalShell
       title={modalMode === 'view' ? 'รายละเอียดใบแจ้งหนี้' : 'สร้างใบแจ้งหนี้ผู้ขาย'}
@@ -3102,7 +3215,7 @@ const Purchase = () => {
       }
     >
       {/* ── Procurement Chain (Option A: PO as master) ── */}
-      {selectedPO && (
+      {(selectedPO || (isView && invoiceForm._po_number)) && (
         <div className="flex items-center gap-1.5 p-3 bg-cyber-dark rounded-xl overflow-x-auto">
           {linkedPR && (<>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -3112,7 +3225,7 @@ const Purchase = () => {
             <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
           </>)}
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs font-mono text-cyber-primary bg-cyber-primary/15 px-2 py-1 rounded-lg font-semibold">{selectedPO.po_number}</span>
+            <span className="text-xs font-mono text-cyber-primary bg-cyber-primary/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
             <span className="text-gray-600 text-xs">PO ★</span>
           </div>
           {selectedGRs.length > 0 && (<>
@@ -3125,29 +3238,41 @@ const Purchase = () => {
             </div>
           </>)}
           <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
-          <span className="text-xs font-mono text-yellow-400 bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">INV-????</span>
+          {isView
+            ? <span className="text-xs font-mono text-yellow-400 bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{invoiceForm._pi_number}</span>
+            : <span className="text-xs font-mono text-yellow-400 bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">INV-????</span>
+          }
         </div>
       )}
 
       {/* ── Section 1: PO + GR reference ── */}
       <div className="space-y-3">
+        {isView ? (
+          <div className="p-3 bg-cyber-dark rounded-xl text-sm">
+            <p className="text-xs text-gray-500 mb-0.5">ใบสั่งซื้อ (PO)</p>
+            <p className="text-cyber-primary font-mono font-semibold">{displayPO || '-'}</p>
+          </div>
+        ) : (
         <Field label="ใบสั่งซื้อ (PO)" required>
           <POSearchInput
             orders={orders.filter(o => !['CANCELLED', 'DRAFT'].includes(o.status))}
             value={invoiceForm.purchase_order_id}
+            emptyMessage="ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ Submitted/Approved/Received)"
             onChange={id => {
               const po = orders.find(o => o.id === id)
               setInvoiceForm(p => ({
                 ...p,
                 purchase_order_id: id,
                 goods_receipt_ids: [],
-                tax_rate: po?.tax_rate || 7,
+                tax_rate: po?.tax_rate ?? 7,
                 due_date: po?.expected_date?.split('T')[0] || '',
               }))
             }}
           />
         </Field>
+        )}
 
+        {!isView && (
         <Field label="อ้างอิงใบรับสินค้า (GR) — เลือกได้หลายใบ">
           <GRSearchInput
             receipts={poGRs}
@@ -3156,21 +3281,27 @@ const Purchase = () => {
             disabled={!invoiceForm.purchase_order_id}
           />
         </Field>
+        )}
 
         {/* PO + Supplier summary */}
-        {selectedPO && (
+        {(selectedPO || (isView && displaySupplier)) && (
           <div className="grid grid-cols-2 gap-3 p-3 bg-cyber-primary/5 border border-cyber-primary/20 rounded-xl text-sm">
             <div>
               <p className="text-xs text-gray-500 mb-0.5">ผู้ขาย</p>
-              <p className="text-white font-medium truncate">{selectedPO.supplier_name}</p>
+              <p className="text-white font-medium truncate">{displaySupplier}</p>
               {supplierDetail?.tax_id && (
                 <p className="text-xs text-gray-400 font-mono mt-0.5">เลขผู้เสียภาษี: {supplierDetail.tax_id}</p>
               )}
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">มูลค่า PO</p>
-              <p className="text-cyber-primary font-semibold">{formatCurrency(selectedPO.total_amount)}</p>
-              <p className="text-xs text-cyber-green mt-0.5">GR ยืนยันแล้ว {poGRs.length} ใบ {selectedGRs.length > 0 ? `(เลือก ${selectedGRs.length} ใบ)` : ''}</p>
+              <p className="text-xs text-gray-500 mb-0.5">{isView ? 'มูลค่าใบแจ้งหนี้' : 'มูลค่า PO'}</p>
+              <p className="text-cyber-primary font-semibold">{formatCurrency(isView ? invoiceForm._total_amount : (selectedPO?.total_amount ?? 0))}</p>
+              {!isView && <p className="text-xs text-cyber-green mt-0.5">GR ยืนยันแล้ว {poGRs.length} ใบ {selectedGRs.length > 0 ? `(เลือก ${selectedGRs.length} ใบ)` : ''}</p>}
+              {isView && invoiceForm._payment_status && (
+                <p className={`text-xs mt-0.5 ${invoiceForm._payment_status === 'PAID' ? 'text-cyber-green' : invoiceForm._payment_status === 'PARTIAL' ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {invoiceForm._payment_status === 'PAID' ? 'ชำระครบแล้ว' : invoiceForm._payment_status === 'PARTIAL' ? `ชำระแล้ว ${formatCurrency(invoiceForm._paid_amount)} / ค้าง ${formatCurrency(invoiceForm._balance_amount)}` : `ยังไม่ชำระ (ค้าง ${formatCurrency(invoiceForm._balance_amount)})`}
+                </p>
+              )}
             </div>
           </div>
         )}

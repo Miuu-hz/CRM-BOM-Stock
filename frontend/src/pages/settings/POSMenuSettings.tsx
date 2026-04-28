@@ -51,6 +51,7 @@ interface POSMenu {
   quick_code?: string
   preparation_time: number
   description?: string
+  sale_unit?: string
 }
 
 interface BOM {
@@ -519,13 +520,16 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
   const [boms, setBoms] = useState<BOM[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [stockUnits, setStockUnits] = useState<{ base_unit?: string; display_unit?: string; unit?: string } | null>(null)
   
-  // Fetch BOMs when product is selected
+  // Fetch BOMs + stock units when product is selected
   useEffect(() => {
     if (selectedProduct?.id) {
       fetchBOMs(selectedProduct.id)
+      fetchStockUnits(selectedProduct.id)
     } else {
       setBoms([])
+      setStockUnits(null)
     }
   }, [selectedProduct?.id])
   
@@ -543,6 +547,22 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       console.error('Failed to fetch BOMs:', error)
     }
   }
+
+  const fetchStockUnits = async (productId: string) => {
+    try {
+      const res = await api.get(`/stock/${productId}`)
+      if (res.data?.success) {
+        const item = res.data.data
+        setStockUnits({
+          base_unit: item.base_unit || item.unit,
+          display_unit: item.display_unit || item.unit,
+          unit: item.unit,
+        })
+      }
+    } catch (error) {
+      console.error('Failed to fetch stock units:', error)
+    }
+  }
   
   const [formData, setFormData] = useState({
     category_id: '',
@@ -554,6 +574,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
     quick_code: '',
     preparation_time: 10,
     description: '',
+    sale_unit: '',
   })
 
   useEffect(() => {
@@ -577,6 +598,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         quick_code: menu.quick_code || '',
         preparation_time: menu.preparation_time || 10,
         description: menu.description || '',
+        sale_unit: menu.sale_unit || '',
       })
     } else {
       setStep(1)
@@ -591,6 +613,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         quick_code: '',
         preparation_time: 10,
         description: '',
+        sale_unit: '',
       })
       fetchProducts()
     }
@@ -849,6 +872,38 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    หน่วยขาย <span className="text-gray-500">(Sale Unit)</span>
+                  </label>
+                  <select
+                    value={formData.sale_unit}
+                    onChange={(e) => setFormData({ ...formData, sale_unit: e.target.value })}
+                    className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                  >
+                    <option value="">
+                      {stockUnits
+                        ? `${stockUnits.base_unit || stockUnits.unit} (default)`
+                        : 'เลือกหน่วย...'}
+                    </option>
+                    {stockUnits?.display_unit && stockUnits.display_unit !== stockUnits.base_unit && (
+                      <option value={stockUnits.display_unit}>
+                        {stockUnits.display_unit} (Display)
+                      </option>
+                    )}
+                    {stockUnits?.base_unit && (
+                      <option value={stockUnits.base_unit}>
+                        {stockUnits.base_unit} (Base)
+                      </option>
+                    )}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {stockUnits
+                      ? `Base: ${stockUnits.base_unit || stockUnits.unit} | Display: ${stockUnits.display_unit || stockUnits.unit}`
+                      : 'เลือกสินค้าก่อนเพื่อดูหน่วยที่มี'}
+                  </p>
                 </div>
               </div>
 

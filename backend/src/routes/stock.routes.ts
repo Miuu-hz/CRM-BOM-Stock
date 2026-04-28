@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
+import { convertQuantityBidirectional } from '../services/unitConversion.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -33,6 +34,27 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+/** Enrich stock item with display quantity computed from base_unit ↔ display_unit */
+function enrichStockItem(item: any, tenantId: string) {
+  if (!item) return item
+  const baseUnit = item.base_unit || item.unit
+  const displayUnit = item.display_unit || item.unit
+  item.base_unit = baseUnit
+  item.display_unit = displayUnit
+
+  if (displayUnit && baseUnit && displayUnit !== baseUnit) {
+    const converted = convertQuantityBidirectional(item.quantity, baseUnit, displayUnit, tenantId, item.id)
+    if (converted) {
+      item.display_quantity = Number(converted.converted.toFixed(4))
+    } else {
+      item.display_quantity = item.quantity
+    }
+  } else {
+    item.display_quantity = item.quantity
+  }
+  return item
 }
 
 // Get stock statistics
@@ -98,6 +120,7 @@ router.get('/', async (req: Request, res: Response) => {
         ORDER BY created_at DESC
         LIMIT 5
       `).all(item.id)
+      enrichStockItem(item, tenantId)
     }
 
     res.json({
@@ -137,6 +160,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       ORDER BY created_at DESC
     `).all(stock.id)
 
+    enrichStockItem(stock, tenantId)
+
     res.json({
       success: true,
       data: stock,
@@ -151,25 +176,28 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { sku, gs1Barcode, name, category, unit, quantity = 0, minStock = 0, maxStock = 100, location, isPosEnabled = false, unitCost, unitPrice } = req.body
+    const { sku, gs1Barcode, name, category, unit, baseUnit, saleUnit, displayUnit, quantity = 0, minStock = 0, maxStock = 100, location, isPosEnabled = false, unitCost, unitPrice } = req.body
 
-    if (!sku || !name) {
-      return res.status(400).json({ success: false, message: 'SKU and name are required' })
+    if (!sku || !name || !unit) {
+      return res.status(400).json({ success: false, message: 'SKU, name and unit are required' })
     }
 
     const id = generateId()
     const now = new Date().toISOString()
+    const effectiveBaseUnit = baseUnit || unit
+    const effectiveDisplayUnit = displayUnit || unit
+    const effectiveSaleUnit = saleUnit || effectiveBaseUnit
 
     db.prepare(`
-      INSERT INTO stock_items (id, tenant_id, sku, gs1_barcode, name, category, quantity, unit, unit_cost, unit_price, min_stock, max_stock, location, status, is_pos_enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-    `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, unit, unitCost ? Number(unitCost) : 0, unitPrice ? Number(unitPrice) : 0, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
+      INSERT INTO stock_items (id, tenant_id, sku, gs1_barcode, name, category, quantity, unit, base_unit, sale_unit, display_unit, unit_cost, unit_price, min_stock, max_stock, location, status, is_pos_enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+    `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, unit, effectiveBaseUnit, effectiveSaleUnit, effectiveDisplayUnit, unitCost ? Number(unitCost) : 0, unitPrice ? Number(unitPrice) : 0, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
 
     const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id)
     
     res.status(201).json({
       success: true,
-      data: item,
+      data: enrichStockItem(item, tenantId),
     })
   } catch (error) {
     console.error('Create stock item error:', error)
@@ -181,7 +209,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { name, gs1Barcode, category, unit, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
+    const { name, gs1Barcode, category, unit, baseUnit, saleUnit, displayUnit, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
 
     const existing = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     if (!existing) {
@@ -198,6 +226,9 @@ router.put('/:id', async (req: Request, res: Response) => {
         gs1_barcode = COALESCE(?, gs1_barcode),
         category = COALESCE(?, category),
         unit = COALESCE(?, unit),
+        base_unit = COALESCE(?, base_unit),
+        sale_unit = COALESCE(?, sale_unit),
+        display_unit = COALESCE(?, display_unit),
         unit_cost = COALESCE(?, unit_cost),
         unit_price = COALESCE(?, unit_price),
         min_stock = COALESCE(?, min_stock),
@@ -206,7 +237,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         is_pos_enabled = COALESCE(?, is_pos_enabled),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, gs1Barcode, category, unit || undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
+    `).run(name, gs1Barcode, category, unit || undefined, baseUnit || undefined, saleUnit || undefined, displayUnit || undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
 
     // Record price change in movements
     if (unitCost !== undefined && currentItem && Number(unitCost) !== Number(currentItem.unit_cost)) {
@@ -250,11 +281,9 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(req.params.id)
-
     res.json({
       success: true,
-      data: item,
+      data: enrichStockItem(stockItem, tenantId),
     })
   } catch (error) {
     console.error('Update stock item error:', error)
@@ -285,10 +314,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.post('/movement', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { stockItemId, type, quantity, reference, notes, unitCost } = req.body
+    const { stockItemId, type, quantity, unit, reference, notes, unitCost } = req.body
     const createdBy = req.user!.email
 
-    if (!stockItemId || !type || !quantity) {
+    if (!stockItemId || !type || quantity === undefined || quantity === null) {
       return res.status(400).json({ success: false, message: 'Missing required fields' })
     }
 
@@ -297,16 +326,32 @@ router.post('/movement', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
 
+    const baseUnit = item.base_unit || item.unit
+    const movementUnit = unit || item.unit
+    let convertedQuantity = Number(quantity)
+
+    // Convert movement unit to base unit if different
+    if (movementUnit !== baseUnit) {
+      const conversion = convertQuantityBidirectional(Number(quantity), movementUnit, baseUnit, tenantId, stockItemId)
+      if (!conversion) {
+        return res.status(400).json({
+          success: false,
+          message: `ไม่พบการแปลงหน่วยจาก "${movementUnit}" เป็น "${baseUnit}" กรุณาตั้งค่าการแปลงหน่วยใน Settings > การแปลงหน่วย`,
+        })
+      }
+      convertedQuantity = conversion.converted
+    }
+
     let newQuantity = item.quantity
     if (type === 'IN') {
-      newQuantity += quantity
+      newQuantity += convertedQuantity
     } else if (type === 'OUT') {
-      if (item.quantity < quantity) {
+      if (item.quantity < convertedQuantity) {
         return res.status(400).json({ success: false, message: 'Insufficient stock' })
       }
-      newQuantity -= quantity
+      newQuantity -= convertedQuantity
     } else if (type === 'ADJUST') {
-      newQuantity = quantity
+      newQuantity = convertedQuantity
     }
 
     const now = new Date().toISOString()
@@ -321,15 +366,15 @@ router.post('/movement', async (req: Request, res: Response) => {
 
     const movementId = generateId()
     db.prepare(`
-      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(movementId, tenantId, stockItemId, type, quantity, reference || '', notes || '', now, createdBy)
+      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
 
     const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
     
     res.json({
       success: true,
-      data: updatedItem,
+      data: enrichStockItem(updatedItem, tenantId),
     })
   } catch (error) {
     console.error('Record movement error:', error)

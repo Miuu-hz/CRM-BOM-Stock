@@ -40,6 +40,7 @@ import { printSalesDoc } from '../utils/salesPrint'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
+import { useUnits } from '../hooks/useUnits'
 
 // Types
 interface SalesSummary {
@@ -1920,10 +1921,12 @@ function CustomerSearch({ value, onChange }: {
 }
 
 // ─── Shared: Product Line Items Editor ───────────────────────────────────────
+
 interface LineItem {
   productId?: string
   productName: string
   quantity: number
+  unit: string
   unitPrice: number
   discountPercent: number
 }
@@ -1993,7 +1996,8 @@ function LineItemsEditor({
   onChange: (items: LineItem[]) => void
   products: Product[]
 }) {
-  const add = () => onChange([...items, { productName: '', quantity: 1, unitPrice: 0, discountPercent: 0 }])
+  const { units: availableUnits } = useUnits()
+  const add = () => onChange([...items, { productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
   const update = (i: number, patch: Partial<LineItem>) => {
     const next = [...items]
@@ -2018,8 +2022,8 @@ function LineItemsEditor({
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
-                onSelect={p => update(i, { productId: p.id, productName: p.name, unitPrice: p.sell_price || 0 })}
-                onClear={() => update(i, { productId: undefined, productName: '' })}
+                onSelect={p => update(i, { productId: p.id, productName: p.name, unit: p.unit || '', unitPrice: p.sell_price || 0 })}
+onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
             <div className="col-span-2">
@@ -2027,6 +2031,16 @@ function LineItemsEditor({
               <input type="number" value={item.quantity} min={0.01} step={0.01}
                 onChange={e => update(i, { quantity: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-gray-500 mb-1 block">หน่วย</label>
+              <select
+                value={item.unit || ''}
+                onChange={e => update(i, { unit: e.target.value })}
+                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary">
+                <option value="">เลือกหน่วย</option>
+                {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
+              </select>
             </div>
             <div className="col-span-2">
               <label className="text-xs text-gray-500 mb-1 block">ราคา/หน่วย</label>
@@ -2117,7 +2131,7 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
   const [taxRate, setTaxRate] = useState(0)
   const [discountAmount, setDiscountAmount] = useState(0)
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unitPrice: 0, discountPercent: 0 }])
+  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
   const [products, setProducts] = useState<Product[]>([])
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
@@ -2141,6 +2155,7 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
           productId: it.productId,
           productName: it.productName,
           quantity: it.quantity,
+          unit: it.unit,
           unitPrice: it.unitPrice,
           discountPercent: it.discountPercent,
         })),
@@ -2370,7 +2385,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
   const [taxRate, setTaxRate] = useState(0)
   const [discountAmount, setDiscountAmount] = useState(0)
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unitPrice: 0, discountPercent: 0 }])
+  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
   const [products, setProducts] = useState<Product[]>([])
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
@@ -2393,6 +2408,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
                   productId: pid,
                   productName: pname,
                   quantity: it.quantity,
+                  unit: it.unit || '',
                   unitPrice: it.unit_price,
                   discountPercent: it.discount_percent || 0,
                 }
@@ -2426,6 +2442,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
           productId: it.productId,
           productName: it.productName,
           quantity: it.quantity,
+          unit: it.unit,
           unitPrice: it.unitPrice,
           discountPercent: it.discountPercent,
         })),

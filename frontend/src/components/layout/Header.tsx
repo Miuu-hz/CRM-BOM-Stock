@@ -14,6 +14,12 @@ import {
   Loader2,
   X,
   Store,
+  Truck,
+  ClipboardList,
+  Wrench,
+  FileCheck,
+  FileText,
+  Receipt,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import searchService from '../../services/search'
@@ -30,6 +36,7 @@ function Header({ onMenuClick }: HeaderProps) {
   const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -41,9 +48,13 @@ function Header({ onMenuClick }: HeaderProps) {
         try {
           const results = await searchService.search(searchQuery)
           setSearchResults(results)
+          setSearchError(null)
           setShowResults(true)
         } catch (error) {
           console.error('Search error:', error)
+          setSearchError('เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่อีกครั้ง')
+          setSearchResults(null)
+          setShowResults(true)
         } finally {
           setIsSearching(false)
         }
@@ -111,6 +122,24 @@ function Header({ onMenuClick }: HeaderProps) {
         case 'stock':
           navigate('/stock', { state: { highlightStock: item.id } })
           break
+        case 'supplier':
+          navigate('/crm', { state: { tab: 'suppliers', highlightSupplier: item.id } })
+          break
+        case 'purchase_order':
+          navigate('/purchase', { state: { highlightPO: item.id } })
+          break
+        case 'work_order':
+          navigate('/work-orders', { state: { highlightWO: item.id } })
+          break
+        case 'sales_order':
+          navigate('/sales', { state: { highlightSO: item.id } })
+          break
+        case 'quotation':
+          navigate('/sales', { state: { highlightQuotation: item.id } })
+          break
+        case 'invoice':
+          navigate('/sales', { state: { highlightInvoice: item.id } })
+          break
       }
     },
     [navigate]
@@ -119,6 +148,7 @@ function Header({ onMenuClick }: HeaderProps) {
   const clearSearch = () => {
     setSearchQuery('')
     setSearchResults(null)
+    setSearchError(null)
     setShowResults(false)
     inputRef.current?.focus()
   }
@@ -130,7 +160,13 @@ function Header({ onMenuClick }: HeaderProps) {
       (searchResults.products || []).length > 0 ||
       (searchResults.materials || []).length > 0 ||
       (searchResults.boms || []).length > 0 ||
-      (searchResults.stock || []).length > 0)
+      (searchResults.stock || []).length > 0 ||
+      (searchResults.suppliers || []).length > 0 ||
+      (searchResults.purchase_orders || []).length > 0 ||
+      (searchResults.work_orders || []).length > 0 ||
+      (searchResults.sales_orders || []).length > 0 ||
+      (searchResults.quotations || []).length > 0 ||
+      (searchResults.invoices || []).length > 0)
 
   const totalResults = searchResults
     ? (searchResults.customers || []).length +
@@ -138,7 +174,13 @@ function Header({ onMenuClick }: HeaderProps) {
       (searchResults.products || []).length +
       (searchResults.materials || []).length +
       (searchResults.boms || []).length +
-      (searchResults.stock || []).length
+      (searchResults.stock || []).length +
+      (searchResults.suppliers || []).length +
+      (searchResults.purchase_orders || []).length +
+      (searchResults.work_orders || []).length +
+      (searchResults.sales_orders || []).length +
+      (searchResults.quotations || []).length +
+      (searchResults.invoices || []).length
     : 0
 
   return (
@@ -190,11 +232,17 @@ function Header({ onMenuClick }: HeaderProps) {
                   exit={{ opacity: 0, y: -10 }}
                   className="absolute top-full mt-2 left-0 right-0 w-[500px] max-h-[70vh] overflow-y-auto bg-cyber-card border border-cyber-border rounded-lg shadow-2xl"
                 >
-                  {!hasResults && !isSearching && searchQuery.length >= 2 && (
+                  {searchError && !isSearching && (
+                    <div className="p-6 text-center text-red-400">
+                      <p>{searchError}</p>
+                    </div>
+                  )}
+
+                  {!searchError && !hasResults && !isSearching && searchQuery.length >= 2 && (
                     <div className="p-6 text-center text-gray-400">
                       <Search className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p>No results found for "{searchQuery}"</p>
-                      <p className="text-sm mt-1">Try different keywords</p>
+                      <p>ไม่พบผลลัพธ์สำหรับ "{searchQuery}"</p>
+                      <p className="text-sm mt-1">ลองใช้คำค้นหาอื่น</p>
                     </div>
                   )}
 
@@ -267,6 +315,72 @@ function Header({ onMenuClick }: HeaderProps) {
                           items={searchResults.stock}
                           onItemClick={handleResultClick}
                           color="text-orange-400"
+                        />
+                      )}
+
+                      {/* Suppliers */}
+                      {(searchResults.suppliers || []).length > 0 && (
+                        <ResultSection
+                          title="Suppliers"
+                          icon={Truck}
+                          items={searchResults.suppliers}
+                          onItemClick={handleResultClick}
+                          color="text-pink-400"
+                        />
+                      )}
+
+                      {/* Purchase Orders */}
+                      {(searchResults.purchase_orders || []).length > 0 && (
+                        <ResultSection
+                          title="Purchase Orders"
+                          icon={ClipboardList}
+                          items={searchResults.purchase_orders}
+                          onItemClick={handleResultClick}
+                          color="text-amber-400"
+                        />
+                      )}
+
+                      {/* Work Orders */}
+                      {(searchResults.work_orders || []).length > 0 && (
+                        <ResultSection
+                          title="Work Orders"
+                          icon={Wrench}
+                          items={searchResults.work_orders}
+                          onItemClick={handleResultClick}
+                          color="text-indigo-400"
+                        />
+                      )}
+
+                      {/* Sales Orders */}
+                      {(searchResults.sales_orders || []).length > 0 && (
+                        <ResultSection
+                          title="Sales Orders"
+                          icon={FileCheck}
+                          items={searchResults.sales_orders}
+                          onItemClick={handleResultClick}
+                          color="text-emerald-400"
+                        />
+                      )}
+
+                      {/* Quotations */}
+                      {(searchResults.quotations || []).length > 0 && (
+                        <ResultSection
+                          title="Quotations"
+                          icon={FileText}
+                          items={searchResults.quotations}
+                          onItemClick={handleResultClick}
+                          color="text-violet-400"
+                        />
+                      )}
+
+                      {/* Invoices */}
+                      {(searchResults.invoices || []).length > 0 && (
+                        <ResultSection
+                          title="Invoices"
+                          icon={Receipt}
+                          items={searchResults.invoices}
+                          onItemClick={handleResultClick}
+                          color="text-rose-400"
                         />
                       )}
                     </div>

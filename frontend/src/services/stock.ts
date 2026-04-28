@@ -10,6 +10,10 @@ export interface StockItem {
   materialId?: string
   quantity: number
   unit: string
+  baseUnit?: string
+  saleUnit?: string
+  displayUnit?: string
+  displayQuantity?: number
   minStock: number
   maxStock: number
   location: string
@@ -42,6 +46,8 @@ export interface StockMovement {
   stockItemId: string
   type: 'IN' | 'OUT' | 'ADJUST' | 'PRICE_CHANGE'
   quantity: number
+  movementUnit?: string
+  movementQuantity?: number
   reference?: string
   notes?: string
   createdAt: string
@@ -66,6 +72,9 @@ export interface CreateStockInput {
   materialId?: string
   quantity?: number
   unit: string
+  baseUnit?: string
+  saleUnit?: string
+  displayUnit?: string
   minStock?: number
   maxStock?: number
   location?: string
@@ -79,6 +88,9 @@ export interface UpdateStockInput {
   gs1Barcode?: string
   category?: string
   unit?: string
+  baseUnit?: string
+  saleUnit?: string
+  displayUnit?: string
   minStock?: number
   maxStock?: number
   location?: string
@@ -91,6 +103,7 @@ export interface StockMovementInput {
   stockItemId: string
   type: 'IN' | 'OUT' | 'ADJUST'
   quantity: number
+  unit?: string
   notes?: string
   reference?: string
   unitCost?: number

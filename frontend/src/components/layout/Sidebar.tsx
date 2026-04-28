@@ -140,7 +140,9 @@ function Sidebar({ isOpen }: SidebarProps) {
           lowStock: Array.isArray(stock.data.data) ? stock.data.data.length : 0,
           pendingPO: Array.isArray(po.data.data) ? po.data.data.length : 0,
         })
-      } catch {}
+      } catch (err: any) {
+        console.error('Sidebar stats load error:', err)
+      }
     }
     load()
     const interval = setInterval(load, 60_000)

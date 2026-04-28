@@ -76,6 +76,66 @@ const STANDARD_CONVERSIONS: Record<string, number> = {
   'pcs->pair': 0.5,
 }
 
+// ===================================================================
+// Unit Name Mapping (Thai ↔ English)
+// ===================================================================
+const UNIT_NAME_MAP: Record<string, string> = {
+  // น้ำหนัก
+  'กิโลกรัม': 'kg', 'กรัม': 'g', 'มิลลิกรัม': 'mg',
+  'ปอนด์': 'lb', 'ออนซ์': 'oz',
+  // ความยาว
+  'นิ้ว': 'inch', 'เซนติเมตร': 'cm', 'มิลลิเมตร': 'mm',
+  'เมตร': 'm', 'กิโลเมตร': 'km', 'ฟุต': 'ft', 'หลา': 'yard',
+  // ปริมาตร
+  'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
+  // พื้นที่
+  'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
+  // หน่วยนับ
+  'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'แผ่น': 'sheet', 'ขวด': 'bottle',
+}
+
+/** Normalize unit name to English code */
+export function normalizeUnit(unit: string): string {
+  const u = unit.toLowerCase().trim()
+  return UNIT_NAME_MAP[u] || u
+}
+
+/** Get display name (Thai if available, else original) */
+export function getUnitDisplayName(unit: string): string {
+  const normalized = normalizeUnit(unit)
+  for (const [thai, eng] of Object.entries(UNIT_NAME_MAP)) {
+    if (eng === normalized) return thai
+  }
+  return unit
+}
+
+// ===================================================================
+// Unit Category Mapping
+// ===================================================================
+const UNIT_CATEGORIES: Record<string, string[]> = {
+  weight: ['kg', 'g', 'mg', 'lb', 'oz'],
+  length: ['inch', 'cm', 'mm', 'm', 'km', 'ft', 'yard'],
+  volume: ['l', 'ml', 'ltr', 'gallon', 'fl_oz'],
+  area: ['m2', 'cm2', 'sqm', 'sqcm'],
+  count: ['dozen', 'pcs', 'gross', 'pair', 'box', 'pack', 'set', 'roll', 'sheet', 'bottle'],
+}
+
+export function getUnitCategory(unit: string): string | null {
+  const u = normalizeUnit(unit)
+  for (const [category, units] of Object.entries(UNIT_CATEGORIES)) {
+    if (units.includes(u)) return category
+  }
+  return null
+}
+
+export function getCompatibleUnits(unit: string): string[] {
+  const category = getUnitCategory(unit)
+  if (!category) return [unit] // ไม่รู้จัก category ให้คืนแค่ตัวเอง
+  return UNIT_CATEGORIES[category]
+}
+
 function generateId(): string {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
@@ -89,17 +149,19 @@ export function getConversionFactor(
   tenantId: string,
   materialId?: string
 ): number | null {
-  if (fromUnit === toUnit) return 1
+  const normFrom = normalizeUnit(fromUnit)
+  const normTo = normalizeUnit(toUnit)
+  if (normFrom === normTo) return 1
 
-  const key = `${fromUnit.toLowerCase()}->${toUnit.toLowerCase()}`
+  const key = `${normFrom}->${normTo}`
 
-  // 1. ตรวจสอบ material-specific ก่อน
+  // 1. ตรวจสอบ material-specific ก่อน (ใช้ normalized unit)
   if (materialId) {
     const row = db.prepare(`
       SELECT conversion_factor FROM unit_conversions
       WHERE material_id = ? AND from_unit = ? AND to_unit = ?
       LIMIT 1
-    `).get(materialId, fromUnit, toUnit) as any
+    `).get(materialId, normFrom, normTo) as any
     if (row) return Number(row.conversion_factor)
   }
 
@@ -108,7 +170,7 @@ export function getConversionFactor(
     SELECT conversion_factor FROM unit_conversions
     WHERE tenant_id = ? AND material_id IS NULL AND from_unit = ? AND to_unit = ?
     LIMIT 1
-  `).get(tenantId, fromUnit, toUnit) as any
+  `).get(tenantId, normFrom, normTo) as any
   if (tenantRow) return Number(tenantRow.conversion_factor)
 
   // 3. มาตราสากล built-in
@@ -128,6 +190,28 @@ export function convertQuantity(
   const factor = getConversionFactor(fromUnit, toUnit, tenantId, materialId)
   if (factor === null) return null
   return { converted: quantity * factor, factor }
+}
+
+// แปลงแบบสองทิศทาง: ถ้าหา direct ไม่เจอ ให้ลอง reverse
+export function convertQuantityBidirectional(
+  quantity: number,
+  fromUnit: string,
+  toUnit: string,
+  tenantId: string,
+  materialId?: string
+): { converted: number; factor: number } | null {
+  // 1. ลอง direct
+  const direct = convertQuantity(quantity, fromUnit, toUnit, tenantId, materialId)
+  if (direct) return direct
+
+  // 2. ลอง reverse (swap from/to แล้วหาร)
+  const reverse = convertQuantity(1, toUnit, fromUnit, tenantId, materialId)
+  if (reverse && reverse.factor !== 0) {
+    const factor = 1 / reverse.factor
+    return { converted: quantity * factor, factor }
+  }
+
+  return null
 }
 
 // ===================================================================
