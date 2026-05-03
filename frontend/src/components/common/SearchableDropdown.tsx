@@ -56,16 +56,19 @@ export function SearchableDropdown({
       )
     : options
 
-  // Handle click outside to close dropdown
+  // Handle click outside to close dropdown (using mousedown on document, but ignore inside portal)
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (containerRef.current && containerRef.current.contains(target)) return
+      // If clicking inside portal dropdown, don't close
+      const portalDropdown = document.querySelector('[data-searchable-dropdown-portal]')
+      if (portalDropdown && portalDropdown.contains(target)) return
+      setIsOpen(false)
     }
 
-    document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
 
   // Reset search when closed
@@ -88,9 +91,9 @@ export function SearchableDropdown({
 
   const dropdownContent = (
     <div
+      data-searchable-dropdown-portal
       className="fixed z-[100] bg-cyber-card border border-cyber-border rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
-      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Search Input */}
       <div className="p-2 border-b border-cyber-border">
@@ -118,7 +121,10 @@ export function SearchableDropdown({
             <button
               key={option.id}
               type="button"
-              onClick={() => handleSelect(option.id)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                handleSelect(option.id)
+              }}
               className={`w-full px-3 py-2 text-left text-sm hover:bg-cyber-primary/20 transition-colors ${
                 value === option.id
                   ? 'bg-cyber-primary/20 text-cyber-primary'
