@@ -200,10 +200,10 @@ export default function MaterialCategories() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-gray-200 font-medium text-sm">{c.name}</span>
-                      <span className="px-1.5 py-0.5 bg-cyber-dark rounded text-[10px] text-gray-500 font-mono">{c.code}</span>
+                      <span className="px-2 py-0.5 bg-cyber-primary/20 border border-cyber-primary/30 rounded text-[11px] text-cyber-primary font-mono font-bold tracking-wide">{c.code}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                      <span>หน่วยเริ่มต้น: <span className="text-cyber-primary">{ul(c.defaultUnit)}</span></span>
+                      <span>หน่วยเริ่มต้น: <span className="text-cyber-primary font-medium">{ul(c.defaultUnit)}</span></span>
                       {c.description && <span className="truncate max-w-[200px]">· {c.description}</span>}
                     </div>
                   </div>

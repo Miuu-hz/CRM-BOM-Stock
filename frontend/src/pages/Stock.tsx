@@ -2358,12 +2358,13 @@ function AddStockModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
+        className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
+        style={{ maxHeight: 'calc(100vh - 2rem)' }}
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10">
+        <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <Package className="w-6 h-6 text-cyber-green" />
-            <h2 className="text-xl font-bold text-gray-100">Create New Stock Item</h2>
+            <Package className="w-5 h-5 text-cyber-green" />
+            <h2 className="text-lg font-bold text-gray-100">เพิ่มสินค้าใหม่</h2>
           </div>
           <button
             onClick={onClose}
@@ -2373,217 +2374,232 @@ function AddStockModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">SKU *</label>
-              <input
-                type="text"
-                value={formData.sku}
-                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                className="cyber-input w-full"
-                placeholder="e.g., RAW-001"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Category</label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="cyber-input w-full"
-              >
-                <option value="raw">Raw Material</option>
-                <option value="wip">WIP</option>
-                <option value="finished">Finished</option>
-                <option value="material">Material</option>
-              </select>
-            </div>
-          </div>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Item Name *</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="cyber-input w-full"
-              placeholder="Enter item name"
-              required
-            />
-          </div>
+            {/* ── Section: ข้อมูลพื้นฐาน ── */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ข้อมูลพื้นฐาน</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">SKU *</label>
+                  <input
+                    type="text"
+                    value={formData.sku}
+                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                    className="cyber-input w-full"
+                    placeholder="RAW-001"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">ประเภทสินค้า</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    <option value="raw">วัตถุดิบ</option>
+                    <option value="wip">กึ่งสำเร็จรูป</option>
+                    <option value="finished">สำเร็จรูป</option>
+                    <option value="material">วัสดุ/อื่นๆ</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">ชื่อสินค้า *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="cyber-input w-full"
+                  placeholder="กรอกชื่อสินค้า"
+                  required
+                />
+              </div>
+            </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">หน่วยแสดงผล (Display)</label>
-              <select
-                value={formData.unit}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                className="cyber-input w-full"
-              >
-                {availableUnits.map((u) => (
-                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                ))}
-              </select>
+            {/* ── Section: หน่วยนับ ── */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">หน่วยนับ</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">หน่วยแสดงผล</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    {availableUnits.map((u) => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">จำนวนเริ่มต้น</label>
+                  <input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">หน่วยฐาน</label>
+                  <select
+                    value={formData.baseUnit || ''}
+                    onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                    {availableUnits.map((u) => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">หน่วยบรรจุ</label>
+                  <select
+                    value={formData.displayUnit || ''}
+                    onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
+                    className="cyber-input w-full"
+                  >
+                    <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
+                    {availableUnits.map((u) => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
+                </div>
+              </div>
+              {addConversionWarning && (
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-300">{addConversionWarning}</p>
+                </div>
+              )}
             </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Initial Quantity</label>
-              <input
-                type="number"
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
-                onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
-                min="0"
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">หน่วยฐาน (Base Unit)</label>
-              <select
-                value={formData.baseUnit || ''}
-                onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
-                className="cyber-input w-full"
-              >
-                <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
-                {availableUnits.map((u) => (
-                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+            {/* ── Section: ราคา & สต๊อก ── */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ราคา & สต๊อก</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วย (฿)</label>
+                  <input
+                    type="number"
+                    value={formData.unitCost}
+                    onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วย (฿)</label>
+                  <input
+                    type="number"
+                    value={formData.unitPrice}
+                    onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Min Stock</label>
+                  <input
+                    type="number"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Max Stock</label>
+                  <input
+                    type="number"
+                    value={formData.maxStock}
+                    onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full"
+                    min="0"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">หน่วยแสดงผล (Display Unit)</label>
-              <select
-                value={formData.displayUnit || ''}
-                onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
-                className="cyber-input w-full"
-              >
-                <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
-                {availableUnits.map((u) => (
-                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
-            </div>
-          </div>
 
-          {addConversionWarning && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-300">{addConversionWarning}</p>
-            </div>
-          )}
-
-          {/* Cost + Price */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span>
+            {/* ── Section: อื่นๆ ── */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">อื่นๆ</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">สถานที่เก็บ</label>
+                  <input
+                    type="text"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    className="cyber-input w-full"
+                    placeholder="คลังหลัก, A-12"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">GS1 Barcode</label>
+                  <input
+                    type="text"
+                    value={formData.gs1Barcode}
+                    onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
+                    className="cyber-input w-full"
+                    placeholder="ไม่บังคับ"
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-3 p-2.5 bg-cyber-dark/50 rounded-lg border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
+                <input
+                  type="checkbox"
+                  id="isPosEnabledAdd"
+                  checked={formData.isPosEnabled}
+                  onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
+                  className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+                />
+                <div className="flex-1">
+                  <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
+                  <p className="text-[10px] text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
+                  {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
+                </span>
               </label>
-              <input
-                type="number"
-                value={formData.unitCost}
-                onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
             </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                ราคาขาย/หน่วย (฿) <span className="text-cyber-green/70">ขาย</span>
-              </label>
-              <input
-                type="number"
-                value={formData.unitPrice}
-                onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
-                onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
-            </div>
+
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Min Stock</label>
-              <input
-                type="number"
-                value={formData.minStock}
-                onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Max Stock</label>
-              <input
-                type="number"
-                value={formData.maxStock}
-                onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
-                min="0"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Location</label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="cyber-input w-full"
-              placeholder="e.g., Main Warehouse, A-12"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">GS1 Barcode (Optional)</label>
-            <input
-              type="text"
-              value={formData.gs1Barcode}
-              onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
-              className="cyber-input w-full"
-              placeholder="e.g., 8851234567890"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-lg border border-cyber-border">
-            <input
-              type="checkbox"
-              id="isPosEnabledAdd"
-              checked={formData.isPosEnabled}
-              onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-              className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
-            />
-            <label htmlFor="isPosEnabledAdd" className="text-sm text-gray-300 cursor-pointer flex-1">
-              Enable in POS
-              <span className="block text-xs text-gray-500">Show this item in POS menu selection</span>
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
+          {/* Footer — sticky */}
+          <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+              className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50"
+              className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
