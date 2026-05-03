@@ -90,6 +90,7 @@ export function SearchableDropdown({
     <div
       className="fixed z-[100] bg-cyber-card border border-cyber-border rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Search Input */}
       <div className="p-2 border-b border-cyber-border">
