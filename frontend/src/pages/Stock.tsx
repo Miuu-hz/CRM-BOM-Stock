@@ -872,21 +872,34 @@ function DetailModal({
             <div>
               <p className="text-sm text-gray-400 mb-1">Current Stock</p>
               <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                {item.quantity} {item.unit}
+                {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
+                  ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
+                  : `${item.quantity} ${item.baseUnit || item.unit}`}
                 {item.quantity === 0 && (
                   <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
                     OUT OF STOCK
                   </span>
                 )}
               </p>
+              {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
+                <p className="text-xs text-gray-500">{item.quantity} {item.baseUnit || item.unit}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">หน่วยฐาน (Base)</p>
+              <p className="text-gray-200">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(Display: ${item.unit})` : ''}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">หน่วยแสดงผล (Display)</p>
+              <p className="text-gray-200">{item.displayUnit || '-'}</p>
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">Min Stock</p>
-              <p className="text-gray-200">{item.minStock} {item.unit}</p>
+              <p className="text-gray-200">{item.minStock} {item.baseUnit || item.unit}</p>
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">Max Stock</p>
-              <p className="text-gray-200">{item.maxStock} {item.unit}</p>
+              <p className="text-gray-200">{item.maxStock} {item.baseUnit || item.unit}</p>
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วย</p>
@@ -950,10 +963,13 @@ function DetailModal({
                           movement.type === 'OUT' ? 'text-red-400' :
                           movement.type === 'PRICE_CHANGE' ? 'text-yellow-400' : 'text-blue-400'
                         }`}>
-                          {movement.type === 'IN' ? `+${movement.quantity} ${item.unit}` :
-                           movement.type === 'OUT' ? `-${movement.quantity} ${item.unit}` :
+                          {movement.type === 'IN' ? `+${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
+                           movement.type === 'OUT' ? `-${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
                            movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
-                           `${movement.quantity} ${item.unit}`}
+                           `${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}`}
+                          {movement.movementQuantity !== undefined && movement.movementQuantity !== movement.quantity && movement.movementUnit && (
+                            <span className="text-xs text-gray-500 ml-1">(นับ {movement.movementQuantity} {movement.movementUnit})</span>
+                          )}
                         </p>
                         {movement.notes && (
                           <p className="text-gray-400 text-xs mt-0.5">{movement.notes}</p>
@@ -1465,23 +1481,29 @@ function EditModal({
                   <div className="flex gap-2 items-end">
                     <div className="flex-1">
                       <p className="text-[10px] text-gray-500 mb-1">จาก (เช่น pack)</p>
-                      <input
-                        type="text"
+                      <select
                         value={convForm.from_unit}
                         onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                        placeholder={`เช่น ${formData.unit}`}
-                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
-                      />
+                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                      >
+                        <option value="">เลือกหน่วย</option>
+                        {availableUnits.map((u) => (
+                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="flex-1">
                       <p className="text-[10px] text-gray-500 mb-1">เป็น (เช่น pcs)</p>
-                      <input
-                        type="text"
+                      <select
                         value={convForm.to_unit}
                         onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                        placeholder="pcs"
-                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
-                      />
+                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                      >
+                        <option value="">เลือกหน่วย</option>
+                        {availableUnits.map((u) => (
+                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="w-20">
                       <p className="text-[10px] text-gray-500 mb-1">จำนวน</p>
@@ -1588,8 +1610,22 @@ function MovementModal({
   }, [item, open])
 
   const selectedItem = stockItems.find((i) => i.id === selectedItemId)
+  const { units: availableUnits } = useUnits(selectedItem?.id)
+
+  // Convert quantity to base unit for backend
+  const baseQuantity = (() => {
+    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) {
+      return quantity
+    }
+    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== 0) {
+      const ratio = selectedItem.quantity / selectedItem.displayQuantity
+      return Math.round(quantity * ratio * 1000) / 1000
+    }
+    return quantity
+  })()
+
   const isOutOfStock = selectedItem && selectedItem.quantity === 0 && type === 'OUT'
-  const exceedsStock = selectedItem && type === 'OUT' && quantity > selectedItem.quantity
+  const exceedsStock = selectedItem && type === 'OUT' && baseQuantity > selectedItem.quantity
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1605,7 +1641,7 @@ function MovementModal({
     }
 
     if (exceedsStock) {
-      alert(`Cannot take out more than available stock (${selectedItem?.quantity})`)
+      alert(`Cannot take out more than available stock (${selectedItem?.quantity} ${selectedItem?.baseUnit || selectedItem?.unit})`)
       return
     }
 
@@ -1614,8 +1650,8 @@ function MovementModal({
       await stockService.recordMovement({
         stockItemId: selectedItemId,
         type,
-        quantity,
-        unit: unit || undefined,
+        quantity: baseQuantity,
+        unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
         notes: notes || undefined,
         reference: reference || undefined,
         unitCost: unitCost !== '' ? unitCost : undefined,
@@ -1762,14 +1798,19 @@ function MovementModal({
               >
                 {selectedItem ? (
                   <>
-                    <option value={selectedItem.displayUnit || selectedItem.unit}>
-                      {selectedItem.displayUnit || selectedItem.unit} (Display)
-                    </option>
-                    {selectedItem.baseUnit && selectedItem.baseUnit !== (selectedItem.displayUnit || selectedItem.unit) && (
+                    {selectedItem.baseUnit && (
                       <option value={selectedItem.baseUnit}>
-                        {selectedItem.baseUnit} (Base)
+                        {UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)
                       </option>
                     )}
+                    {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
+                      <option value={selectedItem.displayUnit}>
+                        {UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (Display)
+                      </option>
+                    )}
+                    {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
                   </>
                 ) : (
                   <option value="">Select item first</option>
@@ -2020,29 +2061,48 @@ function AdjustModal({
   useModalClose(onClose)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [physicalCount, setPhysicalCount] = useState(0)
+  const [unit, setUnit] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const selectedItem = stockItems.find(i => i.id === selectedItemId)
+  const { units: availableUnits } = useUnits(selectedItem?.id)
 
   useEffect(() => {
     if (item) {
       setSelectedItemId(item.id)
       setPhysicalCount(item.quantity)
+      setUnit(item.baseUnit || item.unit || '')
     } else {
       setSelectedItemId('')
       setPhysicalCount(0)
+      setUnit('')
     }
     setNotes('')
   }, [item, open])
 
-  const selectedItem = stockItems.find(i => i.id === selectedItemId)
-
   useEffect(() => {
     if (selectedItem && !item) {
       setPhysicalCount(selectedItem.quantity)
+      setUnit(selectedItem.baseUnit || selectedItem.unit || '')
     }
   }, [selectedItemId])
 
-  const diff = physicalCount - (selectedItem?.quantity ?? 0)
+  // Convert entered quantity to base unit before calculating diff & submitting
+  const baseQuantity = (() => {
+    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) {
+      return physicalCount
+    }
+    // If unit matches displayUnit, use displayQuantity ratio if available
+    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== 0) {
+      const ratio = selectedItem.quantity / selectedItem.displayQuantity
+      return Math.round(physicalCount * ratio * 1000) / 1000
+    }
+    // Fallback: we cannot convert without a known conversion factor here
+    return physicalCount
+  })()
+
+  const diff = baseQuantity - (selectedItem?.quantity ?? 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -2055,8 +2115,9 @@ function AdjustModal({
       await stockService.recordMovement({
         stockItemId: selectedItemId,
         type: 'ADJUST',
-        quantity: physicalCount,
-        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${physicalCount} ${selectedItem?.unit || ''}`,
+        quantity: baseQuantity,
+        unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
+        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${baseQuantity} ${selectedItem?.baseUnit || selectedItem?.unit || ''} (นับได้ ${physicalCount} ${unit})`,
       })
       onSave()
       onClose()
@@ -2100,7 +2161,7 @@ function AdjustModal({
               onChange={setSelectedItemId}
               options={stockItems.map(si => ({
                 id: si.id,
-                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${si.unit}`,
+                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${si.baseUnit || si.unit}`,
                 searchText: `${si.name} ${si.sku}`,
               }))}
               placeholder="-- เลือกสินค้า --"
@@ -2112,25 +2173,52 @@ function AdjustModal({
             <div className="p-4 bg-cyber-darker rounded-lg space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400 text-sm">ยอดในระบบ:</span>
-                <span className="font-bold text-cyber-primary">{selectedItem.quantity} {selectedItem.unit}</span>
+                <span className="font-bold text-cyber-primary">
+                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
+                    ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
+                    : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
+                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
+                    <span className="block text-xs text-gray-500 text-right">{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
+                  )}
+                </span>
               </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">จำนวนที่นับได้จริง</label>
-                <input
-                  type="number"
-                  value={physicalCount}
-                  onChange={(e) => setPhysicalCount(parseInt(e.target.value) || 0)}
-                  onFocus={(e) => e.target.select()}
-                  className="cyber-input w-full text-lg font-bold"
-                  min="0"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">จำนวนที่นับได้จริง</label>
+                  <input
+                    type="number"
+                    value={physicalCount}
+                    onChange={(e) => setPhysicalCount(parseInt(e.target.value) || 0)}
+                    onFocus={(e) => e.target.select()}
+                    className="cyber-input w-full text-lg font-bold"
+                    min="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">หน่วยที่นับ</label>
+                  <select
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    className="cyber-input w-full"
+                  >
+                    {selectedItem.baseUnit && (
+                      <option value={selectedItem.baseUnit}>{UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)</option>
+                    )}
+                    {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
+                      <option value={selectedItem.displayUnit}>{UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (Display)</option>
+                    )}
+                    {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               {diff !== 0 && (
                 <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-cyber-green/10 border-cyber-green/30' : 'bg-red-500/10 border-red-500/30'}`}>
                   <span className="text-sm text-gray-300">ผลต่าง:</span>
                   <span className={`font-bold text-lg ${diff > 0 ? 'text-cyber-green' : 'text-red-400'}`}>
-                    {diff > 0 ? '+' : ''}{diff} {selectedItem.unit}
+                    {diff > 0 ? '+' : ''}{diff} {selectedItem.baseUnit || selectedItem.unit}
                   </span>
                 </div>
               )}
@@ -2203,6 +2291,12 @@ function AddStockModal({
   })
   const [saving, setSaving] = useState(false)
   const { units: availableUnits } = useUnits()
+
+  const addConversionWarning = (() => {
+    if (!formData.baseUnit || !formData.displayUnit) return null
+    if (formData.baseUnit === formData.displayUnit) return null
+    return `⚠️ หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยแสดงผล (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
+  })()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -2375,6 +2469,13 @@ function AddStockModal({
               <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
             </div>
           </div>
+
+          {addConversionWarning && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-300">{addConversionWarning}</p>
+            </div>
+          )}
 
           {/* Cost + Price */}
           <div className="grid grid-cols-2 gap-4">

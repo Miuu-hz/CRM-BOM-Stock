@@ -74,6 +74,68 @@ router.post('/categories', (req: Request, res: Response) => {
   }
 })
 
+// PUT /api/materials/categories/:id — แก้ไขหมวดหมู่
+router.put('/categories/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const { name, defaultUnit, description } = req.body
+
+    if (!name || !defaultUnit) {
+      return res.status(400).json({ success: false, message: 'Name and defaultUnit are required' })
+    }
+
+    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle', 'ml', 'mg', 'lb', 'oz', 'inch', 'ft', 'gallon', 'can', 'tube', 'sachet', 'bag']
+    if (!validUnits.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
+    }
+
+    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found' })
+    }
+
+    db.prepare(`
+      UPDATE material_categories
+      SET name = ?, default_unit = ?, description = ?, updated_at = ?
+      WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)
+    `).run(name, defaultUnit, description || '', new Date().toISOString(), id, tenantId)
+
+    const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description FROM material_categories WHERE id = ?').get(id)
+    res.json({ success: true, data: category })
+  } catch (error) {
+    console.error('Update category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update category' })
+  }
+})
+
+// DELETE /api/materials/categories/:id — ลบหมวดหมู่
+router.delete('/categories/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+
+    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found' })
+    }
+
+    const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
+    if (materialCount.count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: Category is used by ${materialCount.count} material(s)`,
+      })
+    }
+
+    db.prepare('DELETE FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').run(id, tenantId)
+    res.json({ success: true, message: 'Category deleted successfully' })
+  } catch (error) {
+    console.error('Delete category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete category' })
+  }
+})
+
 // Get materials statistics
 router.get('/stats', (req: Request, res: Response) => {
   try {
@@ -379,7 +441,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, categoryId, unitCost, minStock, maxStock, initialStock } = req.body
+    const { code, name, categoryId, unitCost, minStock, maxStock, initialStock, unit: reqUnit } = req.body
 
     // Validate required fields
     if (!code || !name || !categoryId || unitCost === undefined) {
@@ -398,16 +460,24 @@ router.post('/', (req: Request, res: Response) => {
       })
     }
 
-    // Unit is determined by category - cannot be changed
-    const unit = category.default_unit
+    // Unit: allow override from request, fallback to category default
+    const unit = reqUnit || category.default_unit
 
-    // Check for duplicate code
+    // Check for duplicate code in materials
     const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
-
     if (existing) {
       return res.status(400).json({
         success: false,
         message: 'Material code already exists',
+      })
+    }
+
+    // Check for duplicate SKU in stock_items
+    const existingStock = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(`STK-${code}`, tenantId)
+    if (existingStock) {
+      return res.status(400).json({
+        success: false,
+        message: 'Stock SKU already exists',
       })
     }
 
@@ -420,34 +490,33 @@ router.post('/', (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, categoryId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
 
-    // Create stock item if initial stock provided
-    if (initialStock && initialStock > 0) {
-      const stockId = generateId()
-      db.prepare(`
-        INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
-      `).run(
-        stockId, 
-        tenantId, 
-        `STK-${code}`, 
-        `Stock: ${name}`, 
-        id, 
-        initialStock, 
-        unit,
-        minStock || 0, 
-        maxStock || 1000, 
-        initialStock > (minStock || 0) ? 'ADEQUATE' : 'LOW',
-        now, 
-        now
-      )
-    }
+    // Create stock item automatically so it appears in BOM dropdown
+    const qty = initialStock || 0
+    const stockId = generateId()
+    db.prepare(`
+      INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
+    `).run(
+      stockId, 
+      tenantId, 
+      `STK-${code}`, 
+      `Stock: ${name}`, 
+      id, 
+      qty, 
+      unit,
+      minStock || 0, 
+      maxStock || 1000, 
+      qty > (minStock || 0) ? 'ADEQUATE' : (qty === 0 ? 'OUT' : 'LOW'),
+      now, 
+      now
+    )
 
     const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id)
 
     res.json({
       success: true,
       message: 'Material created successfully',
-      data: material,
+      data: { ...material, stockId },
     })
   } catch (error) {
     console.error('Create material error:', error)

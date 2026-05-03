@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
 import { authenticate } from '../middleware/auth.middleware'
+import { convertQuantityBidirectional } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -525,11 +526,12 @@ router.get('/menu-configs/:id/stock', (req, res) => {
         SELECT 
           bi.id,
           bi.quantity as quantity_used,
+          bi.unit as ingredient_unit,
           0 as is_optional,
           si.id as stock_item_id,
           si.name as stock_item_name,
           si.quantity as current_stock,
-          si.unit
+          si.unit as stock_unit
         FROM bom_items bi
         JOIN stock_items si ON bi.material_id = si.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
@@ -541,11 +543,12 @@ router.get('/menu-configs/:id/stock', (req, res) => {
         SELECT 
           pmi.id,
           pmi.quantity_used,
+          pmi.unit_id as ingredient_unit,
           pmi.is_optional,
           si.id as stock_item_id,
           si.name as stock_item_name,
           si.quantity as current_stock,
-          si.unit
+          si.unit as stock_unit
         FROM pos_menu_ingredients pmi
         JOIN stock_items si ON pmi.stock_item_id = si.id
         WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
@@ -553,12 +556,24 @@ router.get('/menu-configs/:id/stock', (req, res) => {
       ingredients = stmt.all(id, tenantId)
     }
     
-    // Calculate max available quantity
+    // Calculate max available quantity (with unit conversion)
     let maxAvailable = Infinity
     const stockDetails = ingredients.map((ing: any) => {
-      const required = ing.quantity_used * qty
+      const stockBaseUnit = ing.stock_unit || ''
+      const ingredientUnit = ing.ingredient_unit || stockBaseUnit
+      let quantityUsed = ing.quantity_used
+
+      // Convert ingredient unit to stock base unit if different
+      if (ingredientUnit && stockBaseUnit && ingredientUnit !== stockBaseUnit) {
+        const converted = convertQuantityBidirectional(quantityUsed, ingredientUnit, stockBaseUnit, tenantId, ing.stock_item_id)
+        if (converted) {
+          quantityUsed = converted.converted
+        }
+      }
+
+      const required = quantityUsed * qty
       const available = ing.current_stock
-      const canMake = Math.floor(available / ing.quantity_used)
+      const canMake = Math.floor(available / quantityUsed)
       
       if (!ing.is_optional && canMake < maxAvailable) {
         maxAvailable = canMake
@@ -566,6 +581,9 @@ router.get('/menu-configs/:id/stock', (req, res) => {
       
       return {
         ...ing,
+        quantity_used_original: ing.quantity_used,
+        quantity_used_converted: quantityUsed,
+        unit: stockBaseUnit,
         required,
         available,
         sufficient: available >= required,

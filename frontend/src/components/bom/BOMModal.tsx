@@ -5,6 +5,7 @@ import bomService, { BOM, Material, Product } from '../../services/bom'
 import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
 import api from '../../services/api'
+import { useUnits } from '../../hooks/useUnits'
 
 interface BOMModalProps {
   isOpen: boolean
@@ -127,7 +128,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       materialId: item.materialId || item.material_id || '',
       childBomId: item.childBomId || item.child_bom_id || '',
       quantity: Number(item.quantity),
-      unit: item.unit || item.material_unit || '',
+      unit: item.unit || item.material_unit || item.material?.unit || '',
       notes: item.notes || '',
     }))
   }
@@ -276,7 +277,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   // ดึง unit จาก material โดยตรง
   const getMaterialUnit = (materialId: string): string => {
     const material = materials.find((m) => m.id === materialId)
-    return material?.unit || '-'
+    return material?.unit || ''
   }
 
   // โหลด compatible units เมื่อเลือก material
@@ -302,6 +303,12 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   // Handle material selection with unit loading
   const handleMaterialSelect = (rowId: string, materialId: string) => {
     const material = materials.find((m) => m.id === materialId)
+    // Clear old compatible units first
+    setCompatibleUnits(prev => {
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
     handleItemChange(rowId, 'materialId', materialId)
     handleItemChange(rowId, 'unit', material?.unit || '')
     if (material?.unit) {
@@ -649,13 +656,22 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                             <div className="col-span-2">
                               {isMaterial && row.materialId ? (
                                 <select
-                                  value={row.unit || getMaterialUnit(row.materialId)}
+                                  value={row.unit || getMaterialUnit(row.materialId) || ''}
                                   onChange={(e) => handleItemChange(row.id, 'unit', e.target.value)}
                                   className="cyber-input w-full text-sm"
                                 >
-                                  {(compatibleUnits[row.id] || [{ code: getMaterialUnit(row.materialId), label: getMaterialUnit(row.materialId) }]).map((u) => (
-                                    <option key={u.code} value={u.code}>{u.label}</option>
-                                  ))}
+                                  {(() => {
+                                    const unitCode = row.unit || getMaterialUnit(row.materialId) || ''
+                                    const opts = compatibleUnits[row.id] || []
+                                    const hasCurrent = opts.some(u => u.code === unitCode)
+                                    const allOpts = hasCurrent || !unitCode ? opts : [{ code: unitCode, label: unitCode }, ...opts]
+                                    if (allOpts.length === 0) {
+                                      return <option value="">เลือกหน่วย</option>
+                                    }
+                                    return allOpts.map((u) => (
+                                      <option key={u.code} value={u.code}>{u.label}</option>
+                                    ))
+                                  })()}
                                 </select>
                               ) : (
                                 <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center justify-center">
@@ -828,11 +844,14 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
     code: '',
     name: '',
     categoryId: '',
+    unit: '',
     unitCost: 0,
     minStock: 10,
     maxStock: 100,
+    initialStock: 0,
   })
   const [saving, setSaving] = useState(false)
+  const { units: availableUnits } = useUnits()
 
   // Load categories
   useEffect(() => {
@@ -854,7 +873,11 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
   const handleCategoryChange = (categoryId: string) => {
     const category = categories.find(c => c.id === categoryId) || null
     setSelectedCategory(category)
-    setFormData(prev => ({ ...prev, categoryId }))
+    setFormData(prev => ({
+      ...prev,
+      categoryId,
+      unit: category?.defaultUnit || prev.unit || '',
+    }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -874,6 +897,8 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
         unitCost: formData.unitCost,
         minStock: formData.minStock,
         maxStock: formData.maxStock,
+        initialStock: formData.initialStock,
+        unit: formData.unit || selectedCategory?.defaultUnit,
       })
       onSuccess(newMaterial)
       // Reset form
@@ -881,9 +906,11 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
         code: '',
         name: '',
         categoryId: '',
+        unit: '',
         unitCost: 0,
         minStock: 10,
         maxStock: 100,
+        initialStock: 0,
       })
       setSelectedCategory(null)
     } catch (err) {
@@ -954,15 +981,25 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 </div>
               </div>
 
-              {/* Unit - แสดงเป็น read-only */}
+              {/* Unit - เลือกได้จากหมวดหมู่หรือ override */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">หน่วย (Auto)</label>
-                <div className="cyber-input w-full text-sm bg-cyber-dark/50 text-cyber-primary font-semibold flex items-center">
-                  {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  หน่วยถูกกำหนดโดยอัตโนมัติตามหมวดหมู่วัตถุดิบ
-                </p>
+                <label className="block text-sm text-gray-400 mb-1">หน่วย *</label>
+                <select
+                  value={formData.unit || selectedCategory?.defaultUnit || ''}
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  className="cyber-input w-full text-sm"
+                  required
+                >
+                  <option value="">เลือกหน่วย</option>
+                  {availableUnits.map((u) => (
+                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                  ))}
+                </select>
+                {selectedCategory?.defaultUnit && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    ค่าเริ่มต้นจากหมวดหมู่: {selectedCategory.defaultUnit}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -977,7 +1014,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">ต้นทุน/หน่วย</label>
                   <input
@@ -989,6 +1026,18 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                     step="0.01"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">สต๊อกเริ่มต้น</label>
+                  <input
+                    type="number"
+                    value={formData.initialStock}
+                    onChange={(e) => setFormData({ ...formData, initialStock: parseInt(e.target.value) || 0 })}
+                    className="cyber-input w-full text-sm"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Min Stock</label>
                   <input

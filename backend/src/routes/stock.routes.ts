@@ -6,6 +6,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { convertQuantityBidirectional } from '../services/unitConversion.service'
+import { ACC, ACC_META } from '../config/accountCodes'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -34,6 +35,15 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
+  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
+  if (existing) return existing.id
+  const id = generateId()
+  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
+  return id
 }
 
 /** Enrich stock item with display quantity computed from base_unit ↔ display_unit */
@@ -369,6 +379,48 @@ router.post('/movement', async (req: Request, res: Response) => {
       INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
+
+    // Auto-journal for ADJUST stock movements
+    if (type === 'ADJUST') {
+      const oldQty = item.quantity || 0
+      const diffQty = newQuantity - oldQty
+      const unitCost = Number(item.unit_cost || 0)
+      const diffValue = diffQty * unitCost
+      if (Math.abs(diffValue) > 0.01) {
+        try {
+          const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
+          const yr = new Date().getFullYear()
+          const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
+          const jvNumber = `JV-${yr}-${String(jvCount + 1).padStart(5, '0')}`
+          const entryId = generateId()
+
+          if (diffValue > 0) {
+            // Adjust up: Dr Inventory / Cr Other Income
+            const incomeAccId = getOrCreateAccount(tenantId, '4203', 'รายได้อื่น', 'REVENUE', 'OTHER_REVENUE', 'CREDIT')
+            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${item.name}`, diffValue, diffValue, createdBy, now, now)
+            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+              .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
+            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+              .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
+          } else {
+            // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
+            const adjExpAccId = getOrCreateAccount(tenantId, '5901', 'ค่าใช้จ่ายปรับปรุงสต็อก', 'EXPENSE', 'OTHER_EXPENSE', 'DEBIT')
+            const absValue = Math.abs(diffValue)
+            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${item.name}`, absValue, absValue, createdBy, now, now)
+            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+              .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${item.name}`, absValue)
+            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+              .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${item.name}`, absValue)
+          }
+        } catch (journalErr) {
+          console.error('⚠️ Stock adjust journal error:', journalErr)
+        }
+      }
+    }
 
     const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
     

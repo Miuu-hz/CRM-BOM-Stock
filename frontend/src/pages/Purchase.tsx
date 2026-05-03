@@ -222,6 +222,7 @@ interface ReturnItem {
   id?: string
   material_id: string
   quantity: number
+  unit: string
   unit_price: number
   total_price: number
   reason: string
@@ -939,7 +940,7 @@ const Purchase = () => {
     reason: '',
     tax_rate: 7,
     notes: '',
-    items: [{ material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }] as ReturnItem[]
+    items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] as ReturnItem[]
   })
 
   // Fetch shared reference data once on mount (needed across modals regardless of active tab)
@@ -1299,6 +1300,7 @@ const Purchase = () => {
         items: receiptForm.items.map(item => ({
           poItemId: item.purchase_order_item_id,
           materialId: item.material_id,
+          unit: item.unit,
           orderedQty: item.ordered_qty,
           receivedQty: item.received_qty,
           acceptedQty: item.accepted_qty,
@@ -1507,7 +1509,7 @@ const Purchase = () => {
           reason: data.reason || '',
           tax_rate: data.tax_rate || 7,
           notes: data.notes || '',
-          items: data.items || [{ material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }]
+          items: data.items || [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }]
         })
       }
     } else {
@@ -1516,7 +1518,7 @@ const Purchase = () => {
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
       setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
-      setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }] })
+      setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
 
@@ -1613,7 +1615,7 @@ const Purchase = () => {
   }
   const removeOrderItem = (index: number) => setOrderForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))
 
-  const addReturnItem = () => setReturnForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', quantity: 1, unit_price: 0, total_price: 0, reason: '' }] }))
+  const addReturnItem = () => setReturnForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] }))
   const updateReturnItem = (index: number, field: keyof ReturnItem, value: any) => {
     setReturnForm(prev => {
       const items = [...prev.items]
@@ -2689,11 +2691,17 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
-                  <input type="text" value={item.unit}
+                  <select
+                    value={item.unit || ''}
                     onChange={e => updateRequestItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    placeholder="ชิ้น/กก."
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                  >
+                    <option value="">เลือกหน่วย</option>
+                    {availableUnits.map(u => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-3">
                   <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย (ประมาณ)</label>
@@ -3617,13 +3625,29 @@ const Purchase = () => {
           {returnForm.items.map((item, index) => (
             <div key={index} className="p-3 bg-cyber-dark rounded-xl space-y-2 border border-red-500/20">
               <MaterialSearchInput materials={materials} value={item.material_id}
-                onChange={(id) => updateReturnItemFields(index, { material_id: id })} />
+                onChange={(id) => {
+                  const mat = materials.find(m => m.id === id)
+                  updateReturnItemFields(index, { material_id: id, unit: mat?.unit || '' })
+                }} />
               <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-3">
+                <div className="col-span-2">
                   <label className="text-xs text-gray-500 mb-0.5 block">จำนวนคืน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     className="w-full px-2 py-1.5 bg-cyber-card border border-red-500/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
+                  <select
+                    value={item.unit || ''}
+                    onChange={e => updateReturnItem(index, 'unit', e.target.value)}
+                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary"
+                  >
+                    <option value="">เลือกหน่วย</option>
+                    {availableUnits.map(u => (
+                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-3">
                   <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย</label>
@@ -3634,7 +3658,7 @@ const Purchase = () => {
                       className="w-full pl-5 pr-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary" />
                   </div>
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2">
                   <label className="text-xs text-gray-500 mb-0.5 block">หมายเหตุ item</label>
                   <input type="text" value={item.reason} placeholder="สาเหตุเพิ่มเติม"
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}

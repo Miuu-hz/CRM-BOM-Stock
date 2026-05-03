@@ -182,7 +182,7 @@ function templateQT_Thermal(d: any): string {
   const rows = (d.items || []).map((it: any, i: number) => `
     <tr>
       <td>${i + 1}. ${it.product_name || it.productName || '-'}</td>
-      <td class="right">${it.quantity}×${fmt(it.unit_price)}</td>
+      <td class="right">${it.quantity}${it.unit || ''}×${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price)}</td>
     </tr>`).join('')
   return `<div class="center">
@@ -300,6 +300,7 @@ function templateINV_A4(d: any): string {
       <td class="center">${i + 1}</td>
       <td>${it.product_name || '-'}</td>
       <td class="center">${it.quantity}</td>
+      <td class="center">${it.unit || '-'}</td>
       <td class="right">${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price)}</td>
     </tr>`).join('')
@@ -343,9 +344,10 @@ function templateINV_A4(d: any): string {
       <thead><tr>
         <th class="center" style="width:8mm">#</th>
         <th>รายการ</th>
-        <th class="center" style="width:18mm">จำนวน</th>
-        <th class="right" style="width:28mm">ราคา/หน่วย</th>
-        <th class="right" style="width:28mm">รวม (บาท)</th>
+        <th class="center" style="width:14mm">จำนวน</th>
+        <th class="center" style="width:12mm">หน่วย</th>
+        <th class="right" style="width:24mm">ราคา/หน่วย</th>
+        <th class="right" style="width:24mm">รวม (บาท)</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -382,7 +384,7 @@ function templateINV_Thermal(d: any): string {
   const rows = (d.items || []).map((it: any, i: number) => `
     <tr>
       <td>${i + 1}. ${it.product_name || '-'}</td>
-      <td class="right">${it.quantity}×${fmt(it.unit_price)}</td>
+      <td class="right">${it.quantity}${it.unit || ''}×${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price)}</td>
     </tr>`).join('')
   return `<div class="center">
@@ -505,6 +507,7 @@ function templateCN_A4(d: any): string {
       <td class="center">${i + 1}</td>
       <td>${it.product_name || '-'}</td>
       <td class="center">${it.quantity}</td>
+      <td class="center">${it.unit || '-'}</td>
       <td class="right">${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price)}</td>
     </tr>`).join('')
@@ -544,9 +547,10 @@ function templateCN_A4(d: any): string {
       <thead><tr>
         <th class="center" style="width:8mm">#</th>
         <th>รายการ</th>
-        <th class="center" style="width:18mm">จำนวน</th>
-        <th class="right" style="width:28mm">ราคา/หน่วย</th>
-        <th class="right" style="width:28mm">รวม (บาท)</th>
+        <th class="center" style="width:14mm">จำนวน</th>
+        <th class="center" style="width:12mm">หน่วย</th>
+        <th class="right" style="width:24mm">ราคา/หน่วย</th>
+        <th class="right" style="width:24mm">รวม (บาท)</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>` : ''}

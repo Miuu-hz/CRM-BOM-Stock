@@ -125,6 +125,7 @@ const nestedBomService = {
       materialId?: string
       childBomId?: string
       quantity: number
+      unit?: string
       notes?: string
     }[]
   }) => {
@@ -134,6 +135,7 @@ const nestedBomService = {
         materialId: item.materialId,
         childBomId: item.childBomId,
         quantity: item.quantity,
+        unit: item.unit,
         itemType: item.itemType,
         notes: item.notes,
       }))
@@ -151,6 +153,7 @@ const nestedBomService = {
       materialId?: string
       childBomId?: string
       quantity: number
+      unit?: string
       notes?: string
     }[]
   }) => {
@@ -160,6 +163,7 @@ const nestedBomService = {
         materialId: item.materialId,
         childBomId: item.childBomId,
         quantity: item.quantity,
+        unit: item.unit,
         itemType: item.itemType,
         notes: item.notes,
       }))

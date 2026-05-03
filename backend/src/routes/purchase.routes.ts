@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { convertQuantity } from '../services/unitConversion.service'
+import { ACC, ACC_META } from '../config/accountCodes'
 
 const router = Router()
 
@@ -641,6 +642,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
     if (!po) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
+    const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(po.supplier_id, tenantId) as any
 
     const id = generateId()
     const piNumber = generateNumber('PI', tenantId, 'purchase_invoices')
@@ -664,9 +666,9 @@ router.post('/invoices', async (req: Request, res: Response) => {
       ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(drAccountId, tenantId) as any)?.id ?? null
       : null
     const inventoryAccId = resolvedDrAccId
-      ?? getOrCreateAccount(tenantId, '1107', 'สต็อกวัตถุดิบ', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
-    const payableAccId   = getOrCreateAccount(tenantId, '2101', 'เจ้าหนี้การค้า', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
-    const vatAccId       = taxAmount > 0 ? getOrCreateAccount(tenantId, '1110', 'ภาษีซื้อ', 'ASSET', 'CURRENT_ASSET', 'DEBIT') : null
+      ?? getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
+    const payableAccId   = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
+    const vatAccId       = taxAmount > 0 ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : null
     const journalId      = generateId()
     const journalNumber  = generateEntryNumber(tenantId, invoiceDate || now)
 
@@ -717,6 +719,16 @@ router.post('/invoices', async (req: Request, res: Response) => {
         insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
       }
       insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
+
+      // VAT Entry (Input VAT)
+      if (taxAmount > 0) {
+        db.prepare(`
+          INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+        `).run(generateId(), tenantId, 'PURCHASE_INVOICE', id, piNumber, (invoiceDate || now).substring(0, 10),
+          supplier?.name || '', supplier?.tax_id || null,
+          subtotal, taxRate, taxAmount, totalAmount, now)
+      }
     })
 
     transaction()
@@ -805,9 +817,9 @@ router.post('/payments', async (req: Request, res: Response) => {
     const netAmount = amount - wht
 
     // Resolve accounts before transaction
-    const payableAccId = getOrCreateAccount(tenantId, '2101', 'เจ้าหนี้การค้า', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
-    const cashAccId    = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
-    const whtAccId     = wht > 0 ? getOrCreateAccount(tenantId, '2180', 'ภาษีหัก ณ ที่จ่าย', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT') : null
+    const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
+    const cashAccId    = getOrCreateAccount(tenantId, ACC.CASH, ACC_META[ACC.CASH]!.name, ACC_META[ACC.CASH]!.type, ACC_META[ACC.CASH]!.category, ACC_META[ACC.CASH]!.normalBalance)
+    const whtAccId     = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
     const journalId    = generateId()
     const journalNumber = generateEntryNumber(tenantId, paymentDate || now)
 

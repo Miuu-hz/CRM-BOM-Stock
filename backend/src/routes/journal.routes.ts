@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { ACC } from '../config/accountCodes'
 
 const router = Router()
 
@@ -405,9 +406,9 @@ router.post('/auto/purchase-order', async (req: Request, res: Response) => {
     `).all(purchaseOrderId) as any[]
     
     // Find accounts
-    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = '1107' AND tenant_id = ?`).get(tenantId) as any // สต็อกวัตถุดิบ
-    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = '1110' AND tenant_id = ?`).get(tenantId) as any // ภาษีซื้อ
-    const payableAccount = db.prepare(`SELECT id FROM accounts WHERE code = '2101' AND tenant_id = ?`).get(tenantId) as any // เจ้าหนี้การค้า
+    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.RAW_MATERIAL, tenantId) as any // สต็อกวัตถุดิบ
+    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INPUT_VAT, tenantId) as any // ภาษีซื้อ
+    const payableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AP, tenantId) as any // เจ้าหนี้การค้า
     
     if (!inventoryAccount || !vatAccount || !payableAccount) {
       return res.status(400).json({ 
@@ -473,11 +474,11 @@ router.post('/auto/sales', async (req: Request, res: Response) => {
     }
     
     // Find accounts
-    const receivableAccount = db.prepare(`SELECT id FROM accounts WHERE code = '1104' AND tenant_id = ?`).get(tenantId) as any // ลูกหนี้การค้า
-    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = '2104' AND tenant_id = ?`).get(tenantId) as any // ภาษีขาย
-    const revenueAccount = db.prepare(`SELECT id FROM accounts WHERE code = '4101' AND tenant_id = ?`).get(tenantId) as any // รายได้ขายสินค้า
-    const cogsAccount = db.prepare(`SELECT id FROM accounts WHERE code = '5101' AND tenant_id = ?`).get(tenantId) as any // ต้นทุนสินค้าขาย
-    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = '1106' AND tenant_id = ?`).get(tenantId) as any // สต็อกสินค้า
+    const receivableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AR, tenantId) as any // ลูกหนี้การค้า
+    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.OUTPUT_VAT, tenantId) as any // ภาษีขาย
+    const revenueAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.REVENUE_PRODUCT, tenantId) as any // รายได้ขายสินค้า
+    const cogsAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.COGS_PRODUCT, tenantId) as any // ต้นทุนสินค้าขาย
+    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INVENTORY, tenantId) as any // สต็อกสินค้า
     
     if (!receivableAccount || !vatAccount || !revenueAccount) {
       return res.status(400).json({ 

@@ -506,3 +506,13 @@ Phase 3 — Higher Risk · Architecture Change
 3.1	Sidebar ไม่มี mobile breakpoint logic — ควรเปิดเป็น overlay บน < lg และปิดอัตโนมัติหลัง navigate	Layout.tsx + Sidebar.tsx	🔴 High	High — mobile experience
 3.2	Z-index ไม่มีระบบ — มี z-[9999], z-[60], z-50, z-40 ปนกัน ทำให้ modal ซ้อน modal ผิดพลาดได้	App.tsx, BOMModal.tsx	🔴 High	Medium — modal stacking bugs
 3.3	Background glow effects ใช้ animate-pulse-slow infinite บน Layout.tsx:32-33 — รันตลอดทุกหน้า	Layout.tsx	🟡 Medium	Low — battery/CP
+
+
+
+🟢 Phase 3: Advanced Features (อนาคต)
+ลำดับ	หัวข้อ	ความซับซ้อน
+3.1	Year-End Closing Entries	ปิดบัญชีรายได้ → กำไรสะสม (3103), ปิดบัญชีค่าใช้จ่าย → กำไรสะสม
+3.2	WHT Certificate Tracking	ติดตามใบหัก ณ ที่จ่าย ภ.ง.ด. 3/53 พร้อมรายงาน
+3.3	Budget vs Actual	ตั้งงบประมาณรายบัญชี → เทียบกับ actual
+3.4	Multi-Currency	รองรับธุรกรรมต่างประเทศ
+3.5	Fixed Asset Depreciation	คำนวณค่าเสื่อมอัตโนมัติ

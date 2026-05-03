@@ -23,11 +23,13 @@ import {
   Star,
   Gift,
   ArrowLeftRight,
+  Tag,
   Info,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
+import MaterialCategories from './settings/MaterialCategories'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -42,7 +44,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -134,6 +136,12 @@ export default function SettingsPage() {
           icon={ArrowLeftRight}
           label="แปลงหน่วย"
         />
+        <TabButton
+          active={activeTab === 'material-categories'}
+          onClick={() => setActiveTab('material-categories')}
+          icon={Tag}
+          label="หมวดหมู่วัตถุดิบ"
+        />
       </div>
 
       {/* Content */}
@@ -161,6 +169,8 @@ export default function SettingsPage() {
         {activeTab === 'loyalty' && <LoyaltySettings />}
 
         {activeTab === 'units' && <UnitConversions />}
+
+        {activeTab === 'material-categories' && <MaterialCategories />}
       </div>
 
       {/* Add User Modal */}

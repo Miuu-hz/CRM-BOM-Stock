@@ -4,6 +4,7 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import multer from 'multer'
 import { convertQuantity } from '../services/unitConversion.service'
+import { ACC, ACC_META } from '../config/accountCodes'
 import path from 'path'
 import fs from 'fs'
 
@@ -91,25 +92,70 @@ function createSalesJournal(
     const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
     const jvNumber = `JV-${yr}-${String(jvCount + 1).padStart(5, '0')}`
 
-    // Accounts
-    const arId   = getOrCreateAccount(tenantId, '1180', 'ลูกหนี้การค้า', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
-    const revId  = getOrCreateAccount(tenantId, '4100', 'รายได้จากการขาย', 'REVENUE', 'REVENUE', 'CREDIT')
-    const vatId  = getOrCreateAccount(tenantId, '2210', 'ภาษีขายค้างจ่าย', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT')
-    const cashId = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
-    const bankId = getOrCreateAccount(tenantId, '1102', 'เงินฝากธนาคาร', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
+    // Accounts — using standardized codes from ACC constants
+    const arMeta = ACC_META[ACC.AR]!
+    const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
+    const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
+    const cashMeta = ACC_META[ACC.CASH]!
+    const bankMeta = ACC_META[ACC.BANK]!
+    const invMeta = ACC_META[ACC.INVENTORY]!
+    const cogsMeta = ACC_META[ACC.COGS_PRODUCT]!
+
+    const arId   = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
+    const revId  = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
+    const vatId  = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
+    const cashId = getOrCreateAccount(tenantId, ACC.CASH, cashMeta.name, cashMeta.type, cashMeta.category, cashMeta.normalBalance)
+    const bankId = getOrCreateAccount(tenantId, ACC.BANK, bankMeta.name, bankMeta.type, bankMeta.category, bankMeta.normalBalance)
+    const invId  = getOrCreateAccount(tenantId, ACC.INVENTORY, invMeta.name, invMeta.type, invMeta.category, invMeta.normalBalance)
+    const cogsId = getOrCreateAccount(tenantId, ACC.COGS_PRODUCT, cogsMeta.name, cogsMeta.type, cogsMeta.category, cogsMeta.normalBalance)
 
     const entryId = generateId()
     const netRevenue = totalAmount - taxAmount
 
     if (referenceType === 'INVOICE') {
-      // DR ลูกหนี้การค้า / CR รายได้ขาย + CR ภาษีขาย
+      // Calculate COGS from invoice items → sales_order_items → stock_items.unit_cost
+      let totalCOGS = 0
+      try {
+        const invoice = db.prepare('SELECT sales_order_id FROM invoices WHERE id = ?').get(referenceId) as any
+        if (invoice?.sales_order_id) {
+          const soItems = db.prepare(`
+            SELECT soi.quantity, soi.unit as so_unit, si.unit_cost, si.unit as stock_unit, si.id as stock_item_id
+            FROM sales_order_items soi
+            JOIN stock_items si ON soi.stock_item_id = si.id
+            WHERE soi.sales_order_id = ?
+          `).all(invoice.sales_order_id) as any[]
+          for (const it of soItems) {
+            let qty = Number(it.quantity || 0)
+            const soUnit = it.so_unit || ''
+            const stockUnit = it.stock_unit || ''
+            // Convert SO quantity to stock unit if different for accurate COGS
+            if (soUnit && stockUnit && soUnit !== stockUnit) {
+              const converted = convertQuantity(qty, soUnit, stockUnit, tenantId, it.stock_item_id)
+              if (converted) qty = converted.converted
+            }
+            totalCOGS += (qty * (it.unit_cost || 0))
+          }
+        }
+      } catch (cogsErr) {
+        console.error('⚠️ COGS calculation error:', cogsErr)
+      }
+
+      const grandTotal = totalAmount + totalCOGS
+
+      // DR ลูกหนี้การค้า + DR ต้นทุนขาย / CR รายได้ขาย + CR ภาษีขาย + CR สต็อกสินค้า
       db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'INVOICE', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?)`)
-        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
+        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, grandTotal, grandTotal, now, now)
 
       let lineNum = 1
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
         .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+      if (totalCOGS > 0) {
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+          .run(generateId(), tenantId, entryId, cogsId, lineNum++, `ต้นทุนขาย - ${sourceNumber || ''}`, totalCOGS)
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+          .run(generateId(), tenantId, entryId, invId, lineNum++, `ลดสต็อก - ${sourceNumber || ''}`, totalCOGS)
+      }
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
         .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue)
       if (taxAmount > 0) {
@@ -118,6 +164,10 @@ function createSalesJournal(
       }
 
       updateAccountBalance(tenantId, arId, totalAmount, 0)
+      if (totalCOGS > 0) {
+        updateAccountBalance(tenantId, cogsId, totalCOGS, 0)
+        updateAccountBalance(tenantId, invId, 0, totalCOGS)
+      }
       updateAccountBalance(tenantId, revId, 0, netRevenue)
       if (taxAmount > 0) updateAccountBalance(tenantId, vatId, 0, taxAmount)
 
@@ -149,13 +199,26 @@ function deductStockForSO(tenantId: string, soId: string, soNumber: string) {
     for (const item of items) {
       const stockItemId = item.stock_item_id
       if (!stockItemId) continue
-      const qty = Math.floor(item.quantity || 0)
+      let qty = Number(item.quantity || 0)
       if (qty <= 0) continue
+
+      // Convert SO unit to stock unit if different
+      const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(stockItemId) as any
+      const soUnit = item.unit || ''
+      const stockUnit = stockItem?.unit || ''
+      if (soUnit && stockUnit && soUnit !== stockUnit) {
+        const converted = convertQuantity(qty, soUnit, stockUnit, tenantId, stockItemId)
+        if (converted) {
+          qty = converted.converted
+        }
+      }
+
+      const deductQty = Math.floor(qty)
       db.prepare('UPDATE stock_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(qty, new Date().toISOString(), stockItemId, tenantId)
+        .run(deductQty, new Date().toISOString(), stockItemId, tenantId)
       db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
         VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')`).run(
-        generateId(), tenantId, stockItemId, qty, `SO: ${soNumber}`, `ขายสินค้า SO ${soNumber}`, new Date().toISOString())
+        generateId(), tenantId, stockItemId, deductQty, `SO: ${soNumber}`, `ขายสินค้า SO ${soNumber}${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} → ${deductQty} ${stockUnit})` : ''}`, new Date().toISOString())
     }
   } catch (err) {
     console.error('⚠️ deductStockForSO error:', err)
@@ -458,15 +521,25 @@ router.put('/sales-orders/:id/status', async (req: Request, res: Response) => {
     // เช็ค stock ก่อน CONFIRMED
     if (status === 'CONFIRMED') {
       const soItems = db.prepare(`
-        SELECT soi.*, si.quantity as stock_qty, COALESCE(soi.product_name, si.name) as item_name
+        SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, COALESCE(soi.product_name, si.name) as item_name
         FROM sales_order_items soi
         LEFT JOIN stock_items si ON soi.stock_item_id = si.id
         WHERE soi.sales_order_id = ?
       `).all(req.params.id) as any[]
 
-      const shortItems = soItems.filter(it => it.stock_item_id && (it.stock_qty ?? 0) < it.quantity)
+      const shortItems = soItems.filter(it => {
+        if (!it.stock_item_id) return false
+        let needQty = Number(it.quantity || 0)
+        const soUnit = it.unit || ''
+        const stockUnit = it.stock_unit || ''
+        if (soUnit && stockUnit && soUnit !== stockUnit) {
+          const converted = convertQuantity(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
+          if (converted) needQty = converted.converted
+        }
+        return (it.stock_qty ?? 0) < needQty
+      })
       if (shortItems.length > 0) {
-        const details = shortItems.map((it: any) => `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} มีในสต็อก ${it.stock_qty ?? 0}`).join(', ')
+        const details = shortItems.map((it: any) => `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} ${it.unit || ''} มีในสต็อก ${it.stock_qty ?? 0} ${it.stock_unit || ''}`).join(', ')
         return res.status(400).json({ success: false, message: `สต็อกไม่เพียงพอ: ${details}` })
       }
     }
@@ -863,7 +936,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
 
     // Get sales order details
     const salesOrder = db.prepare(`
-      SELECT so.*, c.id as customer_id
+      SELECT so.*, c.id as customer_id, c.name as customer_name
       FROM sales_orders so
       JOIN customers c ON so.customer_id = c.id
       WHERE so.id = ? AND so.tenant_id = ?
@@ -893,13 +966,23 @@ router.post('/invoices', async (req: Request, res: Response) => {
 
       // Create invoice items from sales order items
       const insertItem = db.prepare(`
-        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       for (const item of salesOrderItems) {
         insertItem.run(generateId(), tenantId, id, item.id,
           item.stock_item_id || null, null, item.product_name || null,
-          item.quantity, item.unit_price, item.total_price)
+          item.quantity, item.unit || '', item.unit_price, item.total_price)
+      }
+
+      // VAT Entry (Output VAT)
+      if ((salesOrder.tax_amount || 0) > 0) {
+        db.prepare(`
+          INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
+        `).run(generateId(), tenantId, 'INVOICE', id, invoiceNumber, now.substring(0, 10),
+          salesOrder.customer_name || '', null,
+          salesOrder.subtotal, salesOrder.tax_rate || 7, salesOrder.tax_amount, salesOrder.total_amount, now)
       }
     })
 
@@ -1099,13 +1182,13 @@ router.post('/credit-notes', async (req: Request, res: Response) => {
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO credit_note_items (id, tenant_id, credit_note_id, invoice_item_id, product_id, quantity, unit_price, reason, total_price)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO credit_note_items (id, tenant_id, credit_note_id, invoice_item_id, product_id, quantity, unit, unit_price, reason, total_price)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
           const total = item.quantity * item.unitPrice
           insertItem.run(generateId(), tenantId, id, item.invoiceItemId, item.productId,
-            item.quantity, item.unitPrice, item.reason || '', total)
+            item.quantity, item.unit || '', item.unitPrice, item.reason || '', total)
         }
       }
 

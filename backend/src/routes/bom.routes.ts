@@ -32,7 +32,7 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
            m.unit as material_unit,
            child_bom.product_id as child_product_id
     FROM bom_items bi
-    LEFT JOIN stock_items m ON bi.material_id = m.id
+    LEFT JOIN materials m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
@@ -85,7 +85,7 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
     SELECT
       bi.*,
       m.name as material_name,
-      m.sku as material_code,
+      m.code as material_code,
       m.unit_cost,
       m.unit,
       child_bom.id as child_bom_id_ref,
@@ -93,7 +93,7 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
       child_p.name as child_bom_product_name,
       child_p.sku as child_bom_product_code
     FROM bom_items bi
-    LEFT JOIN stock_items m ON bi.material_id = m.id
+    LEFT JOIN materials m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -317,14 +317,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT
         bi.*,
         m.name as material_name,
-        m.sku as material_code,
+        m.code as material_code,
         m.unit_cost,
         m.unit as material_unit,
         child_bom.version as child_bom_version,
         child_p.name as child_bom_product_name,
         child_p.sku as child_bom_product_code
       FROM bom_items bi
-      LEFT JOIN stock_items m ON bi.material_id = m.id
+      LEFT JOIN materials m ON bi.material_id = m.id
       LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
       LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
       WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -612,9 +612,9 @@ router.get('/explode/:id', async (req: Request, res: Response) => {
       visited.add(currentBomId)
 
       const items = db.prepare(`
-        SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit
+        SELECT bi.*, m.name as material_name, m.code as material_code, m.unit
         FROM bom_items bi
-        LEFT JOIN stock_items m ON bi.material_id = m.id
+        LEFT JOIN materials m ON bi.material_id = m.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ?
       `).all(currentBomId, tenantId) as any[]
 

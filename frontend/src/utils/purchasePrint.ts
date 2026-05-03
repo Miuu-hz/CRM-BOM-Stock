@@ -165,6 +165,7 @@ function templatePO_A4(d: any): string {
       <td class="center">${i + 1}</td>
       <td>${it.description || '-'}</td>
       <td class="center">${it.quantity}</td>
+      <td class="center">${it.unit || '-'}</td>
       <td class="right">${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price || it.quantity * it.unit_price)}</td>
     </tr>`).join('')
@@ -203,9 +204,10 @@ function templatePO_A4(d: any): string {
       <thead><tr>
         <th class="center" style="width:8mm">#</th>
         <th>รายการ</th>
-        <th class="center" style="width:18mm">จำนวน</th>
-        <th class="right" style="width:24mm">ราคาต่อหน่วย</th>
-        <th class="right" style="width:26mm">รวม (บาท)</th>
+        <th class="center" style="width:14mm">จำนวน</th>
+        <th class="center" style="width:12mm">หน่วย</th>
+        <th class="right" style="width:22mm">ราคาต่อหน่วย</th>
+        <th class="right" style="width:24mm">รวม (บาท)</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -236,6 +238,7 @@ function templateGR_A4(d: any): string {
       <td>${it.description || it.material_name || '-'}</td>
       <td class="center">${it.ordered_qty ?? '-'}</td>
       <td class="center">${it.received_qty}</td>
+      <td class="center">${it.unit || '-'}</td>
       <td class="center">${it.accepted_qty ?? it.received_qty}</td>
       <td class="center">${it.rejected_qty || 0}</td>
       <td class="center">${it.lot_number || '-'}</td>
@@ -273,12 +276,13 @@ function templateGR_A4(d: any): string {
       <thead><tr>
         <th class="center" style="width:7mm">#</th>
         <th>รายการ</th>
-        <th class="center" style="width:16mm">สั่ง</th>
-        <th class="center" style="width:16mm">รับ</th>
-        <th class="center" style="width:16mm">ผ่าน QC</th>
-        <th class="center" style="width:14mm">ปฏิเสธ</th>
-        <th class="center" style="width:18mm">Lot/Batch</th>
-        <th class="center" style="width:18mm">ตำแหน่ง</th>
+        <th class="center" style="width:14mm">สั่ง</th>
+        <th class="center" style="width:14mm">รับ</th>
+        <th class="center" style="width:12mm">หน่วย</th>
+        <th class="center" style="width:14mm">ผ่าน QC</th>
+        <th class="center" style="width:12mm">ปฏิเสธ</th>
+        <th class="center" style="width:16mm">Lot/Batch</th>
+        <th class="center" style="width:16mm">ตำแหน่ง</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -299,7 +303,7 @@ function templateGR_Thermal(d: any): string {
   const rows = (d.items || []).map((it: any, i: number) => `
     <tr>
       <td>${i + 1}. ${it.description || it.material_name || '-'}${it.lot_number ? `<br><span style="font-size:7pt;color:#555">Lot: ${it.lot_number}</span>` : ''}</td>
-      <td class="right">${it.received_qty}<br><span style="font-size:7pt">${it.location || ''}</span></td>
+      <td class="right">${it.received_qty}${it.unit || ''}<br><span style="font-size:7pt">${it.location || ''}</span></td>
     </tr>`).join('')
   return `<div class="center">
     <div class="company-name">${d._company || 'บริษัท'}</div>
@@ -468,6 +472,7 @@ function templateReturn_A4(d: any): string {
       <td class="center">${i + 1}</td>
       <td>${it.material_name || it.description || '-'}</td>
       <td class="center">${it.quantity}</td>
+      <td class="center">${it.unit || '-'}</td>
       <td class="right">${fmt(it.unit_price)}</td>
       <td class="right">${fmt(it.total_price || it.quantity * it.unit_price)}</td>
       <td>${it.reason || '-'}</td>
@@ -502,10 +507,11 @@ function templateReturn_A4(d: any): string {
       <thead><tr>
         <th class="center" style="width:8mm">#</th>
         <th>รายการ</th>
-        <th class="center" style="width:16mm">จำนวน</th>
-        <th class="right" style="width:22mm">ราคา/หน่วย</th>
-        <th class="right" style="width:24mm">รวม</th>
-        <th style="width:30mm">เหตุผล</th>
+        <th class="center" style="width:14mm">จำนวน</th>
+        <th class="center" style="width:12mm">หน่วย</th>
+        <th class="right" style="width:20mm">ราคา/หน่วย</th>
+        <th class="right" style="width:22mm">รวม</th>
+        <th style="width:28mm">เหตุผล</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>

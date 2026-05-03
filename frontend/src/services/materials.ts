@@ -53,6 +53,7 @@ export interface CreateMaterialInput {
   minStock?: number
   maxStock?: number
   initialStock?: number
+  unit?: string
 }
 
 export interface UpdateMaterialInput {
@@ -81,6 +82,17 @@ export const materialsService = {
   createCategory: async (input: { code: string; name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
     const response = await api.post<any>('/materials/categories', input)
     return response.data?.data
+  },
+
+  // Update category
+  updateCategory: async (id: string, input: { name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
+    const response = await api.put<any>(`/materials/categories/${id}`, input)
+    return response.data?.data
+  },
+
+  // Delete category
+  deleteCategory: async (id: string): Promise<void> => {
+    await api.delete(`/materials/categories/${id}`)
   },
 
   // Get all materials with stock info
