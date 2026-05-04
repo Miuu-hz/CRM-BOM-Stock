@@ -9,6 +9,7 @@ export interface StockItem {
   productId?: string
   materialId?: string
   quantity: number
+  sealed_qty?: number
   unit: string
   baseUnit?: string
   saleUnit?: string

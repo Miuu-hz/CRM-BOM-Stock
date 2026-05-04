@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
-import { convertQuantityBidirectional } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
 
 // Multer config: store in uploads/stock-images/
@@ -53,6 +53,7 @@ function enrichStockItem(item: any, tenantId: string) {
   const displayUnit = item.display_unit || item.unit
   item.base_unit = baseUnit
   item.display_unit = displayUnit
+  item.sealed_qty = item.sealed_qty ?? 0
 
   if (displayUnit && baseUnit && displayUnit !== baseUnit) {
     const converted = convertQuantityBidirectional(item.quantity, baseUnit, displayUnit, tenantId, item.id)
@@ -353,18 +354,42 @@ router.post('/movement', async (req: Request, res: Response) => {
     }
 
     let newQuantity = item.quantity
+    let newSealedQty = item.sealed_qty ?? 0
+    const now = new Date().toISOString()
+
     if (type === 'IN') {
       newQuantity += convertedQuantity
     } else if (type === 'OUT') {
+      // auto-unpack ถ้า quantity ไม่พอ แต่มี sealed_qty
       if (item.quantity < convertedQuantity) {
+        const unpack = autoUnpackIfNeeded(item, convertedQuantity, tenantId)
+        if (!unpack) {
+          const totalBase = (item.quantity ?? 0) + (item.sealed_qty ?? 0) * (item.display_unit ? 1 : 0)
+          return res.status(400).json({ success: false, message: 'Insufficient stock' })
+        }
+        // บันทึก unpack movement
+        if (unpack.unpackedPacks > 0) {
+          db.prepare(`
+            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+            VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)
+          `).run(generateId(), tenantId, stockItemId,
+            unpack.unpackedPacks,
+            reference || 'AUTO',
+            `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit} → ${unpack.unpackedPacks * unpack.packFactor} ${baseUnit}`,
+            now, createdBy)
+          db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
+            .run(unpack.sealed_qty, now, stockItemId)
+          newSealedQty = unpack.sealed_qty
+          newQuantity = unpack.quantity
+        }
+      }
+      if (newQuantity < convertedQuantity) {
         return res.status(400).json({ success: false, message: 'Insufficient stock' })
       }
       newQuantity -= convertedQuantity
     } else if (type === 'ADJUST') {
       newQuantity = convertedQuantity
     }
-
-    const now = new Date().toISOString()
 
     db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now, stockItemId)
 

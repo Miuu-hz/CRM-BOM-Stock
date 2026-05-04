@@ -93,12 +93,19 @@ const UNIT_NAME_MAP: Record<string, string> = {
   // หน่วยนับ
   'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
   'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
-  'แผ่น': 'sheet', 'ขวด': 'bottle',
+  'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
+  'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+  // spelling variants ที่พบบ่อย
+  'แพค': 'pack', 'แพ๊ค': 'pack',
+  'กุรอส': 'gross',
 }
 
 /** Normalize unit name to English code */
 export function normalizeUnit(unit: string): string {
   const u = unit.toLowerCase().trim()
+  // Handle "label (code)" format e.g. "แพ็ค (pack)" → "pack"
+  const match = u.match(/\(([^)]+)\)$/)
+  if (match) return match[1].trim()
   return UNIT_NAME_MAP[u] || u
 }
 
@@ -138,6 +145,113 @@ export function getCompatibleUnits(unit: string): string[] {
 
 function generateId(): string {
   return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+// ===================================================================
+// Graph-based Chain Conversion (BFS)
+// ===================================================================
+type ConversionGraph = Map<string, Array<{ to: string; factor: number }>>
+
+interface GraphCache {
+  graph: ConversionGraph
+  ts: number
+}
+
+const graphCache = new Map<string, GraphCache>()
+const GRAPH_TTL = 5 * 60 * 1000 // 5 minutes
+
+export function invalidateConversionGraphCache(tenantId: string) {
+  graphCache.delete(tenantId)
+}
+
+function buildConversionGraph(tenantId: string, materialId?: string): ConversionGraph {
+  const cacheKey = `${tenantId}:${materialId ?? ''}`
+  const cached = graphCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < GRAPH_TTL) return cached.graph
+
+  const graph: ConversionGraph = new Map()
+
+  const addEdge = (from: string, to: string, factor: number) => {
+    if (!graph.has(from)) graph.set(from, [])
+    graph.get(from)!.push({ to, factor })
+    // reverse edge
+    if (!graph.has(to)) graph.set(to, [])
+    graph.get(to)!.push({ to: from, factor: 1 / factor })
+  }
+
+  // STANDARD_CONVERSIONS (bidirectional already defined, deduplicate via seen)
+  const seen = new Set<string>()
+  for (const [key, factor] of Object.entries(STANDARD_CONVERSIONS)) {
+    const [from, to] = key.split('->')
+    const fwd = `${from}->${to}`
+    const rev = `${to}->${from}`
+    if (!seen.has(fwd) && !seen.has(rev)) {
+      seen.add(fwd)
+      seen.add(rev)
+      addEdge(from, to, factor)
+    }
+  }
+
+  // tenant global conversions
+  const globalRows = db.prepare(`
+    SELECT from_unit, to_unit, conversion_factor FROM unit_conversions
+    WHERE tenant_id = ? AND material_id IS NULL
+  `).all(tenantId) as Array<{ from_unit: string; to_unit: string; conversion_factor: number }>
+
+  for (const row of globalRows) {
+    addEdge(row.from_unit, row.to_unit, row.conversion_factor)
+  }
+
+  // material-specific conversions (override or supplement)
+  if (materialId) {
+    const matRows = db.prepare(`
+      SELECT from_unit, to_unit, conversion_factor FROM unit_conversions
+      WHERE material_id = ?
+    `).all(materialId) as Array<{ from_unit: string; to_unit: string; conversion_factor: number }>
+
+    for (const row of matRows) {
+      addEdge(row.from_unit, row.to_unit, row.conversion_factor)
+    }
+  }
+
+  graphCache.set(cacheKey, { graph, ts: Date.now() })
+  return graph
+}
+
+/** BFS to find a conversion chain from `from` to `to`. Returns combined factor or null. */
+export function findConversionChain(
+  fromUnit: string,
+  toUnit: string,
+  tenantId: string,
+  materialId?: string
+): { factor: number; path: string[] } | null {
+  const normFrom = normalizeUnit(fromUnit)
+  const normTo = normalizeUnit(toUnit)
+  if (normFrom === normTo) return { factor: 1, path: [normFrom] }
+
+  const graph = buildConversionGraph(tenantId, materialId)
+
+  // BFS
+  const queue: Array<{ unit: string; factor: number; path: string[] }> = [
+    { unit: normFrom, factor: 1, path: [normFrom] },
+  ]
+  const visited = new Set<string>([normFrom])
+
+  while (queue.length > 0) {
+    const { unit, factor, path } = queue.shift()!
+    if (path.length > 5) continue // max depth
+
+    for (const edge of graph.get(unit) ?? []) {
+      if (visited.has(edge.to)) continue
+      const newFactor = factor * edge.factor
+      const newPath = [...path, edge.to]
+      if (edge.to === normTo) return { factor: newFactor, path: newPath }
+      visited.add(edge.to)
+      queue.push({ unit: edge.to, factor: newFactor, path: newPath })
+    }
+  }
+
+  return null
 }
 
 // ===================================================================
@@ -192,7 +306,7 @@ export function convertQuantity(
   return { converted: quantity * factor, factor }
 }
 
-// แปลงแบบสองทิศทาง: ถ้าหา direct ไม่เจอ ให้ลอง reverse
+// แปลงแบบสองทิศทาง: direct → reverse → BFS chain
 export function convertQuantityBidirectional(
   quantity: number,
   fromUnit: string,
@@ -211,7 +325,68 @@ export function convertQuantityBidirectional(
     return { converted: quantity * factor, factor }
   }
 
+  // 3. BFS chain (เช่น pack→bottle→liter)
+  const chain = findConversionChain(fromUnit, toUnit, tenantId, materialId)
+  if (chain) {
+    console.info(`[unit-chain] ${chain.path.join('→')} factor=${chain.factor}`)
+    return { converted: quantity * chain.factor, factor: chain.factor }
+  }
+
   return null
+}
+
+// ===================================================================
+// Auto-Unpack: เปิดแพ็คอัตโนมัติเมื่อ quantity ไม่พอ
+// ===================================================================
+export interface AutoUnpackResult {
+  quantity: number      // loose base units หลังแกะ
+  sealed_qty: number    // sealed packs ที่เหลือ
+  unpackedPacks: number // แพ็คที่ถูกแกะในรอบนี้
+  packFactor: number    // base units ต่อ 1 แพ็ค
+}
+
+export function autoUnpackIfNeeded(
+  stockItem: {
+    id: string
+    quantity: number
+    sealed_qty: number
+    display_unit?: string | null
+    base_unit?: string | null
+    unit: string
+    material_id?: string | null
+  },
+  neededInBase: number,
+  tenantId: string
+): AutoUnpackResult | null {
+  // พอแล้ว ไม่ต้องแกะ
+  if (stockItem.quantity >= neededInBase) {
+    return { quantity: stockItem.quantity, sealed_qty: stockItem.sealed_qty ?? 0, unpackedPacks: 0, packFactor: 0 }
+  }
+
+  const displayUnit = stockItem.display_unit
+  if (!displayUnit || (stockItem.sealed_qty ?? 0) <= 0) return null
+
+  const baseUnit = stockItem.base_unit || stockItem.unit
+  if (normalizeUnit(displayUnit) === normalizeUnit(baseUnit)) return null
+
+  const chain = findConversionChain(displayUnit, baseUnit, tenantId, stockItem.material_id ?? undefined)
+  if (!chain || chain.factor <= 0) return null
+
+  const packFactor = Math.round(chain.factor) // ใช้ round เพราะ factor ควรเป็น integer (3 ขวด/แพ็ค)
+
+  let qty = stockItem.quantity
+  let sealed = stockItem.sealed_qty ?? 0
+  let unpackedPacks = 0
+
+  while (qty < neededInBase && sealed > 0) {
+    sealed -= 1
+    qty += packFactor
+    unpackedPacks += 1
+  }
+
+  if (qty < neededInBase) return null // ยังไม่พอแม้แกะหมดแล้ว
+
+  return { quantity: qty, sealed_qty: sealed, unpackedPacks, packFactor }
 }
 
 // ===================================================================
@@ -249,11 +424,14 @@ export function createConversion(
 ): UnitConversion {
   const id = generateId()
   const now = new Date().toISOString()
+  const normFrom = normalizeUnit(data.from_unit)
+  const normTo = normalizeUnit(data.to_unit)
   db.prepare(`
     INSERT INTO unit_conversions (id, tenant_id, material_id, from_unit, to_unit, conversion_factor, notes, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, tenantId, data.material_id ?? null, data.from_unit, data.to_unit, data.conversion_factor, data.notes ?? null, now, now)
+  `).run(id, tenantId, data.material_id ?? null, normFrom, normTo, data.conversion_factor, data.notes ?? null, now, now)
 
+  invalidateConversionGraphCache(tenantId)
   return db.prepare(`SELECT * FROM unit_conversions WHERE id = ?`).get(id) as UnitConversion
 }
 
@@ -276,6 +454,7 @@ export function updateConversion(
     now,
     id
   )
+  invalidateConversionGraphCache(tenantId)
   return db.prepare(`SELECT * FROM unit_conversions WHERE id = ?`).get(id) as UnitConversion
 }
 
@@ -283,6 +462,7 @@ export function deleteConversion(id: string, tenantId: string): boolean {
   const result = db.prepare(`
     DELETE FROM unit_conversions WHERE id = ? AND tenant_id = ? AND is_global = 0
   `).run(id, tenantId)
+  if (result.changes > 0) invalidateConversionGraphCache(tenantId)
   return result.changes > 0
 }
 

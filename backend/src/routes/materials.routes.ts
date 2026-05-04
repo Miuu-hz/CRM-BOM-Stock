@@ -12,7 +12,10 @@ import {
   convertQuantity,
   getCompatibleUnits,
   getUnitDisplayName,
+  findConversionChain,
+  normalizeUnit,
 } from '../services/unitConversion.service'
+import { suggestUnitConversion } from '../services/llm.service'
 
 const router = Router()
 
@@ -320,6 +323,61 @@ router.post('/unit-conversions/convert', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Convert error:', error)
     res.status(500).json({ success: false, message: 'Failed to convert' })
+  }
+})
+
+// POST /api/materials/unit-conversions/check-path — ตรวจสอบเส้นทาง (BFS, ไม่ใช้ LLM)
+router.post('/unit-conversions/check-path', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from_unit, to_unit, material_id } = req.body
+    if (!from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'from_unit และ to_unit จำเป็นต้องระบุ' })
+    }
+
+    const chain = findConversionChain(from_unit, to_unit, tenantId, material_id)
+    if (chain) {
+      return res.json({ success: true, data: { found: true, path: chain.path, factor: chain.factor } })
+    }
+
+    // หา partial path จาก from และจาก to เพื่อบอก gap
+    const fromNorm = normalizeUnit(from_unit)
+    const toNorm = normalizeUnit(to_unit)
+    return res.json({
+      success: true,
+      data: {
+        found: false,
+        from_norm: fromNorm,
+        to_norm: toNorm,
+        message: `ไม่พบเส้นทางแปลง ${fromNorm} → ${toNorm}`,
+      },
+    })
+  } catch (error) {
+    console.error('check-path error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// POST /api/materials/unit-conversions/suggest — ขอ AI แนะนำ factor
+router.post('/unit-conversions/suggest', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from_unit, to_unit, material_id, material_name } = req.body
+    if (!from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'from_unit และ to_unit จำเป็นต้องระบุ' })
+    }
+
+    // โหลด existing conversions เพื่อส่ง context ให้ LLM
+    const allConversions = listAllConversions(tenantId)
+    const existing = allConversions
+      .filter(c => !material_id || c.material_id === material_id || !c.material_id)
+      .map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: c.conversion_factor }))
+
+    const result = await suggestUnitConversion({ from_unit, to_unit, material_name, existing_conversions: existing })
+    res.json({ success: true, data: result })
+  } catch (error) {
+    console.error('suggest error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
   }
 })
 

@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { lineBotService } from '../services/line-bot.service'
-import { convertQuantity } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -169,7 +169,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           let conversionInfo = ''
 
           if (stock && m.unit && m.unit !== stock.unit) {
-            const converted = convertQuantity(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
+            const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
             if (!converted) {
               return res.status(400).json({
                 success: false,
@@ -180,7 +180,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             conversionInfo = ` (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit})`
           }
 
-          if (!stock || stock.quantity < requiredStockQty) {
+          const totalAvailable = (stock?.quantity ?? 0) + ((stock?.sealed_qty ?? 0) > 0
+            ? autoUnpackIfNeeded(stock, requiredStockQty, tenantId)?.quantity ?? 0 : 0)
+          if (!stock || (stock.quantity < requiredStockQty && !autoUnpackIfNeeded(stock, requiredStockQty, tenantId))) {
             return res.status(400).json({
               success: false,
               message: `Insufficient stock for ${m.material_name}. Need ${requiredStockQty}${conversionInfo}, have ${stock?.quantity || 0} ${stock?.unit || ''}`,
@@ -202,20 +204,35 @@ router.put('/:id/status', async (req: Request, res: Response) => {
               let movementNotes = `Material issued for work order`
 
               if (m.unit && m.unit !== stock.unit) {
-                const converted = convertQuantity(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
+                const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
                 if (converted) {
                   deductQty = converted.converted
                   movementNotes = `Material issued for work order (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
                 }
               }
 
+              // auto-unpack ถ้า quantity ไม่พอ
+              const needed = Math.floor(deductQty)
+              if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
+                const unpack = autoUnpackIfNeeded(stock, needed, tenantId)
+                if (unpack && unpack.unpackedPacks > 0) {
+                  db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
+                    .run(unpack.sealed_qty, unpack.quantity, now, stock.id)
+                  db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+                    VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'system')`)
+                    .run(generateId(), tenantId, stock.id, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
+                      `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now)
+                  stock.quantity = unpack.quantity
+                }
+              }
+
               db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
-                .run(Math.floor(deductQty), now, stock.id)
+                .run(needed, now, stock.id)
 
               db.prepare(`
                 INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                 VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, stock.id, Math.floor(deductQty), `WO: ${wo.wo_number}`, movementNotes, now)
+              `).run(generateId(), tenantId, stock.id, needed, `WO: ${wo.wo_number}`, movementNotes, now)
 
               db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
                 .run(m.required_qty, m.id)

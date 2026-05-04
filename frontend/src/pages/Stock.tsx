@@ -593,16 +593,26 @@ function Stock() {
                       )}
                       {visibleCols.quantity && (
                         <td>
-                          <div className="flex flex-col">
-                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                              {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
-                                ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
-                                : `${item.quantity} ${item.baseUnit || item.unit}`}
-                            </span>
-                            {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
-                              <span className="text-xs text-gray-500">
-                                {item.quantity} {item.baseUnit || item.unit}
-                              </span>
+                          <div className="flex flex-col gap-0.5">
+                            {(item.sealed_qty ?? 0) > 0 ? (
+                              <>
+                                <span className={`font-semibold ${item.quantity === 0 && (item.sealed_qty ?? 0) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                                  {item.sealed_qty} {item.displayUnit || item.unit}
+                                  {item.quantity > 0 && <span className="text-gray-400 font-normal"> + {item.quantity} {item.baseUnit || item.unit}</span>}
+                                </span>
+                                <span className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealed_qty} {item.displayUnit}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                                  {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
+                                    ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
+                                    : `${item.quantity} ${item.baseUnit || item.unit}`}
+                                </span>
+                                {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
+                                  <span className="text-xs text-gray-500">{item.quantity} {item.baseUnit || item.unit}</span>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>

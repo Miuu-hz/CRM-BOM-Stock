@@ -100,6 +100,69 @@ export async function detectIntent(userMessage: string): Promise<LLMIntent> {
     }
 }
 
+// ===================================================================
+// Unit Conversion Advisor — pre-defined prompt template
+// ===================================================================
+const UNIT_SUGGEST_SYSTEM = `คุณเป็นผู้ช่วยตั้งค่าการแปลงหน่วยสำหรับระบบ ERP
+ตอบด้วย JSON เท่านั้น ห้ามมีข้อความอื่นนอกจาก JSON
+รูปแบบ: {"factor": <number>, "note": "<คำอธิบายสั้นภาษาไทย>"}`
+
+export async function suggestUnitConversion(params: {
+  from_unit: string
+  to_unit: string
+  material_name?: string
+  existing_conversions: Array<{ from_unit: string; to_unit: string; factor: number }>
+}): Promise<{ factor: number | null; note: string }> {
+  if (!LLM_API_KEY) {
+    return { factor: null, note: 'ระบบ AI ยังไม่ได้ตั้งค่า กรุณากรอกค่าเอง' }
+  }
+
+  const existingText = params.existing_conversions.length > 0
+    ? params.existing_conversions.map(c => `1 ${c.from_unit} = ${c.factor} ${c.to_unit}`).join(', ')
+    : 'ยังไม่มี'
+
+  const userMsg = `สินค้า: ${params.material_name ?? 'ทั่วไป'}
+ต้องการทราบ: 1 ${params.from_unit} เท่ากับกี่ ${params.to_unit}
+การแปลงที่มีในระบบ: ${existingText}
+แนะนำค่า factor ที่เหมาะสม พร้อมคำอธิบายสั้น`
+
+  try {
+    const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LLM_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        messages: [
+          { role: 'system', content: UNIT_SUGGEST_SYSTEM },
+          { role: 'user', content: userMsg },
+        ],
+        max_tokens: 100,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    if (!res.ok) throw new Error(`LLM error ${res.status}`)
+
+    const data: any = await res.json()
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? ''
+    const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+    const parsed = JSON.parse(jsonStr)
+
+    if (typeof parsed.factor === 'number' && parsed.factor > 0) {
+      return { factor: parsed.factor, note: parsed.note ?? '' }
+    }
+    return { factor: null, note: 'AI ไม่สามารถแนะนำค่าได้ กรุณากรอกเอง' }
+
+  } catch (err) {
+    console.error('suggestUnitConversion error:', err)
+    return { factor: null, note: 'กรุณากรอกค่าเอง' }
+  }
+}
+
 // Fallback เมื่อ LLM ไม่ตอบหรือ error — ตอบ CHAT ธรรมดา ไม่สร้าง task อัตโนมัติ
 function fallbackIntent(_message: string): LLMIntent {
     return {

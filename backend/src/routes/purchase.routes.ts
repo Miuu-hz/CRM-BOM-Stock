@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
-import { convertQuantity } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, normalizeUnit } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
 
 const router = Router()
@@ -461,21 +461,35 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
 
           let stockQty = item.accepted_qty
           let movementNotes = `Received from purchase`
+          let addToSealed = false
 
-          // Unit conversion: PO unit → Stock unit
-          if (stockItem && poUnit && poUnit !== stockItem.unit) {
-            const converted = convertQuantity(Number(item.accepted_qty), poUnit, stockItem.unit, tenantId, item.material_id)
+          // ถ้า PO unit ตรงกับ display_unit → เก็บเป็น sealed_qty (ยังไม่แกะ)
+          if (stockItem && poUnit && stockItem.display_unit &&
+              normalizeUnit(poUnit) === normalizeUnit(stockItem.display_unit)) {
+            addToSealed = true
+            movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit} (ยังไม่แกะ)`
+          } else if (stockItem && poUnit && poUnit !== stockItem.unit) {
+            // Unit conversion: PO unit → Stock base unit
+            const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockItem.unit, tenantId, item.material_id)
             if (!converted) {
-              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockItem.unit} สำหรับวัตถุดิบนี้ กรุณาตั้งค่า Unit Conversion ก่อน`)
+              const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
+                || (db.prepare('SELECT name FROM stock_items WHERE id = ?').get(item.material_id) as any)?.name
+                || item.material_id
+              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockItem.unit} สำหรับ "${materialName}" กรุณาตั้งค่า Unit Conversion ก่อน`)
             }
             stockQty = converted.converted
             movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockItem.unit}, factor: ${converted.factor})`
           }
 
           if (stockItem) {
-            // Update quantity + unit_cost (latest purchase price)
-            db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-              .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+            if (addToSealed) {
+              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+                .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+            } else {
+              // Update quantity + unit_cost (latest purchase price)
+              db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+                .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+            }
           } else {
             // Create new stock item (BOM material not yet in stock)
             const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
@@ -525,6 +539,10 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
   } catch (error: any) {
     console.error('Confirm goods receipt error:', error)
     const message = error?.message || 'Failed to confirm goods receipt'
+    // Validation errors (missing unit conversion) should return 400, not 500
+    if (message.includes('ไม่พบการแปลงหน่วย') || message.includes('Unit Conversion')) {
+      return res.status(400).json({ success: false, message })
+    }
     res.status(500).json({ success: false, message })
   }
 })

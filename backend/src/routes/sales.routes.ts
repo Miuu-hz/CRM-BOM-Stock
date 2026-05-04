@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import multer from 'multer'
-import { convertQuantity } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
 import path from 'path'
 import fs from 'fs'
@@ -130,7 +130,7 @@ function createSalesJournal(
             const stockUnit = it.stock_unit || ''
             // Convert SO quantity to stock unit if different for accurate COGS
             if (soUnit && stockUnit && soUnit !== stockUnit) {
-              const converted = convertQuantity(qty, soUnit, stockUnit, tenantId, it.stock_item_id)
+              const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, it.stock_item_id)
               if (converted) qty = converted.converted
             }
             totalCOGS += (qty * (it.unit_cost || 0))
@@ -207,7 +207,7 @@ function deductStockForSO(tenantId: string, soId: string, soNumber: string) {
       const soUnit = item.unit || ''
       const stockUnit = stockItem?.unit || ''
       if (soUnit && stockUnit && soUnit !== stockUnit) {
-        const converted = convertQuantity(qty, soUnit, stockUnit, tenantId, stockItemId)
+        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
         if (converted) {
           qty = converted.converted
         }
@@ -533,7 +533,7 @@ router.put('/sales-orders/:id/status', async (req: Request, res: Response) => {
         const soUnit = it.unit || ''
         const stockUnit = it.stock_unit || ''
         if (soUnit && stockUnit && soUnit !== stockUnit) {
-          const converted = convertQuantity(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
+          const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
           if (converted) needQty = converted.converted
         }
         return (it.stock_qty ?? 0) < needQty
@@ -719,7 +719,7 @@ router.put('/delivery-orders/:id/status', async (req: Request, res: Response) =>
             let movementNotes = `Delivered to customer`
 
             if (soUnit && stockUnit && soUnit !== stockUnit) {
-              const converted = convertQuantity(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id)
+              const converted = convertQuantityBidirectional(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id)
               if (!converted) {
                 throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับสินค้านี้ กรุณาตั้งค่า Unit Conversion ก่อน`)
               }
@@ -727,14 +727,29 @@ router.put('/delivery-orders/:id/status', async (req: Request, res: Response) =>
               movementNotes = `Delivered to customer (converted: ${item.quantity} ${soUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`
             }
 
+            const needed = Math.floor(deductQty)
+            // auto-unpack ถ้า quantity ไม่พอ
+            if (stockItem.quantity < needed && (stockItem.sealed_qty ?? 0) > 0) {
+              const unpack = autoUnpackIfNeeded(stockItem, needed, tenantId)
+              if (unpack && unpack.unpackedPacks > 0) {
+                db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
+                  .run(unpack.sealed_qty, unpack.quantity, now, stockItem.id)
+                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)`)
+                  .run(generateId(), tenantId, stockItem.id, unpack.unpackedPacks, `DO: ${deliveryOrder.do_number}`,
+                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stockItem.display_unit}`, now, req.user!.userId)
+                stockItem.quantity = unpack.quantity
+              }
+            }
+
             db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
-              .run(Math.floor(deductQty), now, stockItem.id)
+              .run(needed, now, stockItem.id)
 
             // Record stock movement
             db.prepare(`
               INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
               VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id, Math.floor(deductQty), `DO: ${deliveryOrder.do_number}`, 
+            `).run(generateId(), tenantId, stockItem.id, needed, `DO: ${deliveryOrder.do_number}`,
               movementNotes, now, req.user!.userId)
           }
         }

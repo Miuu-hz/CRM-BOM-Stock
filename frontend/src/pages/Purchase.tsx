@@ -205,6 +205,7 @@ interface ReceiptItem {
   purchase_order_item_id: string
   material_id: string
   description: string
+  material_name?: string
   unit: string
   unit_price: number
   ordered_qty: number
@@ -231,6 +232,27 @@ interface ReturnItem {
 // ─── Module-level helpers (stable refs — no re-creation on parent re-render) ──
 
 const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH')}`
+
+const UNIT_NAME_MAP: Record<string, string> = {
+  'กิโลกรัม': 'kg', 'กรัม': 'g', 'มิลลิกรัม': 'mg',
+  'ปอนด์': 'lb', 'ออนซ์': 'oz',
+  'นิ้ว': 'inch', 'เซนติเมตร': 'cm', 'มิลลิเมตร': 'mm',
+  'เมตร': 'm', 'กิโลเมตร': 'km', 'ฟุต': 'ft', 'หลา': 'yard',
+  'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
+  'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
+  'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
+  'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+}
+
+function normalizeUnit(unit: string): string {
+  if (!unit) return unit
+  const u = unit.toLowerCase().trim()
+  const match = u.match(/\(([^)]+)\)$/)
+  if (match) return match[1].trim()
+  return UNIT_NAME_MAP[u] || u
+}
 
 function ModalShell({ title, onClose, children, footer }: {
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode
@@ -1639,7 +1661,8 @@ const Purchase = () => {
             purchase_order_item_id: item.id,
             material_id: item.material_id || '',
             description: item.description || item.material_name || '',
-            unit: item.unit || 'หน่วย',
+            material_name: item.material_name || '',
+            unit: normalizeUnit(item.unit) || 'หน่วย',
             unit_price: item.unit_price || 0,
             ordered_qty: item.quantity || 0,
             already_received_qty: item.received_qty || 0,
@@ -2085,20 +2108,66 @@ const Purchase = () => {
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : viewMode === 'list' ? (
           <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
-              <span className="col-span-2">เลขที่ PO</span><span className="col-span-3">ผู้ขาย</span><span className="col-span-2">วันสั่ง</span>
-              <span className="col-span-2">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
-              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-1"></span>
+              <span className="col-span-2">เลขที่ PO</span><span className="col-span-2">ผู้ขาย</span><span className="col-span-1">วันสั่ง</span>
+              <span className="col-span-1">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
+              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-4"></span>
             </div>
             {paginated.map((order, i) => (
-              <div key={order.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+              <div key={order.id}
+                onClick={() => openModalWithDetail('order', 'view', order.id, order)}
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-gray-400">{order.po_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{order.supplier_name}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{formatDate(order.order_date)}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{formatDate(order.expected_date)}</p>
+                <p className="col-span-2 text-white font-medium truncate">{order.supplier_name}</p>
+                <p className="col-span-1 text-gray-400 text-xs">{formatDate(order.order_date)}</p>
+                <p className="col-span-1 text-gray-400 text-xs">{formatDate(order.expected_date)}</p>
                 <div className="col-span-1"><StatusBadge status={order.status} /></div>
                 <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(order.total_amount)}</p>
-                <div className="col-span-1 flex justify-end gap-1">
-                  <button onClick={() => openModalWithDetail('order', 'view', order.id, order)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                <div className="col-span-4 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => handlePrint('po', order.id)} title="พิมพ์ใบสั่งซื้อ A4"
+                    className="p-1.5 text-gray-400 hover:text-white bg-cyber-dark rounded transition-colors">
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
+                  {order.status === 'DRAFT' && (<>
+                    <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
+                      className="px-2 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded hover:bg-blue-500/20 font-medium transition-colors whitespace-nowrap">
+                      ส่งอนุมัติ
+                    </button>
+                    <button onClick={() => handleDeleteOrder(order.id)}
+                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-red-500/20 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>)}
+                  {order.status === 'SUBMITTED' && (
+                    <button onClick={() => handleUpdateOrderStatus(order.id, 'APPROVED')}
+                      className="px-2 py-1.5 text-xs text-green-400 bg-green-500/10 rounded hover:bg-green-500/20 font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+                      <Check className="w-3 h-3" /> อนุมัติ
+                    </button>
+                  )}
+                  {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (
+                    <button onClick={() => {
+                      setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
+                      loadPendingItems(order.id)
+                      openModal('receipt', 'create')
+                    }}
+                      className="px-2 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded hover:bg-cyber-green/20 font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+                      รับสินค้า <Package className="w-3 h-3" />
+                    </button>
+                  )}
+                  {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
+                    <button onClick={() => {
+                      setInvoiceForm(p => ({
+                        ...p,
+                        purchase_order_id: order.id,
+                        goods_receipt_ids: [],
+                        tax_rate: order.tax_rate ?? 7,
+                        due_date: order.expected_date?.split('T')[0] || '',
+                      }))
+                      openModal('invoice', 'create')
+                    }}
+                      className="px-2 py-1.5 text-xs text-yellow-400 bg-yellow-500/10 rounded hover:bg-yellow-500/20 font-medium transition-colors whitespace-nowrap">
+                      วางบิล
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2238,18 +2307,37 @@ const Purchase = () => {
           <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
               <span className="col-span-2">เลขที่ GR</span><span className="col-span-3">ผู้ขาย</span>
-              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">วันที่รับ</span>
-              <span className="col-span-2">สถานะ</span><span className="col-span-1"></span>
+              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-1">วันที่รับ</span>
+              <span className="col-span-1">สถานะ</span><span className="col-span-3"></span>
             </div>
             {paginated.map((receipt, i) => (
-              <div key={receipt.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+              <div key={receipt.id}
+                onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-gray-400">{receipt.gr_number}</p>
                 <p className="col-span-3 text-white font-medium truncate">{receipt.supplier_name}</p>
                 <p className="col-span-2 text-gray-400 text-xs font-mono">{receipt.po_number}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{formatDate(receipt.receipt_date)}</p>
-                <div className="col-span-2"><StatusBadge status={receipt.status} /></div>
-                <div className="col-span-1 flex justify-end gap-1">
-                  <button onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                <p className="col-span-1 text-gray-400 text-xs">{formatDate(receipt.receipt_date)}</p>
+                <div className="col-span-1"><StatusBadge status={receipt.status} /></div>
+                <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
+                    className="p-1.5 text-gray-400 hover:text-white bg-cyber-dark rounded transition-colors">
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
+                    className="p-1.5 text-gray-400 hover:text-yellow-400 bg-cyber-dark rounded transition-colors text-xs leading-none">
+                    🧾
+                  </button>
+                  {receipt.status === 'DRAFT' && (<>
+                    <button onClick={() => handleConfirmReceipt(receipt.id)} title="ยืนยัน"
+                      className="p-1.5 text-cyber-green bg-cyber-green/10 rounded hover:bg-cyber-green/20 transition-colors">
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleDeleteReceipt(receipt.id)} title="ลบ"
+                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-red-500/20 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>)}
                 </div>
               </div>
             ))}
@@ -3086,7 +3174,7 @@ const Purchase = () => {
                   {/* ── Item header ── */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{item.description || item.material_id}</p>
+                      <p className="text-sm font-semibold text-white truncate">{item.description || item.material_name || item.material_id}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         ราคา/หน่วย: <span className="text-cyber-primary font-medium">{formatCurrency(item.unit_price)}</span>
                         {item.unit && <span className="ml-2 text-gray-600">· {item.unit}</span>}

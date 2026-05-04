@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeftRight, Plus, Trash2, Edit2, Globe, Lock,
   Search, X, Save, ChevronDown, ChevronUp, Info, Package,
+  Sparkles, CheckCircle2, AlertCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -44,6 +45,29 @@ const UNIT_LABELS: Record<string, string> = {
   case: 'ลัง', can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
 }
 
+const UNIT_NAME_MAP: Record<string, string> = {
+  'กิโลกรัม': 'kg', 'กรัม': 'g', 'มิลลิกรัม': 'mg',
+  'ปอนด์': 'lb', 'ออนซ์': 'oz',
+  'นิ้ว': 'inch', 'เซนติเมตร': 'cm', 'มิลลิเมตร': 'mm',
+  'เมตร': 'm', 'กิโลเมตร': 'km', 'ฟุต': 'ft', 'หลา': 'yard',
+  'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
+  'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
+  'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
+  'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+  // spelling variants ที่พบบ่อย
+  'แพค': 'pack', 'แพ๊ค': 'pack',
+  'กุรอส': 'gross',
+}
+
+function normalizeUnit(unit: string): string {
+  const u = unit.toLowerCase().trim()
+  const match = u.match(/\(([^)]+)\)$/)
+  if (match) return match[1].trim()
+  return UNIT_NAME_MAP[u] || u
+}
+
 const ul = (u: string) => UNIT_LABELS[u] ? `${u} (${UNIT_LABELS[u]})` : u
 const unitLabel = (u: string) => UNIT_LABELS[u] ?? u
 
@@ -71,6 +95,16 @@ export default function UnitConversions() {
   const [factor, setFactor] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Path checker state (advisor panel)
+  const [checkFrom, setCheckFrom] = useState('')
+  const [checkTo, setCheckTo] = useState('')
+  const [pathResult, setPathResult] = useState<{
+    found: boolean; path?: string[]; factor?: number; from_norm?: string; to_norm?: string
+  } | null>(null)
+  const [suggestion, setSuggestion] = useState<{ factor: number | null; note: string } | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
 
   // Material selector state
   const [selectedMaterial, setSelectedMaterial] = useState<StockItem | null>(null)
@@ -123,6 +157,50 @@ export default function UnitConversions() {
     )
   }
 
+  const handleCheckPath = async () => {
+    if (!checkFrom.trim() || !checkTo.trim()) return
+    setChecking(true)
+    setPathResult(null)
+    setSuggestion(null)
+    try {
+      const res = await api.post('/materials/unit-conversions/check-path', {
+        from_unit: checkFrom.trim(),
+        to_unit: checkTo.trim(),
+        material_id: selectedMaterial?.id,
+      })
+      setPathResult(res.data.data)
+    } catch {
+      toast.error('ตรวจสอบเส้นทางไม่สำเร็จ')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleSuggest = async () => {
+    if (!pathResult || pathResult.found) return
+    setSuggesting(true)
+    try {
+      const res = await api.post('/materials/unit-conversions/suggest', {
+        from_unit: pathResult.from_norm ?? checkFrom,
+        to_unit: pathResult.to_norm ?? checkTo,
+        material_id: selectedMaterial?.id,
+        material_name: selectedMaterial?.name,
+      })
+      setSuggestion(res.data.data)
+    } catch {
+      toast.error('ขอคำแนะนำ AI ไม่สำเร็จ')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const applyAdvisorToForm = () => {
+    if (!pathResult) return
+    setFromUnit(pathResult.from_norm ?? checkFrom)
+    setToUnit(pathResult.to_norm ?? checkTo)
+    if (suggestion?.factor) setFactor(String(suggestion.factor))
+  }
+
   const openCreate = () => {
     setEditTarget(null)
     setFromUnit('')
@@ -131,6 +209,10 @@ export default function UnitConversions() {
     setNotes('')
     setSelectedMaterial(null)
     setMaterialSearch('')
+    setCheckFrom('')
+    setCheckTo('')
+    setPathResult(null)
+    setSuggestion(null)
     setShowForm(true)
   }
 
@@ -161,8 +243,8 @@ export default function UnitConversions() {
         toast.success('บันทึกแล้ว')
       } else {
         await api.post('/materials/unit-conversions', {
-          from_unit: fromUnit.trim().toLowerCase(),
-          to_unit: toUnit.trim().toLowerCase(),
+          from_unit: normalizeUnit(fromUnit),
+          to_unit: normalizeUnit(toUnit),
           conversion_factor: Number(factor),
           notes: notes.trim() || undefined,
           material_id: selectedMaterial?.id ?? undefined,
@@ -437,6 +519,99 @@ export default function UnitConversions() {
                       1 {unitLabel(fromUnit) || fromUnit} = {factor} {unitLabel(toUnit) || toUnit}
                       {selectedMaterial && <span className="text-gray-400 ml-2 text-sm">({selectedMaterial.name})</span>}
                     </span>
+                  </div>
+                )}
+
+                {/* ── Path Advisor (create mode only) ── */}
+                {!editTarget && (
+                  <div className="p-3 bg-gray-700/30 border border-gray-600/40 rounded-xl space-y-2">
+                    <p className="text-xs font-medium text-gray-400 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      ตรวจสอบเส้นทาง / ขอคำแนะนำ AI
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={checkFrom}
+                        onChange={e => { setCheckFrom(e.target.value); setPathResult(null); setSuggestion(null) }}
+                        placeholder="จาก (pack)"
+                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                      />
+                      <span className="text-gray-600 self-center">→</span>
+                      <input
+                        type="text"
+                        value={checkTo}
+                        onChange={e => { setCheckTo(e.target.value); setPathResult(null); setSuggestion(null) }}
+                        placeholder="ถึง (liter)"
+                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                      />
+                      <button
+                        onClick={handleCheckPath}
+                        disabled={checking || !checkFrom.trim() || !checkTo.trim()}
+                        className="px-3 py-1.5 bg-purple-600/70 hover:bg-purple-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors"
+                      >
+                        {checking ? '...' : 'ตรวจสอบ'}
+                      </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {pathResult && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                          {pathResult.found ? (
+                            <div className="flex items-start gap-2 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                              <div className="text-xs text-emerald-300 space-y-0.5">
+                                <p className="font-medium">พบเส้นทาง: {pathResult.path?.join(' → ')}</p>
+                                <p className="text-emerald-400/70">1 {pathResult.path?.[0]} = {pathResult.factor?.toFixed(6).replace(/\.?0+$/, '')} {pathResult.path?.[pathResult.path.length - 1]}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                                <div className="text-xs text-amber-300">
+                                  <p className="font-medium">ไม่พบเส้นทาง {pathResult.from_norm} → {pathResult.to_norm}</p>
+                                  <p className="text-amber-400/70 mt-0.5">กรุณาเพิ่มการแปลงด้านล่าง หรือให้ AI แนะนำค่า</p>
+                                </div>
+                              </div>
+                              {!suggestion && (
+                                <button
+                                  onClick={handleSuggest}
+                                  disabled={suggesting}
+                                  className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-purple-600/50 hover:bg-purple-600/70 disabled:opacity-40 text-purple-200 rounded-lg text-xs transition-colors"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  {suggesting ? 'AI กำลังคิด...' : 'ขอให้ AI แนะนำค่า'}
+                                </button>
+                              )}
+                              {suggestion && (
+                                <div className="flex items-center gap-2 p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-purple-300 font-medium">
+                                      {suggestion.factor
+                                        ? `AI แนะนำ: 1 ${pathResult.from_norm} = ${suggestion.factor} ${pathResult.to_norm}`
+                                        : suggestion.note}
+                                    </p>
+                                    {suggestion.note && suggestion.factor && (
+                                      <p className="text-xs text-gray-500 truncate">{suggestion.note}</p>
+                                    )}
+                                  </div>
+                                  {suggestion.factor && (
+                                    <button
+                                      onClick={applyAdvisorToForm}
+                                      className="flex-shrink-0 px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-xs font-medium transition-colors"
+                                    >
+                                      ใช้ค่านี้
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
 

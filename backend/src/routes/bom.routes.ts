@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
-import { getConversionFactor } from '../services/unitConversion.service'
+import { convertQuantityBidirectional } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -53,8 +53,8 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
       const materialUnit: string = item.material_unit ?? ''
 
       if (bomUnit && materialUnit && bomUnit !== materialUnit) {
-        const factor = getConversionFactor(bomUnit, materialUnit, tenantId, item.material_id)
-        if (factor !== null) qty = qty * factor
+        const result = convertQuantityBidirectional(qty, bomUnit, materialUnit, tenantId, item.material_id)
+        if (result !== null) qty = result.converted
       }
 
       totalCost += qty * Number(item.unit_cost || 0)

@@ -264,8 +264,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   }
 
   const handleItemChange = (id: string, field: keyof BOMItemRow, value: string | number | boolean) => {
-    setItemRows(
-      (itemRows || []).map((row) => {
+    setItemRows(prev =>
+      prev.map((row) => {
         if (row.id === id) {
           return { ...row, [field]: value }
         }
@@ -303,14 +303,15 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   // Handle material selection with unit loading
   const handleMaterialSelect = (rowId: string, materialId: string) => {
     const material = materials.find((m) => m.id === materialId)
-    // Clear old compatible units first
     setCompatibleUnits(prev => {
       const next = { ...prev }
       delete next[rowId]
       return next
     })
-    handleItemChange(rowId, 'materialId', materialId)
-    handleItemChange(rowId, 'unit', material?.unit || '')
+    // Atomic update: set both materialId and unit in one setState call
+    setItemRows(prev => prev.map(row =>
+      row.id === rowId ? { ...row, materialId, unit: material?.unit || '' } : row
+    ))
     if (material?.unit) {
       loadCompatibleUnits(materialId, rowId)
     }

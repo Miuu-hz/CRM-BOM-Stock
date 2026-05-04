@@ -2460,6 +2460,15 @@ try {
    }
  } catch (e) { console.error('⚠️ pos_menu_configs auto-set sale_unit migration error:', e) }
 
+// Migration: add sealed_qty to stock_items
+try {
+  const cols = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'sealed_qty')) {
+    db.exec(`ALTER TABLE stock_items ADD COLUMN sealed_qty INTEGER DEFAULT 0`)
+    console.log('✅ Migration: added sealed_qty to stock_items')
+  }
+} catch (e) { console.error('⚠️ stock_items sealed_qty migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db
