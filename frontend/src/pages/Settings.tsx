@@ -84,7 +84,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-cyber-border pb-2">
+      <div className="flex gap-2 border-b border-cyber-border pb-2 overflow-x-auto no-scrollbar">
         <TabButton
           active={activeTab === 'general'}
           onClick={() => setActiveTab('general')}
