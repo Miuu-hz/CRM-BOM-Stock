@@ -29,6 +29,10 @@
 | **Sales Invoice Attachments** | ✅ | อัปโหลดรูป/ไฟล์แนบใบแจ้งหนี้ (max 10MB), gallery preview, lightbox |
 | **Invoice Detail Modal** | ✅ | redesign max-w-4xl, items table, payment history, attachment gallery |
 | **Purchase List/Card View** | ✅ | สลับ list/card view (list default), pagination 25/50/100 per page |
+| **Smart Unit Conversion** | ✅ | BFS chain conversion, sealed stock, auto-unpack, LLM advisor, spelling tolerant |
+
+#### 🧮 Smart Unit Conversion (May 2026)
+สรุปสั้น ๆ: ระบบแปลงหน่วยอัจฉริยะที่แก้ปัญหา 6 อย่าง — (1) **BFS chain conversion** แปลงหน่วยหลายขั้นต่อเนื่องอัตโนมัติ เช่น `แพ็ค → ขวด → ลิตร` (2) **Sealed stock** แยก stock ที่ยังไม่แกะ (`sealed_qty`) ออกจากที่แกะแล้ว (3) **Auto-unpack** ถ้าของหลักหมด → แกะแพ็คอัตโนมัติเพื่อเบิก/ขายต่อ (4) **Spelling tolerant** รับคำเขียนผิดเช่น `แพค/แพ๊ค/แพ็ค` ทั้งหมด map เป็น `pack` (5) **LLM Advisor** ช่วยแนะนำค่า conversion factor ตอนตั้งค่า (6) **List view UX** หน้า Purchase (GR/PO) คลิก row ได้เหมือน card view พร้อมปุ่ม action ครบ
 
 ### ✅ Online Channel / Platform Integration
 
