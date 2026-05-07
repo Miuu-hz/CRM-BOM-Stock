@@ -1092,7 +1092,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6"
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold text-white mb-4">สร้างบิลใหม่</h2>
 
@@ -1195,7 +1195,7 @@ function AssignMemberModal({ onClose, onAssign }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm"
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
       >
         <div className="p-5 border-b border-cyber-border flex items-center justify-between">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -1268,7 +1268,7 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6"
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold text-white mb-4">แก้ไขชื่อบิล</h2>
         <input
@@ -1604,7 +1604,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl max-w-md w-full p-6"
+        className="bg-cyber-card border border-cyber-border rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-white">ชำระเงิน</h2>

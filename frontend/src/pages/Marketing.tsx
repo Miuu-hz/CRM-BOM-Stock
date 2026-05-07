@@ -1709,7 +1709,7 @@ function Marketing() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="cyber-card p-6 max-w-md w-full space-y-4"
+            className="cyber-card p-6 max-w-md w-full space-y-4 max-h-[80vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-yellow-400">อนุมัติ JE ค่าโฆษณา</h3>
@@ -1859,7 +1859,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
         onClick={e => e.stopPropagation()}
-        className="cyber-card p-6 max-w-lg w-full"
+        className="cyber-card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
       >
         {children}
         <button

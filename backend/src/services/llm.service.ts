@@ -2,9 +2,9 @@
 // Analyzes LINE messages that don't match hard-coded commands
 // Returns structured intent so line-bot.service can route correctly
 
-const LLM_BASE_URL = process.env.THAI_LLM_URL    ?? 'https://api.aieat.or.th/v1'
+const LLM_BASE_URL = process.env.THAI_LLM_URL    ?? 'https://api.moonshot.cn/v1'
 const LLM_API_KEY  = process.env.THAI_LLM_API_KEY ?? ''
-const LLM_MODEL    = process.env.THAI_LLM_MODEL   ?? 'OpenThaiGPT-ThaiLLM-8B-Instruct-v7.2'
+const LLM_MODEL    = process.env.THAI_LLM_MODEL   ?? 'kimi-k2.6'
 
 export type IntentType =
     | 'CREATE_BOM'      // สร้าง/เพิ่ม BOM สูตรการผลิต

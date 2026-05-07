@@ -3,11 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeftRight, Plus, Trash2, Edit2, Globe, Lock,
   Search, X, Save, ChevronDown, ChevronUp, Info, Package,
-  Sparkles, CheckCircle2, AlertCircle,
+  Sparkles, CheckCircle2, AlertCircle, Network,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { invalidateUnitsCache } from '../../hooks/useUnits'
+import UnitChainEditor from '../../components/common/UnitChainEditor'
 
 interface UnitConversion {
   id: string
@@ -53,11 +54,14 @@ const UNIT_NAME_MAP: Record<string, string> = {
   'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
   'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
   'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
-  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'แพ๊ค': 'pack', 'แพค': 'pack',
+  'ชุด': 'set', 'ม้วน': 'roll',
   'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
   'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+  'แก้ว': 'glass', 'ช้อนชา': 'tsp', 'ช้อนโต๊ะ': 'tbsp',
+  'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
+  'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
   // spelling variants ที่พบบ่อย
-  'แพค': 'pack', 'แพ๊ค': 'pack',
   'กุรอส': 'gross',
 }
 
@@ -105,6 +109,9 @@ export default function UnitConversions() {
   const [suggestion, setSuggestion] = useState<{ factor: number | null; note: string } | null>(null)
   const [checking, setChecking] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
+
+  // Chain editor state
+  const [chainEditorCtx, setChainEditorCtx] = useState<{ id: string | null; name: string } | null>(null)
 
   // Material selector state
   const [selectedMaterial, setSelectedMaterial] = useState<StockItem | null>(null)
@@ -297,6 +304,43 @@ export default function UnitConversions() {
   const toggleGroup = (label: string) =>
     setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }))
 
+  const chainConversions = chainEditorCtx
+    ? allConversions.filter(c =>
+        chainEditorCtx.id ? c.material_id === chainEditorCtx.id : !c.material_id,
+      )
+    : []
+
+  const chainAvailableUnits = (() => {
+    const seen = new Set<string>()
+    const result: Array<{ value: string; label: string }> = []
+    const add = (u: string) => {
+      if (!seen.has(u)) {
+        seen.add(u)
+        result.push({ value: u, label: UNIT_LABELS[u] ? `${UNIT_LABELS[u]} (${u})` : u })
+      }
+    }
+    Object.keys(UNIT_LABELS).forEach(add)
+    allConversions.forEach(c => { add(c.from_unit); add(c.to_unit) })
+    return result
+  })()
+
+  const handleChainAdd = async (from: string, to: string, factor: number) => {
+    await api.post('/materials/unit-conversions', {
+      from_unit: from,
+      to_unit: to,
+      conversion_factor: factor,
+      material_id: chainEditorCtx?.id ?? undefined,
+    })
+    invalidateUnitsCache()
+    await fetchAll()
+  }
+
+  const handleChainDelete = async (id: string) => {
+    await api.delete(`/materials/unit-conversions/${id}`)
+    invalidateUnitsCache()
+    setAllConversions(prev => prev.filter(c => c.id !== id))
+  }
+
   const ConversionRow = ({ c }: { c: UnitConversion }) => (
     <motion.div
       key={c.id}
@@ -375,6 +419,13 @@ export default function UnitConversions() {
           <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full">
             {globalConversions.length} รายการ
           </span>
+          <button
+            onClick={() => setChainEditorCtx({ id: null, name: 'ทั่วไป' })}
+            className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-lg text-xs hover:bg-purple-500/20 transition-colors"
+          >
+            <Network className="w-3.5 h-3.5" />
+            Chain View
+          </button>
         </div>
 
         {loading ? (
@@ -419,7 +470,14 @@ export default function UnitConversions() {
                     <Package className="w-3.5 h-3.5 text-amber-400/70" />
                     <span className="text-xs font-medium text-amber-300">{group.name}</span>
                     {group.sku && <span className="text-xs text-gray-500 font-mono">{group.sku}</span>}
-                    <span className="ml-auto text-xs text-gray-600">{group.items.length} รายการ</span>
+                    <span className="text-xs text-gray-600">{group.items.length} รายการ</span>
+                    <button
+                      onClick={() => setChainEditorCtx({ id: materialId, name: group.name })}
+                      className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-lg text-xs hover:bg-purple-500/20 transition-colors"
+                    >
+                      <Network className="w-3 h-3" />
+                      Chain
+                    </button>
                   </div>
                   {filterConv(group.items).map(c => <ConversionRow key={c.id} c={c} />)}
                 </div>
@@ -497,7 +555,7 @@ export default function UnitConversions() {
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl"
+              className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
             >
               <div className="flex items-center justify-between p-5 border-b border-gray-700">
                 <div className="flex items-center gap-2">
@@ -529,7 +587,7 @@ export default function UnitConversions() {
                       <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                       ตรวจสอบเส้นทาง / ขอคำแนะนำ AI
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <input
                         type="text"
                         value={checkFrom}
@@ -550,7 +608,7 @@ export default function UnitConversions() {
                         disabled={checking || !checkFrom.trim() || !checkTo.trim()}
                         className="px-3 py-1.5 bg-purple-600/70 hover:bg-purple-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors"
                       >
-                        {checking ? '...' : 'ตรวจสอบ'}
+                        {checking ? '...' : <span className="whitespace-nowrap">ตรวจสอบ</span>}
                       </button>
                     </div>
 
@@ -746,6 +804,16 @@ export default function UnitConversions() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {chainEditorCtx && (
+        <UnitChainEditor
+          conversions={chainConversions}
+          availableUnits={chainAvailableUnits}
+          onAdd={handleChainAdd}
+          onDelete={handleChainDelete}
+          onClose={() => setChainEditorCtx(null)}
+        />
+      )}
     </div>
   )
 }

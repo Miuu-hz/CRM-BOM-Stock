@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Package,
@@ -28,12 +28,14 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Network,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
+import UnitChainEditor from '../components/common/UnitChainEditor'
 import { useModalClose } from '../hooks/useModalClose'
 import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
 
@@ -185,8 +187,8 @@ function Stock() {
       case 'displayQty': aVal = a.displayQuantity ?? a.quantity ?? 0; bVal = b.displayQuantity ?? b.quantity ?? 0; break
       case 'baseUnit': aVal = a.baseUnit || a.unit || ''; bVal = b.baseUnit || b.unit || ''; break
       case 'displayUnit': aVal = a.displayUnit || a.unit || ''; bVal = b.displayUnit || b.unit || ''; break
-      case 'unitCost': aVal = a.unitCost ?? a.unit_cost ?? 0; bVal = b.unitCost ?? b.unit_cost ?? 0; break
-      case 'unitPrice': aVal = a.unitPrice ?? a.unit_price ?? 0; bVal = b.unitPrice ?? b.unit_price ?? 0; break
+      case 'unitCost': aVal = a.unitCost ?? 0; bVal = b.unitCost ?? 0; break
+      case 'unitPrice': aVal = a.unitPrice ?? 0; bVal = b.unitPrice ?? 0; break
       case 'location': aVal = a.location || ''; bVal = b.location || ''; break
       case 'status': aVal = getItemStatus(a); bVal = getItemStatus(b); break
       default: return 0
@@ -228,8 +230,8 @@ function Stock() {
       'หน่วย': item.unit,
       'Min Stock': item.minStock,
       'Max Stock': item.maxStock,
-      'ต้นทุน/หน่วย (฿)': item.unitCost ?? item.unit_cost ?? 0,
-      'ราคาขาย/หน่วย (฿)': item.unitPrice ?? item.unit_price ?? 0,
+      'ต้นทุน/หน่วย (฿)': item.unitCost ?? 0,
+      'ราคาขาย/หน่วย (฿)': item.unitPrice ?? 0,
       'สถานที่': item.location || '',
       'สถานะ': getItemStatus(item),
     }))
@@ -543,8 +545,8 @@ function Stock() {
               ) : (
                 paginatedItems.map((item, index) => {
                   const status = getItemStatus(item)
-                  const cost = item.unitCost ?? item.unit_cost ?? 0
-                  const price = item.unitPrice ?? item.unit_price ?? 0
+                  const cost = item.unitCost ?? 0
+                  const price = item.unitPrice ?? 0
                   const isSelected = selectedIds.has(item.id)
                   return (
                     <motion.tr
@@ -565,9 +567,9 @@ function Stock() {
                       </td>
                       {visibleCols.image && (
                         <td className="w-14">
-                          {item.image_url || item.imageUrl ? (
+                          {item.imageUrl ? (
                             <img
-                              src={item.image_url || item.imageUrl}
+                              src={item.imageUrl}
                               alt={item.name}
                               className="w-10 h-10 rounded-lg object-cover border border-cyber-border"
                             />
@@ -594,13 +596,13 @@ function Stock() {
                       {visibleCols.quantity && (
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            {(item.sealed_qty ?? 0) > 0 ? (
+                            {(item.sealedQty ?? 0) > 0 ? (
                               <>
-                                <span className={`font-semibold ${item.quantity === 0 && (item.sealed_qty ?? 0) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                                  {item.sealed_qty} {item.displayUnit || item.unit}
+                                <span className={`font-semibold ${item.quantity === 0 && (item.sealedQty ?? 0) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                                  {item.sealedQty} {item.displayUnit || item.unit}
                                   {item.quantity > 0 && <span className="text-gray-400 font-normal"> + {item.quantity} {item.baseUnit || item.unit}</span>}
                                 </span>
-                                <span className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealed_qty} {item.displayUnit}</span>
+                                <span className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealedQty} {item.displayUnit}</span>
                               </>
                             ) : (
                               <>
@@ -914,8 +916,8 @@ function DetailModal({
             <div>
               <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วย</p>
               <p className="text-cyber-green font-semibold">
-                {item.unitCost || (item as any).unit_cost
-                  ? `฿${Number(item.unitCost || (item as any).unit_cost).toLocaleString()}`
+                {item.unitCost
+                  ? `฿${Number(item.unitCost).toLocaleString()}`
                   : 'ไม่ระบุ'}
               </p>
             </div>
@@ -1045,6 +1047,8 @@ function EditModal({
   const { units: availableUnits } = useUnits(item?.id)
 
   // Per-material unit conversions
+  const [activeTab, setActiveTab] = useState<'general' | 'units'>('general')
+  const [showChainEditor, setShowChainEditor] = useState(false)
   const [convExpanded, setConvExpanded] = useState(false)
   const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
   const [convForm, setConvForm] = useState({ from_unit: '', to_unit: '', conversion_factor: '' })
@@ -1106,12 +1110,14 @@ function EditModal({
         minStock: item.minStock ?? 0,
         maxStock: item.maxStock ?? 0,
         location: item.location || '',
-        isPosEnabled: !!(item.isPosEnabled || (item as any).is_pos_enabled),
-        unitCost: item.unitCost ?? (item as any).unit_cost ?? 0,
-        unitPrice: item.unitPrice ?? (item as any).unit_price ?? 0,
+        isPosEnabled: !!item.isPosEnabled,
+        unitCost: item.unitCost ?? 0,
+        unitPrice: item.unitPrice ?? 0,
       })
-      setImagePreview(item.image_url || item.imageUrl || null)
+      setImagePreview(item.imageUrl || null)
       setImageFile(null)
+      setActiveTab('general')
+      setShowChainEditor(false)
       setConvExpanded(false)
       setItemConversions([])
       setConversionWarning(null)
@@ -1173,408 +1179,460 @@ function EditModal({
   if (!open || !item) return null
 
   return (
-    <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
+    <>
       <div
-        onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
-        style={{ maxHeight: 'calc(100vh - 2rem)' }}
+        className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
+        onClick={onClose}
       >
-        {/* Header — sticky */}
-        <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between flex-shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-gray-100">แก้ไขสินค้า</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{item.sku} · {item.name}</p>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+        >
+          {/* Header — sticky */}
+          <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between flex-shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-gray-100">แก้ไขสินค้า</h2>
+              <p className="text-xs text-gray-500 mt-0.5">{item.sku} · {item.name}</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
 
-        {/* Scrollable body */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-
-            {/* Image + Name row */}
-            <div className="flex gap-3 items-start">
-              {/* Image picker */}
-              <label className="cursor-pointer flex-shrink-0">
-                <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cyber-border hover:border-cyber-primary/60 flex items-center justify-center overflow-hidden bg-cyber-dark transition-colors relative group">
-                  {imagePreview ? (
-                    <>
-                      <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Upload className="w-5 h-5 text-white" />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1">
-                      <ImagePlus className="w-6 h-6 text-gray-500" />
-                      <span className="text-[10px] text-gray-500">อัปโหลด</span>
-                    </div>
-                  )}
-                </div>
-                <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-              </label>
-
-              {/* Name */}
-              <div className="flex-1">
-                <label className="block text-xs text-gray-400 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="cyber-input w-full"
-                  required
-                />
-                {imagePreview && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!item) return
-                      if (confirm('ลบรูปภาพ?')) {
-                        await stockService.deleteImage(item.id)
-                        setImagePreview(null)
-                        setImageFile(null)
-                        onSave()
-                      }
-                    }}
-                    className="mt-1.5 text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3 h-3" /> ลบรูปภาพ
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Category + Unit */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="cyber-input w-full"
-                  required
-                >
-                  <option value="raw">วัตถุดิบ (Raw)</option>
-                  <option value="wip">กำลังผลิต (WIP)</option>
-                  <option value="finished">สำเร็จรูป (Finished)</option>
-                  <option value="material">วัสดุสิ้นเปลือง</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Display)</label>
-                <select
-                  value={formData.unit}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="cyber-input w-full"
-                >
-                  {/* Ensure current unit always appears even if not in list yet */}
-                  {formData.unit && !availableUnits.find(u => u.value === formData.unit) && (
-                    <option value={formData.unit}>{formData.unit}</option>
-                  )}
-                  {availableUnits.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-600 mt-1">
-                  เพิ่มหน่วยได้ใน Settings → Unit Conversions
-                </p>
-              </div>
-            </div>
-
-            {/* Base Unit + Display Unit */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">
-                  หน่วยฐาน <span className="text-gray-600">(Base Unit - หน่วยย่อยสุด)</span>
-                </label>
-                <select
-                  value={formData.baseUnit || ''}
-                  onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
-                  className="cyber-input w-full"
-                >
-                  <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
-                  {availableUnits.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">
-                  หน่วยแสดงผล <span className="text-gray-600">(Display Unit - บรรจุภัณฑ์)</span>
-                </label>
-                <select
-                  value={formData.displayUnit || ''}
-                  onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
-                  className="cyber-input w-full"
-                >
-                  <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
-                  {availableUnits.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
-              </div>
-            </div>
-
-            {/* Cost + Price */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">
-                  ราคาต้นทุน/หน่วย (฿)
-                  <span className="ml-1 text-amber-400/70">ต้นทุน</span>
-                </label>
-                <input
-                  type="number"
-                  value={formData.unitCost}
-                  onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                  onFocus={(e) => e.target.select()}
-                  className="cyber-input w-full"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">
-                  ราคาขาย/หน่วย (฿)
-                  <span className="ml-1 text-cyber-green/70">ขาย</span>
-                </label>
-                <input
-                  type="number"
-                  value={formData.unitPrice}
-                  onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
-                  onFocus={(e) => e.target.select()}
-                  className="cyber-input w-full"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            {/* Min/Max Stock */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">สต็อกขั้นต่ำ</label>
-                <input
-                  type="number"
-                  value={formData.minStock}
-                  onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                  onFocus={(e) => e.target.select()}
-                  className="cyber-input w-full"
-                  min="0"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">สต็อกสูงสุด</label>
-                <input
-                  type="number"
-                  value={formData.maxStock}
-                  onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                  onFocus={(e) => e.target.select()}
-                  className="cyber-input w-full"
-                  min="0"
-                />
-              </div>
-            </div>
-
-            {/* Location + Barcode */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">สถานที่เก็บ</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="cyber-input w-full"
-                  placeholder="เช่น คลังหลัก"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">GS1 Barcode</label>
-                <input
-                  type="text"
-                  value={formData.gs1Barcode}
-                  onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
-                  className="cyber-input w-full"
-                  placeholder="ไม่บังคับ"
-                />
-              </div>
-            </div>
-
-            {/* Conversion Warning */}
-            {conversionWarning && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm text-amber-300">{conversionWarning}</p>
-                  <button
-                    type="button"
-                    onClick={() => setConvExpanded(true)}
-                    className="text-xs text-amber-400 hover:text-amber-300 underline mt-1"
-                  >
-                    คลิกเพื่อเพิ่มการแปลงหน่วย
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* POS toggle */}
-            <label className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-xl border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
-              <input
-                type="checkbox"
-                id="isPosEnabled"
-                checked={formData.isPosEnabled}
-                onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
-              />
-              <div className="flex-1">
-                <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
-                <p className="text-xs text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
-              </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
-                {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
-              </span>
-            </label>
-
-            {/* Unit Conversions (per-material) */}
-            <div className="rounded-xl border border-cyber-border overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex border-b border-cyber-border flex-shrink-0">
+            {(['general', 'units'] as const).map(tab => (
               <button
+                key={tab}
                 type="button"
-                onClick={() => setConvExpanded(v => !v)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-cyber-dark/50 hover:bg-cyber-dark/70 transition-colors"
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  activeTab === tab
+                    ? 'text-cyber-primary border-cyber-primary'
+                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                }`}
               >
-                <div className="flex items-center gap-2">
-                  <ArrowUpCircle className="w-4 h-4 text-purple-400" style={{ transform: 'rotate(90deg)' }} />
-                  <span className="text-sm font-medium text-gray-200">การแปลงหน่วยเฉพาะสินค้านี้</span>
-                  {itemConversions.length > 0 && (
-                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
-                      {itemConversions.length} รายการ
-                    </span>
-                  )}
-                </div>
-                {convExpanded
-                  ? <ChevronUp className="w-4 h-4 text-gray-500" />
-                  : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                {tab === 'general' ? 'ทั่วไป' : 'หน่วย'}
               </button>
+            ))}
+          </div>
 
-              {convExpanded && (
-                <div className="p-3 space-y-2 bg-cyber-dark/20">
-                  {/* existing conversions */}
-                  {itemConversions.length > 0 && (
-                    <div className="space-y-1">
-                      {itemConversions.map(c => (
-                        <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-lg">
-                          <span className="text-xs font-mono text-blue-300">1 {ul(c.from_unit)}</span>
-                          <span className="text-gray-600 text-xs">=</span>
-                          <span className="text-xs font-mono text-green-300">{c.conversion_factor} {ul(c.to_unit)}</span>
-                          <span className="text-gray-600 text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteConversion(c.id)}
-                            className="ml-auto p-1 text-gray-500 hover:text-red-400 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+          {/* Scrollable body */}
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-                  {/* add form */}
-                  <div className="flex gap-2 items-end">
+              {/* ── GENERAL TAB ── */}
+              {activeTab === 'general' && (
+                <>
+                  {/* Image + Name row */}
+                  <div className="flex gap-3 items-start">
+                    <label className="cursor-pointer flex-shrink-0">
+                      <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cyber-border hover:border-cyber-primary/60 flex items-center justify-center overflow-hidden bg-cyber-dark transition-colors relative group">
+                        {imagePreview ? (
+                          <>
+                            <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Upload className="w-5 h-5 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <ImagePlus className="w-6 h-6 text-gray-500" />
+                            <span className="text-[10px] text-gray-500">อัปโหลด</span>
+                          </div>
+                        )}
+                      </div>
+                      <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                    </label>
                     <div className="flex-1">
-                      <p className="text-[10px] text-gray-500 mb-1">จาก (เช่น pack)</p>
-                      <select
-                        value={convForm.from_unit}
-                        onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
-                      >
-                        <option value="">เลือกหน่วย</option>
-                        {availableUnits.map((u) => (
-                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-500 mb-1">เป็น (เช่น pcs)</p>
-                      <select
-                        value={convForm.to_unit}
-                        onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
-                      >
-                        <option value="">เลือกหน่วย</option>
-                        {availableUnits.map((u) => (
-                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="w-20">
-                      <p className="text-[10px] text-gray-500 mb-1">จำนวน</p>
+                      <label className="block text-xs text-gray-400 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
                       <input
-                        type="number"
-                        value={convForm.conversion_factor}
-                        onChange={e => setConvForm(f => ({ ...f, conversion_factor: e.target.value }))}
-                        placeholder="24"
-                        min="0.000001"
-                        step="any"
-                        className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="cyber-input w-full"
+                        required
                       />
+                      {imagePreview && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!item) return
+                            if (confirm('ลบรูปภาพ?')) {
+                              await stockService.deleteImage(item.id)
+                              setImagePreview(null)
+                              setImageFile(null)
+                              onSave()
+                            }
+                          }}
+                          className="mt-1.5 text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> ลบรูปภาพ
+                        </button>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleAddConversion}
-                      disabled={convSaving || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 flex-shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      เพิ่ม
-                    </button>
                   </div>
 
-                  {/* preview */}
-                  {convForm.from_unit && convForm.to_unit && convForm.conversion_factor && Number(convForm.conversion_factor) > 0 && (
-                    <p className="text-xs text-purple-300/70 text-center">
-                      1 {ul(convForm.from_unit)} = {convForm.conversion_factor} {ul(convForm.to_unit)}
-                    </p>
-                  )}
-                </div>
+                  {/* Category */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      className="cyber-input w-full"
+                      required
+                    >
+                      <option value="raw">วัตถุดิบ (Raw)</option>
+                      <option value="wip">กำลังผลิต (WIP)</option>
+                      <option value="finished">สำเร็จรูป (Finished)</option>
+                      <option value="material">วัสดุสิ้นเปลือง</option>
+                    </select>
+                  </div>
+
+                  {/* Cost + Price */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">
+                        ราคาต้นทุน/หน่วย (฿)
+                        <span className="ml-1 text-amber-400/70">ต้นทุน</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.unitCost}
+                        onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                        onFocus={(e) => e.target.select()}
+                        className="cyber-input w-full"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">
+                        ราคาขาย/หน่วย (฿)
+                        <span className="ml-1 text-cyber-green/70">ขาย</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.unitPrice}
+                        onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                        onFocus={(e) => e.target.select()}
+                        className="cyber-input w-full"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Min/Max Stock */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">สต็อกขั้นต่ำ</label>
+                      <input
+                        type="number"
+                        value={formData.minStock}
+                        onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                        onFocus={(e) => e.target.select()}
+                        className="cyber-input w-full"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">สต็อกสูงสุด</label>
+                      <input
+                        type="number"
+                        value={formData.maxStock}
+                        onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                        onFocus={(e) => e.target.select()}
+                        className="cyber-input w-full"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Location + Barcode */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">สถานที่เก็บ</label>
+                      <input
+                        type="text"
+                        value={formData.location}
+                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                        className="cyber-input w-full"
+                        placeholder="เช่น คลังหลัก"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">GS1 Barcode</label>
+                      <input
+                        type="text"
+                        value={formData.gs1Barcode}
+                        onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
+                        className="cyber-input w-full"
+                        placeholder="ไม่บังคับ"
+                      />
+                    </div>
+                  </div>
+
+                  {/* POS toggle */}
+                  <label className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-xl border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="isPosEnabled"
+                      checked={formData.isPosEnabled}
+                      onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
+                      className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
+                      <p className="text-xs text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
+                      {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
+                    </span>
+                  </label>
+                </>
               )}
+
+              {/* ── UNITS TAB ── */}
+              {activeTab === 'units' && (
+                <>
+                  {/* Unit (legacy) */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Display)</label>
+                    <select
+                      value={formData.unit}
+                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                      className="cyber-input w-full"
+                    >
+                      {formData.unit && !availableUnits.find(u => u.value === formData.unit) && (
+                        <option value={formData.unit}>{formData.unit}</option>
+                      )}
+                      {availableUnits.map((u) => (
+                        <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-600 mt-1">เพิ่มหน่วยได้ใน Settings → Unit Conversions</p>
+                  </div>
+
+                  {/* Base Unit + Display Unit */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">
+                        หน่วยฐาน <span className="text-gray-600">(Base - หน่วยย่อยสุด)</span>
+                      </label>
+                      <select
+                        value={formData.baseUnit || ''}
+                        onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                        className="cyber-input w-full"
+                      >
+                        <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                        {availableUnits.map((u) => (
+                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">
+                        หน่วยแสดงผล <span className="text-gray-600">(Display - บรรจุภัณฑ์)</span>
+                      </label>
+                      <select
+                        value={formData.displayUnit || ''}
+                        onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
+                        className="cyber-input w-full"
+                      >
+                        <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
+                        {availableUnits.map((u) => (
+                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
+                    </div>
+                  </div>
+
+                  {/* Conversion Warning */}
+                  {conversionWarning && (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm text-amber-300">{conversionWarning}</p>
+                        <button
+                          type="button"
+                          onClick={() => setConvExpanded(true)}
+                          className="text-xs text-amber-400 hover:text-amber-300 underline mt-1"
+                        >
+                          คลิกเพื่อเพิ่มการแปลงหน่วย
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Unit Conversions (per-material) */}
+                  <div className="rounded-xl border border-cyber-border overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setConvExpanded(v => !v)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-cyber-dark/50 hover:bg-cyber-dark/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ArrowUpCircle className="w-4 h-4 text-purple-400" style={{ transform: 'rotate(90deg)' }} />
+                        <span className="text-sm font-medium text-gray-200">การแปลงหน่วยเฉพาะสินค้านี้</span>
+                        {itemConversions.length > 0 && (
+                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
+                            {itemConversions.length} รายการ
+                          </span>
+                        )}
+                      </div>
+                      {convExpanded
+                        ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                        : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                    </button>
+
+                    {convExpanded && (
+                      <div className="p-3 space-y-2 bg-cyber-dark/20">
+                        {itemConversions.length > 0 && (
+                          <div className="space-y-1">
+                            {itemConversions.map(c => (
+                              <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-lg">
+                                <span className="text-xs font-mono text-blue-300">1 {ul(c.from_unit)}</span>
+                                <span className="text-gray-600 text-xs">=</span>
+                                <span className="text-xs font-mono text-green-300">{c.conversion_factor} {ul(c.to_unit)}</span>
+                                <span className="text-gray-600 text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteConversion(c.id)}
+                                  className="ml-auto p-1 text-gray-500 hover:text-red-400 transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex gap-2 items-end">
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-500 mb-1">จาก (เช่น pack)</p>
+                            <select
+                              value={convForm.from_unit}
+                              onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                            >
+                              <option value="">เลือกหน่วย</option>
+                              {availableUnits.map((u) => (
+                                <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-500 mb-1">เป็น (เช่น pcs)</p>
+                            <select
+                              value={convForm.to_unit}
+                              onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                            >
+                              <option value="">เลือกหน่วย</option>
+                              {availableUnits.map((u) => (
+                                <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="w-20">
+                            <p className="text-[10px] text-gray-500 mb-1">จำนวน</p>
+                            <input
+                              type="number"
+                              value={convForm.conversion_factor}
+                              onChange={e => setConvForm(f => ({ ...f, conversion_factor: e.target.value }))}
+                              placeholder="24"
+                              min="0.000001"
+                              step="any"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddConversion}
+                            disabled={convSaving || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor}
+                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 flex-shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            เพิ่ม
+                          </button>
+                        </div>
+                        {convForm.from_unit && convForm.to_unit && convForm.conversion_factor && Number(convForm.conversion_factor) > 0 && (
+                          <p className="text-xs text-purple-300/70 text-center">
+                            1 {ul(convForm.from_unit)} = {convForm.conversion_factor} {ul(convForm.to_unit)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Chain Editor button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowChainEditor(true)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 border border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10 text-purple-300 rounded-xl text-sm transition-colors"
+                  >
+                    <Network className="w-4 h-4" />
+                    เปิด Chain Editor (ผังหน่วยแบบ Visual)
+                  </button>
+                </>
+              )}
+
             </div>
 
-          </div>
+            {/* Footer — sticky */}
+            <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={saving || uploadingImage}
+                className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
+              >
+                {(saving || uploadingImage) ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก...</>
+                ) : (
+                  <><Edit2 className="w-4 h-4" /> บันทึก</>
+                )}
+              </button>
+            </div>
+          </form>
 
-          {/* Footer — sticky */}
-          <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              disabled={saving || uploadingImage}
-              className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
-            >
-              {(saving || uploadingImage) ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก...</>
-              ) : (
-                <><Edit2 className="w-4 h-4" /> บันทึก</>
-              )}
-            </button>
-          </div>
-        </form>
-
+        </div>
       </div>
-    </div>
+
+      {/* Chain Editor overlay */}
+      {showChainEditor && item && (
+        <UnitChainEditor
+          conversions={itemConversions}
+          availableUnits={availableUnits}
+          onAdd={async (from, to, factor) => {
+            const api = await import('../services/api').then(m => m.default)
+            await api.post('/materials/unit-conversions', {
+              material_id: item.id,
+              from_unit: from,
+              to_unit: to,
+              conversion_factor: factor,
+            })
+            await fetchItemConversions(item.id)
+            invalidateUnitsCache()
+          }}
+          onDelete={handleDeleteConversion}
+          onClose={() => setShowChainEditor(false)}
+          baseUnit={formData.baseUnit}
+          displayUnit={formData.displayUnit}
+        />
+      )}
+    </>
   )
 }
 
@@ -1690,9 +1748,9 @@ function MovementModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
+        className="cyber-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
       >
-        <div className={`p-6 border-b border-cyber-border flex items-center justify-between ${type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
+        <div className={`p-6 border-b border-cyber-border flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
           }`}>
           <div className="flex items-center gap-3">
             {type === 'IN' ? (
@@ -1712,7 +1770,8 @@ function MovementModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-2">Select Item</label>
             <SearchableDropdown
@@ -1875,8 +1934,8 @@ function MovementModal({
               />
             </div>
           )}
-
-          <div className="flex justify-end gap-3 pt-4">
+          </div>
+          <div className="flex justify-end gap-3 px-6 py-4 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -2148,9 +2207,9 @@ function AdjustModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg animate-scaleIn"
+        className="cyber-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-blue-500/10">
+        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-blue-500/10 flex-shrink-0">
           <div className="flex items-center gap-3">
             <SlidersHorizontal className="w-6 h-6 text-blue-400" />
             <div>
@@ -2163,7 +2222,8 @@ function AdjustModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-2">เลือกสินค้า</label>
             <SearchableDropdown
@@ -2248,8 +2308,8 @@ function AdjustModal({
               placeholder="เช่น ตรวจนับประจำเดือน, เจอสินค้าหาย..."
             />
           </div>
-
-          <div className="flex justify-end gap-3 pt-2">
+          </div>
+          <div className="flex justify-end gap-3 px-6 py-4 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}

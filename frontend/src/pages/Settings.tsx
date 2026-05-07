@@ -962,7 +962,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-md"
+        className="cyber-card w-full max-w-md max-h-[80vh] overflow-y-auto"
       >
         <div className="p-6 border-b border-cyber-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-100">เพิ่มผู้ใช้งานลูก</h2>

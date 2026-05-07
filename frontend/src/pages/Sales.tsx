@@ -1457,7 +1457,7 @@ const Sales = () => {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-cyber-card border border-red-500/40 rounded-2xl w-full max-w-sm">
+          className="bg-cyber-card border border-red-500/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
           <div className="p-5 border-b border-cyber-border flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Ban className="w-5 h-5 text-red-400" /> ยกเลิกบิล
@@ -1789,7 +1789,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm">
+        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
         <div className="p-4 border-b border-cyber-border flex justify-between items-center">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <Plus className="w-4 h-4 text-cyber-primary" /> เพิ่มลูกค้าใหม่ (ด่วน)

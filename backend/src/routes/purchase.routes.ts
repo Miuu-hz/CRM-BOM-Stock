@@ -311,9 +311,16 @@ router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT gri.*, m.name as material_name, m.code as material_code, m.unit
+      SELECT
+        gri.*,
+        poi.description,
+        poi.unit_price,
+        si.name as material_name,
+        si.sku as material_code,
+        si.unit as unit
       FROM goods_receipt_items gri
-      LEFT JOIN materials m ON gri.material_id = m.id
+      LEFT JOIN purchase_order_items poi ON gri.purchase_order_item_id = poi.id
+      LEFT JOIN stock_items si ON gri.material_id = si.id
       WHERE gri.goods_receipt_id = ?
     `).all(req.params.id)
 
@@ -451,7 +458,7 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
           }
           const unitPrice = poItem?.unit_price || 0
-          const poUnit = poItem?.unit || ''
+          const poUnit = normalizeUnit(poItem?.unit || '')
 
           // Find stock item: first by material_id (BOM flow), then directly by id (standalone stock flow)
           let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
@@ -463,22 +470,24 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
           let movementNotes = `Received from purchase`
           let addToSealed = false
 
+          const stockUnit = normalizeUnit(stockItem?.unit || '')
+          const displayUnit = normalizeUnit(stockItem?.display_unit || '')
+
           // ถ้า PO unit ตรงกับ display_unit → เก็บเป็น sealed_qty (ยังไม่แกะ)
-          if (stockItem && poUnit && stockItem.display_unit &&
-              normalizeUnit(poUnit) === normalizeUnit(stockItem.display_unit)) {
+          if (stockItem && poUnit && displayUnit && poUnit === displayUnit) {
             addToSealed = true
             movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit} (ยังไม่แกะ)`
-          } else if (stockItem && poUnit && poUnit !== stockItem.unit) {
+          } else if (stockItem && poUnit && poUnit !== stockUnit) {
             // Unit conversion: PO unit → Stock base unit
-            const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockItem.unit, tenantId, item.material_id)
+            const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
             if (!converted) {
               const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
-                || (db.prepare('SELECT name FROM stock_items WHERE id = ?').get(item.material_id) as any)?.name
+                || stockItem.name
                 || item.material_id
-              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockItem.unit} สำหรับ "${materialName}" กรุณาตั้งค่า Unit Conversion ก่อน`)
+              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockUnit} สำหรับ "${materialName}" กรุณาตั้งค่า Unit Conversion ก่อน`)
             }
             stockQty = converted.converted
-            movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockItem.unit}, factor: ${converted.factor})`
+            movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`
           }
 
           if (stockItem) {

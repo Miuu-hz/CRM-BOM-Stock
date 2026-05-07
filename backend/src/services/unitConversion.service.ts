@@ -92,11 +92,14 @@ const UNIT_NAME_MAP: Record<string, string> = {
   'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
   // หน่วยนับ
   'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
-  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'แพ๊ค': 'pack', 'แพค': 'pack',
+  'ชุด': 'set', 'ม้วน': 'roll',
   'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
   'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+  'แก้ว': 'glass', 'ช้อนชา': 'tsp', 'ช้อนโต๊ะ': 'tbsp',
+  'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
+  'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
   // spelling variants ที่พบบ่อย
-  'แพค': 'pack', 'แพ๊ค': 'pack',
   'กุรอส': 'gross',
 }
 

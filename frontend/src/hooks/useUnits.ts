@@ -15,6 +15,9 @@ export const UNIT_LABELS: Record<string, string> = {
   set: 'ชุด', pair: 'คู่', sheet: 'แผ่น', bottle: 'ขวด',
   bag: 'ถุง', sachet: 'ซอง', dozen: 'โหล', gross: 'กุรอส',
   case: 'ลัง', can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
+  glass: 'แก้ว', tsp: 'ช้อนชา', tbsp: 'ช้อนโต๊ะ',
+  plate: 'จาน', tray: 'ถาด', piece: 'ลูก', egg: 'ฟอง',
+  item: 'รายการ', scoop: 'สกู๊ป',
 }
 
 export const BASE_UNITS: UnitOption[] = [

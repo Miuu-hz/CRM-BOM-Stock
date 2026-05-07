@@ -721,7 +721,7 @@ router.put('/delivery-orders/:id/status', async (req: Request, res: Response) =>
             if (soUnit && stockUnit && soUnit !== stockUnit) {
               const converted = convertQuantityBidirectional(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id)
               if (!converted) {
-                throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับสินค้านี้ กรุณาตั้งค่า Unit Conversion ก่อน`)
+                throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name}" กรุณาตั้งค่า Unit Conversion ก่อน`)
               }
               deductQty = converted.converted
               movementNotes = `Delivered to customer (converted: ${item.quantity} ${soUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`

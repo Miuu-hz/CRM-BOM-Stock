@@ -241,9 +241,13 @@ const UNIT_NAME_MAP: Record<string, string> = {
   'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
   'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
   'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
-  'กล่อง': 'box', 'แพ็ค': 'pack', 'ชุด': 'set', 'ม้วน': 'roll',
+  'กล่อง': 'box', 'แพ็ค': 'pack', 'แพ๊ค': 'pack', 'แพค': 'pack',
+  'ชุด': 'set', 'ม้วน': 'roll',
   'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
   'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
+  'แก้ว': 'glass', 'ช้อนชา': 'tsp', 'ช้อนโต๊ะ': 'tbsp',
+  'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
+  'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
 }
 
 function normalizeUnit(unit: string): string {
@@ -1060,7 +1064,7 @@ const Purchase = () => {
           unit: s.unit,
           currentStock: qty,
           stockStatus,
-          unitCost: s.unitCost ?? s.unit_cost ?? 0,
+          unitCost: s.unitCost ?? 0,
         }
       })
       setMaterials(mapped)
@@ -1247,7 +1251,7 @@ const Purchase = () => {
         materialId: item.material_id,
         description: item.description,
         quantity: item.quantity,
-        unit: item.unit,
+        unit: normalizeUnit(item.unit),
         unitPrice: item.unit_price,
         notes: item.notes,
       }))
@@ -1322,7 +1326,7 @@ const Purchase = () => {
         items: receiptForm.items.map(item => ({
           poItemId: item.purchase_order_item_id,
           materialId: item.material_id,
-          unit: item.unit,
+          unit: normalizeUnit(item.unit),
           orderedQty: item.ordered_qty,
           receivedQty: item.received_qty,
           acceptedQty: item.accepted_qty,
