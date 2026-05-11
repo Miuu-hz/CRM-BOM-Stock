@@ -27,6 +27,8 @@ import {
   Star,
   UserX,
   Printer,
+  AlertTriangle,
+  Scale,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import posService from '../services/pos.service'
@@ -64,6 +66,7 @@ interface OpenBill {
   bill_number: string
   display_name: string
   customer_name?: string
+  subtotal: number
   total_amount: number
   item_count: number
   opened_at: string
@@ -121,6 +124,7 @@ export default function Cashier() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showAssignMemberModal, setShowAssignMemberModal] = useState(false)
   const [scanningBarcode, setScanningBarcode] = useState(false)
+  const [payActionIssues, setPayActionIssues] = useState<any[] | null>(null)
   // Discount & extra charge (local, per-session)
   const [discount, setDiscount] = useState<{ type: 'pct' | 'fixed'; value: number }>({ type: 'pct', value: 0 })
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
@@ -136,6 +140,19 @@ export default function Cashier() {
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  // Sync billing config to backend on mount so recalculateBillTotals uses correct settings
+  useEffect(() => {
+    const cfg = loadBillingConfig()
+    import('../services/companySettings.service').then(m => {
+      m.default.update({
+        pos_vat_enabled: cfg.vatEnabled,
+        pos_vat_rate: cfg.vatRate,
+        pos_service_enabled: cfg.serviceEnabled,
+        pos_service_rate: cfg.serviceRate,
+      }).catch(() => {})
+    })
   }, [])
   const [sendingToKitchen, setSendingToKitchen] = useState(false)
 
@@ -357,6 +374,13 @@ export default function Cashier() {
         redeem_points: loyalty.enabled && redeemPoints ? redeemPoints : undefined,
       })
 
+      // ── Actionable response: cannot pay due to stock/conversion issues ──
+      if (res.data?.canPay === false && res.data?.needsAction) {
+        setPayActionIssues(res.data.issues || [])
+        setShowPaymentModal(false)
+        return
+      }
+
       if (res.success) {
         const earned = res.data?.points_earned || 0
         const redeemed = res.data?.points_redeemed || 0
@@ -532,7 +556,12 @@ export default function Cashier() {
                         </div>
                         <p className="text-xs text-gray-500">{bill.bill_number}</p>
                         <p className="text-xl font-bold text-cyber-green mt-2">
-                          ฿{bill.total_amount?.toLocaleString() || 0}
+                          ฿{(() => {
+                            const s = bill.subtotal || 0
+                            const serviceAmt = billing.serviceEnabled ? Math.round(s * billing.serviceRate / 100) : 0
+                            const vatAmt = billing.vatEnabled ? Math.round(s * billing.vatRate / 100) : 0
+                            return (s + serviceAmt + vatAmt).toLocaleString()
+                          })()}
                         </p>
                         <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
                           <Clock className="w-3 h-3" />
@@ -1040,6 +1069,74 @@ export default function Cashier() {
         loyalty={loyalty}
         customerPoints={currentBill?.customer_id ? (currentBill.customer_loyalty_points ?? null) : null}
       />
+
+      {/* Pay Action Issues Modal */}
+      {payActionIssues && payActionIssues.length > 0 && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-cyber-card border border-cyber-border rounded-2xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">ไม่สามารถชำระเงินได้</h2>
+                <p className="text-sm text-gray-400">พบปัญหาที่ต้องแก้ไขก่อน</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {payActionIssues.map((issue, idx) => (
+                <div key={idx} className="p-3 bg-cyber-dark rounded-xl border border-cyber-border/50">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                      {issue.type === 'INSUFFICIENT_STOCK' ? (
+                        <Package className="w-4 h-4 text-red-400" />
+                      ) : issue.type === 'MISSING_CONVERSION' ? (
+                        <Scale className="w-4 h-4 text-amber-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white">
+                        {issue.type === 'INSUFFICIENT_STOCK' ? 'สต็อกไม่พอ' : issue.type === 'MISSING_CONVERSION' ? 'หน่วยไม่ครบ' : 'ปัญหาอื่น'}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">{issue.message}</p>
+                      {issue.link && (
+                        <button
+                          onClick={() => { window.open(issue.link, '_blank'); setPayActionIssues(null) }}
+                          className="mt-2 text-xs px-3 py-1.5 bg-cyber-primary/15 text-cyber-primary rounded-lg hover:bg-cyber-primary/25 transition-colors"
+                        >
+                          ไปแก้ไข
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPayActionIssues(null)}
+                className="flex-1 py-2.5 text-sm text-gray-400 hover:text-white bg-cyber-dark rounded-xl border border-cyber-border hover:border-cyber-border/80 transition-colors"
+              >
+                ปิด
+              </button>
+              <button
+                onClick={() => { window.open('/stock', '_blank'); setPayActionIssues(null) }}
+                className="flex-1 py-2.5 text-sm bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 transition-colors"
+              >
+                ไปหน้าสต็อก
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Category Manager Modal */}
       <CategoryManagerModal

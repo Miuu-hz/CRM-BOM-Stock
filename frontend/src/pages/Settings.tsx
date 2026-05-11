@@ -25,11 +25,13 @@ import {
   ArrowLeftRight,
   Tag,
   Info,
+  Brain,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
+import LLMSettings from './settings/LLMSettings'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -44,7 +46,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -142,6 +144,12 @@ export default function SettingsPage() {
           icon={Tag}
           label="หมวดหมู่วัตถุดิบ"
         />
+        <TabButton
+          active={activeTab === 'llm'}
+          onClick={() => setActiveTab('llm')}
+          icon={Brain}
+          label="AI / LLM"
+        />
       </div>
 
       {/* Content */}
@@ -171,6 +179,8 @@ export default function SettingsPage() {
         {activeTab === 'units' && <UnitConversions />}
 
         {activeTab === 'material-categories' && <MaterialCategories />}
+
+        {activeTab === 'llm' && <LLMSettings />}
       </div>
 
       {/* Add User Modal */}
@@ -262,10 +272,22 @@ function BillingSettings() {
   const [cfg, setCfg] = useState<BillingConfig>(loadBillingConfig)
   const [saved, setSaved] = useState(false)
 
-  const save = () => {
+  const save = async () => {
     localStorage.setItem('pos_billing_settings', JSON.stringify(cfg))
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    // Sync to backend so POS bill calculations use the same settings
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({
+        pos_vat_enabled: cfg.vatEnabled,
+        pos_vat_rate: cfg.vatRate,
+        pos_service_enabled: cfg.serviceEnabled,
+        pos_service_rate: cfg.serviceRate,
+      })
+    } catch (e) {
+      console.warn('Failed to sync billing config to backend:', e)
+    }
   }
 
   const ToggleSwitch = ({ enabled, onChange, label, sub }: { enabled: boolean; onChange: (v: boolean) => void; label: string; sub: string }) => (

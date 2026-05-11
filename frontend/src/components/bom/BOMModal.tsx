@@ -106,6 +106,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   ])
   const [compatibleUnits, setCompatibleUnits] = useState<Record<string, { code: string; label: string }[]>>({})
   const [rowCosts, setRowCosts] = useState<Record<string, number>>({})
+  const [conversionIssues, setConversionIssues] = useState<Array<{
+    rowId: string
+    materialName: string
+    from: string
+    to: string
+    materialId: string
+  }>>([])
 
   const isEdit = !!editBOM
   const isCopy = !!copyFrom
@@ -381,6 +388,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   useEffect(() => {
     const calculateCosts = async () => {
       const costs: Record<string, number> = {}
+      const issues: typeof conversionIssues = []
       for (const row of itemRows) {
         if (row.itemType === 'MATERIAL' && row.materialId && row.quantity > 0) {
           const material = materials.find((m) => m.id === row.materialId)
@@ -396,8 +404,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 to_unit: stockUnit,
                 material_id: row.materialId,
               })
-              if (res.data?.success) {
-                convertedQty = res.data.data.converted
+              const data = res.data?.data
+              if (data?.canConvert === false && data?.needsAction) {
+                issues.push({
+                  rowId: row.id,
+                  materialName: material.name,
+                  from: bomUnit,
+                  to: stockUnit,
+                  materialId: row.materialId,
+                })
+              } else if (data?.converted != null) {
+                convertedQty = data.converted
               }
             } catch {
               // fallback: use raw quantity if conversion fails
@@ -410,6 +427,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         }
       }
       setRowCosts(costs)
+      setConversionIssues(issues)
     }
     calculateCosts()
   }, [itemRows, materials, availableChildBOMs])
@@ -719,6 +737,38 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       </p>
                     )}
                   </div>
+
+                  {/* Conversion Issues */}
+                  {conversionIssues.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {conversionIssues.map((issue) => (
+                        <div key={issue.rowId} className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-amber-300">
+                              <span className="font-medium">{issue.materialName}</span>: ยังไม่มีการแปลงหน่วย "{issue.from}" → "{issue.to}"
+                            </p>
+                            <div className="flex gap-2 mt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => window.open(`/stock/${issue.materialId}/edit?tab=units`, '_blank')}
+                                className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
+                              >
+                                แก้ไขหน่วยใน Stock
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => window.open('/settings/unit-conversions', '_blank')}
+                                className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
+                              >
+                                ตั้งค่าหน่วยทั้งระบบ
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Total Cost */}
                   <div className="flex items-center justify-end gap-4 pt-4 border-t border-cyber-border">

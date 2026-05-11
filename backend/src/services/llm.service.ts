@@ -1,25 +1,47 @@
-// ThaiLLM / OpenAI-compatible intent detection service
-// Analyzes LINE messages that don't match hard-coded commands
-// Returns structured intent so line-bot.service can route correctly
+// MCP-style LLM hub — dynamically resolves provider per tenant
+// Falls back to env vars if no DB record exists
 
-const LLM_BASE_URL = process.env.THAI_LLM_URL    ?? 'https://api.moonshot.cn/v1'
-const LLM_API_KEY  = process.env.THAI_LLM_API_KEY ?? ''
-const LLM_MODEL    = process.env.THAI_LLM_MODEL   ?? 'kimi-k2.6'
+import db from '../db/sqlite'
+
+export interface ResolvedProvider {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+export function getActiveProvider(tenantId?: string): ResolvedProvider | null {
+  if (tenantId) {
+    const row: any = db.prepare(
+      `SELECT base_url, api_key, model FROM llm_providers
+       WHERE tenant_id = ? AND is_active = 1 AND is_default = 1 LIMIT 1`
+    ).get(tenantId)
+    if (row) {
+      return { baseUrl: row.base_url, apiKey: row.api_key, model: row.model }
+    }
+    const fallback: any = db.prepare(
+      `SELECT base_url, api_key, model FROM llm_providers
+       WHERE tenant_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1`
+    ).get(tenantId)
+    if (fallback) {
+      return { baseUrl: fallback.base_url, apiKey: fallback.api_key, model: fallback.model }
+    }
+  }
+  return null
+}
 
 export type IntentType =
-    | 'CREATE_BOM'      // สร้าง/เพิ่ม BOM สูตรการผลิต
-    | 'SUGGEST_MENU'    // แนะนำเมนูจากวัตถุดิบที่มี
-    | 'QUERY_ERP'       // ถามข้อมูลใน ERP (สต็อก, ต้นทุน, ออเดอร์)
-    | 'CREATE_TASK'     // งานที่ซับซ้อน ส่ง Paperclip
-    | 'CHAT'            // คำถามทั่วไป ตอบตรง
+    | 'CREATE_BOM'
+    | 'SUGGEST_MENU'
+    | 'QUERY_ERP'
+    | 'CREATE_TASK'
+    | 'CHAT'
 
 export interface LLMIntent {
     intent: IntentType
     params: Record<string, any>
-    replyDirect?: string  // ถ้า LLM ตอบได้เลย (CHAT intent)
+    replyDirect?: string
 }
 
-// System prompt — สอน LLM ให้ return JSON intent เสมอ
 const SYSTEM_PROMPT = `คุณคือผู้ช่วย ERP สำหรับโรงงานผลิต/ร้านกาแฟ ชื่อ "ERP Bot"
 วิเคราะห์ข้อความและตอบกลับเป็น JSON เท่านั้น ห้ามมีข้อความอื่น
 
@@ -57,39 +79,39 @@ intent ที่รองรับ:
 → {"intent":"CHAT","params":{},"replyDirect":"สวัสดีครับ! มีอะไรให้ช่วยไหมครับ"}
 `
 
-export async function detectIntent(userMessage: string): Promise<LLMIntent> {
-    if (!LLM_API_KEY) {
+export async function detectIntent(userMessage: string, tenantId?: string): Promise<LLMIntent> {
+    const provider = getActiveProvider(tenantId)
+    if (!provider) {
         return { intent: 'CHAT', params: {}, replyDirect: 'ระบบ AI ยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแล' }
     }
 
     try {
-        const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+        const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${LLM_API_KEY}`,
+                'Authorization': `Bearer ${provider.apiKey}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: LLM_MODEL,
+                model: provider.model,
                 messages: [
                     { role: 'system', content: SYSTEM_PROMPT },
                     { role: 'user',   content: userMessage },
                 ],
                 max_tokens: 300,
-                temperature: 0.1,  // ต่ำ = deterministic มากขึ้น เหมาะกับ JSON extraction
+                temperature: 0.1,
             }),
             signal: AbortSignal.timeout(15_000),
         })
 
         if (!res.ok) {
-            console.error('ThaiLLM API error:', res.status, await res.text())
+            console.error('LLM API error:', res.status, await res.text())
             return fallbackIntent(userMessage)
         }
 
         const data: any = await res.json()
         const raw = data.choices?.[0]?.message?.content?.trim() ?? ''
 
-        // Strip markdown code fences if LLM wraps in ```json ... ```
         const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
         const parsed = JSON.parse(jsonStr) as LLMIntent
         return parsed
@@ -100,9 +122,6 @@ export async function detectIntent(userMessage: string): Promise<LLMIntent> {
     }
 }
 
-// ===================================================================
-// Unit Conversion Advisor — pre-defined prompt template
-// ===================================================================
 const UNIT_SUGGEST_SYSTEM = `คุณเป็นผู้ช่วยตั้งค่าการแปลงหน่วยสำหรับระบบ ERP
 ตอบด้วย JSON เท่านั้น ห้ามมีข้อความอื่นนอกจาก JSON
 รูปแบบ: {"factor": <number>, "note": "<คำอธิบายสั้นภาษาไทย>"}`
@@ -112,8 +131,9 @@ export async function suggestUnitConversion(params: {
   to_unit: string
   material_name?: string
   existing_conversions: Array<{ from_unit: string; to_unit: string; factor: number }>
-}): Promise<{ factor: number | null; note: string }> {
-  if (!LLM_API_KEY) {
+}, tenantId?: string): Promise<{ factor: number | null; note: string }> {
+  const provider = getActiveProvider(tenantId)
+  if (!provider) {
     return { factor: null, note: 'ระบบ AI ยังไม่ได้ตั้งค่า กรุณากรอกค่าเอง' }
   }
 
@@ -127,14 +147,14 @@ export async function suggestUnitConversion(params: {
 แนะนำค่า factor ที่เหมาะสม พร้อมคำอธิบายสั้น`
 
   try {
-    const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LLM_API_KEY}`,
+        'Authorization': `Bearer ${provider.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: LLM_MODEL,
+        model: provider.model,
         messages: [
           { role: 'system', content: UNIT_SUGGEST_SYSTEM },
           { role: 'user', content: userMsg },
@@ -163,7 +183,6 @@ export async function suggestUnitConversion(params: {
   }
 }
 
-// Fallback เมื่อ LLM ไม่ตอบหรือ error — ตอบ CHAT ธรรมดา ไม่สร้าง task อัตโนมัติ
 function fallbackIntent(_message: string): LLMIntent {
     return {
         intent: 'CHAT',

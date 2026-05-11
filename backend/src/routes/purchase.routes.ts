@@ -292,6 +292,35 @@ router.get('/goods-receipts', async (req: Request, res: Response) => {
   }
 })
 
+// GET pending PO items for GR
+router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+
+    const items = db.prepare(`
+      SELECT
+        poi.id, poi.purchase_order_id, poi.material_id,
+        poi.description, poi.quantity, poi.unit_price, poi.total_price,
+        poi.received_qty,
+        (poi.quantity - poi.received_qty) AS pending_qty,
+        si.name  AS material_name,
+        si.sku   AS material_code,
+        si.unit  AS unit
+      FROM purchase_order_items poi
+      LEFT JOIN stock_items si ON poi.material_id = si.id
+      LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
+      WHERE poi.purchase_order_id = ?
+        AND po.tenant_id = ?
+        AND poi.quantity > poi.received_qty
+    `).all(req.params.poId, tenantId)
+
+    res.json({ success: true, data: items })
+  } catch (error) {
+    console.error('Get pending items error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch pending items' })
+  }
+})
+
 // GET single goods receipt
 router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
   try {
@@ -553,35 +582,6 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
       return res.status(400).json({ success: false, message })
     }
     res.status(500).json({ success: false, message })
-  }
-})
-
-// GET pending PO items for GR
-router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-
-    const items = db.prepare(`
-      SELECT
-        poi.id, poi.purchase_order_id, poi.material_id,
-        poi.description, poi.quantity, poi.unit_price, poi.total_price,
-        poi.received_qty,
-        (poi.quantity - poi.received_qty) AS pending_qty,
-        si.name  AS material_name,
-        si.sku   AS material_code,
-        si.unit  AS unit
-      FROM purchase_order_items poi
-      LEFT JOIN stock_items si ON poi.material_id = si.id
-      LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      WHERE poi.purchase_order_id = ?
-        AND po.tenant_id = ?
-        AND poi.quantity > poi.received_qty
-    `).all(req.params.poId, tenantId)
-
-    res.json({ success: true, data: items })
-  } catch (error) {
-    console.error('Get pending items error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch pending items' })
   }
 })
 

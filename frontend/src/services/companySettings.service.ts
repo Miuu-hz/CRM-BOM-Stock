@@ -9,6 +9,10 @@ export interface CompanySettings {
   tax_id?: string
   logo_base64?: string
   pos_bom_deduct?: number | boolean  // 1=ตัด stock ตาม BOM, 0=ไม่ตัด (default 1)
+  pos_vat_enabled?: number | boolean
+  pos_vat_rate?: number
+  pos_service_enabled?: number | boolean
+  pos_service_rate?: number
 }
 
 const LS_KEY = 'crm_company_settings'

@@ -5,17 +5,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import materialsService, { MaterialCategory } from '../../services/materials'
-
-const UNIT_LABELS: Record<string, string> = {
-  pcs: 'ชิ้น', kg: 'กิโลกรัม', g: 'กรัม', mg: 'มิลลิกรัม',
-  lb: 'ปอนด์', oz: 'ออนซ์', m: 'เมตร', cm: 'เซนติเมตร',
-  mm: 'มิลลิเมตร', km: 'กิโลเมตร', inch: 'นิ้ว', ft: 'ฟุต',
-  yard: 'หลา', l: 'ลิตร', ltr: 'ลิตร', ml: 'มิลลิลิตร',
-  gallon: 'แกลลอน', roll: 'ม้วน', box: 'กล่อง', pack: 'แพ็ค',
-  set: 'ชุด', pair: 'คู่', sheet: 'แผ่น', bottle: 'ขวด',
-  bag: 'ถุง', sachet: 'ซอง', dozen: 'โหล', gross: 'กุรอส',
-  case: 'ลัง', can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
-}
+import { UNIT_LABELS } from '../../hooks/useUnits'
 
 const ul = (u: string) => UNIT_LABELS[u] ? `${u} (${UNIT_LABELS[u]})` : u
 

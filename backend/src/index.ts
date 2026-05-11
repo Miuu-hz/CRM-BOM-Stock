@@ -43,6 +43,7 @@ import posClearingRoutes from './routes/pos-clearing.routes'
 import kdsRoutes from './routes/kds.routes'
 import lineBotRoutes from './routes/line-bot.routes'
 import settingsRoutes from './routes/settings.routes'
+import llmProviderRoutes from './routes/llmProvider.routes'
 import { agentRoutes, startWorker } from './agent'
 import analyticsRoutes from './analytics/routes'
 
@@ -154,6 +155,7 @@ app.use('/api/pos', posBillRoutes)
 app.use('/api/pos', posClearingRoutes)
 app.use('/api/pos/kds', kdsRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/llm-providers', llmProviderRoutes)
 app.use('/api/analytics', analyticsRoutes)
 
 // Serve frontend (production) — must be after all API routes

@@ -372,7 +372,7 @@ export function autoUnpackIfNeeded(
   const baseUnit = stockItem.base_unit || stockItem.unit
   if (normalizeUnit(displayUnit) === normalizeUnit(baseUnit)) return null
 
-  const chain = findConversionChain(displayUnit, baseUnit, tenantId, stockItem.material_id ?? undefined)
+  const chain = findConversionChain(displayUnit, baseUnit, tenantId, stockItem.id ?? stockItem.material_id ?? undefined)
   if (!chain || chain.factor <= 0) return null
 
   const packFactor = Math.round(chain.factor) // ใช้ round เพราะ factor ควรเป็น integer (3 ขวด/แพ็ค)

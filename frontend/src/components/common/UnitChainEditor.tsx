@@ -75,17 +75,16 @@ export default function UnitChainEditor({
   baseUnit = '',
   displayUnit = '',
 }: Props) {
-  const initUnits = () => {
+  const markerIdRef = useRef(`uce-arrow-${Math.random().toString(36).slice(2)}`)
+  const markerId = markerIdRef.current
+
+  const [nodePositions, setNodePositions] = useState<Record<string, NodePos>>(() => {
     const set = new Set<string>()
     if (baseUnit) set.add(baseUnit)
     if (displayUnit) set.add(displayUnit)
     conversions.forEach(c => { set.add(c.from_unit); set.add(c.to_unit) })
-    return Array.from(set)
-  }
-
-  const [nodePositions, setNodePositions] = useState<Record<string, NodePos>>(
-    () => autoLayout(initUnits(), conversions, baseUnit),
-  )
+    return autoLayout(Array.from(set), conversions, baseUnit)
+  })
   const [dragging, setDragging] = useState<{ unit: string; ox: number; oy: number } | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
@@ -192,9 +191,14 @@ export default function UnitChainEditor({
     setNewUnitValue(''); setAddingUnit(false)
   }
 
-  const handleRemoveNode = (unit: string) => {
-    conversions.filter(c => c.from_unit === unit || c.to_unit === unit).forEach(c => onDelete(c.id))
-    setNodePositions(prev => { const next = { ...prev }; delete next[unit]; return next })
+  const handleRemoveNode = async (unit: string) => {
+    const toDelete = conversions.filter(c => c.from_unit === unit || c.to_unit === unit)
+    try {
+      await Promise.all(toDelete.map(c => onDelete(c.id)))
+      setNodePositions(prev => { const next = { ...prev }; delete next[unit]; return next })
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
+    }
   }
 
   const edgePath = (from: string, to: string) => {
@@ -246,7 +250,7 @@ export default function UnitChainEditor({
           {/* SVG edges */}
           <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
             <defs>
-              <marker id="uce-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <marker id={markerId} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                 <path d="M0,0 L0,6 L8,3 z" fill="#8b5cf6" />
               </marker>
             </defs>
@@ -256,7 +260,7 @@ export default function UnitChainEditor({
               if (!path) return null
               return (
                 <g key={conv.id}>
-                  <path d={path} stroke="#8b5cf6" strokeWidth="2" fill="none" markerEnd="url(#uce-arrow)" strokeOpacity="0.8" />
+                  <path d={path} stroke="#8b5cf6" strokeWidth="2" fill="none" markerEnd={`url(#${markerId})`} strokeOpacity="0.8" />
                   <rect x={mid.x - 26} y={mid.y - 10} width={52} height={20} rx={10} fill="#1a1a2e" stroke="#8b5cf6" strokeWidth="1" strokeOpacity="0.5" />
                   <text x={mid.x} y={mid.y + 4} textAnchor="middle" fill="#c4b5fd" fontSize="11" fontFamily="monospace">
                     ×{conv.conversion_factor}

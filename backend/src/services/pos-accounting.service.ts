@@ -316,7 +316,7 @@ class POSAccountingService {
           id, tenant_id, document_type, document_id, document_number, document_date,
           party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount,
           is_output_vat, journal_entry_id, created_at
-        ) VALUES (?, ?, 'SALES', ?, ?, ?, ?, ?, ?, 7, ?, ?, 1, ?, ?)
+        ) VALUES (?, ?, 'SALES', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       `)
 
       vatStmt.run(
@@ -328,6 +328,7 @@ class POSAccountingService {
         bill.customer_name || 'ลูกค้าทั่วไป',
         null, // party_tax_id
         totalRevenue,
+        bill.tax_rate || 0,
         bill.tax_amount,
         bill.total_amount,
         entryId,

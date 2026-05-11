@@ -9,19 +9,15 @@ const KDS: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(false)
   const isFirstLoad = useRef(true)
   const lastCount = useRef(0)
-  const audioCtxRef = useRef<AudioContext | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const unlockAudio = () => {
     if (soundEnabled) return
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      audioCtxRef.current = ctx
-      // play silent buffer to unlock
-      const buf = ctx.createBuffer(1, 1, 22050)
-      const src = ctx.createBufferSource()
-      src.buffer = buf
-      src.connect(ctx.destination)
-      src.start(0)
+      const audio = new Audio('/sounds/order-voice.m4a')
+      audio.volume = 1.0
+      audio.load()
+      audioRef.current = audio
       setSoundEnabled(true)
     } catch {}
   }
@@ -53,28 +49,10 @@ const KDS: React.FC = () => {
 
   const playNotificationSound = () => {
     try {
-      const ctx = audioCtxRef.current
-      if (!ctx) return
-      if (ctx.state === 'suspended') ctx.resume()
-
-      const playBeep = (startTime: number, freq: number, duration: number) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.type = 'sine'
-        osc.frequency.value = freq
-        gain.gain.setValueAtTime(0, startTime)
-        gain.gain.linearRampToValueAtTime(0.6, startTime + 0.02)
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.start(startTime)
-        osc.stop(startTime + duration)
-      }
-
-      const t = ctx.currentTime
-      playBeep(t, 880, 0.15)
-      playBeep(t + 0.2, 1100, 0.15)
-      playBeep(t + 0.4, 880, 0.2)
+      const audio = audioRef.current
+      if (!audio) return
+      audio.currentTime = 0
+      audio.play()
     } catch {}
   }
 

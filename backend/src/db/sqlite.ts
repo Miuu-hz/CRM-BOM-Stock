@@ -1598,6 +1598,21 @@ db.exec(`
     UNIQUE(tenant_id, user_id),
     UNIQUE(tenant_id, line_user_id)
   );
+
+  -- ==================== LLM PROVIDERS ====================
+  CREATE TABLE IF NOT EXISTS llm_providers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    model TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
 `)
 
 // ==================== MIGRATIONS ====================
@@ -2082,6 +2097,27 @@ try {
 try {
   db.exec(`ALTER TABLE company_settings ADD COLUMN pos_bom_deduct INTEGER DEFAULT 1`)
   console.log('✅ Migration: company_settings.pos_bom_deduct added')
+} catch { /* column already exists */ }
+
+// Migration: add POS billing settings to company_settings
+try {
+  db.exec(`ALTER TABLE company_settings ADD COLUMN pos_vat_enabled INTEGER`)
+  console.log('✅ Migration: company_settings.pos_vat_enabled added')
+} catch { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE company_settings ADD COLUMN pos_vat_rate REAL`)
+  console.log('✅ Migration: company_settings.pos_vat_rate added')
+} catch { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE company_settings ADD COLUMN pos_service_enabled INTEGER`)
+  console.log('✅ Migration: company_settings.pos_service_enabled added')
+} catch { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE company_settings ADD COLUMN pos_service_rate REAL`)
+  console.log('✅ Migration: company_settings.pos_service_rate added')
 } catch { /* column already exists */ }
 
 // Migration: fix accounts with NULL is_active (manually created accounts missed the column)

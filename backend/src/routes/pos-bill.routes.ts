@@ -95,8 +95,14 @@ router.get('/bills/open', (req, res) => {
       ORDER BY b.opened_at DESC
     `)
     
-    const bills = stmt.all(tenantId)
-    res.json({ success: true, data: bills })
+    const bills = stmt.all(tenantId) as any[]
+    // Recalculate totals for open bills so they reflect current POS billing settings
+    for (const bill of bills) {
+      recalculateBillTotals(bill.id)
+    }
+    // Re-fetch to get updated totals
+    const refreshedBills = stmt.all(tenantId)
+    res.json({ success: true, data: refreshedBills })
   } catch (error) {
     console.error('Error fetching open bills:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch open bills' })
@@ -437,21 +443,35 @@ router.post('/bills/:id/pay', async (req, res) => {
     if ((bill as any).item_count === 0) {
       return res.status(400).json({ success: false, message: 'Cannot pay empty bill' })
     }
+
+    // Ensure bill totals are up-to-date with current POS billing settings
+    recalculateBillTotals(id)
+    const refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     
     // 1. Deduct stock using service
     const stockResult = await posStockService.deductStockOnPayment(id, tenantId, userId)
     
     if (!stockResult.success) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Stock deduction failed',
-        errors: stockResult.errors 
+      return res.json({ 
+        success: true,
+        data: {
+          canPay: false,
+          needsAction: true,
+          action: 'FIX_STOCK_ISSUES',
+          message: 'ไม่สามารถจ่ายเงินได้ — พบปัญหาสต็อกหรือหน่วย',
+          issues: stockResult.issues || stockResult.errors.map((e: string) => ({ type: 'UNKNOWN', message: e })),
+          errors: stockResult.errors,
+          links: {
+            stock: '/stock',
+            settings: '/settings/unit-conversions',
+          }
+        }
       })
     }
     
     // 2. Record payment
     const paymentId = generateId()
-    const totalAmount = (bill as any).total_amount
+    const totalAmount = (refreshedBill as any).total_amount
     const changeAmount = received_amount ? received_amount - totalAmount : 0
     
     const paymentStmt = db.prepare(`
@@ -475,14 +495,14 @@ router.post('/bills/:id/pay', async (req, res) => {
     // 4. Record accounting entry
     const payment = { payment_method, amount: totalAmount }
     const accountingResult = await posAccountingService.recordSale(
-      bill as any, payment, tenantId, userId
+      refreshedBill as any, payment, tenantId, userId
     )
 
     // 5. Earn loyalty points (if bill has a CRM customer linked)
     let pointsEarned = 0
     let pointsRedeemed = 0
-    if ((bill as any).customer_id) {
-      const customerId = (bill as any).customer_id
+    if ((refreshedBill as any).customer_id) {
+      const customerId = (refreshedBill as any).customer_id
       const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ?').get(customerId) as any
       if (customer) {
         // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
@@ -504,7 +524,7 @@ router.post('/bills/:id/pay', async (req, res) => {
           `).run(
             generateId(), tenantId, customerId, id,
             pointsRedeemed, balanceBefore, Math.max(0, balanceBefore - pointsRedeemed),
-            `แลกแต้มลดราคาจากบิล ${(bill as any).bill_number}`,
+            `แลกแต้มลดราคาจากบิล ${(refreshedBill as any).bill_number}`,
             userId, now()
           )
         }
@@ -745,19 +765,44 @@ function recalculateBillTotals(billId: string) {
   const items = itemsStmt.all(billId)
   
   const subtotal = (items as any[]).reduce((sum, item) => sum + item.total_price, 0)
-  const serviceChargeRate = 0.10 // 10%
-  const taxRate = 0.07 // 7%
   
-  const serviceChargeAmount = subtotal * serviceChargeRate
-  const taxAmount = (subtotal + serviceChargeAmount) * taxRate
+  // Get bill tenant to lookup company POS billing settings
+  const billRow = db.prepare('SELECT tenant_id FROM pos_running_bills WHERE id = ?').get(billId) as any
+  const tenantId = billRow?.tenant_id
+  
+  // Read POS billing settings from company_settings (fallback to legacy hardcoded values for backward compat)
+  let vatEnabled = true
+  let vatRate = 7
+  let serviceEnabled = true
+  let serviceRate = 10
+  
+  if (tenantId) {
+    const settings = db.prepare(`
+      SELECT pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate 
+      FROM company_settings 
+      WHERE tenant_id = ?
+    `).get(tenantId) as any
+    
+    if (settings && settings.pos_vat_enabled !== null) {
+      vatEnabled = settings.pos_vat_enabled === 1
+      vatRate = settings.pos_vat_rate ?? 7
+      serviceEnabled = settings.pos_service_enabled === 1
+      serviceRate = settings.pos_service_rate ?? 10
+    }
+  }
+  
+  // Match frontend calculation logic (Cashier.tsx)
+  const serviceChargeAmount = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0
+  const taxAmount = vatEnabled ? Math.round(subtotal * vatRate / 100) : 0
   const totalAmount = subtotal + serviceChargeAmount + taxAmount
   
   const updateStmt = db.prepare(`
     UPDATE pos_running_bills 
-    SET subtotal = ?, service_charge_amount = ?, tax_amount = ?, total_amount = ?
+    SET subtotal = ?, service_charge_amount = ?, service_charge_rate = ?,
+        tax_amount = ?, tax_rate = ?, total_amount = ?
     WHERE id = ?
   `)
-  updateStmt.run(subtotal, serviceChargeAmount, taxAmount, totalAmount, billId)
+  updateStmt.run(subtotal, serviceChargeAmount, serviceRate, taxAmount, vatRate, totalAmount, billId)
 }
 
 export default router

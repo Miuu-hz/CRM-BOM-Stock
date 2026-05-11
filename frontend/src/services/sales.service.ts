@@ -1,4 +1,5 @@
 import api from './api'
+import { normalizeUnit } from '../utils/unitNormalize'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ const salesService = {
       id: p.id,
       code: p.sku || p.code,
       name: p.name,
-      unit: p.unit,
+      unit: normalizeUnit(p.unit),
       sell_price: p.unit_price || p.unitCost || 0,
     }))
   },

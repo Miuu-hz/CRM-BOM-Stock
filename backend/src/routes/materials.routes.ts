@@ -10,6 +10,7 @@ import {
   deleteConversion,
   getStandardConversions,
   convertQuantity,
+  convertQuantityBidirectional,
   getCompatibleUnits,
   getUnitDisplayName,
   findConversionChain,
@@ -315,11 +316,41 @@ router.post('/unit-conversions/convert', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'quantity, from_unit, to_unit จำเป็นต้องระบุ' })
     }
 
-    const result = convertQuantity(Number(quantity), from_unit, to_unit, tenantId, material_id)
-    if (!result) {
-      return res.status(404).json({ success: false, message: `ไม่พบวิธีแปลง ${from_unit} → ${to_unit}` })
+    const result = convertQuantityBidirectional(Number(quantity), from_unit, to_unit, tenantId, material_id)
+    if (result) {
+      return res.json({ success: true, data: { quantity: Number(quantity), from_unit, to_unit, ...result } })
     }
-    res.json({ success: true, data: { quantity: Number(quantity), from_unit, to_unit, ...result } })
+
+    // ── Actionable response: บอกว่าขาดอะไร และแนะนำให้สร้าง ──
+    const chain = findConversionChain(normalizeUnit(from_unit), normalizeUnit(to_unit), tenantId, material_id)
+    const missingLinks: Array<{ from: string; to: string; reason: string }> = []
+
+    if (!chain) {
+      // ไม่มีเส้นทางเลย → ขาด link ตรงๆ
+      missingLinks.push({
+        from: from_unit,
+        to: to_unit,
+        reason: 'ยังไม่มีการแปลงหน่วยนี้ในระบบ'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        canConvert: false,
+        needsAction: true,
+        action: 'CREATE_CONVERSION',
+        message: `ยังไม่มีการแปลงหน่วย "${getUnitDisplayName(from_unit)}" → "${getUnitDisplayName(to_unit)}"`,
+        missingLinks,
+        from_unit,
+        to_unit,
+        material_id: material_id || null,
+        links: {
+          settings: '/settings/unit-conversions',
+          stockEdit: material_id ? `/stock/${material_id}/edit?tab=units` : null,
+        }
+      }
+    })
   } catch (error) {
     console.error('Convert error:', error)
     res.status(500).json({ success: false, message: 'Failed to convert' })
@@ -373,7 +404,7 @@ router.post('/unit-conversions/suggest', async (req: Request, res: Response) => 
       .filter(c => !material_id || c.material_id === material_id || !c.material_id)
       .map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: c.conversion_factor }))
 
-    const result = await suggestUnitConversion({ from_unit, to_unit, material_name, existing_conversions: existing })
+    const result = await suggestUnitConversion({ from_unit, to_unit, material_name, existing_conversions: existing }, tenantId)
     res.json({ success: true, data: result })
   } catch (error) {
     console.error('suggest error:', error)

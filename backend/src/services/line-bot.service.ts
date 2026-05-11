@@ -674,7 +674,7 @@ class LineBotService {
 
         let intent
         try {
-            intent = await detectIntent(text)
+            intent = await detectIntent(text, tenantId)
         } catch {
             await client.replyMessage(replyToken, {
                 type: 'text', text: 'ขออภัย ระบบวิเคราะห์คำสั่งขัดข้อง กรุณาลองใหม่หรือพิมพ์ -help',

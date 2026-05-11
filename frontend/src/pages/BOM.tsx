@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText,
@@ -670,9 +670,8 @@ function BOMPage() {
                   </thead>
                   <tbody>
                     {filteredBOMs.map((bom) => (
-                      <>
+                      <React.Fragment key={bom.id}>
                         <tr
-                          key={bom.id}
                           className="cursor-pointer hover:bg-cyber-card/30"
                           onClick={() => toggleExpanded(bom.id)}
                         >
@@ -743,7 +742,7 @@ function BOMPage() {
                         </tr>
                         {/* Expanded Materials */}
                         {expandedIds.has(bom.id) && (
-                          <tr key={`${bom.id}-materials`}>
+                          <tr>
                             <td colSpan={9} className="bg-cyber-dark/30 p-0">
                               <div className="p-4">
                                 <BOMItemsTable items={bom.items || bom.materials || []} />
@@ -751,7 +750,7 @@ function BOMPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -982,6 +981,33 @@ function BOMCard({
   onDelete: (id: string, name: string) => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [cardItems, setCardItems] = useState<BOMItem[]>(bom.items || bom.materials || [])
+  const [cardLoading, setCardLoading] = useState(false)
+  const itemCount = cardItems.length
+
+  const handleToggle = async () => {
+    const next = !isExpanded
+    setIsExpanded(next)
+    // Fetch items on first expand if not loaded yet
+    if (next && itemCount === 0 && !bom.items && !bom.materials) {
+      setCardLoading(true)
+      try {
+        const full = await bomService.getById(bom.id)
+        const loaded = full.items || full.materials || []
+        setCardItems(loaded)
+      } catch {
+        setCardItems([])
+      } finally {
+        setCardLoading(false)
+      }
+    }
+  }
+
+  const fmtDate = (s?: string) => {
+    if (!s || s === 'Invalid Date') return '-'
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH')
+  }
 
   return (
     <motion.div
@@ -1058,16 +1084,14 @@ function BOMCard({
       </div>
 
       {/* BOM Items Preview */}
-      <div className="overflow-x-auto mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-1 text-sm text-cyber-primary hover:text-cyber-primary/80"
-          >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            <span>Items ({(bom.items || bom.materials || []).length})</span>
-          </button>
-        </div>
+      <div className="mb-4">
+        <button
+          onClick={handleToggle}
+          className="flex items-center gap-1.5 text-sm text-cyber-primary hover:text-cyber-primary/80 mb-2"
+        >
+          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          <span className="font-medium">รายการวัตถุดิบ ({itemCount})</span>
+        </button>
         
         <AnimatePresence>
           {isExpanded && (
@@ -1077,56 +1101,70 @@ function BOMCard({
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <table className="cyber-table">
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Item</th>
-                    <th>Code</th>
-                    <th>Quantity</th>
-                    <th>Cost/Unit</th>
-                    <th>Total Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(bom.items || bom.materials || []).map((item) => {
-                    const isChildBOM = item.itemType === 'CHILD_BOM'
-                    const name = isChildBOM ? item.childBomProductName : item.material?.name
-                    const code = isChildBOM ? item.childBomProductCode : item.material?.code
-                    const unitCost = isChildBOM ? 0 : (item.material?.unitCost || 0)
-                    const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
-
-                    return (
-                      <tr key={item.id}>
-                        <td>
-                          {isChildBOM ? (
-                            <span className="flex items-center gap-1 text-cyber-purple text-sm">
-                              <GitBranch className="w-3 h-3" />
-                              BOM
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-gray-400 text-sm">
-                              <Box className="w-3 h-3" />
-                              Material
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-gray-300">{name}</td>
-                        <td className="text-gray-400">{code}</td>
-                        <td className="text-gray-400">
-                          {Number(item.quantity)} {item.unit || item.material?.unit}
-                        </td>
-                        <td className="text-gray-400">
-                          {!isChildBOM && `฿${unitCost.toLocaleString()}`}
-                        </td>
-                        <td className="text-cyber-green font-semibold">
-                          {!isChildBOM && `฿${itemTotal.toLocaleString()}`}
-                        </td>
+              {cardLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-gray-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  กำลังโหลด...
+                </div>
+              ) : itemCount === 0 ? (
+                <div className="py-4 text-center text-sm text-gray-500 bg-cyber-dark/30 rounded-lg border border-cyber-border/30">
+                  <Box className="w-5 h-5 mx-auto mb-1 text-gray-600" />
+                  ไม่มีรายการวัตถุดิบ
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-cyber-border/30">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-cyber-border/30 bg-cyber-dark/30">
+                        <th className="text-left py-2 px-3">ประเภท</th>
+                        <th className="text-left py-2 px-3">รายการ</th>
+                        <th className="text-left py-2 px-3">รหัส</th>
+                        <th className="text-right py-2 px-3">จำนวน</th>
+                        <th className="text-right py-2 px-3">ต้นทุน/หน่วย</th>
+                        <th className="text-right py-2 px-3">รวม</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {cardItems.map((item) => {
+                        const isChildBOM = item.itemType === 'CHILD_BOM'
+                        const name = isChildBOM ? item.childBomProductName : item.material?.name
+                        const code = isChildBOM ? item.childBomProductCode : item.material?.code
+                        const unitCost = isChildBOM ? 0 : (item.material?.unitCost || 0)
+                        const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
+
+                        return (
+                          <tr key={item.id} className="border-b border-cyber-border/10 hover:bg-cyber-dark/20">
+                            <td className="py-2 px-3">
+                              {isChildBOM ? (
+                                <span className="flex items-center gap-1 text-cyber-purple text-xs">
+                                  <GitBranch className="w-3 h-3" />
+                                  Child BOM
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-gray-400 text-xs">
+                                  <Box className="w-3 h-3" />
+                                  วัตถุดิบ
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-gray-300 whitespace-nowrap">{name}</td>
+                            <td className="py-2 px-3 text-gray-500 text-xs">{code}</td>
+                            <td className="py-2 px-3 text-right text-gray-400">
+                              {Number(item.quantity)} {item.unit || item.material?.unit}
+                            </td>
+                            <td className="py-2 px-3 text-right text-gray-400">
+                              {!isChildBOM && `฿${unitCost.toLocaleString()}`}
+                            </td>
+                            <td className="py-2 px-3 text-right text-cyber-green font-semibold">
+                              {!isChildBOM && `฿${itemTotal.toLocaleString()}`}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1135,10 +1173,10 @@ function BOMCard({
       {/* Total Cost */}
       <div className="flex items-center justify-between pt-4 border-t border-cyber-border">
         <div className="text-sm text-gray-400">
-          Last updated: {new Date(bom.updatedAt).toLocaleDateString('th-TH')}
+          อัปเดตล่าสุด: {fmtDate(bom.updatedAt)}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-gray-400">Total Production Cost:</span>
+          <span className="text-gray-400">ต้นทุนผลิตรวม:</span>
           <span className="text-2xl font-bold text-cyber-primary">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>

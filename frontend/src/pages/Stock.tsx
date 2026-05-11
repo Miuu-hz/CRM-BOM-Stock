@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Package,
@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
+import api from '../services/api'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
@@ -40,6 +41,29 @@ import { useModalClose } from '../hooks/useModalClose'
 import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
 
 type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
+
+const COLUMN_LABELS: Record<ColumnKey, string> = {
+  image: 'รูปภาพ',
+  name: 'ชื่อสินค้า',
+  sku: 'SKU',
+  category: 'ประเภท',
+  quantity: 'จำนวน',
+  displayQty: 'จำนวนบรรจุ',
+  baseUnit: 'หน่วยฐาน',
+  displayUnit: 'หน่วยบรรจุ',
+  minmax: 'Min/Max',
+  unitCost: 'ต้นทุน/หน่วยซื้อ',
+  unitPrice: 'ราคาขาย/หน่วยฐาน',
+  location: 'สถานที่',
+  status: 'สถานะ',
+}
+const ALWAYS_VISIBLE: ColumnKey[] = ['name', 'quantity', 'status']
+
+function getDefaultCols(): Record<ColumnKey, boolean> {
+  const saved = localStorage.getItem('stock_columns')
+  if (saved) return JSON.parse(saved)
+  return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
+}
 
 function Stock() {
   const [stockItems, setStockItems] = useState<StockItem[]>([])
@@ -50,28 +74,6 @@ function Stock() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [showColumnPicker, setShowColumnPicker] = useState(false)
 
-  const COLUMN_LABELS: Record<ColumnKey, string> = {
-    image: 'รูปภาพ',
-    name: 'ชื่อสินค้า',
-    sku: 'SKU',
-    category: 'ประเภท',
-    quantity: 'จำนวน',
-    displayQty: 'จำนวนแสดงผล',
-    baseUnit: 'หน่วยฐาน',
-    displayUnit: 'หน่วยแสดงผล',
-    minmax: 'Min/Max',
-    unitCost: 'ราคาต้นทุน',
-    unitPrice: 'ราคาขาย',
-    location: 'สถานที่',
-    status: 'สถานะ',
-  }
-  const ALWAYS_VISIBLE: ColumnKey[] = ['name', 'quantity', 'status']
-
-  const getDefaultCols = (): Record<ColumnKey, boolean> => {
-    const saved = localStorage.getItem('stock_columns')
-    if (saved) return JSON.parse(saved)
-    return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
-  }
   const [visibleCols, setVisibleCols] = useState<Record<ColumnKey, boolean>>(getDefaultCols)
 
   const toggleCol = (key: ColumnKey) => {
@@ -166,7 +168,7 @@ function Stock() {
     return 'adequate'
   }
 
-  const filteredItems = (stockItems || []).filter((item) => {
+  const filteredItems = useMemo(() => (stockItems || []).filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
@@ -175,16 +177,16 @@ function Stock() {
     const status = getItemStatus(item)
     const matchesStatus = selectedStatus === 'all' || status === selectedStatus
     return matchesSearch && matchesCategory && matchesStatus
-  })
+  }), [stockItems, searchTerm, selectedCategory, selectedStatus])
 
-  const sortedItems = sortKey ? [...filteredItems].sort((a, b) => {
+  const sortedItems = useMemo(() => sortKey ? [...filteredItems].sort((a, b) => {
     let aVal: any, bVal: any
     switch (sortKey) {
       case 'name': aVal = a.name; bVal = b.name; break
       case 'sku': aVal = a.sku; bVal = b.sku; break
       case 'category': aVal = getCategoryGroup(a.category); bVal = getCategoryGroup(b.category); break
       case 'quantity': aVal = a.quantity; bVal = b.quantity; break
-      case 'displayQty': aVal = a.displayQuantity ?? a.quantity ?? 0; bVal = b.displayQuantity ?? b.quantity ?? 0; break
+      case 'displayQty': aVal = a.sealedQty ?? 0; bVal = b.sealedQty ?? 0; break
       case 'baseUnit': aVal = a.baseUnit || a.unit || ''; bVal = b.baseUnit || b.unit || ''; break
       case 'displayUnit': aVal = a.displayUnit || a.unit || ''; bVal = b.displayUnit || b.unit || ''; break
       case 'unitCost': aVal = a.unitCost ?? 0; bVal = b.unitCost ?? 0; break
@@ -195,14 +197,16 @@ function Stock() {
     }
     if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal, 'th') : bVal.localeCompare(aVal, 'th')
     return sortDir === 'asc' ? aVal - bVal : bVal - aVal
-  }) : filteredItems
+  }) : filteredItems, [filteredItems, sortKey, sortDir])
 
-  // Pagination logic
   const totalItems = sortedItems.length
   const totalPages = Math.ceil(totalItems / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = sortedItems.slice(startIndex, endIndex)
+  const paginatedItems = useMemo(
+    () => sortedItems.slice(startIndex, endIndex),
+    [sortedItems, startIndex, endIndex],
+  )
 
   // Reset to page 1 when filters change
   const handleSearchChange = (value: string) => {
@@ -230,8 +234,8 @@ function Stock() {
       'หน่วย': item.unit,
       'Min Stock': item.minStock,
       'Max Stock': item.maxStock,
-      'ต้นทุน/หน่วย (฿)': item.unitCost ?? 0,
-      'ราคาขาย/หน่วย (฿)': item.unitPrice ?? 0,
+      'ต้นทุน/หน่วยซื้อ (฿)': item.unitCost ?? 0,
+      'ราคาขาย/หน่วยฐาน (฿)': item.unitPrice ?? 0,
       'สถานที่': item.location || '',
       'สถานะ': getItemStatus(item),
     }))
@@ -525,8 +529,8 @@ function Stock() {
                 {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.baseUnit && <SortTh label="หน่วยฐาน" colKey="baseUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.displayQty && <SortTh label="จำนวนแสดงผล" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.displayUnit && <SortTh label="หน่วยแสดงผล" colKey="displayUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.displayQty && <SortTh label="จำนวนบรรจุ" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.displayUnit && <SortTh label="หน่วยบรรจุ" colKey="displayUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.minmax && <th>Min / Max</th>}
                 {visibleCols.unitCost && <SortTh label="ต้นทุน/หน่วย" colKey="unitCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
                 {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
@@ -596,25 +600,15 @@ function Stock() {
                       {visibleCols.quantity && (
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            {(item.sealedQty ?? 0) > 0 ? (
-                              <>
-                                <span className={`font-semibold ${item.quantity === 0 && (item.sealedQty ?? 0) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                                  {item.sealedQty} {item.displayUnit || item.unit}
-                                  {item.quantity > 0 && <span className="text-gray-400 font-normal"> + {item.quantity} {item.baseUnit || item.unit}</span>}
-                                </span>
-                                <span className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealedQty} {item.displayUnit}</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                                  {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
-                                    ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
-                                    : `${item.quantity} ${item.baseUnit || item.unit}`}
-                                </span>
-                                {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
-                                  <span className="text-xs text-gray-500">{item.quantity} {item.baseUnit || item.unit}</span>
-                                )}
-                              </>
+                            {/* จำนวนสต็อกหลัก = หน่วยฐาน */}
+                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                              {item.quantity} {item.baseUnit || item.unit}
+                            </span>
+                            {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info */}
+                            {(item.sealedQty ?? 0) > 0 && (
+                              <span className="text-xs text-amber-500/80">
+                                ยังไม่แกะ {item.sealedQty} {item.displayUnit || item.unit}
+                              </span>
                             )}
                           </div>
                         </td>
@@ -626,10 +620,8 @@ function Stock() {
                       )}
                       {visibleCols.displayQty && (
                         <td>
-                          <span className={`font-semibold ${(item.displayQuantity ?? item.quantity) === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                            {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
-                              ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
-                              : `${item.quantity} ${item.baseUnit || item.unit}`}
+                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-gray-500' : 'text-cyber-primary'}`}>
+                            {item.sealedQty ?? 0} {item.displayUnit || item.unit}
                           </span>
                         </td>
                       )}
@@ -646,14 +638,14 @@ function Stock() {
                       {visibleCols.unitCost && (
                         <td>
                           <span className="text-amber-400 text-sm font-medium">
-                            {cost ? `฿${Number(cost).toLocaleString()}` : '-'}
+                            {cost ? `฿${Number(cost).toLocaleString()}/${item.displayUnit || item.unit || 'หน่วย'}` : '-'}
                           </span>
                         </td>
                       )}
                       {visibleCols.unitPrice && (
                         <td>
                           <span className="text-cyber-green text-sm font-medium">
-                            {price ? `฿${Number(price).toLocaleString()}` : '-'}
+                            {price ? `฿${Number(price).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}` : '-'}
                           </span>
                         </td>
                       )}
@@ -882,27 +874,25 @@ function DetailModal({
               <CategoryBadge category={item.category} />
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">Current Stock</p>
+              <p className="text-sm text-gray-400 mb-1">Current Stock (Base)</p>
               <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
-                {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity
-                  ? `${item.displayQuantity} ${item.displayUnit || item.unit}`
-                  : `${item.quantity} ${item.baseUnit || item.unit}`}
+                {item.quantity} {item.baseUnit || item.unit}
                 {item.quantity === 0 && (
                   <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
                     OUT OF STOCK
                   </span>
                 )}
               </p>
-              {item.displayQuantity !== undefined && item.displayQuantity !== item.quantity && (
-                <p className="text-xs text-gray-500">{item.quantity} {item.baseUnit || item.unit}</p>
+              {(item.sealedQty ?? 0) > 0 && (
+                <p className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealedQty} {item.displayUnit || item.unit}</p>
               )}
             </div>
             <div>
               <p className="text-sm text-gray-400 mb-1">หน่วยฐาน (Base)</p>
-              <p className="text-gray-200">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(Display: ${item.unit})` : ''}</p>
+              <p className="text-gray-200">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(หน่วยเดิม: ${item.unit})` : ''}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">หน่วยแสดงผล (Display)</p>
+              <p className="text-sm text-gray-400 mb-1">หน่วยบรรจุ (Packaging)</p>
               <p className="text-gray-200">{item.displayUnit || '-'}</p>
             </div>
             <div>
@@ -914,10 +904,18 @@ function DetailModal({
               <p className="text-gray-200">{item.maxStock} {item.baseUnit || item.unit}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วย</p>
-              <p className="text-cyber-green font-semibold">
+              <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วยซื้อ ({item.displayUnit || item.unit})</p>
+              <p className="text-amber-400 font-semibold">
                 {item.unitCost
-                  ? `฿${Number(item.unitCost).toLocaleString()}`
+                  ? `฿${Number(item.unitCost).toLocaleString()}/${item.displayUnit || item.unit || 'หน่วย'}`
+                  : 'ไม่ระบุ'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-400 mb-1">ราคาขาย/หน่วยฐาน ({item.baseUnit || item.unit})</p>
+              <p className="text-cyber-green font-semibold">
+                {item.unitPrice
+                  ? `฿${Number(item.unitPrice).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}`
                   : 'ไม่ระบุ'}
               </p>
             </div>
@@ -1051,6 +1049,7 @@ function EditModal({
   const [showChainEditor, setShowChainEditor] = useState(false)
   const [convExpanded, setConvExpanded] = useState(false)
   const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
+  const [standardConversions, setStandardConversions] = useState<Array<{ from_unit: string; to_unit: string; factor: number }>>([])
   const [convForm, setConvForm] = useState({ from_unit: '', to_unit: '', conversion_factor: '' })
   const [convSaving, setConvSaving] = useState(false)
   const [conversionWarning, setConversionWarning] = useState<string | null>(null)
@@ -1059,8 +1058,15 @@ function EditModal({
 
   const fetchItemConversions = async (itemId: string) => {
     try {
-      const res = await import('../services/api').then(m => m.default.get(`/materials/unit-conversions?materialId=${itemId}`))
+      const res = await api.get(`/materials/unit-conversions?materialId=${itemId}`)
       setItemConversions(res.data.data ?? [])
+    } catch { /* silent */ }
+  }
+
+  const fetchStandardConversions = async () => {
+    try {
+      const res = await api.get('/materials/unit-conversions/standards')
+      setStandardConversions(res.data.data ?? [])
     } catch { /* silent */ }
   }
 
@@ -1070,7 +1076,6 @@ function EditModal({
     if (Number(convForm.conversion_factor) <= 0) { toast.error('ค่าแปลงต้องมากกว่า 0'); return }
     setConvSaving(true)
     try {
-      const api = await import('../services/api').then(m => m.default)
       await api.post('/materials/unit-conversions', {
         material_id: item.id,
         from_unit: convForm.from_unit.trim().toLowerCase(),
@@ -1090,7 +1095,6 @@ function EditModal({
 
   const handleDeleteConversion = async (convId: string) => {
     try {
-      const api = await import('../services/api').then(m => m.default)
       await api.delete(`/materials/unit-conversions/${convId}`)
       setItemConversions(prev => prev.filter(c => c.id !== convId))
       invalidateUnitsCache()
@@ -1120,8 +1124,10 @@ function EditModal({
       setShowChainEditor(false)
       setConvExpanded(false)
       setItemConversions([])
+      setStandardConversions([])
       setConversionWarning(null)
       fetchItemConversions(item.id)
+      fetchStandardConversions()
     }
   }, [item])
 
@@ -1135,16 +1141,20 @@ function EditModal({
       setConversionWarning(null)
       return
     }
-    const hasConversion = itemConversions.some(c =>
+    const hasCustom = itemConversions.some(c =>
       (c.from_unit === formData.displayUnit && c.to_unit === formData.baseUnit) ||
       (c.from_unit === formData.baseUnit && c.to_unit === formData.displayUnit)
     )
-    if (!hasConversion) {
+    const hasStandard = standardConversions.some(c =>
+      (c.from_unit === formData.displayUnit && c.to_unit === formData.baseUnit) ||
+      (c.from_unit === formData.baseUnit && c.to_unit === formData.displayUnit)
+    )
+    if (!hasCustom && !hasStandard) {
       setConversionWarning(`⚠️ ไม่พบการแปลงหน่วยจาก "${ul(formData.displayUnit)}" เป็น "${ul(formData.baseUnit)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
     } else {
       setConversionWarning(null)
     }
-  }, [formData.baseUnit, formData.displayUnit, itemConversions])
+  }, [formData.baseUnit, formData.displayUnit, itemConversions, standardConversions])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1294,8 +1304,8 @@ function EditModal({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">
-                        ราคาต้นทุน/หน่วย (฿)
-                        <span className="ml-1 text-amber-400/70">ต้นทุน</span>
+                        ราคาต้นทุน/หน่วยซื้อ (฿)
+                        <span className="ml-1 text-amber-400/70">ต่อ {formData.displayUnit || formData.unit || 'หน่วยที่ซื้อ'}</span>
                       </label>
                       <input
                         type="number"
@@ -1310,8 +1320,8 @@ function EditModal({
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">
-                        ราคาขาย/หน่วย (฿)
-                        <span className="ml-1 text-cyber-green/70">ขาย</span>
+                        ราคาขาย/หน่วยฐาน (฿)
+                        <span className="ml-1 text-cyber-green/70">ต่อ {formData.baseUnit || formData.unit || 'หน่วยฐาน'}</span>
                       </label>
                       <input
                         type="number"
@@ -1401,7 +1411,7 @@ function EditModal({
                 <>
                   {/* Unit (legacy) */}
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Display)</label>
+                    <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Legacy)</label>
                     <select
                       value={formData.unit}
                       onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
@@ -1437,14 +1447,14 @@ function EditModal({
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">
-                        หน่วยแสดงผล <span className="text-gray-600">(Display - บรรจุภัณฑ์)</span>
+                        หน่วยบรรจุ <span className="text-gray-600">(Packaging - บรรจุภัณฑ์)</span>
                       </label>
                       <select
                         value={formData.displayUnit || ''}
                         onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
                         className="cyber-input w-full"
                       >
-                        <option value="">{formData.unit || 'เลือกหน่วยแสดงผล'}</option>
+                        <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
                         {availableUnits.map((u) => (
                           <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                         ))}
@@ -1616,7 +1626,6 @@ function EditModal({
           conversions={itemConversions}
           availableUnits={availableUnits}
           onAdd={async (from, to, factor) => {
-            const api = await import('../services/api').then(m => m.default)
             await api.post('/materials/unit-conversions', {
               material_id: item.id,
               from_unit: from,
@@ -1680,36 +1689,35 @@ function MovementModal({
   const selectedItem = stockItems.find((i) => i.id === selectedItemId)
   const { units: availableUnits } = useUnits(selectedItem?.id)
 
-  // Convert quantity to base unit for backend
-  const baseQuantity = (() => {
-    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) {
-      return quantity
-    }
-    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== 0) {
+  const baseQuantity = useMemo(() => {
+    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) return quantity
+    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0) {
       const ratio = selectedItem.quantity / selectedItem.displayQuantity
+      if (!isFinite(ratio) || ratio <= 0) return quantity
       return Math.round(quantity * ratio * 1000) / 1000
     }
     return quantity
-  })()
+  }, [quantity, unit, selectedItem])
 
   const isOutOfStock = selectedItem && selectedItem.quantity === 0 && type === 'OUT'
-  const exceedsStock = selectedItem && type === 'OUT' && baseQuantity > selectedItem.quantity
+  const canConvertInFrontend = !selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit) || (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0)
+  const exceedsStock = selectedItem && type === 'OUT' && canConvertInFrontend && Number.isFinite(baseQuantity) && baseQuantity > selectedItem.quantity
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!selectedItemId) {
-      alert('Please select an item')
+      toast.error('Please select an item')
       return
     }
 
     if (isOutOfStock) {
-      alert('Cannot perform Stock Out - item is out of stock!')
+      toast.error('Cannot perform Stock Out - item is out of stock!')
       return
     }
 
     if (exceedsStock) {
-      alert(`Cannot take out more than available stock (${selectedItem?.quantity} ${selectedItem?.baseUnit || selectedItem?.unit})`)
+      toast.error(`Cannot take out more than available stock (${selectedItem?.quantity} ${selectedItem?.baseUnit || selectedItem?.unit})`)
       return
     }
 
@@ -1728,16 +1736,24 @@ function MovementModal({
       onClose()
     } catch (err) {
       console.error('Failed to record movement:', err)
-      alert('Failed to record movement')
+      toast.error('Failed to record movement')
     } finally {
       setSaving(false)
     }
   }
 
-  // Filter items for Stock Out - exclude items with 0 quantity
-  const availableItems = type === 'OUT'
-    ? (stockItems || []).filter((i) => i.quantity > 0)
-    : stockItems
+  const availableItems = useMemo(
+    () => type === 'OUT' ? (stockItems || []).filter((i) => i.quantity > 0) : stockItems,
+    [type, stockItems],
+  )
+  const availableItemOptions = useMemo(
+    () => availableItems.map((stockItem) => ({
+      id: stockItem.id,
+      label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
+      searchText: `${stockItem.name} ${stockItem.sku}`,
+    })),
+    [availableItems],
+  )
 
   if (!open) return null
 
@@ -1777,11 +1793,7 @@ function MovementModal({
             <SearchableDropdown
               value={selectedItemId}
               onChange={setSelectedItemId}
-              options={availableItems.map((stockItem) => ({
-                id: stockItem.id,
-                label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
-                searchText: `${stockItem.name} ${stockItem.sku}`,
-              }))}
+              options={availableItemOptions}
               placeholder="-- Select Item --"
               disabled={!!item}
             />
@@ -1874,7 +1886,7 @@ function MovementModal({
                     )}
                     {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
                       <option value={selectedItem.displayUnit}>
-                        {UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (Display)
+                        {UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (บรรจุ)
                       </option>
                     )}
                     {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
@@ -1920,7 +1932,7 @@ function MovementModal({
           {type === 'IN' && (
             <div>
               <label className="block text-sm text-gray-400 mb-2">
-                อัปเดตราคาต้นทุน/หน่วย (฿) <span className="text-gray-500">(ไม่บังคับ)</span>
+                อัปเดตราคาต้นทุน/หน่วยซื้อ (฿) <span className="text-gray-500">(ไม่บังคับ)</span>
               </label>
               <input
                 type="number"
@@ -2157,19 +2169,15 @@ function AdjustModal({
     }
   }, [selectedItemId])
 
-  // Convert entered quantity to base unit before calculating diff & submitting
-  const baseQuantity = (() => {
-    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) {
-      return physicalCount
-    }
-    // If unit matches displayUnit, use displayQuantity ratio if available
-    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== 0) {
+  const baseQuantity = useMemo(() => {
+    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) return physicalCount
+    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0) {
       const ratio = selectedItem.quantity / selectedItem.displayQuantity
+      if (!isFinite(ratio) || ratio <= 0) return physicalCount
       return Math.round(physicalCount * ratio * 1000) / 1000
     }
-    // Fallback: we cannot convert without a known conversion factor here
     return physicalCount
-  })()
+  }, [physicalCount, unit, selectedItem])
 
   const diff = baseQuantity - (selectedItem?.quantity ?? 0)
 
@@ -2276,7 +2284,7 @@ function AdjustModal({
                       <option value={selectedItem.baseUnit}>{UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)</option>
                     )}
                     {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
-                      <option value={selectedItem.displayUnit}>{UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (Display)</option>
+                      <option value={selectedItem.displayUnit}>{UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (บรรจุ)</option>
                     )}
                     {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
@@ -2365,13 +2373,13 @@ function AddStockModal({
   const addConversionWarning = (() => {
     if (!formData.baseUnit || !formData.displayUnit) return null
     if (formData.baseUnit === formData.displayUnit) return null
-    return `⚠️ หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยแสดงผล (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
+    return `⚠️ หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
   })()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.sku || !formData.name) {
-      alert('Please enter SKU and Name')
+      toast.error('Please enter SKU and Name')
       return
     }
 
@@ -2413,7 +2421,7 @@ function AddStockModal({
       })
     } catch (err) {
       console.error('Failed to create stock item:', err)
-      alert('Failed to create stock item')
+      toast.error('Failed to create stock item')
     } finally {
       setSaving(false)
     }
@@ -2494,7 +2502,7 @@ function AddStockModal({
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">หน่วยนับ</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">หน่วยแสดงผล</label>
+                  <label className="block text-xs text-gray-400 mb-1">หน่วยบรรจุ</label>
                   <select
                     value={formData.unit}
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
@@ -2560,7 +2568,7 @@ function AddStockModal({
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ราคา & สต๊อก</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วย (฿)</label>
+                  <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วยซื้อ (฿)</label>
                   <input
                     type="number"
                     value={formData.unitCost}
@@ -2573,7 +2581,7 @@ function AddStockModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วย (฿)</label>
+                  <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วยฐาน (฿)</label>
                   <input
                     type="number"
                     value={formData.unitPrice}

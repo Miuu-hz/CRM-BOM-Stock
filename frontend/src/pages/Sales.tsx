@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText,
   ShoppingCart,
@@ -36,8 +36,10 @@ import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import posService from '../services/pos.service'
 import salesService, { type Customer, type Product } from '../services/sales.service'
+import { stockService } from '../services/stock'
 import { printSalesDoc } from '../utils/salesPrint'
 import { getCachedCompanySettings } from '../services/companySettings.service'
+import { normalizeUnit } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
 import { useUnits } from '../hooks/useUnits'
@@ -133,6 +135,18 @@ interface Backorder {
   so_number: string
   original_do?: string
   status: string
+}
+
+interface DeliveryOrder {
+  id: string
+  do_number: string
+  customer_name: string
+  customer_code: string
+  so_number: string
+  delivery_date: string
+  status: string
+  driver_name?: string
+  vehicle_plate?: string
 }
 
 interface QuotationTemplate {
@@ -258,16 +272,32 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </div>
 )
 
+// ── Reusable Journal Preview (outside main component) ────────────────────────
+const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => (
+  <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-1">
+    <p className="text-xs text-yellow-400 font-medium mb-2">สมุดรายวัน (ระบบบันทึกอัตโนมัติ)</p>
+    {entries.map((e, i) => (
+      <div key={i} className={`flex items-center gap-2 text-xs ${e.dr ? '' : 'pl-6'}`}>
+        <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-red-400'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
+        <span className="text-gray-300 flex-1">{e.account}</span>
+        <span className="text-gray-400">{e.label}</span>
+        {e.amount !== undefined && <span className="text-white font-medium">฿{(e.amount).toLocaleString('th-TH')}</span>}
+      </div>
+    ))}
+  </div>
+)
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Sales = () => {
   const { tenant } = useAuth()
-  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'orders' | 'invoices' | 'credit-notes' | 'backorders' | 'templates' | 'pos-daily'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'orders' | 'delivery-orders' | 'invoices' | 'credit-notes' | 'backorders' | 'templates' | 'pos-daily'>('overview')
   const [summary, setSummary] = useState<SalesSummary | null>(null)
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([])
   const [backorders, setBackorders] = useState<Backorder[]>([])
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([])
   const [templates, setTemplates] = useState<QuotationTemplate[]>([])
   const [, setPosDailySales] = useState<POSDailySales[]>([])
   const [posPendingBills, setPosPendingBills] = useState<POSPendingBill[]>([])
@@ -275,6 +305,8 @@ const Sales = () => {
   const [posShifts, setPosShifts] = useState<POSShift[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
 
   // POS shift modals
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -293,12 +325,15 @@ const Sales = () => {
   const [convertQT, setConvertQT]           = useState<Quotation | null>(null)  // QT → SO
 
   useEffect(() => {
+    setCurrentPage(1)
     if (activeTab === 'overview') {
       fetchSummary()
     } else if (activeTab === 'quotations') {
       fetchQuotations()
     } else if (activeTab === 'orders') {
       fetchSalesOrders()
+    } else if (activeTab === 'delivery-orders') {
+      fetchDeliveryOrders()
     } else if (activeTab === 'invoices') {
       fetchInvoices()
     } else if (activeTab === 'credit-notes') {
@@ -383,6 +418,16 @@ const Sales = () => {
     } finally { setLoading(false) }
   }
 
+  const fetchDeliveryOrders = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/sales/delivery-orders')
+      if (data.success) setDeliveryOrders(data.data)
+    } catch (error: any) {
+      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบส่งของได้')
+    } finally { setLoading(false) }
+  }
+
   const fetchTemplates = async () => {
     setLoading(true)
     try {
@@ -424,6 +469,14 @@ const Sales = () => {
   const handleCreateQuotation  = () => setShowCreateQT(true)
   const handleCreateSalesOrder = () => setShowCreateSO(true)
   const handleCreateInvoice    = () => toast('สร้างใบแจ้งหนี้: เลือก SO ก่อนจากหน้าคำสั่งขาย')
+  const handleCreateInvoiceFromSO = async (so: SalesOrder) => {
+    try {
+      await salesService.createInvoice(so.id)
+      toast.success('สร้างใบแจ้งหนี้สำเร็จ')
+      fetchInvoices()
+      setActiveTab('invoices')
+    } catch { toast.error('สร้างใบแจ้งหนี้ไม่สำเร็จ') }
+  }
   const handleCreateCreditNote = () => setShowCreateCN(true)
   const handleCreateBackorder  = () => toast('ใบค้างส่งสร้างอัตโนมัติจากการส่งของบางส่วน')
   const handleCreateTemplate   = () => toast('ฟีเจอร์สร้างเทมเพลตกำลังพัฒนา...')
@@ -438,6 +491,47 @@ const Sales = () => {
   const handleEdit = (_item: any, type: string) => toast(`แก้ไข ${type} — กำลังพัฒนา`)
   const handleRecordPayment    = (invoice: Invoice) => setDetailInv(invoice)
   const handleConvertQtToSO    = (quotation: Quotation) => setConvertQT(quotation)
+
+  // Inline status updates
+  const handleUpdateQTStatus = async (id: string, status: string) => {
+    try {
+      await salesService.updateQuotationStatus(id, status)
+      toast.success('อัปเดตสถานะสำเร็จ')
+      fetchQuotations()
+    } catch { toast.error('อัปเดตสถานะไม่สำเร็จ') }
+  }
+  const handleUpdateSOStatus = async (id: string, status: string) => {
+    try {
+      await salesService.updateSOStatus(id, status)
+      toast.success('อัปเดตสถานะสำเร็จ')
+      fetchSalesOrders()
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'อัปเดตสถานะไม่สำเร็จ') }
+  }
+
+  // Delete handlers
+  const handleDeleteQuotation = async (id: string) => {
+    if (!confirm('ต้องการลบใบเสนอราคานี้?')) return
+    try {
+      await api.delete(`/sales/quotations/${id}`)
+      toast.success('ลบใบเสนอราคาสำเร็จ')
+      fetchQuotations()
+    } catch { toast.error('ไม่สามารถลบใบเสนอราคาได้') }
+  }
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm('ต้องการลบเทมเพลตนี้?')) return
+    try {
+      await api.delete(`/sales/quotation-templates/${id}`)
+      toast.success('ลบเทมเพลตสำเร็จ')
+      fetchTemplates()
+    } catch { toast.error('ไม่สามารถลบเทมเพลตได้') }
+  }
+  const handleUpdateDOStatus = async (id: string, status: string) => {
+    try {
+      await api.put(`/sales/delivery-orders/${id}/status`, { status })
+      toast.success('อัปเดตสถานะสำเร็จ')
+      fetchDeliveryOrders()
+    } catch { toast.error('อัปเดตสถานะไม่สำเร็จ') }
+  }
 
   // Formatters
   const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH')}`
@@ -460,8 +554,56 @@ const Sales = () => {
       if (dateFrom) result = result.filter(it => String(it[dateKey] || '').slice(0, 10) >= dateFrom)
       if (dateTo)   result = result.filter(it => String(it[dateKey] || '').slice(0, 10) <= dateTo)
     }
-    return result.slice(0, listLimit)
+    return result
   }
+
+  const paginate = <T,>(items: T[]) => {
+    return items.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  }
+
+  const Pagination = ({ total }: { total: number }) => {
+    const totalPages = Math.ceil(total / pageSize)
+    if (totalPages <= 1) return null
+    const pages: (number | '...')[] = []
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (currentPage > 3) pages.push('...')
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i)
+      if (currentPage < totalPages - 2) pages.push('...')
+      pages.push(totalPages)
+    }
+    return (
+      <div className="flex items-center justify-between pt-3 border-t border-cyber-border/40">
+        <p className="text-xs text-gray-500">
+          แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
+        </p>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">‹</button>
+          {pages.map((p, i) => p === '...'
+            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-600">…</span>
+            : <button key={p} onClick={() => setCurrentPage(p as number)}
+                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-cyber-primary text-cyber-dark font-bold' : 'text-gray-400 bg-cyber-dark hover:text-white'}`}>
+                {p}
+              </button>
+          )}
+          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">›</button>
+        </div>
+      </div>
+    )
+  }
+
+  const PageSizeSelect = () => (
+    <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
+      className="px-2 py-1.5 bg-cyber-dark border border-cyber-border rounded-lg text-xs text-gray-300 focus:outline-none focus:border-cyber-primary">
+      <option value={25}>25 / หน้า</option>
+      <option value={50}>50 / หน้า</option>
+      <option value={100}>100 / หน้า</option>
+    </select>
+  )
 
   // ── Pending counts for tab badges ──────────────────────────────────────────
   const pendingQuotations = quotations.filter(q => q.status === 'DRAFT' || q.status === 'SENT').length
@@ -618,11 +760,17 @@ const Sales = () => {
 
   // ── Quotations ─────────────────────────────────────────────────────────────
   const QuotationsContent = () => {
-    const items = filterItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date')
+    const filtered = filterItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date')
+    const items = paginate(filtered)
+    const qtNextStatus: Record<string, { status: string; label: string; color: string }> = {
+      DRAFT: { status: 'SENT', label: 'ส่งใบเสนอราคา', color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' },
+      SENT:  { status: 'ACCEPTED', label: 'อนุมัติ', color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
+    }
     return (
       <div className="space-y-3">
         <ListToolbar placeholder="ค้นหาใบเสนอราคา..." action={
           <>
+            <PageSizeSelect />
             <button onClick={() => setActiveTab('templates')}
               className="flex items-center gap-1.5 px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-gray-300 hover:border-cyber-primary text-sm">
               <LayoutTemplate className="w-4 h-4" /> เทมเพลต
@@ -634,7 +782,7 @@ const Sales = () => {
           </>
         } />
 
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบเสนอราคา</p></div>
         ) : viewMode === 'list' ? (
           <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
@@ -651,7 +799,9 @@ const Sales = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyber-border/50">
-                {items.map(q => (
+                {items.map(q => {
+                  const next = qtNextStatus[q.status]
+                  return (
                   <tr key={q.id} className="hover:bg-cyber-dark/50 transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-mono text-xs font-semibold text-cyber-primary">{q.quotation_number}</p>
@@ -672,26 +822,37 @@ const Sales = () => {
                       <div className="flex justify-end gap-1.5">
                         <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
                           className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                        {next && (
+                          <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
+                            className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
+                            <CheckCircle className="w-3 h-3" /> {next.label}
+                          </button>
+                        )}
                         {q.status === 'ACCEPTED' && (
                           <button onClick={() => handleConvertQtToSO(q)}
                             className="px-2.5 py-1 text-xs text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 flex items-center gap-1">
                             <ArrowRight className="w-3 h-3" /> SO
                           </button>
                         )}
+                        {q.status === 'DRAFT' && (
+                          <button onClick={() => handleDeleteQuotation(q.id)}
+                            className="px-2 py-1 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-cyber-border/50 text-xs text-gray-500">
-              แสดง {items.length} รายการ
-            </div>
+            <Pagination total={filtered.length} />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((q, i) => {
               const isExpired = q.expiry_date && new Date(q.expiry_date) < new Date()
+              const next = qtNextStatus[q.status]
               return (
                 <motion.div key={q.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -715,6 +876,12 @@ const Sales = () => {
                       className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
                       ดูรายละเอียด
                     </button>
+                    {next && (
+                      <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
+                        className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
+                        <CheckCircle className="w-3 h-3" /> {next.label}
+                      </button>
+                    )}
                     {q.status === 'ACCEPTED' && (
                       <button onClick={() => handleConvertQtToSO(q)}
                         className="flex-1 py-1.5 text-xs font-medium text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 flex items-center justify-center gap-1">
@@ -725,6 +892,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
+            <Pagination total={filtered.length} />
           </div>
         )}
       </div>
@@ -743,16 +911,27 @@ const Sales = () => {
 
   const OrdersContent = () => {
     const [filterStatus, setFilterStatus] = useState<string>('')
-    const items = filterItems(salesOrders, ['so_number', 'customer_name'], 'order_date')
+    const filtered = filterItems(salesOrders, ['so_number', 'customer_name'], 'order_date')
       .filter(o => !filterStatus || o.status === filterStatus)
+    const items = paginate(filtered)
+    const soNextStatus: Record<string, { status: string; label: string; color: string }> = {
+      DRAFT:      { status: 'CONFIRMED',  label: 'ยืนยัน',       color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' },
+      CONFIRMED:  { status: 'PROCESSING', label: 'เตรียมสินค้า', color: 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' },
+      PROCESSING: { status: 'READY',      label: 'พร้อมส่ง',     color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
+      READY:      { status: 'DELIVERED',  label: 'ส่งของแล้ว',  color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
+      DELIVERED:  { status: 'COMPLETED',  label: 'เสร็จสิ้น',   color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
+    }
 
     return (
       <div className="space-y-3">
         <ListToolbar placeholder="ค้นหาคำสั่งขาย..." action={
-          <button onClick={handleCreateSalesOrder}
-            className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
-            <Plus className="w-4 h-4" /> สร้างคำสั่งขาย
-          </button>
+          <>
+            <PageSizeSelect />
+            <button onClick={handleCreateSalesOrder}
+              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              <Plus className="w-4 h-4" /> สร้างคำสั่งขาย
+            </button>
+          </>
         } />
 
         {/* Delivery status filter pills */}
@@ -769,7 +948,7 @@ const Sales = () => {
           ))}
         </div>
 
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบคำสั่งขาย</p></div>
         ) : viewMode === 'list' ? (
           <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
@@ -791,11 +970,32 @@ const Sales = () => {
                   const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
                   const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
                   const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+                  const next = soNextStatus[order.status]
                   return (
                     <tr key={order.id} className="hover:bg-cyber-dark/50 transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-mono text-xs font-semibold text-purple-400">{order.so_number}</p>
-                        {order.quotation_number && <p className="text-xs text-gray-600">QT: {order.quotation_number}</p>}
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {order.quotation_number && (
+                            <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
+                          )}
+                          {(() => {
+                            const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
+                            const doDraft = doAll.filter(d => d.status === 'DRAFT')
+                            const doShipped = doAll.filter(d => d.status === 'SHIPPED')
+                            return (<>
+                              {doShipped.length > 0 && (
+                                <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">DO ×{doShipped.length}</span>
+                              )}
+                              {doDraft.length > 0 && (
+                                <span className="text-[10px] text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded">DO ร่าง ×{doDraft.length}</span>
+                              )}
+                            </>)
+                          })()}
+                          {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
+                            <span className="text-[10px] text-cyber-primary bg-cyber-primary/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
+                          ) : null })()}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">{order.customer_name}</p>
@@ -823,17 +1023,29 @@ const Sales = () => {
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-white">{formatCurrency(order.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
-                          className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
+                            className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                          {next && (
+                            <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
+                              className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
+                              <CheckCircle className="w-3 h-3" /> {next.label}
+                            </button>
+                          )}
+                          {['CONFIRMED','PROCESSING','READY','DELIVERED','COMPLETED'].includes(order.status) && (
+                            <button onClick={() => handleCreateInvoiceFromSO(order)}
+                              className="px-2 py-1 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg hover:bg-yellow-500/20 flex items-center gap-1">
+                              <Receipt className="w-3 h-3" /> INV
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-cyber-border/50 text-xs text-gray-500">
-              แสดง {items.length} รายการ
-            </div>
+            <Pagination total={filtered.length} />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -841,6 +1053,7 @@ const Sales = () => {
               const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
               const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+              const next = soNextStatus[order.status]
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -848,7 +1061,27 @@ const Sales = () => {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="font-mono text-sm font-semibold text-purple-400">{order.so_number}</p>
-                      {order.quotation_number && <p className="text-xs text-gray-500">QT: {order.quotation_number}</p>}
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {order.quotation_number && (
+                          <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
+                        )}
+                        {(() => {
+                          const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
+                          const doDraft = doAll.filter(d => d.status === 'DRAFT')
+                          const doShipped = doAll.filter(d => d.status === 'SHIPPED')
+                          return (<>
+                            {doShipped.length > 0 && (
+                              <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">DO ×{doShipped.length}</span>
+                            )}
+                            {doDraft.length > 0 && (
+                              <span className="text-[10px] text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded">DO ร่าง ×{doDraft.length}</span>
+                            )}
+                          </>)
+                        })()}
+                        {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
+                          <span className="text-[10px] text-cyber-primary bg-cyber-primary/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
+                        ) : null })()}
+                      </div>
                       <p className="text-white font-medium mt-0.5">{order.customer_name}</p>
                       <p className="text-xs text-gray-500">{order.customer_code}</p>
                     </div>
@@ -867,15 +1100,28 @@ const Sales = () => {
                     <span>{order.item_count} รายการ</span>
                     <span className="text-right font-semibold text-white">{formatCurrency(order.total_amount)}</span>
                   </div>
-                  <div className="pt-3 border-t border-cyber-border/50">
+                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
                     <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
-                      className="w-full py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
                       ดูรายละเอียด
                     </button>
+                    {next && (
+                      <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
+                        className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
+                        <CheckCircle className="w-3 h-3" /> {next.label}
+                      </button>
+                    )}
+                    {['CONFIRMED','PROCESSING','READY','DELIVERED','COMPLETED'].includes(order.status) && (
+                      <button onClick={() => handleCreateInvoiceFromSO(order)}
+                        className="flex-1 py-1.5 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg hover:bg-yellow-500/20 flex items-center justify-center gap-1">
+                        <Receipt className="w-3 h-3" /> ออก INV
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )
             })}
+            <Pagination total={filtered.length} />
           </div>
         )}
       </div>
@@ -884,17 +1130,21 @@ const Sales = () => {
 
   // ── Invoices ───────────────────────────────────────────────────────────────
   const InvoicesContent = () => {
-    const items = filterItems(invoices, ['invoice_number', 'customer_name'], 'invoice_date')
+    const filtered = filterItems(invoices, ['invoice_number', 'customer_name'], 'invoice_date')
+    const items = paginate(filtered)
     return (
       <div className="space-y-3">
         <ListToolbar placeholder="ค้นหาใบแจ้งหนี้..." action={
-          <button onClick={handleCreateInvoice}
-            className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบแจ้งหนี้
-          </button>
+          <>
+            <PageSizeSelect />
+            <button onClick={handleCreateInvoice}
+              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบแจ้งหนี้
+            </button>
+          </>
         } />
 
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>ไม่พบใบแจ้งหนี้</p>
@@ -928,7 +1178,19 @@ const Sales = () => {
                         <p className="text-white font-medium">{inv.customer_name}</p>
                         <p className="text-xs text-gray-500">{inv.customer_code}</p>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{inv.so_number}</td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        {inv.so_number && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">{inv.so_number}</span>
+                            {(() => {
+                              const so = salesOrders.find(s => s.so_number === inv.so_number)
+                              return so?.quotation_number ? (
+                                <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
+                              ) : null
+                            })()}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{formatDate(inv.invoice_date)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">
                         <span className={`text-xs font-medium ${isOverdue ? 'text-red-400' : 'text-gray-400'}`}>
@@ -959,9 +1221,7 @@ const Sales = () => {
                 })}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-cyber-border/50 text-xs text-gray-500">
-              แสดง {items.length} รายการ
-            </div>
+            <Pagination total={filtered.length} />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -975,7 +1235,19 @@ const Sales = () => {
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-yellow-400">{inv.invoice_number}</p>
-                      <p className="text-xs text-gray-500">SO: {inv.so_number}</p>
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {inv.so_number && (
+                          <>
+                            <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">{inv.so_number}</span>
+                            {(() => {
+                              const so = salesOrders.find(s => s.so_number === inv.so_number)
+                              return so?.quotation_number ? (
+                                <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
+                              ) : null
+                            })()}
+                          </>
+                        )}
+                      </div>
                       <p className="text-white font-medium mt-0.5">{inv.customer_name}</p>
                       <p className="text-xs text-gray-500">{inv.customer_code}</p>
                     </div>
@@ -1006,6 +1278,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
+            <Pagination total={filtered.length} />
           </div>
         )}
       </div>
@@ -1192,6 +1465,118 @@ const Sales = () => {
     )
   }
 
+  // ── Delivery Orders ────────────────────────────────────────────────────────
+  const DeliveryOrdersContent = () => {
+    const filtered = filterItems(deliveryOrders, ['do_number', 'customer_name'], 'delivery_date')
+    const items = paginate(filtered)
+    const doNextStatus: Record<string, { status: string; label: string; color: string }> = {
+      DRAFT: { status: 'READY',    label: 'พร้อมส่ง',   color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
+      READY: { status: 'SHIPPED',  label: 'ส่งแล้ว',    color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' },
+    }
+    return (
+      <div className="space-y-3">
+        <ListToolbar placeholder="ค้นหาใบส่งของ..." action={
+          <>
+            <PageSizeSelect />
+            <button onClick={() => toast('สร้างใบส่งของจากคำสั่งขาย')}
+              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              <Plus className="w-4 h-4" /> สร้างใบส่งของ
+            </button>
+          </>
+        } />
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 text-gray-500"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบส่งของ</p></div>
+        ) : viewMode === 'list' ? (
+          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
+                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">วันส่ง</th>
+                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cyber-border/50">
+                {items.map(do_ => {
+                  const next = doNextStatus[do_.status]
+                  return (
+                    <tr key={do_.id} className="hover:bg-cyber-dark/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-mono text-xs font-semibold text-blue-400">{do_.do_number}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-white font-medium">{do_.customer_name}</p>
+                        <p className="text-xs text-gray-500">{do_.customer_code}</p>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{do_.so_number}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{formatDate(do_.delivery_date)}</td>
+                      <td className="px-4 py-3 text-center"><StatusBadge status={do_.status} /></td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
+                            className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                          {next && (
+                            <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
+                              className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
+                              <CheckCircle className="w-3 h-3" /> {next.label}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <Pagination total={filtered.length} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {items.map((do_, i) => {
+              const next = doNextStatus[do_.status]
+              return (
+                <motion.div key={do_.id}
+                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                  className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-blue-500/40 transition-colors">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="font-mono text-sm font-semibold text-blue-400">{do_.do_number}</p>
+                      <p className="text-xs text-gray-500">SO: {do_.so_number}</p>
+                      <p className="text-white font-medium mt-0.5">{do_.customer_name}</p>
+                      <p className="text-xs text-gray-500">{do_.customer_code}</p>
+                    </div>
+                    <StatusBadge status={do_.status} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
+                    <span>วันส่ง: <span className="text-gray-300">{formatDate(do_.delivery_date)}</span></span>
+                    <span className="text-right">{do_.driver_name || '-'}</span>
+                  </div>
+                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
+                    <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
+                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      ดูรายละเอียด
+                    </button>
+                    {next && (
+                      <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
+                        className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
+                        <CheckCircle className="w-3 h-3" /> {next.label}
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )
+            })}
+            <Pagination total={filtered.length} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Templates ──────────────────────────────────────────────────────────────
   const TemplatesContent = () => (
     <div className="space-y-4">
@@ -1239,15 +1624,18 @@ const Sales = () => {
   )
 
   // ── Tab definitions ────────────────────────────────────────────────────────
+  const pendingDeliveryOrders = deliveryOrders.filter(d => d.status === 'DRAFT' || d.status === 'READY').length
+
   const tabs = [
-    { id: 'overview',     label: 'ภาพรวม',       icon: TrendingUp,    badge: 0 },
-    { id: 'quotations',   label: 'ใบเสนอราคา',   icon: FileText,      badge: pendingQuotations },
-    { id: 'orders',       label: 'คำสั่งขาย',    icon: ShoppingCart,  badge: pendingOrders },
-    { id: 'invoices',     label: 'ใบแจ้งหนี้',   icon: Receipt,       badge: pendingInvoices },
-    { id: 'credit-notes', label: 'ใบลดหนี้',     icon: RotateCcw,     badge: 0 },
-    { id: 'backorders',   label: 'ค้างส่ง',       icon: Package,       badge: pendingBackorders },
-    { id: 'templates',    label: 'เทมเพลต',       icon: LayoutTemplate,badge: 0 },
-    { id: 'pos-daily',    label: 'POS กะขาย',    icon: Store,         badge: 0 },
+    { id: 'overview',        label: 'ภาพรวม',       icon: TrendingUp,     badge: 0 },
+    { id: 'quotations',      label: 'ใบเสนอราคา',   icon: FileText,       badge: pendingQuotations },
+    { id: 'orders',          label: 'คำสั่งขาย',    icon: ShoppingCart,   badge: pendingOrders },
+    { id: 'delivery-orders', label: 'ใบส่งของ',    icon: Package,        badge: pendingDeliveryOrders },
+    { id: 'invoices',        label: 'ใบแจ้งหนี้',   icon: Receipt,        badge: pendingInvoices },
+    { id: 'credit-notes',    label: 'ใบลดหนี้',     icon: RotateCcw,      badge: 0 },
+    { id: 'backorders',      label: 'ค้างส่ง',       icon: Package,        badge: pendingBackorders },
+    { id: 'templates',       label: 'เทมเพลต',       icon: LayoutTemplate, badge: 0 },
+    { id: 'pos-daily',       label: 'POS กะขาย',    icon: Store,          badge: 0 },
   ]
 
   // ── POS components (fully functional — keep intact) ────────────────────────
@@ -1660,12 +2048,13 @@ const Sales = () => {
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
           {activeTab === 'overview'     && <OverviewContent />}
           {activeTab === 'quotations'   && <QuotationsContent />}
-          {activeTab === 'orders'       && <OrdersContent />}
-          {activeTab === 'invoices'     && <InvoicesContent />}
-          {activeTab === 'credit-notes' && <CreditNotesContent />}
-          {activeTab === 'backorders'   && <BackordersContent />}
-          {activeTab === 'templates'    && <TemplatesContent />}
-          {activeTab === 'pos-daily'    && <POSDailyContent />}
+          {activeTab === 'orders'          && <OrdersContent />}
+          {activeTab === 'delivery-orders' && <DeliveryOrdersContent />}
+          {activeTab === 'invoices'        && <InvoicesContent />}
+          {activeTab === 'credit-notes'    && <CreditNotesContent />}
+          {activeTab === 'backorders'      && <BackordersContent />}
+          {activeTab === 'templates'       && <TemplatesContent />}
+          {activeTab === 'pos-daily'       && <POSDailyContent />}
         </motion.div>
       )}
 
@@ -1989,6 +2378,25 @@ function ProductSearch({ value, products, onSelect, onClear }: {
   )
 }
 
+function UnitSelectForRow({ productId, value, onChange }: {
+  productId?: string
+  value: string
+  onChange: (unit: string) => void
+}) {
+  const { units, loading } = useUnits(productId || null)
+  return (
+    <select
+      value={value || ''}
+      onChange={e => onChange(e.target.value)}
+      className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary"
+    >
+      <option value="">เลือกหน่วย</option>
+      {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+      {loading && <option disabled>กำลังโหลด...</option>}
+    </select>
+  )
+}
+
 function LineItemsEditor({
   items, onChange, products,
 }: {
@@ -1996,7 +2404,6 @@ function LineItemsEditor({
   onChange: (items: LineItem[]) => void
   products: Product[]
 }) {
-  const { units: availableUnits } = useUnits()
   const add = () => onChange([...items, { productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
   const update = (i: number, patch: Partial<LineItem>) => {
@@ -2022,7 +2429,7 @@ function LineItemsEditor({
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
-                onSelect={p => update(i, { productId: p.id, productName: p.name, unit: p.unit || '', unitPrice: p.sell_price || 0 })}
+                onSelect={p => update(i, { productId: p.id, productName: p.name, unit: normalizeUnit(p.unit || ''), unitPrice: p.sell_price || 0 })}
 onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
@@ -2034,13 +2441,11 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
             </div>
             <div className="col-span-2">
               <label className="text-xs text-gray-500 mb-1 block">หน่วย</label>
-              <select
-                value={item.unit || ''}
-                onChange={e => update(i, { unit: e.target.value })}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary">
-                <option value="">เลือกหน่วย</option>
-                {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
-              </select>
+              <UnitSelectForRow
+                productId={item.productId}
+                value={item.unit}
+                onChange={u => update(i, { unit: u })}
+              />
             </div>
             <div className="col-span-2">
               <label className="text-xs text-gray-500 mb-1 block">ราคา/หน่วย</label>
@@ -2853,6 +3258,20 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                   <div className="flex justify-between text-gray-400"><span>ยอดก่อนภาษี</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
                   {detail?.vat_amount > 0 && <div className="flex justify-between text-gray-400"><span>VAT {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
                   <div className="flex justify-between text-gray-300 border-t border-cyber-border/50 pt-1.5"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
+                  {(detail?.withholdingTax || []).length > 0 && (
+                    <>
+                      {(detail.withholdingTax as any[]).map((w: any) => (
+                        <div key={w.id} className="flex justify-between text-orange-400 text-xs">
+                          <span>หัก ณ ที่จ่าย {w.tax_type} {w.tax_rate}%</span>
+                          <span>-{fmt(w.tax_amount)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-gray-300 text-xs">
+                        <span>ยอดสุทธิ (หัก WHT)</span>
+                        <span>{fmt((detail?.total_amount || 0) - (detail?.withholdingTax || []).reduce((s: number, w: any) => s + (w.tax_amount || 0), 0))}</span>
+                      </div>
+                    </>
+                  )}
                   {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-cyber-green"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
                     <span className="text-gray-100">ยอดคงค้าง</span>
@@ -2974,6 +3393,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                       placeholder="เช่น ชำระบางส่วน / โอนเข้าบัญชี xxx..."
                       className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary resize-none" />
                   </div>
+                  {/* Journal Preview */}
+                  <JournalPreview entries={[
+                    { dr: true,  account: payMethod === 'CASH' ? '1100 เงินสด' : '1101 เงินฝากธนาคาร', label: 'เพิ่มสินทรัพย์', amount: parseFloat(payAmount) || 0 },
+                    { dr: false, account: '1110 ลูกหนี้การค้า', label: 'ลดลูกหนี้', amount: parseFloat(payAmount) || 0 },
+                  ]} />
+
                   <div className="flex gap-2">
                     <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-gray-400 text-sm hover:text-white">ยกเลิก</button>
                     <button onClick={handleRecordPayment} disabled={saving}

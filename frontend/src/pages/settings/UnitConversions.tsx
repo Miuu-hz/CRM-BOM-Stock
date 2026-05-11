@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeftRight, Plus, Trash2, Edit2, Globe, Lock,
@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
-import { invalidateUnitsCache } from '../../hooks/useUnits'
+import { invalidateUnitsCache, UNIT_LABELS } from '../../hooks/useUnits'
+import { normalizeUnit } from '../../utils/unitNormalize'
 import UnitChainEditor from '../../components/common/UnitChainEditor'
 
 interface UnitConversion {
@@ -33,43 +34,6 @@ interface StockItem {
   name: string
   sku: string
   unit: string
-}
-
-const UNIT_LABELS: Record<string, string> = {
-  pcs: 'ชิ้น', kg: 'กิโลกรัม', g: 'กรัม', mg: 'มิลลิกรัม',
-  lb: 'ปอนด์', oz: 'ออนซ์', m: 'เมตร', cm: 'เซนติเมตร',
-  mm: 'มิลลิเมตร', km: 'กิโลเมตร', inch: 'นิ้ว', ft: 'ฟุต',
-  yard: 'หลา', l: 'ลิตร', ltr: 'ลิตร', ml: 'มิลลิลิตร',
-  gallon: 'แกลลอน', roll: 'ม้วน', box: 'กล่อง', pack: 'แพ็ค',
-  set: 'ชุด', pair: 'คู่', sheet: 'แผ่น', bottle: 'ขวด',
-  bag: 'ถุง', sachet: 'ซอง', dozen: 'โหล', gross: 'กุรอส',
-  case: 'ลัง', can: 'กระป๋อง', tube: 'หลอด', tablet: 'เม็ด',
-}
-
-const UNIT_NAME_MAP: Record<string, string> = {
-  'กิโลกรัม': 'kg', 'กรัม': 'g', 'มิลลิกรัม': 'mg',
-  'ปอนด์': 'lb', 'ออนซ์': 'oz',
-  'นิ้ว': 'inch', 'เซนติเมตร': 'cm', 'มิลลิเมตร': 'mm',
-  'เมตร': 'm', 'กิโลเมตร': 'km', 'ฟุต': 'ft', 'หลา': 'yard',
-  'ลิตร': 'l', 'มิลลิลิตร': 'ml', 'แกลลอน': 'gallon',
-  'ตารางเมตร': 'm2', 'ตารางเซนติเมตร': 'cm2',
-  'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
-  'กล่อง': 'box', 'แพ็ค': 'pack', 'แพ๊ค': 'pack', 'แพค': 'pack',
-  'ชุด': 'set', 'ม้วน': 'roll',
-  'แผ่น': 'sheet', 'ขวด': 'bottle', 'ถุง': 'bag', 'ซอง': 'sachet',
-  'ลัง': 'case', 'กระป๋อง': 'can', 'หลอด': 'tube', 'เม็ด': 'tablet',
-  'แก้ว': 'glass', 'ช้อนชา': 'tsp', 'ช้อนโต๊ะ': 'tbsp',
-  'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
-  'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
-  // spelling variants ที่พบบ่อย
-  'กุรอส': 'gross',
-}
-
-function normalizeUnit(unit: string): string {
-  const u = unit.toLowerCase().trim()
-  const match = u.match(/\(([^)]+)\)$/)
-  if (match) return match[1].trim()
-  return UNIT_NAME_MAP[u] || u
 }
 
 const ul = (u: string) => UNIT_LABELS[u] ? `${u} (${UNIT_LABELS[u]})` : u
@@ -110,7 +74,6 @@ export default function UnitConversions() {
   const [checking, setChecking] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
 
-  // Chain editor state
   const [chainEditorCtx, setChainEditorCtx] = useState<{ id: string | null; name: string } | null>(null)
 
   // Material selector state
@@ -304,13 +267,16 @@ export default function UnitConversions() {
   const toggleGroup = (label: string) =>
     setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }))
 
-  const chainConversions = chainEditorCtx
-    ? allConversions.filter(c =>
-        chainEditorCtx.id ? c.material_id === chainEditorCtx.id : !c.material_id,
-      )
-    : []
+  const chainConversions = useMemo(
+    () => chainEditorCtx
+      ? allConversions.filter(c =>
+          chainEditorCtx.id ? c.material_id === chainEditorCtx.id : !c.material_id,
+        )
+      : [],
+    [allConversions, chainEditorCtx],
+  )
 
-  const chainAvailableUnits = (() => {
+  const chainAvailableUnits = useMemo(() => {
     const seen = new Set<string>()
     const result: Array<{ value: string; label: string }> = []
     const add = (u: string) => {
@@ -322,7 +288,7 @@ export default function UnitConversions() {
     Object.keys(UNIT_LABELS).forEach(add)
     allConversions.forEach(c => { add(c.from_unit); add(c.to_unit) })
     return result
-  })()
+  }, [allConversions])
 
   const handleChainAdd = async (from: string, to: string, factor: number) => {
     await api.post('/materials/unit-conversions', {

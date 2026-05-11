@@ -108,7 +108,6 @@ export interface StockMovementInput {
 }
 
 function mapStockMovement(m: any): StockMovement {
-  if (!m) return m
   return {
     ...m,
     stockItemId: m.stock_item_id || m.stockItemId,
@@ -138,7 +137,7 @@ function mapStockItem(item: any): StockItem {
     isPosEnabled: item.is_pos_enabled !== undefined ? item.is_pos_enabled : item.isPosEnabled,
     createdAt: item.created_at || item.createdAt,
     updatedAt: item.updated_at || item.updatedAt,
-    movements: item.movements ? item.movements.map(mapStockMovement) : item.movements,
+    movements: item.movements?.map(mapStockMovement),
   }
   return mapped
 }

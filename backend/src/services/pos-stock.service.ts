@@ -1,5 +1,5 @@
 import db from '../db/sqlite'
-import { convertQuantityBidirectional } from './unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded } from './unitConversion.service'
 
 // Helper: Generate ID (24-char hex)
 const generateId = () => {
@@ -162,9 +162,10 @@ class POSStockService {
     billId: string,
     tenantId: string,
     userId: string
-  ): Promise<{ success: boolean; deductions: any[]; errors: string[] }> {
+  ): Promise<{ success: boolean; deductions: any[]; errors: string[]; issues?: any[] }> {
     const errors: string[] = []
     const deductions: any[] = []
+    const issues: any[] = []
 
     try {
       // Check tenant setting: pos_bom_deduct (default ON)
@@ -237,7 +238,7 @@ class POSStockService {
         }
 
         for (const ing of ingredients) {
-          const stockBaseUnit = ing.stock_base_unit || ing.stock_unit
+          const stockBaseUnit = ing.stock_base_unit || ing.stock_unit || 'pcs'
           const ingredientUnit = ing.ingredient_unit || ing.unit_id || stockBaseUnit
           
           // Convert to base unit
@@ -256,11 +257,42 @@ class POSStockService {
           }
 
           // Check if enough stock
-          const stockStmt = db.prepare('SELECT quantity, name, base_unit, unit FROM stock_items WHERE id = ?')
-          const stock = stockStmt.get(ing.stock_item_id) as any
+          const stockStmt = db.prepare('SELECT id, quantity, sealed_qty, name, base_unit, unit, display_unit FROM stock_items WHERE id = ?')
+          let stock = stockStmt.get(ing.stock_item_id) as any
+
+          // Auto-unpack if needed
+          if (stock && stock.quantity < deductQtyInBase && (stock.sealed_qty ?? 0) > 0) {
+            const unpackResult = autoUnpackIfNeeded(stock, deductQtyInBase, tenantId)
+            if (unpackResult && unpackResult.unpackedPacks > 0) {
+              // Update stock in DB: reduce sealed, add unpacked to loose quantity
+              const unpackUpdate = db.prepare(`
+                UPDATE stock_items 
+                SET quantity = quantity + ?, sealed_qty = sealed_qty - ?, updated_at = ?
+                WHERE id = ? AND tenant_id = ?
+              `)
+              unpackUpdate.run(unpackResult.packFactor * unpackResult.unpackedPacks, unpackResult.unpackedPacks, now(), ing.stock_item_id, tenantId)
+              // Refresh stock object
+              stock = stockStmt.get(ing.stock_item_id) as any
+            }
+          }
+
+          const displayUnitLabel = stock?.display_unit || stock?.unit || stockBaseUnit
 
           if (!stock || stock.quantity < deductQtyInBase) {
-            errors.push(`Insufficient stock for ${stock?.name || 'Unknown'} (need ${deductQtyInBase} ${stockBaseUnit}, have ${stock?.quantity || 0} ${stock?.base_unit || stock?.unit || ''})`)
+            const issue = {
+              type: 'INSUFFICIENT_STOCK',
+              itemName: item.product_name || 'Unknown',
+              stockItemId: stock?.id || ing.stock_item_id,
+              stockItemName: stock?.name || 'Unknown',
+              need: deductQtyInBase,
+              have: stock?.quantity || 0,
+              unit: stockBaseUnit,
+              action: 'RESTOCK',
+              link: stock?.id ? `/stock/${stock.id}/edit` : null,
+              message: `${stock?.name || 'Unknown'} ไม่พอ (ต้องการ ${deductQtyInBase} ${stockBaseUnit} มี ${stock?.quantity || 0} ${stock?.base_unit || stock?.unit || stockBaseUnit})`
+            }
+            issues.push(issue)
+            errors.push(issue.message)
             continue
           }
 
@@ -320,13 +352,15 @@ class POSStockService {
       return {
         success: errors.length === 0,
         deductions,
-        errors
+        errors,
+        issues
       }
     } catch (error: any) {
       return {
         success: false,
         deductions,
-        errors: [error.message || 'Unknown error occurred']
+        errors: [error.message || 'Unknown error occurred'],
+        issues: [{ type: 'UNKNOWN_ERROR', message: error.message || 'Unknown error occurred' }]
       }
     }
   }

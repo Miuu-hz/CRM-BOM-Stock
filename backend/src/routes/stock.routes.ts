@@ -222,12 +222,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { name, gs1Barcode, category, unit, baseUnit, saleUnit, displayUnit, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
 
-    const existing = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    if (!existing) {
+    const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!currentItem) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
-
-    const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
     const now = new Date().toISOString()
 
@@ -276,7 +274,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         // Upsert: create pos_menu_configs entry if not exists
         const existingPOS = db.prepare('SELECT id FROM pos_menu_configs WHERE product_id = ? AND tenant_id = ?').get(req.params.id, tenantId)
         if (!existingPOS) {
-          const posId = randomUUID().replace(/-/g, '').substring(0, 25)
+          const posId = generateId()
           db.prepare(`
             INSERT INTO pos_menu_configs (id, tenant_id, product_id, pos_price, cost_price, image_url, is_available, is_pos_enabled, display_order, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)
@@ -364,7 +362,6 @@ router.post('/movement', async (req: Request, res: Response) => {
       if (item.quantity < convertedQuantity) {
         const unpack = autoUnpackIfNeeded(item, convertedQuantity, tenantId)
         if (!unpack) {
-          const totalBase = (item.quantity ?? 0) + (item.sealed_qty ?? 0) * (item.display_unit ? 1 : 0)
           return res.status(400).json({ success: false, message: 'Insufficient stock' })
         }
         // บันทึก unpack movement
@@ -391,12 +388,11 @@ router.post('/movement', async (req: Request, res: Response) => {
       newQuantity = convertedQuantity
     }
 
-    db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now, stockItemId)
-
-    // Update unit_cost on stock-in if provided
     if (type === 'IN' && unitCost !== undefined && unitCost !== null) {
-      db.prepare('UPDATE stock_items SET unit_cost = ?, updated_at = ? WHERE id = ?')
-        .run(Number(unitCost), now, stockItemId)
+      db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+        .run(newQuantity, Number(unitCost), now, stockItemId)
+    } else {
+      db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now, stockItemId)
     }
 
     const movementId = generateId()
@@ -492,11 +488,10 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
     const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) return res.status(404).json({ success: false, message: 'Stock item not found' })
 
-    // Delete old image file if exists
     if (existing.image_url) {
       const baseDir = path.resolve(__dirname, '..', '..', 'uploads')
       const oldPath = path.resolve(baseDir, existing.image_url.replace(/^\//, ''))
-      if (oldPath.startsWith(baseDir) && fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
+      if (oldPath.startsWith(baseDir)) try { fs.unlinkSync(oldPath) } catch { /* file already gone */ }
     }
 
     const imageUrl = `/uploads/stock-images/${file.filename}`
@@ -526,7 +521,7 @@ router.delete('/:id/image', async (req: Request, res: Response) => {
     if (existing.image_url) {
       const baseDir = path.resolve(__dirname, '..', '..', 'uploads')
       const filePath = path.resolve(baseDir, existing.image_url.replace(/^\//, ''))
-      if (filePath.startsWith(baseDir) && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      if (filePath.startsWith(baseDir)) try { fs.unlinkSync(filePath) } catch { /* file already gone */ }
     }
 
     const now = new Date().toISOString()
