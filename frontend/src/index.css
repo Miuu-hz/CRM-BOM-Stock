@@ -2,199 +2,202 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Phopy ERP Design Tokens — Light-first, warm cream + ink palette */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @layer base {
-  * {
-    @apply border-cyber-border;
+  :root {
+    --bg: #FBF8F1;
+    --surface: #FFFFFF;
+    --surface-2: #F5F0E2;
+    --surface-sunken: #ECE6D8;
+    --border: #ECE6D8;
+    --border-subtle: color-mix(in oklab, #ECE6D8 70%, white);
+    --border-strong: #D9D2C0;
+
+    --fg: #1E1B16;
+    --fg-1: #1E1B16;
+    --fg-2: #383426;
+    --fg-3: #6B6658;
+    --fg-4: #A8A294;
+    --fg-on-brand: #FFFFFF;
+    --link: #3949E5;
+
+    --primary: #3949E5;
+    --primary-hover: #2F3DC4;
+    --primary-press: #2632A8;
+    --primary-soft: #EEF0FE;
+
+    --shadow-1: 0 1px 2px rgba(30, 27, 22, 0.05);
+    --shadow-2: 0 4px 12px -2px rgba(30, 27, 22, 0.08);
+    --shadow-3: 0 12px 32px -8px rgba(30, 27, 22, 0.16);
+    --shadow-focus: 0 0 0 4px rgba(57, 73, 229, 0.18);
   }
 
-  body {
-    @apply bg-cyber-dark text-gray-100;
-    font-family: 'Inter', 'Noto Sans Thai', sans-serif;
-    background-image:
-      radial-gradient(circle at 20% 50%, rgba(0, 102, 255, 0.05) 0%, transparent 50%),
-      radial-gradient(circle at 80% 80%, rgba(157, 0, 255, 0.05) 0%, transparent 50%),
-      radial-gradient(circle at 40% 20%, rgba(0, 255, 136, 0.03) 0%, transparent 50%);
-    background-attachment: scroll;
+  html, body {
+    @apply bg-[var(--bg)] text-[var(--fg-2)] font-sans text-base antialiased;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Inter', 'Noto Sans Thai', sans-serif;
-    @apply font-bold tracking-tight;
+    @apply font-semibold text-[var(--fg-1)];
+  }
+
+  h1 { @apply text-h1 tracking-tight; }
+  h2 { @apply text-h2; }
+  h3 { @apply text-h3; }
+
+  a {
+    @apply text-[var(--link)] no-underline;
+  }
+  a:hover {
+    @apply underline;
+  }
+
+  ::selection {
+    background: var(--primary-soft);
+    color: var(--fg-1);
   }
 }
 
 @layer components {
-  /* Cyber Card */
-  .cyber-card {
-    @apply bg-gradient-card backdrop-blur-xl border border-cyber-border rounded-xl shadow-lg;
-    @apply transition-all duration-300 hover:shadow-neon hover:border-cyber-primary/50;
+  /* Phopy Card */
+  .phopy-card {
+    @apply bg-white border border-[var(--border)] rounded-lg shadow-1;
+    @apply transition-all duration-200 ease-phopy-out;
+  }
+  .phopy-card:hover {
+    @apply shadow-2 border-[var(--border-strong)];
   }
 
-  /* Cyber Button Primary */
-  .cyber-btn-primary {
-    @apply bg-gradient-to-r from-cyber-primary to-cyber-secondary text-white font-semibold;
-    @apply px-6 py-3 rounded-lg shadow-neon min-h-[44px];
-    @apply transition-all duration-200 hover:shadow-neon-strong hover:brightness-110;
-    @apply active:brightness-90 cursor-pointer;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-primary focus-visible:ring-offset-2 focus-visible:ring-offset-cyber-dark;
+  /* Phopy Button Primary */
+  .phopy-btn-primary {
+    @apply bg-phopy-indigo text-white font-semibold;
+    @apply px-5 py-2.5 rounded-md min-h-[44px];
+    @apply transition-all duration-120 ease-phopy-out;
+    @apply cursor-pointer;
+  }
+  .phopy-btn-primary:hover {
+    background: var(--primary-hover);
+  }
+  .phopy-btn-primary:active {
+    background: var(--primary-press);
+    transform: translateY(1px);
+  }
+  .phopy-btn-primary:focus-visible {
+    @apply outline-none;
+    box-shadow: var(--shadow-focus);
   }
 
-  /* Cyber Button Secondary */
-  .cyber-btn-secondary {
-    @apply bg-gradient-to-r from-cyber-purple to-cyber-magenta text-white font-semibold;
-    @apply px-6 py-3 rounded-lg shadow-purple-neon min-h-[44px];
-    @apply transition-all duration-200 hover:shadow-neon-strong hover:brightness-110;
-    @apply active:brightness-90 cursor-pointer;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-purple focus-visible:ring-offset-2 focus-visible:ring-offset-cyber-dark;
+  /* Phopy Button Secondary / Ghost */
+  .phopy-btn-secondary {
+    @apply bg-transparent text-[var(--fg-2)] font-medium border border-[var(--border)];
+    @apply px-5 py-2.5 rounded-md min-h-[44px];
+    @apply transition-all duration-120 ease-phopy-out;
+    @apply cursor-pointer;
+  }
+  .phopy-btn-secondary:hover {
+    @apply bg-[var(--surface-2)];
+  }
+  .phopy-btn-secondary:active {
+    transform: translateY(1px);
+  }
+  .phopy-btn-secondary:focus-visible {
+    @apply outline-none;
+    box-shadow: var(--shadow-focus);
   }
 
-  /* Cyber Input */
-  .cyber-input {
-    @apply bg-cyber-darker border border-cyber-border text-gray-100;
-    @apply px-4 py-2.5 rounded-lg;
-    @apply focus:outline-none focus:border-cyber-primary focus:shadow-neon;
-    @apply transition-all duration-300;
+  /* Phopy Input */
+  .phopy-input {
+    @apply bg-white border border-[var(--border)] text-[var(--fg-2)];
+    @apply px-4 py-2.5 rounded-md;
+    @apply transition-all duration-120 ease-phopy-out;
+  }
+  .phopy-input:focus {
+    @apply outline-none border-phopy-indigo;
+    box-shadow: var(--shadow-focus);
+  }
+  .phopy-input::placeholder {
+    @apply text-[var(--fg-4)];
   }
 
-  /* Cyber Table */
-  .cyber-table {
+  /* Phopy Table */
+  .phopy-table {
     @apply w-full border-collapse;
   }
-
-  .cyber-table th {
-    @apply bg-cyber-darker text-cyber-primary font-semibold text-left px-4 py-3 tracking-wide text-sm uppercase;
-    @apply border-b-2 border-cyber-primary/50;
+  .phopy-table th {
+    @apply text-sm font-medium text-[var(--fg-3)] text-left px-4 py-3 uppercase tracking-wider;
+    @apply border-b border-[var(--border)];
   }
-
-  .cyber-table td {
-    @apply px-4 py-3 border-b border-cyber-border;
+  .phopy-table td {
+    @apply px-4 py-3 border-b border-[var(--border-subtle)] text-sm text-[var(--fg-2)];
   }
-
-  .cyber-table tbody tr {
-    @apply transition-all duration-200 hover:bg-cyber-card/50;
+  .phopy-table tbody tr {
+    @apply transition-colors duration-120;
   }
-
-  /* Neon Text */
-  .neon-text {
-    @apply text-cyber-primary;
-    text-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+  .phopy-table tbody tr:hover {
+    @apply bg-[var(--surface-2)];
   }
-
-  .neon-text-purple {
-    @apply text-cyber-purple;
-    text-shadow: 0 0 10px rgba(157, 0, 255, 0.8);
-  }
-
-  .neon-text-green {
-    @apply text-cyber-green;
-    text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
-  }
-
-  /* Scrollbar */
-  .cyber-scrollbar::-webkit-scrollbar {
-    @apply w-2;
-  }
-
-  .cyber-scrollbar::-webkit-scrollbar-track {
-    @apply bg-cyber-darker rounded-full;
-  }
-
-  .cyber-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-cyber-primary/30 rounded-full hover:bg-cyber-primary/50;
-  }
-
-  /* Modal scrollbar — บาง เรียบ ไม่กวนสายตา */
-  .modal-scroll::-webkit-scrollbar { width: 3px; }
-  .modal-scroll::-webkit-scrollbar-track { background: transparent; }
-  .modal-scroll::-webkit-scrollbar-thumb { background: rgba(100,100,120,0.35); border-radius: 9999px; }
-  .modal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(130,130,160,0.55); }
-
-  /* ซ่อน scrollbar แต่ยังเลื่อนได้ */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
   /* Status Badges */
   .status-badge {
-    @apply px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
+    @apply px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
+  }
+  .status-badge.active,
+  .status-badge.success {
+    @apply bg-success-soft text-success;
+  }
+  .status-badge.pending,
+  .status-badge.warning {
+    @apply bg-warning-soft text-warning;
+  }
+  .status-badge.inactive,
+  .status-badge.danger {
+    @apply bg-danger-soft text-danger;
+  }
+  .status-badge.info {
+    @apply bg-info-soft text-info;
   }
 
-  .status-badge.active {
-    @apply bg-cyber-green/20 text-cyber-green border border-cyber-green/30;
+  /* Scrollbar */
+  .phopy-scrollbar::-webkit-scrollbar {
+    @apply w-2;
+  }
+  .phopy-scrollbar::-webkit-scrollbar-track {
+    @apply bg-[var(--surface-2)] rounded-full;
+  }
+  .phopy-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-[var(--border-strong)] rounded-full;
+  }
+  .phopy-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-[var(--fg-4)];
   }
 
-  .status-badge.pending {
-    @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/30;
-  }
+  /* Modal scrollbar */
+  .modal-scroll::-webkit-scrollbar { width: 3px; }
+  .modal-scroll::-webkit-scrollbar-track { background: transparent; }
+  .modal-scroll::-webkit-scrollbar-thumb { background: rgba(168, 162, 148, 0.35); border-radius: 9999px; }
+  .modal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(107, 102, 88, 0.55); }
 
-  .status-badge.inactive {
-    @apply bg-red-500/20 text-red-400 border border-red-500/30;
-  }
-
-  /* Glow Effect */
-  .glow-effect {
-    @apply relative;
-  }
-
-  .glow-effect::before {
-    content: '';
-    @apply absolute inset-0 rounded-lg opacity-0 transition-opacity duration-300;
-    background: radial-gradient(circle, rgba(0, 240, 255, 0.3) 0%, transparent 70%);
-    filter: blur(20px);
-  }
-
-  .glow-effect:hover::before {
-    @apply opacity-100;
-  }
+  /* Hide scrollbar but keep scroll */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
-/* Custom Animations */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+/* KPI number styling */
+.kpi {
+  @apply font-sans text-[32px] leading-10 font-bold text-[var(--fg-1)] tabular-nums;
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+/* Numeric / mono columns */
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
-@keyframes scan-line {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(100%);
-  }
-}
-
-.scan-line-effect {
-  position: relative;
-  overflow: hidden;
-}
-
-.scan-line-effect::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.8), transparent);
-  animation: scan-line 3s linear infinite;
-}
-
-/* Accessibility: หยุด animation สำหรับผู้ใช้ที่ตั้งค่า reduced motion */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-  .animate-float,
-  .scan-line-effect::after {
-    animation: none !important;
   }
 }

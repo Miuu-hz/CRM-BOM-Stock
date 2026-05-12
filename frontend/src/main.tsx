@@ -25,21 +25,21 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           toastOptions={{
             duration: 3000,
             style: {
-              background: '#151932',
-              color: '#fff',
-              border: '1px solid #2d3250',
-              boxShadow: '0 0 10px rgba(0, 240, 255, 0.3)',
+              background: '#FFFFFF',
+              color: '#1E1B16',
+              border: '1px solid #ECE6D8',
+              boxShadow: '0 12px 32px -8px rgba(30, 27, 22, 0.16)',
             },
             success: {
               iconTheme: {
-                primary: '#00ff88',
-                secondary: '#151932',
+                primary: '#16A34A',
+                secondary: '#FFFFFF',
               },
             },
             error: {
               iconTheme: {
-                primary: '#ff4444',
-                secondary: '#151932',
+                primary: '#DC2626',
+                secondary: '#FFFFFF',
               },
             },
           }}
