@@ -20,6 +20,7 @@ import {
   FileCheck,
   FileText,
   Receipt,
+  Sparkles,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import searchService from '../../services/search'
@@ -31,7 +32,7 @@ interface HeaderProps {
 
 function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
-  const { user, isMaster, logout } = useAuth()
+  const { user, isMaster } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -184,23 +185,23 @@ function Header({ onMenuClick }: HeaderProps) {
     : 0
 
   return (
-    <header className="bg-gradient-card backdrop-blur-xl border-b border-cyber-border px-6 py-4 sticky top-0 z-40">
-      <div className="flex items-center justify-between">
+    <header className="bg-white/92 backdrop-blur-xl border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
+      <div className="flex items-center justify-between h-full">
         {/* Left Section */}
         <div className="flex items-center gap-4">
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={onMenuClick}
-            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="เปิด/ปิดเมนู"
           >
-            <Menu className="w-6 h-6 text-cyber-primary" />
+            <Menu className="w-6 h-6 text-[var(--fg-2)]" />
           </motion.button>
 
           {/* Search Bar */}
           <div ref={searchRef} className="relative hidden md:block" role="search">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-4)]" aria-hidden="true" />
             <input
               ref={inputRef}
               type="search"
@@ -209,17 +210,17 @@ function Header({ onMenuClick }: HeaderProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
-              className="cyber-input pl-10 pr-10 w-64 lg:w-96"
+              className="phopy-input pl-10 pr-10 w-64 lg:w-96"
             />
             {isSearching ? (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-cyber-primary animate-spin" aria-hidden="true" />
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-phopy-indigo animate-spin" aria-hidden="true" />
             ) : searchQuery ? (
               <button
                 onClick={clearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-cyber-dark rounded cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-[var(--surface-2)] rounded cursor-pointer"
                 aria-label="ล้างการค้นหา"
               >
-                <X className="w-4 h-4 text-gray-400 hover:text-gray-300" />
+                <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
               </button>
             ) : null}
 
@@ -230,25 +231,25 @@ function Header({ onMenuClick }: HeaderProps) {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="absolute top-full mt-2 left-0 right-0 w-[500px] max-h-[70vh] overflow-y-auto bg-cyber-card border border-cyber-border rounded-lg shadow-2xl"
+                  className="absolute top-full mt-2 left-0 right-0 w-[500px] max-h-[70vh] overflow-y-auto bg-white border border-[var(--border)] rounded-lg shadow-3"
                 >
                   {searchError && !isSearching && (
-                    <div className="p-6 text-center text-red-400">
+                    <div className="p-6 text-center text-danger">
                       <p>{searchError}</p>
                     </div>
                   )}
 
                   {!searchError && !hasResults && !isSearching && searchQuery.length >= 2 && (
-                    <div className="p-6 text-center text-gray-400">
+                    <div className="p-6 text-center text-[var(--fg-3)]">
                       <Search className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p>ไม่พบผลลัพธ์สำหรับ "{searchQuery}"</p>
+                      <p>ไม่พบผลลัพธ์สำหรับ &quot;{searchQuery}&quot;</p>
                       <p className="text-sm mt-1">ลองใช้คำค้นหาอื่น</p>
                     </div>
                   )}
 
                   {hasResults && (
                     <div className="p-2">
-                      <p className="px-3 py-2 text-xs text-gray-500 uppercase tracking-wider">
+                      <p className="px-3 py-2 text-xs text-[var(--fg-4)] uppercase tracking-wider">
                         Found {totalResults} results
                       </p>
 
@@ -259,7 +260,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Users}
                           items={searchResults.customers}
                           onItemClick={handleResultClick}
-                          color="text-blue-400"
+                          color="text-phopy-indigo"
                         />
                       )}
 
@@ -270,7 +271,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={ShoppingCart}
                           items={searchResults.orders}
                           onItemClick={handleResultClick}
-                          color="text-cyber-green"
+                          color="text-success"
                         />
                       )}
 
@@ -281,7 +282,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Package}
                           items={searchResults.products}
                           onItemClick={handleResultClick}
-                          color="text-cyber-purple"
+                          color="text-phopy-mango"
                         />
                       )}
 
@@ -292,7 +293,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Layers}
                           items={searchResults.materials}
                           onItemClick={handleResultClick}
-                          color="text-yellow-400"
+                          color="text-warning"
                         />
                       )}
 
@@ -303,7 +304,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Box}
                           items={searchResults.boms}
                           onItemClick={handleResultClick}
-                          color="text-cyan-400"
+                          color="text-info"
                         />
                       )}
 
@@ -314,7 +315,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Package}
                           items={searchResults.stock}
                           onItemClick={handleResultClick}
-                          color="text-orange-400"
+                          color="text-phopy-mango"
                         />
                       )}
 
@@ -325,7 +326,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Truck}
                           items={searchResults.suppliers}
                           onItemClick={handleResultClick}
-                          color="text-pink-400"
+                          color="text-phopy-indigo"
                         />
                       )}
 
@@ -336,7 +337,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={ClipboardList}
                           items={searchResults.purchase_orders}
                           onItemClick={handleResultClick}
-                          color="text-amber-400"
+                          color="text-warning"
                         />
                       )}
 
@@ -347,7 +348,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Wrench}
                           items={searchResults.work_orders}
                           onItemClick={handleResultClick}
-                          color="text-indigo-400"
+                          color="text-phopy-indigo"
                         />
                       )}
 
@@ -358,7 +359,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={FileCheck}
                           items={searchResults.sales_orders}
                           onItemClick={handleResultClick}
-                          color="text-emerald-400"
+                          color="text-success"
                         />
                       )}
 
@@ -369,7 +370,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={FileText}
                           items={searchResults.quotations}
                           onItemClick={handleResultClick}
-                          color="text-violet-400"
+                          color="text-phopy-indigo"
                         />
                       )}
 
@@ -380,7 +381,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Receipt}
                           items={searchResults.invoices}
                           onItemClick={handleResultClick}
-                          color="text-rose-400"
+                          color="text-danger"
                         />
                       )}
                     </div>
@@ -392,59 +393,69 @@ function Header({ onMenuClick }: HeaderProps) {
         </div>
 
         {/* Right Section */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Ask AI */}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => navigate('/ai')}
+            className="hidden md:flex items-center gap-2 h-10 px-3 rounded-md bg-[var(--ink-900)] text-white text-sm font-semibold cursor-pointer hover:bg-[var(--ink-700)] transition-colors"
+            aria-label="ถาม Phopy AI"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Ask AI</span>
+          </motion.button>
+
           {/* Notifications */}
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="แจ้งเตือน"
           >
-            <Bell className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-cyber-green rounded-full animate-pulse" aria-hidden="true" />
+            <Bell className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-success rounded-full" aria-hidden="true" />
           </motion.button>
 
           {/* Cashier - Quick Access */}
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/cashier')}
-            className="relative p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="ระบบขายหน้าร้าน"
           >
-            <Store className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyber-green rounded-full animate-pulse" aria-hidden="true" />
+            <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
           </motion.button>
 
           {/* Settings */}
           <motion.button
-            whileHover={{ scale: 1.1, rotate: 90 }}
-            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="การตั้งค่า"
           >
-            <Settings className="w-6 h-6 text-gray-400 group-hover:text-cyber-primary transition-colors" />
+            <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
           </motion.button>
 
           {/* User Profile */}
           <motion.div
-            whileHover={{ scale: 1.05 }}
-            className="flex items-center gap-3 pl-3 pr-4 py-2 rounded-lg bg-cyber-card/50 border border-cyber-border hover:border-cyber-primary/50 transition-all cursor-pointer"
+            whileHover={{ scale: 1.02 }}
+            className="flex items-center gap-3 pl-3 pr-4 py-1.5 rounded-lg bg-white border border-[var(--border)] hover:border-[var(--border-strong)] transition-all cursor-pointer"
             onClick={() => navigate('/settings')}
           >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
               isMaster 
-                ? 'bg-gradient-to-br from-cyber-green to-emerald-500 shadow-[0_0_10px_rgba(0,255,136,0.3)]' 
-                : 'bg-gradient-to-br from-cyber-primary to-cyber-purple shadow-[0_0_10px_rgba(0,240,255,0.3)]'
+                ? 'bg-gradient-to-br from-phopy-mango to-phopy-mango-600' 
+                : 'bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700'
             }`}>
               <User className="w-5 h-5 text-white" />
             </div>
             <div className="hidden lg:block">
-              <p className="text-sm font-semibold text-gray-100">{user?.name || 'User'}</p>
-              <p className={`text-xs ${isMaster ? 'text-cyber-green' : 'text-gray-400'}`}>
-                {user?.role || 'USER'}
-                {isMaster && ' ★'}
+              <p className="text-sm font-semibold text-[var(--fg-1)]">{user?.name || 'User'}</p>
+              <p className={`text-xs font-medium ${isMaster ? 'text-phopy-mango' : 'text-[var(--fg-3)]'}`}>
+                {isMaster ? '★ MASTER' : (user?.role || 'USER')}
               </p>
             </div>
           </motion.div>
@@ -473,7 +484,7 @@ function ResultSection({
       <div className={`flex items-center gap-2 px-3 py-2 ${color}`}>
         <Icon className="w-4 h-4" />
         <span className="text-sm font-medium">{title}</span>
-        <span className="text-xs bg-cyber-dark px-2 py-0.5 rounded-full">
+        <span className="text-xs bg-[var(--surface-2)] text-[var(--fg-3)] px-2 py-0.5 rounded-full">
           {items.length}
         </span>
       </div>
@@ -483,12 +494,12 @@ function ResultSection({
             key={`${item.type}-${item.id}`}
             whileHover={{ x: 4 }}
             onClick={() => onItemClick(item)}
-            className="w-full text-left px-4 py-2 rounded-lg hover:bg-cyber-primary/10 transition-colors group"
+            className="w-full text-left px-4 py-2 rounded-lg hover:bg-phopy-indigo-50 transition-colors group"
           >
-            <p className="text-gray-200 group-hover:text-cyber-primary transition-colors">
+            <p className="text-[var(--fg-1)] group-hover:text-phopy-indigo transition-colors text-sm">
               {item.label}
             </p>
-            <p className="text-xs text-gray-500">{item.subtitle}</p>
+            <p className="text-xs text-[var(--fg-4)]">{item.subtitle}</p>
           </motion.button>
         ))}
       </div>
