@@ -146,49 +146,49 @@ export default function POSClearing() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">นำเงิน POS เข้าบัญชี</h1>
-          <p className="text-gray-400 mt-1 text-sm">
+          <p className="text-[var(--fg-3)] mt-1 text-sm">
             รับเงินจากลิ้นชักและ QR เข้าบัญชีเงินสด / ธนาคารประจำวัน
           </p>
         </div>
         <button
           onClick={() => fetchData(selectedDate)}
-          className="p-2 rounded-lg bg-cyber-card border border-cyber-border text-gray-400 hover:text-white"
+          className="p-2 rounded-lg bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
         >
           <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {/* Date Selector */}
-      <div className="flex items-center gap-2 bg-cyber-card border border-cyber-border rounded-xl px-3 py-2">
+      <div className="flex items-center gap-2 bg-phopy-card border border-[var(--border)] rounded-xl px-3 py-2">
         <button
           onClick={() => shiftDate(-1)}
-          className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 flex items-center justify-center gap-3">
-          <Calendar className="w-4 h-4 text-cyber-primary" />
+          <Calendar className="w-4 h-4 text-phopy-indigo" />
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
           />
-          <span className="text-cyber-primary font-medium text-sm">
+          <span className="text-phopy-indigo font-medium text-sm">
             {dateLabel()}
           </span>
         </div>
         <button
           onClick={() => shiftDate(1)}
           disabled={selectedDate >= localDateStr()}
-          className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
         {selectedDate !== localDateStr() && (
           <button
             onClick={() => setSelectedDate(localDateStr())}
-            className="ml-1 text-xs px-2 py-1 rounded bg-cyber-primary/20 text-cyber-primary hover:bg-cyber-primary/30"
+            className="ml-1 text-xs px-2 py-1 rounded bg-phopy-indigo-50 text-phopy-indigo hover:bg-phopy-indigo/30"
           >
             วันนี้
           </button>
@@ -200,11 +200,11 @@ export default function POSClearing() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-5 bg-cyber-card border border-cyber-border rounded-xl"
+          className="p-5 bg-phopy-card border border-[var(--border)] rounded-xl"
         >
-          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">ยอดรอนำเข้า</p>
-          <p className="text-3xl font-bold text-cyber-primary">{fmt(pendingTotal)}</p>
-          <p className="text-sm text-gray-500 mt-1">{balance?.pending?.billCount || 0} บิล</p>
+          <p className="text-xs text-[var(--fg-3)] uppercase tracking-wide mb-2">ยอดรอนำเข้า</p>
+          <p className="text-3xl font-bold text-phopy-indigo">{fmt(pendingTotal)}</p>
+          <p className="text-sm text-[var(--fg-4)] mt-1">{balance?.pending?.billCount || 0} บิล</p>
           {cashTotal > 0 && (
             <div className="flex items-center gap-1 mt-2 text-xs text-yellow-400">
               <Banknote className="w-3 h-3" /> เงินสด {fmt(cashTotal)}
@@ -221,19 +221,19 @@ export default function POSClearing() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="p-5 bg-cyber-card border border-cyber-border rounded-xl"
+          className="p-5 bg-phopy-card border border-[var(--border)] rounded-xl"
         >
-          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">นำเข้าแล้วรวม</p>
-          <p className="text-3xl font-bold text-cyber-green">
+          <p className="text-xs text-[var(--fg-3)] uppercase tracking-wide mb-2">นำเข้าแล้วรวม</p>
+          <p className="text-3xl font-bold text-success">
             {fmt(balance?.transferred?.totalAmount || 0)}
           </p>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-[var(--fg-4)] mt-1">
             {balance?.transferred?.transferCount || 0} ครั้ง
           </p>
           <div className="mt-3">
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="text-xs text-gray-500 hover:text-white flex items-center gap-1"
+              className="text-xs text-[var(--fg-4)] hover:text-[var(--fg-1)] flex items-center gap-1"
             >
               ดูประวัติ {showHistory ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             </button>
@@ -249,7 +249,7 @@ export default function POSClearing() {
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.99 }}
           onClick={() => setShowModal(true)}
-          className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white font-semibold rounded-xl text-lg shadow-lg"
+          className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold rounded-xl text-lg shadow-lg"
         >
           <ArrowDownToLine className="w-5 h-5" />
           นำเงิน {fmt(pendingTotal)} เข้าบัญชี
@@ -258,10 +258,10 @@ export default function POSClearing() {
 
       {/* Pending Bills */}
       {pendingBills.length > 0 && (
-        <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-cyber-border">
+        <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-[var(--border)]">
             <h2 className="font-semibold text-white flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-cyber-primary" />
+              <Receipt className="w-4 h-4 text-phopy-indigo" />
               บิลที่รอนำเงินเข้า ({pendingBills.length} บิล)
             </h2>
           </div>
@@ -289,10 +289,10 @@ export default function POSClearing() {
       )}
 
       {pendingBills.length === 0 && !loading && (
-        <div className="bg-cyber-card border border-cyber-border rounded-xl p-10 text-center">
-          <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-cyber-green" />
+        <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-10 text-center">
+          <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-success" />
           <p className="text-white font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
-          <p className="text-gray-500 text-sm mt-1">ไม่มีบิลค้างอยู่</p>
+          <p className="text-[var(--fg-4)] text-sm mt-1">ไม่มีบิลค้างอยู่</p>
         </div>
       )}
 
@@ -303,23 +303,23 @@ export default function POSClearing() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden"
+            className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden"
           >
-            <div className="px-5 py-4 border-b border-cyber-border">
+            <div className="px-5 py-4 border-b border-[var(--border)]">
               <h2 className="font-semibold text-white flex items-center gap-2">
-                <Clock className="w-4 h-4 text-gray-400" />
+                <Clock className="w-4 h-4 text-[var(--fg-3)]" />
                 ประวัติการนำเงินเข้าบัญชี
               </h2>
             </div>
             {!balance?.recentTransfers?.length ? (
-              <div className="p-8 text-center text-gray-500 text-sm">ยังไม่มีประวัติ</div>
+              <div className="p-8 text-center text-[var(--fg-4)] text-sm">ยังไม่มีประวัติ</div>
             ) : (
-              <div className="divide-y divide-cyber-border">
+              <div className="divide-y divide-[var(--border)]">
                 {balance.recentTransfers.map((t) => (
                   <div key={t.id} className="px-5 py-4 flex justify-between items-center">
                     <div>
                       <p className="text-sm font-medium text-white">{fmtDate(t.transfer_date)}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs text-[var(--fg-4)] mt-0.5">
                         {t.bill_count ? `${t.bill_count} บิล · ` : ''}
                         {t.cash_amount > 0 && `เงินสด ${fmt(t.cash_amount)}`}
                         {t.cash_amount > 0 && t.bank_amount > 0 && ' · '}
@@ -328,8 +328,8 @@ export default function POSClearing() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-cyber-green">{fmt(t.total_amount)}</p>
-                      <p className="text-xs text-gray-500">โดย {t.created_by_name || 'System'}</p>
+                      <p className="font-semibold text-success">{fmt(t.total_amount)}</p>
+                      <p className="text-xs text-[var(--fg-4)]">โดย {t.created_by_name || 'System'}</p>
                     </div>
                   </div>
                 ))}
@@ -340,7 +340,7 @@ export default function POSClearing() {
       </AnimatePresence>
 
       {/* Info note */}
-      <div className="flex items-start gap-2 text-xs text-gray-600 px-1">
+      <div className="flex items-start gap-2 text-xs text-[var(--fg-4)] px-1">
         <Info className="w-3 h-3 mt-0.5 shrink-0" />
         <span>ระบบจะบันทึกรายการบัญชีอัตโนมัติ (Dr. เงินสด/ธนาคาร, Cr. บัญชีพัก POS 1180)</span>
       </div>
@@ -385,16 +385,16 @@ function BillGroup({
     <div className={`border-b last:border-b-0 ${borderColor}`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-full px-5 py-3 flex items-center justify-between hover:bg-cyber-dark/30 ${bgColor}`}
+        className={`w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30 ${bgColor}`}
       >
         <div className="flex items-center gap-2">
           {icon}
           <span className={`text-sm font-medium ${textColor}`}>{label}</span>
-          <span className="text-xs text-gray-500">{bills.length} บิล</span>
+          <span className="text-xs text-[var(--fg-4)]">{bills.length} บิล</span>
         </div>
         <div className="flex items-center gap-3">
           <span className={`font-semibold ${textColor}`}>{fmt(total)}</span>
-          {expanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+          {expanded ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" /> : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
         </div>
       </button>
       <AnimatePresence>
@@ -406,10 +406,10 @@ function BillGroup({
             className="overflow-hidden"
           >
             {bills.map((bill) => (
-              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-cyber-border/50 bg-cyber-dark/20">
+              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20">
                 <div>
                   <p className="text-sm text-white">{bill.display_name || bill.bill_number}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--fg-4)]">
                     {bill.bill_number} · {fmtDate(bill.closed_at)} {fmtTime(bill.closed_at)}
                   </p>
                 </div>
@@ -509,19 +509,19 @@ function DepositModal({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md flex flex-col"
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}
       >
         {/* Header */}
-        <div className="p-5 border-b border-cyber-border flex items-center justify-between shrink-0">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <ArrowDownToLine className="w-5 h-5 text-cyber-primary" />
+              <ArrowDownToLine className="w-5 h-5 text-phopy-indigo" />
               นำเงินเข้าบัญชี
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">{allBills.length} บิล · รวม {fmt(grandTotal)}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{allBills.length} บิล · รวม {fmt(grandTotal)}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -529,14 +529,14 @@ function DepositModal({
         {/* Body */}
         <div className="overflow-y-auto p-5 space-y-4">
           {/* Breakdown */}
-          <div className="rounded-xl overflow-hidden border border-cyber-border">
+          <div className="rounded-xl overflow-hidden border border-[var(--border)]">
             {cashTotal > 0 && (
-              <div className="flex justify-between items-center px-4 py-3 bg-yellow-500/10 border-b border-cyber-border">
+              <div className="flex justify-between items-center px-4 py-3 bg-yellow-500/10 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
                   <Banknote className="w-4 h-4 text-yellow-400" />
                   <div>
                     <p className="text-sm font-medium text-yellow-400">เงินสดจากลิ้นชัก</p>
-                    <p className="text-xs text-gray-500">{cashBills.length} บิล</p>
+                    <p className="text-xs text-[var(--fg-4)]">{cashBills.length} บิล</p>
                   </div>
                 </div>
                 <p className="font-semibold text-yellow-400">{fmt(cashTotal)}</p>
@@ -548,7 +548,7 @@ function DepositModal({
                   <QrCode className="w-4 h-4 text-blue-400" />
                   <div>
                     <p className="text-sm font-medium text-blue-400">QR / โอนเงิน</p>
-                    <p className="text-xs text-gray-500">{bankBills.length} บิล</p>
+                    <p className="text-xs text-[var(--fg-4)]">{bankBills.length} บิล</p>
                   </div>
                 </div>
                 <p className="font-semibold text-blue-400">{fmt(bankTotal)}</p>
@@ -558,26 +558,26 @@ function DepositModal({
 
           {/* Date */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">วันที่บันทึก</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1.5">วันที่บันทึก</label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
               <input
                 type="date"
                 value={transferDate}
                 onChange={(e) => setTransferDate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
               />
             </div>
           </div>
 
           {/* Amounts */}
           <div className="space-y-3">
-            <label className="block text-sm text-gray-400">ยืนยันจำนวนเงิน</label>
+            <label className="block text-sm text-[var(--fg-3)]">ยืนยันจำนวนเงิน</label>
             {cashTotal > 0 && (
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                   <Banknote className="w-4 h-4 text-yellow-400" />
-                  <span className="text-xs text-gray-500">เงินสด</span>
+                  <span className="text-xs text-[var(--fg-4)]">เงินสด</span>
                 </div>
                 <input
                   type="number"
@@ -585,7 +585,7 @@ function DepositModal({
                   onChange={(e) => setCashAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-cyber-dark border border-yellow-500/30 rounded-lg text-white focus:outline-none focus:border-yellow-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-yellow-500/30 rounded-lg text-white focus:outline-none focus:border-yellow-400"
                 />
               </div>
             )}
@@ -593,7 +593,7 @@ function DepositModal({
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                   <QrCode className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-500">ธนาคาร</span>
+                  <span className="text-xs text-[var(--fg-4)]">ธนาคาร</span>
                 </div>
                 <input
                   type="number"
@@ -601,7 +601,7 @@ function DepositModal({
                   onChange={(e) => setBankAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-cyber-dark border border-blue-500/30 rounded-lg text-white focus:outline-none focus:border-blue-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-blue-500/30 rounded-lg text-white focus:outline-none focus:border-blue-400"
                 />
               </div>
             )}
@@ -609,21 +609,21 @@ function DepositModal({
             {/* Match indicator */}
             <div className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${
               Math.abs(difference) <= 0.01
-                ? 'bg-cyber-green/10 border border-cyber-green/30'
+                ? 'bg-success/10 border border-success/30'
                 : difference > 0
                   ? 'bg-red-500/10 border border-red-500/30'
                   : 'bg-yellow-500/10 border border-yellow-500/30'
             }`}>
-              <span className="text-gray-400">รวมที่กรอก</span>
+              <span className="text-[var(--fg-3)]">รวมที่กรอก</span>
               <div className="flex items-center gap-2">
                 <span className={`font-semibold ${
-                  Math.abs(difference) <= 0.01 ? 'text-cyber-green'
+                  Math.abs(difference) <= 0.01 ? 'text-success'
                   : difference > 0 ? 'text-red-400' : 'text-yellow-400'
                 }`}>
                   {fmt(totalEntered)}
                 </span>
                 {Math.abs(difference) <= 0.01
-                  ? <CheckCircle2 className="w-4 h-4 text-cyber-green" />
+                  ? <CheckCircle2 className="w-4 h-4 text-success" />
                   : <span className={`text-xs ${difference > 0 ? 'text-red-400' : 'text-yellow-400'}`}>
                       {difference > 0 ? `ขาด ${fmt(difference)}` : `เกิน ${fmt(-difference)}`}
                     </span>
@@ -632,8 +632,8 @@ function DepositModal({
             </div>
             {/* Over/short explanation */}
             {Math.abs(difference) > 0.01 && (
-              <div className="flex items-start gap-2 px-3 py-2 bg-cyber-dark rounded-lg text-xs text-gray-400">
-                <Info className="w-3 h-3 mt-0.5 shrink-0 text-gray-500" />
+              <div className="flex items-start gap-2 px-3 py-2 bg-[var(--bg)] rounded-lg text-xs text-[var(--fg-3)]">
+                <Info className="w-3 h-3 mt-0.5 shrink-0 text-[var(--fg-4)]" />
                 <span>
                   ผลต่าง{' '}
                   <span className={difference > 0 ? 'text-red-400' : 'text-yellow-400'}>
@@ -647,43 +647,43 @@ function DepositModal({
 
           {/* Reference */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">เลขที่อ้างอิง / สลิป (optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1.5">เลขที่อ้างอิง / สลิป (optional)</label>
             <div className="relative">
-              <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
               <input
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="เช่น เลขสลิปโอน, เลขที่ใบนำฝาก"
-                className="w-full pl-10 pr-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">หมายเหตุ (optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ (optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary resize-none text-sm"
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo resize-none text-sm"
               placeholder="บันทึกเพิ่มเติม..."
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">
+        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2.5 text-gray-400 hover:text-white transition-colors text-sm"
+            className="px-4 py-2.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors text-sm"
           >
             ยกเลิก
           </button>
           <button
             onClick={handleSubmit}
             disabled={saving || totalEntered <= 0}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white font-semibold rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

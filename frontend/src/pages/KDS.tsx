@@ -82,38 +82,38 @@ const KDS: React.FC = () => {
   const statusConfig = {
     PENDING: { label: 'รอรับ', bg: 'bg-yellow-500/20', border: 'border-yellow-500/50', text: 'text-yellow-400', dot: 'bg-yellow-400' },
     IN_PROGRESS: { label: 'กำลังทำ', bg: 'bg-blue-500/20', border: 'border-blue-500/50', text: 'text-blue-400', dot: 'bg-blue-400' },
-    DONE: { label: 'เสร็จแล้ว', bg: 'bg-green-500/20', border: 'border-green-500/50', text: 'text-cyber-green', dot: 'bg-cyber-green' },
+    DONE: { label: 'เสร็จแล้ว', bg: 'bg-green-500/20', border: 'border-green-500/50', text: 'text-success', dot: 'bg-success' },
   }
 
   return (
-    <div className="flex flex-col h-full bg-cyber-dark text-gray-200" onClick={unlockAudio}>
+    <div className="flex flex-col h-full bg-[var(--bg)] text-[var(--fg-2)]" onClick={unlockAudio}>
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-cyber-primary flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-phopy-indigo flex items-center gap-2">
             <MonitorPlay className="w-6 h-6" />
             Kitchen Display System
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Polling ทุก 3 วินาที · {tickets.length} ticket ที่รอดำเนินการ</p>
+          <p className="text-[var(--fg-3)] text-sm mt-1">Polling ทุก 3 วินาที · {tickets.length} ticket ที่รอดำเนินการ</p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={unlockAudio}
             className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${
               soundEnabled
-                ? 'bg-cyber-green/10 border-cyber-green/40 text-cyber-green'
+                ? 'bg-success/10 border-success/40 text-success'
                 : 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400 animate-pulse'
             }`}
           >
             {soundEnabled ? '🔔 เสียงเปิด' : '🔕 กดเพื่อเปิดเสียง'}
           </button>
-          <div className="px-4 py-2 bg-cyber-card border border-cyber-border rounded-lg flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-cyber-green animate-pulse" />
+          <div className="px-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-sm font-medium">Live</span>
           </div>
           <button
             onClick={fetchTickets}
-            className="p-2 bg-cyber-primary/20 hover:bg-cyber-primary/40 text-cyber-primary rounded-lg transition-colors border border-cyber-primary/50"
+            className="p-2 bg-phopy-indigo-50 hover:bg-phopy-indigo/40 text-phopy-indigo rounded-lg transition-colors border border-phopy-indigo/50"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -130,16 +130,16 @@ const KDS: React.FC = () => {
       {/* Tickets Grid */}
       {loading && isFirstLoad.current ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="w-12 h-12 border-4 border-cyber-primary/30 border-t-cyber-primary rounded-full animate-spin" />
+          <div className="w-12 h-12 border-4 border-phopy-indigo/30 border-t-phopy-indigo rounded-full animate-spin" />
         </div>
       ) : tickets.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center border-2 border-dashed border-cyber-border rounded-xl bg-cyber-card/30">
-          <ClipboardList className="w-16 h-16 text-gray-500 mb-4" />
-          <h3 className="text-xl font-bold text-gray-400">ไม่มี ticket ที่รอดำเนินการ</h3>
-          <p className="text-gray-500 text-sm mt-1">รอ POS ส่งออร์เดอร์มาครัว...</p>
+        <div className="flex flex-1 flex-col items-center justify-center border-2 border-dashed border-[var(--border)] rounded-xl bg-phopy-card/30">
+          <ClipboardList className="w-16 h-16 text-[var(--fg-4)] mb-4" />
+          <h3 className="text-xl font-bold text-[var(--fg-3)]">ไม่มี ticket ที่รอดำเนินการ</h3>
+          <p className="text-[var(--fg-4)] text-sm mt-1">รอ POS ส่งออร์เดอร์มาครัว...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 overflow-y-auto cyber-scrollbar pr-2 pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 overflow-y-auto phopy-scrollbar pr-2 pb-6">
           {tickets.map(ticket => {
             const cfg = statusConfig[ticket.status]
             const elapsed = getElapsedMinutes(ticket.sent_at)
@@ -147,26 +147,26 @@ const KDS: React.FC = () => {
             return (
               <div
                 key={ticket.id}
-                className={`bg-cyber-card border rounded-xl shadow-lg flex flex-col transition-all ${isUrgent ? 'border-red-500/70 shadow-red-500/10' : cfg.border}`}
+                className={`bg-phopy-card border rounded-xl shadow-lg flex flex-col transition-all ${isUrgent ? 'border-red-500/70 shadow-red-500/10' : cfg.border}`}
               >
                 {/* Ticket Header */}
-                <div className={`p-4 border-b border-cyber-border ${cfg.bg} rounded-t-xl`}>
+                <div className={`p-4 border-b border-[var(--border)] ${cfg.bg} rounded-t-xl`}>
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-lg font-bold text-white">{ticket.table_name}</h3>
-                        <span className="px-2 py-0.5 bg-cyber-dark rounded text-xs text-cyber-primary font-mono">
+                        <span className="px-2 py-0.5 bg-[var(--bg)] rounded text-xs text-phopy-indigo font-mono">
                           รอบ {ticket.round}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 font-mono mt-0.5">{ticket.bill_number}</p>
+                      <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">{ticket.bill_number}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cfg.text}`}>
                         <div className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${ticket.status === 'PENDING' ? 'animate-pulse' : ''}`} />
                         {cfg.label}
                       </div>
-                      <div className={`flex items-center gap-1 text-xs ${isUrgent ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                      <div className={`flex items-center gap-1 text-xs ${isUrgent ? 'text-red-400 font-bold' : 'text-[var(--fg-3)]'}`}>
                         <Clock className="w-3 h-3" />
                         {getElapsed(ticket.sent_at)}
                       </div>
@@ -178,7 +178,7 @@ const KDS: React.FC = () => {
                 <div className="p-3 flex-1 space-y-2">
                   {ticket.items.map(item => (
                     <div key={item.id} className="flex items-start gap-3 bg-black/20 rounded-lg p-3">
-                      <span className="text-cyber-green font-bold text-lg leading-none">{item.quantity}×</span>
+                      <span className="text-success font-bold text-lg leading-none">{item.quantity}×</span>
                       <div className="flex-1">
                         <p className="font-semibold text-white">{item.product_name}</p>
                         {item.special_instructions && (
@@ -192,7 +192,7 @@ const KDS: React.FC = () => {
                 </div>
 
                 {/* Action buttons */}
-                <div className="p-3 border-t border-cyber-border flex gap-2">
+                <div className="p-3 border-t border-[var(--border)] flex gap-2">
                   {ticket.status === 'PENDING' && (
                     <button
                       onClick={() => handleStatus(ticket.id, 'IN_PROGRESS')}
@@ -205,7 +205,7 @@ const KDS: React.FC = () => {
                   {ticket.status === 'IN_PROGRESS' && (
                     <button
                       onClick={() => handleStatus(ticket.id, 'DONE')}
-                      className="flex-1 py-2 rounded-lg bg-cyber-green/20 border border-cyber-green/50 text-cyber-green hover:bg-cyber-green/30 transition-all text-sm font-medium flex items-center justify-center gap-1"
+                      className="flex-1 py-2 rounded-lg bg-success-soft border border-success/50 text-success hover:bg-success/30 transition-all text-sm font-medium flex items-center justify-center gap-1"
                     >
                       <Check className="w-4 h-4" />
                       เสร็จแล้ว

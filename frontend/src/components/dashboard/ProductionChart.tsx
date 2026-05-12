@@ -21,17 +21,17 @@ const data = [
 
 function ProductionChart() {
   return (
-    <div className="cyber-card p-6">
+    <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Activity className="w-6 h-6 text-cyber-purple" />
-          <h2 className="text-xl font-bold text-gray-100">
+          <Activity className="w-6 h-6 text-purple-500" />
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Production Status
           </h2>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-400">This Week</p>
-          <p className="text-sm font-semibold text-cyber-green">
+          <p className="text-xs text-[var(--fg-3)]">This Week</p>
+          <p className="text-sm font-semibold text-success">
             940 / 1000 Units
           </p>
         </div>
@@ -70,14 +70,14 @@ function ProductionChart() {
         </BarChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 flex items-center justify-between p-3 rounded-lg bg-cyber-darker/50 border border-cyber-border">
+      <div className="mt-4 flex items-center justify-between p-3 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)]">
         <div>
-          <p className="text-xs text-gray-400 mb-1">Production Rate</p>
-          <p className="text-sm font-semibold text-gray-200">94% of Target</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">Production Rate</p>
+          <p className="text-sm font-semibold text-[var(--fg-2)]">94% of Target</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-400 mb-1">Efficiency</p>
-          <p className="text-sm font-semibold text-cyber-green">+4.2%</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">Efficiency</p>
+          <p className="text-sm font-semibold text-success">+4.2%</p>
         </div>
       </div>
     </div>

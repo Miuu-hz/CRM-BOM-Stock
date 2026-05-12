@@ -119,7 +119,7 @@ const PLATFORMS = [
   { id: 'SHOPEE', name: 'Shopee', color: 'from-orange-500 to-red-500' },
   { id: 'TIKTOK', name: 'TikTok', color: 'from-black to-gray-700' },
   { id: 'LAZADA', name: 'Lazada', color: 'from-blue-500 to-purple-500' },
-  { id: 'LINE', name: 'LINE', color: 'from-green-500 to-emerald-500' },
+  { id: 'LINE', name: 'LINE', color: 'from-green-500 to-success' },
 ]
 
 const CHART_TYPES = [
@@ -682,8 +682,8 @@ function Marketing() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-3xl font-bold neon-text mb-2">Marketing Analytics</h1>
-          <p className="text-gray-400">วิเคราะห์ประสิทธิภาพการตลาดและโฆษณา</p>
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">Marketing Analytics</h1>
+          <p className="text-[var(--fg-3)]">วิเคราะห์ประสิทธิภาพการตลาดและโฆษณา</p>
         </div>
 
         <div className="flex gap-3">
@@ -691,7 +691,7 @@ function Marketing() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowAddShopModal(true)}
-            className="px-4 py-2 bg-gradient-to-r from-cyber-purple to-cyber-primary rounded-lg font-semibold hover:shadow-neon transition-all flex items-center gap-2"
+            className="px-4 py-2 bg-gradient-to-r from-purple-500 to-phopy-indigo rounded-lg font-semibold hover:shadow-2 transition-all flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             เพิ่มร้านค้า
@@ -702,7 +702,7 @@ function Marketing() {
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowUploadModal(true)}
             disabled={!selectedShop}
-            className="px-4 py-2 bg-gradient-to-r from-cyber-primary to-cyber-green rounded-lg font-semibold hover:shadow-neon transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-gradient-to-r from-phopy-indigo to-success rounded-lg font-semibold hover:shadow-2 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload className="w-5 h-5" />
             อัพโหลดข้อมูล
@@ -711,22 +711,22 @@ function Marketing() {
       </motion.div>
 
       {/* Main Tab Switcher */}
-      <div className="flex gap-1 bg-cyber-card border border-cyber-border rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-phopy-card border border-[var(--border)] rounded-xl p-1 w-fit">
         <button
           onClick={() => setMainTab('analytics')}
-          className={mainTab === 'analytics' ? 'px-4 py-2 rounded-lg bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
+          className={mainTab === 'analytics' ? 'px-4 py-2 rounded-lg bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
         >
           📊 Analytics
         </button>
         <button
           onClick={() => setMainTab('profit')}
-          className={mainTab === 'profit' ? 'px-4 py-2 rounded-lg bg-cyber-green/20 text-cyber-green border border-cyber-green/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
+          className={mainTab === 'profit' ? 'px-4 py-2 rounded-lg bg-success-soft text-success border border-success/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
         >
           <Calculator className="w-4 h-4 inline mr-1" /> ต้นทุน &amp; กำไร
         </button>
         <button
           onClick={() => setMainTab('platform')}
-          className={mainTab === 'platform' ? 'px-4 py-2 rounded-lg bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-gray-400 hover:text-white text-sm'}
+          className={mainTab === 'platform' ? 'px-4 py-2 rounded-lg bg-purple-500/20 text-purple-500 border border-purple-500/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
         >
           <Upload className="w-4 h-4 inline mr-1" /> Platform Orders
         </button>
@@ -739,7 +739,7 @@ function Marketing() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="cyber-card p-1"
+            className="phopy-card p-1"
           >
             <div className="flex gap-2">
               {PLATFORMS.map(platform => (
@@ -751,8 +751,8 @@ function Marketing() {
                   }}
                   className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
                     selectedPlatform === platform.id
-                      ? `bg-gradient-to-r ${platform.color} shadow-neon`
-                      : 'bg-cyber-card/50 hover:bg-cyber-card text-gray-400 hover:text-white'
+                      ? `bg-gradient-to-r ${platform.color} shadow-2`
+                      : 'bg-phopy-card/50 hover:bg-phopy-card text-[var(--fg-3)] hover:text-[var(--fg-1)]'
                   }`}
                 >
                   {platform.name}
@@ -766,14 +766,14 @@ function Marketing() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="cyber-card p-4 flex flex-wrap gap-4 items-center"
+            className="phopy-card p-4 flex flex-wrap gap-4 items-center"
           >
             <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-              <Store className="w-5 h-5 text-cyber-primary" />
+              <Store className="w-5 h-5 text-phopy-indigo" />
               <select
                 value={selectedShop}
                 onChange={(e) => setSelectedShop(e.target.value)}
-                className="flex-1 bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                className="flex-1 bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               >
                 <option value="">เลือกร้านค้า</option>
                 {(shops || []).map(shop => (
@@ -785,19 +785,19 @@ function Marketing() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-cyber-primary" />
+              <Calendar className="w-5 h-5 text-phopy-indigo" />
               <input
                 type="date"
                 value={dateRange.start}
                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               />
-              <span className="text-gray-400">ถึง</span>
+              <span className="text-[var(--fg-3)]">ถึง</span>
               <input
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               />
             </div>
 
@@ -807,8 +807,8 @@ function Marketing() {
                 onClick={() => setViewMode('chart')}
                 className={`p-2 rounded-lg transition-all ${
                   viewMode === 'chart'
-                    ? 'bg-cyber-primary text-white'
-                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                    ? 'bg-phopy-indigo text-white'
+                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
                 }`}
                 title="Chart View"
               >
@@ -818,15 +818,15 @@ function Marketing() {
                 onClick={() => setViewMode('table')}
                 className={`p-2 rounded-lg transition-all ${
                   viewMode === 'table'
-                    ? 'bg-cyber-primary text-white'
-                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                    ? 'bg-phopy-indigo text-white'
+                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
                 }`}
                 title="Table View"
               >
                 <Table className="w-5 h-5" />
               </button>
 
-              <div className="w-px h-8 bg-cyber-border mx-1" />
+              <div className="w-px h-8 bg-[var(--border)] mx-1" />
 
               {/* Chart Types (only show when in chart mode) */}
               {viewMode === 'chart' && CHART_TYPES.map(type => (
@@ -835,8 +835,8 @@ function Marketing() {
                   onClick={() => setChartType(type.id as any)}
                   className={`p-2 rounded-lg transition-all ${
                     chartType === type.id
-                      ? 'bg-cyber-primary text-white'
-                      : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                      ? 'bg-phopy-indigo text-white'
+                      : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
                   }`}
                   title={type.name}
                 >
@@ -844,15 +844,15 @@ function Marketing() {
                 </button>
               ))}
 
-              <div className="w-px h-8 bg-cyber-border mx-1" />
+              <div className="w-px h-8 bg-[var(--border)] mx-1" />
 
               {/* Pivot Settings */}
               <button
                 onClick={() => setShowPivotSettings(!showPivotSettings)}
                 className={`p-2 rounded-lg transition-all ${
                   showPivotSettings
-                    ? 'bg-cyber-primary text-white'
-                    : 'bg-cyber-card/50 text-gray-400 hover:bg-cyber-card hover:text-white'
+                    ? 'bg-phopy-indigo text-white'
+                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
                 }`}
                 title="Pivot Settings"
               >
@@ -873,14 +873,14 @@ function Marketing() {
                 title="ยอดขายรวม"
                 value={`฿${summary.totalSales.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
                 icon={DollarSign}
-                color="from-cyber-primary to-cyber-green"
+                color="from-phopy-indigo to-success"
                 subtitle={`${summary.totalOrders} คำสั่งซื้อ`}
               />
               <StatCard
                 title="ค่าโฆษณารวม"
                 value={`฿${summary.totalAdCost.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
                 icon={TrendingUp}
-                color="from-cyber-purple to-pink-500"
+                color="from-purple-500 to-pink-500"
                 subtitle={`ROAS: ${summary.totalROAS.toFixed(2)}`}
               />
               <StatCard
@@ -905,19 +905,19 @@ function Marketing() {
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="cyber-card p-4"
+              className="phopy-card p-4"
             >
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-cyber-primary" />
+                <Settings className="w-5 h-5 text-phopy-indigo" />
                 Pivot Table Configuration
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มตาม</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">จัดกลุ่มตาม</label>
                   <select
                     value={pivotConfig.rowBy}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, rowBy: e.target.value as any })}
-                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     {ROW_OPTIONS.map(opt => (
                       <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -925,10 +925,10 @@ function Marketing() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Metrics</label>
-                  <div className="space-y-1 bg-cyber-card border border-cyber-border rounded-lg p-2 max-h-32 overflow-y-auto">
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Metrics</label>
+                  <div className="space-y-1 bg-phopy-card border border-[var(--border)] rounded-lg p-2 max-h-32 overflow-y-auto">
                     {METRIC_OPTIONS.map(metric => (
-                      <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-cyber-card/50 p-1 rounded">
+                      <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-phopy-card/50 p-1 rounded">
                         <input
                           type="checkbox"
                           checked={pivotConfig.metrics.includes(metric.key)}
@@ -939,7 +939,7 @@ function Marketing() {
                               setPivotConfig({ ...pivotConfig, metrics: (pivotConfig.metrics || []).filter(m => m !== metric.key) })
                             }
                           }}
-                          className="rounded border-cyber-border text-cyber-primary focus:ring-cyber-primary"
+                          className="rounded border-[var(--border)] text-phopy-indigo focus:ring-phopy-indigo"
                         />
                         <span className="text-sm">{metric.label}</span>
                       </label>
@@ -947,11 +947,11 @@ function Marketing() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">การคำนวณ</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">การคำนวณ</label>
                   <select
                     value={pivotConfig.aggregation}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, aggregation: e.target.value as any })}
-                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="sum">รวม (Sum)</option>
                     <option value="avg">เฉลี่ย (Average)</option>
@@ -959,12 +959,12 @@ function Marketing() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">จัดกลุ่มช่วง</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">จัดกลุ่มช่วง</label>
                   <select
                     value={pivotConfig.groupBy}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, groupBy: e.target.value as any })}
                     disabled={pivotConfig.rowBy !== 'date'}
-                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="day">รายวัน</option>
                     <option value="week">รายสัปดาห์</option>
@@ -981,10 +981,10 @@ function Marketing() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="cyber-card p-6"
+              className="phopy-card p-6"
             >
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-cyber-primary" />
+                <TrendingUp className="w-6 h-6 text-phopy-indigo" />
                 Performance Trends
               </h2>
               <ResponsiveContainer width="100%" height={400}>
@@ -999,23 +999,23 @@ function Marketing() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="cyber-card p-6"
+              className="phopy-card p-6"
             >
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Table className="w-6 h-6 text-cyber-primary" />
+                <Table className="w-6 h-6 text-phopy-indigo" />
                 Pivot Table View
               </h2>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="border-b border-cyber-border">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-300">
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-[var(--fg-2)]">
                         {ROW_OPTIONS.find(opt => opt.key === pivotConfig.rowBy)?.label || 'Key'}
                       </th>
                       {pivotConfig.metrics.map(metricKey => {
                         const metric = METRIC_OPTIONS.find(m => m.key === metricKey)
                         return (
-                          <th key={metricKey} className="text-right py-3 px-4 text-sm font-semibold text-gray-300">
+                          <th key={metricKey} className="text-right py-3 px-4 text-sm font-semibold text-[var(--fg-2)]">
                             {metric?.label || metricKey}
                           </th>
                         )
@@ -1026,7 +1026,7 @@ function Marketing() {
                     {(pivotData || []).map((row, idx) => (
                       <tr
                         key={idx}
-                        className="border-b border-cyber-border/30 hover:bg-cyber-card/30 transition-colors"
+                        className="border-b border-[var(--border)]/30 hover:bg-phopy-card/30 transition-colors"
                       >
                         <td className="py-3 px-4 text-sm font-medium text-white">{row.key}</td>
                         {pivotConfig.metrics.map(metricKey => {
@@ -1049,7 +1049,7 @@ function Marketing() {
                       </tr>
                     ))}
                     {pivotData.length > 1 && (
-                      <tr className="border-t-2 border-cyber-primary/50 bg-cyber-card/50 font-bold">
+                      <tr className="border-t-2 border-phopy-indigo/50 bg-phopy-card/50 font-bold">
                         <td className="py-3 px-4 text-sm text-white">
                           รวมทั้งหมด ({pivotConfig.aggregation === 'avg' ? 'เฉลี่ย' : 'รวม'})
                         </td>
@@ -1078,7 +1078,7 @@ function Marketing() {
                 </table>
               </div>
               {pivotData.length === 0 && (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-12 text-[var(--fg-3)]">
                   <Table className="w-16 h-16 mx-auto mb-4 opacity-30" />
                   <p>ไม่มีข้อมูลให้แสดง</p>
                 </div>
@@ -1091,14 +1091,14 @@ function Marketing() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="cyber-card p-12 text-center"
+              className="phopy-card p-12 text-center"
             >
-              <Upload className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-400 mb-2">ยังไม่มีข้อมูล</h3>
-              <p className="text-gray-500 mb-6">อัพโหลดไฟล์ CSV เพื่อเริ่มวิเคราะห์ข้อมูลการตลาด</p>
+              <Upload className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-[var(--fg-3)] mb-2">ยังไม่มีข้อมูล</h3>
+              <p className="text-[var(--fg-4)] mb-6">อัพโหลดไฟล์ CSV เพื่อเริ่มวิเคราะห์ข้อมูลการตลาด</p>
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-cyber-primary to-cyber-green rounded-lg font-semibold hover:shadow-neon transition-all"
+                className="px-6 py-3 bg-gradient-to-r from-phopy-indigo to-success rounded-lg font-semibold hover:shadow-2 transition-all"
               >
                 อัพโหลดไฟล์
               </button>
@@ -1115,35 +1115,35 @@ function Marketing() {
           className="space-y-6"
         >
           {/* Date Range Filter */}
-          <div className="cyber-card p-4 flex flex-wrap gap-4 items-center">
-            <Calendar className="w-5 h-5 text-cyber-green" />
-            <span className="text-gray-400 text-sm">ช่วงวันที่:</span>
+          <div className="phopy-card p-4 flex flex-wrap gap-4 items-center">
+            <Calendar className="w-5 h-5 text-success" />
+            <span className="text-[var(--fg-3)] text-sm">ช่วงวันที่:</span>
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-green"
+              className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
             />
-            <span className="text-gray-400">ถึง</span>
+            <span className="text-[var(--fg-3)]">ถึง</span>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-green"
+              className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
             />
           </div>
 
           {/* Two-column: Form + History */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left: Ad Spend Form */}
-            <div className="cyber-card p-5 space-y-4">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-green">
+            <div className="phopy-card p-5 space-y-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-success">
                 <Plus className="w-5 h-5" />
                 บันทึกค่าโฆษณา
                 <button
                   type="button"
                   onClick={() => setAdForm({ date: '', platform: 'FACEBOOK', channel: '', amount: '', notes: '' })}
-                  className="ml-auto text-gray-500 hover:text-gray-300 transition-colors"
+                  className="ml-auto text-[var(--fg-4)] hover:text-[var(--fg-2)] transition-colors"
                   title="ล้างฟอร์ม"
                 >
                   <X className="w-4 h-4" />
@@ -1152,20 +1152,20 @@ function Marketing() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">วันที่ *</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">วันที่ *</label>
                   <input
                     type="date"
                     value={adForm.date}
                     onChange={(e) => setAdForm({ ...adForm, date: e.target.value })}
-                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">แพลตฟอร์ม *</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">แพลตฟอร์ม *</label>
                   <select
                     value={adForm.platform}
                     onChange={(e) => setAdForm({ ...adForm, platform: e.target.value })}
-                    className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                   >
                     <option value="FACEBOOK">Facebook</option>
                     <option value="GOOGLE">Google</option>
@@ -1178,18 +1178,18 @@ function Marketing() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">ชื่อ Campaign (ไม่บังคับ)</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อ Campaign (ไม่บังคับ)</label>
                 <input
                   type="text"
                   placeholder="เช่น Summer Sale Campaign"
                   value={adForm.channel}
                   onChange={(e) => setAdForm({ ...adForm, channel: e.target.value })}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">จำนวนเงิน (฿) *</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเงิน (฿) *</label>
                 <input
                   type="number"
                   placeholder="0.00"
@@ -1197,25 +1197,25 @@ function Marketing() {
                   step="0.01"
                   value={adForm.amount}
                   onChange={(e) => setAdForm({ ...adForm, amount: e.target.value })}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">หมายเหตุ (ไม่บังคับ)</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ (ไม่บังคับ)</label>
                 <textarea
                   placeholder="รายละเอียดเพิ่มเติม..."
                   value={adForm.notes}
                   onChange={(e) => setAdForm({ ...adForm, notes: e.target.value })}
                   rows={2}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-green text-sm resize-none"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm resize-none"
                 />
               </div>
 
               <button
                 onClick={handleAddAdSpend}
                 disabled={adFormSaving}
-                className="w-full py-2 bg-gradient-to-r from-cyber-green to-emerald-500 rounded-lg font-semibold hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
+                className="w-full py-2 bg-gradient-to-r from-success to-success rounded-lg font-semibold hover:shadow-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
               >
                 {adFormSaving ? (
                   <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
@@ -1227,13 +1227,13 @@ function Marketing() {
             </div>
 
             {/* Right: Ad Spend History */}
-            <div className="cyber-card p-5">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-primary mb-4">
+            <div className="phopy-card p-5">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-phopy-indigo mb-4">
                 <DollarSign className="w-5 h-5" />
                 ประวัติค่าโฆษณา (Manual)
               </h3>
               {adSpends.length === 0 ? (
-                <div className="text-center py-10 text-gray-500">
+                <div className="text-center py-10 text-[var(--fg-4)]">
                   <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-20" />
                   <p className="text-sm">ยังไม่มีข้อมูลค่าโฆษณา</p>
                 </div>
@@ -1242,20 +1242,20 @@ function Marketing() {
                   {adSpends.map((spend) => {
                     const badgeColors: Record<string, string> = {
                       FACEBOOK: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-                      GOOGLE: 'bg-red-500/20 text-red-400 border-red-500/30',
+                      GOOGLE: 'bg-danger-soft text-red-400 border-red-500/30',
                       LINE_OA: 'bg-green-500/20 text-green-400 border-green-500/30',
-                      TIKTOK_ADS: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+                      TIKTOK_ADS: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
                       INSTAGRAM: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
-                      OTHER: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+                      OTHER: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
                     }
                     return (
-                      <div key={spend.id} className="flex items-center gap-2 p-2 bg-cyber-card/50 rounded-lg border border-cyber-border/30 hover:border-cyber-border transition-colors">
-                        <span className="text-xs text-gray-400 w-20 shrink-0">{spend.date}</span>
+                      <div key={spend.id} className="flex items-center gap-2 p-2 bg-phopy-card/50 rounded-lg border border-[var(--border)]/30 hover:border-[var(--border)] transition-colors">
+                        <span className="text-xs text-[var(--fg-3)] w-20 shrink-0">{spend.date}</span>
                         <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${badgeColors[spend.platform] || badgeColors.OTHER}`}>
                           {spend.platform}
                         </span>
-                        <span className="text-xs text-gray-300 flex-1 truncate">{spend.channel || '-'}</span>
-                        <span className="text-xs font-mono text-cyber-green shrink-0">
+                        <span className="text-xs text-[var(--fg-2)] flex-1 truncate">{spend.channel || '-'}</span>
+                        <span className="text-xs font-mono text-success shrink-0">
                           ฿{spend.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
                         <button
@@ -1281,21 +1281,21 @@ function Marketing() {
             const totalNetProfit = profitReport.reduce((s, r) => s + r.netProfit, 0)
             return (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
-                  <p className="text-xs text-gray-400 mb-1">ยอดขายรวม</p>
+                <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
+                  <p className="text-xs text-[var(--fg-3)] mb-1">ยอดขายรวม</p>
                   <p className="text-xl font-bold text-cyan-400">฿{totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </motion.div>
-                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
-                  <p className="text-xs text-gray-400 mb-1">ต้นทุนสินค้ารวม</p>
+                <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
+                  <p className="text-xs text-[var(--fg-3)] mb-1">ต้นทุนสินค้ารวม</p>
                   <p className="text-xl font-bold text-orange-400">฿{totalCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </motion.div>
-                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
-                  <p className="text-xs text-gray-400 mb-1">ค่าโฆษณารวม</p>
+                <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
+                  <p className="text-xs text-[var(--fg-3)] mb-1">ค่าโฆษณารวม</p>
                   <p className="text-xl font-bold text-purple-400">฿{totalAdSpend.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </motion.div>
-                <motion.div whileHover={{ scale: 1.02 }} className="cyber-card p-4">
-                  <p className="text-xs text-gray-400 mb-1">กำไรสุทธิรวม</p>
-                  <p className={`text-xl font-bold ${totalNetProfit >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
+                  <p className="text-xs text-[var(--fg-3)] mb-1">กำไรสุทธิรวม</p>
+                  <p className={`text-xl font-bold ${totalNetProfit >= 0 ? 'text-success' : 'text-red-400'}`}>
                     ฿{totalNetProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                   </p>
                 </motion.div>
@@ -1304,29 +1304,29 @@ function Marketing() {
           })()}
 
           {/* P&L Report Table */}
-          <div className="cyber-card p-5">
+          <div className="phopy-card p-5">
             <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
-              <Calculator className="w-5 h-5 text-cyber-green" />
+              <Calculator className="w-5 h-5 text-success" />
               รายงาน P&amp;L รายวัน
             </h3>
 
             {profitLoading ? (
               <div className="flex items-center justify-center py-16">
-                <div className="animate-spin w-8 h-8 border-2 border-cyber-green border-t-transparent rounded-full" />
-                <span className="ml-3 text-gray-400">กำลังโหลด...</span>
+                <div className="animate-spin w-8 h-8 border-2 border-success border-t-transparent rounded-full" />
+                <span className="ml-3 text-[var(--fg-3)]">กำลังโหลด...</span>
               </div>
             ) : profitReport.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-[var(--fg-4)]">
                 <Calculator className="w-14 h-14 mx-auto mb-3 opacity-20" />
                 <p className="text-sm">ไม่มีข้อมูล P&amp;L ในช่วงเวลานี้</p>
-                <p className="text-xs mt-1 text-gray-600">เลือกช่วงวันที่และตรวจสอบข้อมูลยอดขาย</p>
+                <p className="text-xs mt-1 text-[var(--fg-4)]">เลือกช่วงวันที่และตรวจสอบข้อมูลยอดขาย</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-cyber-border">
-                      <th className="text-left py-2 px-3 text-gray-400 font-semibold">วันที่</th>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 px-3 text-[var(--fg-3)] font-semibold">วันที่</th>
                       <th className="text-right py-2 px-3 text-cyan-400 font-semibold">ยอดขาย</th>
                       <th className="text-right py-2 px-3 text-orange-400 font-semibold">COGS</th>
                       <th className="text-right py-2 px-3 text-green-400 font-semibold">กำไรขั้นต้น</th>
@@ -1334,14 +1334,14 @@ function Marketing() {
                       <th className="text-right py-2 px-3 text-purple-300 font-semibold">โฆษณา Manual</th>
                       <th className="text-right py-2 px-3 text-purple-500 font-semibold">โฆษณารวม</th>
                       <th className="text-right py-2 px-3 text-green-400 font-semibold">กำไรสุทธิ</th>
-                      <th className="text-right py-2 px-3 text-gray-400 font-semibold">Net Margin</th>
+                      <th className="text-right py-2 px-3 text-[var(--fg-3)] font-semibold">Net Margin</th>
                       <th className="text-right py-2 px-3 text-blue-400 font-semibold">ROAS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {profitReport.map((row, idx) => (
-                      <tr key={idx} className="border-b border-cyber-border/20 hover:bg-cyber-card/30 transition-colors">
-                        <td className="py-2 px-3 text-gray-300 font-medium">{row.date}</td>
+                      <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30 transition-colors">
+                        <td className="py-2 px-3 text-[var(--fg-2)] font-medium">{row.date}</td>
                         <td className="py-2 px-3 text-right font-mono text-cyan-400">
                           ฿{row.revenue.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
@@ -1360,7 +1360,7 @@ function Marketing() {
                         <td className="py-2 px-3 text-right font-mono text-purple-500">
                           ฿{row.totalAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
-                        <td className={`py-2 px-3 text-right font-mono font-bold ${row.netProfit >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                        <td className={`py-2 px-3 text-right font-mono font-bold ${row.netProfit >= 0 ? 'text-success' : 'text-red-400'}`}>
                           ฿{row.netProfit.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
                         <td className={`py-2 px-3 text-right font-mono ${row.netMargin >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1383,7 +1383,7 @@ function Marketing() {
                       const tMargin = tRev > 0 ? (tNet / tRev) * 100 : 0
                       const tRoas = tTotAd > 0 ? tRev / tTotAd : 0
                       return (
-                        <tr className="border-t-2 border-cyber-green/40 bg-cyber-card/50 font-bold">
+                        <tr className="border-t-2 border-success/40 bg-phopy-card/50 font-bold">
                           <td className="py-2 px-3 text-white text-xs">รวมทั้งหมด</td>
                           <td className="py-2 px-3 text-right font-mono text-cyan-400">฿{tRev.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className="py-2 px-3 text-right font-mono text-orange-400">฿{tCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
@@ -1391,7 +1391,7 @@ function Marketing() {
                           <td className="py-2 px-3 text-right font-mono text-purple-400">฿{tCsvAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className="py-2 px-3 text-right font-mono text-purple-300">฿{tManAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className="py-2 px-3 text-right font-mono text-purple-500">฿{tTotAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
-                          <td className={`py-2 px-3 text-right font-mono ${tNet >= 0 ? 'text-cyber-green' : 'text-red-400'}`}>฿{tNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className={`py-2 px-3 text-right font-mono ${tNet >= 0 ? 'text-success' : 'text-red-400'}`}>฿{tNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className={`py-2 px-3 text-right font-mono ${tMargin >= 0 ? 'text-green-400' : 'text-red-400'}`}>{tMargin.toFixed(1)}%</td>
                           <td className="py-2 px-3 text-right font-mono text-blue-400">{tRoas.toFixed(2)}x</td>
                         </tr>
@@ -1413,19 +1413,19 @@ function Marketing() {
           className="space-y-6"
         >
           {/* A. Upload & Preview Panel */}
-          <div className="cyber-card p-5 space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-purple">
+          <div className="phopy-card p-5 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-purple-500">
               <Upload className="w-5 h-5" />
               อัปโหลด CSV จาก Platform
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Platform</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">Platform</label>
                 <select
                   value={platPlatform}
                   onChange={e => setPlatPlatform(e.target.value)}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
                 >
                   <option value="SHOPEE">Shopee</option>
                   <option value="LAZADA">Lazada</option>
@@ -1433,21 +1433,21 @@ function Marketing() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">วันที่นำเข้า</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">วันที่นำเข้า</label>
                 <input
                   type="date"
                   value={platImportDate}
                   onChange={e => setPlatImportDate(e.target.value)}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">ไฟล์ CSV</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">ไฟล์ CSV</label>
                 <input
                   type="file"
                   accept=".csv"
                   onChange={e => setPlatFile(e.target.files?.[0] || null)}
-                  className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyber-purple text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-cyber-purple/20 file:text-cyber-purple"
+                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-purple-500/20 file:text-purple-500"
                 />
               </div>
             </div>
@@ -1455,7 +1455,7 @@ function Marketing() {
             <button
               onClick={handlePlatPreview}
               disabled={platUploading || !platFile || !platImportDate}
-              className="px-5 py-2 bg-gradient-to-r from-cyber-purple to-pink-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-5 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg font-semibold text-sm hover:shadow-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {platUploading ? (
                 <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
@@ -1476,10 +1476,10 @@ function Marketing() {
                   <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full">
                     ยังไม่จับคู่ {platPreview.summary.unmatched} รายการ
                   </span>
-                  <span className="px-3 py-1 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 rounded-full">
+                  <span className="px-3 py-1 bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30 rounded-full">
                     ตัดสต๊อกรวม {platPreview.summary.totalItemsSold} ชิ้น
                   </span>
-                  <span className="px-3 py-1 bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/30 rounded-full">
+                  <span className="px-3 py-1 bg-purple-500/20 text-purple-500 border border-purple-500/30 rounded-full">
                     ค่าโฆษณา ฿{(platPreview.summary.totalAdCost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -1487,23 +1487,23 @@ function Marketing() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-cyber-border">
-                        <th className="text-left py-2 px-2 text-gray-400">SKU</th>
-                        <th className="text-left py-2 px-2 text-gray-400">สินค้า</th>
-                        <th className="text-right py-2 px-2 text-gray-400">ขายแล้ว</th>
-                        <th className="text-right py-2 px-2 text-gray-400">ยอดขาย</th>
-                        <th className="text-right py-2 px-2 text-gray-400">ค่าโฆษณา</th>
-                        <th className="text-right py-2 px-2 text-gray-400">ROAS</th>
-                        <th className="text-right py-2 px-2 text-gray-400">สต๊อก</th>
-                        <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
+                      <tr className="border-b border-[var(--border)]">
+                        <th className="text-left py-2 px-2 text-[var(--fg-3)]">SKU</th>
+                        <th className="text-left py-2 px-2 text-[var(--fg-3)]">สินค้า</th>
+                        <th className="text-right py-2 px-2 text-[var(--fg-3)]">ขายแล้ว</th>
+                        <th className="text-right py-2 px-2 text-[var(--fg-3)]">ยอดขาย</th>
+                        <th className="text-right py-2 px-2 text-[var(--fg-3)]">ค่าโฆษณา</th>
+                        <th className="text-right py-2 px-2 text-[var(--fg-3)]">ROAS</th>
+                        <th className="text-right py-2 px-2 text-[var(--fg-3)]">สต๊อก</th>
+                        <th className="text-center py-2 px-2 text-[var(--fg-3)]">สถานะ</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(platPreview.items || []).map((item: any, idx: number) => (
-                        <tr key={idx} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
-                          <td className="py-2 px-2 font-mono text-gray-300">{item.sku}</td>
-                          <td className="py-2 px-2 text-gray-300 max-w-[140px] truncate">{item.productName}</td>
-                          <td className="py-2 px-2 text-right text-cyber-primary font-mono">{item.itemsSold}</td>
+                        <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                          <td className="py-2 px-2 font-mono text-[var(--fg-2)]">{item.sku}</td>
+                          <td className="py-2 px-2 text-[var(--fg-2)] max-w-[140px] truncate">{item.productName}</td>
+                          <td className="py-2 px-2 text-right text-phopy-indigo font-mono">{item.itemsSold}</td>
                           <td className="py-2 px-2 text-right text-cyan-400 font-mono">
                             ฿{(item.revenue || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </td>
@@ -1511,7 +1511,7 @@ function Marketing() {
                             ฿{(item.adCost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </td>
                           <td className="py-2 px-2 text-right text-blue-400 font-mono">{(item.roas || 0).toFixed(2)}x</td>
-                          <td className="py-2 px-2 text-right text-gray-300 font-mono">{item.currentStock ?? '-'}</td>
+                          <td className="py-2 px-2 text-right text-[var(--fg-2)] font-mono">{item.currentStock ?? '-'}</td>
                           <td className="py-2 px-2 text-center">
                             {item.matchStatus === 'MATCHED' ? (
                               <span className="px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">
@@ -1528,20 +1528,20 @@ function Marketing() {
                                     placeholder="ค้นหาสินค้า..."
                                     value={platSkuSearchMap[item.sku] || ''}
                                     onChange={e => handlePlatSkuSearch(item.sku, e.target.value)}
-                                    className="flex-1 bg-cyber-card border border-cyber-border rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-yellow-400 min-w-0"
+                                    className="flex-1 bg-phopy-card border border-[var(--border)] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-yellow-400 min-w-0"
                                   />
                                 </div>
                                 {(platSkuResults[item.sku] || []).length > 0 && (
-                                  <div className="bg-cyber-card border border-cyber-border rounded shadow-lg z-10 max-h-32 overflow-y-auto">
+                                  <div className="bg-phopy-card border border-[var(--border)] rounded shadow-lg z-10 max-h-32 overflow-y-auto">
                                     {(platSkuResults[item.sku] || []).map((si: any) => (
                                       <button
                                         key={si.id}
                                         onClick={() => handlePlatSaveMapping(item.sku, si.id)}
                                         disabled={platSkuSaving[item.sku]}
-                                        className="w-full text-left px-2 py-1 hover:bg-cyber-primary/20 text-xs text-gray-300 hover:text-white transition-colors border-b border-cyber-border/30 last:border-0 flex justify-between items-center gap-1"
+                                        className="w-full text-left px-2 py-1 hover:bg-phopy-indigo-50 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] transition-colors border-b border-[var(--border)]/30 last:border-0 flex justify-between items-center gap-1"
                                       >
                                         <span className="truncate">{si.name}</span>
-                                        <span className="text-gray-500 shrink-0 font-mono">{si.sku}</span>
+                                        <span className="text-[var(--fg-4)] shrink-0 font-mono">{si.sku}</span>
                                       </button>
                                     ))}
                                   </div>
@@ -1558,7 +1558,7 @@ function Marketing() {
                 <button
                   onClick={handlePlatConfirm}
                   disabled={platConfirming}
-                  className="w-full py-2.5 bg-gradient-to-r from-cyber-green to-emerald-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-2.5 bg-gradient-to-r from-success to-success rounded-lg font-semibold text-sm hover:shadow-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {platConfirming ? (
                     <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
@@ -1570,13 +1570,13 @@ function Marketing() {
           </div>
 
           {/* B. Pending JE Approval */}
-          <div className="cyber-card p-5 space-y-4">
+          <div className="phopy-card p-5 space-y-4">
             <h3 className="text-lg font-bold flex items-center gap-2 text-yellow-400">
               <DollarSign className="w-5 h-5" />
               รออนุมัติ JE ค่าโฆษณา
             </h3>
             {platPendingJE.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 text-sm">
+              <div className="text-center py-8 text-[var(--fg-4)] text-sm">
                 <DollarSign className="w-10 h-10 mx-auto mb-2 opacity-20" />
                 ไม่มีรายการรออนุมัติ
               </div>
@@ -1584,25 +1584,25 @@ function Marketing() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-cyber-border">
-                      <th className="text-left py-2 px-2 text-gray-400">วันที่</th>
-                      <th className="text-left py-2 px-2 text-gray-400">Platform</th>
-                      <th className="text-left py-2 px-2 text-gray-400">รายการ</th>
-                      <th className="text-right py-2 px-2 text-gray-400">จำนวน</th>
-                      <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
-                      <th className="text-center py-2 px-2 text-gray-400">Actions</th>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">วันที่</th>
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">Platform</th>
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">รายการ</th>
+                      <th className="text-right py-2 px-2 text-[var(--fg-3)]">จำนวน</th>
+                      <th className="text-center py-2 px-2 text-[var(--fg-3)]">สถานะ</th>
+                      <th className="text-center py-2 px-2 text-[var(--fg-3)]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {platPendingJE.map((pje: any) => (
-                      <tr key={pje.id} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
-                        <td className="py-2 px-2 text-gray-300">{pje.import_date}</td>
+                      <tr key={pje.id} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                        <td className="py-2 px-2 text-[var(--fg-2)]">{pje.import_date}</td>
                         <td className="py-2 px-2">
-                          <span className="px-2 py-0.5 bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/30 rounded text-xs">
+                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-500 border border-purple-500/30 rounded text-xs">
                             {pje.platform}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-gray-300 max-w-[200px] truncate">{pje.description}</td>
+                        <td className="py-2 px-2 text-[var(--fg-2)] max-w-[200px] truncate">{pje.description}</td>
                         <td className="py-2 px-2 text-right font-mono text-yellow-400">
                           ฿{(pje.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </td>
@@ -1626,7 +1626,7 @@ function Marketing() {
                             </button>
                             <button
                               onClick={() => handlePlatRejectJE(pje.id)}
-                              className="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs hover:bg-red-500/30 transition-colors"
+                              className="px-2 py-1 bg-danger-soft text-red-400 border border-red-500/30 rounded text-xs hover:bg-red-500/30 transition-colors"
                             >
                               ปฏิเสธ
                             </button>
@@ -1641,13 +1641,13 @@ function Marketing() {
           </div>
 
           {/* C. Import History */}
-          <div className="cyber-card p-5 space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-cyber-primary">
+          <div className="phopy-card p-5 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-phopy-indigo">
               <BarChart3 className="w-5 h-5" />
               ประวัติการนำเข้า
             </h3>
             {platImports.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 text-sm">
+              <div className="text-center py-8 text-[var(--fg-4)] text-sm">
                 <BarChart3 className="w-10 h-10 mx-auto mb-2 opacity-20" />
                 ยังไม่มีประวัติการนำเข้า
               </div>
@@ -1655,30 +1655,30 @@ function Marketing() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-cyber-border">
-                      <th className="text-left py-2 px-2 text-gray-400">วันที่</th>
-                      <th className="text-left py-2 px-2 text-gray-400">Platform</th>
-                      <th className="text-left py-2 px-2 text-gray-400">ไฟล์</th>
-                      <th className="text-right py-2 px-2 text-gray-400">จับคู่</th>
-                      <th className="text-right py-2 px-2 text-gray-400">ตัดสต๊อก</th>
-                      <th className="text-right py-2 px-2 text-gray-400">ค่าโฆษณา</th>
-                      <th className="text-center py-2 px-2 text-gray-400">สถานะ</th>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">วันที่</th>
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">Platform</th>
+                      <th className="text-left py-2 px-2 text-[var(--fg-3)]">ไฟล์</th>
+                      <th className="text-right py-2 px-2 text-[var(--fg-3)]">จับคู่</th>
+                      <th className="text-right py-2 px-2 text-[var(--fg-3)]">ตัดสต๊อก</th>
+                      <th className="text-right py-2 px-2 text-[var(--fg-3)]">ค่าโฆษณา</th>
+                      <th className="text-center py-2 px-2 text-[var(--fg-3)]">สถานะ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {platImports.map((imp: any) => (
-                      <tr key={imp.id} className="border-b border-cyber-border/20 hover:bg-cyber-card/30">
-                        <td className="py-2 px-2 text-gray-300">{imp.import_date}</td>
+                      <tr key={imp.id} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                        <td className="py-2 px-2 text-[var(--fg-2)]">{imp.import_date}</td>
                         <td className="py-2 px-2">
-                          <span className="px-2 py-0.5 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 rounded text-xs">
+                          <span className="px-2 py-0.5 bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30 rounded text-xs">
                             {imp.platform}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-gray-400 max-w-[160px] truncate">{imp.filename}</td>
+                        <td className="py-2 px-2 text-[var(--fg-3)] max-w-[160px] truncate">{imp.filename}</td>
                         <td className="py-2 px-2 text-right text-green-400 font-mono">
                           {imp.matched_rows}/{imp.total_rows}
                         </td>
-                        <td className="py-2 px-2 text-right text-cyber-primary font-mono">{imp.total_items_sold}</td>
+                        <td className="py-2 px-2 text-right text-phopy-indigo font-mono">{imp.total_items_sold}</td>
                         <td className="py-2 px-2 text-right text-purple-400 font-mono">
                           ฿{(imp.total_ad_cost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                         </td>
@@ -1687,7 +1687,7 @@ function Marketing() {
                             imp.status === 'CONFIRMED'
                               ? 'bg-green-500/20 text-green-400 border-green-500/30'
                               : imp.status === 'CANCELLED'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                              ? 'bg-danger-soft text-red-400 border-red-500/30'
                               : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
                           }`}>
                             {imp.status}
@@ -1709,17 +1709,17 @@ function Marketing() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="cyber-card p-6 max-w-md w-full space-y-4 max-h-[80vh] overflow-y-auto"
+            className="phopy-card p-6 max-w-md w-full space-y-4 max-h-[80vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-yellow-400">อนุมัติ JE ค่าโฆษณา</h3>
-              <button onClick={() => setPlatJEModal(null)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setPlatJEModal(null)} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-cyber-card/50 rounded-lg p-3 border border-cyber-border/30 text-sm space-y-1">
-              <p className="text-gray-400 text-xs">รายการ</p>
+            <div className="bg-phopy-card/50 rounded-lg p-3 border border-[var(--border)]/30 text-sm space-y-1">
+              <p className="text-[var(--fg-3)] text-xs">รายการ</p>
               <p className="text-white">{platJEModal.description}</p>
               <p className="text-yellow-400 font-bold text-lg font-mono">
                 ฿{(platJEModal.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
@@ -1727,11 +1727,11 @@ function Marketing() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Dr. บัญชีค่าโฆษณา (Expense)</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">Dr. บัญชีค่าโฆษณา (Expense)</label>
               <select
                 value={platJEDr}
                 onChange={e => setPlatJEDr(e.target.value)}
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
               >
                 <option value="">-- เลือกบัญชี --</option>
                 {platAccounts
@@ -1743,11 +1743,11 @@ function Marketing() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Cr. บัญชีเจ้าหนี้ / เงินสด</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">Cr. บัญชีเจ้าหนี้ / เงินสด</label>
               <select
                 value={platJECr}
                 onChange={e => setPlatJECr(e.target.value)}
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
               >
                 <option value="">-- เลือกบัญชี --</option>
                 {platAccounts
@@ -1759,13 +1759,13 @@ function Marketing() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ</label>
               <textarea
                 value={platJENotes}
                 onChange={e => setPlatJENotes(e.target.value)}
                 rows={2}
                 placeholder="หมายเหตุเพิ่มเติม (ไม่บังคับ)"
-                className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm resize-none"
+                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm resize-none"
               />
             </div>
 
@@ -1773,7 +1773,7 @@ function Marketing() {
               <button
                 onClick={handlePlatApproveJE}
                 disabled={platJESaving || !platJEDr || !platJECr}
-                className="flex-1 py-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg font-semibold text-sm hover:shadow-neon transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 py-2 bg-gradient-to-r from-green-500 to-success rounded-lg font-semibold text-sm hover:shadow-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {platJESaving ? (
                   <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
@@ -1782,7 +1782,7 @@ function Marketing() {
               </button>
               <button
                 onClick={() => setPlatJEModal(null)}
-                className="px-4 py-2 bg-cyber-card hover:bg-red-500/20 rounded-lg text-sm transition-all"
+                className="px-4 py-2 bg-phopy-card hover:bg-danger-soft rounded-lg text-sm transition-all"
               >
                 ยกเลิก
               </button>
@@ -1835,16 +1835,16 @@ function StatCard({
   return (
     <motion.div
       whileHover={{ scale: 1.02, y: -5 }}
-      className="cyber-card p-4 relative overflow-hidden"
+      className="phopy-card p-4 relative overflow-hidden"
     >
       <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${color} opacity-10 rounded-full blur-2xl`} />
       <div className="relative">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm text-gray-400">{title}</p>
+          <p className="text-sm text-[var(--fg-3)]">{title}</p>
           <Icon className={`w-5 h-5 bg-gradient-to-r ${color} bg-clip-text text-transparent`} />
         </div>
         <p className="text-2xl font-bold text-white mb-1">{value}</p>
-        {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-[var(--fg-4)]">{subtitle}</p>}
       </div>
     </motion.div>
   )
@@ -1859,12 +1859,12 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
         onClick={e => e.stopPropagation()}
-        className="cyber-card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+        className="phopy-card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
       >
         {children}
         <button
           onClick={onClose}
-          className="mt-4 w-full px-4 py-2 bg-cyber-card hover:bg-red-500/20 rounded-lg transition-all"
+          className="mt-4 w-full px-4 py-2 bg-phopy-card hover:bg-danger-soft rounded-lg transition-all"
         >
           ปิด
         </button>
@@ -1911,26 +1911,26 @@ function UploadModal({
       <div className="space-y-4">
         {/* Platform */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Platform</label>
-          <div className="w-full bg-cyber-card/50 border border-cyber-border rounded-lg px-4 py-2 text-white">
+          <label className="block text-sm text-[var(--fg-3)] mb-2">Platform</label>
+          <div className="w-full bg-phopy-card/50 border border-[var(--border)] rounded-lg px-4 py-2 text-white">
             {PLATFORMS.find(p => p.id === platform)?.name}
           </div>
         </div>
 
         {/* Shop Selector with Search */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">ร้านค้า</label>
+          <label className="block text-sm text-[var(--fg-3)] mb-2">ร้านค้า</label>
           <input
             type="text"
             placeholder="🔍 ค้นหาร้านค้า..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary mb-2"
+            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo mb-2"
           />
           <select
             value={selectedShop}
             onChange={(e) => setSelectedShop(e.target.value)}
-            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           >
             <option value="">เลือกร้านค้า</option>
@@ -1945,22 +1945,22 @@ function UploadModal({
         {/* Date Range */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">วันที่เริ่มต้น</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">วันที่เริ่มต้น</label>
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               required
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-2">วันที่สิ้นสุด</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">วันที่สิ้นสุด</label>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+              className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               required
             />
           </div>
@@ -1968,13 +1968,13 @@ function UploadModal({
 
         {/* File Upload */}
         <div>
-          <label className="block text-sm text-gray-400 mb-2">ไฟล์ CSV</label>
+          <label className="block text-sm text-[var(--fg-3)] mb-2">ไฟล์ CSV</label>
           <input
             type="file"
             accept=".csv"
             onChange={onUpload}
             disabled={uploading || !canUpload}
-            className="w-full p-4 border-2 border-dashed border-cyber-border rounded-lg bg-cyber-card/50 hover:border-cyber-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg bg-phopy-card/50 hover:border-phopy-indigo transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           />
           {!canUpload && (
             <p className="text-sm text-yellow-500 mt-2">กรุณาเลือกร้านค้าและวันที่ก่อนอัพโหลด</p>
@@ -1982,7 +1982,7 @@ function UploadModal({
         </div>
 
         {uploading && (
-          <p className="text-center text-cyber-primary mt-4">กำลังประมวลผล...</p>
+          <p className="text-center text-phopy-indigo mt-4">กำลังประมวลผล...</p>
         )}
       </div>
     </Modal>
@@ -2014,28 +2014,28 @@ function AddShopModal({
       <h3 className="text-xl font-bold mb-4">เพิ่มร้านค้าใหม่</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-gray-400 mb-2">ชื่อร้านค้า</label>
+          <label className="block text-sm text-[var(--fg-3)] mb-2">ชื่อร้านค้า</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           />
         </div>
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Shop ID ({platform})</label>
+          <label className="block text-sm text-[var(--fg-3)] mb-2">Shop ID ({platform})</label>
           <input
             type="text"
             value={shopId}
             onChange={(e) => setShopId(e.target.value)}
-            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyber-primary"
+            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           />
         </div>
         <button
           type="submit"
-          className="w-full px-4 py-2 bg-gradient-to-r from-cyber-primary to-cyber-green rounded-lg font-semibold hover:shadow-neon transition-all"
+          className="w-full px-4 py-2 bg-gradient-to-r from-phopy-indigo to-success rounded-lg font-semibold hover:shadow-2 transition-all"
         >
           เพิ่มร้านค้า
         </button>

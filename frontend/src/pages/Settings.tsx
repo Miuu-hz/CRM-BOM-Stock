@@ -78,15 +78,15 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2">
-            <span className="neon-text">Settings</span>
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
+            <span className="text-[var(--fg-1)]">Settings</span>
           </h1>
-          <p className="text-gray-400">ตั้งค่าระบบและจัดการผู้ใช้งาน</p>
+          <p className="text-[var(--fg-3)]">ตั้งค่าระบบและจัดการผู้ใช้งาน</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-cyber-border pb-2 overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 border-b border-[var(--border)] pb-2 overflow-x-auto no-scrollbar">
         <TabButton
           active={activeTab === 'general'}
           onClick={() => setActiveTab('general')}
@@ -205,14 +205,14 @@ function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
     <button
       onClick={onClick}
       className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${active
-          ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
-          : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
+          ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+          : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
         }`}
     >
       <Icon className="w-5 h-5" />
       <span>{label}</span>
       {badge !== undefined && (
-        <span className="ml-1 px-2 py-0.5 bg-cyber-primary/30 text-cyber-primary rounded-full text-xs">
+        <span className="ml-1 px-2 py-0.5 bg-phopy-indigo/30 text-phopy-indigo rounded-full text-xs">
           {badge}
         </span>
       )}
@@ -294,15 +294,15 @@ function BillingSettings() {
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-cyber-primary/60 bg-cyber-primary/5' : 'border-cyber-border bg-cyber-darker'}`}
+      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
     >
       <div className="text-left">
-        <p className={`font-medium ${enabled ? 'text-cyber-primary' : 'text-gray-300'}`}>{label}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+        <p className={`font-medium ${enabled ? 'text-phopy-indigo' : 'text-[var(--fg-2)]'}`}>{label}</p>
+        <p className="text-xs text-[var(--fg-4)] mt-0.5">{sub}</p>
       </div>
       {enabled
-        ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
-        : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+        ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+        : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
       }
     </button>
   )
@@ -310,8 +310,8 @@ function BillingSettings() {
   return (
     <div className="space-y-6 max-w-lg">
       <div>
-        <h2 className="text-lg font-bold text-gray-100 mb-1">การชำระเงิน POS</h2>
-        <p className="text-sm text-gray-400">ตั้งค่า VAT และค่าบริการที่คิดเพิ่มในบิล</p>
+        <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1">การชำระเงิน POS</h2>
+        <p className="text-sm text-[var(--fg-3)]">ตั้งค่า VAT และค่าบริการที่คิดเพิ่มในบิล</p>
       </div>
 
       {/* VAT */}
@@ -324,7 +324,7 @@ function BillingSettings() {
         />
         {cfg.vatEnabled && (
           <div className="pl-2">
-            <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+            <label className="block text-sm text-[var(--fg-3)] mb-2 flex items-center gap-2">
               <Percent className="w-4 h-4" /> อัตรา VAT (%)
             </label>
             <div className="flex items-center gap-3">
@@ -333,19 +333,19 @@ function BillingSettings() {
                 value={cfg.vatRate}
                 onChange={(e) => setCfg({ ...cfg, vatRate: parseFloat(e.target.value) || 0 })}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-32 text-center text-lg font-bold"
+                className="phopy-input w-32 text-center text-lg font-bold"
                 min="0"
                 max="100"
                 step="0.5"
               />
-              <span className="text-gray-400 text-sm">%</span>
+              <span className="text-[var(--fg-3)] text-sm">%</span>
               <div className="flex gap-2">
                 {[3, 5, 7, 10].map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, vatRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                   >
                     {r}%
                   </button>
@@ -366,7 +366,7 @@ function BillingSettings() {
         />
         {cfg.serviceEnabled && (
           <div className="pl-2">
-            <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+            <label className="block text-sm text-[var(--fg-3)] mb-2 flex items-center gap-2">
               <Percent className="w-4 h-4" /> อัตราค่าบริการ (%)
             </label>
             <div className="flex items-center gap-3">
@@ -375,19 +375,19 @@ function BillingSettings() {
                 value={cfg.serviceRate}
                 onChange={(e) => setCfg({ ...cfg, serviceRate: parseFloat(e.target.value) || 0 })}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-32 text-center text-lg font-bold"
+                className="phopy-input w-32 text-center text-lg font-bold"
                 min="0"
                 max="100"
                 step="0.5"
               />
-              <span className="text-gray-400 text-sm">%</span>
+              <span className="text-[var(--fg-3)] text-sm">%</span>
               <div className="flex gap-2">
                 {[5, 10, 12.5, 15].map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, serviceRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                   >
                     {r}%
                   </button>
@@ -400,9 +400,9 @@ function BillingSettings() {
 
       {/* Preview */}
       {(cfg.vatEnabled || cfg.serviceEnabled) && (
-        <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-1.5 text-sm">
-          <p className="text-gray-400 font-medium mb-2">ตัวอย่าง (ยอดสินค้า ฿1,000)</p>
-          <div className="flex justify-between text-gray-400">
+        <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-1.5 text-sm">
+          <p className="text-[var(--fg-3)] font-medium mb-2">ตัวอย่าง (ยอดสินค้า ฿1,000)</p>
+          <div className="flex justify-between text-[var(--fg-3)]">
             <span>ยอดสินค้า</span><span>฿1,000.00</span>
           </div>
           {cfg.serviceEnabled && (
@@ -417,7 +417,7 @@ function BillingSettings() {
               <span>+฿{(1000 * cfg.vatRate / 100).toFixed(2)}</span>
             </div>
           )}
-          <div className="flex justify-between text-cyber-green font-bold border-t border-cyber-border pt-1.5">
+          <div className="flex justify-between text-success font-bold border-t border-[var(--border)] pt-1.5">
             <span>ยอดสุทธิ</span>
             <span>฿{(1000 + (cfg.serviceEnabled ? 1000 * cfg.serviceRate / 100 : 0) + (cfg.vatEnabled ? 1000 * cfg.vatRate / 100 : 0)).toFixed(2)}</span>
           </div>
@@ -426,7 +426,7 @@ function BillingSettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/50' : 'cyber-btn-primary'}`}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-success-soft text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
         {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
       </button>
@@ -472,15 +472,15 @@ function LoyaltySettings() {
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-cyber-primary/60 bg-cyber-primary/5' : 'border-cyber-border bg-cyber-darker'}`}
+      className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
     >
       <div className="text-left">
-        <p className={`font-medium ${enabled ? 'text-cyber-primary' : 'text-gray-300'}`}>{label}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+        <p className={`font-medium ${enabled ? 'text-phopy-indigo' : 'text-[var(--fg-2)]'}`}>{label}</p>
+        <p className="text-xs text-[var(--fg-4)] mt-0.5">{sub}</p>
       </div>
       {enabled
-        ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
-        : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+        ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+        : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
       }
     </button>
   )
@@ -488,11 +488,11 @@ function LoyaltySettings() {
   return (
     <div className="space-y-6 max-w-lg">
       <div>
-        <h2 className="text-lg font-bold text-gray-100 mb-1 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1 flex items-center gap-2">
           <Star className="w-5 h-5 text-yellow-400" />
           ระบบสะสมแต้มสมาชิก (CRM)
         </h2>
-        <p className="text-sm text-gray-400">ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS</p>
+        <p className="text-sm text-[var(--fg-3)]">ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS</p>
       </div>
 
       {/* Enable Toggle */}
@@ -506,24 +506,24 @@ function LoyaltySettings() {
       {cfg.enabled && (
         <>
           {/* Earn Rate */}
-          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+          <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
-              <Gift className="w-4 h-4 text-cyber-primary" />
-              <p className="font-medium text-gray-200">อัตราสะสมแต้ม</p>
+              <Gift className="w-4 h-4 text-phopy-indigo" />
+              <p className="font-medium text-[var(--fg-2)]">อัตราสะสมแต้ม</p>
             </div>
-            <p className="text-xs text-gray-500">ซื้อสินค้าครบ X บาท ได้ 1 แต้ม</p>
+            <p className="text-xs text-[var(--fg-4)]">ซื้อสินค้าครบ X บาท ได้ 1 แต้ม</p>
             <div className="flex items-center gap-3">
-              <span className="text-gray-400 text-sm">ใช้จ่าย</span>
+              <span className="text-[var(--fg-3)] text-sm">ใช้จ่าย</span>
               <input
                 type="number"
                 value={cfg.earnRate}
                 onChange={(e) => setCfg({ ...cfg, earnRate: Math.max(1, parseFloat(e.target.value) || 1) })}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-28 text-center text-lg font-bold"
+                className="phopy-input w-28 text-center text-lg font-bold"
                 min="1"
                 step="1"
               />
-              <span className="text-gray-400 text-sm">บาท = 1 แต้ม</span>
+              <span className="text-[var(--fg-3)] text-sm">บาท = 1 แต้ม</span>
             </div>
             <div className="flex gap-2 flex-wrap">
               {[10, 25, 50, 100, 200].map((r) => (
@@ -531,7 +531,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, earnRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-cyber-primary/20 border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                 >
                   {r} บาท
                 </button>
@@ -540,24 +540,24 @@ function LoyaltySettings() {
           </div>
 
           {/* Redeem Rate */}
-          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+          <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
               <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
-              <p className="font-medium text-gray-200">อัตราแลกแต้ม</p>
+              <p className="font-medium text-[var(--fg-2)]">อัตราแลกแต้ม</p>
             </div>
-            <p className="text-xs text-gray-500">ใช้ X แต้ม แลกส่วนลด 1 บาท</p>
+            <p className="text-xs text-[var(--fg-4)]">ใช้ X แต้ม แลกส่วนลด 1 บาท</p>
             <div className="flex items-center gap-3">
-              <span className="text-gray-400 text-sm">ใช้</span>
+              <span className="text-[var(--fg-3)] text-sm">ใช้</span>
               <input
                 type="number"
                 value={cfg.redeemRate}
                 onChange={(e) => setCfg({ ...cfg, redeemRate: Math.max(1, parseFloat(e.target.value) || 1) })}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-28 text-center text-lg font-bold"
+                className="phopy-input w-28 text-center text-lg font-bold"
                 min="1"
                 step="1"
               />
-              <span className="text-gray-400 text-sm">แต้ม = ส่วนลด 1 บาท</span>
+              <span className="text-[var(--fg-3)] text-sm">แต้ม = ส่วนลด 1 บาท</span>
             </div>
             <div className="flex gap-2 flex-wrap">
               {[1, 5, 10, 20, 50].map((r) => (
@@ -565,7 +565,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, redeemRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-yellow-400' : 'border-cyber-border text-gray-400 hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-yellow-400' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                 >
                   {r} แต้ม
                 </button>
@@ -574,38 +574,38 @@ function LoyaltySettings() {
           </div>
 
           {/* Minimum Redeem */}
-          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-3">
+          <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-gray-400" />
-              <p className="font-medium text-gray-200">แต้มขั้นต่ำในการแลก</p>
+              <Info className="w-4 h-4 text-[var(--fg-3)]" />
+              <p className="font-medium text-[var(--fg-2)]">แต้มขั้นต่ำในการแลก</p>
             </div>
-            <p className="text-xs text-gray-500">ลูกค้าต้องมีแต้มอย่างน้อยเท่านี้จึงจะแลกได้</p>
+            <p className="text-xs text-[var(--fg-4)]">ลูกค้าต้องมีแต้มอย่างน้อยเท่านี้จึงจะแลกได้</p>
             <div className="flex items-center gap-3">
               <input
                 type="number"
                 value={cfg.minRedeemPoints}
                 onChange={(e) => setCfg({ ...cfg, minRedeemPoints: Math.max(0, parseFloat(e.target.value) || 0) })}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-28 text-center text-lg font-bold"
+                className="phopy-input w-28 text-center text-lg font-bold"
                 min="0"
                 step="1"
               />
-              <span className="text-gray-400 text-sm">แต้ม</span>
+              <span className="text-[var(--fg-3)] text-sm">แต้ม</span>
             </div>
           </div>
 
           {/* Preview */}
-          <div className="p-4 bg-cyber-darker rounded-xl border border-cyber-border space-y-2 text-sm">
-            <p className="text-gray-400 font-medium mb-2">ตัวอย่างการคำนวณ</p>
-            <div className="flex justify-between text-gray-400">
+          <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2 text-sm">
+            <p className="text-[var(--fg-3)] font-medium mb-2">ตัวอย่างการคำนวณ</p>
+            <div className="flex justify-between text-[var(--fg-3)]">
               <span>ซื้อ ฿{(cfg.earnRate * 10).toLocaleString()}</span>
-              <span className="text-cyber-primary">ได้ 10 แต้ม</span>
+              <span className="text-phopy-indigo">ได้ 10 แต้ม</span>
             </div>
-            <div className="flex justify-between text-gray-400">
+            <div className="flex justify-between text-[var(--fg-3)]">
               <span>แลก {cfg.redeemRate * 10} แต้ม</span>
               <span className="text-yellow-400">ลด ฿10</span>
             </div>
-            <div className="flex justify-between text-gray-500 text-xs border-t border-cyber-border pt-2">
+            <div className="flex justify-between text-[var(--fg-4)] text-xs border-t border-[var(--border)] pt-2">
               <span>ค่าแต้มสะสม 1 แต้ม</span>
               <span>≈ ฿{(1 / cfg.redeemRate).toFixed(2)}</span>
             </div>
@@ -615,7 +615,7 @@ function LoyaltySettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/50' : 'cyber-btn-primary'}`}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-success-soft text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
         {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
       </button>
@@ -665,17 +665,17 @@ function GeneralSettings() {
   return (
     <div className="space-y-6">
       {/* Company Profile — editable */}
-      <div className="cyber-card p-6">
+      <div className="phopy-card p-6">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-cyber-primary" />
+          <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-phopy-indigo" />
             ข้อมูลบริษัท (สำหรับใบบิล)
           </h3>
           <button
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="cyber-btn-primary flex items-center gap-2 text-sm px-4 py-2"
+            className="phopy-btn-primary flex items-center gap-2 text-sm px-4 py-2"
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             {saving ? 'กำลังบันทึก...' : 'บันทึก'}
@@ -683,7 +683,7 @@ function GeneralSettings() {
         </div>
 
         {saveMsg && (
-          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-cyber-green/10 text-cyber-green border border-cyber-green/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
+          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-success/10 text-success border border-success/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
             {saveMsg}
           </div>
         )}
@@ -692,15 +692,15 @@ function GeneralSettings() {
           {/* Logo */}
           <div className="md:col-span-2 flex items-center gap-4">
             <div
-              className="w-20 h-20 rounded-lg border-2 border-dashed border-cyber-border flex items-center justify-center cursor-pointer hover:border-cyber-primary/50 transition-colors overflow-hidden bg-cyber-dark"
+              className="w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] flex items-center justify-center cursor-pointer hover:border-phopy-indigo/50 transition-colors overflow-hidden bg-[var(--bg)]"
               onClick={() => fileRef.current?.click()}
             >
               {co.logo_base64
                 ? <img src={co.logo_base64} alt="logo" className="w-full h-full object-contain" />
-                : <Building2 className="w-8 h-8 text-gray-600" />}
+                : <Building2 className="w-8 h-8 text-[var(--fg-4)]" />}
             </div>
             <div>
-              <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-cyber-primary hover:underline">
+              <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-phopy-indigo hover:underline">
                 อัปโหลดโลโก้
               </button>
               {co.logo_base64 && (
@@ -708,48 +708,48 @@ function GeneralSettings() {
                   ลบ
                 </button>
               )}
-              <p className="text-xs text-gray-500 mt-1">PNG/JPG, แสดงบนหัวใบบิล</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">PNG/JPG, แสดงบนหัวใบบิล</p>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">ชื่อบริษัท / ร้าน</label>
-            <input type="text" value={co.name} onChange={e => setCo(p => ({ ...p, name: e.target.value }))} className="cyber-input w-full" placeholder="บริษัท ตัวอย่าง จำกัด" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อบริษัท / ร้าน</label>
+            <input type="text" value={co.name} onChange={e => setCo(p => ({ ...p, name: e.target.value }))} className="phopy-input w-full" placeholder="บริษัท ตัวอย่าง จำกัด" />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">เลขผู้เสียภาษี (Tax ID)</label>
-            <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="cyber-input w-full" placeholder="0-0000-00000-00-0" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">เลขผู้เสียภาษี (Tax ID)</label>
+            <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="phopy-input w-full" placeholder="0-0000-00000-00-0" />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-400 mb-1">ที่อยู่</label>
-            <textarea value={co.address} onChange={e => setCo(p => ({ ...p, address: e.target.value }))} className="cyber-input w-full resize-none" rows={3} placeholder="เลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">ที่อยู่</label>
+            <textarea value={co.address} onChange={e => setCo(p => ({ ...p, address: e.target.value }))} className="phopy-input w-full resize-none" rows={3} placeholder="เลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">โทรศัพท์</label>
-            <input type="text" value={co.phone} onChange={e => setCo(p => ({ ...p, phone: e.target.value }))} className="cyber-input w-full" placeholder="02-xxx-xxxx" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">โทรศัพท์</label>
+            <input type="text" value={co.phone} onChange={e => setCo(p => ({ ...p, phone: e.target.value }))} className="phopy-input w-full" placeholder="02-xxx-xxxx" />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">อีเมล</label>
-            <input type="email" value={co.email} onChange={e => setCo(p => ({ ...p, email: e.target.value }))} className="cyber-input w-full" placeholder="info@company.com" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">อีเมล</label>
+            <input type="email" value={co.email} onChange={e => setCo(p => ({ ...p, email: e.target.value }))} className="phopy-input w-full" placeholder="info@company.com" />
           </div>
         </div>
       </div>
 
       {/* Tenant meta (read-only) */}
-      <div className="cyber-card p-6">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-cyber-primary" />
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+          <Shield className="w-5 h-5 text-phopy-indigo" />
           ข้อมูลบัญชี
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">รหัสองค์กร</label>
-            <p className="text-gray-200 font-mono">{tenant?.code || '-'}</p>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">รหัสองค์กร</label>
+            <p className="text-[var(--fg-2)] font-mono">{tenant?.code || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">ประเภทบัญชี</label>
-            <p className={`font-semibold ${isMaster ? 'text-cyber-green' : 'text-cyber-primary'}`}>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">ประเภทบัญชี</label>
+            <p className={`font-semibold ${isMaster ? 'text-success' : 'text-phopy-indigo'}`}>
               {isMaster ? 'Master Account' : 'Standard Account'}
             </p>
           </div>
@@ -758,22 +758,22 @@ function GeneralSettings() {
 
       {/* Master Account Info */}
       {isMaster && (
-        <div className="cyber-card p-6 border-l-4 border-cyber-green">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-            <Shield className="w-5 h-5 text-cyber-green" />
+        <div className="phopy-card p-6 border-l-4 border-success">
+          <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-success" />
             สิทธิ์ Master Account
           </h3>
-          <ul className="space-y-2 text-gray-300">
+          <ul className="space-y-2 text-[var(--fg-2)]">
             <li className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-cyber-green" />
+              <CheckCircle className="w-4 h-4 text-success" />
               สามารถสร้างผู้ใช้งานลูกได้ไม่จำกัด
             </li>
             <li className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-cyber-green" />
+              <CheckCircle className="w-4 h-4 text-success" />
               แก้ไขข้อมูลได้ไม่จำกัดเวลา (ไม่ติด 24hr rule)
             </li>
             <li className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-cyber-green" />
+              <CheckCircle className="w-4 h-4 text-success" />
               จัดการสิทธิ์ผู้ใช้งานได้
             </li>
           </ul>
@@ -781,27 +781,27 @@ function GeneralSettings() {
       )}
 
       {/* Time Lock Info */}
-      <div className="cyber-card p-6">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-cyber-primary" />
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-phopy-indigo" />
           กฎการแก้ไขข้อมูล (24 Hour Rule)
         </h3>
-        <div className="space-y-3 text-gray-300">
+        <div className="space-y-3 text-[var(--fg-2)]">
           <p className="flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
             <span>
-              ข้อมูลทุกรายการที่สร้างขึ้น <strong className="text-cyber-primary">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง
+              ข้อมูลทุกรายการที่สร้างขึ้น <strong className="text-phopy-indigo">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง
             </span>
           </p>
           <p className="flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
             <span>
               หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้
-              {isMaster && <strong className="text-cyber-green"> (ยกเว้น Master Account)</strong>}
+              {isMaster && <strong className="text-success"> (ยกเว้น Master Account)</strong>}
             </span>
           </p>
           <p className="flex items-start gap-2">
-            <CheckCircle className="w-5 h-5 text-cyber-green flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
             <span>
               ระบบจะคำนวณเวลาจาก <strong>เวลาปัจจุบัน - เวลาสร้าง</strong> โดยอัตโนมัติ
             </span>
@@ -832,22 +832,22 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-          <Users className="w-5 h-5 text-cyber-primary" />
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+          <Users className="w-5 h-5 text-phopy-indigo" />
           รายชื่อผู้ใช้งานในสายงาน
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="p-2 text-gray-400 hover:text-cyber-primary rounded-lg hover:bg-cyber-primary/10 transition-colors"
+            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors"
             title="รีเฟรช"
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={onAdd}
-            className="cyber-btn-primary flex items-center gap-2"
+            className="phopy-btn-primary flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             เพิ่มผู้ใช้งาน
@@ -857,41 +857,41 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
 
       {/* User List */}
       {children.length === 0 ? (
-        <div className="cyber-card p-12 text-center">
-          <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">ยังไม่มีผู้ใช้งานลูก</h3>
-          <p className="text-gray-500 mb-4">เริ่มต้นสร้างผู้ใช้งานในสายงานของคุณ</p>
-          <button onClick={onAdd} className="cyber-btn-primary">
+        <div className="phopy-card p-12 text-center">
+          <Users className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">ยังไม่มีผู้ใช้งานลูก</h3>
+          <p className="text-[var(--fg-4)] mb-4">เริ่มต้นสร้างผู้ใช้งานในสายงานของคุณ</p>
+          <button onClick={onAdd} className="phopy-btn-primary">
             <Plus className="w-4 h-4 inline mr-2" />
             เพิ่มผู้ใช้งาน
           </button>
         </div>
       ) : (
-        <div className="cyber-card overflow-hidden">
+        <div className="phopy-card overflow-hidden">
           <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-cyber-dark/50">
+            <thead className="bg-[var(--surface-2)]">
               <tr>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">ชื่อ</th>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">อีเมล</th>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">สิทธิ์</th>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">สร้างเมื่อ</th>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">เข้าสู่ระบบล่าสุด</th>
-                <th className="text-center py-3 px-4 text-gray-400 font-medium">จัดการ</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">ชื่อ</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">อีเมล</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">สิทธิ์</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">สร้างเมื่อ</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">เข้าสู่ระบบล่าสุด</th>
+                <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">จัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-cyber-border">
+            <tbody className="divide-y divide-[var(--border)]">
               {children.map((child: ChildUser) => (
-                <tr key={child.id} className="hover:bg-cyber-dark/30">
-                  <td className="py-3 px-4 text-gray-200">{child.name}</td>
-                  <td className="py-3 px-4 text-gray-400">{child.email}</td>
+                <tr key={child.id} className="hover:bg-[var(--bg)]/30">
+                  <td className="py-3 px-4 text-[var(--fg-2)]">{child.name}</td>
+                  <td className="py-3 px-4 text-[var(--fg-3)]">{child.email}</td>
                   <td className="py-3 px-4">
                     <RoleBadge role={child.role} />
                   </td>
-                  <td className="py-3 px-4 text-gray-400 text-sm">
+                  <td className="py-3 px-4 text-[var(--fg-3)] text-sm">
                     {new Date(child.created_at).toLocaleDateString('th-TH')}
                   </td>
-                  <td className="py-3 px-4 text-gray-400 text-sm">
+                  <td className="py-3 px-4 text-[var(--fg-3)] text-sm">
                     {child.last_login_at
                       ? new Date(child.last_login_at).toLocaleDateString('th-TH')
                       : '-'
@@ -901,7 +901,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
                     <button
                       onClick={() => handleDelete(child.id)}
                       disabled={deleting === child.id}
-                      className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                      className="p-2 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
                       title="ลบ"
                     >
                       {deleting === child.id ? (
@@ -925,10 +925,10 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
 // Role Badge
 function RoleBadge({ role }: { role: string }) {
   const colors: Record<string, string> = {
-    ADMIN: 'bg-cyber-green/20 text-cyber-green',
-    MANAGER: 'bg-cyber-primary/20 text-cyber-primary',
+    ADMIN: 'bg-success-soft text-success',
+    MANAGER: 'bg-phopy-indigo-50 text-phopy-indigo',
     USER: 'bg-blue-500/20 text-blue-400',
-    VIEWER: 'bg-gray-500/20 text-gray-400',
+    VIEWER: 'bg-gray-500/20 text-[var(--fg-3)]',
   }
 
   return (
@@ -984,12 +984,12 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-md max-h-[80vh] overflow-y-auto"
+        className="phopy-card w-full max-w-md max-h-[80vh] overflow-y-auto"
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-100">เพิ่มผู้ใช้งานลูก</h2>
-          <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg">
-            <X className="w-5 h-5 text-gray-400" />
+        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">เพิ่มผู้ใช้งานลูก</h2>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
@@ -1002,47 +1002,47 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">ชื่อ</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">ชื่อ</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               placeholder="ชื่อผู้ใช้งาน"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">อีเมล</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">อีเมล</label>
             <input
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               placeholder="email@example.com"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">รหัสผ่าน</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">รหัสผ่าน</label>
             <input
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               placeholder="รหัสผ่าน"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">สิทธิ์</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">สิทธิ์</label>
             <select
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
             >
               <option value="USER">User - ผู้ใช้งานทั่วไป</option>
               <option value="MANAGER">Manager - ผู้จัดการ</option>
@@ -1054,14 +1054,14 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:bg-cyber-dark"
+              className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:bg-[var(--bg)]"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="cyber-btn-primary flex items-center gap-2"
+              className="phopy-btn-primary flex items-center gap-2"
             >
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               สร้างผู้ใช้งาน
@@ -1077,28 +1077,28 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 function SecuritySettings() {
   return (
     <div className="space-y-6">
-      <div className="cyber-card p-6">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Key className="w-5 h-5 text-cyber-primary" />
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+          <Key className="w-5 h-5 text-phopy-indigo" />
           เปลี่ยนรหัสผ่าน
         </h3>
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-[var(--fg-3)] text-sm mb-4">
           ฟีเจอร์นี้จะพร้อมใช้งานในเร็วๆ นี้
         </p>
-        <button disabled className="cyber-btn-primary opacity-50 cursor-not-allowed">
+        <button disabled className="phopy-btn-primary opacity-50 cursor-not-allowed">
           เปลี่ยนรหัสผ่าน
         </button>
       </div>
 
-      <div className="cyber-card p-6">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-cyber-primary" />
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+          <Shield className="w-5 h-5 text-phopy-indigo" />
           การยืนยันตัวตนแบบ 2 ชั้น (2FA)
         </h3>
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-[var(--fg-3)] text-sm mb-4">
           เพิ่มความปลอดภัยด้วยการยืนยันตัวตนแบบ 2 ชั้น
         </p>
-        <button disabled className="cyber-btn-primary opacity-50 cursor-not-allowed">
+        <button disabled className="phopy-btn-primary opacity-50 cursor-not-allowed">
           เปิดใช้งาน 2FA
         </button>
       </div>

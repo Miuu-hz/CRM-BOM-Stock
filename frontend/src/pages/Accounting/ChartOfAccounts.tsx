@@ -57,14 +57,14 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={`flex items-center gap-2 p-3 rounded-lg border ${
-          level === 0 ? 'bg-cyber-dark/50' : 'hover:bg-cyber-dark/30'
+          level === 0 ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--bg)]/30'
         } ${typeColors[account.type]} mb-1`}
         style={{ marginLeft: `${level * 24}px` }}
       >
         {hasChildren ? (
           <button
             onClick={() => onToggle(account.id)}
-            className="p-1 hover:bg-white/10 rounded"
+            className="p-1 hover:bg-[var(--surface-2)] rounded"
           >
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
@@ -91,22 +91,22 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
         </span>
         
         {account.normalBalance === 'DEBIT' ? (
-          <span className="text-xs text-gray-500">Dr</span>
+          <span className="text-xs text-[var(--fg-4)]">Dr</span>
         ) : (
-          <span className="text-xs text-gray-500">Cr</span>
+          <span className="text-xs text-[var(--fg-4)]">Cr</span>
         )}
         
         {!account.isSystem && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={() => onEdit(account)}
-              className="p-1.5 hover:bg-white/10 rounded-lg"
+              className="p-1.5 hover:bg-[var(--surface-2)] rounded-lg"
             >
               <Edit className="w-4 h-4" />
             </button>
             <button
               onClick={() => onDelete(account)}
-              className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400"
+              className="p-1.5 hover:bg-danger-soft rounded-lg text-red-400"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -280,7 +280,7 @@ const ChartOfAccounts = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-primary" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-phopy-indigo" />
       </div>
     )
   }
@@ -291,24 +291,24 @@ const ChartOfAccounts = () => {
       <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-8 h-8 text-cyber-primary" />
+            <BookOpen className="w-8 h-8 text-phopy-indigo" />
             ผังบัญชี (Chart of Accounts)
           </h1>
-          <p className="text-gray-400 mt-1">จัดการผังบัญชีตามประมวลบัญชีไทย</p>
+          <p className="text-[var(--fg-3)] mt-1">จัดการผังบัญชีตามประมวลบัญชีไทย</p>
         </div>
         
-        <div className="cyber-card p-12 text-center">
-          <BookOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+        <div className="phopy-card p-12 text-center">
+          <BookOpen className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
             ยังไม่มีผังบัญชี
           </h3>
-          <p className="text-gray-500 mb-6 max-w-md mx-auto">
+          <p className="text-[var(--fg-4)] mb-6 max-w-md mx-auto">
             ระบบจะสร้างผังบัญชีมาตรฐานตามประมวลบัญชีไทยให้อัตโนมัติ
           </p>
           <button
             onClick={() => setShowInitConfirm(true)}
             disabled={initializing}
-            className="cyber-btn-primary flex items-center gap-2 mx-auto"
+            className="phopy-btn-primary flex items-center gap-2 mx-auto"
           >
             {initializing ? (
               <RefreshCw className="w-5 h-5 animate-spin" />
@@ -322,12 +322,12 @@ const ChartOfAccounts = () => {
         {/* Init Confirmation Modal */}
         {showInitConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="cyber-card max-w-md w-full p-6">
+            <div className="phopy-card max-w-md w-full p-6">
               <div className="flex items-center gap-3 mb-4">
                 <AlertCircle className="w-8 h-8 text-yellow-400" />
                 <h3 className="text-lg font-bold text-white">ยืนยันการสร้างผังบัญชี</h3>
               </div>
-              <ul className="space-y-2 text-sm text-gray-300 mb-6">
+              <ul className="space-y-2 text-sm text-[var(--fg-2)] mb-6">
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-400" />
                   บัญชีสินทรัพย์ (1xxxx) - เงินสด ลูกหนี้ สต็อก
@@ -352,14 +352,14 @@ const ChartOfAccounts = () => {
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowInitConfirm(false)}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
+                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)]"
                 >
                   ยกเลิก
                 </button>
                 <button
                   onClick={handleInit}
                   disabled={initializing}
-                  className="cyber-btn-primary"
+                  className="phopy-btn-primary"
                 >
                   {initializing ? 'กำลังสร้าง...' : 'ยืนยัน'}
                 </button>
@@ -377,10 +377,10 @@ const ChartOfAccounts = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-8 h-8 text-cyber-primary" />
+            <BookOpen className="w-8 h-8 text-phopy-indigo" />
             ผังบัญชี (Chart of Accounts)
           </h1>
-          <p className="text-gray-400 mt-1">
+          <p className="text-[var(--fg-3)] mt-1">
             {accounts.length} บัญชี • ตามประมวลบัญชีไทย
           </p>
         </div>
@@ -388,13 +388,13 @@ const ChartOfAccounts = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setViewMode(viewMode === 'tree' ? 'list' : 'tree')}
-            className="px-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-gray-300 hover:border-cyber-primary transition-colors"
+            className="px-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo transition-colors"
           >
             {viewMode === 'tree' ? 'มุมมองรายการ' : 'มุมมองต้นไม้'}
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="cyber-btn-primary flex items-center gap-2"
+            className="phopy-btn-primary flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             เพิ่มบัญชี
@@ -410,8 +410,8 @@ const ChartOfAccounts = () => {
             <div
               key={type.value}
               onClick={() => setSelectedType(selectedType === type.value ? 'ALL' : type.value)}
-              className={`cyber-card p-4 cursor-pointer transition-all ${
-                selectedType === type.value ? 'ring-2 ring-cyber-primary' : ''
+              className={`phopy-card p-4 cursor-pointer transition-all ${
+                selectedType === type.value ? 'ring-2 ring-phopy-indigo' : ''
               }`}
             >
               <div className="flex items-center gap-3">
@@ -424,7 +424,7 @@ const ChartOfAccounts = () => {
                 </div>
                 <div>
                   <p className={`text-2xl font-bold ${type.color}`}>{count}</p>
-                  <p className="text-xs text-gray-500">{type.label}</p>
+                  <p className="text-xs text-[var(--fg-4)]">{type.label}</p>
                 </div>
               </div>
             </div>
@@ -433,16 +433,16 @@ const ChartOfAccounts = () => {
       </div>
 
       {/* Filters */}
-      <div className="cyber-card p-4">
+      <div className="phopy-card p-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
             <input
               type="text"
               placeholder="ค้นหาบัญชี (รหัส ชื่อ หรือชื่ออังกฤษ)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="cyber-input pl-10 w-full"
+              className="phopy-input pl-10 w-full"
             />
           </div>
           
@@ -450,13 +450,13 @@ const ChartOfAccounts = () => {
             <div className="flex gap-2">
               <button
                 onClick={expandAll}
-                className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
+                className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)]"
               >
                 ขยายทั้งหมด
               </button>
               <button
                 onClick={collapseAll}
-                className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
+                className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)]"
               >
                 ยุบทั้งหมด
               </button>
@@ -466,7 +466,7 @@ const ChartOfAccounts = () => {
       </div>
 
       {/* Accounts Tree/List */}
-      <div className="cyber-card p-4">
+      <div className="phopy-card p-4">
         {viewMode === 'tree' ? (
           <div className="space-y-1">
             {treeData.map(account => (
@@ -491,7 +491,7 @@ const ChartOfAccounts = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="cyber-table w-full">
+            <table className="phopy-table w-full">
               <thead>
                 <tr>
                   <th className="text-left">รหัส</th>
@@ -505,18 +505,18 @@ const ChartOfAccounts = () => {
               <tbody>
                 {filteredAccounts.map(account => (
                   <tr key={account.id} className="group">
-                    <td className="font-mono text-gray-400">{account.code}</td>
+                    <td className="font-mono text-[var(--fg-3)]">{account.code}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <span className="text-white">{account.name}</span>
                         {account.isSystem && (
-                          <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">
+                          <span className="text-xs bg-gray-700 text-[var(--fg-2)] px-2 py-0.5 rounded">
                             ระบบ
                           </span>
                         )}
                       </div>
                       {account.nameEn && (
-                        <div className="text-sm text-gray-500">{account.nameEn}</div>
+                        <div className="text-sm text-[var(--fg-4)]">{account.nameEn}</div>
                       )}
                     </td>
                     <td>
@@ -525,12 +525,12 @@ const ChartOfAccounts = () => {
                       </span>
                     </td>
                     <td className="text-center">
-                      <span className="text-sm text-gray-400">
+                      <span className="text-sm text-[var(--fg-3)]">
                         {account.normalBalance === 'DEBIT' ? 'เดบิต' : 'เครดิต'}
                       </span>
                     </td>
                     <td className="text-center">
-                      <span className="text-sm text-gray-500">{account.level}</span>
+                      <span className="text-sm text-[var(--fg-4)]">{account.level}</span>
                     </td>
                     <td className="text-right">
                       {!account.isSystem && (
@@ -545,13 +545,13 @@ const ChartOfAccounts = () => {
                                 isActive: account.isActive,
                               })
                             }}
-                            className="p-1.5 hover:bg-cyber-primary/20 rounded-lg"
+                            className="p-1.5 hover:bg-phopy-indigo-50 rounded-lg"
                           >
-                            <Edit className="w-4 h-4 text-cyber-primary" />
+                            <Edit className="w-4 h-4 text-phopy-indigo" />
                           </button>
                           <button
                             onClick={() => handleDelete(account)}
-                            className="p-1.5 hover:bg-red-500/20 rounded-lg"
+                            className="p-1.5 hover:bg-danger-soft rounded-lg"
                           >
                             <Trash2 className="w-4 h-4 text-red-400" />
                           </button>
@@ -567,8 +567,8 @@ const ChartOfAccounts = () => {
         
         {filteredAccounts.length === 0 && (
           <div className="text-center py-12">
-            <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400">ไม่พบบัญชีที่ค้นหา</p>
+            <Search className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-4" />
+            <p className="text-[var(--fg-3)]">ไม่พบบัญชีที่ค้นหา</p>
           </div>
         )}
       </div>
@@ -579,9 +579,9 @@ const ChartOfAccounts = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="cyber-card w-full max-w-lg max-h-[90vh] overflow-auto"
+            className="phopy-card w-full max-w-lg max-h-[90vh] overflow-auto"
           >
-            <div className="p-6 border-b border-cyber-border">
+            <div className="p-6 border-b border-[var(--border)]">
               <h2 className="text-xl font-bold text-white">
                 {editingAccount ? 'แก้ไขบัญชี' : 'เพิ่มบัญชีใหม่'}
               </h2>
@@ -591,20 +591,20 @@ const ChartOfAccounts = () => {
               {!editingAccount && (
                 <>
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">รหัสบัญชี</label>
+                    <label className="block text-sm text-[var(--fg-3)] mb-1">รหัสบัญชี</label>
                     <input
                       type="text"
                       value={formData.code || ''}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                       placeholder="เช่น 1101"
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                       required
                     />
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm text-gray-400 mb-1">ประเภท</label>
+                      <label className="block text-sm text-[var(--fg-3)] mb-1">ประเภท</label>
                       <select
                         value={formData.type}
                         onChange={(e) => {
@@ -615,7 +615,7 @@ const ChartOfAccounts = () => {
                             normalBalance: type === 'ASSET' || type === 'EXPENSE' ? 'DEBIT' : 'CREDIT',
                           })
                         }}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                       >
                         {ACCOUNT_TYPES.map(t => (
                           <option key={t.value} value={t.value}>{t.label}</option>
@@ -624,11 +624,11 @@ const ChartOfAccounts = () => {
                     </div>
                     
                     <div>
-                      <label className="block text-sm text-gray-400 mb-1">ด้านปกติ</label>
+                      <label className="block text-sm text-[var(--fg-3)] mb-1">ด้านปกติ</label>
                       <select
                         value={formData.normalBalance}
                         onChange={(e) => setFormData({ ...formData, normalBalance: e.target.value as 'DEBIT' | 'CREDIT' })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                       >
                         <option value="DEBIT">เดบิต (Debit)</option>
                         <option value="CREDIT">เครดิต (Credit)</option>
@@ -639,33 +639,33 @@ const ChartOfAccounts = () => {
               )}
               
               <div>
-                <label className="block text-sm text-gray-400 mb-1">ชื่อบัญชี (ไทย)</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อบัญชี (ไทย)</label>
                 <input
                   type="text"
                   value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   required
                 />
               </div>
               
               <div>
-                <label className="block text-sm text-gray-400 mb-1">ชื่อบัญชี (อังกฤษ)</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อบัญชี (อังกฤษ)</label>
                 <input
                   type="text"
                   value={formData.nameEn || ''}
                   onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                 />
               </div>
               
               <div>
-                <label className="block text-sm text-gray-400 mb-1">รายละเอียด</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">รายละเอียด</label>
                 <textarea
                   value={formData.description || ''}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                 />
               </div>
               
@@ -676,9 +676,9 @@ const ChartOfAccounts = () => {
                     id="isActive"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="w-4 h-4 rounded border-cyber-border bg-cyber-dark"
+                    className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)]"
                   />
-                  <label htmlFor="isActive" className="text-gray-300">ใช้งาน</label>
+                  <label htmlFor="isActive" className="text-[var(--fg-2)]">ใช้งาน</label>
                 </div>
               )}
               
@@ -690,11 +690,11 @@ const ChartOfAccounts = () => {
                     setEditingAccount(null)
                     setFormData({ type: 'ASSET', normalBalance: 'DEBIT' })
                   }}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
+                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)]"
                 >
                   ยกเลิก
                 </button>
-                <button type="submit" className="cyber-btn-primary">
+                <button type="submit" className="phopy-btn-primary">
                   {editingAccount ? 'บันทึก' : 'สร้าง'}
                 </button>
               </div>

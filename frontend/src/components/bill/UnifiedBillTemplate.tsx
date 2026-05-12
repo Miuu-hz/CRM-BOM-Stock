@@ -96,7 +96,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
     if (loading) {
       return (
         <div className="bill-loading">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo"></div>
           <p>กำลังโหลดข้อมูล...</p>
         </div>
       )
@@ -114,13 +114,13 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
       <div className="unified-bill-container">
         {showPrintButton && (
           <div className="bill-toolbar no-print">
-            <button onClick={handlePrint} className="cyber-btn-primary">
+            <button onClick={handlePrint} className="phopy-btn-primary">
               🖨️ พิมพ์เอกสาร
             </button>
-            <button className="cyber-btn-secondary">
+            <button className="phopy-btn-secondary">
               💾 บันทึก PDF
             </button>
-            <button className="cyber-btn-secondary">
+            <button className="phopy-btn-secondary">
               📧 ส่งอีเมล
             </button>
           </div>

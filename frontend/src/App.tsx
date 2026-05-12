@@ -23,10 +23,10 @@ function AppContent() {
 
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-cyber-dark flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-cyber-primary/30 border-t-cyber-primary rounded-full animate-spin" />
-          <p className="text-gray-400">Loading...</p>
+          <div className="w-12 h-12 border-4 border-phopy-indigo/30 border-t-phopy-indigo rounded-full animate-spin" />
+          <p className="text-[var(--fg-3)]">Loading...</p>
         </div>
       </div>
     )
@@ -39,20 +39,20 @@ function AppContent() {
     {/* Session timeout warning overlay */}
     {showTimeoutWarning && (
       <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center">
-        <div className="bg-cyber-dark border border-yellow-500/50 rounded-xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl">
+        <div className="bg-[var(--bg)] border border-yellow-500/50 rounded-xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl">
           <div className="text-yellow-400 text-4xl mb-4">⏱</div>
           <h2 className="text-xl font-bold text-white mb-2">Session กำลังหมดอายุ</h2>
-          <p className="text-gray-400 mb-6 text-sm">ไม่มีการใช้งานนานกว่า 30 นาที<br/>ระบบจะ logout อัตโนมัติใน 1 นาที</p>
+          <p className="text-[var(--fg-3)] mb-6 text-sm">ไม่มีการใช้งานนานกว่า 30 นาที<br/>ระบบจะ logout อัตโนมัติใน 1 นาที</p>
           <div className="flex gap-3">
             <button
               onClick={extendSession}
-              className="flex-1 cyber-btn-primary py-2 text-sm"
+              className="flex-1 phopy-btn-primary py-2 text-sm"
             >
               ใช้งานต่อ
             </button>
             <button
               onClick={logout}
-              className="flex-1 py-2 text-sm border border-gray-600 rounded-lg text-gray-400 hover:text-white hover:border-gray-400 transition-colors"
+              className="flex-1 py-2 text-sm border border-gray-600 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors"
             >
               Logout
             </button>

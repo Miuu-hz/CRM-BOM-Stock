@@ -106,7 +106,7 @@ function ProductionCalculator() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'OK':
-        return <CheckCircle className="w-5 h-5 text-cyber-green" />
+        return <CheckCircle className="w-5 h-5 text-success" />
       case 'LOW':
         return <AlertTriangle className="w-5 h-5 text-yellow-400" />
       case 'INSUFFICIENT':
@@ -124,7 +124,7 @@ function ProductionCalculator() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
       </div>
     )
   }
@@ -132,14 +132,14 @@ function ProductionCalculator() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="cyber-card p-6">
+      <div className="phopy-card p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center">
+          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center">
             <Calculator className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Production Calculator</h2>
-            <p className="text-sm text-gray-400">
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">Production Calculator</h2>
+            <p className="text-sm text-[var(--fg-3)]">
               Calculate material requirements for production
             </p>
           </div>
@@ -147,11 +147,11 @@ function ProductionCalculator() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Select BOM</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Select BOM</label>
             <select
               value={selectedBomId}
               onChange={(e) => setSelectedBomId(e.target.value)}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
             >
               <option value="">-- Select a BOM --</option>
               {(boms || []).map((bom) => (
@@ -163,13 +163,13 @@ function ProductionCalculator() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Production Quantity</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Production Quantity</label>
             <input
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
               min="1"
-              className="cyber-input w-full"
+              className="phopy-input w-full"
             />
           </div>
         </div>
@@ -183,20 +183,20 @@ function ProductionCalculator() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="cyber-card p-4"
+              className="phopy-card p-4"
             >
-              <p className="text-sm text-gray-400 mb-1">Total Materials</p>
-              <p className="text-2xl font-bold text-cyber-primary">{requirements.length}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Total Materials</p>
+              <p className="text-2xl font-bold text-phopy-indigo">{requirements.length}</p>
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="cyber-card p-4"
+              className="phopy-card p-4"
             >
-              <p className="text-sm text-gray-400 mb-1">Total Cost</p>
-              <p className="text-2xl font-bold text-cyber-green">
+              <p className="text-sm text-[var(--fg-3)] mb-1">Total Cost</p>
+              <p className="text-2xl font-bold text-success">
                 ฿{totalCost.toLocaleString()}
               </p>
             </motion.div>
@@ -205,16 +205,16 @@ function ProductionCalculator() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className={`cyber-card p-4 ${
-                canProduce ? 'border-cyber-green/50' : hasZeroStock ? 'border-red-600/70' : 'border-red-500/50'
+              className={`phopy-card p-4 ${
+                canProduce ? 'border-success/50' : hasZeroStock ? 'border-red-600/70' : 'border-red-500/50'
               }`}
             >
-              <p className="text-sm text-gray-400 mb-1">Production Status</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Production Status</p>
               <div className="flex items-center gap-2">
                 {canProduce ? (
                   <>
-                    <CheckCircle className="w-6 h-6 text-cyber-green" />
-                    <span className="text-xl font-bold text-cyber-green">Ready</span>
+                    <CheckCircle className="w-6 h-6 text-success" />
+                    <span className="text-xl font-bold text-success">Ready</span>
                   </>
                 ) : hasZeroStock ? (
                   <>
@@ -236,13 +236,13 @@ function ProductionCalculator() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="cyber-card overflow-hidden"
+            className="phopy-card overflow-hidden"
           >
-            <div className="p-4 border-b border-cyber-border">
-              <h3 className="text-lg font-semibold text-gray-100">Material Requirements</h3>
+            <div className="p-4 border-b border-[var(--border)]">
+              <h3 className="text-lg font-semibold text-[var(--fg-1)]">Material Requirements</h3>
             </div>
             <div className="overflow-x-auto">
-            <table className="cyber-table w-full">
+            <table className="phopy-table w-full">
               <thead>
                 <tr>
                   <th>Status</th>
@@ -262,9 +262,9 @@ function ProductionCalculator() {
                     className={req.status === 'OUT_OF_STOCK' ? 'bg-red-600/20' : req.status === 'INSUFFICIENT' ? 'bg-red-500/10' : ''}
                   >
                     <td>{getStatusIcon(req.status)}</td>
-                    <td className="text-gray-200">{req.materialName}</td>
-                    <td className="text-gray-400 font-mono">{req.materialCode}</td>
-                    <td className="text-gray-300">
+                    <td className="text-[var(--fg-2)]">{req.materialName}</td>
+                    <td className="text-[var(--fg-3)] font-mono">{req.materialCode}</td>
+                    <td className="text-[var(--fg-2)]">
                       {req.requiredQuantity.toLocaleString()} {req.unit}
                     </td>
                     <td
@@ -275,7 +275,7 @@ function ProductionCalculator() {
                           ? 'text-red-400'
                           : req.status === 'LOW'
                           ? 'text-yellow-400'
-                          : 'text-cyber-green'
+                          : 'text-success'
                       }
                     >
                       {req.availableStock === 0 ? (
@@ -287,22 +287,22 @@ function ProductionCalculator() {
                         `${req.availableStock.toLocaleString()} ${req.unit}`
                       )}
                     </td>
-                    <td className={req.shortage > 0 ? 'text-red-400 font-semibold' : 'text-gray-500'}>
+                    <td className={req.shortage > 0 ? 'text-red-400 font-semibold' : 'text-[var(--fg-4)]'}>
                       {req.shortage > 0 ? `-${req.shortage.toLocaleString()}` : '-'}
                     </td>
-                    <td className="text-gray-400">฿{req.unitCost.toLocaleString()}</td>
-                    <td className="text-cyber-green font-semibold">
+                    <td className="text-[var(--fg-3)]">฿{req.unitCost.toLocaleString()}</td>
+                    <td className="text-success font-semibold">
                       ฿{req.totalCost.toLocaleString()}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-cyber-border">
-                  <td colSpan={7} className="text-right text-gray-400 font-semibold">
+                <tr className="border-t border-[var(--border)]">
+                  <td colSpan={7} className="text-right text-[var(--fg-3)] font-semibold">
                     Total Production Cost:
                   </td>
-                  <td className="text-2xl font-bold text-cyber-primary">
+                  <td className="text-2xl font-bold text-phopy-indigo">
                     ฿{totalCost.toLocaleString()}
                   </td>
                 </tr>
@@ -316,7 +316,7 @@ function ProductionCalculator() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="cyber-card p-6 border-red-600/70 bg-red-500/5"
+              className="phopy-card p-6 border-red-600/70 bg-red-500/5"
             >
               <div className="flex items-start gap-4">
                 <Ban className="w-8 h-8 text-red-500 flex-shrink-0" />
@@ -324,14 +324,14 @@ function ProductionCalculator() {
                   <h3 className="text-lg font-semibold text-red-500 mb-2">
                     Production Blocked - Zero Stock
                   </h3>
-                  <p className="text-gray-400 mb-4">
+                  <p className="text-[var(--fg-3)] mb-4">
                     Production cannot proceed because the following materials have zero stock:
                   </p>
                   <ul className="space-y-2">
                     {requirements
                       .filter((r) => r.availableStock === 0)
                       .map((r) => (
-                        <li key={r.materialId} className="flex items-center gap-2 text-gray-300">
+                        <li key={r.materialId} className="flex items-center gap-2 text-[var(--fg-2)]">
                           <Ban className="w-4 h-4 text-red-500" />
                           <span>
                             {r.materialName}{' '}
@@ -355,7 +355,7 @@ function ProductionCalculator() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="cyber-card p-6 border-red-500/50"
+              className="phopy-card p-6 border-red-500/50"
             >
               <div className="flex items-start gap-4">
                 <AlertCircle className="w-8 h-8 text-red-400 flex-shrink-0" />
@@ -363,14 +363,14 @@ function ProductionCalculator() {
                   <h3 className="text-lg font-semibold text-red-400 mb-2">
                     Insufficient Materials
                   </h3>
-                  <p className="text-gray-400 mb-4">
+                  <p className="text-[var(--fg-3)] mb-4">
                     The following materials need to be restocked before production:
                   </p>
                   <ul className="space-y-2">
                     {requirements
                       .filter((r) => r.status === 'INSUFFICIENT')
                       .map((r) => (
-                        <li key={r.materialId} className="flex items-center gap-2 text-gray-300">
+                        <li key={r.materialId} className="flex items-center gap-2 text-[var(--fg-2)]">
                           <Package className="w-4 h-4 text-red-400" />
                           <span>
                             {r.materialName}: Need{' '}
@@ -391,12 +391,12 @@ function ProductionCalculator() {
 
       {/* Empty State */}
       {!selectedBomId && (
-        <div className="cyber-card p-12 text-center">
-          <Calculator className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+        <div className="phopy-card p-12 text-center">
+          <Calculator className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
             Select a BOM to Calculate
           </h3>
-          <p className="text-gray-500">
+          <p className="text-[var(--fg-4)]">
             Choose a Bill of Materials and enter the production quantity to see material
             requirements
           </p>

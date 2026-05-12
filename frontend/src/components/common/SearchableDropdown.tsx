@@ -92,19 +92,19 @@ export function SearchableDropdown({
   const dropdownContent = (
     <div
       data-searchable-dropdown-portal
-      className="fixed z-[100] bg-cyber-card border border-cyber-border rounded-lg shadow-xl max-h-80 flex flex-col"
+      className="fixed z-[100] bg-phopy-card border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
     >
       {/* Search Input */}
-      <div className="p-2 border-b border-cyber-border">
+      <div className="p-2 border-b border-[var(--border)]">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="ค้นหา..."
-            className="w-full bg-cyber-dark border border-cyber-border rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-cyber-primary"
+            className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg pl-9 pr-3 py-2 text-sm text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo"
             autoFocus
           />
         </div>
@@ -113,7 +113,7 @@ export function SearchableDropdown({
       {/* Options List */}
       <div className="overflow-y-auto max-h-60">
         {filteredOptions.length === 0 ? (
-          <div className="p-3 text-center text-gray-500 text-sm">
+          <div className="p-3 text-center text-[var(--fg-4)] text-sm">
             ไม่พบข้อมูล
           </div>
         ) : (
@@ -125,10 +125,10 @@ export function SearchableDropdown({
                 e.preventDefault()
                 handleSelect(option.id)
               }}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-cyber-primary/20 transition-colors ${
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-phopy-indigo-50 transition-colors ${
                 value === option.id
-                  ? 'bg-cyber-primary/20 text-cyber-primary'
-                  : 'text-gray-300'
+                  ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                  : 'text-[var(--fg-2)]'
               }`}
             >
               {option.label}
@@ -146,25 +146,25 @@ export function SearchableDropdown({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`cyber-input w-full flex items-center justify-between text-left ${
+        className={`phopy-input w-full flex items-center justify-between text-left ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         }`}
       >
-        <span className={selectedOption ? 'text-gray-200' : 'text-gray-500'}>
+        <span className={selectedOption ? 'text-[var(--fg-2)]' : 'text-[var(--fg-4)]'}>
           {selectedOption?.label || placeholder}
         </span>
         <div className="flex items-center gap-1">
           {value && !disabled && (
             <div
               onClick={handleClear}
-              className="p-0.5 hover:bg-cyber-dark rounded cursor-pointer"
+              className="p-0.5 hover:bg-[var(--bg)] rounded cursor-pointer"
               role="button"
             >
-              <X className="w-4 h-4 text-gray-400 hover:text-gray-300" />
+              <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
             </div>
           )}
           <ChevronDown
-            className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-[var(--fg-3)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
           />
         </div>
       </button>

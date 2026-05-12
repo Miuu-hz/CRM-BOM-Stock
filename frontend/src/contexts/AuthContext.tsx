@@ -196,8 +196,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-cyber-dark flex items-center justify-center">
-        <div className="text-cyber-primary animate-pulse">Loading...</div>
+      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
+        <div className="text-phopy-indigo animate-pulse">Loading...</div>
       </div>
     )
   }

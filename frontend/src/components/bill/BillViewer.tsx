@@ -59,11 +59,11 @@ function BillViewerContent({ onClose }: { onClose?: () => void }) {
               <option value="THERMAL">Thermal (80mm)</option>
             </select>
             
-            <button onClick={handlePrint} className="cyber-btn-primary">
+            <button onClick={handlePrint} className="phopy-btn-primary">
               🖨️ พิมพ์
             </button>
             {onClose && (
-              <button onClick={onClose} className="cyber-btn-secondary">
+              <button onClick={onClose} className="phopy-btn-secondary">
                 ✕ ปิด
               </button>
             )}
@@ -100,7 +100,7 @@ export function BillDemo() {
   
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-gray-100">ระบบพิมพ์เอกสาร (Bill Printing System)</h2>
+      <h2 className="text-2xl font-bold text-[var(--fg-1)]">ระบบพิมพ์เอกสาร (Bill Printing System)</h2>
       
       {/* Type Selector */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -110,13 +110,13 @@ export function BillDemo() {
             onClick={() => setSelectedType(type)}
             className={`p-4 rounded-xl border-2 transition-all ${
               selectedType === type
-                ? 'border-cyber-primary bg-cyber-primary/10'
-                : 'border-cyber-border hover:border-cyber-primary/50'
+                ? 'border-phopy-indigo bg-phopy-indigo/10'
+                : 'border-[var(--border)] hover:border-phopy-indigo/50'
             }`}
             style={selectedType === type ? { borderColor: color } : {}}
           >
             <Icon className="w-8 h-8 mx-auto mb-2" style={{ color }} />
-            <p className="text-gray-300 text-sm">{label}</p>
+            <p className="text-[var(--fg-2)] text-sm">{label}</p>
           </button>
         ))}
       </div>
@@ -124,7 +124,7 @@ export function BillDemo() {
       {/* Preview Button */}
       <button
         onClick={() => setShowViewer(true)}
-        className="cyber-btn-primary w-full py-4 text-lg"
+        className="phopy-btn-primary w-full py-4 text-lg"
       >
         👁️ ดูตัวอย่าง {billTypeOptions.find(t => t.type === selectedType)?.label}
       </button>
@@ -164,7 +164,7 @@ export function QuickPrintButton({ type, documentId, label, className = '' }: Qu
     <>
       <button
         onClick={() => setShowViewer(true)}
-        className={`cyber-btn-secondary flex items-center gap-2 ${className}`}
+        className={`phopy-btn-secondary flex items-center gap-2 ${className}`}
         style={{ borderColor: config.color, color: config.color }}
       >
         🖨️ {label || config.label}

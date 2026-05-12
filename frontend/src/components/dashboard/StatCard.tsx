@@ -13,22 +13,22 @@ interface StatCardProps {
 function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardProps) {
   const colorClasses = {
     primary: {
-      bg: 'from-cyber-primary/20 to-cyber-secondary/20',
-      border: 'border-cyber-primary/50',
-      text: 'text-cyber-primary',
-      shadow: 'shadow-neon',
+      bg: 'from-phopy-indigo/20 to-phopy-indigo-600/20',
+      border: 'border-phopy-indigo/50',
+      text: 'text-phopy-indigo',
+      shadow: 'shadow-2',
     },
     green: {
-      bg: 'from-cyber-green/20 to-emerald-500/20',
-      border: 'border-cyber-green/50',
-      text: 'text-cyber-green',
-      shadow: 'shadow-green-neon',
+      bg: 'from-success/20 to-success/20',
+      border: 'border-success/50',
+      text: 'text-success',
+      shadow: 'shadow-2',
     },
     purple: {
-      bg: 'from-cyber-purple/20 to-cyber-magenta/20',
-      border: 'border-cyber-purple/50',
-      text: 'text-cyber-purple',
-      shadow: 'shadow-purple-neon',
+      bg: 'from-purple-500/20 to-pink-500/20',
+      border: 'border-purple-500/50',
+      text: 'text-purple-500',
+      shadow: 'shadow-2',
     },
   }
 
@@ -37,7 +37,7 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
   return (
     <motion.div
       whileHover={{ scale: 1.02, y: -5 }}
-      className={`cyber-card p-6 relative overflow-hidden ${selectedColor.shadow}`}
+      className={`phopy-card p-6 relative overflow-hidden ${selectedColor.shadow}`}
     >
       {/* Background Gradient */}
       <div
@@ -54,17 +54,17 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
           </div>
           <div
             className={`flex items-center gap-1 px-2 py-1 rounded-full ${
-              trend === 'up' ? 'bg-cyber-green/20' : 'bg-red-500/20'
+              trend === 'up' ? 'bg-success-soft' : 'bg-danger-soft'
             }`}
           >
             {trend === 'up' ? (
-              <TrendingUp className="w-3 h-3 text-cyber-green" />
+              <TrendingUp className="w-3 h-3 text-success" />
             ) : (
               <TrendingDown className="w-3 h-3 text-red-400" />
             )}
             <span
               className={`text-xs font-semibold ${
-                trend === 'up' ? 'text-cyber-green' : 'text-red-400'
+                trend === 'up' ? 'text-success' : 'text-red-400'
               }`}
             >
               {change}
@@ -73,7 +73,7 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
         </div>
 
         {/* Stats */}
-        <h3 className="text-gray-400 text-sm font-medium mb-2">{title}</h3>
+        <h3 className="text-[var(--fg-3)] text-sm font-medium mb-2">{title}</h3>
         <p className={`text-3xl font-bold ${selectedColor.text}`}>
           {value}
         </p>

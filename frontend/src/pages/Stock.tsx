@@ -288,7 +288,7 @@ function Stock() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
       </div>
     )
   }
@@ -302,10 +302,10 @@ function Stock() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2">
-            <span className="neon-text">จัดการสต๊อกสินค้า</span>
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
+            <span className="text-[var(--fg-1)]">จัดการสต๊อกสินค้า</span>
           </h1>
-          <p className="text-gray-400">ติดตามและจัดการระดับสต๊อกสินค้า</p>
+          <p className="text-[var(--fg-3)]">ติดตามและจัดการระดับสต๊อกสินค้า</p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end items-center">
           {/* Utility */}
@@ -313,7 +313,7 @@ function Stock() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleExport}
-            className="cyber-btn-secondary flex items-center gap-2 text-sm"
+            className="phopy-btn-secondary flex items-center gap-2 text-sm"
           >
             <FileDown className="w-4 h-4" />
             Export
@@ -322,20 +322,20 @@ function Stock() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowImportModal(true)}
-            className="cyber-btn-secondary flex items-center gap-2 text-sm"
+            className="phopy-btn-secondary flex items-center gap-2 text-sm"
           >
             <Upload className="w-4 h-4" />
             Import
           </motion.button>
 
           {/* Divider */}
-          <div className="w-px h-8 bg-cyber-border" />
+          <div className="w-px h-8 bg-[var(--border)]" />
 
           {/* Stock movement group */}
-          <div className="flex rounded-xl overflow-hidden border border-cyber-border">
+          <div className="flex rounded-xl overflow-hidden border border-[var(--border)]">
             <button
               onClick={() => setMovementModal({ open: true, type: 'IN', item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-cyber-green hover:bg-cyber-green/10 transition-colors border-r border-cyber-border"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-success hover:bg-success/10 transition-colors border-r border-[var(--border)]"
               title="Stock In"
             >
               <ArrowUpCircle className="w-4 h-4" />
@@ -343,7 +343,7 @@ function Stock() {
             </button>
             <button
               onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors border-r border-cyber-border"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors border-r border-[var(--border)]"
               title="Stock Out"
             >
               <ArrowDownCircle className="w-4 h-4" />
@@ -364,7 +364,7 @@ function Stock() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowAddModal(true)}
-            className="cyber-btn-primary flex items-center gap-2 text-sm"
+            className="phopy-btn-primary flex items-center gap-2 text-sm"
           >
             <Plus className="w-4 h-4" />
             เพิ่มสินค้า
@@ -401,25 +401,25 @@ function Stock() {
       </div>
 
       {/* Filters */}
-      <div className="cyber-card p-6">
+      <div className="phopy-card p-6">
         <div className="flex flex-col gap-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" aria-hidden="true" />
             <input
               type="search"
               placeholder="ค้นหาชื่อสินค้า หรือ SKU..."
               aria-label="ค้นหาสินค้า"
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
-              className="cyber-input pl-10 w-full"
+              className="phopy-input pl-10 w-full"
             />
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4">
             {/* Category Filter */}
             <div className="flex flex-col gap-2">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">ประเภทสินค้า</p>
+              <p className="text-xs text-[var(--fg-4)] font-medium uppercase tracking-wider">ประเภทสินค้า</p>
               <div className="flex gap-2 flex-wrap">
                 <FilterButton label="ทั้งหมด" active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
                 <FilterButton label="วัตถุดิบ" active={selectedCategory === 'raw'} onClick={() => handleCategoryChange('raw')} />
@@ -429,11 +429,11 @@ function Stock() {
             </div>
 
             {/* Divider */}
-            <div className="hidden sm:block w-px bg-cyber-border self-stretch" />
+            <div className="hidden sm:block w-px bg-[var(--border)] self-stretch" />
 
             {/* Status Filter */}
             <div className="flex flex-col gap-2">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">สถานะสต๊อก</p>
+              <p className="text-xs text-[var(--fg-4)] font-medium uppercase tracking-wider">สถานะสต๊อก</p>
               <div className="flex gap-2 flex-wrap">
                 <FilterButton label="ทั้งหมด" active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
                 <FilterButton label="หมด" active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
@@ -447,21 +447,21 @@ function Stock() {
       </div>
 
       {/* Stock List */}
-      <div className="cyber-card p-6">
+      <div className="phopy-card p-6">
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 mb-3 p-3 bg-cyber-primary/10 border border-cyber-primary/30 rounded-xl">
-            <span className="text-cyber-primary text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
+          <div className="flex items-center gap-3 mb-3 p-3 bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-xl">
+            <span className="text-phopy-indigo text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
             <button
               onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-sm hover:bg-red-500/30 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-danger-soft text-red-400 border border-red-500/30 rounded-lg text-sm hover:bg-red-500/30 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
               ลบที่เลือก
             </button>
             <button
               onClick={() => setSelectedIds(new Set())}
-              className="text-sm text-gray-400 hover:text-gray-200 transition-colors ml-auto"
+              className="text-sm text-[var(--fg-3)] hover:text-[var(--fg-2)] transition-colors ml-auto"
             >
               ยกเลิก
             </button>
@@ -472,7 +472,7 @@ function Stock() {
         <div className="flex items-center justify-end mb-3 relative">
           <button
             onClick={() => setShowColumnPicker(v => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-cyber-primary text-cyber-primary bg-cyber-primary/10' : 'border-cyber-border text-gray-400 hover:border-cyber-primary/50 hover:text-gray-200'}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-phopy-indigo text-phopy-indigo bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-[var(--fg-2)]'}`}
           >
             <Settings2 className="w-4 h-4" />
             ปรับคอลัมน์
@@ -481,10 +481,10 @@ function Stock() {
           {/* Column picker dropdown */}
           {showColumnPicker && (
             <div
-              className="absolute top-10 right-0 z-30 bg-cyber-card border border-cyber-border rounded-xl shadow-xl p-3 min-w-[180px]"
+              className="absolute top-10 right-0 z-30 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-xs text-gray-400 mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>
+              <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>
               {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
                 const always = ALWAYS_VISIBLE.includes(key)
                 const active = visibleCols[key]
@@ -495,14 +495,14 @@ function Stock() {
                     disabled={always}
                     className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-colors mb-0.5 ${
                       always ? 'opacity-50 cursor-not-allowed' :
-                      active ? 'bg-cyber-primary/10 text-cyber-primary' : 'text-gray-400 hover:bg-cyber-dark hover:text-gray-200'
+                      active ? 'bg-phopy-indigo/10 text-phopy-indigo' : 'text-[var(--fg-3)] hover:bg-[var(--bg)] hover:text-[var(--fg-2)]'
                     }`}
                   >
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-cyber-primary border-cyber-primary' : 'border-gray-600'}`}>
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-phopy-indigo border-phopy-indigo' : 'border-gray-600'}`}>
                       {active && <Check className="w-3 h-3 text-black" />}
                     </span>
                     {COLUMN_LABELS[key]}
-                    {always && <span className="ml-auto text-[10px] text-gray-600">บังคับ</span>}
+                    {always && <span className="ml-auto text-[10px] text-[var(--fg-4)]">บังคับ</span>}
                   </button>
                 )
               })}
@@ -511,7 +511,7 @@ function Stock() {
         </div>
 
         <div className="overflow-x-auto" onClick={() => setShowColumnPicker(false)}>
-          <table className="cyber-table">
+          <table className="phopy-table">
             <thead>
               <tr>
                 <th className="w-10">
@@ -519,7 +519,7 @@ function Stock() {
                     type="checkbox"
                     checked={paginatedItems.length > 0 && selectedIds.size === paginatedItems.length}
                     onChange={handleSelectAll}
-                    className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary cursor-pointer"
+                    className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo cursor-pointer"
                     aria-label="เลือกทั้งหมด"
                   />
                 </th>
@@ -542,7 +542,7 @@ function Stock() {
             <tbody>
               {sortedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={colSpanCount + 1} className="text-center py-8 text-gray-500">
+                  <td colSpan={colSpanCount + 1} className="text-center py-8 text-[var(--fg-4)]">
                     ไม่พบสินค้าที่ค้นหา
                   </td>
                 </tr>
@@ -558,14 +558,14 @@ function Stock() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: Math.min(index * 0.03, 0.3) }}
-                      className={isSelected ? 'bg-cyber-primary/5' : ''}
+                      className={isSelected ? 'bg-phopy-indigo/5' : ''}
                     >
                       <td className="w-10">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelect(item.id)}
-                          className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary cursor-pointer"
+                          className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo cursor-pointer"
                           aria-label={`เลือก ${item.name}`}
                         />
                       </td>
@@ -575,23 +575,23 @@ function Stock() {
                             <img
                               src={item.imageUrl}
                               alt={item.name}
-                              className="w-10 h-10 rounded-lg object-cover border border-cyber-border"
+                              className="w-10 h-10 rounded-lg object-cover border border-[var(--border)]"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-lg bg-cyber-dark border border-cyber-border flex items-center justify-center">
-                              <Package className="w-4 h-4 text-gray-600" />
+                            <div className="w-10 h-10 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center">
+                              <Package className="w-4 h-4 text-[var(--fg-4)]" />
                             </div>
                           )}
                         </td>
                       )}
                       {visibleCols.name && (
                         <td>
-                          <span className="text-gray-300 font-medium">{item.name}</span>
+                          <span className="text-[var(--fg-2)] font-medium">{item.name}</span>
                         </td>
                       )}
                       {visibleCols.sku && (
                         <td>
-                          <span className="text-gray-400 font-mono text-sm">{item.sku}</span>
+                          <span className="text-[var(--fg-3)] font-mono text-sm">{item.sku}</span>
                         </td>
                       )}
                       {visibleCols.category && (
@@ -601,7 +601,7 @@ function Stock() {
                         <td>
                           <div className="flex flex-col gap-0.5">
                             {/* จำนวนสต็อกหลัก = หน่วยฐาน */}
-                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
                               {item.quantity} {item.baseUnit || item.unit}
                             </span>
                             {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info */}
@@ -615,24 +615,24 @@ function Stock() {
                       )}
                       {visibleCols.baseUnit && (
                         <td>
-                          <span className="text-gray-300 text-sm">{item.baseUnit || item.unit}</span>
+                          <span className="text-[var(--fg-2)] text-sm">{item.baseUnit || item.unit}</span>
                         </td>
                       )}
                       {visibleCols.displayQty && (
                         <td>
-                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-gray-500' : 'text-cyber-primary'}`}>
+                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-[var(--fg-4)]' : 'text-phopy-indigo'}`}>
                             {item.sealedQty ?? 0} {item.displayUnit || item.unit}
                           </span>
                         </td>
                       )}
                       {visibleCols.displayUnit && (
                         <td>
-                          <span className="text-gray-300 text-sm">{item.displayUnit || item.unit}</span>
+                          <span className="text-[var(--fg-2)] text-sm">{item.displayUnit || item.unit}</span>
                         </td>
                       )}
                       {visibleCols.minmax && (
                         <td>
-                          <span className="text-gray-400 text-sm">{item.minStock} / {item.maxStock}</span>
+                          <span className="text-[var(--fg-3)] text-sm">{item.minStock} / {item.maxStock}</span>
                         </td>
                       )}
                       {visibleCols.unitCost && (
@@ -644,14 +644,14 @@ function Stock() {
                       )}
                       {visibleCols.unitPrice && (
                         <td>
-                          <span className="text-cyber-green text-sm font-medium">
+                          <span className="text-success text-sm font-medium">
                             {price ? `฿${Number(price).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}` : '-'}
                           </span>
                         </td>
                       )}
                       {visibleCols.location && (
                         <td>
-                          <span className="text-gray-400 text-sm">{item.location || '-'}</span>
+                          <span className="text-[var(--fg-3)] text-sm">{item.location || '-'}</span>
                         </td>
                       )}
                       {visibleCols.status && (
@@ -661,21 +661,21 @@ function Stock() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleOpenDetail(item)}
-                            className="p-2 text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`ดูรายละเอียด ${item.name}`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setEditModal({ open: true, item })}
-                            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`แก้ไข ${item.name}`}
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleStockMovement('IN', item)}
-                            className="p-2 text-gray-400 hover:text-cyber-green hover:bg-cyber-green/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`รับสินค้าเข้า ${item.name}`}
                           >
                             <ArrowUpCircle className="w-4 h-4" />
@@ -684,8 +684,8 @@ function Stock() {
                             onClick={() => handleStockMovement('OUT', item)}
                             disabled={item.quantity === 0}
                             className={`p-2 rounded-lg transition-colors ${item.quantity === 0
-                              ? 'text-gray-600 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-400 hover:bg-red-400/10 cursor-pointer'
+                              ? 'text-[var(--fg-4)] cursor-not-allowed'
+                              : 'text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 cursor-pointer'
                               }`}
                             aria-label={item.quantity === 0 ? `${item.name} สต๊อกหมด` : `ตัดสินค้าออก ${item.name}`}
                           >
@@ -693,7 +693,7 @@ function Stock() {
                           </button>
                           <button
                             onClick={() => setAdjustModal({ open: true, item })}
-                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`ปรับสต๊อก ${item.name}`}
                             title="ปรับสต๊อก"
                           >
@@ -710,10 +710,10 @@ function Stock() {
         </div>
 
         {/* Pagination Controls */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-cyber-border">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-[var(--border)]">
           <div className="flex items-center gap-4">
-            <span className="text-gray-400 text-sm">
-              แสดง <span className="text-cyber-primary font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-cyber-primary font-semibold">{totalItems}</span> รายการ
+            <span className="text-[var(--fg-3)] text-sm">
+              แสดง <span className="text-phopy-indigo font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-phopy-indigo font-semibold">{totalItems}</span> รายการ
             </span>
 
             {/* Items Per Page Selector */}
@@ -723,7 +723,7 @@ function Stock() {
                 setItemsPerPage(Number(e.target.value))
                 setCurrentPage(1)
               }}
-              className="cyber-input text-sm py-1 px-2"
+              className="phopy-input text-sm py-1 px-2"
             >
               <option value={20}>20 / หน้า</option>
               <option value={50}>50 / หน้า</option>
@@ -736,33 +736,33 @@ function Stock() {
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               หน้าแรก
             </button>
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               ก่อนหน้า
             </button>
 
-            <span className="px-4 py-1 text-sm text-cyber-primary font-semibold bg-cyber-primary/10 rounded border border-cyber-primary/30">
+            <span className="px-4 py-1 text-sm text-phopy-indigo font-semibold bg-phopy-indigo/10 rounded border border-phopy-indigo/30">
               หน้า {currentPage} / {totalPages || 1}
             </span>
 
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               ถัดไป
             </button>
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="px-3 py-1 text-sm rounded bg-cyber-dark border border-cyber-border text-gray-300 hover:border-cyber-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               หน้าสุดท้าย
             </button>
@@ -846,15 +846,15 @@ function DetailModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn"
+        className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn"
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-100">Stock Item Details</h2>
+        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">Stock Item Details</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
@@ -862,23 +862,23 @@ function DetailModal({
           {/* Item Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-400 mb-1">Name</p>
-              <p className="text-gray-200 font-medium">{item.name}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Name</p>
+              <p className="text-[var(--fg-2)] font-medium">{item.name}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">SKU</p>
-              <p className="text-gray-200 font-mono">{item.sku}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">SKU</p>
+              <p className="text-[var(--fg-2)] font-mono">{item.sku}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">Category</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Category</p>
               <CategoryBadge category={item.category} />
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">Current Stock (Base)</p>
-              <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Current Stock (Base)</p>
+              <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
                 {item.quantity} {item.baseUnit || item.unit}
                 {item.quantity === 0 && (
-                  <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                  <span className="ml-2 text-xs bg-danger-soft text-red-400 px-2 py-1 rounded">
                     OUT OF STOCK
                   </span>
                 )}
@@ -888,23 +888,23 @@ function DetailModal({
               )}
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">หน่วยฐาน (Base)</p>
-              <p className="text-gray-200">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(หน่วยเดิม: ${item.unit})` : ''}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">หน่วยฐาน (Base)</p>
+              <p className="text-[var(--fg-2)]">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(หน่วยเดิม: ${item.unit})` : ''}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">หน่วยบรรจุ (Packaging)</p>
-              <p className="text-gray-200">{item.displayUnit || '-'}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">หน่วยบรรจุ (Packaging)</p>
+              <p className="text-[var(--fg-2)]">{item.displayUnit || '-'}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">Min Stock</p>
-              <p className="text-gray-200">{item.minStock} {item.baseUnit || item.unit}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Min Stock</p>
+              <p className="text-[var(--fg-2)]">{item.minStock} {item.baseUnit || item.unit}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">Max Stock</p>
-              <p className="text-gray-200">{item.maxStock} {item.baseUnit || item.unit}</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Max Stock</p>
+              <p className="text-[var(--fg-2)]">{item.maxStock} {item.baseUnit || item.unit}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">ราคาต้นทุน/หน่วยซื้อ ({item.displayUnit || item.unit})</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วยซื้อ ({item.displayUnit || item.unit})</p>
               <p className="text-amber-400 font-semibold">
                 {item.unitCost
                   ? `฿${Number(item.unitCost).toLocaleString()}/${item.displayUnit || item.unit || 'หน่วย'}`
@@ -912,17 +912,17 @@ function DetailModal({
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-400 mb-1">ราคาขาย/หน่วยฐาน ({item.baseUnit || item.unit})</p>
-              <p className="text-cyber-green font-semibold">
+              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาขาย/หน่วยฐาน ({item.baseUnit || item.unit})</p>
+              <p className="text-success font-semibold">
                 {item.unitPrice
                   ? `฿${Number(item.unitPrice).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}`
                   : 'ไม่ระบุ'}
               </p>
             </div>
             <div className="col-span-2">
-              <p className="text-sm text-gray-400 mb-1">Location</p>
-              <div className="flex items-center gap-2 text-gray-200">
-                <MapPin className="w-4 h-4 text-cyber-primary" />
+              <p className="text-sm text-[var(--fg-3)] mb-1">Location</p>
+              <div className="flex items-center gap-2 text-[var(--fg-2)]">
+                <MapPin className="w-4 h-4 text-phopy-indigo" />
                 {item.location || 'Not specified'}
               </div>
             </div>
@@ -930,14 +930,14 @@ function DetailModal({
 
           {/* Related Material/Product */}
           {item.material && (
-            <div className="p-4 bg-cyber-darker rounded-lg">
-              <p className="text-sm text-gray-400 mb-2">Related Material</p>
+            <div className="p-4 bg-[var(--surface-2)] rounded-lg">
+              <p className="text-sm text-[var(--fg-3)] mb-2">Related Material</p>
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-gray-200 font-medium">{item.material.name}</p>
-                  <p className="text-gray-400 text-sm">{item.material.code}</p>
+                  <p className="text-[var(--fg-2)] font-medium">{item.material.name}</p>
+                  <p className="text-[var(--fg-3)] text-sm">{item.material.code}</p>
                 </div>
-                <p className="text-cyber-green font-semibold">
+                <p className="text-success font-semibold">
                   ฿{Number(item.material.unitCost).toLocaleString()}/unit
                 </p>
               </div>
@@ -946,8 +946,8 @@ function DetailModal({
 
           {/* Movement History */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center gap-2">
-              <History className="w-5 h-5 text-cyber-primary" />
+            <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
+              <History className="w-5 h-5 text-phopy-indigo" />
               ประวัติการเคลื่อนไหว
             </h3>
             {item.movements && item.movements.length > 0 ? (
@@ -955,11 +955,11 @@ function DetailModal({
                 {item.movements.map((movement) => (
                   <div
                     key={movement.id}
-                    className="flex items-center justify-between p-3 bg-cyber-darker rounded-lg"
+                    className="flex items-center justify-between p-3 bg-[var(--surface-2)] rounded-lg"
                   >
                     <div className="flex items-center gap-3">
                       {movement.type === 'IN' ? (
-                        <ArrowUpCircle className="w-5 h-5 text-cyber-green flex-shrink-0" />
+                        <ArrowUpCircle className="w-5 h-5 text-success flex-shrink-0" />
                       ) : movement.type === 'OUT' ? (
                         <ArrowDownCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                       ) : movement.type === 'PRICE_CHANGE' ? (
@@ -969,7 +969,7 @@ function DetailModal({
                       )}
                       <div>
                         <p className={`font-medium ${
-                          movement.type === 'IN' ? 'text-cyber-green' :
+                          movement.type === 'IN' ? 'text-success' :
                           movement.type === 'OUT' ? 'text-red-400' :
                           movement.type === 'PRICE_CHANGE' ? 'text-yellow-400' : 'text-blue-400'
                         }`}>
@@ -978,29 +978,29 @@ function DetailModal({
                            movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
                            `${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}`}
                           {movement.movementQuantity !== undefined && movement.movementQuantity !== movement.quantity && movement.movementUnit && (
-                            <span className="text-xs text-gray-500 ml-1">(นับ {movement.movementQuantity} {movement.movementUnit})</span>
+                            <span className="text-xs text-[var(--fg-4)] ml-1">(นับ {movement.movementQuantity} {movement.movementUnit})</span>
                           )}
                         </p>
                         {movement.notes && (
-                          <p className="text-gray-400 text-xs mt-0.5">{movement.notes}</p>
+                          <p className="text-[var(--fg-3)] text-xs mt-0.5">{movement.notes}</p>
                         )}
                         {movement.reference && (
-                          <p className="text-gray-500 text-xs font-mono">{movement.reference}</p>
+                          <p className="text-[var(--fg-4)] text-xs font-mono">{movement.reference}</p>
                         )}
                       </div>
                     </div>
-                    <div className="text-right text-xs text-gray-400 flex-shrink-0">
+                    <div className="text-right text-xs text-[var(--fg-3)] flex-shrink-0">
                       <p className="flex items-center gap-1 justify-end">
                         <Clock className="w-3 h-3" />
                         {new Date(movement.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </p>
-                      <p className="text-gray-500">{new Date(movement.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="text-[var(--fg-4)]">{new Date(movement.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-sm text-center py-4">ไม่มีประวัติการเคลื่อนไหว</p>
+              <p className="text-[var(--fg-4)] text-sm text-center py-4">ไม่มีประวัติการเคลื่อนไหว</p>
             )}
           </div>
         </div>
@@ -1196,22 +1196,22 @@ function EditModal({
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
+          className="phopy-card w-full max-w-lg flex flex-col animate-scaleIn"
           style={{ maxHeight: 'calc(100vh - 2rem)' }}
         >
           {/* Header — sticky */}
-          <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between flex-shrink-0">
+          <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
             <div>
-              <h2 className="text-lg font-bold text-gray-100">แก้ไขสินค้า</h2>
-              <p className="text-xs text-gray-500 mt-0.5">{item.sku} · {item.name}</p>
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">แก้ไขสินค้า</h2>
+              <p className="text-xs text-[var(--fg-4)] mt-0.5">{item.sku} · {item.name}</p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
-              <X className="w-5 h-5 text-gray-400" />
+            <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
+              <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
           </div>
 
           {/* Tab bar */}
-          <div className="flex border-b border-cyber-border flex-shrink-0">
+          <div className="flex border-b border-[var(--border)] flex-shrink-0">
             {(['general', 'units'] as const).map(tab => (
               <button
                 key={tab}
@@ -1219,8 +1219,8 @@ function EditModal({
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
                   activeTab === tab
-                    ? 'text-cyber-primary border-cyber-primary'
-                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                    ? 'text-phopy-indigo border-phopy-indigo'
+                    : 'text-[var(--fg-4)] border-transparent hover:text-[var(--fg-2)]'
                 }`}
               >
                 {tab === 'general' ? 'ทั่วไป' : 'หน่วย'}
@@ -1238,7 +1238,7 @@ function EditModal({
                   {/* Image + Name row */}
                   <div className="flex gap-3 items-start">
                     <label className="cursor-pointer flex-shrink-0">
-                      <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cyber-border hover:border-cyber-primary/60 flex items-center justify-center overflow-hidden bg-cyber-dark transition-colors relative group">
+                      <div className="w-20 h-20 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-phopy-indigo/60 flex items-center justify-center overflow-hidden bg-[var(--bg)] transition-colors relative group">
                         {imagePreview ? (
                           <>
                             <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
@@ -1248,20 +1248,20 @@ function EditModal({
                           </>
                         ) : (
                           <div className="flex flex-col items-center gap-1">
-                            <ImagePlus className="w-6 h-6 text-gray-500" />
-                            <span className="text-[10px] text-gray-500">อัปโหลด</span>
+                            <ImagePlus className="w-6 h-6 text-[var(--fg-4)]" />
+                            <span className="text-[10px] text-[var(--fg-4)]">อัปโหลด</span>
                           </div>
                         )}
                       </div>
                       <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                     </label>
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-400 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
                       <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         required
                       />
                       {imagePreview && (
@@ -1286,11 +1286,11 @@ function EditModal({
 
                   {/* Category */}
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1.5">ประเภท</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">ประเภท</label>
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                       required
                     >
                       <option value="raw">วัตถุดิบ (Raw)</option>
@@ -1303,7 +1303,7 @@ function EditModal({
                   {/* Cost + Price */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
                         ราคาต้นทุน/หน่วยซื้อ (฿)
                         <span className="ml-1 text-amber-400/70">ต่อ {formData.displayUnit || formData.unit || 'หน่วยที่ซื้อ'}</span>
                       </label>
@@ -1312,23 +1312,23 @@ function EditModal({
                         value={formData.unitCost}
                         onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
                         onFocus={(e) => e.target.select()}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         min="0"
                         step="0.01"
                         placeholder="0.00"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
                         ราคาขาย/หน่วยฐาน (฿)
-                        <span className="ml-1 text-cyber-green/70">ต่อ {formData.baseUnit || formData.unit || 'หน่วยฐาน'}</span>
+                        <span className="ml-1 text-success/70">ต่อ {formData.baseUnit || formData.unit || 'หน่วยฐาน'}</span>
                       </label>
                       <input
                         type="number"
                         value={formData.unitPrice}
                         onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
                         onFocus={(e) => e.target.select()}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         min="0"
                         step="0.01"
                         placeholder="0.00"
@@ -1339,24 +1339,24 @@ function EditModal({
                   {/* Min/Max Stock */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">สต็อกขั้นต่ำ</label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สต็อกขั้นต่ำ</label>
                       <input
                         type="number"
                         value={formData.minStock}
                         onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
                         onFocus={(e) => e.target.select()}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         min="0"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">สต็อกสูงสุด</label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สต็อกสูงสุด</label>
                       <input
                         type="number"
                         value={formData.maxStock}
                         onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
                         onFocus={(e) => e.target.select()}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         min="0"
                       />
                     </div>
@@ -1365,41 +1365,41 @@ function EditModal({
                   {/* Location + Barcode */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">สถานที่เก็บ</label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สถานที่เก็บ</label>
                       <input
                         type="text"
                         value={formData.location}
                         onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         placeholder="เช่น คลังหลัก"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">GS1 Barcode</label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">GS1 Barcode</label>
                       <input
                         type="text"
                         value={formData.gs1Barcode}
                         onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                         placeholder="ไม่บังคับ"
                       />
                     </div>
                   </div>
 
                   {/* POS toggle */}
-                  <label className="flex items-center gap-3 p-3 bg-cyber-dark/50 rounded-xl border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
+                  <label className="flex items-center gap-3 p-3 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] cursor-pointer hover:border-phopy-indigo/50 transition-colors">
                     <input
                       type="checkbox"
                       id="isPosEnabled"
                       checked={formData.isPosEnabled}
                       onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                      className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+                      className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
                     />
                     <div className="flex-1">
-                      <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
-                      <p className="text-xs text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
+                      <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
+                      <p className="text-xs text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-success-soft text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
                       {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                     </span>
                   </label>
@@ -1411,11 +1411,11 @@ function EditModal({
                 <>
                   {/* Unit (legacy) */}
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1.5">หน่วยสินค้า (Legacy)</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยสินค้า (Legacy)</label>
                     <select
                       value={formData.unit}
                       onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                     >
                       {formData.unit && !availableUnits.find(u => u.value === formData.unit) && (
                         <option value={formData.unit}>{formData.unit}</option>
@@ -1424,42 +1424,42 @@ function EditModal({
                         <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-600 mt-1">เพิ่มหน่วยได้ใน Settings → Unit Conversions</p>
+                    <p className="text-xs text-[var(--fg-4)] mt-1">เพิ่มหน่วยได้ใน Settings → Unit Conversions</p>
                   </div>
 
                   {/* Base Unit + Display Unit */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">
-                        หน่วยฐาน <span className="text-gray-600">(Base - หน่วยย่อยสุด)</span>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
+                        หน่วยฐาน <span className="text-[var(--fg-4)]">(Base - หน่วยย่อยสุด)</span>
                       </label>
                       <select
                         value={formData.baseUnit || ''}
                         onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                       >
                         <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
                         {availableUnits.map((u) => (
                           <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-1">เช่น ขวด, pcs, g, ml</p>
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">
-                        หน่วยบรรจุ <span className="text-gray-600">(Packaging - บรรจุภัณฑ์)</span>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
+                        หน่วยบรรจุ <span className="text-[var(--fg-4)]">(Packaging - บรรจุภัณฑ์)</span>
                       </label>
                       <select
                         value={formData.displayUnit || ''}
                         onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
-                        className="cyber-input w-full"
+                        className="phopy-input w-full"
                       >
                         <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
                         {availableUnits.map((u) => (
                           <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-1">เช่น ลัง, กล่อง, ถุง</p>
                     </div>
                   </div>
 
@@ -1481,15 +1481,15 @@ function EditModal({
                   )}
 
                   {/* Unit Conversions (per-material) */}
-                  <div className="rounded-xl border border-cyber-border overflow-hidden">
+                  <div className="rounded-xl border border-[var(--border)] overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setConvExpanded(v => !v)}
-                      className="w-full flex items-center justify-between px-4 py-3 bg-cyber-dark/50 hover:bg-cyber-dark/70 transition-colors"
+                      className="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface-2)] hover:bg-[var(--bg)]/70 transition-colors"
                     >
                       <div className="flex items-center gap-2">
                         <ArrowUpCircle className="w-4 h-4 text-purple-400" style={{ transform: 'rotate(90deg)' }} />
-                        <span className="text-sm font-medium text-gray-200">การแปลงหน่วยเฉพาะสินค้านี้</span>
+                        <span className="text-sm font-medium text-[var(--fg-2)]">การแปลงหน่วยเฉพาะสินค้านี้</span>
                         {itemConversions.length > 0 && (
                           <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
                             {itemConversions.length} รายการ
@@ -1497,24 +1497,24 @@ function EditModal({
                         )}
                       </div>
                       {convExpanded
-                        ? <ChevronUp className="w-4 h-4 text-gray-500" />
-                        : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                        ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" />
+                        : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
                     </button>
 
                     {convExpanded && (
-                      <div className="p-3 space-y-2 bg-cyber-dark/20">
+                      <div className="p-3 space-y-2 bg-[var(--bg)]/20">
                         {itemConversions.length > 0 && (
                           <div className="space-y-1">
                             {itemConversions.map(c => (
                               <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-lg">
                                 <span className="text-xs font-mono text-blue-300">1 {ul(c.from_unit)}</span>
-                                <span className="text-gray-600 text-xs">=</span>
+                                <span className="text-[var(--fg-4)] text-xs">=</span>
                                 <span className="text-xs font-mono text-green-300">{c.conversion_factor} {ul(c.to_unit)}</span>
-                                <span className="text-gray-600 text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
+                                <span className="text-[var(--fg-4)] text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteConversion(c.id)}
-                                  className="ml-auto p-1 text-gray-500 hover:text-red-400 transition-colors"
+                                  className="ml-auto p-1 text-[var(--fg-4)] hover:text-red-400 transition-colors"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
@@ -1524,11 +1524,11 @@ function EditModal({
                         )}
                         <div className="flex gap-2 items-end">
                           <div className="flex-1">
-                            <p className="text-[10px] text-gray-500 mb-1">จาก (เช่น pack)</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">จาก (เช่น pack)</p>
                             <select
                               value={convForm.from_unit}
                               onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -1537,11 +1537,11 @@ function EditModal({
                             </select>
                           </div>
                           <div className="flex-1">
-                            <p className="text-[10px] text-gray-500 mb-1">เป็น (เช่น pcs)</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">เป็น (เช่น pcs)</p>
                             <select
                               value={convForm.to_unit}
                               onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -1550,7 +1550,7 @@ function EditModal({
                             </select>
                           </div>
                           <div className="w-20">
-                            <p className="text-[10px] text-gray-500 mb-1">จำนวน</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">จำนวน</p>
                             <input
                               type="number"
                               value={convForm.conversion_factor}
@@ -1558,7 +1558,7 @@ function EditModal({
                               placeholder="24"
                               min="0.000001"
                               step="any"
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
                             />
                           </div>
                           <button
@@ -1595,18 +1595,18 @@ function EditModal({
             </div>
 
             {/* Footer — sticky */}
-            <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
+            <div className="px-5 py-3 border-t border-[var(--border)] flex gap-3 flex-shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
+                className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-500 transition-colors text-sm"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
                 disabled={saving || uploadingImage}
-                className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
+                className="flex-1 phopy-btn-primary flex items-center justify-center gap-2 text-sm py-2"
               >
                 {(saving || uploadingImage) ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก...</>
@@ -1764,32 +1764,32 @@ function MovementModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
+        className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
       >
-        <div className={`p-6 border-b border-cyber-border flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-cyber-green/10' : 'bg-red-500/10'
+        <div className={`p-6 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-success/10' : 'bg-red-500/10'
           }`}>
           <div className="flex items-center gap-3">
             {type === 'IN' ? (
-              <ArrowUpCircle className="w-6 h-6 text-cyber-green" />
+              <ArrowUpCircle className="w-6 h-6 text-success" />
             ) : (
               <ArrowDownCircle className="w-6 h-6 text-red-400" />
             )}
-            <h2 className="text-xl font-bold text-gray-100">
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">
               Stock {type === 'IN' ? 'In' : 'Out'}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Select Item</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Select Item</label>
             <SearchableDropdown
               value={selectedItemId}
               onChange={setSelectedItemId}
@@ -1805,14 +1805,14 @@ function MovementModal({
             )}
             {type === 'IN' && (
               <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-gray-500">Item not found?</span>
+                <span className="text-sm text-[var(--fg-4)]">Item not found?</span>
                 <button
                   type="button"
                   onClick={() => {
                     onClose()
                     setShowAddModal(true)
                   }}
-                  className="text-sm text-cyber-primary hover:text-cyber-secondary flex items-center gap-1"
+                  className="text-sm text-phopy-indigo hover:text-phopy-indigo-600 flex items-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
                   Create New Item
@@ -1822,22 +1822,22 @@ function MovementModal({
           </div>
 
           {selectedItem && (
-            <div className="p-4 bg-cyber-darker rounded-lg space-y-1">
+            <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-1">
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Current Stock:</span>
-                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-cyber-primary'}`}>
+                <span className="text-[var(--fg-3)]">Current Stock:</span>
+                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
                     ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
                     : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
                   {selectedItem.quantity === 0 && (
-                    <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                    <span className="ml-2 text-xs bg-danger-soft text-red-400 px-2 py-1 rounded">
                       OUT OF STOCK
                     </span>
                   )}
                 </span>
               </div>
               {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
-                <div className="flex justify-between items-center text-xs text-gray-500">
+                <div className="flex justify-between items-center text-xs text-[var(--fg-4)]">
                   <span></span>
                   <span>{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
                 </div>
@@ -1857,24 +1857,24 @@ function MovementModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">Quantity</label>
               <input
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 min="1"
                 required
                 disabled={isOutOfStock}
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Unit</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">Unit</label>
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 disabled={isOutOfStock}
               >
                 {selectedItem ? (
@@ -1906,23 +1906,23 @@ function MovementModal({
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Reference (Optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Reference (Optional)</label>
             <input
               type="text"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               placeholder="e.g., PO-2024-001"
               disabled={isOutOfStock}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Notes (Optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Notes (Optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               rows={3}
               placeholder="Additional notes..."
               disabled={isOutOfStock}
@@ -1931,15 +1931,15 @@ function MovementModal({
 
           {type === 'IN' && (
             <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                อัปเดตราคาต้นทุน/หน่วยซื้อ (฿) <span className="text-gray-500">(ไม่บังคับ)</span>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">
+                อัปเดตราคาต้นทุน/หน่วยซื้อ (฿) <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
               </label>
               <input
                 type="number"
                 value={unitCost}
                 onChange={(e) => setUnitCost(e.target.value ? parseFloat(e.target.value) : '')}
                 onFocus={(e) => e.target.select()}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 min="0"
                 step="0.01"
                 placeholder="เว้นว่างถ้าไม่ต้องการเปลี่ยนราคา"
@@ -1951,7 +1951,7 @@ function MovementModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+              className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]"
             >
               Cancel
             </button>
@@ -1959,7 +1959,7 @@ function MovementModal({
               type="submit"
               disabled={saving || isOutOfStock || exceedsStock || !selectedItemId}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${type === 'IN'
-                ? 'bg-cyber-green text-black hover:shadow-neon-green disabled:opacity-50'
+                ? 'bg-success text-black hover:shadow-2-green disabled:opacity-50'
                 : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
                 }`}
             >
@@ -1991,17 +1991,17 @@ function StatCard({
   color: string
 }) {
   const colorClass = {
-    primary: 'text-cyber-primary',
-    green: 'text-cyber-green',
+    primary: 'text-phopy-indigo',
+    green: 'text-success',
     yellow: 'text-yellow-400',
     red: 'text-red-400',
   }[color]
 
   return (
-    <div className="cyber-card p-4">
+    <div className="phopy-card p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-400 mb-1">{label}</p>
+          <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
           <p className={`text-2xl font-bold ${colorClass}`}>
             {value}
           </p>
@@ -2025,8 +2025,8 @@ function FilterButton({
     <button
       onClick={onClick}
       className={`px-4 py-2 rounded-lg transition-all whitespace-nowrap ${active
-        ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
-        : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
+        ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+        : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
         }`}
     >
       {label}
@@ -2050,7 +2050,7 @@ function CategoryBadge({ category }: { category: string }) {
   const config: Record<string, { label: string; color: string }> = {
     raw:      { label: 'วัตถุดิบ',       color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
     wip:      { label: 'กึ่งสำเร็จรูป', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
-    finished: { label: 'สินค้าสำเร็จรูป', color: 'text-cyber-green bg-cyber-green/20 border-cyber-green/30' },
+    finished: { label: 'สินค้าสำเร็จรูป', color: 'text-success bg-success-soft border-success/30' },
     material: { label: 'วัสดุ/อื่นๆ',   color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
   }
   const selected = config[getCategoryGroup(category)]
@@ -2063,7 +2063,7 @@ function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
     adequate: {
       label: 'Adequate',
-      className: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+      className: 'bg-success-soft text-success border-success/30',
     },
     low: {
       label: 'Low',
@@ -2071,7 +2071,7 @@ function StatusBadge({ status }: { status: string }) {
     },
     critical: {
       label: 'Critical',
-      className: 'bg-red-500/20 text-red-400 border-red-500/30',
+      className: 'bg-danger-soft text-red-400 border-red-500/30',
     },
     overstock: {
       label: 'Overstock',
@@ -2111,14 +2111,14 @@ function SortTh({
   return (
     <th
       onClick={() => onSort(colKey)}
-      className="cursor-pointer select-none hover:text-cyber-primary transition-colors"
+      className="cursor-pointer select-none hover:text-phopy-indigo transition-colors"
     >
       <span className="flex items-center gap-1">
         {label}
         {active ? (
-          sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-cyber-primary" /> : <ChevronDown className="w-3.5 h-3.5 text-cyber-primary" />
+          sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-phopy-indigo" /> : <ChevronDown className="w-3.5 h-3.5 text-phopy-indigo" />
         ) : (
-          <ChevronsUpDown className="w-3.5 h-3.5 text-gray-600" />
+          <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--fg-4)]" />
         )}
       </span>
     </th>
@@ -2215,25 +2215,25 @@ function AdjustModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
+        className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
       >
-        <div className="p-6 border-b border-cyber-border flex items-center justify-between bg-blue-500/10 flex-shrink-0">
+        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between bg-blue-500/10 flex-shrink-0">
           <div className="flex items-center gap-3">
             <SlidersHorizontal className="w-6 h-6 text-blue-400" />
             <div>
-              <h2 className="text-xl font-bold text-gray-100">ปรับสต๊อก (Physical Count)</h2>
-              <p className="text-xs text-gray-400 mt-0.5">ตรวจนับและปรับยอดสต๊อกให้ตรงกับความจริง</p>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">ปรับสต๊อก (Physical Count)</h2>
+              <p className="text-xs text-[var(--fg-3)] mt-0.5">ตรวจนับและปรับยอดสต๊อกให้ตรงกับความจริง</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg transition-colors">
-            <X className="w-5 h-5 text-gray-400" />
+          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">เลือกสินค้า</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">เลือกสินค้า</label>
             <SearchableDropdown
               value={selectedItemId}
               onChange={setSelectedItemId}
@@ -2248,37 +2248,37 @@ function AdjustModal({
           </div>
 
           {selectedItem && (
-            <div className="p-4 bg-cyber-darker rounded-lg space-y-3">
+            <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-400 text-sm">ยอดในระบบ:</span>
-                <span className="font-bold text-cyber-primary">
+                <span className="text-[var(--fg-3)] text-sm">ยอดในระบบ:</span>
+                <span className="font-bold text-phopy-indigo">
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
                     ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
                     : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
-                    <span className="block text-xs text-gray-500 text-right">{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
+                    <span className="block text-xs text-[var(--fg-4)] text-right">{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
                   )}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">จำนวนที่นับได้จริง</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">จำนวนที่นับได้จริง</label>
                   <input
                     type="number"
                     value={physicalCount}
                     onChange={(e) => setPhysicalCount(parseInt(e.target.value) || 0)}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full text-lg font-bold"
+                    className="phopy-input w-full text-lg font-bold"
                     min="0"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">หน่วยที่นับ</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">หน่วยที่นับ</label>
                   <select
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                   >
                     {selectedItem.baseUnit && (
                       <option value={selectedItem.baseUnit}>{UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)</option>
@@ -2293,25 +2293,25 @@ function AdjustModal({
                 </div>
               </div>
               {diff !== 0 && (
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-cyber-green/10 border-cyber-green/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                  <span className="text-sm text-gray-300">ผลต่าง:</span>
-                  <span className={`font-bold text-lg ${diff > 0 ? 'text-cyber-green' : 'text-red-400'}`}>
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-success/10 border-success/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                  <span className="text-sm text-[var(--fg-2)]">ผลต่าง:</span>
+                  <span className={`font-bold text-lg ${diff > 0 ? 'text-success' : 'text-red-400'}`}>
                     {diff > 0 ? '+' : ''}{diff} {selectedItem.baseUnit || selectedItem.unit}
                   </span>
                 </div>
               )}
               {diff === 0 && physicalCount === selectedItem.quantity && (
-                <p className="text-gray-500 text-sm text-center">จำนวนเท่ากับยอดในระบบ</p>
+                <p className="text-[var(--fg-4)] text-sm text-center">จำนวนเท่ากับยอดในระบบ</p>
               )}
             </div>
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">หมายเหตุ (ไม่บังคับ)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">หมายเหตุ (ไม่บังคับ)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
               rows={2}
               placeholder="เช่น ตรวจนับประจำเดือน, เจอสินค้าหาย..."
             />
@@ -2321,7 +2321,7 @@ function AdjustModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300"
+              className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]"
             >
               ยกเลิก
             </button>
@@ -2436,19 +2436,19 @@ function AddStockModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="cyber-card w-full max-w-lg flex flex-col animate-scaleIn"
+        className="phopy-card w-full max-w-lg flex flex-col animate-scaleIn"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}
       >
-        <div className="px-5 py-4 border-b border-cyber-border flex items-center justify-between bg-cyber-green/10 flex-shrink-0">
+        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between bg-success/10 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <Package className="w-5 h-5 text-cyber-green" />
-            <h2 className="text-lg font-bold text-gray-100">เพิ่มสินค้าใหม่</h2>
+            <Package className="w-5 h-5 text-success" />
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">เพิ่มสินค้าใหม่</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-cyber-dark rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
@@ -2457,25 +2457,25 @@ function AddStockModal({
 
             {/* ── Section: ข้อมูลพื้นฐาน ── */}
             <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ข้อมูลพื้นฐาน</p>
+              <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">ข้อมูลพื้นฐาน</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">SKU *</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">SKU *</label>
                   <input
                     type="text"
                     value={formData.sku}
                     onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     placeholder="RAW-001"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">ประเภทสินค้า</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ประเภทสินค้า</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                   >
                     <option value="raw">วัตถุดิบ</option>
                     <option value="wip">กึ่งสำเร็จรูป</option>
@@ -2485,12 +2485,12 @@ function AddStockModal({
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">ชื่อสินค้า *</label>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อสินค้า *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="กรอกชื่อสินค้า"
                   required
                 />
@@ -2499,14 +2499,14 @@ function AddStockModal({
 
             {/* ── Section: หน่วยนับ ── */}
             <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">หน่วยนับ</p>
+              <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">หน่วยนับ</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">หน่วยบรรจุ</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยบรรจุ</label>
                   <select
                     value={formData.unit}
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                   >
                     {availableUnits.map((u) => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
@@ -2514,45 +2514,45 @@ function AddStockModal({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">จำนวนเริ่มต้น</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
                   <input
                     type="number"
                     value={formData.quantity}
                     onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     min="0"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">หน่วยฐาน</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยฐาน</label>
                   <select
                     value={formData.baseUnit || ''}
                     onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                   >
                     <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
                     {availableUnits.map((u) => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-gray-600 mt-1">เช่น ขวด, pcs, g, ml</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mt-1">เช่น ขวด, pcs, g, ml</p>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">หน่วยบรรจุ</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยบรรจุ</label>
                   <select
                     value={formData.displayUnit || ''}
                     onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                   >
                     <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
                     {availableUnits.map((u) => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-gray-600 mt-1">เช่น ลัง, กล่อง, ถุง</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mt-1">เช่น ลัง, กล่อง, ถุง</p>
                 </div>
               </div>
               {addConversionWarning && (
@@ -2565,29 +2565,29 @@ function AddStockModal({
 
             {/* ── Section: ราคา & สต๊อก ── */}
             <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ราคา & สต๊อก</p>
+              <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">ราคา & สต๊อก</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วยซื้อ (฿)</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วยซื้อ (฿)</label>
                   <input
                     type="number"
                     value={formData.unitCost}
                     onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วยฐาน (฿)</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาขาย/หน่วยฐาน (฿)</label>
                   <input
                     type="number"
                     value={formData.unitPrice}
                     onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -2596,24 +2596,24 @@ function AddStockModal({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Min Stock</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">Min Stock</label>
                   <input
                     type="number"
                     value={formData.minStock}
                     onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     min="0"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Max Stock</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">Max Stock</label>
                   <input
                     type="number"
                     value={formData.maxStock}
                     onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
                     onFocus={(e) => e.target.select()}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     min="0"
                   />
                 </div>
@@ -2622,42 +2622,42 @@ function AddStockModal({
 
             {/* ── Section: อื่นๆ ── */}
             <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">อื่นๆ</p>
+              <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">อื่นๆ</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">สถานที่เก็บ</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">สถานที่เก็บ</label>
                   <input
                     type="text"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     placeholder="คลังหลัก, A-12"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">GS1 Barcode</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">GS1 Barcode</label>
                   <input
                     type="text"
                     value={formData.gs1Barcode}
                     onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
-                    className="cyber-input w-full"
+                    className="phopy-input w-full"
                     placeholder="ไม่บังคับ"
                   />
                 </div>
               </div>
-              <label className="flex items-center gap-3 p-2.5 bg-cyber-dark/50 rounded-lg border border-cyber-border cursor-pointer hover:border-cyber-primary/50 transition-colors">
+              <label className="flex items-center gap-3 p-2.5 bg-[var(--surface-2)] rounded-lg border border-[var(--border)] cursor-pointer hover:border-phopy-indigo/50 transition-colors">
                 <input
                   type="checkbox"
                   id="isPosEnabledAdd"
                   checked={formData.isPosEnabled}
                   onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                  className="w-4 h-4 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+                  className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
                 />
                 <div className="flex-1">
-                  <p className="text-sm text-gray-200 font-medium">แสดงใน POS</p>
-                  <p className="text-[10px] text-gray-500">เพิ่มสินค้านี้เข้าเมนูขาย</p>
+                  <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
+                  <p className="text-[10px] text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-cyber-green/20 text-cyber-green' : 'bg-gray-700 text-gray-400'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-success-soft text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
                   {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                 </span>
               </label>
@@ -2666,18 +2666,18 @@ function AddStockModal({
           </div>
 
           {/* Footer — sticky */}
-          <div className="px-5 py-3 border-t border-cyber-border flex gap-3 flex-shrink-0">
+          <div className="px-5 py-3 border-t border-[var(--border)] flex gap-3 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors text-sm"
+              className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-500 transition-colors text-sm"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 cyber-btn-primary flex items-center justify-center gap-2 text-sm py-2"
+              className="flex-1 phopy-btn-primary flex items-center justify-center gap-2 text-sm py-2"
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

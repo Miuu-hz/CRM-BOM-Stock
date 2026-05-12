@@ -185,16 +185,16 @@ export default function POSMenuSettings() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">POS Menu Management</h1>
-          <p className="text-gray-400 mt-1">Configure which products are available for sale in POS</p>
+          <p className="text-[var(--fg-3)] mt-1">Configure which products are available for sale in POS</p>
         </div>
         
-        <div className="flex bg-cyber-card rounded-lg p-1">
+        <div className="flex bg-phopy-card rounded-lg p-1">
           <button
             onClick={() => setActiveTab('menus')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
               activeTab === 'menus'
-                ? 'bg-cyber-primary/20 text-cyber-primary'
-                : 'text-gray-400 hover:text-white'
+                ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
             }`}
           >
             <Utensils className="w-4 h-4" />
@@ -204,8 +204,8 @@ export default function POSMenuSettings() {
             onClick={() => setActiveTab('categories')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
               activeTab === 'categories'
-                ? 'bg-cyber-primary/20 text-cyber-primary'
-                : 'text-gray-400 hover:text-white'
+                ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
             }`}
           >
             <Grid className="w-4 h-4" />
@@ -219,22 +219,22 @@ export default function POSMenuSettings() {
         type="button"
         onClick={() => !savingBomSetting && handleToggleBomDeduct(!posBomDeduct)}
         disabled={savingBomSetting}
-        className="w-full flex items-center justify-between gap-4 p-4 bg-cyber-card border border-cyber-border rounded-xl hover:border-cyber-primary/40 transition-colors text-left disabled:opacity-60"
+        className="w-full flex items-center justify-between gap-4 p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/40 transition-colors text-left disabled:opacity-60"
       >
         <div>
-          <p className="text-sm font-semibold text-gray-200 flex items-center gap-2">
-            <Package className="w-4 h-4 text-cyber-primary" />
+          <p className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2">
+            <Package className="w-4 h-4 text-phopy-indigo" />
             ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน
           </p>
-          <p className="text-xs text-gray-500 mt-0.5 ml-6">
+          <p className="text-xs text-[var(--fg-4)] mt-0.5 ml-6">
             เปิด = ร้านที่ผลิตเอง (ร้านอาหาร / โรงงาน) ·  ปิด = ร้านค้าที่ขายของสำเร็จรูปโดยตรง
           </p>
         </div>
         {savingBomSetting
-          ? <div className="w-5 h-5 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          ? <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin flex-shrink-0" />
           : posBomDeduct
-            ? <ToggleRight className="w-8 h-8 text-cyber-primary flex-shrink-0" />
-            : <ToggleLeft className="w-8 h-8 text-gray-500 flex-shrink-0" />
+            ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+            : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
         }
       </button>
 
@@ -243,20 +243,20 @@ export default function POSMenuSettings() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
               <input
                 type="text"
                 placeholder="Search menus..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyber-primary"
+                className="w-full pl-10 pr-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
               />
             </div>
             
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+              className="px-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
             >
               <option value="all">All Categories</option>
               {categories.map(cat => (
@@ -271,7 +271,7 @@ export default function POSMenuSettings() {
                 setEditingMenu(null)
                 setShowMenuModal(true)
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white rounded-lg hover:opacity-90"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
             >
               <Plus className="w-4 h-4" />
               Add Menu
@@ -280,39 +280,39 @@ export default function POSMenuSettings() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 bg-cyber-card border border-cyber-border rounded-xl">
-              <p className="text-sm text-gray-400">Total Menus</p>
+            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+              <p className="text-sm text-[var(--fg-3)]">Total Menus</p>
               <p className="text-2xl font-bold text-white">{menus.length}</p>
             </div>
-            <div className="p-4 bg-cyber-card border border-cyber-border rounded-xl">
-              <p className="text-sm text-gray-400">Available</p>
-              <p className="text-2xl font-bold text-cyber-green">
+            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+              <p className="text-sm text-[var(--fg-3)]">Available</p>
+              <p className="text-2xl font-bold text-success">
                 {menus.filter(m => m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-cyber-card border border-cyber-border rounded-xl">
-              <p className="text-sm text-gray-400">Unavailable</p>
+            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+              <p className="text-sm text-[var(--fg-3)]">Unavailable</p>
               <p className="text-2xl font-bold text-red-400">
                 {menus.filter(m => !m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-cyber-card border border-cyber-border rounded-xl">
-              <p className="text-sm text-gray-400">Categories</p>
-              <p className="text-2xl font-bold text-cyber-primary">{categories.length}</p>
+            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+              <p className="text-sm text-[var(--fg-3)]">Categories</p>
+              <p className="text-2xl font-bold text-phopy-indigo">{categories.length}</p>
             </div>
           </div>
 
           {/* Menus Grid */}
           {loading ? (
             <div className="text-center py-12">
-              <div className="w-8 h-8 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-gray-400 mt-2">Loading...</p>
+              <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-[var(--fg-3)] mt-2">Loading...</p>
             </div>
           ) : filteredMenus.length === 0 ? (
-            <div className="text-center py-12 bg-cyber-card border border-cyber-border rounded-xl">
-              <Store className="w-12 h-12 mx-auto text-gray-500 mb-3" />
-              <p className="text-gray-400">No menus found</p>
-              <p className="text-sm text-gray-500 mt-1">
+            <div className="text-center py-12 bg-phopy-card border border-[var(--border)] rounded-xl">
+              <Store className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
+              <p className="text-[var(--fg-3)]">No menus found</p>
+              <p className="text-sm text-[var(--fg-4)] mt-1">
                 {searchQuery ? 'Try different search terms' : 'Add your first menu to POS'}
               </p>
             </div>
@@ -324,7 +324,7 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-cyber-card border border-cyber-border rounded-xl hover:border-cyber-primary/50 transition-all group"
+                  className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -333,11 +333,11 @@ export default function POSMenuSettings() {
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: menu.category_color || '#00f0ff' }}
                         />
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-[var(--fg-3)]">
                           {menu.category_name || 'Uncategorized'}
                         </span>
                         {menu.bom_id && (
-                          <span className="text-xs px-1.5 py-0.5 bg-cyber-primary/20 text-cyber-primary rounded">
+                          <span className="text-xs px-1.5 py-0.5 bg-phopy-indigo-50 text-phopy-indigo rounded">
                             BOM v{menu.bom_version}
                           </span>
                         )}
@@ -345,7 +345,7 @@ export default function POSMenuSettings() {
                       <h3 className="font-semibold text-white mt-1 truncate">
                         {menu.product_name}
                       </h3>
-                      <p className="text-xs text-gray-500">{menu.product_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
                     </div>
                     
                     <div className="flex items-center gap-1">
@@ -353,8 +353,8 @@ export default function POSMenuSettings() {
                         onClick={() => toggleAvailability(menu)}
                         className={`p-2 rounded-lg transition-colors ${
                           menu.is_available 
-                            ? 'text-cyber-green hover:bg-cyber-green/10' 
-                            : 'text-gray-500 hover:bg-gray-500/10'
+                            ? 'text-success hover:bg-success/10' 
+                            : 'text-[var(--fg-4)] hover:bg-gray-500/10'
                         }`}
                         title={menu.is_available ? 'Enabled' : 'Disabled'}
                       >
@@ -369,35 +369,35 @@ export default function POSMenuSettings() {
                           setEditingMenu(menu)
                           setShowMenuModal(true)
                         }}
-                        className="p-2 rounded-lg text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => deleteMenu(menu.id)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                   
-                  <div className="mt-4 pt-4 border-t border-cyber-border">
+                  <div className="mt-4 pt-4 border-t border-[var(--border)]">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-4">
-                        <span className="flex items-center gap-1 text-cyber-green">
+                        <span className="flex items-center gap-1 text-success">
                           <DollarSign className="w-4 h-4" />
                           {menu.pos_price?.toLocaleString()}
                         </span>
                         {menu.preparation_time > 0 && (
-                          <span className="flex items-center gap-1 text-gray-400">
+                          <span className="flex items-center gap-1 text-[var(--fg-3)]">
                             <Clock className="w-4 h-4" />
                             {menu.preparation_time}m
                           </span>
                         )}
                       </div>
                       {menu.quick_code && (
-                        <span className="px-2 py-1 bg-cyber-dark rounded text-xs text-gray-400">
+                        <span className="px-2 py-1 bg-[var(--bg)] rounded text-xs text-[var(--fg-3)]">
                           {menu.quick_code}
                         </span>
                       )}
@@ -421,7 +421,7 @@ export default function POSMenuSettings() {
                 setEditingCategory(null)
                 setShowCategoryModal(true)
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white rounded-lg hover:opacity-90"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
             >
               <Plus className="w-4 h-4" />
               Add Category
@@ -438,7 +438,7 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-cyber-card border border-cyber-border rounded-xl hover:border-cyber-primary/50 transition-all"
+                  className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -453,7 +453,7 @@ export default function POSMenuSettings() {
                       </div>
                       <div>
                         <h3 className="font-semibold text-white">{category.name}</h3>
-                        <p className="text-sm text-gray-400">{menuCount} menus</p>
+                        <p className="text-sm text-[var(--fg-3)]">{menuCount} menus</p>
                       </div>
                     </div>
                     
@@ -463,13 +463,13 @@ export default function POSMenuSettings() {
                           setEditingCategory(category)
                           setShowCategoryModal(true)
                         }}
-                        className="p-2 rounded-lg text-gray-400 hover:text-cyber-primary hover:bg-cyber-primary/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => deleteCategory(category.id)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -688,15 +688,15 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
-        <div className="flex items-center justify-between p-6 border-b border-cyber-border">
+        <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
             {menu ? 'Edit Menu' : 'Add Menu to POS'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"
+            className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -705,25 +705,25 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         <div className="flex-1 overflow-auto p-6">
           {step === 1 && !menu ? (
             <div className="space-y-4">
-              <p className="text-gray-400">Select a product to add to POS</p>
+              <p className="text-[var(--fg-3)]">Select a product to add to POS</p>
               
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
                 <input
                   type="text"
                   placeholder="Search products..."
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-cyber-dark border border-cyber-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyber-primary"
+                  className="w-full pl-10 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
                 />
               </div>
 
               {loading ? (
                 <div className="text-center py-8">
-                  <div className="w-8 h-8 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                  <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
                 </div>
               ) : products.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-[var(--fg-4)]">
                   <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p>No available products found</p>
                   <p className="text-sm mt-1">All products may already be in POS</p>
@@ -737,15 +737,15 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                         setSelectedProduct(product)
                         setStep(2)
                       }}
-                      className="w-full p-4 bg-cyber-dark border border-cyber-border rounded-lg text-left hover:border-cyber-primary/50 transition-all flex items-center justify-between group"
+                      className="w-full p-4 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-left hover:border-phopy-indigo/50 transition-all flex items-center justify-between group"
                     >
                       <div>
-                        <p className="font-medium text-white group-hover:text-cyber-primary">
+                        <p className="font-medium text-white group-hover:text-phopy-indigo">
                           {product.name}
                         </p>
-                        <p className="text-sm text-gray-500">{product.code}</p>
+                        <p className="text-sm text-[var(--fg-4)]">{product.code}</p>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-cyber-primary" />
+                      <ChevronRight className="w-5 h-5 text-[var(--fg-4)] group-hover:text-phopy-indigo" />
                     </button>
                   ))}
                 </div>
@@ -753,19 +753,19 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="p-4 bg-cyber-dark rounded-lg">
-                <p className="text-sm text-gray-400">Product</p>
+              <div className="p-4 bg-[var(--bg)] rounded-lg">
+                <p className="text-sm text-[var(--fg-3)]">Product</p>
                 <p className="font-semibold text-white">{selectedProduct?.name}</p>
-                <p className="text-sm text-gray-500">{selectedProduct?.code}</p>
+                <p className="text-sm text-[var(--fg-4)]">{selectedProduct?.code}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Category</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">Category</label>
                   <select
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">Select category...</option>
                     {categories.map(cat => (
@@ -775,16 +775,16 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">
                     BOM (Bill of Materials)
                     {boms.length > 0 && (
-                      <span className="text-cyber-primary ml-1">({boms.length} available)</span>
+                      <span className="text-phopy-indigo ml-1">({boms.length} available)</span>
                     )}
                   </label>
                   <select
                     value={formData.bom_id}
                     onChange={(e) => setFormData({ ...formData, bom_id: e.target.value })}
-                    className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">
                       {boms.length === 0 ? 'No BOM available' : 'Select BOM (optional)...'}
@@ -796,92 +796,92 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     ))}
                   </select>
                   {formData.bom_id && (
-                    <p className="text-xs text-cyber-green mt-1">
+                    <p className="text-xs text-success mt-1">
                       ✓ Stock will be deducted from BOM ingredients
                     </p>
                   )}
                   {!formData.bom_id && boms.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-[var(--fg-4)] mt-1">
                       Tip: Link a BOM to auto-deduct stock from production recipe
                     </p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">
                     POS Price <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="number"
                       value={formData.pos_price}
                       onChange={(e) => setFormData({ ...formData, pos_price: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                       placeholder="0.00"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Cost Price</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">Cost Price</label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="number"
                       value={formData.cost_price}
                       onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                       placeholder="0.00"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Quick Code</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">Quick Code</label>
                   <div className="relative">
-                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="text"
                       value={formData.quick_code}
                       onChange={(e) => setFormData({ ...formData, quick_code: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                       placeholder="e.g., A01"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Prep Time (min)</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">Prep Time (min)</label>
                   <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="number"
                       value={formData.preparation_time}
                       onChange={(e) => setFormData({ ...formData, preparation_time: parseInt(e.target.value) || 0 })}
-                      className="w-full pl-9 pr-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Display Order</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">Display Order</label>
                   <input
                     type="number"
                     value={formData.display_order}
                     onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
-                    หน่วยขาย <span className="text-gray-500">(Sale Unit)</span>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">
+                    หน่วยขาย <span className="text-[var(--fg-4)]">(Sale Unit)</span>
                   </label>
                   <select
                     value={formData.sale_unit}
                     onChange={(e) => setFormData({ ...formData, sale_unit: e.target.value })}
-                    className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">
                       {stockUnits
@@ -899,7 +899,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       </option>
                     )}
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-[var(--fg-4)] mt-1">
                     {stockUnits
                       ? `Base: ${stockUnits.base_unit || stockUnits.unit} | Display: ${stockUnits.display_unit || stockUnits.unit}`
                       : 'เลือกสินค้าก่อนเพื่อดูหน่วยที่มี'}
@@ -908,12 +908,12 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Description</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary resize-none"
+                  className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo resize-none"
                   placeholder="Menu description..."
                 />
               </div>
@@ -923,7 +923,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   type="checkbox"
                   checked={formData.is_available}
                   onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
-                  className="w-5 h-5 rounded border-cyber-border bg-cyber-dark text-cyber-primary focus:ring-cyber-primary"
+                  className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
                 />
                 <span className="text-white">Available for sale</span>
               </label>
@@ -931,11 +931,11 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
           )}
         </div>
 
-        <div className="flex items-center justify-between p-6 border-t border-cyber-border">
+        <div className="flex items-center justify-between p-6 border-t border-[var(--border)]">
           {step === 2 && !menu ? (
             <button
               onClick={() => setStep(1)}
-              className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+              className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
             >
               Back
             </button>
@@ -946,7 +946,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+              className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
             >
               Cancel
             </button>
@@ -954,7 +954,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? (
                   <>
@@ -1051,15 +1051,15 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md"
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md"
       >
-        <div className="flex items-center justify-between p-6 border-b border-cyber-border">
+        <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
             {category ? 'Edit Category' : 'Add Category'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"
+            className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -1067,20 +1067,20 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-[var(--fg-3)] mb-1">
               Name <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
               placeholder="e.g., Main Course"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Color</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Color</label>
             <div className="flex flex-wrap gap-2">
               {colors.map((c) => (
                 <button
@@ -1096,28 +1096,28 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Icon (optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">Icon (optional)</label>
             <input
               type="text"
               value={icon}
               onChange={(e) => setIcon(e.target.value)}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white focus:outline-none focus:border-cyber-primary"
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
               placeholder="Icon name"
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 p-6 border-t border-cyber-border">
+        <div className="flex justify-end gap-3 p-6 border-t border-[var(--border)]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+            className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyber-primary to-cyber-purple text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
           >
             {saving ? (
               <>

@@ -52,22 +52,22 @@ const orders: Order[] = [
 
 function RecentOrders() {
   return (
-    <div className="cyber-card p-6">
+    <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <ShoppingCart className="w-6 h-6 text-cyber-primary" />
-          <h2 className="text-xl font-bold text-gray-100">
+          <ShoppingCart className="w-6 h-6 text-phopy-indigo" />
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Recent Orders
           </h2>
         </div>
-        <button className="text-sm text-cyber-primary hover:text-cyber-secondary transition-colors flex items-center gap-1 group">
+        <button className="text-sm text-phopy-indigo hover:text-phopy-indigo-600 transition-colors flex items-center gap-1 group">
           View All
           <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="cyber-table">
+        <table className="phopy-table">
           <thead>
             <tr>
               <th>Order ID</th>
@@ -87,21 +87,21 @@ function RecentOrders() {
                 transition={{ delay: index * 0.1 }}
               >
                 <td>
-                  <span className="text-cyber-primary font-semibold">
+                  <span className="text-phopy-indigo font-semibold">
                     {order.id}
                   </span>
                 </td>
                 <td>
-                  <span className="text-gray-300">{order.customer}</span>
+                  <span className="text-[var(--fg-2)]">{order.customer}</span>
                 </td>
                 <td>
-                  <span className="text-gray-400">{order.product}</span>
+                  <span className="text-[var(--fg-3)]">{order.product}</span>
                 </td>
                 <td>
-                  <span className="text-gray-400">{order.quantity}</span>
+                  <span className="text-[var(--fg-3)]">{order.quantity}</span>
                 </td>
                 <td>
-                  <span className="text-cyber-green font-semibold">
+                  <span className="text-success font-semibold">
                     {order.amount}
                   </span>
                 </td>
@@ -125,11 +125,11 @@ function StatusBadge({ status }: { status: Order['status'] }) {
     },
     processing: {
       label: 'Processing',
-      className: 'bg-cyber-primary/20 text-cyber-primary border-cyber-primary/30',
+      className: 'bg-phopy-indigo-50 text-phopy-indigo border-phopy-indigo/30',
     },
     completed: {
       label: 'Completed',
-      className: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+      className: 'bg-success-soft text-success border-success/30',
     },
   }
 

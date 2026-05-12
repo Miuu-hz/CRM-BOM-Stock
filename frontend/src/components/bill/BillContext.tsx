@@ -52,7 +52,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบสั่งขาย',
       refNumber: 'อ้างอิงใบเสนอราคา',
     },
-    themeColor: '#00f0ff', // cyber-primary
+    themeColor: '#00f0ff', // phopy-indigo
   },
   PURCHASE: {
     type: 'PURCHASE',
@@ -73,7 +73,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบสั่งซื้อ',
       refNumber: 'อ้างอิงใบขอซื้อ',
     },
-    themeColor: '#9d00ff', // cyber-purple
+    themeColor: '#9d00ff', // purple-500
   },
   WORK_ORDER: {
     type: 'WORK_ORDER',
@@ -94,7 +94,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบสั่งผลิต',
       refNumber: 'อ้างอิงใบสั่งขาย',
     },
-    themeColor: '#00ff88', // cyber-green
+    themeColor: '#00ff88', // success
   },
   QUOTATION: {
     type: 'QUOTATION',
@@ -115,7 +115,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบเสนอราคา',
       refNumber: 'อ้างอิง',
     },
-    themeColor: '#ff00ff', // cyber-magenta
+    themeColor: '#ff00ff', // pink-500
   },
   DELIVERY: {
     type: 'DELIVERY',
@@ -136,7 +136,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบส่งของ',
       refNumber: 'อ้างอิงใบสั่งขาย',
     },
-    themeColor: '#0066ff', // cyber-secondary
+    themeColor: '#0066ff', // phopy-indigo-600
   },
   RECEIPT: {
     type: 'RECEIPT',

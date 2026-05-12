@@ -164,23 +164,23 @@ export default function LineSettings() {
 
     if (loading) {
         return (
-            <div className="cyber-card p-12 text-center">
-                <RefreshCw className="w-8 h-8 text-cyber-primary mx-auto animate-spin mb-4" />
-                <p className="text-gray-400">กำลังโหลดข้อมูล...</p>
+            <div className="phopy-card p-12 text-center">
+                <RefreshCw className="w-8 h-8 text-phopy-indigo mx-auto animate-spin mb-4" />
+                <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูล...</p>
             </div>
         )
     }
 
     return (
         <div className="space-y-6">
-            <div className="cyber-card p-6 border-l-4 border-cyber-primary">
-                <h3 className="text-lg font-semibold text-gray-100 mb-2 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-cyber-primary" />
+            <div className="phopy-card p-6 border-l-4 border-phopy-indigo">
+                <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-2 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-phopy-indigo" />
                     การตั้งค่า LINE Messaging API
                 </h3>
-                <p className="text-gray-400 text-sm mb-6">
+                <p className="text-[var(--fg-3)] text-sm mb-6">
                     ตั้งค่าเพื่อใช้งาน LINE Bot สำหรับแจ้งเตือนใบสั่งผลิต แจ้งเตือนสถานะต่างๆ
-                    Webhook URL: <span className="font-mono text-cyber-primary px-2 py-1 bg-cyber-primary/10 rounded">https://crm.phopy.net/api/line/webhook</span>
+                    Webhook URL: <span className="font-mono text-phopy-indigo px-2 py-1 bg-phopy-indigo/10 rounded">https://crm.phopy.net/api/line/webhook</span>
                 </p>
 
                 {error && (
@@ -191,7 +191,7 @@ export default function LineSettings() {
                 )}
 
                 {success && (
-                    <div className="mb-6 p-4 bg-cyber-green/10 border border-cyber-green/30 rounded-lg flex items-center gap-3 text-cyber-green">
+                    <div className="mb-6 p-4 bg-success/10 border border-success/30 rounded-lg flex items-center gap-3 text-success">
                         <CheckCircle className="w-5 h-5 flex-shrink-0" />
                         <p>{success}</p>
                     </div>
@@ -199,28 +199,28 @@ export default function LineSettings() {
 
                 <form onSubmit={handleSave} className="space-y-5 max-w-2xl">
                     <div>
-                        <label className="block text-sm text-gray-400 mb-2 flex items-center gap-2">
+                        <label className="block text-sm text-[var(--fg-3)] mb-2 flex items-center gap-2">
                             ชื่อ Channel (แสดงผลเท่านั้น)
                         </label>
                         <input
                             type="text"
                             value={config.channel_name}
                             onChange={(e) => setConfig({ ...config, channel_name: e.target.value })}
-                            className="cyber-input w-full"
+                            className="phopy-input w-full"
                             placeholder="เช่น BBPillow Bot"
                             disabled={!isMaster}
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm text-gray-400 mb-2">
+                        <label className="block text-sm text-[var(--fg-3)] mb-2">
                             Channel Secret
                         </label>
                         <input
                             type="password"
                             value={config.channel_secret}
                             onChange={(e) => setConfig({ ...config, channel_secret: e.target.value })}
-                            className="cyber-input w-full"
+                            className="phopy-input w-full"
                             placeholder={config.id ? '•••••••••••••••• (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)' : 'กรอก Channel Secret'}
                             required={!config.id}
                             disabled={!isMaster}
@@ -228,13 +228,13 @@ export default function LineSettings() {
                     </div>
 
                     <div>
-                        <label className="block text-sm text-gray-400 mb-2">
+                        <label className="block text-sm text-[var(--fg-3)] mb-2">
                             Channel Access Token
                         </label>
                         <textarea
                             value={config.channel_access_token}
                             onChange={(e) => setConfig({ ...config, channel_access_token: e.target.value })}
-                            className="cyber-input w-full h-24"
+                            className="phopy-input w-full h-24"
                             placeholder={config.id ? '•••••••••••••••• (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)' : 'กรอก Channel Access Token (long-lived)'}
                             required={!config.id}
                             disabled={!isMaster}
@@ -247,20 +247,20 @@ export default function LineSettings() {
                             id="is_active"
                             checked={config.is_active}
                             onChange={(e) => setConfig({ ...config, is_active: e.target.checked })}
-                            className="rounded bg-cyber-dark border-cyber-border text-cyber-primary focus:ring-cyber-primary"
+                            className="rounded bg-[var(--bg)] border-[var(--border)] text-phopy-indigo focus:ring-phopy-indigo"
                             disabled={!isMaster}
                         />
-                        <label htmlFor="is_active" className="text-gray-300">
+                        <label htmlFor="is_active" className="text-[var(--fg-2)]">
                             เปิดใช้งาน LINE Bot (ส่งแจ้งเตือนและรับคำสั่ง)
                         </label>
                     </div>
 
-                    <div className="pt-6 border-t border-cyber-border flex items-center gap-4">
+                    <div className="pt-6 border-t border-[var(--border)] flex items-center gap-4">
                         {isMaster && (
                             <button
                                 type="submit"
                                 disabled={saving}
-                                className="cyber-btn-primary flex items-center gap-2"
+                                className="phopy-btn-primary flex items-center gap-2"
                             >
                                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 บันทึกการตั้งค่า
@@ -271,7 +271,7 @@ export default function LineSettings() {
                             type="button"
                             onClick={handleTest}
                             disabled={testing || !config.id}
-                            className="px-4 py-2 bg-cyber-dark border border-cyber-border text-gray-300 rounded-lg font-medium hover:bg-cyber-dark/80 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50"
+                            className="px-4 py-2 bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] rounded-lg font-medium hover:bg-[var(--bg)]/80 hover:text-[var(--fg-1)] transition-all flex items-center gap-2 disabled:opacity-50"
                         >
                             {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                             ทดสอบส่งข้อความ (เข้า Role ของคุณ)
@@ -280,12 +280,12 @@ export default function LineSettings() {
                 </form>
             </div>
         {/* Account Linking */}
-        <div className="cyber-card p-6 border-l-4 border-cyber-green">
-            <h3 className="text-lg font-semibold text-gray-100 mb-1 flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-cyber-green" />
+        <div className="phopy-card p-6 border-l-4 border-success">
+            <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-success" />
                 เชื่อมบัญชี LINE ของคุณ
             </h3>
-            <p className="text-gray-400 text-sm mb-5">
+            <p className="text-[var(--fg-3)] text-sm mb-5">
                 เชื่อมบัญชีเพื่อรับแจ้งเตือนและสั่งงานผ่าน LINE โดยตรง
             </p>
 
@@ -293,7 +293,7 @@ export default function LineSettings() {
             {linkStatus && (
                 <div className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-3 text-sm ${
                     linkStatus.linked
-                        ? 'bg-cyber-green/10 border border-cyber-green/30 text-cyber-green'
+                        ? 'bg-success/10 border border-success/30 text-success'
                         : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
                 }`}>
                     <span className="flex items-center gap-2">
@@ -316,18 +316,18 @@ export default function LineSettings() {
             )}
 
             {/* Steps */}
-            <div className="bg-cyber-dark/50 rounded-lg p-4 mb-4 text-sm space-y-2 text-gray-300">
-                <p className="font-medium text-gray-200 mb-2">วิธีเชื่อมบัญชี:</p>
+            <div className="bg-[var(--surface-2)] rounded-lg p-4 mb-4 text-sm space-y-2 text-[var(--fg-2)]">
+                <p className="font-medium text-[var(--fg-2)] mb-2">วิธีเชื่อมบัญชี:</p>
                 <p>1. กดปุ่ม "สร้างรหัสเชื่อม" ด้านล่าง</p>
                 <p>2. กด "คัดลอก" แล้วส่งข้อความนั้นในแชทกับ LINE OA</p>
-                <p className="text-gray-500 text-xs">⏰ รหัสมีอายุ 10 นาที</p>
+                <p className="text-[var(--fg-4)] text-xs">⏰ รหัสมีอายุ 10 นาที</p>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
                 <button
                     onClick={handleGenerateToken}
                     disabled={generatingToken}
-                    className="cyber-btn-primary flex items-center gap-2 text-sm"
+                    className="phopy-btn-primary flex items-center gap-2 text-sm"
                 >
                     {generatingToken
                         ? <RefreshCw className="w-4 h-4 animate-spin" />
@@ -338,12 +338,12 @@ export default function LineSettings() {
 
                 {linkToken && (
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <div className="flex-1 font-mono text-sm bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-cyber-primary select-all">
+                        <div className="flex-1 font-mono text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-phopy-indigo select-all">
                             ลิงก์ {linkToken}
                         </div>
                         <button
                             onClick={copyToken}
-                            className="flex items-center gap-1 px-3 py-2 rounded-lg border border-cyber-border text-sm text-gray-300 hover:text-white hover:border-cyber-primary transition-all whitespace-nowrap"
+                            className="flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:text-[var(--fg-1)] hover:border-phopy-indigo transition-all whitespace-nowrap"
                         >
                             <Copy className="w-3.5 h-3.5" />
                             {tokenCopied ? 'คัดลอกแล้ว ✓' : 'คัดลอก'}
@@ -355,26 +355,26 @@ export default function LineSettings() {
 
         {/* Linked Users List (master only) */}
         {isMaster && (
-            <div className="cyber-card p-6 border-l-4 border-cyber-primary/50">
-                <h3 className="text-lg font-semibold text-gray-100 mb-1 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-cyber-primary" />
+            <div className="phopy-card p-6 border-l-4 border-phopy-indigo/50">
+                <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-phopy-indigo" />
                     ผู้ใช้ที่เชื่อมต่อ LINE แล้ว
                 </h3>
-                <p className="text-gray-400 text-sm mb-4">รายชื่อผู้ใช้ในระบบที่เชื่อมบัญชี LINE ไว้แล้ว</p>
+                <p className="text-[var(--fg-3)] text-sm mb-4">รายชื่อผู้ใช้ในระบบที่เชื่อมบัญชี LINE ไว้แล้ว</p>
 
                 {linkedUsers.length === 0 ? (
-                    <p className="text-gray-500 text-sm">ยังไม่มีผู้ใช้เชื่อมต่อ LINE</p>
+                    <p className="text-[var(--fg-4)] text-sm">ยังไม่มีผู้ใช้เชื่อมต่อ LINE</p>
                 ) : (
                     <div className="space-y-2">
                         {linkedUsers.map(u => (
-                            <div key={u.user_id} className="flex items-center justify-between p-3 bg-cyber-dark/50 rounded-lg border border-cyber-border">
+                            <div key={u.user_id} className="flex items-center justify-between p-3 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]">
                                 <div>
-                                    <p className="text-gray-200 text-sm font-medium">
+                                    <p className="text-[var(--fg-2)] text-sm font-medium">
                                         {u.user_name || u.user_id}
-                                        <span className="ml-2 text-xs text-gray-500">{u.role}</span>
+                                        <span className="ml-2 text-xs text-[var(--fg-4)]">{u.role}</span>
                                     </p>
-                                    {u.user_email && <p className="text-gray-500 text-xs">{u.user_email}</p>}
-                                    <p className="text-gray-600 text-xs mt-0.5">
+                                    {u.user_email && <p className="text-[var(--fg-4)] text-xs">{u.user_email}</p>}
+                                    <p className="text-[var(--fg-4)] text-xs mt-0.5">
                                         เชื่อมเมื่อ {u.linked_at ? new Date(u.linked_at).toLocaleDateString('th-TH') : '-'}
                                     </p>
                                 </div>

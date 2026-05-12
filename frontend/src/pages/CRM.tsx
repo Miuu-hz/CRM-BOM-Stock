@@ -351,10 +351,10 @@ function CRM() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2">
-            <span className="neon-text">CRM</span>
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
+            <span className="text-[var(--fg-1)]">CRM</span>
           </h1>
-          <p className="text-gray-400">
+          <p className="text-[var(--fg-3)]">
             {mainTab === 'customers' ? 'จัดการลูกค้าและโอกาสเพิ่มยอดขาย' : 'จัดการผู้ขายและซัพพลายเออร์'}
           </p>
         </div>
@@ -364,7 +364,7 @@ function CRM() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowImportModal(true)}
-              className="cyber-btn-secondary flex items-center gap-2"
+              className="phopy-btn-secondary flex items-center gap-2"
             >
               <Upload className="w-5 h-5" />
               Import
@@ -373,7 +373,7 @@ function CRM() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => { setEditingCustomer(null); setShowCustomerModal(true) }}
-              className="cyber-btn-primary flex items-center gap-2"
+              className="phopy-btn-primary flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Add Customer
@@ -383,13 +383,13 @@ function CRM() {
       </div>
 
       {/* Main Tabs: Customers / Suppliers */}
-      <div className="flex gap-2 border-b border-cyber-border pb-2">
+      <div className="flex gap-2 border-b border-[var(--border)] pb-2">
         <button
           onClick={() => setMainTab('customers')}
           className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
             mainTab === 'customers'
-              ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
-              : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
+              ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+              : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
           }`}
         >
           <Users className="w-5 h-5" />
@@ -399,8 +399,8 @@ function CRM() {
           onClick={() => setMainTab('suppliers')}
           className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
             mainTab === 'suppliers'
-              ? 'bg-cyber-purple/20 text-cyber-purple border-b-2 border-cyber-purple'
-              : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-dark'
+              ? 'bg-purple-500/20 text-purple-500 border-b-2 border-purple-500'
+              : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
           }`}
         >
           <Truck className="w-5 h-5" />
@@ -452,17 +452,17 @@ function CRM() {
       </div>
 
       {/* Filters and Search */}
-      <div className="cyber-card p-4">
+      <div className="phopy-card p-4">
         <div className="flex flex-col md:flex-row gap-3 items-center">
           {/* Search */}
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
             <input
               type="text"
               placeholder="Search customers..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="cyber-input pl-10 w-full"
+              className="phopy-input pl-10 w-full"
             />
           </div>
 
@@ -474,8 +474,8 @@ function CRM() {
                 onClick={() => setSelectedType(t)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
                   selectedType === t
-                    ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
-                    : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
+                    ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                    : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
                 }`}
               >
                 {t === 'all' ? 'All' : t === 'HOTEL' ? 'Hotels' : t === 'WHOLESALE' ? 'Wholesale' : 'Retail'}
@@ -484,7 +484,7 @@ function CRM() {
           </div>
 
           {/* Per-page selector */}
-          <div className="flex items-center gap-1 text-sm text-gray-400">
+          <div className="flex items-center gap-1 text-sm text-[var(--fg-3)]">
             <span className="whitespace-nowrap">แสดง</span>
             {[25, 50, 100].map((n) => (
               <button
@@ -492,8 +492,8 @@ function CRM() {
                 onClick={() => setCustomerLimit(n)}
                 className={`px-2.5 py-1.5 rounded-lg text-xs transition-all ${
                   customerLimit === n
-                    ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50'
-                    : 'bg-cyber-darker text-gray-400 border border-cyber-border hover:border-cyber-primary/30'
+                    ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                    : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
                 }`}
               >
                 {n}
@@ -502,16 +502,16 @@ function CRM() {
           </div>
 
           {/* View Toggle */}
-          <div className="flex items-center gap-1 bg-cyber-darker border border-cyber-border rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-1">
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-cyber-primary/20 text-cyber-primary' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
             >
               <LayoutList className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('card')}
-              className={`p-1.5 rounded transition-all ${viewMode === 'card' ? 'bg-cyber-primary/20 text-cyber-primary' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`p-1.5 rounded transition-all ${viewMode === 'card' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -520,20 +520,20 @@ function CRM() {
       </div>
 
       {/* Result count */}
-      <div className="flex items-center justify-between text-sm text-gray-500 px-1">
-        <span>พบ <span className="text-gray-300 font-medium">{filteredCustomers.length}</span> รายการ</span>
+      <div className="flex items-center justify-between text-sm text-[var(--fg-4)] px-1">
+        <span>พบ <span className="text-[var(--fg-2)] font-medium">{filteredCustomers.length}</span> รายการ</span>
         {totalCustomerPages > 1 && (
           <span>หน้า {customerPageNum} / {totalCustomerPages}</span>
         )}
       </div>
 
       {/* Customers — List View */}
-      {loading && <p className="text-gray-400 text-center py-8">กำลังโหลดข้อมูลลูกค้า...</p>}
+      {loading && <p className="text-[var(--fg-3)] text-center py-8">กำลังโหลดข้อมูลลูกค้า...</p>}
 
       {!loading && viewMode === 'list' && (
-        <div className="cyber-card overflow-hidden">
+        <div className="phopy-card overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="cyber-table">
+          <table className="phopy-table">
             <thead>
               <tr>
                 <th>ลูกค้า</th>
@@ -546,24 +546,24 @@ function CRM() {
             </thead>
             <tbody>
               {pagedCustomers.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-gray-500">ไม่พบข้อมูลลูกค้า</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-[var(--fg-4)]">ไม่พบข้อมูลลูกค้า</td></tr>
               ) : pagedCustomers.map((customer, index) => (
                   <motion.tr
                     key={customer.id}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.02 }}
-                    className="cursor-pointer hover:bg-cyber-primary/5 transition-colors"
+                    className="cursor-pointer hover:bg-phopy-indigo/5 transition-colors"
                     onClick={() => { setSelectedCustomerId(customer.id); setShowModal(true); setActiveTab('overview') }}
                   >
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-cyber-primary/10 border border-cyber-primary/20 flex items-center justify-center text-sm font-bold text-cyber-primary">
+                        <div className="w-9 h-9 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50 flex items-center justify-center text-sm font-bold text-phopy-indigo">
                           {customer.name?.charAt(0)?.toUpperCase()}
                         </div>
                         <div>
-                          <p className="text-gray-200 font-medium">{customer.name}</p>
-                          <p className="text-gray-500 text-xs">{customer.code || customer.email}</p>
+                          <p className="text-[var(--fg-2)] font-medium">{customer.name}</p>
+                          <p className="text-[var(--fg-4)] text-xs">{customer.code || customer.email}</p>
                         </div>
                       </div>
                     </td>
@@ -578,16 +578,16 @@ function CRM() {
                     </td>
                     <td>
                       <div className="text-sm">
-                        {customer.contactName && <p className="text-gray-300">{customer.contactName}</p>}
-                        {customer.phone && <p className="text-gray-500 text-xs">{customer.phone}</p>}
+                        {customer.contactName && <p className="text-[var(--fg-2)]">{customer.contactName}</p>}
+                        {customer.phone && <p className="text-[var(--fg-4)] text-xs">{customer.phone}</p>}
                       </div>
                     </td>
-                    <td className="text-cyber-primary font-semibold">{customer.totalOrders ?? 0}</td>
-                    <td className="text-cyber-green font-semibold">฿{(customer.totalRevenue ?? 0).toLocaleString()}</td>
+                    <td className="text-phopy-indigo font-semibold">{customer.totalOrders ?? 0}</td>
+                    <td className="text-success font-semibold">฿{(customer.totalRevenue ?? 0).toLocaleString()}</td>
                     <td>
                       <span className={`status-badge text-xs ${
-                        customer.status === 'ACTIVE' ? 'bg-cyber-green/20 text-cyber-green border-cyber-green/30' :
-                        'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                        customer.status === 'ACTIVE' ? 'bg-success-soft text-success border-success/30' :
+                        'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30'
                       }`}>{customer.status}</span>
                     </td>
                   </motion.tr>
@@ -630,9 +630,9 @@ function CRM() {
           <button
             onClick={() => setCustomerPageNum(p => Math.max(1, p - 1))}
             disabled={customerPageNum === 1}
-            className="p-1.5 rounded-lg hover:bg-cyber-card disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-phopy-card disabled:opacity-30 transition-colors"
           >
-            <ChevronLeft className="w-4 h-4 text-gray-400" />
+            <ChevronLeft className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
           {Array.from({ length: Math.min(7, totalCustomerPages) }, (_, i) => {
             const start = Math.max(1, Math.min(customerPageNum - 3, totalCustomerPages - 6))
@@ -643,8 +643,8 @@ function CRM() {
                 onClick={() => setCustomerPageNum(p)}
                 className={`w-8 h-8 text-xs rounded-lg transition-all ${
                   p === customerPageNum
-                    ? 'bg-cyber-primary text-white'
-                    : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'
+                    ? 'bg-phopy-indigo text-white'
+                    : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80'
                 }`}
               >
                 {p}
@@ -654,9 +654,9 @@ function CRM() {
           <button
             onClick={() => setCustomerPageNum(p => Math.min(totalCustomerPages, p + 1))}
             disabled={customerPageNum === totalCustomerPages}
-            className="p-1.5 rounded-lg hover:bg-cyber-card disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-phopy-card disabled:opacity-30 transition-colors"
           >
-            <ChevronRight className="w-4 h-4 text-gray-400" />
+            <ChevronRight className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
         </div>
       )}
@@ -755,47 +755,47 @@ function CustomerModal({ open, customer, onClose, onSave }: {
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()}
-            className="cyber-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-cyber-border flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-100">
+            className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 {customer ? 'Edit Customer' : 'New Customer'}
               </h2>
-              <button onClick={onClose} className="p-2 hover:bg-cyber-dark rounded-lg">
-                <X className="w-5 h-5 text-gray-400" />
+              <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
+                <X className="w-5 h-5 text-[var(--fg-3)]" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Code *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Code *</label>
                   <input type="text" value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
-                    className="cyber-input w-full" required disabled={!!customer}
+                    className="phopy-input w-full" required disabled={!!customer}
                     placeholder="CUS-001" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Name *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Name *</label>
                   <input type="text" value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="cyber-input w-full" required placeholder="Customer Name" />
+                    className="phopy-input w-full" required placeholder="Customer Name" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Type</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Type</label>
                   <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    className="cyber-input w-full">
+                    className="phopy-input w-full">
                     <option value="RETAIL">Retail</option>
                     <option value="HOTEL">Hotel</option>
                     <option value="WHOLESALE">Wholesale</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Status</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Status</label>
                   <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    className="cyber-input w-full">
+                    className="phopy-input w-full">
                     <option value="ACTIVE">Active</option>
                     <option value="INACTIVE">Inactive</option>
                   </select>
@@ -804,48 +804,48 @@ function CustomerModal({ open, customer, onClose, onSave }: {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Contact Name *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Contact Name *</label>
                   <input type="text" value={form.contactName}
                     onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-                    className="cyber-input w-full" required placeholder="Contact Person" />
+                    className="phopy-input w-full" required placeholder="Contact Person" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Phone *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Phone *</label>
                   <input type="text" value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="cyber-input w-full" required placeholder="081-234-5678" />
+                    className="phopy-input w-full" required placeholder="081-234-5678" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Email</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">Email</label>
                   <input type="email" value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className="cyber-input w-full" placeholder="email@example.com" />
+                    className="phopy-input w-full" placeholder="email@example.com" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">City</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">City</label>
                   <input type="text" value={form.city}
                     onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    className="cyber-input w-full" placeholder="Bangkok" />
+                    className="phopy-input w-full" placeholder="Bangkok" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Credit Limit (฿)</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">Credit Limit (฿)</label>
                 <input type="number" value={form.creditLimit}
                   onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
-                  className="cyber-input w-full" min="0" placeholder="0" />
+                  className="phopy-input w-full" min="0" placeholder="0" />
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={onClose}
-                  className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:bg-cyber-dark">
+                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:bg-[var(--bg)]">
                   Cancel
                 </button>
                 <button type="submit" disabled={saving}
-                  className="cyber-btn-primary flex items-center gap-2">
+                  className="phopy-btn-primary flex items-center gap-2">
                   {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
                   {customer ? 'Update' : 'Create'} Customer
                 </button>
@@ -1004,36 +1004,36 @@ function CustomerDetailModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-darker border border-cyber-primary/40 rounded-2xl shadow-2xl shadow-cyber-primary/10 w-full max-w-5xl max-h-[95vh] flex overflow-hidden"
+        className="bg-[var(--surface-2)] border border-phopy-indigo/40 rounded-2xl shadow-2xl shadow-phopy-indigo/10 w-full max-w-5xl max-h-[95vh] flex overflow-hidden"
       >
         {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-cyber-card/40 border-r border-cyber-border flex flex-col overflow-y-auto modal-scroll">
+        <div className="w-64 flex-shrink-0 bg-phopy-card/40 border-r border-[var(--border)] flex flex-col overflow-y-auto modal-scroll">
           {/* Avatar + Name */}
-          <div className="relative p-5 text-center bg-gradient-to-b from-cyber-primary/10 to-transparent border-b border-cyber-border/50">
-            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-cyber-card/60 transition-colors">
-              <X className="w-4 h-4 text-gray-400 hover:text-white" />
+          <div className="relative p-5 text-center bg-gradient-to-b from-phopy-indigo/10 to-transparent border-b border-[var(--border)]/50">
+            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-phopy-card/60 transition-colors">
+              <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-1)]" />
             </button>
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center mx-auto mb-3 shadow-lg shadow-cyber-primary/30">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-phopy-indigo/30">
               <Building2 className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-base font-bold text-white leading-tight">{customer.name}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{customer.code}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{customer.code}</p>
             <div className="flex items-center justify-center gap-1.5 mt-2 flex-wrap">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">{customer.type}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-phopy-indigo/15 text-phopy-indigo border border-phopy-indigo-50">{customer.type}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{customer.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด'}</span>
             </div>
             {/* Action buttons */}
             <div className="flex items-center gap-2 mt-3 justify-center">
               <button
                 onClick={onEdit}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyber-primary/10 text-cyber-primary border border-cyber-primary/20 hover:bg-cyber-primary/20 text-xs transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 text-phopy-indigo border border-phopy-indigo-50 hover:bg-phopy-indigo-50 text-xs transition-all"
               >
                 <Pencil className="w-3 h-3" />แก้ไข
               </button>
               {!confirmDelete ? (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-danger-soft text-xs transition-all"
                 >
                   <Trash2 className="w-3 h-3" />ลบ
                 </button>
@@ -1047,7 +1047,7 @@ function CustomerDetailModal({
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="px-2 py-1.5 rounded-lg bg-cyber-card text-gray-400 text-xs hover:bg-cyber-card/80 transition-all"
+                    className="px-2 py-1.5 rounded-lg bg-phopy-card text-[var(--fg-3)] text-xs hover:bg-phopy-card/80 transition-all"
                   >
                     ยกเลิก
                   </button>
@@ -1057,60 +1057,60 @@ function CustomerDetailModal({
           </div>
 
           {/* Contact */}
-          <div className="p-4 space-y-2.5 border-b border-cyber-border/50">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">ข้อมูลติดต่อ</p>
+          <div className="p-4 space-y-2.5 border-b border-[var(--border)]/50">
+            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">ข้อมูลติดต่อ</p>
             {customer.contactName && (
               <div className="flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                <span className="text-xs text-gray-300 truncate">{customer.contactName}</span>
+                <Users className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
+                <span className="text-xs text-[var(--fg-2)] truncate">{customer.contactName}</span>
               </div>
             )}
             {customer.email && (
               <div className="flex items-center gap-2">
-                <Mail className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                <span className="text-xs text-gray-300 truncate">{customer.email}</span>
+                <Mail className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
+                <span className="text-xs text-[var(--fg-2)] truncate">{customer.email}</span>
               </div>
             )}
             {customer.phone && (
               <div className="flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5 text-cyber-primary flex-shrink-0" />
+                <Phone className="w-3.5 h-3.5 text-phopy-indigo flex-shrink-0" />
                 <span className="text-xs text-white font-semibold">{customer.phone}</span>
               </div>
             )}
             {customer.city && (
               <div className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                <span className="text-xs text-gray-300 truncate">{customer.city}</span>
+                <MapPin className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
+                <span className="text-xs text-[var(--fg-2)] truncate">{customer.city}</span>
               </div>
             )}
           </div>
 
           {/* Stats */}
           <div className="p-4 space-y-4 flex-1">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">สถิติการซื้อ</p>
+            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">สถิติการซื้อ</p>
 
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">ยอดซื้อรวม</p>
-              <p className="text-xl font-bold text-cyber-green">฿{totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-[var(--fg-3)] mb-0.5">ยอดซื้อรวม</p>
+              <p className="text-xl font-bold text-success">฿{totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
             </div>
 
             <div>
-              <p className="text-xs text-gray-400 mb-0.5 flex items-center gap-1">
+              <p className="text-xs text-[var(--fg-3)] mb-0.5 flex items-center gap-1">
                 วงเงินเครดิต
                 {customer.creditUsed !== undefined && customer.creditUsed > customer.creditLimit * 0.8 && (
                   <AlertTriangle className="w-3 h-3 text-yellow-500" />
                 )}
               </p>
-              <p className="text-lg font-bold text-cyber-purple">฿{(customer.creditLimit ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+              <p className="text-lg font-bold text-purple-500">฿{(customer.creditLimit ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
               {customer.creditUsed !== undefined && customer.creditLimit > 0 && (
                 <div className="mt-1.5">
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-500">ใช้ไป</span>
+                    <span className="text-[var(--fg-4)]">ใช้ไป</span>
                     <span className={customer.creditUsed > customer.creditLimit * 0.9 ? 'text-red-400' : customer.creditUsed > customer.creditLimit * 0.7 ? 'text-yellow-400' : 'text-green-400'}>
                       {((customer.creditUsed / customer.creditLimit) * 100).toFixed(0)}%
                     </span>
                   </div>
-                  <div className="w-full bg-cyber-darker h-1.5 rounded-full overflow-hidden">
+                  <div className="w-full bg-[var(--surface-2)] h-1.5 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full ${customer.creditUsed > customer.creditLimit * 0.9 ? 'bg-red-500' : customer.creditUsed > customer.creditLimit * 0.7 ? 'bg-yellow-500' : 'bg-green-500'}`}
                       style={{ width: `${Math.min((customer.creditUsed / customer.creditLimit) * 100, 100)}%` }} />
                   </div>
@@ -1119,12 +1119,12 @@ function CustomerDetailModal({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-cyber-darker/60 rounded-lg p-2.5">
-                <p className="text-[10px] text-gray-500 mb-0.5">ออเดอร์</p>
-                <p className="text-lg font-bold text-cyber-primary">{totalOrders}</p>
+              <div className="bg-var(--surface-2)/60 rounded-lg p-2.5">
+                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ออเดอร์</p>
+                <p className="text-lg font-bold text-phopy-indigo">{totalOrders}</p>
               </div>
-              <div className="bg-cyber-darker/60 rounded-lg p-2.5">
-                <p className="text-[10px] text-gray-500 mb-0.5">ล่าสุด</p>
+              <div className="bg-var(--surface-2)/60 rounded-lg p-2.5">
+                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ล่าสุด</p>
                 <p className="text-xs font-semibold text-white">{lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</p>
               </div>
             </div>
@@ -1132,11 +1132,11 @@ function CustomerDetailModal({
             {insights && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-green-500/5 border border-green-500/10 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">ชำระแล้ว</p>
-                  <p className="text-xs font-bold text-cyber-green">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ชำระแล้ว</p>
+                  <p className="text-xs font-bold text-success">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </div>
                 <div className="bg-orange-500/5 border border-orange-500/10 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">ค้างชำระ</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ค้างชำระ</p>
                   <p className="text-xs font-bold text-orange-400">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
@@ -1148,11 +1148,11 @@ function CustomerDetailModal({
               className={`w-full bg-yellow-500/5 border rounded-lg p-3 text-left transition-all hover:bg-yellow-500/10 ${activeTab === 'loyalty' ? 'border-yellow-500/50' : 'border-yellow-500/20'}`}
             >
               <div className="flex items-center justify-between mb-0.5">
-                <p className="text-[10px] text-gray-500 flex items-center gap-1"><Star className="w-3 h-3 text-yellow-400" />แต้มสะสม</p>
+                <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-yellow-400" />แต้มสะสม</p>
                 <span className="text-[10px] text-yellow-400/60">คลิกดูรายละเอียด →</span>
               </div>
               <p className="text-xl font-bold text-yellow-400">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
-              <p className="text-[10px] text-gray-500">แต้ม</p>
+              <p className="text-[10px] text-[var(--fg-4)]">แต้ม</p>
             </button>
           </div>
         </div>
@@ -1160,7 +1160,7 @@ function CustomerDetailModal({
         {/* ── RIGHT PANEL ──────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Tab Nav */}
-          <div className="border-b border-cyber-border bg-cyber-darker/80 px-4 flex-shrink-0">
+          <div className="border-b border-[var(--border)] bg-[var(--surface-2)]/80 px-4 flex-shrink-0">
             <div className="flex gap-0.5 overflow-x-auto no-scrollbar pt-3">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
@@ -1168,8 +1168,8 @@ function CustomerDetailModal({
                   onClick={() => setActiveTab(id as typeof activeTab)}
                   className={`px-3 py-2 flex items-center gap-1.5 text-xs font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
                     activeTab === id
-                      ? 'border-cyber-primary text-cyber-primary'
-                      : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                      ? 'border-phopy-indigo text-phopy-indigo'
+                      : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-600'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -1183,7 +1183,7 @@ function CustomerDetailModal({
           <div className="flex-1 overflow-y-auto p-5">
           {insightsLoading && (
             <div className="text-center py-12">
-              <p className="text-gray-400">กำลังโหลดข้อมูลลูกค้า...</p>
+              <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูลลูกค้า...</p>
             </div>
           )}
 
@@ -1193,27 +1193,27 @@ function CustomerDetailModal({
                 <>
                   {/* Summary bar */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="cyber-card p-3 text-center border border-cyber-primary/10">
-                      <p className="text-xs text-gray-400 mb-1">ออเดอร์ทั้งหมด</p>
-                      <p className="text-2xl font-bold text-cyber-primary">
+                    <div className="phopy-card p-3 text-center border border-phopy-indigo/10">
+                      <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ทั้งหมด</p>
+                      <p className="text-2xl font-bold text-phopy-indigo">
                         {((insights.stats.totalOrders ?? 0) + (insights.stats.totalSO ?? 0)).toLocaleString()}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">SO {insights.stats.totalSO ?? 0} · เก่า {insights.stats.totalOrders ?? 0}</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-0.5">SO {insights.stats.totalSO ?? 0} · เก่า {insights.stats.totalOrders ?? 0}</p>
                     </div>
-                    <div className="cyber-card p-3 text-center border border-cyber-green/10">
-                      <p className="text-xs text-gray-400 mb-1">ยอดซื้อรวม</p>
-                      <p className="text-2xl font-bold text-cyber-green">
+                    <div className="phopy-card p-3 text-center border border-success/10">
+                      <p className="text-xs text-[var(--fg-3)] mb-1">ยอดซื้อรวม</p>
+                      <p className="text-2xl font-bold text-success">
                         ฿{((insights.stats.totalRevenue ?? 0) + (insights.stats.totalPaid ?? 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">ชำระแล้ว ฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-0.5">ชำระแล้ว ฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                     </div>
-                    <div className="cyber-card p-3 text-center border border-gray-700/30">
-                      <p className="text-xs text-gray-400 mb-1">ออเดอร์ล่าสุด</p>
+                    <div className="phopy-card p-3 text-center border border-gray-700/30">
+                      <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ล่าสุด</p>
                       <p className="text-sm font-bold text-white">
                         {lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
                       </p>
                       {insights.stats.daysSinceLastOrder !== undefined && (
-                        <p className={`text-xs mt-0.5 ${insights.stats.daysSinceLastOrder > 60 ? 'text-red-400' : insights.stats.daysSinceLastOrder > 30 ? 'text-yellow-400' : 'text-gray-500'}`}>
+                        <p className={`text-xs mt-0.5 ${insights.stats.daysSinceLastOrder > 60 ? 'text-red-400' : insights.stats.daysSinceLastOrder > 30 ? 'text-yellow-400' : 'text-[var(--fg-4)]'}`}>
                           {insights.stats.daysSinceLastOrder} วันที่แล้ว
                         </p>
                       )}
@@ -1222,38 +1222,38 @@ function CustomerDetailModal({
 
                   {/* QT / SO / INV breakdown */}
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <p className="text-xs text-[var(--fg-4)] uppercase tracking-wider mb-2 flex items-center gap-1">
                       <TrendingUp className="w-3 h-3" /> รายละเอียดเอกสาร
                     </p>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="cyber-card p-3">
+                      <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <FileText className="w-4 h-4 text-blue-400" />
-                          <span className="text-xs text-gray-400">ใบเสนอราคา (QT)</span>
+                          <span className="text-xs text-[var(--fg-3)]">ใบเสนอราคา (QT)</span>
                         </div>
                         <p className="text-lg font-bold text-blue-400">{insights.stats.totalQT ?? 0} ใบ</p>
-                        <p className="text-xs text-gray-500">฿{(insights.stats.totalQTAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xs text-[var(--fg-4)]">฿{(insights.stats.totalQTAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                       </div>
-                      <div className="cyber-card p-3">
+                      <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <ShoppingCart className="w-4 h-4 text-purple-400" />
-                          <span className="text-xs text-gray-400">คำสั่งขาย (SO)</span>
+                          <span className="text-xs text-[var(--fg-3)]">คำสั่งขาย (SO)</span>
                         </div>
                         <p className="text-lg font-bold text-purple-400">{insights.stats.totalSO ?? 0} ใบ</p>
-                        <p className="text-xs text-gray-500">฿{(insights.stats.totalSOAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xs text-[var(--fg-4)]">฿{(insights.stats.totalSOAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                       </div>
-                      <div className="cyber-card p-3">
+                      <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <CreditCard className="w-4 h-4 text-cyber-green" />
-                          <span className="text-xs text-gray-400">ชำระแล้ว</span>
+                          <CreditCard className="w-4 h-4 text-success" />
+                          <span className="text-xs text-[var(--fg-3)]">ชำระแล้ว</span>
                         </div>
-                        <p className="text-lg font-bold text-cyber-green">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
-                        <p className="text-xs text-gray-500">{insights.stats.totalInvoices ?? 0} ใบแจ้งหนี้</p>
+                        <p className="text-lg font-bold text-success">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{insights.stats.totalInvoices ?? 0} ใบแจ้งหนี้</p>
                       </div>
-                      <div className="cyber-card p-3">
+                      <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <AlertCircle className="w-4 h-4 text-orange-400" />
-                          <span className="text-xs text-gray-400">ค้างชำระ</span>
+                          <span className="text-xs text-[var(--fg-3)]">ค้างชำระ</span>
                         </div>
                         <p className="text-lg font-bold text-orange-400">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                       </div>
@@ -1262,7 +1262,7 @@ function CustomerDetailModal({
                 </>
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-gray-500">ยังไม่มีข้อมูล</p>
+                  <p className="text-[var(--fg-4)]">ยังไม่มีข้อมูล</p>
                 </div>
               )}
             </div>
@@ -1272,16 +1272,16 @@ function CustomerDetailModal({
             <div className="space-y-4">
               {/* Toolbar */}
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5 text-cyber-primary" />
+                <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-phopy-indigo" />
                   ประวัติออเดอร์
-                  {orderPage && <span className="text-sm text-gray-400 font-normal">({orderPage.pagination.total} รายการ)</span>}
+                  {orderPage && <span className="text-sm text-[var(--fg-3)] font-normal">({orderPage.pagination.total} รายการ)</span>}
                 </h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">แสดง</span>
+                  <span className="text-xs text-[var(--fg-3)]">แสดง</span>
                   {[25, 50, 100].map(l => (
                     <button key={l} onClick={() => onOrderLimitChange(l)}
-                      className={`px-2 py-1 text-xs rounded ${orderLimit === l ? 'bg-cyber-primary text-white' : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'}`}>
+                      className={`px-2 py-1 text-xs rounded ${orderLimit === l ? 'bg-phopy-indigo text-white' : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80'}`}>
                       {l}
                     </button>
                   ))}
@@ -1289,31 +1289,31 @@ function CustomerDetailModal({
               </div>
 
               {orderPageLoading ? (
-                <p className="text-center text-gray-400 py-8">กำลังโหลด...</p>
+                <p className="text-center text-[var(--fg-3)] py-8">กำลังโหลด...</p>
               ) : orderPage && orderPage.data.length > 0 ? (
                 <>
                   <div className="space-y-3">
                     {orderPage.data.map((order: any) => (
-                      <div key={order.id} className="cyber-card p-4">
+                      <div key={order.id} className="phopy-card p-4">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-cyber-primary">{order.orderNumber}</span>
+                            <span className="font-semibold text-phopy-indigo">{order.orderNumber}</span>
                             {order.source === 'SO' && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/20">SO</span>
                             )}
                           </div>
-                          <span className="text-xs text-gray-400">{new Date(order.orderDate).toLocaleDateString('th-TH')}</span>
+                          <span className="text-xs text-[var(--fg-3)]">{new Date(order.orderDate).toLocaleDateString('th-TH')}</span>
                         </div>
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs px-2 py-0.5 rounded bg-gray-700/50 text-gray-300">{order.status}</span>
-                          <span className="font-bold text-cyber-green">฿{(order.totalAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                          <span className="text-xs px-2 py-0.5 rounded bg-gray-700/50 text-[var(--fg-2)]">{order.status}</span>
+                          <span className="font-bold text-success">฿{(order.totalAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                         </div>
                         {order.items && order.items.length > 0 && (
-                          <div className="text-xs text-gray-400 space-y-0.5 border-t border-cyber-border pt-2 mt-2">
+                          <div className="text-xs text-[var(--fg-3)] space-y-0.5 border-t border-[var(--border)] pt-2 mt-2">
                             {order.items.map((item: any, idx: number) => (
                               <div key={idx} className="flex justify-between">
                                 <span>{item.productName}</span>
-                                <span className="text-cyber-primary">x{item.quantity}</span>
+                                <span className="text-phopy-indigo">x{item.quantity}</span>
                               </div>
                             ))}
                           </div>
@@ -1325,34 +1325,34 @@ function CustomerDetailModal({
                   {/* Pagination */}
                   {orderPage.pagination.totalPages > 1 && (
                     <div className="flex items-center justify-between pt-2">
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-[var(--fg-3)]">
                         หน้า {orderPage.pagination.page} / {orderPage.pagination.totalPages}
                       </span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => onOrderPageChange(orderPageNum - 1)} disabled={orderPageNum <= 1}
-                          className="p-1 rounded hover:bg-cyber-card disabled:opacity-30">
-                          <ChevronLeft className="w-4 h-4 text-gray-400" />
+                          className="p-1 rounded hover:bg-phopy-card disabled:opacity-30">
+                          <ChevronLeft className="w-4 h-4 text-[var(--fg-3)]" />
                         </button>
                         {Array.from({ length: Math.min(5, orderPage.pagination.totalPages) }, (_, i) => {
                           const start = Math.max(1, Math.min(orderPageNum - 2, orderPage.pagination.totalPages - 4))
                           const p = start + i
                           return (
                             <button key={p} onClick={() => onOrderPageChange(p)}
-                              className={`w-7 h-7 text-xs rounded ${p === orderPageNum ? 'bg-cyber-primary text-white' : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'}`}>
+                              className={`w-7 h-7 text-xs rounded ${p === orderPageNum ? 'bg-phopy-indigo text-white' : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80'}`}>
                               {p}
                             </button>
                           )
                         })}
                         <button onClick={() => onOrderPageChange(orderPageNum + 1)} disabled={orderPageNum >= orderPage.pagination.totalPages}
-                          className="p-1 rounded hover:bg-cyber-card disabled:opacity-30">
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
+                          className="p-1 rounded hover:bg-phopy-card disabled:opacity-30">
+                          <ChevronRight className="w-4 h-4 text-[var(--fg-3)]" />
                         </button>
                       </div>
                     </div>
                   )}
                 </>
               ) : (
-                <p className="text-center text-gray-500 py-8">ยังไม่มีประวัติการสั่งซื้อ</p>
+                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีประวัติการสั่งซื้อ</p>
               )}
             </div>
           )}
@@ -1364,32 +1364,32 @@ function CustomerDetailModal({
           {activeTab === 'recommendations' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-                  <Lightbulb className="w-5 h-5 text-cyber-primary" />สินค้าแนะนำ
+                <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+                  <Lightbulb className="w-5 h-5 text-phopy-indigo" />สินค้าแนะนำ
                 </h3>
-                <button onClick={() => setShowAddRec(!showAddRec)} className="cyber-btn-secondary text-sm flex items-center gap-2">
+                <button onClick={() => setShowAddRec(!showAddRec)} className="phopy-btn-secondary text-sm flex items-center gap-2">
                   <Plus className="w-4 h-4" />เพิ่ม
                 </button>
               </div>
 
               {showAddRec && (
-                <div className="cyber-card p-4 space-y-3">
+                <div className="phopy-card p-4 space-y-3">
                   <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)]" />
                     <input type="text" value={searchQuery} onChange={(e) => handleSearchProducts(e.target.value)}
-                      placeholder="ค้นหาสินค้า (2+ ตัวอักษร)..." className="cyber-input w-full pl-10" />
-                    {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">ค้นหา...</span>}
+                      placeholder="ค้นหาสินค้า (2+ ตัวอักษร)..." className="phopy-input w-full pl-10" />
+                    {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-3)]">ค้นหา...</span>}
                   </div>
                   {searchResults.length > 0 && (
                     <div className="max-h-48 overflow-y-auto space-y-1">
                       {searchResults.map((product) => (
-                        <div key={product.id} className="flex items-center justify-between p-2 bg-cyber-dark rounded-lg">
+                        <div key={product.id} className="flex items-center justify-between p-2 bg-[var(--bg)] rounded-lg">
                           <div>
                             <p className="text-sm font-medium text-white">{product.name}</p>
-                            <p className="text-xs text-gray-400">{product.sku} • {product.category}</p>
+                            <p className="text-xs text-[var(--fg-3)]">{product.sku} • {product.category}</p>
                           </div>
                           <button onClick={() => handleAddRecommendation(product)} disabled={addingRec}
-                            className="px-2 py-1 bg-cyber-primary/20 text-cyber-primary rounded text-xs hover:bg-cyber-primary/30">
+                            className="px-2 py-1 bg-phopy-indigo-50 text-phopy-indigo rounded text-xs hover:bg-phopy-indigo/30">
                             {addingRec ? '...' : 'เพิ่ม'}
                           </button>
                         </div>
@@ -1397,25 +1397,25 @@ function CustomerDetailModal({
                     </div>
                   )}
                   {searchQuery.length >= 2 && !searching && searchResults.length === 0 && (
-                    <p className="text-center text-gray-500 text-sm py-2">ไม่พบสินค้า</p>
+                    <p className="text-center text-[var(--fg-4)] text-sm py-2">ไม่พบสินค้า</p>
                   )}
                 </div>
               )}
 
               {recommendationsLoading ? (
-                <p className="text-center text-gray-400 py-8">กำลังโหลด...</p>
+                <p className="text-center text-[var(--fg-3)] py-8">กำลังโหลด...</p>
               ) : recommendations.length > 0 ? (
                 <div className="space-y-2">
                   {recommendations.map((rec) => (
-                    <div key={rec.id} className="cyber-card p-3 flex items-center gap-3">
+                    <div key={rec.id} className="phopy-card p-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white text-sm truncate">{rec.productName}</p>
-                        <p className="text-xs text-gray-400">{rec.productCategory || '-'}</p>
+                        <p className="text-xs text-[var(--fg-3)]">{rec.productCategory || '-'}</p>
                         <span className={`text-xs px-2 py-0.5 rounded inline-block mt-1 ${
                           rec.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
                           rec.status === 'OFFERED' ? 'bg-blue-500/20 text-blue-400' :
                           rec.status === 'ACCEPTED' ? 'bg-green-500/20 text-green-400' :
-                          'bg-red-500/20 text-red-400'
+                          'bg-danger-soft text-red-400'
                         }`}>
                           {rec.status === 'PENDING' ? 'รอเสนอ' : rec.status === 'OFFERED' ? 'เสนอแล้ว' : rec.status === 'ACCEPTED' ? 'สนใจ' : 'ไม่สนใจ'}
                         </span>
@@ -1433,13 +1433,13 @@ function CustomerDetailModal({
                               <CheckCircle2 className="w-3 h-3" />สนใจ
                             </button>
                             <button onClick={() => handleUpdateRec(rec.id, 'REJECTED')}
-                              className="px-2 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 flex items-center gap-1">
+                              className="px-2 py-1 text-xs rounded bg-danger-soft text-red-400 hover:bg-red-500/30 flex items-center gap-1">
                               <XCircle className="w-3 h-3" />ไม่สนใจ
                             </button>
                           </>
                         )}
                         <button onClick={() => handleDeleteRec(rec.id)}
-                          className="p-1 text-gray-600 hover:text-red-400 rounded">
+                          className="p-1 text-[var(--fg-4)] hover:text-red-400 rounded">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1447,22 +1447,22 @@ function CustomerDetailModal({
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-500 py-8">ยังไม่มีรายการ กด "เพิ่ม" เพื่อเพิ่มสินค้าแนะนำ</p>
+                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีรายการ กด "เพิ่ม" เพื่อเพิ่มสินค้าแนะนำ</p>
               )}
             </div>
           )}
 
           {!insightsLoading && activeTab === 'proposals' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-cyber-primary" />ใบเสนอราคา (QT) ที่เคยส่ง
+              <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+                <FileText className="w-5 h-5 text-phopy-indigo" />ใบเสนอราคา (QT) ที่เคยส่ง
               </h3>
               {insights && insights.quotations && insights.quotations.length > 0 ? (
                 <div className="space-y-3">
                   {insights.quotations.map((qt) => {
                     const statusColor: Record<string, string> = {
-                      DRAFT: 'bg-gray-500/20 text-gray-400', SENT: 'bg-blue-500/20 text-blue-400',
-                      ACCEPTED: 'bg-green-500/20 text-green-400', REJECTED: 'bg-red-500/20 text-red-400',
+                      DRAFT: 'bg-gray-500/20 text-[var(--fg-3)]', SENT: 'bg-blue-500/20 text-blue-400',
+                      ACCEPTED: 'bg-green-500/20 text-green-400', REJECTED: 'bg-danger-soft text-red-400',
                       EXPIRED: 'bg-orange-500/20 text-orange-400', CONVERTED: 'bg-purple-500/20 text-purple-400',
                     }
                     const statusTH: Record<string, string> = {
@@ -1470,38 +1470,38 @@ function CustomerDetailModal({
                       EXPIRED: 'หมดอายุ', CONVERTED: 'แปลงเป็น SO',
                     }
                     return (
-                      <details key={qt.id} className="cyber-card group">
+                      <details key={qt.id} className="phopy-card group">
                         <summary className="p-4 cursor-pointer list-none flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="font-semibold text-cyber-primary">{qt.quotation_number}</span>
+                            <span className="font-semibold text-phopy-indigo">{qt.quotation_number}</span>
                             <span className={`text-xs px-2 py-0.5 rounded ${statusColor[qt.status] || statusColor.DRAFT}`}>
                               {statusTH[qt.status] || qt.status}
                             </span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="font-bold text-cyber-green">฿{(qt.total_amount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                            <span className="text-xs text-gray-400">{qt.quotation_date ? new Date(qt.quotation_date).toLocaleDateString('th-TH') : '-'}</span>
+                            <span className="font-bold text-success">฿{(qt.total_amount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            <span className="text-xs text-[var(--fg-3)]">{qt.quotation_date ? new Date(qt.quotation_date).toLocaleDateString('th-TH') : '-'}</span>
                           </div>
                         </summary>
-                        <div className="px-4 pb-4 border-t border-cyber-border pt-3">
+                        <div className="px-4 pb-4 border-t border-[var(--border)] pt-3">
                           {qt.items.length > 0 ? (
                             <div className="space-y-1">
                               {qt.items.map((it, idx) => (
                                 <div key={idx} className="flex justify-between text-xs">
-                                  <span className="text-gray-300">{it.productName}</span>
-                                  <span className="text-gray-400">x{it.quantity} · ฿{(it.total_price ?? 0).toLocaleString()}</span>
+                                  <span className="text-[var(--fg-2)]">{it.productName}</span>
+                                  <span className="text-[var(--fg-3)]">x{it.quantity} · ฿{(it.total_price ?? 0).toLocaleString()}</span>
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-gray-500">ไม่มีรายการสินค้า</p>}
-                          {qt.notes && <p className="text-xs text-gray-500 mt-2 italic">{qt.notes}</p>}
+                          ) : <p className="text-xs text-[var(--fg-4)]">ไม่มีรายการสินค้า</p>}
+                          {qt.notes && <p className="text-xs text-[var(--fg-4)] mt-2 italic">{qt.notes}</p>}
                         </div>
                       </details>
                     )
                   })}
                 </div>
               ) : (
-                <p className="text-center text-gray-500 py-8">ยังไม่มีใบเสนอราคาสำหรับลูกค้านี้</p>
+                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีใบเสนอราคาสำหรับลูกค้านี้</p>
               )}
             </div>
           )}
@@ -1557,7 +1557,7 @@ function ActivityLogTab({
     CALL:    { label: 'โทรติดตาม',     icon: Phone,        dot: 'bg-blue-500',   border: 'border-l-blue-500',   badge: 'bg-blue-500/10 text-blue-400',   iconColor: 'text-blue-400'   },
     EMAIL:   { label: 'ส่งอีเมล',      icon: Mail,         dot: 'bg-green-500',  border: 'border-l-green-500',  badge: 'bg-green-500/10 text-green-400', iconColor: 'text-green-400'  },
     MEETING: { label: 'พบลูกค้า',      icon: UserCheck,    dot: 'bg-purple-500', border: 'border-l-purple-500', badge: 'bg-purple-500/10 text-purple-400',iconColor: 'text-purple-400' },
-    NOTE:    { label: 'บันทึกเพิ่มเติม',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-gray-400',   iconColor: 'text-gray-400'   },
+    NOTE:    { label: 'บันทึกเพิ่มเติม',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-[var(--fg-3)]',   iconColor: 'text-[var(--fg-3)]'   },
   } as const
 
   const timeAgo = (dateStr: string) => {
@@ -1583,18 +1583,18 @@ function ActivityLogTab({
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-cyber-primary" />
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+          <Clock className="w-5 h-5 text-phopy-indigo" />
           ประวัติการติดตามลูกค้า
           {activities?.length > 0 && (
-            <span className="text-xs bg-cyber-primary/20 text-cyber-primary px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-phopy-indigo-50 text-phopy-indigo px-2 py-0.5 rounded-full">
               {activities.length}
             </span>
           )}
         </h3>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="cyber-btn-primary text-sm px-3 py-1.5 flex items-center gap-2"
+          className="phopy-btn-primary text-sm px-3 py-1.5 flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           เพิ่มบันทึก
@@ -1603,7 +1603,7 @@ function ActivityLogTab({
 
       {/* Add Activity Form */}
       {showAddForm && (
-        <div className="cyber-card p-4 space-y-3 border-2 border-cyber-primary/30">
+        <div className="phopy-card p-4 space-y-3 border-2 border-phopy-indigo/30">
           <h4 className="font-semibold text-white text-sm">เพิ่มบันทึกการติดตาม</h4>
           <div className="flex gap-2 flex-wrap">
             {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as const).map((type) => {
@@ -1616,7 +1616,7 @@ function ActivityLogTab({
                   className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all border ${
                     activityType === type
                       ? `${cfg.badge} border-current font-semibold`
-                      : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80 border-cyber-border'
+                      : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80 border-[var(--border)]'
                   }`}
                 >
                   <Icon className={`w-3.5 h-3.5 ${activityType === type ? '' : 'opacity-60'}`} />
@@ -1629,19 +1629,19 @@ function ActivityLogTab({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="บันทึกรายละเอียด..."
-            className="w-full bg-cyber-card border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary min-h-[80px] resize-none"
+            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo min-h-[80px] resize-none"
           />
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => { setShowAddForm(false); setNote('') }}
-              className="px-4 py-1.5 rounded-lg text-sm bg-cyber-card text-gray-400 hover:bg-cyber-card/80"
+              className="px-4 py-1.5 rounded-lg text-sm bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80"
             >
               ยกเลิก
             </button>
             <button
               onClick={handleAddActivity}
               disabled={!note.trim() || saving}
-              className="px-4 py-1.5 rounded-lg text-sm bg-cyber-primary text-white hover:bg-cyber-primary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 rounded-lg text-sm bg-phopy-indigo text-white hover:bg-phopy-indigo/80 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'กำลังบันทึก...' : 'บันทึก'}
             </button>
@@ -1656,8 +1656,8 @@ function ActivityLogTab({
             onClick={() => setFilter('ALL')}
             className={`px-3 py-1 rounded-full text-xs transition-all ${
               filter === 'ALL'
-                ? 'bg-cyber-primary text-white font-semibold'
-                : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'
+                ? 'bg-phopy-indigo text-white font-semibold'
+                : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80'
             }`}
           >
             ทั้งหมด ({activities.length})
@@ -1672,7 +1672,7 @@ function ActivityLogTab({
                 className={`px-3 py-1 rounded-full text-xs flex items-center gap-1 transition-all ${
                   filter === type
                     ? `${cfg.badge} font-semibold ring-1 ring-current`
-                    : 'bg-cyber-card text-gray-400 hover:bg-cyber-card/80'
+                    : 'bg-phopy-card text-[var(--fg-3)] hover:bg-phopy-card/80'
                 }`}
               >
                 <Icon className="w-3 h-3" />
@@ -1693,13 +1693,13 @@ function ActivityLogTab({
               <div key={activity.id} className="flex gap-3 group">
                 {/* Timeline line + dot */}
                 <div className="flex flex-col items-center pt-1 min-w-[20px]">
-                  <div className={`w-2.5 h-2.5 rounded-full ${cfg.dot} ring-2 ring-cyber-bg flex-shrink-0`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${cfg.dot} ring-2 ring-[var(--bg)] flex-shrink-0`} />
                   {idx < filtered.length - 1 && (
-                    <div className="w-px flex-1 bg-cyber-border/50 mt-1 mb-1" />
+                    <div className="w-px flex-1 bg-[var(--border)]/50 mt-1 mb-1" />
                   )}
                 </div>
                 {/* Card */}
-                <div className={`flex-1 bg-cyber-card rounded-lg p-3 mb-2 border-l-2 ${cfg.border} transition-all group-hover:bg-cyber-card/80`}>
+                <div className={`flex-1 bg-phopy-card rounded-lg p-3 mb-2 border-l-2 ${cfg.border} transition-all group-hover:bg-phopy-card/80`}>
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
@@ -1707,33 +1707,33 @@ function ActivityLogTab({
                         {cfg.label}
                       </span>
                       {activity.createdBy && (
-                        <span className="text-xs text-gray-500">โดย {activity.createdBy}</span>
+                        <span className="text-xs text-[var(--fg-4)]">โดย {activity.createdBy}</span>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                      <span className="text-xs text-gray-400">{timeAgo(activity.createdAt)}</span>
-                      <span className="text-[10px] text-gray-600">
+                      <span className="text-xs text-[var(--fg-3)]">{timeAgo(activity.createdAt)}</span>
+                      <span className="text-[10px] text-[var(--fg-4)]">
                         {new Date(activity.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
                       </span>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{activity.note}</p>
+                  <p className="text-sm text-[var(--fg-2)] leading-relaxed whitespace-pre-wrap">{activity.note}</p>
                 </div>
               </div>
             )
           })
         ) : (
           <div className="text-center py-12">
-            <Clock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+            <Clock className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
             {filter !== 'ALL' ? (
               <>
-                <p className="text-gray-500">ไม่มีบันทึกประเภท "{typeConfig[filter as keyof typeof typeConfig]?.label}"</p>
-                <button onClick={() => setFilter('ALL')} className="text-xs text-cyber-primary mt-2 hover:underline">ดูทั้งหมด</button>
+                <p className="text-[var(--fg-4)]">ไม่มีบันทึกประเภท "{typeConfig[filter as keyof typeof typeConfig]?.label}"</p>
+                <button onClick={() => setFilter('ALL')} className="text-xs text-phopy-indigo mt-2 hover:underline">ดูทั้งหมด</button>
               </>
             ) : (
               <>
-                <p className="text-gray-500">ยังไม่มีบันทึกการติดตาม</p>
-                <p className="text-xs text-gray-600 mt-1">คลิก "เพิ่มบันทึก" เพื่อเริ่มบันทึกการติดตามลูกค้า</p>
+                <p className="text-[var(--fg-4)]">ยังไม่มีบันทึกการติดตาม</p>
+                <p className="text-xs text-[var(--fg-4)] mt-1">คลิก "เพิ่มบันทึก" เพื่อเริ่มบันทึกการติดตามลูกค้า</p>
               </>
             )}
           </div>
@@ -1791,9 +1791,9 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
   if (!products || products.length === 0) {
     return (
       <div className="text-center py-16">
-        <Heart className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-        <p className="text-gray-500">ยังไม่มีข้อมูลสินค้าที่ซื้อบ่อย</p>
-        <p className="text-xs text-gray-600 mt-1">ข้อมูลจะปรากฏเมื่อมีประวัติการสั่งซื้อ</p>
+        <Heart className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
+        <p className="text-[var(--fg-4)]">ยังไม่มีข้อมูลสินค้าที่ซื้อบ่อย</p>
+        <p className="text-xs text-[var(--fg-4)] mt-1">ข้อมูลจะปรากฏเมื่อมีประวัติการสั่งซื้อ</p>
       </div>
     )
   }
@@ -1815,9 +1815,9 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-base font-semibold text-gray-100 flex items-center gap-2">
-        <Heart className="w-4 h-4 text-cyber-primary" />สินค้าที่ซื้อบ่อย
-        <span className="text-xs text-gray-500 font-normal">รวม {totalQty.toLocaleString()} ชิ้น</span>
+      <h3 className="text-base font-semibold text-[var(--fg-1)] flex items-center gap-2">
+        <Heart className="w-4 h-4 text-phopy-indigo" />สินค้าที่ซื้อบ่อย
+        <span className="text-xs text-[var(--fg-4)] font-normal">รวม {totalQty.toLocaleString()} ชิ้น</span>
       </h3>
 
       <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -1838,12 +1838,12 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
                     <span className="text-xs text-white font-medium truncate pr-2">{sl.label}</span>
                     <span className="text-xs font-bold flex-shrink-0" style={{ color: sl.color }}>{pct}%</span>
                   </div>
-                  <div className="w-full bg-cyber-darker rounded-full h-1.5">
+                  <div className="w-full bg-[var(--surface-2)] rounded-full h-1.5">
                     <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: sl.color }} />
                   </div>
                   <div className="flex justify-between mt-0.5">
-                    <span className="text-[10px] text-gray-500">{sl.category}</span>
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-[var(--fg-4)]">{sl.category}</span>
+                    <span className="text-[10px] text-[var(--fg-3)]">
                       x{sl.value.toLocaleString()}
                       {sl.revenue > 0 && ` · ฿${sl.revenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
                     </span>
@@ -1868,15 +1868,15 @@ function StatCard({
   icon: any
 }) {
   return (
-    <div className="cyber-card p-4">
+    <div className="phopy-card p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-400 mb-1">{label}</p>
-          <p className="text-2xl font-bold text-cyber-primary">
+          <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
+          <p className="text-2xl font-bold text-phopy-indigo">
             {value}
           </p>
         </div>
-        <Icon className="w-8 h-8 text-cyber-primary/50" />
+        <Icon className="w-8 h-8 text-phopy-indigo/50" />
       </div>
     </div>
   )
@@ -1887,11 +1887,11 @@ function getSegmentInfo(segment: CustomerSegment) {
   const segmentMap = {
     VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: '👑', textColor: 'text-yellow-400' },
     PREMIUM: { label: 'Premium', color: 'from-purple-500 to-pink-500', icon: '⭐', textColor: 'text-purple-400' },
-    GROWING: { label: 'เติบโต', color: 'from-green-500 to-emerald-500', icon: '📈', textColor: 'text-green-400' },
+    GROWING: { label: 'เติบโต', color: 'from-green-500 to-success', icon: '📈', textColor: 'text-green-400' },
     AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: '⚠️', textColor: 'text-red-400' },
     NEW: { label: 'ใหม่', color: 'from-blue-500 to-cyan-500', icon: '🎯', textColor: 'text-blue-400' },
     SEASONAL: { label: 'ตามฤดู', color: 'from-indigo-500 to-violet-500', icon: '🔄', textColor: 'text-indigo-400' },
-    REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: '👤', textColor: 'text-gray-400' },
+    REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: '👤', textColor: 'text-[var(--fg-3)]' },
   }
   return segmentMap[segment] || segmentMap.REGULAR
 }
@@ -1918,18 +1918,18 @@ function CustomerCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ scale: 1.02 }}
-      className={`cyber-card p-6 glow-effect cursor-pointer ${
+      className={`phopy-card p-6  cursor-pointer ${
         isAtRisk ? 'ring-2 ring-red-500/30' : ''
       }`}
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyber-primary to-cyber-purple flex items-center justify-center shadow-neon">
+          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center shadow-2">
             <Building2 className="w-6 h-6 text-white" />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold text-gray-100">{customer.name}</h3>
+              <h3 className="text-lg font-bold text-[var(--fg-1)]">{customer.name}</h3>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gradient-to-r ${segmentInfo.color} text-white flex items-center gap-1`}
                 title={segmentInfo.label}
@@ -1938,7 +1938,7 @@ function CustomerCard({
                 <span>{segmentInfo.label}</span>
               </span>
             </div>
-            <p className="text-sm text-gray-400">{customer.code}</p>
+            <p className="text-sm text-[var(--fg-3)]">{customer.code}</p>
           </div>
         </div>
         {isAtRisk && (
@@ -1949,7 +1949,7 @@ function CustomerCard({
         {onEdit && (
           <button
             onClick={onEdit}
-            className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors ml-2"
+            className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors ml-2"
             title="Edit Customer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1961,34 +1961,34 @@ function CustomerCard({
 
       <div className="space-y-3 mb-4">
         <div className="flex items-center gap-2 text-sm">
-          <Users className="w-4 h-4 text-cyber-primary" />
-          <span className="text-gray-400">Contact:</span>
-          <span className="text-gray-300">{customer.contactName}</span>
+          <Users className="w-4 h-4 text-phopy-indigo" />
+          <span className="text-[var(--fg-3)]">Contact:</span>
+          <span className="text-[var(--fg-2)]">{customer.contactName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Mail className="w-4 h-4 text-cyber-primary" />
-          <span className="text-gray-400">{customer.email}</span>
+          <Mail className="w-4 h-4 text-phopy-indigo" />
+          <span className="text-[var(--fg-3)]">{customer.email}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Phone className="w-4 h-4 text-cyber-primary" />
-          <span className="text-gray-400">{customer.phone}</span>
+          <Phone className="w-4 h-4 text-phopy-indigo" />
+          <span className="text-[var(--fg-3)]">{customer.phone}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <MapPin className="w-4 h-4 text-cyber-primary" />
-          <span className="text-gray-400">{customer.city}</span>
+          <MapPin className="w-4 h-4 text-phopy-indigo" />
+          <span className="text-[var(--fg-3)]">{customer.city}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 pt-4 border-t border-cyber-border">
+      <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--border)]">
         <div>
-          <p className="text-xs text-gray-400 mb-1">Orders</p>
-          <p className="text-sm font-semibold text-cyber-primary">
+          <p className="text-xs text-[var(--fg-3)] mb-1">Orders</p>
+          <p className="text-sm font-semibold text-phopy-indigo">
             {(customer.totalOrders ?? 0).toLocaleString('th-TH')}
           </p>
         </div>
         <div>
-          <p className="text-xs text-gray-400 mb-1">Revenue</p>
-          <p className="text-sm font-semibold text-cyber-green">
+          <p className="text-xs text-[var(--fg-3)] mb-1">Revenue</p>
+          <p className="text-sm font-semibold text-success">
             ฿
             {(customer.totalRevenue ?? 0).toLocaleString('th-TH', {
               maximumFractionDigits: 0,
@@ -1996,8 +1996,8 @@ function CustomerCard({
           </p>
         </div>
         <div>
-          <p className="text-xs text-gray-400 mb-1">Credit</p>
-          <p className="text-sm font-semibold text-cyber-purple">
+          <p className="text-xs text-[var(--fg-3)] mb-1">Credit</p>
+          <p className="text-sm font-semibold text-purple-500">
             ฿
             {(customer.creditLimit ?? 0).toLocaleString('th-TH', {
               maximumFractionDigits: 0,
@@ -2089,7 +2089,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
   const typeLabel = { EARN: 'รับแต้ม', REDEEM: 'แลกแต้ม', ADJUST: 'ปรับแต้ม' }
   const typeBadge = {
-    EARN:   'bg-green-500/15 text-green-400 border border-green-500/20',
+    EARN:   'bg-success-soft text-green-400 border border-green-500/20',
     REDEEM: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20',
     ADJUST: 'bg-blue-500/15 text-blue-400 border border-blue-500/20',
   }
@@ -2098,11 +2098,11 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
           <Star className="w-5 h-5 text-yellow-400" />
           ระบบแต้มสะสม
         </h3>
-        <button onClick={fetchLoyalty} className="p-1.5 text-gray-400 hover:text-cyber-primary rounded-lg hover:bg-cyber-primary/10 transition-colors">
+        <button onClick={fetchLoyalty} className="p-1.5 text-[var(--fg-3)] hover:text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
@@ -2111,9 +2111,9 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
       <div className="bg-gradient-to-br from-yellow-500/10 to-amber-500/5 border border-yellow-500/20 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-xs text-gray-400 mb-1">แต้มสะสมคงเหลือ</p>
+            <p className="text-xs text-[var(--fg-3)] mb-1">แต้มสะสมคงเหลือ</p>
             <p className="text-4xl font-bold text-yellow-400">{points.toLocaleString()}</p>
-            <p className="text-xs text-gray-500 mt-0.5">แต้ม</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">แต้ม</p>
           </div>
           <div className="w-16 h-16 rounded-2xl bg-yellow-500/20 flex items-center justify-center">
             <Star className="w-8 h-8 text-yellow-400" />
@@ -2122,11 +2122,11 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
         {/* Config info */}
         <div className="grid grid-cols-2 gap-2 text-xs border-t border-yellow-500/10 pt-3">
-          <div className="flex items-center gap-1.5 text-gray-400">
+          <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
             <Gift className="w-3.5 h-3.5 text-green-400" />
             ซื้อ ฿{loyaltyCfg.earnRate.toLocaleString()} = 1 แต้ม
           </div>
-          <div className="flex items-center gap-1.5 text-gray-400">
+          <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
             <ArrowLeftRight className="w-3.5 h-3.5 text-yellow-400" />
             {loyaltyCfg.redeemRate} แต้ม = ลด ฿1
           </div>
@@ -2163,36 +2163,36 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
       {/* Earn form */}
       {mode === 'earn' && (
-        <div className="cyber-card p-4 space-y-3 border border-green-500/20">
+        <div className="phopy-card p-4 space-y-3 border border-green-500/20">
           <h4 className="font-semibold text-green-400 text-sm flex items-center gap-2">
             <Gift className="w-4 h-4" /> เพิ่มแต้มให้ลูกค้า
           </h4>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">ยอดซื้อ (บาท) — คำนวณแต้มอัตโนมัติ</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ยอดซื้อ (บาท) — คำนวณแต้มอัตโนมัติ</label>
               <input
                 type="number" min="0" value={inputAmount}
                 onChange={e => { setInputAmount(e.target.value); setInputPoints(String(calcPointsFromAmount(parseFloat(e.target.value) || 0))) }}
-                className="cyber-input w-full" placeholder="0"
+                className="phopy-input w-full" placeholder="0"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">จำนวนแต้ม</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนแต้ม</label>
               <input
                 type="number" min="1" value={inputPoints}
                 onChange={e => { setInputPoints(e.target.value); setInputAmount('') }}
-                className="cyber-input w-full" placeholder="0"
+                className="phopy-input w-full" placeholder="0"
               />
             </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ</label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
-              className="cyber-input w-full" placeholder="เช่น ซื้อสินค้า SO-2026-00001" />
+              className="phopy-input w-full" placeholder="เช่น ซื้อสินค้า SO-2026-00001" />
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-cyber-card text-gray-400 rounded-lg hover:bg-cyber-card/80">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-phopy-card text-[var(--fg-3)] rounded-lg hover:bg-phopy-card/80">ยกเลิก</button>
             <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 font-semibold">
               {saving ? 'กำลังบันทึก...' : 'เพิ่มแต้ม'}
             </button>
@@ -2202,34 +2202,34 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
       {/* Redeem form */}
       {mode === 'redeem' && (
-        <div className="cyber-card p-4 space-y-3 border border-yellow-500/20">
+        <div className="phopy-card p-4 space-y-3 border border-yellow-500/20">
           <h4 className="font-semibold text-yellow-400 text-sm flex items-center gap-2">
             <ArrowLeftRight className="w-4 h-4" /> แลกแต้มเป็นส่วนลด
           </h4>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">จำนวนแต้มที่ต้องการแลก</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนแต้มที่ต้องการแลก</label>
               <input
                 type="number" min="1" max={points} value={inputPoints}
                 onChange={e => setInputPoints(e.target.value)}
-                className="cyber-input w-full" placeholder={`สูงสุด ${points}`}
+                className="phopy-input w-full" placeholder={`สูงสุด ${points}`}
               />
             </div>
             <div className="flex flex-col justify-end">
-              <p className="text-xs text-gray-400 mb-1">มูลค่าส่วนลด</p>
+              <p className="text-xs text-[var(--fg-3)] mb-1">มูลค่าส่วนลด</p>
               <p className="text-xl font-bold text-yellow-400">
                 ฿{inputPoints ? (parseInt(inputPoints || '0') / loyaltyCfg.redeemRate).toFixed(2) : '0.00'}
               </p>
             </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">หมายเหตุ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ</label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
-              className="cyber-input w-full" placeholder="เช่น แลกส่วนลดสำหรับ SO-2026-00002" />
+              className="phopy-input w-full" placeholder="เช่น แลกส่วนลดสำหรับ SO-2026-00002" />
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-cyber-card text-gray-400 rounded-lg hover:bg-cyber-card/80">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-phopy-card text-[var(--fg-3)] rounded-lg hover:bg-phopy-card/80">ยกเลิก</button>
             <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 font-semibold">
               {saving ? 'กำลังบันทึก...' : 'แลกแต้ม'}
             </button>
@@ -2239,25 +2239,25 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
       {/* Transaction history */}
       <div>
-        <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2 mb-3">
-          <History className="w-4 h-4 text-gray-400" />
+        <h4 className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2 mb-3">
+          <History className="w-4 h-4 text-[var(--fg-3)]" />
           ประวัติการใช้งานแต้ม
-          {transactions.length > 0 && <span className="text-xs bg-cyber-card px-2 py-0.5 rounded-full text-gray-400">{transactions.length} รายการ</span>}
+          {transactions.length > 0 && <span className="text-xs bg-phopy-card px-2 py-0.5 rounded-full text-[var(--fg-3)]">{transactions.length} รายการ</span>}
         </h4>
 
         {loading ? (
-          <p className="text-center text-gray-400 py-6 text-sm">กำลังโหลด...</p>
+          <p className="text-center text-[var(--fg-3)] py-6 text-sm">กำลังโหลด...</p>
         ) : transactions.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-10 h-10 text-gray-700 mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">ยังไม่มีประวัติการใช้แต้ม</p>
+            <p className="text-[var(--fg-4)] text-sm">ยังไม่มีประวัติการใช้แต้ม</p>
           </div>
         ) : (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="flex items-start gap-3 p-3 bg-cyber-darker/60 rounded-lg border border-cyber-border/50 hover:border-cyber-border transition-colors">
+              <div key={tx.id} className="flex items-start gap-3 p-3 bg-var(--surface-2)/60 rounded-lg border border-[var(--border)]/50 hover:border-[var(--border)] transition-colors">
                 {/* Icon */}
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-green-500/15' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-success-soft' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
                   {tx.type === 'EARN' ? <Gift className="w-4 h-4 text-green-400" />
                     : tx.type === 'REDEEM' ? <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
                     : <Star className="w-4 h-4 text-blue-400" />}
@@ -2271,13 +2271,13 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
                       {tx.points > 0 ? '+' : ''}{tx.points.toLocaleString()} แต้ม
                     </span>
                   </div>
-                  {tx.note && <p className="text-xs text-gray-300 mt-1">{tx.note}</p>}
+                  {tx.note && <p className="text-xs text-[var(--fg-2)] mt-1">{tx.note}</p>}
                   <div className="flex items-center justify-between mt-1">
-                    <span className="text-[10px] text-gray-500">
+                    <span className="text-[10px] text-[var(--fg-4)]">
                       {new Date(tx.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       {tx.created_by && ` · ${tx.created_by}`}
                     </span>
-                    <span className="text-[10px] text-gray-500">คงเหลือ {tx.balance_after.toLocaleString()} แต้ม</span>
+                    <span className="text-[10px] text-[var(--fg-4)]">คงเหลือ {tx.balance_after.toLocaleString()} แต้ม</span>
                   </div>
                 </div>
               </div>

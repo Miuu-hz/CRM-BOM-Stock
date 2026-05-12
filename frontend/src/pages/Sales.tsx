@@ -213,11 +213,11 @@ interface POSDailySales {
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  DRAFT:      { label: 'ฉบับร่าง',        bg: 'bg-gray-500/15',    text: 'text-gray-300' },
+  DRAFT:      { label: 'ฉบับร่าง',        bg: 'bg-gray-500/15',    text: 'text-[var(--fg-2)]' },
   SENT:       { label: 'ส่งแล้ว',          bg: 'bg-blue-500/15',    text: 'text-blue-300' },
-  ACCEPTED:   { label: 'อนุมัติ',          bg: 'bg-green-500/15',   text: 'text-green-300' },
+  ACCEPTED:   { label: 'อนุมัติ',          bg: 'bg-success-soft',   text: 'text-green-300' },
   REJECTED:   { label: 'ปฏิเสธ',           bg: 'bg-red-500/15',     text: 'text-red-300' },
-  EXPIRED:    { label: 'หมดอายุ',          bg: 'bg-gray-500/15',    text: 'text-gray-400' },
+  EXPIRED:    { label: 'หมดอายุ',          bg: 'bg-gray-500/15',    text: 'text-[var(--fg-3)]' },
   CANCELLED:  { label: 'ยกเลิก',           bg: 'bg-red-500/15',     text: 'text-red-300' },
   CONFIRMED:  { label: 'ยืนยัน',           bg: 'bg-cyan-500/15',    text: 'text-cyan-300' },
   PROCESSING: { label: 'กำลังดำเนินการ',   bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
@@ -226,14 +226,14 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
   COMPLETED:  { label: 'เสร็จสิ้น',        bg: 'bg-green-600/15',   text: 'text-green-300' },
   PARTIAL:    { label: 'ส่งบางส่วน',       bg: 'bg-orange-500/15',  text: 'text-orange-300' },
   ISSUED:     { label: 'ออกใบแล้ว',        bg: 'bg-blue-500/15',    text: 'text-blue-300' },
-  PAID:       { label: 'ชำระแล้ว',         bg: 'bg-green-500/15',   text: 'text-green-300' },
+  PAID:       { label: 'ชำระแล้ว',         bg: 'bg-success-soft',   text: 'text-green-300' },
   UNPAID:     { label: 'ค้างชำระ',         bg: 'bg-red-500/15',     text: 'text-red-300' },
   OVERDUE:    { label: 'เกินกำหนด',        bg: 'bg-red-600/15',     text: 'text-red-400' },
   PENDING:    { label: 'รอดำเนินการ',      bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
 }
 
 const StatusBadge = ({ status }: { status: string }) => {
-  const cfg = STATUS_CONFIG[status] || { label: status, bg: 'bg-gray-500/15', text: 'text-gray-400' }
+  const cfg = STATUS_CONFIG[status] || { label: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
       {cfg.label}
@@ -241,7 +241,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   )
 }
 
-function ModalShell({ title, icon: Icon, iconColor = 'text-cyber-primary', onClose, children, footer }: {
+function ModalShell({ title, icon: Icon, iconColor = 'text-phopy-indigo', onClose, children, footer }: {
   title: string; icon: any; iconColor?: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode
 }) {
   useModalClose(onClose)
@@ -249,17 +249,17 @@ function ModalShell({ title, icon: Icon, iconColor = 'text-cyber-primary', onClo
   <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
     <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
       onClick={e => e.stopPropagation()}
-      className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-      <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+      className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+      <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <Icon className={`w-5 h-5 ${iconColor}`} /> {title}
         </h2>
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="overflow-y-auto modal-scroll p-5 space-y-4">{children}</div>
-      <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">{footer}</div>
+      <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">{footer}</div>
     </motion.div>
   </div>
   )
@@ -267,7 +267,7 @@ function ModalShell({ title, icon: Icon, iconColor = 'text-cyber-primary', onClo
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
-    <label className="block text-sm text-gray-400 mb-1.5">{label}</label>
+    <label className="block text-sm text-[var(--fg-3)] mb-1.5">{label}</label>
     {children}
   </div>
 )
@@ -279,8 +279,8 @@ const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string;
     {entries.map((e, i) => (
       <div key={i} className={`flex items-center gap-2 text-xs ${e.dr ? '' : 'pl-6'}`}>
         <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-red-400'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
-        <span className="text-gray-300 flex-1">{e.account}</span>
-        <span className="text-gray-400">{e.label}</span>
+        <span className="text-[var(--fg-2)] flex-1">{e.account}</span>
+        <span className="text-[var(--fg-3)]">{e.label}</span>
         {e.amount !== undefined && <span className="text-white font-medium">฿{(e.amount).toLocaleString('th-TH')}</span>}
       </div>
     ))}
@@ -575,22 +575,22 @@ const Sales = () => {
       pages.push(totalPages)
     }
     return (
-      <div className="flex items-center justify-between pt-3 border-t border-cyber-border/40">
-        <p className="text-xs text-gray-500">
+      <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/40">
+        <p className="text-xs text-[var(--fg-4)]">
           แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
         </p>
         <div className="flex items-center gap-1">
           <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">‹</button>
+            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">‹</button>
           {pages.map((p, i) => p === '...'
-            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-600">…</span>
+            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-[var(--fg-4)]">…</span>
             : <button key={p} onClick={() => setCurrentPage(p as number)}
-                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-cyber-primary text-cyber-dark font-bold' : 'text-gray-400 bg-cyber-dark hover:text-white'}`}>
+                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-phopy-indigo text-white font-bold' : 'text-[var(--fg-3)] bg-[var(--bg)] hover:text-[var(--fg-1)]'}`}>
                 {p}
               </button>
           )}
           <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
-            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">›</button>
+            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">›</button>
         </div>
       </div>
     )
@@ -598,7 +598,7 @@ const Sales = () => {
 
   const PageSizeSelect = () => (
     <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
-      className="px-2 py-1.5 bg-cyber-dark border border-cyber-border rounded-lg text-xs text-gray-300 focus:outline-none focus:border-cyber-primary">
+      className="px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo">
       <option value={25}>25 / หน้า</option>
       <option value={50}>50 / หน้า</option>
       <option value={100}>100 / หน้า</option>
@@ -617,9 +617,9 @@ const Sales = () => {
       {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'ยอดขายรวม',   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-cyber-primary', bg: 'bg-cyber-primary/10',  border: 'border-cyber-primary/20' },
-          { label: 'คำสั่งขาย',   value: `${summary?.salesOrders.total || 0} รายการ`,          icon: ShoppingCart, color: 'text-cyber-purple',  bg: 'bg-cyber-purple/10',   border: 'border-cyber-purple/20' },
-          { label: 'รับเงินวันนี้', value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-cyber-green',   bg: 'bg-cyber-green/10',    border: 'border-cyber-green/20' },
+          { label: 'ยอดขายรวม',   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-phopy-indigo', bg: 'bg-phopy-indigo/10',  border: 'border-phopy-indigo-50' },
+          { label: 'คำสั่งขาย',   value: `${summary?.salesOrders.total || 0} รายการ`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
+          { label: 'รับเงินวันนี้', value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-success/10',    border: 'border-success-soft' },
           { label: 'ยอดค้างรับ',   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-orange-400',    bg: 'bg-orange-500/10',     border: 'border-orange-500/20' },
         ].map((card, i) => (
           <motion.div key={card.label}
@@ -627,7 +627,7 @@ const Sales = () => {
             className={`rounded-xl p-5 border ${card.border} ${card.bg}`}>
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-xs text-gray-400 mb-1">{card.label}</p>
+                <p className="text-xs text-[var(--fg-3)] mb-1">{card.label}</p>
                 <p className={`text-xl font-bold ${card.color}`}>{card.value}</p>
               </div>
               <div className={`p-2 rounded-lg ${card.bg} shrink-0`}>
@@ -641,7 +641,7 @@ const Sales = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pending actions */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="lg:col-span-1 bg-cyber-card border border-cyber-border rounded-xl p-5">
+          className="lg:col-span-1 bg-phopy-card border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
             <Clock className="w-4 h-4 text-yellow-400" /> รายการรอดำเนินการ
           </h3>
@@ -654,11 +654,11 @@ const Sales = () => {
               { label: 'รายการค้างส่ง',                count: summary?.backorders.pending || 0,        color: 'text-orange-400', tab: 'backorders' as const },
             ].map(item => (
               <button key={item.label} onClick={() => setActiveTab(item.tab)}
-                className={`w-full flex items-center justify-between p-3 rounded-lg hover:bg-cyber-dark/60 transition-colors ${item.count > 0 ? 'border border-yellow-500/20 bg-yellow-500/5' : 'bg-cyber-dark/30'}`}>
-                <span className="text-sm text-gray-300">{item.label}</span>
+                className={`w-full flex items-center justify-between p-3 rounded-lg hover:bg-[var(--bg)]/60 transition-colors ${item.count > 0 ? 'border border-yellow-500/20 bg-yellow-500/5' : 'bg-[var(--bg)]/30'}`}>
+                <span className="text-sm text-[var(--fg-2)]">{item.label}</span>
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-sm font-semibold ${item.count > 0 ? item.color : 'text-gray-500'}`}>{item.count}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                  <span className={`text-sm font-semibold ${item.count > 0 ? item.color : 'text-[var(--fg-4)]'}`}>{item.count}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--fg-4)]" />
                 </div>
               </button>
             ))}
@@ -667,9 +667,9 @@ const Sales = () => {
 
         {/* Sales workflow pipeline */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="lg:col-span-2 bg-cyber-card border border-cyber-border rounded-xl p-5">
+          className="lg:col-span-2 bg-phopy-card border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <ArrowRight className="w-4 h-4 text-cyber-primary" /> กระบวนการขาย
+            <ArrowRight className="w-4 h-4 text-phopy-indigo" /> กระบวนการขาย
           </h3>
           <div className="flex items-center gap-1 flex-wrap">
             {[
@@ -683,9 +683,9 @@ const Sales = () => {
                   className={`flex-1 flex flex-col items-center gap-1.5 p-3 rounded-xl border ${step.bg} ${step.border} hover:brightness-110 transition-all`}>
                   <step.icon className={`w-5 h-5 ${step.color}`} />
                   <span className="text-xs font-medium text-white">{step.label}</span>
-                  <span className="text-xs text-gray-500">{step.sub}</span>
+                  <span className="text-xs text-[var(--fg-4)]">{step.sub}</span>
                 </button>
-                {i < 3 && <ArrowRight className="w-4 h-4 text-gray-600 shrink-0" />}
+                {i < 3 && <ArrowRight className="w-4 h-4 text-[var(--fg-4)] shrink-0" />}
               </div>
             ))}
           </div>
@@ -697,8 +697,8 @@ const Sales = () => {
               { label: 'ชำระบางส่วน', value: summary?.invoices.partial || 0,  color: 'text-yellow-400' },
               { label: 'ชำระครบแล้ว', value: summary?.invoices.paid || 0,     color: 'text-green-400' },
             ].map(item => (
-              <div key={item.label} className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">{item.label}</p>
+              <div key={item.label} className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">{item.label}</p>
                 <p className={`text-lg font-bold ${item.color}`}>{item.value}</p>
               </div>
             ))}
@@ -715,40 +715,40 @@ const Sales = () => {
         <div className="flex flex-wrap gap-2 items-center flex-1 min-w-0">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
             <input type="text" placeholder={placeholder} value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyber-primary w-52 text-sm" />
+              className="pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo w-52 text-sm" />
           </div>
           {/* Date range */}
           <div className="flex items-center gap-1.5 text-sm">
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="bg-cyber-dark border border-cyber-border rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-cyber-primary" />
-            <span className="text-gray-500 text-xs">ถึง</span>
+              className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
+            <span className="text-[var(--fg-4)] text-xs">ถึง</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="bg-cyber-dark border border-cyber-border rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+              className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             {(dateFrom || dateTo) && (
               <button onClick={() => { setDateFrom(''); setDateTo('') }}
-                className="text-gray-500 hover:text-red-400 text-xs px-1.5 py-1 rounded">ล้าง</button>
+                className="text-[var(--fg-4)] hover:text-red-400 text-xs px-1.5 py-1 rounded">ล้าง</button>
             )}
           </div>
           {/* Limit */}
-          <div className="flex items-center gap-1 bg-cyber-dark border border-cyber-border rounded-lg px-1 py-1">
+          <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-1 py-1">
             {([25, 50, 100] as const).map(n => (
               <button key={n} onClick={() => setListLimit(n)}
-                className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${listLimit === n ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-400 hover:text-white'}`}>
+                className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${listLimit === n ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
                 {n}
               </button>
             ))}
           </div>
           {/* View mode toggle */}
-          <div className="flex items-center gap-0.5 bg-cyber-dark border border-cyber-border rounded-lg p-1">
+          <div className="flex items-center gap-0.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg p-1">
             <button onClick={() => setViewMode('list')} title="มุมมองรายการ"
-              className={`p-1 rounded transition-colors ${viewMode === 'list' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-400 hover:text-white'}`}>
+              className={`p-1 rounded transition-colors ${viewMode === 'list' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               <LayoutList className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setViewMode('card')} title="มุมมองการ์ด"
-              className={`p-1 rounded transition-colors ${viewMode === 'card' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-400 hover:text-white'}`}>
+              className={`p-1 rounded transition-colors ${viewMode === 'card' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -764,7 +764,7 @@ const Sales = () => {
     const items = paginate(filtered)
     const qtNextStatus: Record<string, { status: string; label: string; color: string }> = {
       DRAFT: { status: 'SENT', label: 'ส่งใบเสนอราคา', color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' },
-      SENT:  { status: 'ACCEPTED', label: 'อนุมัติ', color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
+      SENT:  { status: 'ACCEPTED', label: 'อนุมัติ', color: 'text-success bg-success/10 hover:bg-success-soft' },
     }
     return (
       <div className="space-y-3">
@@ -772,23 +772,23 @@ const Sales = () => {
           <>
             <PageSizeSelect />
             <button onClick={() => setActiveTab('templates')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-gray-300 hover:border-cyber-primary text-sm">
+              className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm">
               <LayoutTemplate className="w-4 h-4" /> เทมเพลต
             </button>
             <button onClick={handleCreateQuotation}
-              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> สร้างใบเสนอราคา
             </button>
           </>
         } />
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบเสนอราคา</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบเสนอราคา</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">วันที่</th>
@@ -798,21 +798,21 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(q => {
                   const next = qtNextStatus[q.status]
                   return (
-                  <tr key={q.id} className="hover:bg-cyber-dark/50 transition-colors">
+                  <tr key={q.id} className="hover:bg-[var(--surface-2)] transition-colors">
                     <td className="px-4 py-3">
-                      <p className="font-mono text-xs font-semibold text-cyber-primary">{q.quotation_number}</p>
+                      <p className="font-mono text-xs font-semibold text-phopy-indigo">{q.quotation_number}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-white font-medium">{q.customer_name}</p>
-                      <p className="text-xs text-gray-500">{q.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{q.customer_code}</p>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell">{formatDate(q.quotation_date)}</td>
+                    <td className="px-4 py-3 text-[var(--fg-3)] text-xs hidden sm:table-cell">{formatDate(q.quotation_date)}</td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={`text-xs font-medium ${q.expiry_date && new Date(q.expiry_date) < new Date() ? 'text-red-400' : 'text-gray-400'}`}>
+                      <span className={`text-xs font-medium ${q.expiry_date && new Date(q.expiry_date) < new Date() ? 'text-red-400' : 'text-[var(--fg-3)]'}`}>
                         {formatDate(q.expiry_date)}
                       </span>
                     </td>
@@ -821,7 +821,7 @@ const Sales = () => {
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
                         <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
-                          className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                         {next && (
                           <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
                             className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -830,13 +830,13 @@ const Sales = () => {
                         )}
                         {q.status === 'ACCEPTED' && (
                           <button onClick={() => handleConvertQtToSO(q)}
-                            className="px-2.5 py-1 text-xs text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 flex items-center gap-1">
+                            className="px-2.5 py-1 text-xs text-phopy-indigo bg-phopy-indigo/10 rounded-lg hover:bg-phopy-indigo-50 flex items-center gap-1">
                             <ArrowRight className="w-3 h-3" /> SO
                           </button>
                         )}
                         {q.status === 'DRAFT' && (
                           <button onClick={() => handleDeleteQuotation(q.id)}
-                            className="px-2 py-1 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20">
+                            className="px-2 py-1 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-danger-soft">
                             <Trash2 className="w-3 h-3" />
                           </button>
                         )}
@@ -856,24 +856,24 @@ const Sales = () => {
               return (
                 <motion.div key={q.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-cyber-primary/50 transition-colors">
+                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-phopy-indigo/50 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div>
-                      <p className="font-mono text-sm font-semibold text-cyber-primary">{q.quotation_number}</p>
+                      <p className="font-mono text-sm font-semibold text-phopy-indigo">{q.quotation_number}</p>
                       <p className="text-white font-medium mt-0.5">{q.customer_name}</p>
-                      <p className="text-xs text-gray-500">{q.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{q.customer_code}</p>
                     </div>
                     <StatusBadge status={q.status} />
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
-                    <span>วันที่: <span className="text-gray-300">{formatDate(q.quotation_date)}</span></span>
-                    <span>หมดอายุ: <span className={isExpired ? 'text-red-400 font-medium' : 'text-gray-300'}>{formatDate(q.expiry_date)}</span></span>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
+                    <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(q.quotation_date)}</span></span>
+                    <span>หมดอายุ: <span className={isExpired ? 'text-red-400 font-medium' : 'text-[var(--fg-2)]'}>{formatDate(q.expiry_date)}</span></span>
                     <span>{q.item_count} รายการ</span>
                     <span className="text-right font-semibold text-white">{formatCurrency(q.total_amount)}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
-                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
                     {next && (
@@ -884,7 +884,7 @@ const Sales = () => {
                     )}
                     {q.status === 'ACCEPTED' && (
                       <button onClick={() => handleConvertQtToSO(q)}
-                        className="flex-1 py-1.5 text-xs font-medium text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 flex items-center justify-center gap-1">
+                        className="flex-1 py-1.5 text-xs font-medium text-phopy-indigo bg-phopy-indigo/10 rounded-lg hover:bg-phopy-indigo-50 flex items-center justify-center gap-1">
                         <ArrowRight className="w-3 h-3" /> แปลง SO
                       </button>
                     )}
@@ -901,12 +901,12 @@ const Sales = () => {
 
   // ── Sales Orders ───────────────────────────────────────────────────────────
   const SO_DELIVERY_STEPS = [
-    { status: 'DRAFT',      label: 'ฉบับร่าง',        color: 'text-gray-400' },
+    { status: 'DRAFT',      label: 'ฉบับร่าง',        color: 'text-[var(--fg-3)]' },
     { status: 'CONFIRMED',  label: 'ยืนยันแล้ว',       color: 'text-blue-400' },
     { status: 'PROCESSING', label: 'กำลังเตรียม',      color: 'text-yellow-400' },
     { status: 'READY',      label: 'พร้อมส่ง',          color: 'text-purple-400' },
-    { status: 'DELIVERED',  label: 'ส่งแล้ว',           color: 'text-cyber-green' },
-    { status: 'COMPLETED',  label: 'เสร็จสิ้น',         color: 'text-cyber-green' },
+    { status: 'DELIVERED',  label: 'ส่งแล้ว',           color: 'text-success' },
+    { status: 'COMPLETED',  label: 'เสร็จสิ้น',         color: 'text-success' },
   ]
 
   const OrdersContent = () => {
@@ -918,8 +918,8 @@ const Sales = () => {
       DRAFT:      { status: 'CONFIRMED',  label: 'ยืนยัน',       color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' },
       CONFIRMED:  { status: 'PROCESSING', label: 'เตรียมสินค้า', color: 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' },
       PROCESSING: { status: 'READY',      label: 'พร้อมส่ง',     color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
-      READY:      { status: 'DELIVERED',  label: 'ส่งของแล้ว',  color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
-      DELIVERED:  { status: 'COMPLETED',  label: 'เสร็จสิ้น',   color: 'text-cyber-green bg-cyber-green/10 hover:bg-cyber-green/20' },
+      READY:      { status: 'DELIVERED',  label: 'ส่งของแล้ว',  color: 'text-success bg-success/10 hover:bg-success-soft' },
+      DELIVERED:  { status: 'COMPLETED',  label: 'เสร็จสิ้น',   color: 'text-success bg-success/10 hover:bg-success-soft' },
     }
 
     return (
@@ -928,7 +928,7 @@ const Sales = () => {
           <>
             <PageSizeSelect />
             <button onClick={handleCreateSalesOrder}
-              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> สร้างคำสั่งขาย
             </button>
           </>
@@ -937,24 +937,24 @@ const Sales = () => {
         {/* Delivery status filter pills */}
         <div className="flex flex-wrap gap-1.5">
           <button onClick={() => setFilterStatus('')}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterStatus ? 'bg-cyber-primary text-cyber-dark border-cyber-primary' : 'border-cyber-border text-gray-400 hover:text-white'}`}>
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterStatus ? 'bg-phopy-indigo text-white border-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
             ทั้งหมด
           </button>
           {SO_DELIVERY_STEPS.map(s => (
             <button key={s.status} onClick={() => setFilterStatus(s.status === filterStatus ? '' : s.status)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterStatus === s.status ? 'bg-cyber-dark border-cyber-primary text-white' : 'border-cyber-border text-gray-400 hover:text-white'}`}>
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterStatus === s.status ? 'bg-[var(--bg)] border-phopy-indigo text-white' : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               {s.label}
             </button>
           ))}
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบคำสั่งขาย</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบคำสั่งขาย</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">วันสั่ง</th>
@@ -965,19 +965,19 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(order => {
                   const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
                   const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
                   const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
                   const next = soNextStatus[order.status]
                   return (
-                    <tr key={order.id} className="hover:bg-cyber-dark/50 transition-colors">
+                    <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-mono text-xs font-semibold text-purple-400">{order.so_number}</p>
                         <div className="flex items-center gap-1 mt-1 flex-wrap">
                           {order.quotation_number && (
-                            <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
+                            <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
                           )}
                           {(() => {
                             const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
@@ -993,27 +993,27 @@ const Sales = () => {
                             </>)
                           })()}
                           {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
-                            <span className="text-[10px] text-cyber-primary bg-cyber-primary/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
+                            <span className="text-[10px] text-phopy-indigo bg-phopy-indigo/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
                           ) : null })()}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">{order.customer_name}</p>
-                        <p className="text-xs text-gray-500">{order.customer_code}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{order.customer_code}</p>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(order.order_date)}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">
-                        <span className={`text-xs font-medium ${isLate ? 'text-red-400' : 'text-gray-400'}`}>
+                        <span className={`text-xs font-medium ${isLate ? 'text-red-400' : 'text-[var(--fg-3)]'}`}>
                           {formatDate(order.delivery_date)}{isLate ? ' ⚠' : ''}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-0.5 justify-center">
                           {SO_DELIVERY_STEPS.slice(0, 5).map((s, i) => (
-                            <div key={s.status} className={`h-1.5 rounded-full flex-1 ${i <= stepIdx ? 'bg-cyber-primary' : 'bg-cyber-border'}`} style={{ minWidth: 12 }} />
+                            <div key={s.status} className={`h-1.5 rounded-full flex-1 ${i <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} style={{ minWidth: 12 }} />
                           ))}
                         </div>
-                        <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-gray-400'}`}>{step?.label}</p>
+                        <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}</p>
                         {(order.pending_qty ?? 0) > 0 && (
                           <p className="text-xs text-center text-orange-400">ค้างส่ง {order.pending_qty}</p>
                         )}
@@ -1025,7 +1025,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
-                            className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {next && (
                             <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -1057,13 +1057,13 @@ const Sales = () => {
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-purple-500/40 transition-colors">
+                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="font-mono text-sm font-semibold text-purple-400">{order.so_number}</p>
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         {order.quotation_number && (
-                          <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
+                          <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
                         )}
                         {(() => {
                           const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
@@ -1079,30 +1079,30 @@ const Sales = () => {
                           </>)
                         })()}
                         {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
-                          <span className="text-[10px] text-cyber-primary bg-cyber-primary/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
+                          <span className="text-[10px] text-phopy-indigo bg-phopy-indigo/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
                         ) : null })()}
                       </div>
                       <p className="text-white font-medium mt-0.5">{order.customer_name}</p>
-                      <p className="text-xs text-gray-500">{order.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{order.customer_code}</p>
                     </div>
                     <StatusBadge status={order.payment_status} />
                   </div>
                   {/* Delivery progress bar */}
                   <div className="flex items-center gap-0.5 my-2">
                     {SO_DELIVERY_STEPS.slice(0, 5).map((s, idx) => (
-                      <div key={s.status} className={`h-1.5 rounded-full flex-1 ${idx <= stepIdx ? 'bg-cyber-primary' : 'bg-cyber-border'}`} />
+                      <div key={s.status} className={`h-1.5 rounded-full flex-1 ${idx <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
                     ))}
                   </div>
-                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-gray-400'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · ค้างส่ง ${order.pending_qty}` : ''}</p>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
-                    <span>วันสั่ง: <span className="text-gray-300">{formatDate(order.order_date)}</span></span>
-                    <span>กำหนดส่ง: <span className={isLate ? 'text-red-400 font-medium' : 'text-gray-300'}>{formatDate(order.delivery_date)}{isLate ? ' ⚠' : ''}</span></span>
+                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · ค้างส่ง ${order.pending_qty}` : ''}</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
+                    <span>วันสั่ง: <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
+                    <span>กำหนดส่ง: <span className={isLate ? 'text-red-400 font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? ' ⚠' : ''}</span></span>
                     <span>{order.item_count} รายการ</span>
                     <span className="text-right font-semibold text-white">{formatCurrency(order.total_amount)}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
-                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
                     {next && (
@@ -1138,22 +1138,22 @@ const Sales = () => {
           <>
             <PageSizeSelect />
             <button onClick={handleCreateInvoice}
-              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> สร้างใบแจ้งหนี้
             </button>
           </>
         } />
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500">
+          <div className="text-center py-16 text-[var(--fg-4)]">
             <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>ไม่พบใบแจ้งหนี้</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
@@ -1165,18 +1165,18 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(inv => {
                   const isOverdue = inv.payment_status === 'OVERDUE'
                   const isUnpaid = inv.payment_status === 'UNPAID' || isOverdue
                   return (
-                    <tr key={inv.id} className={`hover:bg-cyber-dark/50 transition-colors ${isOverdue ? 'bg-red-500/5' : ''}`}>
+                    <tr key={inv.id} className={`hover:bg-[var(--surface-2)] transition-colors ${isOverdue ? 'bg-red-500/5' : ''}`}>
                       <td className="px-4 py-3">
                         <p className="font-mono text-xs font-semibold text-yellow-400">{inv.invoice_number}</p>
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">{inv.customer_name}</p>
-                        <p className="text-xs text-gray-500">{inv.customer_code}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{inv.customer_code}</p>
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
                         {inv.so_number && (
@@ -1185,15 +1185,15 @@ const Sales = () => {
                             {(() => {
                               const so = salesOrders.find(s => s.so_number === inv.so_number)
                               return so?.quotation_number ? (
-                                <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
+                                <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
                               ) : null
                             })()}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{formatDate(inv.invoice_date)}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(inv.invoice_date)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">
-                        <span className={`text-xs font-medium ${isOverdue ? 'text-red-400' : 'text-gray-400'}`}>
+                        <span className={`text-xs font-medium ${isOverdue ? 'text-red-400' : 'text-[var(--fg-3)]'}`}>
                           {formatDate(inv.due_date)}{isOverdue ? ' ⚠' : ''}
                         </span>
                       </td>
@@ -1207,10 +1207,10 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(inv, 'ใบแจ้งหนี้')}
-                            className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {isUnpaid && (
                             <button onClick={() => handleRecordPayment(inv)}
-                              className="px-2.5 py-1 text-xs font-medium text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 flex items-center gap-1">
+                              className="px-2.5 py-1 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-success-soft flex items-center gap-1">
                               <DollarSign className="w-3 h-3" /> รับเงิน
                             </button>
                           )}
@@ -1231,7 +1231,7 @@ const Sales = () => {
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className={`bg-cyber-card border rounded-xl p-4 hover:brightness-105 transition-all ${isOverdue ? 'border-red-500/40' : 'border-cyber-border hover:border-cyber-primary/50'}`}>
+                  className={`bg-phopy-card border rounded-xl p-4 hover:brightness-105 transition-all ${isOverdue ? 'border-red-500/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-yellow-400">{inv.invoice_number}</p>
@@ -1242,20 +1242,20 @@ const Sales = () => {
                             {(() => {
                               const so = salesOrders.find(s => s.so_number === inv.so_number)
                               return so?.quotation_number ? (
-                                <span className="text-[10px] text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
+                                <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
                               ) : null
                             })()}
                           </>
                         )}
                       </div>
                       <p className="text-white font-medium mt-0.5">{inv.customer_name}</p>
-                      <p className="text-xs text-gray-500">{inv.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{inv.customer_code}</p>
                     </div>
                     <StatusBadge status={inv.payment_status} />
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
-                    <span>วันที่: <span className="text-gray-300">{formatDate(inv.invoice_date)}</span></span>
-                    <span>ครบกำหนด: <span className={isOverdue ? 'text-red-400 font-medium' : 'text-gray-300'}>{formatDate(inv.due_date)}</span></span>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
+                    <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
+                    <span>ครบกำหนด: <span className={isOverdue ? 'text-red-400 font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date)}</span></span>
                     <span>ยอดรวม: <span className="text-white font-medium">{formatCurrency(inv.total_amount)}</span></span>
                     <span className="text-right">
                       คงค้าง: <span className={inv.balance_amount > 0 ? 'text-red-400 font-semibold' : 'text-green-400 font-semibold'}>
@@ -1263,14 +1263,14 @@ const Sales = () => {
                       </span>
                     </span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(inv, 'ใบแจ้งหนี้')}
-                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
                     {isUnpaid && (
                       <button onClick={() => handleRecordPayment(inv)}
-                        className="flex-1 py-1.5 text-xs font-medium text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 transition-colors flex items-center justify-center gap-1">
+                        className="flex-1 py-1.5 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-success-soft transition-colors flex items-center justify-center gap-1">
                         <DollarSign className="w-3 h-3" /> รับเงิน
                       </button>
                     )}
@@ -1298,15 +1298,15 @@ const Sales = () => {
         } />
 
         {items.length === 0 ? (
-          <div className="text-center py-16 text-gray-500">
+          <div className="text-center py-16 text-[var(--fg-4)]">
             <RotateCcw className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>ไม่พบใบลดหนี้</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">INV</th>
@@ -1317,30 +1317,30 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(cn => (
-                  <tr key={cn.id} className="hover:bg-cyber-dark/50 transition-colors">
+                  <tr key={cn.id} className="hover:bg-[var(--surface-2)] transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-mono text-xs font-semibold text-red-400">{cn.cn_number}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-white font-medium">{cn.customer_name}</p>
-                      <p className="text-xs text-gray-500">{cn.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{cn.customer_code}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{cn.invoice_number}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{formatDate(cn.credit_date)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell max-w-[160px] truncate">{cn.reason}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{cn.invoice_number}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(cn.credit_date)}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell max-w-[160px] truncate">{cn.reason}</td>
                     <td className="px-4 py-3 text-center"><StatusBadge status={cn.status} /></td>
                     <td className="px-4 py-3 text-right font-semibold text-red-400">-{formatCurrency(cn.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleViewDetail(cn, 'ใบลดหนี้')}
-                        className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-cyber-border/50 text-xs text-gray-500">
+            <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
               แสดง {items.length} รายการ
             </div>
           </div>
@@ -1349,24 +1349,24 @@ const Sales = () => {
             {items.map((cn, i) => (
               <motion.div key={cn.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-red-500/40 transition-colors">
+                className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-red-500/40 transition-colors">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-red-400">{cn.cn_number}</p>
-                    <p className="text-xs text-gray-500">INV: {cn.invoice_number}</p>
+                    <p className="text-xs text-[var(--fg-4)]">INV: {cn.invoice_number}</p>
                     <p className="text-white font-medium mt-0.5">{cn.customer_name}</p>
-                    <p className="text-xs text-gray-500">{cn.customer_code}</p>
+                    <p className="text-xs text-[var(--fg-4)]">{cn.customer_code}</p>
                   </div>
                   <StatusBadge status={cn.status} />
                 </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
-                  <span>วันที่: <span className="text-gray-300">{formatDate(cn.credit_date)}</span></span>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
+                  <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(cn.credit_date)}</span></span>
                   <span className="text-right font-semibold text-red-400">-{formatCurrency(cn.total_amount)}</span>
-                  <span className="col-span-2 text-gray-400">เหตุผล: {cn.reason}</span>
+                  <span className="col-span-2 text-[var(--fg-3)]">เหตุผล: {cn.reason}</span>
                 </div>
-                <div className="pt-3 border-t border-cyber-border/50">
+                <div className="pt-3 border-t border-[var(--border)]/50">
                   <button onClick={() => handleViewDetail(cn, 'ใบลดหนี้')}
-                    className="w-full py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                    className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     ดูรายละเอียด
                   </button>
                 </div>
@@ -1391,15 +1391,15 @@ const Sales = () => {
         } />
 
         {items.length === 0 ? (
-          <div className="text-center py-16 text-gray-500">
+          <div className="text-center py-16 text-[var(--fg-4)]">
             <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>ไม่พบใบค้างส่ง</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
@@ -1408,28 +1408,28 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(bo => (
-                  <tr key={bo.id} className="hover:bg-cyber-dark/50 transition-colors">
+                  <tr key={bo.id} className="hover:bg-[var(--surface-2)] transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-mono text-xs font-semibold text-orange-400">{bo.bo_number}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-white font-medium">{bo.customer_name}</p>
-                      <p className="text-xs text-gray-500">{bo.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{bo.customer_code}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{bo.so_number}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{bo.original_do || '-'}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{bo.so_number}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{bo.original_do || '-'}</td>
                     <td className="px-4 py-3 text-center"><StatusBadge status={bo.status} /></td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleViewDetail(bo, 'ใบค้างส่ง')}
-                        className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-cyber-border/50 text-xs text-gray-500">
+            <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
               แสดง {items.length} รายการ
             </div>
           </div>
@@ -1438,22 +1438,22 @@ const Sales = () => {
             {items.map((bo, i) => (
               <motion.div key={bo.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-orange-500/40 transition-colors">
+                className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-orange-500/40 transition-colors">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-orange-400">{bo.bo_number}</p>
-                    <p className="text-xs text-gray-500">SO: {bo.so_number}</p>
+                    <p className="text-xs text-[var(--fg-4)]">SO: {bo.so_number}</p>
                     <p className="text-white font-medium mt-0.5">{bo.customer_name}</p>
-                    <p className="text-xs text-gray-500">{bo.customer_code}</p>
+                    <p className="text-xs text-[var(--fg-4)]">{bo.customer_code}</p>
                   </div>
                   <StatusBadge status={bo.status} />
                 </div>
                 {bo.original_do && (
-                  <p className="text-xs text-gray-400 mb-3">ใบส่งของต้นฉบับ: <span className="text-gray-300">{bo.original_do}</span></p>
+                  <p className="text-xs text-[var(--fg-3)] mb-3">ใบส่งของต้นฉบับ: <span className="text-[var(--fg-2)]">{bo.original_do}</span></p>
                 )}
-                <div className="pt-3 border-t border-cyber-border/50">
+                <div className="pt-3 border-t border-[var(--border)]/50">
                   <button onClick={() => handleViewDetail(bo, 'ใบค้างส่ง')}
-                    className="w-full py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                    className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     ดูรายละเอียด
                   </button>
                 </div>
@@ -1479,19 +1479,19 @@ const Sales = () => {
           <>
             <PageSizeSelect />
             <button onClick={() => toast('สร้างใบส่งของจากคำสั่งขาย')}
-              className="flex items-center gap-1.5 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm">
+              className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> สร้างใบส่งของ
             </button>
           </>
         } />
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบส่งของ</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบส่งของ</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-cyber-border bg-cyber-darker text-xs text-gray-400">
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
                   <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
                   <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
@@ -1500,25 +1500,25 @@ const Sales = () => {
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cyber-border/50">
+              <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(do_ => {
                   const next = doNextStatus[do_.status]
                   return (
-                    <tr key={do_.id} className="hover:bg-cyber-dark/50 transition-colors">
+                    <tr key={do_.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-mono text-xs font-semibold text-blue-400">{do_.do_number}</p>
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">{do_.customer_name}</p>
-                        <p className="text-xs text-gray-500">{do_.customer_code}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{do_.customer_code}</p>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden sm:table-cell">{do_.so_number}</td>
-                      <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{formatDate(do_.delivery_date)}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{do_.so_number}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(do_.delivery_date)}</td>
                       <td className="px-4 py-3 text-center"><StatusBadge status={do_.status} /></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
-                            className="px-2.5 py-1 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {next && (
                             <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -1541,23 +1541,23 @@ const Sales = () => {
               return (
                 <motion.div key={do_.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-cyber-card border border-cyber-border rounded-xl p-4 hover:border-blue-500/40 transition-colors">
+                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-blue-500/40 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-blue-400">{do_.do_number}</p>
-                      <p className="text-xs text-gray-500">SO: {do_.so_number}</p>
+                      <p className="text-xs text-[var(--fg-4)]">SO: {do_.so_number}</p>
                       <p className="text-white font-medium mt-0.5">{do_.customer_name}</p>
-                      <p className="text-xs text-gray-500">{do_.customer_code}</p>
+                      <p className="text-xs text-[var(--fg-4)]">{do_.customer_code}</p>
                     </div>
                     <StatusBadge status={do_.status} />
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
-                    <span>วันส่ง: <span className="text-gray-300">{formatDate(do_.delivery_date)}</span></span>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
+                    <span>วันส่ง: <span className="text-[var(--fg-2)]">{formatDate(do_.delivery_date)}</span></span>
                     <span className="text-right">{do_.driver_name || '-'}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-cyber-border/50">
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
-                      className="flex-1 py-1.5 text-xs text-gray-300 bg-cyber-dark rounded-lg hover:text-white transition-colors">
+                      className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
                     {next && (
@@ -1583,7 +1583,7 @@ const Sales = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-base font-semibold text-white">เทมเพลตใบเสนอราคา</h2>
         <button onClick={handleCreateTemplate}
-          className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm transition-colors">
+          className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
           <Plus className="w-4 h-4" /> สร้างเทมเพลต
         </button>
       </div>
@@ -1592,28 +1592,28 @@ const Sales = () => {
         {templates.map((template, i) => (
           <motion.div key={template.id}
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            className="bg-cyber-card rounded-xl border border-cyber-border p-5 hover:border-cyber-primary/50 transition-colors">
+            className="bg-phopy-card rounded-xl border border-[var(--border)] p-5 hover:border-phopy-indigo/50 transition-colors">
             <div className="flex justify-between items-start mb-3">
-              <div className="p-2.5 bg-cyber-primary/20 rounded-lg">
-                <LayoutTemplate className="w-5 h-5 text-cyber-primary" />
+              <div className="p-2.5 bg-phopy-indigo-50 rounded-lg">
+                <LayoutTemplate className="w-5 h-5 text-phopy-indigo" />
               </div>
               {template.is_default === 1 && (
-                <span className="px-2 py-0.5 bg-cyber-green/20 text-cyber-green text-xs rounded-full">ค่าเริ่มต้น</span>
+                <span className="px-2 py-0.5 bg-success-soft text-success text-xs rounded-full">ค่าเริ่มต้น</span>
               )}
             </div>
             <h3 className="text-base font-semibold text-white mb-1">{template.name}</h3>
-            <p className="text-sm text-gray-400 mb-3">{template.description || 'ไม่มีคำอธิบาย'}</p>
-            <div className="flex justify-between text-xs text-gray-500 mb-4">
+            <p className="text-sm text-[var(--fg-3)] mb-3">{template.description || 'ไม่มีคำอธิบาย'}</p>
+            <div className="flex justify-between text-xs text-[var(--fg-4)] mb-4">
               <span>{template.item_count} รายการ</span>
               <span>หมดอายุ {template.expiration_days} วัน</span>
             </div>
             <div className="flex gap-2">
               <button onClick={() => handleEdit(template, 'เทมเพลต')}
-                className="flex-1 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-gray-300 hover:border-cyber-primary text-sm transition-colors">
+                className="flex-1 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm transition-colors">
                 แก้ไข
               </button>
               <button onClick={() => toast('ใช้เทมเพลต: ' + template.name)}
-                className="flex-1 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 text-sm transition-colors">
+                className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
                 ใช้เทมเพลต
               </button>
             </div>
@@ -1642,25 +1642,25 @@ const Sales = () => {
   const PendingBillsPanel = ({ bills, onVoid }: { bills: POSPendingBill[]; onVoid: (b: POSPendingBill) => void }) => {
     const [expanded, setExpanded] = useState(false)
     return (
-      <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+      <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
         <button onClick={() => setExpanded(!expanded)}
-          className="w-full px-5 py-3 flex items-center justify-between hover:bg-cyber-dark/30">
+          className="w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30">
           <div className="flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-cyber-primary" />
+            <Receipt className="w-4 h-4 text-phopy-indigo" />
             <span className="text-sm font-medium text-white">บิลในกะนี้</span>
-            <span className="text-xs text-gray-500">{bills.length} บิล</span>
+            <span className="text-xs text-[var(--fg-4)]">{bills.length} บิล</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-cyber-primary">
+            <span className="text-sm font-semibold text-phopy-indigo">
               {fmt(bills.reduce((s, b) => s + b.total_amount, 0))}
             </span>
-            {expanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+            {expanded ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" /> : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
           </div>
         </button>
         {expanded && (
-          <div className="divide-y divide-cyber-border/50">
+          <div className="divide-y divide-[var(--border)]/50">
             {bills.map(bill => (
-              <div key={bill.id} className="px-5 py-3 flex items-center justify-between bg-cyber-dark/20">
+              <div key={bill.id} className="px-5 py-3 flex items-center justify-between bg-[var(--bg)]/20">
                 <div>
                   <div className="flex items-center gap-2">
                     {bill.payment_method === 'CASH'
@@ -1668,7 +1668,7 @@ const Sales = () => {
                       : <QrCode className="w-3 h-3 text-blue-400" />}
                     <span className="text-sm text-white">{bill.bill_number}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-[var(--fg-4)] mt-0.5">
                     {bill.display_name} · {fmtDT(bill.closed_at)}
                   </p>
                 </div>
@@ -1706,9 +1706,9 @@ const Sales = () => {
       <ModalShell title="เปิดกะ" icon={ShoppingBag} onClose={onClose}
         footer={
           <>
-            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={handleOpen} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50">
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
               เริ่มกะ
             </button>
@@ -1719,11 +1719,11 @@ const Sales = () => {
         </div>
         <Field label="เงินสดในลิ้นชัก (ยอดเริ่มต้น)">
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">฿</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
             <input type="number" value={openingCash}
               onChange={e => setOpeningCash(e.target.value)}
               onFocus={e => e.target.select()}
-              className="w-full pl-8 pr-3 py-3 bg-cyber-dark border border-cyber-border rounded-lg text-white text-xl font-bold focus:outline-none focus:border-cyber-primary" />
+              className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
           </div>
         </Field>
       </ModalShell>
@@ -1755,50 +1755,50 @@ const Sales = () => {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-          <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+          className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+          <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <X className="w-5 h-5 text-red-400" /> ปิดกะ — {shift.shift_number}
             </h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
           </div>
           <div className="overflow-y-auto p-5 space-y-4">
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">ยอดรวม</p>
-                <p className="text-base font-bold text-cyber-primary">{fmt(live?.total_revenue || 0)}</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">ยอดรวม</p>
+                <p className="text-base font-bold text-phopy-indigo">{fmt(live?.total_revenue || 0)}</p>
               </div>
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">เงินสด</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">เงินสด</p>
                 <p className="text-base font-bold text-yellow-400">{fmt(cashRevenue)}</p>
               </div>
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">QR/โอน</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">QR/โอน</p>
                 <p className="text-base font-bold text-blue-400">{fmt(live?.bank_revenue || 0)}</p>
               </div>
             </div>
-            <div className="p-4 bg-cyber-dark rounded-lg space-y-1 text-sm">
-              <div className="flex justify-between text-gray-400">
+            <div className="p-4 bg-[var(--bg)] rounded-lg space-y-1 text-sm">
+              <div className="flex justify-between text-[var(--fg-3)]">
                 <span>เงินสดเปิดกะ</span><span>{fmt(shift.opening_cash)}</span>
               </div>
-              <div className="flex justify-between text-gray-400">
+              <div className="flex justify-between text-[var(--fg-3)]">
                 <span>+ ขายเงินสด</span><span>{fmt(cashRevenue)}</span>
               </div>
-              <div className="flex justify-between font-semibold text-white border-t border-cyber-border pt-2 mt-2">
+              <div className="flex justify-between font-semibold text-white border-t border-[var(--border)] pt-2 mt-2">
                 <span>ยอดที่ควรมีในลิ้นชัก</span><span>{fmt(expectedCash)}</span>
               </div>
             </div>
             <Field label="นับเงินสดจริงในลิ้นชัก">
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">฿</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
                 <input type="number" value={closingCash}
                   onChange={e => setClosingCash(e.target.value)}
                   onFocus={e => e.target.select()}
-                  className="w-full pl-8 pr-3 py-3 bg-cyber-dark border border-cyber-border rounded-lg text-white text-xl font-bold focus:outline-none focus:border-cyber-primary" />
+                  className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
               </div>
             </Field>
             <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium ${
-              Math.abs(diff) < 0.01 ? 'bg-cyber-green/10 border border-cyber-green/30 text-cyber-green'
+              Math.abs(diff) < 0.01 ? 'bg-success/10 border border-success/30 text-success'
               : diff > 0 ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
               : 'bg-red-500/10 border border-red-500/30 text-red-400'
             }`}>
@@ -1807,12 +1807,12 @@ const Sales = () => {
             </div>
             <Field label="หมายเหตุ (optional)">
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary resize-none"
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo resize-none"
                 placeholder="เช่น สาเหตุที่เงินขาด/เกิน..." />
             </Field>
           </div>
-          <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">
-            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+          <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={handleClose} disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
@@ -1845,19 +1845,19 @@ const Sales = () => {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-cyber-card border border-red-500/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
-          <div className="p-5 border-b border-cyber-border flex items-center justify-between">
+          className="bg-phopy-card border border-red-500/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
+          <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Ban className="w-5 h-5 text-red-400" /> ยกเลิกบิล
             </h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="p-5 space-y-4">
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
               <p className="text-sm font-medium text-white">{bill.bill_number}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-[var(--fg-3)] mt-0.5">
                 {bill.display_name} · {fmt(bill.total_amount)} · {bill.payment_method === 'CASH' ? 'เงินสด' : 'QR/โอน'}
               </p>
             </div>
@@ -1866,12 +1866,12 @@ const Sales = () => {
             </div>
             <Field label="สาเหตุการยกเลิก *">
               <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-red-400 resize-none"
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-red-400 resize-none"
                 placeholder="เช่น ลูกค้าแจ้งยกเลิก, เก็บเงินผิด, ออเดอร์ผิด..." />
             </Field>
           </div>
-          <div className="p-5 border-t border-cyber-border flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ปิด</button>
+          <div className="p-5 border-t border-[var(--border)] flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
             <button onClick={handleVoid} disabled={saving || !reason.trim()}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 hover:bg-red-500 text-white font-semibold rounded-lg disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Ban className="w-4 h-4" />}
@@ -1888,57 +1888,57 @@ const Sales = () => {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-semibold text-white">กะการขาย</h2>
-          <p className="text-gray-400 text-sm">เปิด/ปิดกะ ติดตามยอดขายและเงินสดในลิ้นชัก</p>
+          <p className="text-[var(--fg-3)] text-sm">เปิด/ปิดกะ ติดตามยอดขายและเงินสดในลิ้นชัก</p>
         </div>
-        <button onClick={fetchPOSShifts} className="p-2 rounded-lg bg-cyber-dark text-gray-400 hover:text-white">
+        <button onClick={fetchPOSShifts} className="p-2 rounded-lg bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
           <RotateCcw className="w-4 h-4" />
         </button>
       </div>
 
       {posCurrentShift === undefined ? (
         <div className="p-8 text-center">
-          <div className="w-6 h-6 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="w-6 h-6 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
         </div>
       ) : posCurrentShift === null ? (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-cyber-card border border-cyber-border rounded-xl p-8 text-center space-y-4">
+          className="bg-phopy-card border border-[var(--border)] rounded-xl p-8 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-gray-700/50 flex items-center justify-center mx-auto">
-            <Store className="w-8 h-8 text-gray-500" />
+            <Store className="w-8 h-8 text-[var(--fg-4)]" />
           </div>
           <div>
             <p className="text-white font-medium">ยังไม่มีกะที่เปิดอยู่</p>
-            <p className="text-gray-500 text-sm mt-1">กรอกเงินสดในลิ้นชักแล้วกดเปิดกะ เพื่อเริ่มรับออเดอร์</p>
+            <p className="text-[var(--fg-4)] text-sm mt-1">กรอกเงินสดในลิ้นชักแล้วกดเปิดกะ เพื่อเริ่มรับออเดอร์</p>
           </div>
           <button onClick={() => setShowOpenShift(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 text-lg">
+            className="inline-flex items-center gap-2 px-6 py-3 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 text-lg">
             <ShoppingBag className="w-5 h-5" /> เปิดกะ
           </button>
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-cyber-card border border-cyber-green/40 rounded-xl overflow-hidden">
-          <div className="px-5 py-3 bg-cyber-green/10 border-b border-cyber-green/30 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyber-green animate-pulse" />
-            <span className="text-cyber-green font-medium text-sm">กะกำลังเปิดอยู่</span>
-            <span className="ml-auto text-gray-400 text-xs">{posCurrentShift.shift_number} · เปิดตั้งแต่ {fmtDT(posCurrentShift.opened_at)}</span>
+          className="bg-phopy-card border border-success/40 rounded-xl overflow-hidden">
+          <div className="px-5 py-3 bg-success/10 border-b border-success/30 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+            <span className="text-success font-medium text-sm">กะกำลังเปิดอยู่</span>
+            <span className="ml-auto text-[var(--fg-3)] text-xs">{posCurrentShift.shift_number} · เปิดตั้งแต่ {fmtDT(posCurrentShift.opened_at)}</span>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">ยอดขายรวม</p>
-                <p className="text-xl font-bold text-cyber-primary">{fmt(posCurrentShift.live?.total_revenue || 0)}</p>
-                <p className="text-xs text-gray-500">{posCurrentShift.live?.bill_count || 0} บิล</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">ยอดขายรวม</p>
+                <p className="text-xl font-bold text-phopy-indigo">{fmt(posCurrentShift.live?.total_revenue || 0)}</p>
+                <p className="text-xs text-[var(--fg-4)]">{posCurrentShift.live?.bill_count || 0} บิล</p>
               </div>
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">เงินสด</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">เงินสด</p>
                 <p className="text-xl font-bold text-yellow-400">{fmt(posCurrentShift.live?.cash_revenue || 0)}</p>
               </div>
-              <div className="bg-cyber-dark rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">QR/โอน</p>
+              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+                <p className="text-xs text-[var(--fg-4)] mb-1">QR/โอน</p>
                 <p className="text-xl font-bold text-blue-400">{fmt(posCurrentShift.live?.bank_revenue || 0)}</p>
               </div>
             </div>
-            <div className="flex items-center justify-between text-sm text-gray-400 bg-cyber-dark rounded-lg px-4 py-2.5">
+            <div className="flex items-center justify-between text-sm text-[var(--fg-3)] bg-[var(--bg)] rounded-lg px-4 py-2.5">
               <span>เงินสดเปิดกะ</span>
               <span className="text-white font-medium">{fmt(posCurrentShift.opening_cash)}</span>
             </div>
@@ -1951,33 +1951,33 @@ const Sales = () => {
       )}
 
       {posShifts.filter(s => s.status === 'CLOSED').length > 0 && (
-        <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-cyber-border">
-            <h3 className="text-sm font-medium text-gray-400">ประวัติกะ</h3>
+        <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-[var(--border)]">
+            <h3 className="text-sm font-medium text-[var(--fg-3)]">ประวัติกะ</h3>
           </div>
-          <div className="divide-y divide-cyber-border">
+          <div className="divide-y divide-[var(--border)]">
             {posShifts.filter(s => s.status === 'CLOSED').slice(0, 10).map(s => (
               <div key={s.id} className="px-5 py-4">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-medium text-white">{s.shift_number}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs text-[var(--fg-4)] mt-0.5">
                       {fmtDT(s.opened_at)} → {s.closed_at ? fmtDT(s.closed_at) : '-'}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-cyber-primary">{fmt(s.total_revenue)}</p>
-                    <p className="text-xs text-gray-500">{s.bill_count} บิล</p>
+                    <p className="font-semibold text-phopy-indigo">{fmt(s.total_revenue)}</p>
+                    <p className="text-xs text-[var(--fg-4)]">{s.bill_count} บิล</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {[
                     { label: 'เปิดกะ',  value: fmt(s.opening_cash) },
                     { label: 'นับได้',  value: fmt(s.closing_cash_counted || 0) },
-                    { label: 'ผลต่าง', value: fmt(s.cash_difference || 0), color: (s.cash_difference || 0) >= 0 ? 'text-cyber-green' : 'text-red-400' },
+                    { label: 'ผลต่าง', value: fmt(s.cash_difference || 0), color: (s.cash_difference || 0) >= 0 ? 'text-success' : 'text-red-400' },
                   ].map(item => (
                     <div key={item.label} className="text-xs text-center">
-                      <p className="text-gray-500">{item.label}</p>
+                      <p className="text-[var(--fg-4)]">{item.label}</p>
                       <p className={item.color || 'text-white'}>{item.value}</p>
                     </div>
                   ))}
@@ -2008,28 +2008,28 @@ const Sales = () => {
         className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <TrendingUp className="w-8 h-8 text-cyber-primary" />
+            <TrendingUp className="w-8 h-8 text-phopy-indigo" />
             การขาย
           </h1>
-          <p className="text-gray-400 mt-1 text-sm">จัดการใบเสนอราคา คำสั่งขาย ใบแจ้งหนี้ และการรับชำระเงิน</p>
+          <p className="text-[var(--fg-3)] mt-1 text-sm">จัดการใบเสนอราคา คำสั่งขาย ใบแจ้งหนี้ และการรับชำระเงิน</p>
         </div>
       </motion.div>
 
       {/* Tabs */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-cyber-card p-1.5 rounded-xl border border-cyber-border">
+        className="flex flex-wrap gap-1.5 bg-phopy-card p-1.5 rounded-xl border border-[var(--border)]">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setSearchQuery(''); setActiveTab(tab.id as any) }}
             className={`relative flex items-center gap-2 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
               activeTab === tab.id
-                ? 'bg-cyber-primary text-cyber-dark'
-                : 'text-gray-400 hover:text-white hover:bg-cyber-dark'
+                ? 'bg-phopy-indigo text-white'
+                : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)]'
             }`}>
             <tab.icon className="w-4 h-4" />
             <span className="hidden md:inline">{tab.label}</span>
             {tab.badge > 0 && (
               <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
-                activeTab === tab.id ? 'bg-cyber-dark text-cyber-primary' : 'bg-yellow-500/20 text-yellow-400'
+                activeTab === tab.id ? 'bg-[var(--bg)] text-phopy-indigo' : 'bg-yellow-500/20 text-yellow-400'
               }`}>
                 {tab.badge}
               </span>
@@ -2041,7 +2041,7 @@ const Sales = () => {
       {/* Content */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-primary" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-phopy-indigo" />
         </div>
       ) : (
         <motion.div key={activeTab}
@@ -2178,31 +2178,31 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
-        <div className="p-4 border-b border-cyber-border flex justify-between items-center">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
+        <div className="p-4 border-b border-[var(--border)] flex justify-between items-center">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <Plus className="w-4 h-4 text-cyber-primary" /> เพิ่มลูกค้าใหม่ (ด่วน)
+            <Plus className="w-4 h-4 text-phopy-indigo" /> เพิ่มลูกค้าใหม่ (ด่วน)
           </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="p-4 space-y-3">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">ชื่อลูกค้า *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">ชื่อลูกค้า *</label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อบริษัท / บุคคล..."
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">รหัสลูกค้า *</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">รหัสลูกค้า *</label>
               <input value={code} onChange={e => setCode(e.target.value)} placeholder="C-XXXX"
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">ประเภท</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">ประเภท</label>
               <select value={type} onChange={e => setType(e.target.value)}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary">
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo">
                 <option value="INDIVIDUAL">บุคคล</option>
                 <option value="COMPANY">บริษัท</option>
                 <option value="GOVERNMENT">รัฐบาล</option>
@@ -2210,20 +2210,20 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">เบอร์โทร *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">เบอร์โทร *</label>
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0812345678"
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">อีเมล</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">อีเมล</label>
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com"
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
         </div>
-        <div className="p-4 border-t border-cyber-border flex gap-2">
-          <button onClick={onClose} className="px-3 py-2 text-sm text-gray-400 hover:text-white">ยกเลิก</button>
+        <div className="p-4 border-t border-[var(--border)] flex gap-2">
+          <button onClick={onClose} className="px-3 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg text-sm hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center justify-center gap-1">
+            className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg text-sm hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center justify-center gap-1">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             บันทึก
           </button>
@@ -2257,12 +2257,12 @@ function CustomerSearch({ value, onChange }: {
 
   if (value) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-cyber-dark border border-cyber-primary/50 rounded-lg">
+      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg)] border border-phopy-indigo/50 rounded-lg">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">{value.name}</p>
-          <p className="text-xs text-gray-500">{value.code} · {value.phone || '-'}</p>
+          <p className="text-xs text-[var(--fg-4)]">{value.code} · {value.phone || '-'}</p>
         </div>
-        <button onClick={() => onChange(null)} className="text-gray-500 hover:text-red-400">
+        <button onClick={() => onChange(null)} className="text-[var(--fg-4)] hover:text-red-400">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -2272,7 +2272,7 @@ function CustomerSearch({ value, onChange }: {
   return (
     <>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
         <input
           type="text"
           value={query}
@@ -2280,21 +2280,21 @@ function CustomerSearch({ value, onChange }: {
           onFocus={() => { if (results.length > 0) setOpen(true) }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="ค้นหาลูกค้า (ชื่อ / รหัส / เบอร์โทร)..."
-          className="w-full pl-9 pr-4 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:border-cyber-primary"
+          className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:border-phopy-indigo"
         />
         {open && (results.length > 0 || searched) && (
-          <div className="absolute z-50 w-full mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+          <div className="absolute z-50 w-full mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
             {results.map(c => (
               <button key={c.id} onMouseDown={() => { onChange(c); setQuery(''); setOpen(false); setSearched(false) }}
-                className="w-full px-4 py-2.5 flex items-start gap-2 hover:bg-cyber-dark text-left">
+                className="w-full px-4 py-2.5 flex items-start gap-2 hover:bg-[var(--bg)] text-left">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white font-medium truncate">{c.name}</p>
-                  <p className="text-xs text-gray-500">{c.code} · {c.phone || '-'}</p>
+                  <p className="text-xs text-[var(--fg-4)]">{c.code} · {c.phone || '-'}</p>
                 </div>
               </button>
             ))}
             {results.length === 0 && searched && (
-              <div className="px-4 py-3 text-sm text-gray-500">ไม่พบลูกค้า</div>
+              <div className="px-4 py-3 text-sm text-[var(--fg-4)]">ไม่พบลูกค้า</div>
             )}
           </div>
         )}
@@ -2339,9 +2339,9 @@ function ProductSearch({ value, products, onSelect, onClear }: {
   if (value?.id || value?.name) {
     const displayName = value.name || products.find(p => p.id === value.id)?.name || value.id?.slice(0, 12) || '...'
     return (
-      <div className="flex items-center gap-1 px-2 py-1.5 bg-cyber-dark border border-cyber-primary/50 rounded-lg min-w-0">
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-[var(--bg)] border border-phopy-indigo/50 rounded-lg min-w-0">
         <span className="flex-1 text-sm text-white truncate">{displayName}</span>
-        <button type="button" onClick={onClear} className="shrink-0 text-gray-500 hover:text-red-400">
+        <button type="button" onClick={onClear} className="shrink-0 text-[var(--fg-4)] hover:text-red-400">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -2357,19 +2357,19 @@ function ProductSearch({ value, products, onSelect, onClear }: {
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder="ค้นหาสินค้า (ชื่อ / รหัส)..."
-        className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary"
+        className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
       />
       {open && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-0.5 bg-cyber-card border border-cyber-border rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-0.5 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
           {filtered.map(p => (
             <button key={p.id} type="button"
               onMouseDown={() => { onSelect(p); setQuery(''); setOpen(false) }}
-              className="w-full px-3 py-2 flex items-center justify-between hover:bg-cyber-dark text-left gap-2">
+              className="w-full px-3 py-2 flex items-center justify-between hover:bg-[var(--bg)] text-left gap-2">
               <div className="min-w-0">
                 <p className="text-sm text-white truncate">{p.name}</p>
-                <p className="text-xs text-gray-500">{p.code}</p>
+                <p className="text-xs text-[var(--fg-4)]">{p.code}</p>
               </div>
-              <span className="text-xs text-cyber-primary shrink-0">฿{(p.sell_price || 0).toLocaleString('th-TH')}</span>
+              <span className="text-xs text-phopy-indigo shrink-0">฿{(p.sell_price || 0).toLocaleString('th-TH')}</span>
             </button>
           ))}
         </div>
@@ -2388,7 +2388,7 @@ function UnitSelectForRow({ productId, value, onChange }: {
     <select
       value={value || ''}
       onChange={e => onChange(e.target.value)}
-      className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary"
+      className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-phopy-indigo"
     >
       <option value="">เลือกหน่วย</option>
       {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
@@ -2415,17 +2415,17 @@ function LineItemsEditor({
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
-        <p className="text-sm font-semibold text-gray-300">รายการสินค้า</p>
+        <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
         <button type="button" onClick={add}
-          className="flex items-center gap-1 text-xs text-cyber-primary hover:text-cyber-primary/80">
+          className="flex items-center gap-1 text-xs text-phopy-indigo hover:text-phopy-indigo/80">
           <Plus className="w-3.5 h-3.5" /> เพิ่มรายการ
         </button>
       </div>
       {items.map((item, i) => (
-        <div key={i} className="bg-cyber-darker p-3 rounded-lg space-y-2">
+        <div key={i} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-5">
-              <label className="text-xs text-gray-500 mb-1 block">สินค้า</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">สินค้า</label>
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
@@ -2434,13 +2434,13 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">จำนวน</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">จำนวน</label>
               <input type="number" value={item.quantity} min={0.01} step={0.01}
                 onChange={e => update(i, { quantity: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">หน่วย</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">หน่วย</label>
               <UnitSelectForRow
                 productId={item.productId}
                 value={item.unit}
@@ -2448,16 +2448,16 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">ราคา/หน่วย</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">ราคา/หน่วย</label>
               <input type="number" value={item.unitPrice} min={0} step={0.01}
                 onChange={e => update(i, { unitPrice: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">ส่วนลด%</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">ส่วนลด%</label>
               <input type="number" value={item.discountPercent} min={0} max={100}
                 onChange={e => update(i, { discountPercent: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-1 flex justify-end pb-1">
               {items.length > 1 && (
@@ -2467,7 +2467,7 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               )}
             </div>
           </div>
-          <div className="text-right text-xs text-gray-400">
+          <div className="text-right text-xs text-[var(--fg-3)]">
             รวม: <span className="text-white font-medium">
               ฿{(item.quantity * item.unitPrice * (1 - item.discountPercent / 100)).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
             </span>
@@ -2489,30 +2489,30 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
   const tax = afterDiscount * (taxRate / 100)
   const total = afterDiscount + tax
   return (
-    <div className="bg-cyber-darker p-4 rounded-xl space-y-2 text-sm">
-      <div className="flex justify-between text-gray-400">
+    <div className="bg-[var(--surface-2)] p-4 rounded-xl space-y-2 text-sm">
+      <div className="flex justify-between text-[var(--fg-3)]">
         <span>ยอดรวม</span><span>฿{subtotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
       </div>
-      <div className="flex justify-between text-gray-400 items-center gap-4">
+      <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
         <span className="shrink-0">ส่วนลด (฿)</span>
         <input type="number" value={discountAmount} min={0}
           onChange={e => setDiscountAmount(parseFloat(e.target.value) || 0)}
           onFocus={e => e.target.select()}
-          className="w-28 text-right bg-cyber-dark border border-cyber-border rounded px-2 py-1 text-white focus:outline-none focus:border-cyber-primary" />
+          className="w-28 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-white focus:outline-none focus:border-phopy-indigo" />
       </div>
-      <div className="flex justify-between text-gray-400 items-center gap-4">
+      <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
         <span className="shrink-0">VAT (%)</span>
         <div className="flex items-center gap-2">
           {[0, 7].map(r => (
             <button key={r} type="button" onClick={() => setTaxRate(r)}
-              className={`px-2 py-0.5 rounded text-xs border ${taxRate === r ? 'border-cyber-primary text-cyber-primary' : 'border-cyber-border text-gray-500'}`}>
+              className={`px-2 py-0.5 rounded text-xs border ${taxRate === r ? 'border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-4)]'}`}>
               {r}%
             </button>
           ))}
           <input type="number" value={taxRate} min={0} max={100}
             onChange={e => setTaxRate(parseFloat(e.target.value) || 0)}
             onFocus={e => e.target.select()}
-            className="w-16 text-right bg-cyber-dark border border-cyber-border rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-cyber-primary" />
+            className="w-16 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-phopy-indigo" />
         </div>
       </div>
       {taxRate > 0 && (
@@ -2520,9 +2520,9 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
           <span>VAT ({taxRate}%)</span><span>+฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
         </div>
       )}
-      <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
-        <span className="text-gray-100">ยอดสุทธิ</span>
-        <span className="text-cyber-green">฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+      <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
+        <span className="text-[var(--fg-1)]">ยอดสุทธิ</span>
+        <span className="text-success">฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
       </div>
     </div>
   )
@@ -2578,12 +2578,12 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyber-primary" /> สร้างใบเสนอราคา (QT)
+            <FileText className="w-5 h-5 text-phopy-indigo" /> สร้างใบเสนอราคา (QT)
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -2592,9 +2592,9 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-sm text-gray-400">ลูกค้า *</label>
+                <label className="text-sm text-[var(--fg-3)]">ลูกค้า *</label>
                 <button type="button" onClick={() => setShowQuickAddCust(true)}
-                  className="flex items-center gap-1 text-xs text-cyber-primary hover:text-cyber-primary/80">
+                  className="flex items-center gap-1 text-xs text-phopy-indigo hover:text-phopy-indigo/80">
                   <Plus className="w-3.5 h-3.5" /> เพิ่มลูกค้า
                 </button>
               </div>
@@ -2607,14 +2607,14 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
               )}
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">วันหมดอายุ</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">วันหมดอายุ</label>
               <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">หมายเหตุ</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ</label>
               <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="หมายเหตุ..."
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -2622,10 +2622,10 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
           <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} />
         </div>
 
-        <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 text-sm">
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
             สร้างใบเสนอราคา
           </button>
@@ -2673,30 +2673,30 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
-            <p className="font-mono text-sm text-cyber-primary font-semibold">{quotation.quotation_number}</p>
+            <p className="font-mono text-sm text-phopy-indigo font-semibold">{quotation.quotation_number}</p>
             <p className="text-white font-bold">{quotation.customer_name}</p>
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={quotation.status} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
           {loading ? (
-            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary mx-auto" /></div>
+            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-cyber-dark rounded-lg p-3">
-                  <p className="text-gray-500 text-xs mb-1">วันที่</p>
+                <div className="bg-[var(--bg)] rounded-lg p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">วันที่</p>
                   <p className="text-white">{formatDate(detail?.quotation_date)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-lg p-3">
-                  <p className="text-gray-500 text-xs mb-1">วันหมดอายุ</p>
+                <div className="bg-[var(--bg)] rounded-lg p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">วันหมดอายุ</p>
                   <p className={`font-medium ${detail?.expiry_date && new Date(detail.expiry_date) < new Date() ? 'text-red-400' : 'text-white'}`}>
                     {formatDate(detail?.expiry_date)}
                   </p>
@@ -2705,13 +2705,13 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
 
               {/* Items */}
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-gray-300">รายการสินค้า</p>
+                <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
                 <div className="space-y-1">
                   {(detail?.items || []).map((it: any, i: number) => (
-                    <div key={i} className="flex justify-between items-center py-2 px-3 bg-cyber-darker rounded-lg text-sm">
+                    <div key={i} className="flex justify-between items-center py-2 px-3 bg-[var(--surface-2)] rounded-lg text-sm">
                       <div>
                         <p className="text-white">{it.product_name || it.productName || `รายการ ${i + 1}`}</p>
-                        <p className="text-xs text-gray-500">{it.quantity} × ฿{(it.unit_price || 0).toLocaleString()}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{it.quantity} × ฿{(it.unit_price || 0).toLocaleString()}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
                       </div>
                       <p className="text-white font-medium">{formatCurrency(it.total_price)}</p>
                     </div>
@@ -2720,32 +2720,32 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
               </div>
 
               {/* Totals */}
-              <div className="bg-cyber-darker rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-gray-400"><span>ยอดรวม</span><span>{formatCurrency(detail?.subtotal)}</span></div>
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดรวม</span><span>{formatCurrency(detail?.subtotal)}</span></div>
                 {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-red-400"><span>ส่วนลด</span><span>-{formatCurrency(detail?.discount_amount)}</span></div>}
                 {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-yellow-400"><span>VAT ({detail?.tax_rate}%)</span><span>+{formatCurrency(detail?.tax_amount)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
-                  <span className="text-gray-100">ยอดสุทธิ</span><span className="text-cyber-green">{formatCurrency(detail?.total_amount)}</span>
+                <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
+                  <span className="text-[var(--fg-1)]">ยอดสุทธิ</span><span className="text-success">{formatCurrency(detail?.total_amount)}</span>
                 </div>
               </div>
 
               {detail?.notes && (
-                <div className="bg-cyber-dark rounded-lg p-3 text-sm text-gray-400">หมายเหตุ: {detail.notes}</div>
+                <div className="bg-[var(--bg)] rounded-lg p-3 text-sm text-[var(--fg-3)]">หมายเหตุ: {detail.notes}</div>
               )}
             </>
           )}
         </div>
 
-        <div className="p-5 border-t border-cyber-border flex gap-2 shrink-0 flex-wrap">
+        <div className="p-5 border-t border-[var(--border)] flex gap-2 shrink-0 flex-wrap">
           {/* Print buttons */}
           {!loading && (
             <>
               <button onClick={() => handlePrint('a4')} title="พิมพ์ A4"
-                className="px-2.5 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors">
+                className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors">
                 <Printer className="w-4 h-4" />
               </button>
               <button onClick={() => handlePrint('thermal')} title="พิมพ์ Thermal"
-                className="px-2 py-2 text-gray-500 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors text-xs">
+                className="px-2 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors text-xs">
                 <Printer className="w-3.5 h-3.5 inline" /> 80mm
               </button>
             </>
@@ -2758,13 +2758,13 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
           )}
           {(quotation.status === 'SENT' || quotation.status === 'DRAFT') && (
             <button onClick={() => updateStatus('ACCEPTED')} disabled={updating}
-              className="flex-1 py-2 bg-cyber-green/20 border border-cyber-green/50 text-cyber-green rounded-lg text-sm font-medium hover:bg-cyber-green/30 disabled:opacity-50">
+              className="flex-1 py-2 bg-success-soft border border-success/50 text-success rounded-lg text-sm font-medium hover:bg-success/30 disabled:opacity-50">
               อนุมัติ
             </button>
           )}
           {quotation.status === 'ACCEPTED' && (
             <button onClick={() => onConvert(quotation)} disabled={updating}
-              className="flex-1 py-2 bg-cyber-primary text-cyber-dark rounded-lg text-sm font-semibold hover:bg-cyber-primary/80">
+              className="flex-1 py-2 bg-phopy-indigo text-white rounded-lg text-sm font-semibold hover:bg-phopy-indigo/80">
               <ArrowRight className="w-4 h-4 inline mr-1" />แปลงเป็นคำสั่งขาย (SO)
             </button>
           )}
@@ -2865,22 +2865,22 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-purple-400" />
             {sourceQuotation ? `แปลง ${sourceQuotation.quotation_number} → SO` : 'สร้างคำสั่งขาย (SO)'}
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-sm text-gray-400">ลูกค้า *</label>
+                <label className="text-sm text-[var(--fg-3)]">ลูกค้า *</label>
                 <button type="button" onClick={() => setShowQuickAddCust(true)}
-                  className="flex items-center gap-1 text-xs text-cyber-primary hover:text-cyber-primary/80">
+                  className="flex items-center gap-1 text-xs text-phopy-indigo hover:text-phopy-indigo/80">
                   <Plus className="w-3.5 h-3.5" /> เพิ่มลูกค้า
                 </button>
               </div>
@@ -2893,14 +2893,14 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
               )}
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">กำหนดส่ง</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">กำหนดส่ง</label>
               <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">หมายเหตุ</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ</label>
               <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="หมายเหตุ..."
-                className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -2908,8 +2908,8 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
           <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} />
         </div>
 
-        <div className="p-5 border-t border-cyber-border flex gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -2974,17 +2974,17 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <p className="font-mono text-sm text-purple-400 font-semibold">{salesOrder.so_number}</p>
             <p className="text-white font-bold">{salesOrder.customer_name}</p>
-            {salesOrder.quotation_number && <p className="text-xs text-gray-500">QT: {salesOrder.quotation_number}</p>}
+            {salesOrder.quotation_number && <p className="text-xs text-[var(--fg-4)]">QT: {salesOrder.quotation_number}</p>}
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={salesOrder.status} />
             <StatusBadge status={salesOrder.payment_status} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
@@ -2997,37 +2997,37 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               const isCurrent = i === currentIdx
               return (
                 <div key={s} className="flex items-center gap-1 shrink-0">
-                  <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${isCurrent ? 'bg-purple-500 text-white' : isPast ? 'bg-cyber-green/20 text-cyber-green' : 'bg-cyber-darker text-gray-500'}`}>
+                  <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${isCurrent ? 'bg-purple-500 text-white' : isPast ? 'bg-success-soft text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
                     {STATUS_CONFIG[s]?.label || s}
                   </div>
-                  {i < SO_FLOW.length - 1 && <ArrowRight className="w-3 h-3 text-gray-600 shrink-0" />}
+                  {i < SO_FLOW.length - 1 && <ArrowRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
                 </div>
               )
             })}
           </div>
 
           {loading ? (
-            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary mx-auto" /></div>
+            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-cyber-dark rounded-lg p-3">
-                  <p className="text-gray-500 text-xs mb-1">วันสั่งซื้อ</p><p className="text-white">{fmtD(detail?.order_date)}</p>
+                <div className="bg-[var(--bg)] rounded-lg p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">วันสั่งซื้อ</p><p className="text-white">{fmtD(detail?.order_date)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-lg p-3">
-                  <p className="text-gray-500 text-xs mb-1">กำหนดส่ง</p><p className="text-white">{fmtD(detail?.delivery_date)}</p>
+                <div className="bg-[var(--bg)] rounded-lg p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">กำหนดส่ง</p><p className="text-white">{fmtD(detail?.delivery_date)}</p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-gray-300">รายการสินค้า</p>
+                <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
                 {(detail?.items || []).map((it: any, i: number) => {
                   const insufficient = it.stock_item_id && (it.stock_qty ?? Infinity) < it.quantity
                   return (
-                    <div key={i} className={`flex justify-between items-start py-2 px-3 rounded-lg text-sm ${insufficient ? 'bg-red-500/10 border border-red-500/30' : 'bg-cyber-darker'}`}>
+                    <div key={i} className={`flex justify-between items-start py-2 px-3 rounded-lg text-sm ${insufficient ? 'bg-red-500/10 border border-red-500/30' : 'bg-[var(--surface-2)]'}`}>
                       <div className="flex-1 min-w-0">
                         <p className="text-white">{it.product_name || `รายการ ${i + 1}`}</p>
-                        <p className="text-xs text-gray-500">{it.quantity} × {fmt(it.unit_price)}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{it.quantity} × {fmt(it.unit_price)}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
                         {insufficient && (
                           <p className="text-xs text-red-400 mt-0.5">⚠ สต็อกไม่พอ (มี {it.stock_qty ?? 0} ชิ้น)</p>
                         )}
@@ -3038,22 +3038,22 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
                 })}
               </div>
 
-              <div className="bg-cyber-darker rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-gray-400"><span>ยอดรวม</span><span>{fmt(detail?.subtotal)}</span></div>
+              <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดรวม</span><span>{fmt(detail?.subtotal)}</span></div>
                 {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-red-400"><span>ส่วนลด</span><span>-{fmt(detail?.discount_amount)}</span></div>}
                 {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-yellow-400"><span>VAT ({detail?.tax_rate}%)</span><span>+{fmt(detail?.tax_amount)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
-                  <span className="text-gray-100">ยอดสุทธิ</span><span className="text-cyber-green">{fmt(detail?.total_amount)}</span>
+                <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
+                  <span className="text-[var(--fg-1)]">ยอดสุทธิ</span><span className="text-success">{fmt(detail?.total_amount)}</span>
                 </div>
               </div>
             </>
           )}
         </div>
 
-        <div className="p-5 border-t border-cyber-border flex gap-2 shrink-0 flex-wrap">
+        <div className="p-5 border-t border-[var(--border)] flex gap-2 shrink-0 flex-wrap">
           {!loading && (
             <button onClick={handlePrint} title="พิมพ์ SO (A4)"
-              className="px-2.5 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors">
+              className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors">
               <Printer className="w-4 h-4" />
             </button>
           )}
@@ -3177,58 +3177,58 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
-        <div className="p-5 border-b border-cyber-border flex justify-between items-start shrink-0">
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-start shrink-0">
           <div>
             <div className="flex items-center gap-3 mb-1">
               <p className="font-mono text-base text-yellow-400 font-bold">{invoice.invoice_number}</p>
               {invoice.so_number && (
-                <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <span className="px-1.5 py-0.5 bg-cyber-dark rounded font-mono">SO: {invoice.so_number}</span>
+                <div className="flex items-center gap-1.5 text-xs text-[var(--fg-4)]">
+                  <span className="px-1.5 py-0.5 bg-[var(--bg)] rounded font-mono">SO: {invoice.so_number}</span>
                 </div>
               )}
             </div>
             <p className="text-white font-semibold text-lg">{invoice.customer_name}</p>
-            {invoice.customer_code && <p className="text-xs text-gray-500 font-mono">{invoice.customer_code}</p>}
+            {invoice.customer_code && <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.customer_code}</p>}
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={invoice.payment_status} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-5 flex-1">
           {loading ? (
-            <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyber-primary mx-auto" /></div>
+            <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
           ) : (
             <>
               {/* Info row */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div className="bg-cyber-dark rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">วันที่ออกใบ</p>
+                <div className="bg-[var(--bg)] rounded-xl p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">วันที่ออกใบ</p>
                   <p className="text-white font-medium">{fmtD(detail?.invoice_date)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">ครบกำหนด</p>
+                <div className="bg-[var(--bg)] rounded-xl p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">ครบกำหนด</p>
                   <p className={detail?.payment_status === 'OVERDUE' ? 'text-red-400 font-medium' : 'text-white font-medium'}>{fmtD(detail?.due_date)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">ยอดรวมทั้งหมด</p>
+                <div className="bg-[var(--bg)] rounded-xl p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">ยอดรวมทั้งหมด</p>
                   <p className="text-white font-bold">{fmt(detail?.total_amount)}</p>
                 </div>
-                <div className="bg-cyber-dark rounded-xl p-3">
-                  <p className="text-gray-500 text-xs mb-1">ยอดคงค้าง</p>
-                  <p className={invoice.balance_amount > 0 ? 'text-red-400 font-bold' : 'text-cyber-green font-bold'}>{fmt(invoice.balance_amount)}</p>
+                <div className="bg-[var(--bg)] rounded-xl p-3">
+                  <p className="text-[var(--fg-4)] text-xs mb-1">ยอดคงค้าง</p>
+                  <p className={invoice.balance_amount > 0 ? 'text-red-400 font-bold' : 'text-success font-bold'}>{fmt(invoice.balance_amount)}</p>
                 </div>
               </div>
 
               {/* Items list */}
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">รายการสินค้า</p>
-                <div className="border border-cyber-border rounded-xl overflow-hidden">
-                  <div className="grid grid-cols-12 px-3 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">รายการสินค้า</p>
+                <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
                     <span className="col-span-5">สินค้า</span>
                     <span className="col-span-2 text-center">จำนวน</span>
                     <span className="col-span-2 text-right">ราคา/หน่วย</span>
@@ -3236,14 +3236,14 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     <span className="col-span-2 text-right">รวม</span>
                   </div>
                   {(detail?.items || []).map((it: any, i: number) => (
-                    <div key={i} className={`grid grid-cols-12 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-cyber-darker/40'} border-b border-cyber-border/30 last:border-0`}>
+                    <div key={i} className={`grid grid-cols-12 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
                       <div className="col-span-5">
                         <p className="text-white font-medium">{it.product_name || `รายการ ${i + 1}`}</p>
-                        {it.product_code && <p className="text-xs text-gray-500 font-mono">{it.product_code}</p>}
+                        {it.product_code && <p className="text-xs text-[var(--fg-4)] font-mono">{it.product_code}</p>}
                       </div>
-                      <p className="col-span-2 text-center text-gray-300">{it.quantity} {it.unit || ''}</p>
-                      <p className="col-span-2 text-right text-gray-300">{fmt(it.unit_price)}</p>
-                      <p className="col-span-1 text-right text-gray-500 text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
+                      <p className="col-span-2 text-center text-[var(--fg-2)]">{it.quantity} {it.unit || ''}</p>
+                      <p className="col-span-2 text-right text-[var(--fg-2)]">{fmt(it.unit_price)}</p>
+                      <p className="col-span-1 text-right text-[var(--fg-4)] text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
                       <p className="col-span-2 text-right text-white font-semibold">{fmt(it.total_price)}</p>
                     </div>
                   ))}
@@ -3253,11 +3253,11 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               {/* Totals + Payment history — 2 columns on wide screen */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Totals */}
-                <div className="bg-cyber-darker rounded-xl p-4 space-y-1.5 text-sm">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">สรุปยอด</p>
-                  <div className="flex justify-between text-gray-400"><span>ยอดก่อนภาษี</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
-                  {detail?.vat_amount > 0 && <div className="flex justify-between text-gray-400"><span>VAT {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
-                  <div className="flex justify-between text-gray-300 border-t border-cyber-border/50 pt-1.5"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
+                <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">สรุปยอด</p>
+                  <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดก่อนภาษี</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
+                  {detail?.vat_amount > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>VAT {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
+                  <div className="flex justify-between text-[var(--fg-2)] border-t border-[var(--border)]/50 pt-1.5"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
                   {(detail?.withholdingTax || []).length > 0 && (
                     <>
                       {(detail.withholdingTax as any[]).map((w: any) => (
@@ -3266,43 +3266,43 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                           <span>-{fmt(w.tax_amount)}</span>
                         </div>
                       ))}
-                      <div className="flex justify-between text-gray-300 text-xs">
+                      <div className="flex justify-between text-[var(--fg-2)] text-xs">
                         <span>ยอดสุทธิ (หัก WHT)</span>
                         <span>{fmt((detail?.total_amount || 0) - (detail?.withholdingTax || []).reduce((s: number, w: any) => s + (w.tax_amount || 0), 0))}</span>
                       </div>
                     </>
                   )}
-                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-cyber-green"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
-                  <div className="flex justify-between font-bold text-base border-t border-cyber-border pt-2">
-                    <span className="text-gray-100">ยอดคงค้าง</span>
-                    <span className={invoice.balance_amount > 0 ? 'text-red-400' : 'text-cyber-green'}>{fmt(invoice.balance_amount)}</span>
+                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-success"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
+                  <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
+                    <span className="text-[var(--fg-1)]">ยอดคงค้าง</span>
+                    <span className={invoice.balance_amount > 0 ? 'text-red-400' : 'text-success'}>{fmt(invoice.balance_amount)}</span>
                   </div>
                 </div>
 
                 {/* Payment receipts */}
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ประวัติการรับเงิน</p>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">ประวัติการรับเงิน</p>
                   {(detail?.receipts || []).length === 0 ? (
-                    <div className="bg-cyber-darker rounded-xl p-4 text-center text-sm text-gray-600">ยังไม่มีการรับเงิน</div>
+                    <div className="bg-[var(--surface-2)] rounded-xl p-4 text-center text-sm text-[var(--fg-4)]">ยังไม่มีการรับเงิน</div>
                   ) : (
                     <div className="space-y-2">
                       {detail.receipts.map((r: any) => (
-                        <div key={r.id} className="bg-cyber-darker rounded-xl px-4 py-3 text-sm">
+                        <div key={r.id} className="bg-[var(--surface-2)] rounded-xl px-4 py-3 text-sm">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
                               <p className="text-white font-mono text-xs font-semibold">{r.receipt_number}</p>
-                              <p className="text-xs text-gray-500 mt-0.5">{fmtD(r.receipt_date)} · {r.payment_method}{r.payment_reference ? ` · ${r.payment_reference}` : ''}</p>
-                              {r.notes && <p className="text-xs text-gray-400 mt-1 italic">"{r.notes}"</p>}
+                              <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtD(r.receipt_date)} · {r.payment_method}{r.payment_reference ? ` · ${r.payment_reference}` : ''}</p>
+                              {r.notes && <p className="text-xs text-[var(--fg-3)] mt-1 italic">"{r.notes}"</p>}
                             </div>
-                            <p className="text-cyber-green font-bold ml-3">{fmt(r.amount)}</p>
+                            <p className="text-success font-bold ml-3">{fmt(r.amount)}</p>
                           </div>
                           <div className="flex gap-1 mt-2">
                             <button onClick={() => handlePrintReceipt(r, 'a4')}
-                              className="px-2 py-1 text-gray-500 hover:text-white border border-cyber-border/50 rounded-lg text-xs flex items-center gap-1">
+                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
                               <Printer className="w-3 h-3" /> A4
                             </button>
                             <button onClick={() => handlePrintReceipt(r, 'thermal')}
-                              className="px-2 py-1 text-gray-500 hover:text-white border border-cyber-border/50 rounded-lg text-xs flex items-center gap-1">
+                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
                               <Printer className="w-3 h-3" /> 80mm
                             </button>
                           </div>
@@ -3316,22 +3316,22 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               {/* Attachments */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">เอกสารแนบ / รูปภาพ</p>
-                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${uploading ? 'bg-cyber-dark text-gray-500' : 'bg-cyber-primary/20 text-cyber-primary hover:bg-cyber-primary/30'}`}>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">เอกสารแนบ / รูปภาพ</p>
+                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${uploading ? 'bg-[var(--bg)] text-[var(--fg-4)]' : 'bg-phopy-indigo-50 text-phopy-indigo hover:bg-phopy-indigo/30'}`}>
                     {uploading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป (สูงสุด 10MB)'}
                     <input type="file" accept="image/*" className="hidden" onChange={handleUploadAttachment} disabled={uploading} />
                   </label>
                 </div>
                 {(detail?.attachments || []).length === 0 ? (
-                  <div className="border-2 border-dashed border-cyber-border/50 rounded-xl p-6 text-center text-gray-600 text-sm">
+                  <div className="border-2 border-dashed border-[var(--border)]/50 rounded-xl p-6 text-center text-[var(--fg-4)] text-sm">
                     <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     ยังไม่มีเอกสารแนบ
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                     {detail.attachments.map((att: any) => (
-                      <div key={att.id} className="relative group rounded-xl overflow-hidden border border-cyber-border/50 bg-cyber-darker aspect-square">
+                      <div key={att.id} className="relative group rounded-xl overflow-hidden border border-[var(--border)]/50 bg-[var(--surface-2)] aspect-square">
                         <img src={`/uploads/invoice-attachments/${att.file_path.split('/').pop()}`}
                           alt={att.original_name}
                           className="w-full h-full object-cover"
@@ -3347,7 +3347,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                             <Trash2 className="w-3.5 h-3.5 text-red-400" />
                           </button>
                         </div>
-                        <p className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-black/60 text-[10px] text-gray-300 truncate">{att.original_name}</p>
+                        <p className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-black/60 text-[10px] text-[var(--fg-2)] truncate">{att.original_name}</p>
                       </div>
                     ))}
                   </div>
@@ -3356,20 +3356,20 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
               {/* Record Payment Form */}
               {isUnpaid && showPayment && (
-                <div className="bg-cyber-dark border border-cyber-primary/30 rounded-xl p-4 space-y-3">
-                  <p className="text-sm font-semibold text-cyber-primary">บันทึกการรับเงิน</p>
+                <div className="bg-[var(--bg)] border border-phopy-indigo/30 rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-semibold text-phopy-indigo">บันทึกการรับเงิน</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">จำนวนเงิน (฿)</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">จำนวนเงิน (฿)</label>
                       <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
                         placeholder={`สูงสุด ${fmt(invoice.balance_amount)}`}
                         onFocus={e => e.target.select()}
-                        className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">วิธีชำระ</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">วิธีชำระ</label>
                       <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-                        className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary">
+                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo">
                         <option value="CASH">เงินสด</option>
                         <option value="TRANSFER">โอนเงิน</option>
                         <option value="CHEQUE">เช็ค</option>
@@ -3377,21 +3377,21 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">วันที่รับเงิน</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">วันที่รับเงิน</label>
                       <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
-                        className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">เลขอ้างอิง</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">เลขอ้างอิง</label>
                       <input type="text" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="เลขโอน / เช็ค..."
-                        className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
+                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">หมายเหตุ</label>
+                    <label className="text-xs text-[var(--fg-4)] mb-1 block">หมายเหตุ</label>
                     <textarea value={payNote} onChange={e => setPayNote(e.target.value)} rows={2}
                       placeholder="เช่น ชำระบางส่วน / โอนเข้าบัญชี xxx..."
-                      className="w-full bg-cyber-darker border border-cyber-border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary resize-none" />
+                      className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo resize-none" />
                   </div>
                   {/* Journal Preview */}
                   <JournalPreview entries={[
@@ -3400,9 +3400,9 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                   ]} />
 
                   <div className="flex gap-2">
-                    <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-gray-400 text-sm hover:text-white">ยกเลิก</button>
+                    <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">ยกเลิก</button>
                     <button onClick={handleRecordPayment} disabled={saving}
-                      className="flex-1 py-2 bg-cyber-green text-cyber-dark font-semibold rounded-lg text-sm hover:bg-cyber-green/80 disabled:opacity-50 flex items-center justify-center gap-1">
+                      className="flex-1 py-2 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-1">
                       {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                       ยืนยันรับเงิน
                     </button>
@@ -3415,19 +3415,19 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
         {/* Footer */}
         {!loading && (
-          <div className="px-5 py-4 border-t border-cyber-border shrink-0 flex items-center gap-2">
+          <div className="px-5 py-4 border-t border-[var(--border)] shrink-0 flex items-center gap-2">
             <button onClick={() => handlePrintInv('a4')} title="พิมพ์ใบแจ้งหนี้ A4"
-              className="px-3 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors flex items-center gap-1.5 text-sm">
+              className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors flex items-center gap-1.5 text-sm">
               <Printer className="w-4 h-4" /> A4
             </button>
             <button onClick={() => handlePrintInv('thermal')} title="พิมพ์ Thermal"
-              className="px-3 py-2 text-gray-500 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors text-sm flex items-center gap-1">
+              className="px-3 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors text-sm flex items-center gap-1">
               <Printer className="w-3.5 h-3.5" /> 80mm
             </button>
             <div className="flex-1" />
             {isUnpaid && !showPayment && (
               <button onClick={() => setShowPayment(true)}
-                className="px-5 py-2 bg-cyber-green text-cyber-dark font-semibold rounded-lg hover:bg-cyber-green/80 text-sm flex items-center gap-2">
+                className="px-5 py-2 bg-success text-white font-semibold rounded-lg hover:bg-success/80 text-sm flex items-center gap-2">
                 <DollarSign className="w-4 h-4" /> บันทึกการรับเงิน
               </button>
             )}
@@ -3439,7 +3439,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     {/* Image Preview Lightbox */}
     {previewUrl && (
       <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
-        <button className="absolute top-4 right-4 p-2 bg-white/10 rounded-lg text-white hover:bg-white/20">
+        <button className="absolute top-4 right-4 p-2 bg-[var(--surface-2)] rounded-lg text-white hover:bg-white/20">
           <X className="w-5 h-5" />
         </button>
         <img src={previewUrl} alt="preview" className="max-w-full max-h-full rounded-xl object-contain" onClick={e => e.stopPropagation()} />
@@ -3484,21 +3484,21 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <RotateCcw className="w-5 h-5 text-orange-400" /> สร้างใบลดหนี้ (CN)
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="text-xs text-gray-500 mb-1.5 block">ใบแจ้งหนี้อ้างอิง *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">ใบแจ้งหนี้อ้างอิง *</label>
             <select value={invoiceId} onChange={e => setInvoiceId(e.target.value)}
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-cyber-primary">
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-phopy-indigo">
               <option value="">-- เลือกใบแจ้งหนี้ --</option>
               {invoices.map((inv: any) => (
                 <option key={inv.id} value={inv.id}>
@@ -3509,21 +3509,21 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
           </div>
 
           <div>
-            <label className="text-xs text-gray-500 mb-1.5 block">วันที่ออกใบลดหนี้</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">วันที่ออกใบลดหนี้</label>
             <input type="date" value={creditDate} onChange={e => setCreditDate(e.target.value)}
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-cyber-primary" />
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
 
           <div>
-            <label className="text-xs text-gray-500 mb-1.5 block">เหตุผลการลดหนี้ *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">เหตุผลการลดหนี้ *</label>
             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
               placeholder="เช่น สินค้าชำรุด, ส่งคืนสินค้า, ราคาผิดพลาด..."
-              className="w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyber-primary resize-none" />
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
 
-        <div className="p-5 border-t border-cyber-border shrink-0 flex gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 text-sm hover:text-white">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-1">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
@@ -3556,9 +3556,9 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     DRAFT: 'ร่าง', ISSUED: 'ออกแล้ว', APPLIED: 'นำไปใช้แล้ว', CANCELLED: 'ยกเลิก',
   }
   const statusColor: Record<string, string> = {
-    DRAFT: 'text-gray-400 bg-gray-400/10',
+    DRAFT: 'text-[var(--fg-3)] bg-gray-400/10',
     ISSUED: 'text-blue-400 bg-blue-400/10',
-    APPLIED: 'text-cyber-green bg-cyber-green/10',
+    APPLIED: 'text-success bg-success/10',
     CANCELLED: 'text-red-400 bg-red-400/10',
   }
 
@@ -3580,17 +3580,17 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white font-mono">{creditNote.cn_number}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{creditNote.customer_name}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{creditNote.customer_name}</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[creditNote.status] || 'text-gray-400 bg-gray-400/10'}`}>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[creditNote.status] || 'text-[var(--fg-3)] bg-gray-400/10'}`}>
               {statusLabel[creditNote.status] || creditNote.status}
             </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -3598,30 +3598,30 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
 
         <div className="overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="bg-cyber-darker rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">ใบแจ้งหนี้อ้างอิง</p>
+            <div className="bg-[var(--surface-2)] rounded-lg p-3">
+              <p className="text-xs text-[var(--fg-4)] mb-1">ใบแจ้งหนี้อ้างอิง</p>
               <p className="text-white font-mono font-medium">{creditNote.invoice_number}</p>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">วันที่ออก</p>
+            <div className="bg-[var(--surface-2)] rounded-lg p-3">
+              <p className="text-xs text-[var(--fg-4)] mb-1">วันที่ออก</p>
               <p className="text-white">{fmtD(creditNote.credit_date)}</p>
             </div>
           </div>
 
-          <div className="bg-cyber-darker rounded-lg p-3">
-            <p className="text-xs text-gray-500 mb-1">เหตุผล</p>
+          <div className="bg-[var(--surface-2)] rounded-lg p-3">
+            <p className="text-xs text-[var(--fg-4)] mb-1">เหตุผล</p>
             <p className="text-white text-sm">{creditNote.reason || '-'}</p>
           </div>
 
-          <div className="bg-cyber-darker p-4 rounded-xl flex justify-between items-center">
-            <span className="text-gray-300 text-sm font-semibold">ยอดลดหนี้</span>
+          <div className="bg-[var(--surface-2)] p-4 rounded-xl flex justify-between items-center">
+            <span className="text-[var(--fg-2)] text-sm font-semibold">ยอดลดหนี้</span>
             <span className="text-orange-400 font-bold text-lg">{fmt(creditNote.total_amount)}</span>
           </div>
         </div>
 
-        <div className="p-5 border-t border-cyber-border shrink-0 flex gap-2">
+        <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-2">
           <button onClick={handlePrint} title="พิมพ์ใบลดหนี้ A4"
-            className="px-2.5 py-2 text-gray-400 border border-cyber-border rounded-lg hover:text-white hover:border-gray-400 transition-colors">
+            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors">
             <Printer className="w-4 h-4" />
           </button>
           {creditNote.status === 'DRAFT' && (
@@ -3658,7 +3658,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   }
   const statusColor: Record<string, string> = {
     PENDING: 'text-yellow-400 bg-yellow-400/10',
-    FULFILLED: 'text-cyber-green bg-cyber-green/10',
+    FULFILLED: 'text-success bg-success/10',
     CANCELLED: 'text-red-400 bg-red-400/10',
   }
 
@@ -3682,17 +3682,17 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white font-mono">{backorder.bo_number}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{backorder.customer_name} · SO: {backorder.so_number}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{backorder.customer_name} · SO: {backorder.so_number}</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[backorder.status] || 'text-gray-400 bg-gray-400/10'}`}>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[backorder.status] || 'text-[var(--fg-3)] bg-gray-400/10'}`}>
               {statusLabel[backorder.status] || backorder.status}
             </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -3701,29 +3701,29 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
         <div className="overflow-y-auto p-5 space-y-4">
           {items.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-gray-300">รายการค้างส่ง</p>
+              <p className="text-sm font-semibold text-[var(--fg-2)]">รายการค้างส่ง</p>
               {items.map((item: any, i: number) => (
-                <div key={i} className="bg-cyber-darker rounded-lg p-3 text-sm">
+                <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
                   <p className="text-white font-medium">{item.product_name || item.productName}</p>
-                  <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
+                  <div className="flex gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
                     <span>สั่ง: <span className="text-white">{item.ordered_qty ?? item.quantity}</span></span>
-                    <span>ส่งแล้ว: <span className="text-cyber-green">{item.delivered_qty ?? 0}</span></span>
+                    <span>ส่งแล้ว: <span className="text-success">{item.delivered_qty ?? 0}</span></span>
                     <span>ค้าง: <span className="text-yellow-400">{item.remaining_qty ?? ((item.ordered_qty ?? item.quantity) - (item.delivered_qty ?? 0))}</span></span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500 text-sm">
+            <div className="text-center py-8 text-[var(--fg-4)] text-sm">
               {detail === null ? 'กำลังโหลด...' : 'ไม่มีรายการ'}
             </div>
           )}
         </div>
 
         {backorder.status === 'PENDING' && (
-          <div className="p-5 border-t border-cyber-border shrink-0">
+          <div className="p-5 border-t border-[var(--border)] shrink-0">
             <button onClick={handleFulfill} disabled={saving}
-              className="w-full py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-lg text-sm hover:bg-cyber-green/80 disabled:opacity-50 flex items-center justify-center gap-2">
+              className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
               ยืนยันจัดส่งครบแล้ว
             </button>

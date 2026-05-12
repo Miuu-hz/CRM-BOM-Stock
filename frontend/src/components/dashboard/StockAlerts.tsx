@@ -61,28 +61,28 @@ const alerts: StockAlert[] = [
 
 function StockAlerts() {
   return (
-    <div className="cyber-card p-6">
+    <div className="phopy-card p-6">
       <div className="flex items-center gap-3 mb-6">
         <AlertTriangle className="w-6 h-6 text-yellow-400" />
-        <h2 className="text-xl font-bold text-gray-100">
+        <h2 className="text-xl font-bold text-[var(--fg-1)]">
           Stock Alerts
         </h2>
       </div>
 
-      <div className="space-y-3 max-h-[500px] overflow-y-auto cyber-scrollbar">
+      <div className="space-y-3 max-h-[500px] overflow-y-auto phopy-scrollbar">
         {(alerts || []).map((alert, index) => (
           <motion.div
             key={alert.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="p-4 rounded-lg bg-cyber-darker/50 border border-cyber-border hover:border-cyber-primary/30 transition-all"
+            className="p-4 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)] hover:border-phopy-indigo/30 transition-all"
           >
             <div className="flex items-start gap-3">
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   alert.level === 'critical'
-                    ? 'bg-red-500/20 border border-red-500/30'
+                    ? 'bg-danger-soft border border-red-500/30'
                     : alert.level === 'warning'
                     ? 'bg-yellow-500/20 border border-yellow-500/30'
                     : 'bg-orange-500/20 border border-orange-500/30'
@@ -102,17 +102,17 @@ function StockAlerts() {
               <div className="flex-1">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-200">
+                    <h3 className="text-sm font-semibold text-[var(--fg-2)]">
                       {alert.item}
                     </h3>
-                    <p className="text-xs text-gray-500">{alert.category}</p>
+                    <p className="text-xs text-[var(--fg-4)]">{alert.category}</p>
                   </div>
                   <LevelBadge level={alert.level} />
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Current Stock</span>
+                    <span className="text-[var(--fg-3)]">Current Stock</span>
                     <span
                       className={`font-semibold ${
                         alert.level === 'critical'
@@ -126,14 +126,14 @@ function StockAlerts() {
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Minimum Required</span>
-                    <span className="text-gray-300 font-semibold">
+                    <span className="text-[var(--fg-3)]">Minimum Required</span>
+                    <span className="text-[var(--fg-2)] font-semibold">
                       {alert.minimum} {alert.unit}
                     </span>
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="w-full h-2 bg-cyber-darker rounded-full overflow-hidden">
+                  <div className="w-full h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{
@@ -163,7 +163,7 @@ function LevelBadge({ level }: { level: StockAlert['level'] }) {
   const config = {
     critical: {
       label: 'Critical',
-      className: 'bg-red-500/20 text-red-400 border-red-500/30',
+      className: 'bg-danger-soft text-red-400 border-red-500/30',
     },
     warning: {
       label: 'Warning',

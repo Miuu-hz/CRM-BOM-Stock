@@ -129,8 +129,8 @@ const SOURCE_BADGE: Record<string, { label: string; color: string; icon: React.R
   INVOICE:              { label: 'ใบแจ้งหนี้',     color: 'bg-blue-500/20 text-blue-400',    icon: <FileText className="w-3 h-3" /> },
   PAYMENT:              { label: 'รับชำระ',         color: 'bg-emerald-500/20 text-emerald-400', icon: <Zap className="w-3 h-3" /> },
   PURCHASE_INVOICE:     { label: 'ใบแจ้งหนี้ซื้อ', color: 'bg-orange-500/20 text-orange-400',icon: <FileText className="w-3 h-3" /> },
-  SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-red-500/20 text-red-400',   icon: <ShoppingCart className="w-3 h-3" /> },
-  MANUAL:               { label: 'Manual',         color: 'bg-gray-500/20 text-gray-400',    icon: <FileText className="w-3 h-3" /> },
+  SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-danger-soft text-red-400',   icon: <ShoppingCart className="w-3 h-3" /> },
+  MANUAL:               { label: 'Manual',         color: 'bg-gray-500/20 text-[var(--fg-3)]',    icon: <FileText className="w-3 h-3" /> },
 }
 
 const getSourceBadge = (refType?: string, isAuto?: boolean) => {
@@ -239,24 +239,24 @@ export default function JournalEntries() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <FileText className="w-7 h-7 text-cyber-primary" />
+            <FileText className="w-7 h-7 text-phopy-indigo" />
             สมุดรายวัน
           </h1>
-          <p className="text-gray-400 text-sm mt-0.5">
+          <p className="text-[var(--fg-3)] text-sm mt-0.5">
             {filtered.length} รายการ
             {draftCount > 0 && <span className="ml-2 text-yellow-400">· {draftCount} รอดำเนินการ</span>}
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchEntries} className="p-2 rounded-lg bg-cyber-card border border-cyber-border text-gray-400 hover:text-white">
+          <button onClick={fetchEntries} className="p-2 rounded-lg bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => setShowQuickModal(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-cyber-primary text-cyber-primary rounded-lg hover:bg-cyber-primary/10 transition-colors">
+            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors">
             <Zap className="w-4 h-4" /> บันทึกด่วน
           </button>
           <button onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80">
+            className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80">
             <Plus className="w-4 h-4" /> บันทึกรายการ
           </button>
         </div>
@@ -264,21 +264,21 @@ export default function JournalEntries() {
 
       {/* Summary Bar */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-cyber-card border border-cyber-border rounded-xl px-4 py-3">
-          <p className="text-xs text-gray-500 mb-0.5">เดบิตรวม</p>
-          <p className="text-lg font-bold text-cyber-primary">฿{fmt(totalDebit)}</p>
+        <div className="bg-phopy-card border border-[var(--border)] rounded-xl px-4 py-3">
+          <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม</p>
+          <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalDebit)}</p>
         </div>
-        <div className="bg-cyber-card border border-cyber-border rounded-xl px-4 py-3">
-          <p className="text-xs text-gray-500 mb-0.5">เครดิตรวม</p>
-          <p className="text-lg font-bold text-cyber-primary">฿{fmt(totalCredit)}</p>
+        <div className="bg-phopy-card border border-[var(--border)] rounded-xl px-4 py-3">
+          <p className="text-xs text-[var(--fg-4)] mb-0.5">เครดิตรวม</p>
+          <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalCredit)}</p>
         </div>
         <div className={`rounded-xl px-4 py-3 border ${
           Math.abs(totalDebit - totalCredit) < 0.01
-            ? 'bg-cyber-green/10 border-cyber-green/30'
+            ? 'bg-success/10 border-success/30'
             : 'bg-red-500/10 border-red-500/30'
         }`}>
-          <p className="text-xs text-gray-500 mb-0.5">สมดุล</p>
-          <p className={`text-lg font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-cyber-green' : 'text-red-400'}`}>
+          <p className="text-xs text-[var(--fg-4)] mb-0.5">สมดุล</p>
+          <p className={`text-lg font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-success' : 'text-red-400'}`}>
             {Math.abs(totalDebit - totalCredit) < 0.01 ? '✓ สมดุล' : `ต่าง ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
           </p>
         </div>
@@ -287,27 +287,27 @@ export default function JournalEntries() {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
           <input type="text" placeholder="ค้นหาเลขที่ หรือคำอธิบาย..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary"
+            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex gap-2">
           <input type="date" value={dateRange.start}
             onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-            className="px-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary"
+            className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
-          <span className="self-center text-gray-500">–</span>
+          <span className="self-center text-[var(--fg-4)]">–</span>
           <input type="date" value={dateRange.end}
             onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-            className="px-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary"
+            className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
-        <div className="flex rounded-lg overflow-hidden border border-cyber-border text-sm">
+        <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
           {(['all', 'draft', 'posted'] as const).map(f => (
             <button key={f} onClick={() => setFilterPosted(f)}
-              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-cyber-primary text-cyber-dark font-medium' : 'bg-cyber-card text-gray-400 hover:text-white'}`}>
+              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-phopy-card text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               {f === 'all' ? 'ทั้งหมด' : f === 'draft' ? 'รอดำเนินการ' : 'ยืนยันแล้ว'}
             </button>
           ))}
@@ -315,9 +315,9 @@ export default function JournalEntries() {
       </div>
 
       {/* Entries List */}
-      <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
+      <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
         {/* Table header */}
-        <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-cyber-dark/50 border-b border-cyber-border text-xs text-gray-500 font-medium uppercase tracking-wide">
+        <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">
           <span>เลขที่</span>
           <span>วันที่</span>
           <span>รายการ</span>
@@ -329,27 +329,27 @@ export default function JournalEntries() {
 
         {loading ? (
           <div className="p-12 text-center">
-            <div className="w-8 h-8 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
+          <div className="p-12 text-center text-[var(--fg-4)]">
             <FileText className="w-12 h-12 mx-auto mb-3 text-gray-700" />
             <p>ไม่พบรายการ</p>
           </div>
         ) : (
-          <div className="divide-y divide-cyber-border">
+          <div className="divide-y divide-[var(--border)]">
             {filtered.map(entry => {
               const badge = getSourceBadge(entry.referenceType, entry.isAutoGenerated)
               return (
                 <motion.div key={entry.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   onClick={() => openDetail(entry)}
-                  className="grid grid-cols-1 sm:grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-3.5 hover:bg-cyber-dark/40 cursor-pointer transition-colors items-center">
+                  className="grid grid-cols-1 sm:grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-3.5 hover:bg-[var(--bg)]/40 cursor-pointer transition-colors items-center">
                   {/* Entry number */}
-                  <span className="font-mono text-sm text-cyber-primary font-semibold">
-                    {entry.entryNumber || <span className="text-gray-600 italic text-xs">ไม่มีเลขที่</span>}
+                  <span className="font-mono text-sm text-phopy-indigo font-semibold">
+                    {entry.entryNumber || <span className="text-[var(--fg-4)] italic text-xs">ไม่มีเลขที่</span>}
                   </span>
                   {/* Date */}
-                  <span className="text-sm text-gray-300">{fmtDate(entry.date)}</span>
+                  <span className="text-sm text-[var(--fg-2)]">{fmtDate(entry.date)}</span>
                   {/* Description + badge */}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -364,16 +364,16 @@ export default function JournalEntries() {
                   </div>
                   {/* Debit */}
                   <span className="text-right text-sm font-mono text-white">
-                    {entry.totalDebit > 0 ? fmt(entry.totalDebit) : <span className="text-gray-600">–</span>}
+                    {entry.totalDebit > 0 ? fmt(entry.totalDebit) : <span className="text-[var(--fg-4)]">–</span>}
                   </span>
                   {/* Credit */}
                   <span className="text-right text-sm font-mono text-white">
-                    {entry.totalCredit > 0 ? fmt(entry.totalCredit) : <span className="text-gray-600">–</span>}
+                    {entry.totalCredit > 0 ? fmt(entry.totalCredit) : <span className="text-[var(--fg-4)]">–</span>}
                   </span>
                   {/* Status */}
                   <div className="flex justify-center">
                     {entry.isPosted ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-cyber-green bg-cyber-green/10 px-2 py-1 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-xs text-success bg-success/10 px-2 py-1 rounded-full">
                         <Lock className="w-3 h-3" /> ยืนยัน
                       </span>
                     ) : (
@@ -387,11 +387,11 @@ export default function JournalEntries() {
                     {!entry.isPosted && (
                       <>
                         <button onClick={e => handlePost(entry.id, e)}
-                          className="p-1.5 rounded-lg hover:bg-cyber-green/20 text-cyber-green transition-colors" title="ยืนยัน">
+                          className="p-1.5 rounded-lg hover:bg-success-soft text-success transition-colors" title="ยืนยัน">
                           <CheckCircle className="w-4 h-4" />
                         </button>
                         <button onClick={e => handleDelete(entry.id, entry.isPosted, e)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="ลบ">
+                          className="p-1.5 rounded-lg hover:bg-danger-soft text-red-400 transition-colors" title="ลบ">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </>
@@ -460,18 +460,18 @@ function DetailModal({ entry, loading, onClose, onPost }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         {/* Header */}
-        <div className="p-5 border-b border-cyber-border flex items-start justify-between shrink-0">
+        <div className="p-5 border-b border-[var(--border)] flex items-start justify-between shrink-0">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-lg font-bold font-mono text-cyber-primary">{entry.entryNumber}</span>
+              <span className="text-lg font-bold font-mono text-phopy-indigo">{entry.entryNumber}</span>
               <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${badge.color}`}>
                 {badge.icon}{badge.label}
               </span>
               {entry.isPosted ? (
-                <span className="inline-flex items-center gap-1 text-xs text-cyber-green bg-cyber-green/10 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center gap-1 text-xs text-success bg-success/10 px-2 py-0.5 rounded-full">
                   <Lock className="w-3 h-3" /> ยืนยันแล้ว
                 </span>
               ) : (
@@ -480,10 +480,10 @@ function DetailModal({ entry, loading, onClose, onPost }: {
                 </span>
               )}
             </div>
-            <p className="text-gray-300 text-sm mt-1">{entry.description}</p>
-            <p className="text-gray-500 text-xs mt-0.5">{fmtDate(entry.date)}</p>
+            <p className="text-[var(--fg-2)] text-sm mt-1">{entry.description}</p>
+            <p className="text-[var(--fg-4)] text-xs mt-0.5">{fmtDate(entry.date)}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white shrink-0">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -491,50 +491,50 @@ function DetailModal({ entry, loading, onClose, onPost }: {
         {/* T-Account Body */}
         <div className="overflow-y-auto p-5 space-y-4">
           {loading ? (
-            <div className="p-8 text-center"><div className="w-6 h-6 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto" /></div>
+            <div className="p-8 text-center"><div className="w-6 h-6 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" /></div>
           ) : (
             <>
               {/* T-Account table */}
               <div className="grid grid-cols-2 gap-3">
                 {/* Debit side */}
-                <div className="border border-cyber-border rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 bg-cyber-dark border-b border-cyber-border">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">เดบิต (Dr.)</p>
+                <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                  <div className="px-4 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
+                    <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">เดบิต (Dr.)</p>
                   </div>
-                  <div className="divide-y divide-cyber-border">
+                  <div className="divide-y divide-[var(--border)]">
                     {debitLines.length === 0 ? (
-                      <p className="px-4 py-3 text-xs text-gray-600">–</p>
+                      <p className="px-4 py-3 text-xs text-[var(--fg-4)]">–</p>
                     ) : debitLines.map((l, i) => (
                       <div key={i} className="px-4 py-3">
                         <p className="text-sm text-white font-medium">{l.accountName}</p>
-                        <p className="text-xs text-gray-500 font-mono">{l.accountCode}</p>
-                        {l.description && <p className="text-xs text-gray-600 mt-0.5">{l.description}</p>}
+                        <p className="text-xs text-[var(--fg-4)] font-mono">{l.accountCode}</p>
+                        {l.description && <p className="text-xs text-[var(--fg-4)] mt-0.5">{l.description}</p>}
                         <p className="text-sm font-bold text-white mt-1 text-right">฿{fmt(l.debit)}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="px-4 py-2 bg-cyber-dark/50 border-t border-cyber-border">
+                  <div className="px-4 py-2 bg-[var(--surface-2)] border-t border-[var(--border)]">
                     <p className="text-sm font-bold text-white text-right">฿{fmt(entry.totalDebit)}</p>
                   </div>
                 </div>
                 {/* Credit side */}
-                <div className="border border-cyber-border rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 bg-cyber-dark border-b border-cyber-border">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">เครดิต (Cr.)</p>
+                <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                  <div className="px-4 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
+                    <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">เครดิต (Cr.)</p>
                   </div>
-                  <div className="divide-y divide-cyber-border">
+                  <div className="divide-y divide-[var(--border)]">
                     {creditLines.length === 0 ? (
-                      <p className="px-4 py-3 text-xs text-gray-600">–</p>
+                      <p className="px-4 py-3 text-xs text-[var(--fg-4)]">–</p>
                     ) : creditLines.map((l, i) => (
                       <div key={i} className="px-4 py-3">
                         <p className="text-sm text-white font-medium">{l.accountName}</p>
-                        <p className="text-xs text-gray-500 font-mono">{l.accountCode}</p>
-                        {l.description && <p className="text-xs text-gray-600 mt-0.5">{l.description}</p>}
+                        <p className="text-xs text-[var(--fg-4)] font-mono">{l.accountCode}</p>
+                        {l.description && <p className="text-xs text-[var(--fg-4)] mt-0.5">{l.description}</p>}
                         <p className="text-sm font-bold text-white mt-1 text-right">฿{fmt(l.credit)}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="px-4 py-2 bg-cyber-dark/50 border-t border-cyber-border">
+                  <div className="px-4 py-2 bg-[var(--surface-2)] border-t border-[var(--border)]">
                     <p className="text-sm font-bold text-white text-right">฿{fmt(entry.totalCredit)}</p>
                   </div>
                 </div>
@@ -543,7 +543,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
               {/* Balance check */}
               <div className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${
                 Math.abs(entry.totalDebit - entry.totalCredit) < 0.01
-                  ? 'bg-cyber-green/10 border border-cyber-green/30 text-cyber-green'
+                  ? 'bg-success/10 border border-success/30 text-success'
                   : 'bg-red-500/10 border border-red-500/30 text-red-400'
               }`}>
                 <span className="flex items-center gap-2">
@@ -555,8 +555,8 @@ function DetailModal({ entry, loading, onClose, onPost }: {
               </div>
 
               {entry.notes && (
-                <div className="px-4 py-3 bg-cyber-dark rounded-lg text-sm text-gray-400">
-                  <span className="text-gray-600">หมายเหตุ: </span>{entry.notes}
+                <div className="px-4 py-3 bg-[var(--bg)] rounded-lg text-sm text-[var(--fg-3)]">
+                  <span className="text-[var(--fg-4)]">หมายเหตุ: </span>{entry.notes}
                 </div>
               )}
             </>
@@ -564,11 +564,11 @@ function DetailModal({ entry, loading, onClose, onPost }: {
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-cyber-border flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ปิด</button>
+        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
           {!entry.isPosted && (
             <button onClick={() => onPost(entry.id)}
-              className="flex items-center gap-2 px-5 py-2 bg-cyber-green/20 border border-cyber-green/40 text-cyber-green font-medium rounded-lg hover:bg-cyber-green/30 text-sm">
+              className="flex items-center gap-2 px-5 py-2 bg-success-soft border border-success/40 text-success font-medium rounded-lg hover:bg-success/30 text-sm">
               <CheckCircle className="w-4 h-4" /> ยืนยันรายการ
             </button>
           )}
@@ -658,24 +658,24 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md flex flex-col">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-cyber-border flex items-center justify-between shrink-0">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Zap className="w-5 h-5 text-cyber-primary" /> บันทึกรายการด่วน
+            <Zap className="w-5 h-5 text-phopy-indigo" /> บันทึกรายการด่วน
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-5 space-y-4">
           {/* Type toggle */}
-          <div className="flex rounded-lg overflow-hidden border border-cyber-border text-sm">
+          <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
             <button onClick={() => switchType('expense')}
-              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'expense' ? 'bg-red-500/20 text-red-400 border-r border-cyber-border' : 'bg-cyber-dark text-gray-400 hover:text-white border-r border-cyber-border'}`}>
+              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'expense' ? 'bg-danger-soft text-red-400 border-r border-[var(--border)]' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] border-r border-[var(--border)]'}`}>
               รายจ่าย
             </button>
             <button onClick={() => switchType('income')}
-              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'income' ? 'bg-cyber-green/20 text-cyber-green' : 'bg-cyber-dark text-gray-400 hover:text-white'}`}>
+              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'income' ? 'bg-success-soft text-success' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               รายรับ
             </button>
           </div>
@@ -683,15 +683,15 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
           {/* Date + Description */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">วันที่</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1.5">วันที่</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">คำอธิบาย *</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1.5">คำอธิบาย *</label>
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="เช่น ค่าไฟ มี.ค."
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -708,7 +708,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               DR (เดบิต) — {entryType === 'expense' ? 'ค่าใช้จ่ายอะไร?' : 'รับเงินที่ไหน?'}
             </label>
             <select value={drAccountId} onChange={e => setDrAccountId(e.target.value)}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-yellow-400">
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-yellow-400">
               <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
               {drAccounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
             </select>
@@ -716,12 +716,12 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
           {/* Amount */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">จำนวนเงิน *</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1.5">จำนวนเงิน *</label>
             <div className="relative">
               <input type="number" placeholder="0.00" value={amount}
                 onChange={e => setAmount(e.target.value)} onFocus={e => e.target.select()}
-                className="w-full px-3 py-2 pr-14 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm font-mono focus:outline-none focus:border-cyber-primary" />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">บาท</span>
+                className="w-full px-3 py-2 pr-14 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-phopy-indigo" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">บาท</span>
             </div>
           </div>
 
@@ -731,7 +731,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               CR (เครดิต) — {entryType === 'expense' ? 'จ่ายจากไหน?' : 'รายได้อะไร?'}
             </label>
             <select value={crAccountId} onChange={e => setCrAccountId(e.target.value)}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-blue-400">
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-blue-400">
               <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
               {crAccounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
             </select>
@@ -739,9 +739,9 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
           {/* Preview */}
           {parsedAmount > 0 && drAccountId && crAccountId && (
-            <div className="rounded-lg border border-cyber-border bg-cyber-dark/60 overflow-hidden text-sm">
-              <div className="px-3 py-1.5 border-b border-cyber-border bg-cyber-dark/80">
-                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Preview</p>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)]/60 overflow-hidden text-sm">
+              <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--bg)]/80">
+                <p className="text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">Preview</p>
               </div>
               <div className="px-3 py-2 space-y-1.5">
                 <div className="flex justify-between items-center">
@@ -760,10 +760,10 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-cyber-border flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSubmit} disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 text-sm">
+            className="flex items-center gap-2 px-5 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
             บันทึกรายการ
           </button>
@@ -835,12 +835,12 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
   const creditLines = lines.map((l, i) => ({ ...l, i })).filter(l => l.side === 'credit')
 
   const LineRow = ({ l, i }: { l: typeof lines[0] & { i: number }; i: number }) => (
-    <div className="space-y-2 p-3 bg-cyber-dark rounded-lg relative">
-      <button onClick={() => removeLine(l.i)} className="absolute top-2 right-2 p-1 text-gray-600 hover:text-red-400">
+    <div className="space-y-2 p-3 bg-[var(--bg)] rounded-lg relative">
+      <button onClick={() => removeLine(l.i)} className="absolute top-2 right-2 p-1 text-[var(--fg-4)] hover:text-red-400">
         <X className="w-3.5 h-3.5" />
       </button>
       <select value={l.accountId} onChange={e => updateLine(l.i, 'accountId', e.target.value)}
-        className="w-full px-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary">
+        className="w-full px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
         <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
         {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map(type => {
           const group = accounts.filter(a => a.type === type)
@@ -856,20 +856,20 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="คำอธิบาย (optional)" value={l.description}
           onChange={e => updateLine(l.i, 'description', e.target.value)}
-          className="px-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary col-span-2" />
+          className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">Dr.</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Dr.</span>
           <input type="number" placeholder="0" value={l.debit}
             onChange={e => updateLine(l.i, 'debit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
+            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
         </div>
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">Cr.</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Cr.</span>
           <input type="number" placeholder="0" value={l.credit}
             onChange={e => updateLine(l.i, 'credit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-cyber-card border border-cyber-border rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
+            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
         </div>
       </div>
     </div>
@@ -879,28 +879,28 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-cyber-border flex items-center justify-between shrink-0">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyber-primary" /> บันทึกรายการคู่
+            <FileText className="w-5 h-5 text-phopy-indigo" /> บันทึกรายการคู่
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">วันที่</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1.5">วันที่</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">คำอธิบาย *</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1.5">คำอธิบาย *</label>
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="เช่น บันทึกรับชำระ, บันทึกค่าใช้จ่าย..."
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -938,26 +938,26 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
           {/* Balance Check */}
           <div className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${
-            balanced ? 'bg-cyber-green/10 border border-cyber-green/30' : 'bg-red-500/10 border border-red-500/30'
+            balanced ? 'bg-success/10 border border-success/30' : 'bg-red-500/10 border border-red-500/30'
           }`}>
-            <span className={`flex items-center gap-2 ${balanced ? 'text-cyber-green' : 'text-red-400'}`}>
+            <span className={`flex items-center gap-2 ${balanced ? 'text-success' : 'text-red-400'}`}>
               <Calculator className="w-4 h-4" />
               {balanced ? '✓ สมดุล — พร้อมบันทึก' : `ไม่สมดุล: ต่างกัน ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
             </span>
-            <span className="text-xs text-gray-500">Dr. {fmt(totalDebit)} / Cr. {fmt(totalCredit)}</span>
+            <span className="text-xs text-[var(--fg-4)]">Dr. {fmt(totalDebit)} / Cr. {fmt(totalCredit)}</span>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">หมายเหตุ (optional)</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1.5">หมายเหตุ (optional)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary resize-none" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
 
-        <div className="p-5 border-t border-cyber-border flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSubmit} disabled={saving || !balanced}
-            className="flex items-center gap-2 px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+            className="flex items-center gap-2 px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             บันทึกรายการ
           </button>

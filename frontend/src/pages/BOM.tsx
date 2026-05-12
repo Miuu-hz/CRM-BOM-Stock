@@ -353,8 +353,8 @@ function BOMPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-cyber-primary animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">กำลังโหลดข้อมูล BOM...</p>
+          <Loader2 className="w-12 h-12 text-phopy-indigo animate-spin mx-auto mb-4" />
+          <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูล BOM...</p>
         </div>
       </div>
     )
@@ -366,10 +366,10 @@ function BOMPage() {
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-gray-300 mb-4">{error}</p>
+          <p className="text-[var(--fg-2)] mb-4">{error}</p>
           <button
             onClick={fetchData}
-            className="cyber-btn-primary flex items-center gap-2 mx-auto"
+            className="phopy-btn-primary flex items-center gap-2 mx-auto"
           >
             <RefreshCw className="w-5 h-5" />
             ลองใหม่
@@ -403,17 +403,17 @@ function BOMPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-100 mb-2">
-              <span className="neon-text">Bill of Materials</span>
+            <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
+              <span className="text-[var(--fg-1)]">Bill of Materials</span>
             </h1>
-            <p className="text-gray-400">Manage product formulas and materials with nested BOM support</p>
+            <p className="text-[var(--fg-3)]">Manage product formulas and materials with nested BOM support</p>
           </div>
           {activeTab === 'bom' && (
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleCreate}
-              className="cyber-btn-primary flex items-center gap-2"
+              className="phopy-btn-primary flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Create BOM
@@ -422,7 +422,7 @@ function BOMPage() {
         </div>
 
         {/* Tabs Navigation */}
-        <div className="flex gap-2 border-b border-cyber-border pb-2 overflow-x-auto">
+        <div className="flex gap-2 border-b border-[var(--border)] pb-2 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (
@@ -431,8 +431,8 @@ function BOMPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition-all whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'bg-cyber-primary/20 text-cyber-primary border-b-2 border-cyber-primary'
-                    : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-card/30'
+                    ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+                    : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-phopy-card/30'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -479,21 +479,21 @@ function BOMPage() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex gap-2 border-b border-cyber-border/50 pb-2 overflow-x-auto">
+            <div className="flex gap-2 border-b border-[var(--border)]/50 pb-2 overflow-x-auto">
               {filterTabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setBomFilter(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap text-sm ${
                     bomFilter === tab.id
-                      ? 'bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30'
-                      : 'text-gray-400 hover:text-gray-300 hover:bg-cyber-card/30 border border-transparent'
+                      ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30'
+                      : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-phopy-card/30 border border-transparent'
                   }`}
                 >
                   {tab.icon && <tab.icon className="w-4 h-4" />}
                   {tab.label}
                   {tab.count !== undefined && (
-                    <span className="ml-1 px-2 py-0.5 bg-cyber-dark rounded-full text-xs">
+                    <span className="ml-1 px-2 py-0.5 bg-[var(--bg)] rounded-full text-xs">
                       {tab.count}
                     </span>
                   )}
@@ -502,26 +502,26 @@ function BOMPage() {
             </div>
 
             {/* Search & View Toggle */}
-            <div className="cyber-card p-6">
+            <div className="phopy-card p-6">
               <div className="flex items-center gap-4">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
                   <input
                     type="text"
                     placeholder="Search BOM by product name or code..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="cyber-input pl-10 w-full"
+                    className="phopy-input pl-10 w-full"
                   />
                 </div>
                 {bomFilter !== 'tree-view' && (
-                  <div className="flex items-center gap-1 bg-cyber-dark/50 rounded-lg p-1 border border-cyber-border">
+                  <div className="flex items-center gap-1 bg-[var(--surface-2)] rounded-lg p-1 border border-[var(--border)]">
                     <button
                       onClick={() => setViewMode('card')}
                       className={`p-2 rounded-md transition-colors ${
                         viewMode === 'card'
-                          ? 'bg-cyber-primary/20 text-cyber-primary'
-                          : 'text-gray-400 hover:text-gray-300'
+                          ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                          : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                       }`}
                       title="Card View"
                     >
@@ -531,8 +531,8 @@ function BOMPage() {
                       onClick={() => setViewMode('list')}
                       className={`p-2 rounded-md transition-colors ${
                         viewMode === 'list'
-                          ? 'bg-cyber-primary/20 text-cyber-primary'
-                          : 'text-gray-400 hover:text-gray-300'
+                          ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                          : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                       }`}
                       title="List View"
                     >
@@ -545,16 +545,16 @@ function BOMPage() {
 
             {/* Empty state */}
             {filteredBOMs.length === 0 && (
-              <div className="cyber-card p-12 text-center">
-                <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-300 mb-2">
+              <div className="phopy-card p-12 text-center">
+                <Package className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
                   {searchTerm ? 'ไม่พบ BOM ที่ค้นหา' : 'ยังไม่มี BOM'}
                 </h3>
-                <p className="text-gray-500 mb-4">
+                <p className="text-[var(--fg-4)] mb-4">
                   {searchTerm ? 'ลองค้นหาด้วยคำอื่น' : 'เริ่มต้นสร้าง BOM แรกของคุณ'}
                 </p>
                 {!searchTerm && (
-                  <button onClick={handleCreate} className="cyber-btn-primary">
+                  <button onClick={handleCreate} className="phopy-btn-primary">
                     <Plus className="w-5 h-5 mr-2" />
                     สร้าง BOM
                   </button>
@@ -566,9 +566,9 @@ function BOMPage() {
             {bomFilter === 'tree-view' && filteredBOMs.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* BOM Selector */}
-                <div className="cyber-card p-4">
-                  <h3 className="text-lg font-semibold text-gray-200 mb-4 flex items-center gap-2">
-                    <FolderTree className="w-5 h-5 text-cyber-primary" />
+                <div className="phopy-card p-4">
+                  <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
+                    <FolderTree className="w-5 h-5 text-phopy-indigo" />
                     Select BOM to View
                   </h3>
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
@@ -578,17 +578,17 @@ function BOMPage() {
                         onClick={() => loadBOMTree(bom)}
                         className={`w-full text-left p-3 rounded-lg transition-all ${
                           selectedTreeBOM?.id === bom.id
-                            ? 'bg-cyber-primary/20 border border-cyber-primary/50'
-                            : 'bg-cyber-dark/30 hover:bg-cyber-dark/50 border border-cyber-border/30'
+                            ? 'bg-phopy-indigo-50 border border-phopy-indigo/50'
+                            : 'bg-[var(--bg)]/30 hover:bg-[var(--surface-2)] border border-[var(--border)]/30'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-200 font-medium">{bom.productName}</span>
+                          <span className="text-[var(--fg-2)] font-medium">{bom.productName}</span>
                           <LevelBadge level={0} />
                         </div>
-                        <div className="text-sm text-gray-500 mt-1">{bom.productCode}</div>
+                        <div className="text-sm text-[var(--fg-4)] mt-1">{bom.productCode}</div>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs text-cyber-green">฿{bom.totalCost?.toLocaleString()}</span>
+                          <span className="text-xs text-success">฿{bom.totalCost?.toLocaleString()}</span>
                           <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'} />
                         </div>
                       </button>
@@ -597,23 +597,23 @@ function BOMPage() {
                 </div>
 
                 {/* Tree Visualization */}
-                <div className="lg:col-span-2 cyber-card p-4">
+                <div className="lg:col-span-2 phopy-card p-4">
                   {treeLoading ? (
                     <div className="flex items-center justify-center h-[400px]">
-                      <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+                      <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
                     </div>
                   ) : treeData ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-200 flex items-center gap-2">
-                          <GitBranch className="w-5 h-5 text-cyber-primary" />
+                        <h3 className="text-lg font-semibold text-[var(--fg-2)] flex items-center gap-2">
+                          <GitBranch className="w-5 h-5 text-phopy-indigo" />
                           BOM Hierarchy: {treeData.productName}
                         </h3>
-                        <span className="text-2xl font-bold text-cyber-primary">
+                        <span className="text-2xl font-bold text-phopy-indigo">
                           ฿{treeData.totalCost?.toLocaleString()}
                         </span>
                       </div>
-                      <div className="border-l-2 border-cyber-border/50 ml-4 space-y-2">
+                      <div className="border-l-2 border-[var(--border)]/50 ml-4 space-y-2">
                         <TreeNode
                           node={treeData}
                           expandedNodes={expandedTreeNodes}
@@ -623,7 +623,7 @@ function BOMPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center h-[400px] text-gray-500">
+                    <div className="flex items-center justify-center h-[400px] text-[var(--fg-4)]">
                       <div className="text-center">
                         <FolderTree className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Select a BOM to view its hierarchy</p>
@@ -652,9 +652,9 @@ function BOMPage() {
 
             {/* List View */}
             {bomFilter !== 'tree-view' && viewMode === 'list' && filteredBOMs.length > 0 && (
-              <div className="cyber-card overflow-hidden">
+              <div className="phopy-card overflow-hidden">
                 <div className="overflow-x-auto">
-                <table className="cyber-table w-full">
+                <table className="phopy-table w-full">
                   <thead>
                     <tr>
                       <th className="w-8"></th>
@@ -672,22 +672,22 @@ function BOMPage() {
                     {filteredBOMs.map((bom) => (
                       <React.Fragment key={bom.id}>
                         <tr
-                          className="cursor-pointer hover:bg-cyber-card/30"
+                          className="cursor-pointer hover:bg-phopy-card/30"
                           onClick={() => toggleExpanded(bom.id)}
                         >
                           <td>
                             {expandedIds.has(bom.id) ? (
-                              <ChevronUp className="w-4 h-4 text-gray-400" />
+                              <ChevronUp className="w-4 h-4 text-[var(--fg-3)]" />
                             ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                              <ChevronDown className="w-4 h-4 text-[var(--fg-3)]" />
                             )}
                           </td>
                           <td>
                             <div>
-                              <span className="text-gray-200 font-medium">
+                              <span className="text-[var(--fg-2)] font-medium">
                                 {bom.productName}
                               </span>
-                              <span className="text-gray-500 text-sm ml-2">
+                              <span className="text-[var(--fg-4)] text-sm ml-2">
                                 {bom.productCode}
                               </span>
                             </div>
@@ -701,14 +701,14 @@ function BOMPage() {
                               isTopLevel={bom.isTopLevel || bom.level === 0}
                             />
                           </td>
-                          <td className="text-cyber-primary">{bom.version}</td>
-                          <td className="text-gray-400">{bom.items?.length || bom.materials?.length || 0} items</td>
+                          <td className="text-phopy-indigo">{bom.version}</td>
+                          <td className="text-[var(--fg-3)]">{bom.items?.length || bom.materials?.length || 0} items</td>
                           <td>
                             <StatusBadge
                               status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'}
                             />
                           </td>
-                          <td className="text-cyber-green font-semibold">
+                          <td className="text-success font-semibold">
                             ฿{(bom.totalCost || 0).toLocaleString()}
                           </td>
                           <td>
@@ -718,24 +718,24 @@ function BOMPage() {
                             >
                               <button
                                 onClick={() => handleEdit(bom)}
-                                className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+                                className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
                                 title="แก้ไข"
                               >
-                                <Edit className="w-4 h-4 text-gray-400 hover:text-cyber-primary" />
+                                <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
                               </button>
                               <button
                                 onClick={() => handleCopy(bom)}
-                                className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+                                className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
                                 title="คัดลอก"
                               >
-                                <Copy className="w-4 h-4 text-gray-400 hover:text-cyber-green" />
+                                <Copy className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
                               </button>
                               <button
                                 onClick={() => handleDelete(bom.id, bom.productName)}
                                 className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
                                 title="ลบ"
                               >
-                                <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-400" />
+                                <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-red-400" />
                               </button>
                             </div>
                           </td>
@@ -743,7 +743,7 @@ function BOMPage() {
                         {/* Expanded Materials */}
                         {expandedIds.has(bom.id) && (
                           <tr>
-                            <td colSpan={9} className="bg-cyber-dark/30 p-0">
+                            <td colSpan={9} className="bg-[var(--bg)]/30 p-0">
                               <div className="p-4">
                                 <BOMItemsTable items={bom.items || bom.materials || []} />
                               </div>
@@ -797,36 +797,36 @@ function TreeNode({
 
     return (
       <div style={{ marginLeft: paddingLeft }}>
-        <div className="flex items-center gap-2 py-2 border-b border-cyber-border/20">
+        <div className="flex items-center gap-2 py-2 border-b border-[var(--border)]/20">
           {isChildBOM && item.childBOM ? (
             <>
               <button
                 onClick={() => onToggle(item.id)}
-                className="p-1 rounded hover:bg-cyber-card/50"
+                className="p-1 rounded hover:bg-phopy-card/50"
               >
                 {expandedNodes.has(item.id) ? (
-                  <ChevronDown className="w-4 h-4 text-cyber-primary" />
+                  <ChevronDown className="w-4 h-4 text-phopy-indigo" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-cyber-primary" />
+                  <ChevronRight className="w-4 h-4 text-phopy-indigo" />
                 )}
               </button>
-              <FolderTree className="w-4 h-4 text-cyber-purple" />
-              <span className="text-gray-200 font-medium">{item.childBomProductName}</span>
+              <FolderTree className="w-4 h-4 text-purple-500" />
+              <span className="text-[var(--fg-2)] font-medium">{item.childBomProductName}</span>
               <LevelBadge level={item.childBOM?.level || level + 1} />
-              <span className="text-xs text-gray-500">{item.childBomProductCode}</span>
-              <span className="text-xs text-cyber-primary">× {item.quantity}</span>
-              <span className="ml-auto text-cyber-green text-sm">
+              <span className="text-xs text-[var(--fg-4)]">{item.childBomProductCode}</span>
+              <span className="text-xs text-phopy-indigo">× {item.quantity}</span>
+              <span className="ml-auto text-success text-sm">
                 ฿{((item.childBOM?.totalCost || 0) * item.quantity).toLocaleString()}
               </span>
             </>
           ) : (
             <>
               <div className="w-6" />
-              <Box className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-300">{item.material?.name || item.materialId}</span>
-              <span className="text-xs text-gray-500">{item.material?.code}</span>
-              <span className="text-xs text-gray-400">{item.quantity} {item.unit || item.material?.unit}</span>
-              <span className="ml-auto text-gray-400 text-sm">
+              <Box className="w-4 h-4 text-[var(--fg-4)]" />
+              <span className="text-[var(--fg-2)]">{item.material?.name || item.materialId}</span>
+              <span className="text-xs text-[var(--fg-4)]">{item.material?.code}</span>
+              <span className="text-xs text-[var(--fg-3)]">{item.quantity} {item.unit || item.material?.unit}</span>
+              <span className="ml-auto text-[var(--fg-3)] text-sm">
                 ฿{((item.material?.unitCost || 0) * item.quantity).toLocaleString()}
               </span>
             </>
@@ -835,7 +835,7 @@ function TreeNode({
         
         {/* Render child BOM items if expanded */}
         {isChildBOM && item.childBOM && expandedNodes.has(item.id) && (
-          <div className="border-l border-cyber-border/30 ml-4">
+          <div className="border-l border-[var(--border)]/30 ml-4">
             {item.childBOM.items?.map((childItem) => (
               <TreeNode
                 key={childItem.id}
@@ -857,29 +857,29 @@ function TreeNode({
   return (
     <div>
       <div
-        className="flex items-center gap-2 py-3 px-3 bg-cyber-primary/5 rounded-lg border border-cyber-primary/20"
+        className="flex items-center gap-2 py-3 px-3 bg-phopy-indigo/5 rounded-lg border border-phopy-indigo-50"
         style={{ marginLeft: paddingLeft }}
       >
         {childItems.some((i) => i.itemType === 'CHILD_BOM') ? (
           <button
             onClick={() => onToggle(bomNode.id)}
-            className="p-1 rounded hover:bg-cyber-card/50"
+            className="p-1 rounded hover:bg-phopy-card/50"
           >
             {isExpanded ? (
-              <ChevronDown className="w-5 h-5 text-cyber-primary" />
+              <ChevronDown className="w-5 h-5 text-phopy-indigo" />
             ) : (
-              <ChevronRight className="w-5 h-5 text-cyber-primary" />
+              <ChevronRight className="w-5 h-5 text-phopy-indigo" />
             )}
           </button>
         ) : (
           <div className="w-7" />
         )}
-        <Layers className="w-5 h-5 text-cyber-primary" />
-        <span className="text-gray-100 font-semibold">{bomNode.productName}</span>
+        <Layers className="w-5 h-5 text-phopy-indigo" />
+        <span className="text-[var(--fg-1)] font-semibold">{bomNode.productName}</span>
         <LevelBadge level={bomNode.level} />
         <BOMTypeBadge isSemiFinished={bomNode.isSemiFinished} isTopLevel={bomNode.level === 0} />
-        <span className="text-xs text-gray-500">{bomNode.productCode}</span>
-        <span className="ml-auto text-cyber-primary font-bold">
+        <span className="text-xs text-[var(--fg-4)]">{bomNode.productCode}</span>
+        <span className="ml-auto text-phopy-indigo font-bold">
           ฿{(bomNode.totalCost || 0).toLocaleString()}
         </span>
       </div>
@@ -906,13 +906,13 @@ function TreeNode({
 function BOMItemsTable({ items }: { items: BOMItem[] }) {
   return (
     <div>
-      <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-        <Boxes className="w-4 h-4 text-cyber-primary" />
+      <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
+        <Boxes className="w-4 h-4 text-phopy-indigo" />
         BOM Items
       </h4>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-gray-500 border-b border-cyber-border/30">
+          <tr className="text-[var(--fg-4)] border-b border-[var(--border)]/30">
             <th className="text-left py-2">Type</th>
             <th className="text-left py-2">Name</th>
             <th className="text-left py-2">Code</th>
@@ -932,29 +932,29 @@ function BOMItemsTable({ items }: { items: BOMItem[] }) {
               : (item.material?.unitCost || 0) * item.quantity
 
             return (
-              <tr key={item.id} className="border-b border-cyber-border/10">
+              <tr key={item.id} className="border-b border-[var(--border)]/10">
                 <td className="py-2">
                   {isChildBOM ? (
-                    <span className="flex items-center gap-1 text-cyber-purple">
+                    <span className="flex items-center gap-1 text-purple-500">
                       <GitBranch className="w-3 h-3" />
                       <span className="text-xs">Child BOM</span>
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-gray-400">
+                    <span className="flex items-center gap-1 text-[var(--fg-3)]">
                       <Box className="w-3 h-3" />
                       <span className="text-xs">Material</span>
                     </span>
                   )}
                 </td>
-                <td className="py-2 text-gray-300">{name}</td>
-                <td className="py-2 text-gray-500">{code}</td>
-                <td className="py-2 text-right text-gray-400">
+                <td className="py-2 text-[var(--fg-2)]">{name}</td>
+                <td className="py-2 text-[var(--fg-4)]">{code}</td>
+                <td className="py-2 text-right text-[var(--fg-3)]">
                   {item.quantity} {item.unit || item.material?.unit}
                 </td>
-                <td className="py-2 text-right text-gray-400">
+                <td className="py-2 text-right text-[var(--fg-3)]">
                   {!isChildBOM && `฿${unitCost.toLocaleString()}`}
                 </td>
-                <td className="py-2 text-right text-cyber-green">
+                <td className="py-2 text-right text-success">
                   {!isChildBOM && `฿${total.toLocaleString()}`}
                 </td>
               </tr>
@@ -1014,17 +1014,17 @@ function BOMCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="cyber-card p-6"
+      className="phopy-card p-6"
     >
       {/* BOM Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-lg flex items-center justify-center shadow-neon ${
+          <div className={`w-16 h-16 rounded-lg flex items-center justify-center shadow-2 ${
             bom.isSemiFinished 
-              ? 'bg-gradient-to-br from-cyber-purple to-cyber-magenta' 
+              ? 'bg-gradient-to-br from-purple-500 to-pink-500' 
               : bom.level === 0
-              ? 'bg-gradient-to-br from-cyber-primary to-cyber-secondary'
-              : 'bg-gradient-to-br from-cyber-green to-cyber-primary'
+              ? 'bg-gradient-to-br from-phopy-indigo to-phopy-indigo-600'
+              : 'bg-gradient-to-br from-success to-phopy-indigo'
           }`}>
             {bom.isSemiFinished ? (
               <GitBranch className="w-8 h-8 text-white" />
@@ -1034,7 +1034,7 @@ function BOMCard({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-xl font-bold text-gray-100">{bom.productName}</h3>
+              <h3 className="text-xl font-bold text-[var(--fg-1)]">{bom.productName}</h3>
               <LevelBadge level={bom.level} />
               <BOMTypeBadge 
                 isSemiFinished={bom.isSemiFinished} 
@@ -1042,14 +1042,14 @@ function BOMCard({
               />
             </div>
             <div className="flex items-center gap-3 mt-1">
-              <span className="text-sm text-gray-400">{bom.productCode}</span>
-              <span className="text-sm text-gray-400">•</span>
-              <span className="text-sm text-cyber-primary">{bom.version}</span>
-              <span className="text-sm text-gray-400">•</span>
-              <span className="text-sm text-gray-400">{bom.productCategory}</span>
+              <span className="text-sm text-[var(--fg-3)]">{bom.productCode}</span>
+              <span className="text-sm text-[var(--fg-3)]">•</span>
+              <span className="text-sm text-phopy-indigo">{bom.version}</span>
+              <span className="text-sm text-[var(--fg-3)]">•</span>
+              <span className="text-sm text-[var(--fg-3)]">{bom.productCategory}</span>
             </div>
             {bom.parentProductName && (
-              <div className="flex items-center gap-1 mt-1 text-sm text-gray-500">
+              <div className="flex items-center gap-1 mt-1 text-sm text-[var(--fg-4)]">
                 <ArrowRight className="w-3 h-3" />
                 <span>Used in: {bom.parentProductName}</span>
               </div>
@@ -1061,24 +1061,24 @@ function BOMCard({
           <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'} />
           <button
             onClick={() => onEdit(bom)}
-            className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+            className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
             title="แก้ไข"
           >
-            <Edit className="w-5 h-5 text-gray-400 hover:text-cyber-primary" />
+            <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-phopy-indigo" />
           </button>
           <button
             onClick={() => onCopy(bom)}
-            className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+            className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
             title="คัดลอก"
           >
-            <Copy className="w-5 h-5 text-gray-400 hover:text-cyber-green" />
+            <Copy className="w-5 h-5 text-[var(--fg-3)] hover:text-success" />
           </button>
           <button
             onClick={() => onDelete(bom.id, bom.productName)}
             className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
             title="ลบ"
           >
-            <Trash2 className="w-5 h-5 text-gray-400 hover:text-red-400" />
+            <Trash2 className="w-5 h-5 text-[var(--fg-3)] hover:text-red-400" />
           </button>
         </div>
       </div>
@@ -1087,7 +1087,7 @@ function BOMCard({
       <div className="mb-4">
         <button
           onClick={handleToggle}
-          className="flex items-center gap-1.5 text-sm text-cyber-primary hover:text-cyber-primary/80 mb-2"
+          className="flex items-center gap-1.5 text-sm text-phopy-indigo hover:text-phopy-indigo/80 mb-2"
         >
           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           <span className="font-medium">รายการวัตถุดิบ ({itemCount})</span>
@@ -1102,20 +1102,20 @@ function BOMCard({
               className="overflow-hidden"
             >
               {cardLoading ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-gray-400">
+                <div className="flex items-center gap-2 py-4 text-sm text-[var(--fg-3)]">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   กำลังโหลด...
                 </div>
               ) : itemCount === 0 ? (
-                <div className="py-4 text-center text-sm text-gray-500 bg-cyber-dark/30 rounded-lg border border-cyber-border/30">
-                  <Box className="w-5 h-5 mx-auto mb-1 text-gray-600" />
+                <div className="py-4 text-center text-sm text-[var(--fg-4)] bg-[var(--bg)]/30 rounded-lg border border-[var(--border)]/30">
+                  <Box className="w-5 h-5 mx-auto mb-1 text-[var(--fg-4)]" />
                   ไม่มีรายการวัตถุดิบ
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-cyber-border/30">
+                <div className="overflow-x-auto rounded-lg border border-[var(--border)]/30">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-gray-500 border-b border-cyber-border/30 bg-cyber-dark/30">
+                      <tr className="text-[var(--fg-4)] border-b border-[var(--border)]/30 bg-[var(--bg)]/30">
                         <th className="text-left py-2 px-3">ประเภท</th>
                         <th className="text-left py-2 px-3">รายการ</th>
                         <th className="text-left py-2 px-3">รหัส</th>
@@ -1133,29 +1133,29 @@ function BOMCard({
                         const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
 
                         return (
-                          <tr key={item.id} className="border-b border-cyber-border/10 hover:bg-cyber-dark/20">
+                          <tr key={item.id} className="border-b border-[var(--border)]/10 hover:bg-[var(--bg)]/20">
                             <td className="py-2 px-3">
                               {isChildBOM ? (
-                                <span className="flex items-center gap-1 text-cyber-purple text-xs">
+                                <span className="flex items-center gap-1 text-purple-500 text-xs">
                                   <GitBranch className="w-3 h-3" />
                                   Child BOM
                                 </span>
                               ) : (
-                                <span className="flex items-center gap-1 text-gray-400 text-xs">
+                                <span className="flex items-center gap-1 text-[var(--fg-3)] text-xs">
                                   <Box className="w-3 h-3" />
                                   วัตถุดิบ
                                 </span>
                               )}
                             </td>
-                            <td className="py-2 px-3 text-gray-300 whitespace-nowrap">{name}</td>
-                            <td className="py-2 px-3 text-gray-500 text-xs">{code}</td>
-                            <td className="py-2 px-3 text-right text-gray-400">
+                            <td className="py-2 px-3 text-[var(--fg-2)] whitespace-nowrap">{name}</td>
+                            <td className="py-2 px-3 text-[var(--fg-4)] text-xs">{code}</td>
+                            <td className="py-2 px-3 text-right text-[var(--fg-3)]">
                               {Number(item.quantity)} {item.unit || item.material?.unit}
                             </td>
-                            <td className="py-2 px-3 text-right text-gray-400">
+                            <td className="py-2 px-3 text-right text-[var(--fg-3)]">
                               {!isChildBOM && `฿${unitCost.toLocaleString()}`}
                             </td>
-                            <td className="py-2 px-3 text-right text-cyber-green font-semibold">
+                            <td className="py-2 px-3 text-right text-success font-semibold">
                               {!isChildBOM && `฿${itemTotal.toLocaleString()}`}
                             </td>
                           </tr>
@@ -1171,13 +1171,13 @@ function BOMCard({
       </div>
 
       {/* Total Cost */}
-      <div className="flex items-center justify-between pt-4 border-t border-cyber-border">
-        <div className="text-sm text-gray-400">
+      <div className="flex items-center justify-between pt-4 border-t border-[var(--border)]">
+        <div className="text-sm text-[var(--fg-3)]">
           อัปเดตล่าสุด: {fmtDate(bom.updatedAt)}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-gray-400">ต้นทุนผลิตรวม:</span>
-          <span className="text-2xl font-bold text-cyber-primary">
+          <span className="text-[var(--fg-3)]">ต้นทุนผลิตรวม:</span>
+          <span className="text-2xl font-bold text-phopy-indigo">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>
         </div>
@@ -1189,9 +1189,9 @@ function BOMCard({
 // Level Badge Component
 function LevelBadge({ level }: { level: number }) {
   const colors = [
-    'bg-cyber-primary/20 text-cyber-primary border-cyber-primary/30',
-    'bg-cyber-purple/20 text-cyber-purple border-cyber-purple/30',
-    'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+    'bg-phopy-indigo-50 text-phopy-indigo border-phopy-indigo/30',
+    'bg-purple-500/20 text-purple-500 border-purple-500/30',
+    'bg-success-soft text-success border-success/30',
     'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
     'bg-orange-500/20 text-orange-400 border-orange-500/30',
   ]
@@ -1214,7 +1214,7 @@ function BOMTypeBadge({
 }) {
   if (isTopLevel) {
     return (
-      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-cyber-green/20 text-cyber-green border-cyber-green/30 flex items-center gap-1">
+      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-success-soft text-success border-success/30 flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" />
         Finished
       </span>
@@ -1223,7 +1223,7 @@ function BOMTypeBadge({
   
   if (isSemiFinished) {
     return (
-      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-cyber-purple/20 text-cyber-purple border-cyber-purple/30 flex items-center gap-1">
+      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-purple-500/20 text-purple-500 border-purple-500/30 flex items-center gap-1">
         <GitBranch className="w-3 h-3" />
         Semi-finished
       </span>
@@ -1231,7 +1231,7 @@ function BOMTypeBadge({
   }
 
   return (
-    <span className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-500/20 text-gray-400 border-gray-500/30 flex items-center gap-1">
+    <span className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30 flex items-center gap-1">
       <Box className="w-3 h-3" />
       Component
     </span>
@@ -1250,22 +1250,22 @@ function StatCard({
   color: string
 }) {
   const colorClasses: Record<string, string> = {
-    primary: 'text-cyber-primary',
-    green: 'text-cyber-green',
-    purple: 'text-cyber-purple',
+    primary: 'text-phopy-indigo',
+    green: 'text-success',
+    purple: 'text-purple-500',
     yellow: 'text-yellow-400',
   }
 
   return (
-    <div className="cyber-card p-4">
+    <div className="phopy-card p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-400 mb-1">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color] || 'text-cyber-primary'}`}>
+          <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
+          <p className={`text-2xl font-bold ${colorClasses[color] || 'text-phopy-indigo'}`}>
             {value}
           </p>
         </div>
-        <Icon className={`w-8 h-8 opacity-50 ${colorClasses[color] || 'text-cyber-primary'}`} />
+        <Icon className={`w-8 h-8 opacity-50 ${colorClasses[color] || 'text-phopy-indigo'}`} />
       </div>
     </div>
   )
@@ -1275,7 +1275,7 @@ function StatusBadge({ status }: { status: 'active' | 'draft' | 'archived' }) {
   const config = {
     active: {
       label: 'Active',
-      className: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+      className: 'bg-success-soft text-success border-success/30',
     },
     draft: {
       label: 'Draft',
@@ -1283,7 +1283,7 @@ function StatusBadge({ status }: { status: 'active' | 'draft' | 'archived' }) {
     },
     archived: {
       label: 'Archived',
-      className: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+      className: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
     },
   }
 

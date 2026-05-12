@@ -22,22 +22,22 @@ const data = [
 
 function SalesChart() {
   return (
-    <div className="cyber-card p-6">
+    <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <TrendingUp className="w-6 h-6 text-cyber-green" />
-          <h2 className="text-xl font-bold text-gray-100">
+          <TrendingUp className="w-6 h-6 text-success" />
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Sales Overview
           </h2>
         </div>
         <div className="flex gap-2">
-          <button className="px-3 py-1 text-xs rounded-lg bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30">
+          <button className="px-3 py-1 text-xs rounded-lg bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30">
             7 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-cyber-card/50 text-gray-400">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-phopy-card/50 text-[var(--fg-3)]">
             30 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-cyber-card/50 text-gray-400">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-phopy-card/50 text-[var(--fg-3)]">
             90 Days
           </button>
         </div>
@@ -88,16 +88,16 @@ function SalesChart() {
 
       <div className="mt-4 grid grid-cols-3 gap-4">
         <div className="text-center">
-          <p className="text-xs text-gray-400 mb-1">Total Sales</p>
-          <p className="text-lg font-bold text-cyber-primary">฿22.7M</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">Total Sales</p>
+          <p className="text-lg font-bold text-phopy-indigo">฿22.7M</p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-gray-400 mb-1">Avg. Order Value</p>
-          <p className="text-lg font-bold text-cyber-green">฿62,500</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">Avg. Order Value</p>
+          <p className="text-lg font-bold text-success">฿62,500</p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-gray-400 mb-1">Total Orders</p>
-          <p className="text-lg font-bold text-cyber-purple">366</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">Total Orders</p>
+          <p className="text-lg font-bold text-purple-500">366</p>
         </div>
       </div>
     </div>

@@ -313,16 +313,16 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="cyber-card w-full max-w-3xl max-h-[90vh] overflow-auto"
+        className="phopy-card w-full max-w-3xl max-h-[90vh] overflow-auto"
       >
         {/* Header */}
-        <div className="p-6 border-b border-cyber-border flex justify-between items-center">
+        <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Upload className="w-6 h-6 text-cyber-primary" />
+            <Upload className="w-6 h-6 text-phopy-indigo" />
             นำเข้า{type === 'customers' ? 'ลูกค้า' : 'สินค้า'}
           </h2>
-          <button onClick={handleClose} className="p-2 hover:bg-cyber-dark rounded-lg">
-            <X className="w-5 h-5 text-gray-400" />
+          <button onClick={handleClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
@@ -332,7 +332,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
             <div
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                file ? 'border-cyber-primary bg-cyber-primary/10' : 'border-cyber-border hover:border-cyber-primary/50'
+                file ? 'border-phopy-indigo bg-phopy-indigo/10' : 'border-[var(--border)] hover:border-phopy-indigo/50'
               }`}
             >
               <input
@@ -342,17 +342,17 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <FileSpreadsheet className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <FileSpreadsheet className="w-12 h-12 text-[var(--fg-3)] mx-auto mb-4" />
               {file ? (
                 <>
                   <p className="text-white font-medium">{file.name}</p>
-                  <p className="text-sm text-gray-400">คลิกเพื่อเปลี่ยนไฟล์</p>
+                  <p className="text-sm text-[var(--fg-3)]">คลิกเพื่อเปลี่ยนไฟล์</p>
                 </>
               ) : (
                 <>
-                  <p className="text-gray-300 font-medium">คลิกเพื่อเลือกไฟล์</p>
-                  <p className="text-sm text-gray-500 mt-2">รองรับ .xlsx, .xls, .csv</p>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-[var(--fg-2)] font-medium">คลิกเพื่อเลือกไฟล์</p>
+                  <p className="text-sm text-[var(--fg-4)] mt-2">รองรับ .xlsx, .xls, .csv</p>
+                  <p className="text-xs text-[var(--fg-4)] mt-1">
                     {type === 'customers' 
                       ? 'รองรับไฟล์จาก FlowAccount (Thai) หรือคอลัมน์: name, type, contact_name, email, phone'
                       : 'รองรับทั้งภาษาไทย (รหัสสินค้า, ชื่อสินค้า, หน่วย) หรือภาษาอังกฤษ: name, category, unit, quantity, min_stock, max_stock, location'
@@ -366,8 +366,8 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
-              <span className="ml-2 text-gray-400">กำลังอ่านไฟล์...</span>
+              <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+              <span className="ml-2 text-[var(--fg-3)]">กำลังอ่านไฟล์...</span>
             </div>
           )}
 
@@ -385,12 +385,12 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
                 </span>
               </div>
               {validation.errors.length > 0 && (
-                <div className="mt-2 text-sm text-gray-400 max-h-32 overflow-auto">
+                <div className="mt-2 text-sm text-[var(--fg-3)] max-h-32 overflow-auto">
                   {validation.errors.slice(0, 5).map((err: string, i: number) => (
                     <div key={i} className="py-1">• {err}</div>
                   ))}
                   {validation.errors.length > 5 && (
-                    <div className="py-1 text-gray-500">...และอีก {validation.errors.length - 5} รายการ</div>
+                    <div className="py-1 text-[var(--fg-4)]">...และอีก {validation.errors.length - 5} รายการ</div>
                   )}
                 </div>
               )}
@@ -400,9 +400,9 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
           {/* Preview Data */}
           {previewData.length > 0 && !result && (
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-2">ตัวอย่างข้อมูล ({previewData.length} แถวแรก)</h3>
+              <h3 className="text-sm font-medium text-[var(--fg-3)] mb-2">ตัวอย่างข้อมูล ({previewData.length} แถวแรก)</h3>
               <div className="overflow-x-auto">
-                <table className="cyber-table w-full text-sm">
+                <table className="phopy-table w-full text-sm">
                   <thead>
                     <tr>
                       {Object.keys(previewData[0]).map((key) => (
@@ -431,7 +431,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
                 <CheckCircle className={`w-8 h-8 ${result.failed > 0 ? 'text-yellow-400' : 'text-green-400'}`} />
                 <div>
                   <h3 className="text-lg font-bold text-white">นำเข้าเสร็จสิ้น</h3>
-                  <p className="text-gray-400">{result.success} สำเร็จ, {result.failed} ล้มเหลว</p>
+                  <p className="text-[var(--fg-3)]">{result.success} สำเร็จ, {result.failed} ล้มเหลว</p>
                 </div>
               </div>
               
@@ -439,7 +439,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
                 <div className="mt-4 p-4 bg-black/30 rounded-lg max-h-48 overflow-auto">
                   <h4 className="text-sm font-medium text-yellow-400 mb-2">ข้อผิดพลาด:</h4>
                   {result.errors.map((err: string, i: number) => (
-                    <div key={i} className="text-sm text-gray-400 py-1">• {err}</div>
+                    <div key={i} className="text-sm text-[var(--fg-3)] py-1">• {err}</div>
                   ))}
                 </div>
               )}
@@ -448,10 +448,10 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-cyber-border flex justify-end gap-3">
+        <div className="p-6 border-t border-[var(--border)] flex justify-end gap-3">
           <button
             onClick={handleClose}
-            className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300 hover:bg-cyber-dark"
+            className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)]"
           >
             {result ? 'ปิด' : 'ยกเลิก'}
           </button>
@@ -460,7 +460,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
             <button
               onClick={handleImport}
               disabled={!file || loading || importing || (validation && validation.invalid > 0)}
-              className="cyber-btn-primary flex items-center gap-2 disabled:opacity-50"
+              className="phopy-btn-primary flex items-center gap-2 disabled:opacity-50"
             >
               {importing ? (
                 <>

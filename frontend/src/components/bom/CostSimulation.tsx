@@ -135,7 +135,7 @@ function CostSimulation() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
       </div>
     )
   }
@@ -143,14 +143,14 @@ function CostSimulation() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="cyber-card p-6">
+      <div className="phopy-card p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyber-green to-cyan-500 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-success to-cyan-500 flex items-center justify-center">
             <TrendingUp className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-100">Cost Simulation</h2>
-            <p className="text-sm text-gray-400">
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">Cost Simulation</h2>
+            <p className="text-sm text-[var(--fg-3)]">
               Simulate production costs with different material prices
             </p>
           </div>
@@ -158,11 +158,11 @@ function CostSimulation() {
 
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm text-gray-400 mb-2">Select BOM</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">Select BOM</label>
             <select
               value={selectedBomId}
               onChange={(e) => setSelectedBomId(e.target.value)}
-              className="cyber-input w-full"
+              className="phopy-input w-full"
             >
               <option value="">-- Select a BOM --</option>
               {(boms || []).map((bom) => (
@@ -178,32 +178,32 @@ function CostSimulation() {
               <div className="flex gap-2">
                 <button
                   onClick={() => applyPercentageChange(-10)}
-                  className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                  className="px-3 py-2 bg-danger-soft text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
                 >
                   -10%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(-5)}
-                  className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                  className="px-3 py-2 bg-danger-soft text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
                 >
                   -5%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(5)}
-                  className="px-3 py-2 bg-cyber-green/20 text-cyber-green rounded-lg hover:bg-cyber-green/30 text-sm"
+                  className="px-3 py-2 bg-success-soft text-success rounded-lg hover:bg-success/30 text-sm"
                 >
                   +5%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(10)}
-                  className="px-3 py-2 bg-cyber-green/20 text-cyber-green rounded-lg hover:bg-cyber-green/30 text-sm"
+                  className="px-3 py-2 bg-success-soft text-success rounded-lg hover:bg-success/30 text-sm"
                 >
                   +10%
                 </button>
               </div>
               <button
                 onClick={resetPrices}
-                className="px-4 py-2 border border-cyber-border rounded-lg text-gray-400 hover:text-gray-300 flex items-center gap-2"
+                className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
                 Reset
@@ -220,10 +220,10 @@ function CostSimulation() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="cyber-card p-4"
+              className="phopy-card p-4"
             >
-              <p className="text-sm text-gray-400 mb-1">Original Cost</p>
-              <p className="text-2xl font-bold text-gray-300">
+              <p className="text-sm text-[var(--fg-3)] mb-1">Original Cost</p>
+              <p className="text-2xl font-bold text-[var(--fg-2)]">
                 ฿{originalTotal.toLocaleString()}
               </p>
             </motion.div>
@@ -232,10 +232,10 @@ function CostSimulation() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="cyber-card p-4"
+              className="phopy-card p-4"
             >
-              <p className="text-sm text-gray-400 mb-1">Simulated Cost</p>
-              <p className="text-2xl font-bold text-cyber-primary">
+              <p className="text-sm text-[var(--fg-3)] mb-1">Simulated Cost</p>
+              <p className="text-2xl font-bold text-phopy-indigo">
                 ฿{simulatedTotal.toLocaleString()}
               </p>
             </motion.div>
@@ -244,30 +244,30 @@ function CostSimulation() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className={`cyber-card p-4 ${
+              className={`phopy-card p-4 ${
                 totalChange > 0
                   ? 'border-red-500/50'
                   : totalChange < 0
-                  ? 'border-cyber-green/50'
+                  ? 'border-success/50'
                   : ''
               }`}
             >
-              <p className="text-sm text-gray-400 mb-1">Difference</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">Difference</p>
               <div className="flex items-center gap-2">
                 {totalChange > 0 ? (
                   <TrendingUp className="w-6 h-6 text-red-400" />
                 ) : totalChange < 0 ? (
-                  <TrendingDown className="w-6 h-6 text-cyber-green" />
+                  <TrendingDown className="w-6 h-6 text-success" />
                 ) : (
-                  <Minus className="w-6 h-6 text-gray-400" />
+                  <Minus className="w-6 h-6 text-[var(--fg-3)]" />
                 )}
                 <span
                   className={`text-2xl font-bold ${
                     totalChange > 0
                       ? 'text-red-400'
                       : totalChange < 0
-                      ? 'text-cyber-green'
-                      : 'text-gray-400'
+                      ? 'text-success'
+                      : 'text-[var(--fg-3)]'
                   }`}
                 >
                   {totalChange > 0 ? '+' : ''}฿{totalChange.toLocaleString()}
@@ -277,8 +277,8 @@ function CostSimulation() {
                     totalChange > 0
                       ? 'text-red-400'
                       : totalChange < 0
-                      ? 'text-cyber-green'
-                      : 'text-gray-400'
+                      ? 'text-success'
+                      : 'text-[var(--fg-3)]'
                   }`}
                 >
                   ({totalChangePercent > 0 ? '+' : ''}
@@ -293,15 +293,15 @@ function CostSimulation() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="cyber-card overflow-hidden"
+            className="phopy-card overflow-hidden"
           >
-            <div className="p-4 border-b border-cyber-border">
-              <h3 className="text-lg font-semibold text-gray-100">
+            <div className="p-4 border-b border-[var(--border)]">
+              <h3 className="text-lg font-semibold text-[var(--fg-1)]">
                 Adjust Material Prices
               </h3>
             </div>
             <div className="overflow-x-auto">
-            <table className="cyber-table w-full">
+            <table className="phopy-table w-full">
               <thead>
                 <tr>
                   <th>Material</th>
@@ -316,12 +316,12 @@ function CostSimulation() {
               <tbody>
                 {(simulatedCosts || []).map((cost) => (
                   <tr key={cost.materialId}>
-                    <td className="text-gray-200">{cost.materialName}</td>
-                    <td className="text-gray-400">{cost.quantity}</td>
-                    <td className="text-gray-400">฿{cost.originalCost.toLocaleString()}</td>
+                    <td className="text-[var(--fg-2)]">{cost.materialName}</td>
+                    <td className="text-[var(--fg-3)]">{cost.quantity}</td>
+                    <td className="text-[var(--fg-3)]">฿{cost.originalCost.toLocaleString()}</td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-gray-500" />
+                        <DollarSign className="w-4 h-4 text-[var(--fg-4)]" />
                         <input
                           type="number"
                           value={priceChanges[cost.materialId] ?? cost.originalCost}
@@ -331,14 +331,14 @@ function CostSimulation() {
                               parseFloat(e.target.value) || 0
                             )
                           }
-                          className="cyber-input w-24 text-sm py-1"
+                          className="phopy-input w-24 text-sm py-1"
                           min="0"
                           step="0.01"
                         />
                       </div>
                     </td>
-                    <td className="text-gray-400">฿{cost.originalTotal.toLocaleString()}</td>
-                    <td className="text-cyber-primary font-semibold">
+                    <td className="text-[var(--fg-3)]">฿{cost.originalTotal.toLocaleString()}</td>
+                    <td className="text-phopy-indigo font-semibold">
                       ฿{cost.simulatedTotal.toLocaleString()}
                     </td>
                     <td>
@@ -346,17 +346,17 @@ function CostSimulation() {
                         {cost.change > 0 ? (
                           <TrendingUp className="w-4 h-4 text-red-400" />
                         ) : cost.change < 0 ? (
-                          <TrendingDown className="w-4 h-4 text-cyber-green" />
+                          <TrendingDown className="w-4 h-4 text-success" />
                         ) : (
-                          <Minus className="w-4 h-4 text-gray-500" />
+                          <Minus className="w-4 h-4 text-[var(--fg-4)]" />
                         )}
                         <span
                           className={
                             cost.change > 0
                               ? 'text-red-400'
                               : cost.change < 0
-                              ? 'text-cyber-green'
-                              : 'text-gray-500'
+                              ? 'text-success'
+                              : 'text-[var(--fg-4)]'
                           }
                         >
                           {cost.change > 0 ? '+' : ''}
@@ -376,34 +376,34 @@ function CostSimulation() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`cyber-card p-6 ${
-                totalChange > 0 ? 'border-red-500/30' : 'border-cyber-green/30'
+              className={`phopy-card p-6 ${
+                totalChange > 0 ? 'border-red-500/30' : 'border-success/30'
               }`}
             >
-              <h3 className="text-lg font-semibold text-gray-100 mb-4">Impact Analysis</h3>
+              <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4">Impact Analysis</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <p className="text-gray-400 mb-2">Per Unit Impact</p>
+                  <p className="text-[var(--fg-3)] mb-2">Per Unit Impact</p>
                   <p
                     className={`text-3xl font-bold ${
-                      totalChange > 0 ? 'text-red-400' : 'text-cyber-green'
+                      totalChange > 0 ? 'text-red-400' : 'text-success'
                     }`}
                   >
                     {totalChange > 0 ? '+' : ''}฿{totalChange.toLocaleString()}
                   </p>
                 </div>
                 <div>
-                  <p className="text-gray-400 mb-2">For 100 Units</p>
+                  <p className="text-[var(--fg-3)] mb-2">For 100 Units</p>
                   <p
                     className={`text-3xl font-bold ${
-                      totalChange > 0 ? 'text-red-400' : 'text-cyber-green'
+                      totalChange > 0 ? 'text-red-400' : 'text-success'
                     }`}
                   >
                     {totalChange > 0 ? '+' : ''}฿{(totalChange * 100).toLocaleString()}
                   </p>
                 </div>
               </div>
-              <p className="text-gray-500 mt-4 text-sm">
+              <p className="text-[var(--fg-4)] mt-4 text-sm">
                 {totalChange > 0
                   ? `⚠️ Material price increases will raise production costs by ${totalChangePercent.toFixed(
                       1
@@ -419,12 +419,12 @@ function CostSimulation() {
 
       {/* Empty State */}
       {!selectedBomId && (
-        <div className="cyber-card p-12 text-center">
-          <TrendingUp className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+        <div className="phopy-card p-12 text-center">
+          <TrendingUp className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
             Select a BOM to Simulate
           </h3>
-          <p className="text-gray-500">
+          <p className="text-[var(--fg-4)]">
             Choose a Bill of Materials to simulate cost changes based on material price
             adjustments
           </p>

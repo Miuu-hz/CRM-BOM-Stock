@@ -242,15 +242,15 @@ function ModalShell({ title, onClose, children, footer }: {
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
       onClick={e => e.stopPropagation()}
-      className="bg-cyber-card rounded-2xl border border-cyber-border w-full max-w-4xl max-h-[90vh] flex flex-col">
-      <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+      className="bg-phopy-card rounded-2xl border border-[var(--border)] w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white">{title}</h2>
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="overflow-y-auto modal-scroll p-5 space-y-4 flex-1">{children}</div>
-      <div className="p-5 border-t border-cyber-border shrink-0">{footer}</div>
+      <div className="p-5 border-t border-[var(--border)] shrink-0">{footer}</div>
     </motion.div>
   </div>
   )
@@ -258,7 +258,7 @@ function ModalShell({ title, onClose, children, footer }: {
 
 const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
   <div>
-    <label className="block text-sm font-medium text-gray-300 mb-1.5">
+    <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
       {label}{required && <span className="text-red-400 ml-1">*</span>}
     </label>
     {children}
@@ -266,7 +266,7 @@ const Field = ({ label, required, children }: { label: string; required?: boolea
 )
 
 const inputCls = (disabled?: boolean) =>
-  `w-full px-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-white text-sm focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
+  `w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white text-sm focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
 
 const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onAddNew }: {
   materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
@@ -281,7 +281,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)] pointer-events-none" />
         <input type="text"
           value={open ? query : (selected ? `${selected.code} · ${selected.name}` : '')}
           onChange={e => setQuery(e.target.value)}
@@ -289,50 +289,50 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           disabled={disabled}
           placeholder="ค้นหา รหัส / ชื่อวัสดุ..."
-          className={`w-full pl-8 pr-7 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-center">
-              <p className="text-xs text-gray-500 mb-2">ไม่พบสินค้า "{query}"</p>
+              <p className="text-xs text-[var(--fg-4)] mb-2">ไม่พบสินค้า "{query}"</p>
               {onAddNew && (
                 <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
-                  className="flex items-center gap-1.5 mx-auto px-3 py-1.5 text-xs bg-cyber-green/15 text-cyber-green border border-cyber-green/30 rounded-lg hover:bg-cyber-green/25 transition-colors">
+                  className="flex items-center gap-1.5 mx-auto px-3 py-1.5 text-xs bg-success/15 text-success border border-success/30 rounded-lg hover:bg-success/25 transition-colors">
                   <Plus className="w-3 h-3" /> สร้างสินค้าใหม่เข้า Stock
                 </button>
               )}
             </div>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500 flex items-center justify-between">
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)] flex items-center justify-between">
                 <span>{filtered.length} รายการ</span>
                 {onAddNew && (
                   <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
-                    className="flex items-center gap-1 text-cyber-green hover:text-cyber-green/80 transition-colors">
+                    className="flex items-center gap-1 text-success hover:text-success/80 transition-colors">
                     <Plus className="w-3 h-3" /> สินค้าใหม่
                   </button>
                 )}
               </div>
               {filtered.map(m => (
                 <button key={m.id} onMouseDown={() => { onChange(m.id, m); setOpen(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === m.id ? 'bg-cyber-primary/10' : ''}`}>
-                  <span className="text-xs font-mono text-cyber-primary w-20 shrink-0">{m.code}</span>
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === m.id ? 'bg-phopy-indigo/10' : ''}`}>
+                  <span className="text-xs font-mono text-phopy-indigo w-20 shrink-0">{m.code}</span>
                   <span className="text-sm text-white flex-1 truncate">{m.name}</span>
-                  <span className="text-xs text-gray-500 shrink-0">{m.unit}</span>
+                  <span className="text-xs text-[var(--fg-4)] shrink-0">{m.unit}</span>
                   <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
                     m.stockStatus === 'ADEQUATE' ? 'text-green-400 bg-green-400/10' :
                     m.stockStatus === 'OVERSTOCK' ? 'text-blue-400 bg-blue-400/10' :
                     m.stockStatus === 'LOW' ? 'text-yellow-400 bg-yellow-400/10' :
                     m.stockStatus === 'CRITICAL' ? 'text-red-400 bg-red-400/10' :
-                    'text-gray-500 bg-gray-500/10'
+                    'text-[var(--fg-4)] bg-gray-500/10'
                   }`}>
                     {m.currentStock ?? 0} {m.unit}
                   </span>
@@ -358,7 +358,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)] pointer-events-none" />
         <input type="text"
           value={open ? query : (selected ? `${selected.code} · ${selected.name}` : '')}
           onChange={e => setQuery(e.target.value)}
@@ -366,26 +366,26 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder={placeholder}
-          className={`w-full pl-8 pr-7 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">ไม่พบผู้ขาย</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบผู้ขาย</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} ราย</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} ราย</div>
               {filtered.map(s => (
                 <button key={s.id} onMouseDown={() => { onChange(s.id); setOpen(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === s.id ? 'bg-cyber-primary/10' : ''}`}>
-                  <span className="text-xs font-mono text-cyber-primary w-24 shrink-0">{s.code}</span>
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === s.id ? 'bg-phopy-indigo/10' : ''}`}>
+                  <span className="text-xs font-mono text-phopy-indigo w-24 shrink-0">{s.code}</span>
                   <span className="text-sm text-white flex-1 truncate">{s.name}</span>
                 </button>
               ))}
@@ -410,7 +410,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)] pointer-events-none" />
         <input type="text"
           value={open ? query : (selected ? `${selected.po_number} — ${selected.supplier_name}` : '')}
           onChange={e => setQuery(e.target.value)}
@@ -418,28 +418,28 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder="ค้นหาเลขที่ใบสั่งซื้อ / ผู้ขาย..."
-          className={`w-full pl-8 pr-7 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} รายการ</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ</div>
               {filtered.map(o => (
                 <button key={o.id} onMouseDown={() => { onChange(o.id); setOpen(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === o.id ? 'bg-cyber-primary/10' : ''}`}>
-                  <span className="text-xs font-mono text-cyber-primary w-28 shrink-0">{o.po_number}</span>
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === o.id ? 'bg-phopy-indigo/10' : ''}`}>
+                  <span className="text-xs font-mono text-phopy-indigo w-28 shrink-0">{o.po_number}</span>
                   <span className="text-sm text-white flex-1 truncate">{o.supplier_name}</span>
-                  <span className="text-xs text-gray-500 shrink-0">{o.status === 'RECEIVED' ? 'รับครบ' : o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออนุมัติ/รับ'}</span>
+                  <span className="text-xs text-[var(--fg-4)] shrink-0">{o.status === 'RECEIVED' ? 'รับครบ' : o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออนุมัติ/รับ'}</span>
                 </button>
               ))}
             </>
@@ -470,10 +470,10 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
       {selectedItems.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selectedItems.map(r => (
-            <span key={r.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-cyber-green/15 border border-cyber-green/30 rounded-lg text-xs text-cyber-green">
+            <span key={r.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-success/15 border border-success/30 rounded-lg text-xs text-success">
               <span className="font-mono">{r.gr_number}</span>
               {!disabled && (
-                <button onMouseDown={() => removeItem(r.id)} className="hover:text-white">
+                <button onMouseDown={() => removeItem(r.id)} className="hover:text-[var(--fg-1)]">
                   <X className="w-3 h-3" />
                 </button>
               )}
@@ -484,34 +484,34 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
       {/* Search input */}
       {!disabled && (
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)] pointer-events-none" />
           <input type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
             placeholder="+ เพิ่มใบรับสินค้า GR..."
-            className="w-full pl-8 pr-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary"
+            className="w-full pl-8 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
           />
         </div>
       )}
       {disabled && selectedItems.length === 0 && (
-        <p className="text-xs text-gray-600 py-2">— เลือก PO ก่อน —</p>
+        <p className="text-xs text-[var(--fg-4)] py-2">— เลือก PO ก่อน —</p>
       )}
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">
               {values.length > 0 ? 'เพิ่มทุก GR แล้ว' : 'ไม่พบใบรับสินค้า'}
             </p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} รายการ (คลิกเพื่อเพิ่ม)</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ (คลิกเพื่อเพิ่ม)</div>
               {filtered.map(r => (
                 <button key={r.id} onMouseDown={() => { onChange([...values, r.id]); setQuery(''); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors">
-                  <span className="text-xs font-mono text-cyber-green w-32 shrink-0">{r.gr_number}</span>
-                  <span className="text-xs text-gray-400 flex-1 truncate">PO: {r.po_number}</span>
+                  className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors">
+                  <span className="text-xs font-mono text-success w-32 shrink-0">{r.gr_number}</span>
+                  <span className="text-xs text-[var(--fg-3)] flex-1 truncate">PO: {r.po_number}</span>
                   <span className={`text-xs shrink-0 ${r.status === 'CONFIRMED' ? 'text-green-400' : 'text-yellow-400'}`}>
                     {r.status === 'CONFIRMED' ? 'ยืนยันแล้ว' : 'ร่าง'}
                   </span>
@@ -539,7 +539,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)] pointer-events-none" />
         <input type="text"
           value={open ? query : (selected ? `${selected.pr_number} · ${selected.requester_name}` : '')}
           onChange={e => setQuery(e.target.value)}
@@ -547,31 +547,31 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder="ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ..."
-          className={`w-full pl-8 pr-7 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('', undefined)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-cyber-card border border-cyber-border rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-gray-500 text-center">ไม่พบใบขอซื้อ</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบใบขอซื้อ</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-cyber-border/50 text-xs text-gray-500">{filtered.length} รายการ</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ</div>
               {filtered.map(r => (
                 <button key={r.id} onMouseDown={() => { onChange(r.id, r); setOpen(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-cyber-dark text-left transition-colors ${value === r.id ? 'bg-cyber-primary/10' : ''}`}>
-                  <span className="text-xs font-mono text-cyber-primary w-28 shrink-0">{r.pr_number}</span>
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === r.id ? 'bg-phopy-indigo/10' : ''}`}>
+                  <span className="text-xs font-mono text-phopy-indigo w-28 shrink-0">{r.pr_number}</span>
                   <span className="text-sm text-white flex-1 truncate">{r.requester_name}</span>
                   <span className={`text-xs shrink-0 px-1.5 py-0.5 rounded-full ${
                     r.status === 'APPROVED' ? 'text-green-400 bg-green-500/10' :
                     r.status === 'PENDING' ? 'text-blue-400 bg-blue-500/10' :
-                    'text-gray-500 bg-gray-500/10'
+                    'text-[var(--fg-4)] bg-gray-500/10'
                   }`}>{
                     r.status === 'APPROVED' ? 'อนุมัติแล้ว' :
                     r.status === 'PENDING' ? 'รออนุมัติ' : 'ร่าง'
@@ -592,8 +592,8 @@ const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string;
     {entries.map((e, i) => (
       <div key={i} className={`flex items-center gap-2 text-xs ${e.dr ? '' : 'pl-6'}`}>
         <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-red-400'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
-        <span className="text-gray-300 flex-1">{e.account}</span>
-        <span className="text-gray-400">{e.label}</span>
+        <span className="text-[var(--fg-2)] flex-1">{e.account}</span>
+        <span className="text-[var(--fg-3)]">{e.label}</span>
         {e.amount !== undefined && <span className="text-white font-medium">{formatCurrency(e.amount)}</span>}
       </div>
     ))}
@@ -623,52 +623,52 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="p-4 border-b border-cyber-border flex items-center justify-between">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
           <h3 className="text-white font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 space-y-3">
           {err && <p className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2">{err}</p>}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">รหัสผู้ขาย</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">รหัสผู้ขาย</label>
               <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value }))}
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">ชื่อบริษัท <span className="text-red-400">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อบริษัท <span className="text-red-400">*</span></label>
               <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                 placeholder="ชื่อบริษัท / ร้านค้า"
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">ชื่อผู้ติดต่อ <span className="text-red-400">*</span></label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อผู้ติดต่อ <span className="text-red-400">*</span></label>
             <input value={form.contactName} onChange={e => setForm(p => ({ ...p, contactName: e.target.value }))}
               placeholder="ชื่อ-นามสกุล"
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">เบอร์โทร</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">เบอร์โทร</label>
               <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
                 placeholder="0xx-xxx-xxxx"
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">อีเมล</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">อีเมล</label>
               <input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                 placeholder="email@example.com"
-                className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
-          <p className="text-xs text-gray-500">สามารถแก้ไขข้อมูลเพิ่มเติมได้ที่เมนู CRM → Suppliers</p>
+          <p className="text-xs text-[var(--fg-4)]">สามารถแก้ไขข้อมูลเพิ่มเติมได้ที่เมนู CRM → Suppliers</p>
         </div>
-        <div className="p-4 border-t border-cyber-border flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">ยกเลิก</button>
+        <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
           <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm bg-cyber-primary text-cyber-dark font-semibold rounded-lg hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2">
+            className="px-4 py-2 text-sm bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2">
             {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
             บันทึก
           </button>
@@ -724,22 +724,22 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
     setSaving(false)
   }
 
-  const inp = 'w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-lg text-white text-sm focus:outline-none focus:border-cyber-primary'
+  const inp = 'w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo'
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-lg shadow-2xl">
-        <div className="p-4 border-b border-cyber-border flex items-center justify-between">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
           <div>
             <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-              <Package className="w-4 h-4 text-cyber-green" />
+              <Package className="w-4 h-4 text-success" />
               เพิ่มสินค้าใหม่เข้า Stock
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5">สินค้าจะถูกบันทึกใน Stock ทันที และเลือกได้ใน PO</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">สินค้าจะถูกบันทึกใน Stock ทันที และเลือกได้ใน PO</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
 
         <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
@@ -748,12 +748,12 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* SKU + ชื่อสินค้า */}
           <div className="grid grid-cols-5 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs text-gray-400 mb-1">SKU <span className="text-red-400">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">SKU <span className="text-red-400">*</span></label>
               <input value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
                 placeholder="เช่น MAT-001" className={inp} />
             </div>
             <div className="col-span-3">
-              <label className="block text-xs text-gray-400 mb-1">ชื่อสินค้า <span className="text-red-400">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อสินค้า <span className="text-red-400">*</span></label>
               <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                 placeholder="ชื่อวัตถุดิบ / สินค้า" className={inp} />
             </div>
@@ -762,7 +762,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* ประเภท + หน่วย */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">ประเภท</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ประเภท</label>
               <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className={inp}>
                 <option value="raw">วัตถุดิบ (Raw)</option>
                 <option value="wip">กึ่งสำเร็จรูป (WIP)</option>
@@ -771,7 +771,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">หน่วย</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วย</label>
               <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} className={inp}>
                 {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
               </select>
@@ -781,13 +781,13 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* ราคาต้นทุน + ราคาขาย */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span></label>
               <input type="number" min="0" step="0.01" value={form.unitCost}
                 onChange={e => setForm(p => ({ ...p, unitCost: parseFloat(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">ราคาขาย/หน่วย (฿) <span className="text-cyber-green/70">ขาย</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาขาย/หน่วย (฿) <span className="text-success/70">ขาย</span></label>
               <input type="number" min="0" step="0.01" value={form.unitPrice}
                 onChange={e => setForm(p => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
@@ -797,19 +797,19 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* Min/Max + จำนวนเริ่มต้น */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Min Stock</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">Min Stock</label>
               <input type="number" min="0" value={form.minStock}
                 onChange={e => setForm(p => ({ ...p, minStock: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Max Stock</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">Max Stock</label>
               <input type="number" min="0" value={form.maxStock}
                 onChange={e => setForm(p => ({ ...p, maxStock: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">จำนวนเริ่มต้น</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
               <input type="number" min="0" value={form.quantity}
                 onChange={e => setForm(p => ({ ...p, quantity: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
@@ -818,16 +818,16 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 
           {/* สถานที่เก็บ */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">สถานที่เก็บ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">สถานที่เก็บ</label>
             <input value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))}
               placeholder="เช่น คลังหลัก, A-12" className={inp} />
           </div>
         </div>
 
-        <div className="p-4 border-t border-cyber-border flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">ยกเลิก</button>
+        <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
           <button onClick={save} disabled={saving}
-            className="px-5 py-2 text-sm bg-cyber-green text-cyber-dark font-semibold rounded-lg hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2">
+            className="px-5 py-2 text-sm bg-success text-white font-semibold rounded-lg hover:bg-success/80 disabled:opacity-50 flex items-center gap-2">
             {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
             บันทึกเข้า Stock
           </button>
@@ -1669,21 +1669,21 @@ const Purchase = () => {
 
   const StatusBadge = ({ status }: { status: string }) => {
     const cfg: Record<string, { bg: string; text: string; label: string }> = {
-      DRAFT:     { bg: 'bg-gray-500/15',   text: 'text-gray-400',   label: 'ร่าง' },
+      DRAFT:     { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-3)]',   label: 'ร่าง' },
       PENDING:   { bg: 'bg-yellow-500/15', text: 'text-yellow-400', label: 'รออนุมัติ' },
       SUBMITTED: { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: 'ส่งอนุมัติ' },
-      APPROVED:  { bg: 'bg-green-500/15',  text: 'text-green-400',  label: 'อนุมัติแล้ว' },
+      APPROVED:  { bg: 'bg-success-soft',  text: 'text-green-400',  label: 'อนุมัติแล้ว' },
       REJECTED:  { bg: 'bg-red-500/15',    text: 'text-red-400',    label: 'ปฏิเสธ' },
       CONFIRMED: { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   label: 'ยืนยัน' },
       PARTIAL:   { bg: 'bg-orange-500/15', text: 'text-orange-400', label: 'บางส่วน' },
       RECEIVED:  { bg: 'bg-green-600/15',  text: 'text-green-400',  label: 'รับครบ' },
       UNPAID:    { bg: 'bg-red-500/15',    text: 'text-red-400',    label: 'ค้างจ่าย' },
-      PAID:      { bg: 'bg-green-500/15',  text: 'text-green-400',  label: 'จ่ายแล้ว' },
+      PAID:      { bg: 'bg-success-soft',  text: 'text-green-400',  label: 'จ่ายแล้ว' },
       OVERDUE:   { bg: 'bg-red-600/15',    text: 'text-red-400',    label: 'เกินกำหนด' },
-      CANCELLED: { bg: 'bg-gray-500/15',   text: 'text-gray-500',   label: 'ยกเลิก' },
+      CANCELLED: { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-4)]',   label: 'ยกเลิก' },
       ISSUED:    { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: 'ออกแล้ว' },
     }
-    const c = cfg[status] || { bg: 'bg-gray-500/15', text: 'text-gray-400', label: status }
+    const c = cfg[status] || { bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]', label: status }
     return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>
   }
 
@@ -1691,42 +1691,42 @@ const Purchase = () => {
   const ConvertToPOModal = () => (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-cyber-card border border-cyber-border rounded-2xl w-full max-w-md">
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center">
+        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md">
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-white">แปลงเป็นใบสั่งซื้อ</h2>
-            <p className="text-sm text-gray-400 mt-0.5">เลือกผู้ขายเพื่อสร้าง PO จากใบขอซื้อนี้</p>
+            <p className="text-sm text-[var(--fg-3)] mt-0.5">เลือกผู้ขายเพื่อสร้าง PO จากใบขอซื้อนี้</p>
           </div>
-          <button onClick={() => setConvertPRId(null)} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white">
+          <button onClick={() => setConvertPRId(null)} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
               ผู้ขาย <span className="text-red-400">*</span>
             </label>
             <select value={convertForm.supplier_id} onChange={e => setConvertForm(p => ({ ...p, supplier_id: e.target.value }))}
-              className="w-full px-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-white focus:outline-none focus:border-cyber-primary">
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo">
               <option value="">-- เลือกผู้ขาย --</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">กำหนดส่งสินค้า</label>
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">กำหนดส่งสินค้า</label>
             <input type="date" value={convertForm.expected_date} onChange={e => setConvertForm(p => ({ ...p, expected_date: e.target.value }))}
-              className="w-full px-3 py-2.5 bg-cyber-dark border border-cyber-border rounded-xl text-white focus:outline-none focus:border-cyber-primary" />
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">หมายเหตุ</label>
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">หมายเหตุ</label>
             <textarea value={convertForm.notes} onChange={e => setConvertForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-              className="w-full px-3 py-2 bg-cyber-dark border border-cyber-border rounded-xl text-white text-sm focus:outline-none focus:border-cyber-primary resize-none" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
-        <div className="p-5 border-t border-cyber-border flex gap-3">
-          <button onClick={() => setConvertPRId(null)} className="px-4 py-2 text-gray-400 hover:text-white text-sm transition-colors">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex gap-3">
+          <button onClick={() => setConvertPRId(null)} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm transition-colors">ยกเลิก</button>
           <button onClick={handleDoConvert} disabled={converting || !convertForm.supplier_id}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 disabled:opacity-50 transition-colors">
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 transition-colors">
             {converting
               ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               : <ArrowRight className="w-4 h-4" />}
@@ -1768,49 +1768,49 @@ const Purchase = () => {
         {/* Metric cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-br from-cyber-primary/20 to-cyber-secondary/20 rounded-xl p-5 border border-cyber-primary/30">
-            <p className="text-sm text-gray-400">ยอดสั่งซื้อรวม</p>
-            <p className="text-2xl font-bold text-cyber-primary mt-1">{formatCurrency(summary?.purchaseOrders.totalAmount || 0)}</p>
-            <p className="text-xs text-gray-500 mt-1">{summary?.purchaseOrders.total || 0} ใบสั่งซื้อ</p>
+            className="bg-gradient-to-br from-phopy-indigo/20 to-phopy-indigo-600/20 rounded-xl p-5 border border-phopy-indigo/30">
+            <p className="text-sm text-[var(--fg-3)]">ยอดสั่งซื้อรวม</p>
+            <p className="text-2xl font-bold text-phopy-indigo mt-1">{formatCurrency(summary?.purchaseOrders.totalAmount || 0)}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.purchaseOrders.total || 0} ใบสั่งซื้อ</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="bg-gradient-to-br from-cyber-purple/20 to-cyber-magenta/20 rounded-xl p-5 border border-cyber-purple/30">
-            <p className="text-sm text-gray-400">ใบขอซื้อรออนุมัติ</p>
-            <p className="text-2xl font-bold text-cyber-purple mt-1">{summary?.purchaseRequests.pending || 0}</p>
-            <p className="text-xs text-gray-500 mt-1">จาก {summary?.purchaseRequests.total || 0} ใบทั้งหมด</p>
+            className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl p-5 border border-purple-500/30">
+            <p className="text-sm text-[var(--fg-3)]">ใบขอซื้อรออนุมัติ</p>
+            <p className="text-2xl font-bold text-purple-500 mt-1">{summary?.purchaseRequests.pending || 0}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">จาก {summary?.purchaseRequests.total || 0} ใบทั้งหมด</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className="bg-gradient-to-br from-cyber-green/20 to-emerald-500/20 rounded-xl p-5 border border-cyber-green/30">
-            <p className="text-sm text-gray-400">จ่ายเงินแล้ว</p>
-            <p className="text-2xl font-bold text-cyber-green mt-1">{formatCurrency(summary?.payments.totalPaid || 0)}</p>
-            <p className="text-xs text-gray-500 mt-1">{summary?.payments.total || 0} รายการ</p>
+            className="bg-gradient-to-br from-success/20 to-success/20 rounded-xl p-5 border border-success/30">
+            <p className="text-sm text-[var(--fg-3)]">จ่ายเงินแล้ว</p>
+            <p className="text-2xl font-bold text-success mt-1">{formatCurrency(summary?.payments.totalPaid || 0)}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.payments.total || 0} รายการ</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="bg-gradient-to-br from-orange-500/20 to-red-500/20 rounded-xl p-5 border border-orange-500/30">
-            <p className="text-sm text-gray-400">ยอดค้างจ่าย</p>
+            <p className="text-sm text-[var(--fg-3)]">ยอดค้างจ่าย</p>
             <p className="text-2xl font-bold text-orange-400 mt-1">{formatCurrency(summary?.invoices.outstanding || 0)}</p>
-            <p className="text-xs text-gray-500 mt-1">{summary?.invoices.unpaid || 0} ใบค้างจ่าย</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.invoices.unpaid || 0} ใบค้างจ่าย</p>
           </motion.div>
         </div>
 
         {/* Pending actions */}
         {pendingActions.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="bg-cyber-card border border-yellow-500/30 rounded-xl p-5">
+            className="bg-phopy-card border border-yellow-500/30 rounded-xl p-5">
             <h3 className="text-sm font-semibold text-yellow-400 mb-3 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" /> รายการรอดำเนินการ
             </h3>
             <div className="space-y-2">
               {pendingActions.map(item => (
                 <button key={item.label} onClick={() => setActiveTab(item.tab)}
-                  className="w-full flex items-center justify-between p-3 bg-cyber-dark rounded-xl hover:bg-cyber-dark/60 transition-colors group">
+                  className="w-full flex items-center justify-between p-3 bg-[var(--bg)] rounded-xl hover:bg-[var(--bg)]/60 transition-colors group">
                   <div className="flex items-center gap-3">
-                    <item.icon className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition-colors" />
-                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{item.label}</span>
+                    <item.icon className="w-4 h-4 text-[var(--fg-4)] group-hover:text-[var(--fg-2)] transition-colors" />
+                    <span className="text-sm text-[var(--fg-2)] group-hover:text-[var(--fg-1)] transition-colors">{item.label}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xl font-bold ${item.color}`}>{item.count}</span>
-                    <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+                    <ChevronRight className="w-4 h-4 text-[var(--fg-4)] group-hover:text-[var(--fg-3)] transition-colors" />
                   </div>
                 </button>
               ))}
@@ -1820,20 +1820,20 @@ const Purchase = () => {
 
         {/* Workflow pipeline */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-cyber-card border border-cyber-border rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">กระบวนการจัดซื้อ</h3>
+          className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-[var(--fg-3)] mb-4">กระบวนการจัดซื้อ</h3>
           <div className="flex items-center gap-2 flex-wrap">
             {[
-              { label: 'ใบขอซื้อ', count: summary?.purchaseRequests.total || 0, color: 'text-cyber-primary' },
-              { label: 'ใบสั่งซื้อ', count: summary?.purchaseOrders.total || 0, color: 'text-cyber-purple' },
-              { label: 'รับสินค้า', count: summary?.goodsReceipts.confirmed || 0, color: 'text-cyber-green' },
+              { label: 'ใบขอซื้อ', count: summary?.purchaseRequests.total || 0, color: 'text-phopy-indigo' },
+              { label: 'ใบสั่งซื้อ', count: summary?.purchaseOrders.total || 0, color: 'text-purple-500' },
+              { label: 'รับสินค้า', count: summary?.goodsReceipts.confirmed || 0, color: 'text-success' },
               { label: 'ใบแจ้งหนี้', count: summary?.invoices.total || 0, color: 'text-blue-400' },
               { label: 'จ่ายเงิน', count: summary?.payments.total || 0, color: 'text-green-400' },
             ].map((step, i, arr) => (
               <div key={step.label} className="flex items-center gap-2">
                 <div className="text-center min-w-[60px]">
                   <p className={`text-2xl font-bold ${step.color}`}>{step.count}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{step.label}</p>
+                  <p className="text-xs text-[var(--fg-4)] mt-0.5">{step.label}</p>
                 </div>
                 {i < arr.length - 1 && <ChevronRight className="w-5 h-5 text-gray-700 shrink-0" />}
               </div>
@@ -1843,27 +1843,27 @@ const Purchase = () => {
 
         {/* Status grids */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-cyber-card border border-cyber-border rounded-xl p-5">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-cyber-primary" /> สถานะใบสั่งซื้อ
+              <ShoppingCart className="w-4 h-4 text-phopy-indigo" /> สถานะใบสั่งซื้อ
             </h3>
             <div className="space-y-2">
               {[
-                { label: 'ฉบับร่าง', value: summary?.purchaseOrders.draft || 0, color: 'text-gray-400' },
+                { label: 'ฉบับร่าง', value: summary?.purchaseOrders.draft || 0, color: 'text-[var(--fg-3)]' },
                 { label: 'รอดำเนินการ', value: summary?.purchaseOrders.pending || 0, color: 'text-yellow-400' },
                 { label: 'รับบางส่วน', value: summary?.purchaseOrders.partial || 0, color: 'text-orange-400' },
                 { label: 'รับครบแล้ว', value: summary?.purchaseOrders.received || 0, color: 'text-green-400' },
               ].map(item => (
-                <div key={item.label} className="flex justify-between items-center p-3 bg-cyber-dark rounded-lg">
-                  <span className="text-sm text-gray-400">{item.label}</span>
+                <div key={item.label} className="flex justify-between items-center p-3 bg-[var(--bg)] rounded-lg">
+                  <span className="text-sm text-[var(--fg-3)]">{item.label}</span>
                   <span className={`text-lg font-semibold ${item.color}`}>{item.value}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="bg-cyber-card border border-cyber-border rounded-xl p-5">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-cyber-green" /> สถานะการจ่ายเงิน
+              <CreditCard className="w-4 h-4 text-success" /> สถานะการจ่ายเงิน
             </h3>
             <div className="space-y-2">
               {[
@@ -1871,8 +1871,8 @@ const Purchase = () => {
                 { label: 'จ่ายบางส่วน', value: summary?.invoices.partial || 0, color: 'text-yellow-400' },
                 { label: 'จ่ายครบแล้ว', value: summary?.invoices.paid || 0, color: 'text-green-400' },
               ].map(item => (
-                <div key={item.label} className="flex justify-between items-center p-3 bg-cyber-dark rounded-lg">
-                  <span className="text-sm text-gray-400">{item.label}</span>
+                <div key={item.label} className="flex justify-between items-center p-3 bg-[var(--bg)] rounded-lg">
+                  <span className="text-sm text-[var(--fg-3)]">{item.label}</span>
                   <span className={`text-lg font-semibold ${item.color}`}>{item.value}</span>
                 </div>
               ))}
@@ -1886,30 +1886,30 @@ const Purchase = () => {
   // ─── Shared card list helpers ─────────────────────────────────────
   const SearchBar = ({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (v: string) => void }) => (
     <div className="relative flex-1 max-w-xs">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
       <input type="text" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)}
-        className="w-full pl-9 pr-4 py-2 bg-cyber-dark border border-cyber-border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-cyber-primary text-sm" />
+        className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm" />
     </div>
   )
 
   const EmptyState = ({ text }: { text: string }) => (
-    <div className="text-center py-16 text-gray-500 bg-cyber-card border border-cyber-border rounded-xl">{text}</div>
+    <div className="text-center py-16 text-[var(--fg-4)] bg-phopy-card border border-[var(--border)] rounded-xl">{text}</div>
   )
 
   const ViewToggle = () => (
-    <div className="flex items-center gap-1 bg-cyber-dark border border-cyber-border rounded-lg p-0.5 shrink-0">
+    <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg p-0.5 shrink-0">
       <button onClick={() => setViewMode('card')}
-        className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-500 hover:text-white'}`}
+        className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-4)] hover:text-[var(--fg-1)]'}`}
         title="มุมมองการ์ด"><LayoutGrid className="w-3.5 h-3.5" /></button>
       <button onClick={() => setViewMode('list')}
-        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-cyber-primary text-cyber-dark' : 'text-gray-500 hover:text-white'}`}
+        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-4)] hover:text-[var(--fg-1)]'}`}
         title="มุมมองรายการ"><LayoutList className="w-3.5 h-3.5" /></button>
     </div>
   )
 
   const PageSizeSelect = () => (
     <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
-      className="px-2 py-1.5 bg-cyber-dark border border-cyber-border rounded-lg text-xs text-gray-300 focus:outline-none focus:border-cyber-primary">
+      className="px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo">
       <option value={25}>25 / หน้า</option>
       <option value={50}>50 / หน้า</option>
       <option value={100}>100 / หน้า</option>
@@ -1930,22 +1930,22 @@ const Purchase = () => {
       pages.push(totalPages)
     }
     return (
-      <div className="flex items-center justify-between pt-3 border-t border-cyber-border/40">
-        <p className="text-xs text-gray-500">
+      <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/40">
+        <p className="text-xs text-[var(--fg-4)]">
           แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
         </p>
         <div className="flex items-center gap-1">
           <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">‹</button>
+            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">‹</button>
           {pages.map((p, i) => p === '...'
-            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-600">…</span>
+            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-[var(--fg-4)]">…</span>
             : <button key={p} onClick={() => setCurrentPage(p as number)}
-                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-cyber-primary text-cyber-dark font-bold' : 'text-gray-400 bg-cyber-dark hover:text-white'}`}>
+                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-phopy-indigo text-white font-bold' : 'text-[var(--fg-3)] bg-[var(--bg)] hover:text-[var(--fg-1)]'}`}>
                 {p}
               </button>
           )}
           <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
-            className="px-2 py-1 text-xs text-gray-400 bg-cyber-dark rounded-lg disabled:opacity-30 hover:text-white transition-colors">›</button>
+            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">›</button>
         </div>
       </div>
     )
@@ -1966,31 +1966,31 @@ const Purchase = () => {
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('request', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
             </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบขอซื้อ" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขอ</span><span className="col-span-2">แผนก</span>
               <span className="col-span-2">วันที่ขอ</span><span className="col-span-1">สถานะ</span>
               <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-1"></span>
             </div>
             {paginated.map((req, i) => (
-              <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
+              <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <div className="col-span-2 flex items-center gap-1.5">
-                  <p className="font-mono text-xs text-gray-400">{req.pr_number}</p>
+                  <p className="font-mono text-xs text-[var(--fg-3)]">{req.pr_number}</p>
                   {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 leading-none">LINE</span>}
                 </div>
                 <p className="col-span-3 text-white font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
-                <p className="col-span-2 text-gray-400 text-xs truncate">{req.department || '-'}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{formatDate(req.request_date)}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs truncate">{req.department || '-'}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(req.request_date)}</p>
                 <div className="col-span-1"><StatusBadge status={req.status} /></div>
                 <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(req.total_amount)}</p>
                 <div className="col-span-1 flex justify-end gap-1">
-                  <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}
@@ -1998,19 +1998,19 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(req => (
-              <div key={req.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={req.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="text-xs text-gray-500 font-mono">{req.pr_number}</p>
+                      <p className="text-xs text-[var(--fg-4)] font-mono">{req.pr_number}</p>
                       {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 leading-none">LINE</span>}
                     </div>
                     <p className="font-semibold text-white mt-0.5 truncate">{req.requester_name || req.supplier_name || '-'}</p>
-                    <p className="text-sm text-gray-400">{req.department || req.supplier_name || '-'}</p>
+                    <p className="text-sm text-[var(--fg-3)]">{req.department || req.supplier_name || '-'}</p>
                   </div>
                   <StatusBadge status={req.status} />
                 </div>
-                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>ขอ {formatDate(req.request_date)}</span>
                   <span>ต้องการ {formatDate(req.required_date)}</span>
                 </div>
@@ -2021,18 +2021,18 @@ const Purchase = () => {
                   </div>
                   <p className="font-bold text-white text-sm">{formatCurrency(req.total_amount)}</p>
                 </div>
-                <div className="flex gap-2 mt-auto pt-3 mt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-auto pt-3 mt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('pr', req.id)} title="พิมพ์ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {req.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
-                      className="flex-1 py-1.5 text-xs text-cyber-primary bg-cyber-primary/10 rounded-lg hover:bg-cyber-primary/20 transition-colors">
+                      className="flex-1 py-1.5 text-xs text-phopy-indigo bg-phopy-indigo/10 rounded-lg hover:bg-phopy-indigo-50 transition-colors">
                       แก้ไข
                     </button>
                     <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
@@ -2040,7 +2040,7 @@ const Purchase = () => {
                       ส่งอนุมัติ
                     </button>
                     <button onClick={() => handleDeleteRequest(req.id)}
-                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors">
+                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-danger-soft transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </>)}
@@ -2052,7 +2052,7 @@ const Purchase = () => {
                   )}
                   {req.status === 'APPROVED' && (
                     <button onClick={() => handleConvertRequestToOrder(req.id)}
-                      className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-success-soft font-medium transition-colors flex items-center justify-center gap-1">
                       แปลง PO <ArrowRight className="w-3 h-3" />
                     </button>
                   )}
@@ -2080,14 +2080,14 @@ const Purchase = () => {
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('order', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /> สร้างใบสั่งซื้อ
             </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ PO</span><span className="col-span-2">ผู้ขาย</span><span className="col-span-1">วันสั่ง</span>
               <span className="col-span-1">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
               <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-4"></span>
@@ -2095,16 +2095,16 @@ const Purchase = () => {
             {paginated.map((order, i) => (
               <div key={order.id}
                 onClick={() => openModalWithDetail('order', 'view', order.id, order)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{order.po_number}</p>
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{order.po_number}</p>
                 <p className="col-span-2 text-white font-medium truncate">{order.supplier_name}</p>
-                <p className="col-span-1 text-gray-400 text-xs">{formatDate(order.order_date)}</p>
-                <p className="col-span-1 text-gray-400 text-xs">{formatDate(order.expected_date)}</p>
+                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.order_date)}</p>
+                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.expected_date)}</p>
                 <div className="col-span-1"><StatusBadge status={order.status} /></div>
                 <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(order.total_amount)}</p>
                 <div className="col-span-4 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                   <button onClick={() => handlePrint('po', order.id)} title="พิมพ์ใบสั่งซื้อ A4"
-                    className="p-1.5 text-gray-400 hover:text-white bg-cyber-dark rounded transition-colors">
+                    className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {order.status === 'DRAFT' && (<>
@@ -2113,7 +2113,7 @@ const Purchase = () => {
                       ส่งอนุมัติ
                     </button>
                     <button onClick={() => handleDeleteOrder(order.id)}
-                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-red-500/20 transition-colors">
+                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-danger-soft transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </>)}
@@ -2129,7 +2129,7 @@ const Purchase = () => {
                       loadPendingItems(order.id)
                       openModal('receipt', 'create')
                     }}
-                      className="px-2 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded hover:bg-cyber-green/20 font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+                      className="px-2 py-1.5 text-xs text-success bg-success/10 rounded hover:bg-success-soft font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
                       รับสินค้า <Package className="w-3 h-3" />
                     </button>
                   )}
@@ -2155,23 +2155,23 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(order => (
-              <div key={order.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={order.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{order.po_number}</p>
+                    <p className="text-xs text-[var(--fg-4)] font-mono">{order.po_number}</p>
                     <p className="font-semibold text-white mt-0.5 truncate">{order.supplier_name}</p>
-                    <p className="text-sm text-gray-400">{order.supplier_code}</p>
+                    <p className="text-sm text-[var(--fg-3)]">{order.supplier_code}</p>
                   </div>
                   <StatusBadge status={order.status} />
                 </div>
-                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>สั่ง {formatDate(order.order_date)}</span>
                   <span>กำหนดรับ {formatDate(order.expected_date)}</span>
                 </div>
                 {/* Option A: Procurement chain badges */}
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                   {order.linked_pr_id && (() => { const pr = requests.find(r => r.id === order.linked_pr_id); return pr ? (
-                    <span className="text-xs font-mono text-gray-400 bg-gray-500/10 px-1.5 py-0.5 rounded">
+                    <span className="text-xs font-mono text-[var(--fg-3)] bg-gray-500/10 px-1.5 py-0.5 rounded">
                       {pr.pr_number}
                     </span>
                   ) : null })()}
@@ -2181,7 +2181,7 @@ const Purchase = () => {
                     const grConfirmed = grAll.filter(r => r.status === 'CONFIRMED')
                     return (<>
                       {grConfirmed.length > 0 && (
-                        <span className="text-xs text-cyber-green bg-cyber-green/10 px-1.5 py-0.5 rounded">
+                        <span className="text-xs text-success bg-success/10 px-1.5 py-0.5 rounded">
                           GR ×{grConfirmed.length}
                         </span>
                       )}
@@ -2199,14 +2199,14 @@ const Purchase = () => {
                   ) : null })()}
                 </div>
                 <p className="font-bold text-white text-sm mt-2 text-right">{formatCurrency(order.total_amount)}</p>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('order', 'view', order.id, order)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('po', order.id)}
                     title="พิมพ์ใบสั่งซื้อ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {/* DRAFT → ส่งอนุมัติ + ลบ */}
@@ -2216,7 +2216,7 @@ const Purchase = () => {
                       ส่งอนุมัติ
                     </button>
                     <button onClick={() => handleDeleteOrder(order.id)}
-                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors">
+                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-danger-soft transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </>)}
@@ -2234,7 +2234,7 @@ const Purchase = () => {
                       loadPendingItems(order.id)
                       openModal('receipt', 'create')
                     }}
-                      className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-success-soft font-medium transition-colors flex items-center justify-center gap-1">
                       รับสินค้า <Package className="w-3 h-3" />
                     </button>
                   )}
@@ -2278,14 +2278,14 @@ const Purchase = () => {
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('receipt', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /> บันทึกรับสินค้า
             </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการรับสินค้า" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ GR</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">อ้างอิง PO</span><span className="col-span-1">วันที่รับ</span>
               <span className="col-span-1">สถานะ</span><span className="col-span-3"></span>
@@ -2293,28 +2293,28 @@ const Purchase = () => {
             {paginated.map((receipt, i) => (
               <div key={receipt.id}
                 onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{receipt.gr_number}</p>
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{receipt.gr_number}</p>
                 <p className="col-span-3 text-white font-medium truncate">{receipt.supplier_name}</p>
-                <p className="col-span-2 text-gray-400 text-xs font-mono">{receipt.po_number}</p>
-                <p className="col-span-1 text-gray-400 text-xs">{formatDate(receipt.receipt_date)}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{receipt.po_number}</p>
+                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(receipt.receipt_date)}</p>
                 <div className="col-span-1"><StatusBadge status={receipt.status} /></div>
                 <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                   <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
-                    className="p-1.5 text-gray-400 hover:text-white bg-cyber-dark rounded transition-colors">
+                    className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
-                    className="p-1.5 text-gray-400 hover:text-yellow-400 bg-cyber-dark rounded transition-colors text-xs leading-none">
+                    className="p-1.5 text-[var(--fg-3)] hover:text-yellow-400 bg-[var(--bg)] rounded transition-colors text-xs leading-none">
                     🧾
                   </button>
                   {receipt.status === 'DRAFT' && (<>
                     <button onClick={() => handleConfirmReceipt(receipt.id)} title="ยืนยัน"
-                      className="p-1.5 text-cyber-green bg-cyber-green/10 rounded hover:bg-cyber-green/20 transition-colors">
+                      className="p-1.5 text-success bg-success/10 rounded hover:bg-success-soft transition-colors">
                       <Check className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => handleDeleteReceipt(receipt.id)} title="ลบ"
-                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-red-500/20 transition-colors">
+                      className="p-1.5 text-red-400 bg-red-500/10 rounded hover:bg-danger-soft transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </>)}
@@ -2325,39 +2325,39 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(receipt => (
-              <div key={receipt.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={receipt.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{receipt.gr_number}</p>
+                    <p className="text-xs text-[var(--fg-4)] font-mono">{receipt.gr_number}</p>
                     <p className="font-semibold text-white mt-0.5 truncate">{receipt.supplier_name}</p>
-                    <p className="text-sm text-gray-400">PO: {receipt.po_number}</p>
+                    <p className="text-sm text-[var(--fg-3)]">PO: {receipt.po_number}</p>
                   </div>
                   <StatusBadge status={receipt.status} />
                 </div>
-                <p className="text-xs text-gray-500 mt-2">รับวันที่ {formatDate(receipt.receipt_date)}</p>
+                <p className="text-xs text-[var(--fg-4)] mt-2">รับวันที่ {formatDate(receipt.receipt_date)}</p>
                 {receipt.journal_entry_number && (
-                  <p className="text-xs text-cyber-primary/70 mt-1">สมุดรายวัน: {receipt.journal_entry_number}</p>
+                  <p className="text-xs text-phopy-indigo/70 mt-1">สมุดรายวัน: {receipt.journal_entry_number}</p>
                 )}
-                <div className="flex gap-2 mt-3 pt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-yellow-400 bg-cyber-dark rounded-lg transition-colors text-xs leading-none">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-yellow-400 bg-[var(--bg)] rounded-lg transition-colors text-xs leading-none">
                     🧾
                   </button>
                   {receipt.status === 'DRAFT' && (<>
                     <button onClick={() => handleConfirmReceipt(receipt.id)}
-                      className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-success-soft font-medium transition-colors flex items-center justify-center gap-1">
                       <Check className="w-3 h-3" /> ยืนยัน
                     </button>
                     <button onClick={() => handleDeleteReceipt(receipt.id)}
-                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors">
+                      className="px-2.5 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-danger-soft transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </>)}
@@ -2385,37 +2385,37 @@ const Purchase = () => {
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('invoice', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /> สร้างใบวางบิล
             </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบวางบิล" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ PI</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">ครบกำหนด</span>
               <span className="col-span-1">สถานะ</span>
               <span className="col-span-1 text-right">ค้างชำระ</span><span className="col-span-1"></span>
             </div>
             {paginated.map((invoice, i) => (
-              <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{invoice.pi_number}</p>
+              <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{invoice.pi_number}</p>
                 <p className="col-span-3 text-white font-medium truncate">{invoice.supplier_name}</p>
-                <p className="col-span-2 text-gray-400 text-xs font-mono">{invoice.po_number}</p>
-                <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-red-400' : 'text-gray-400'}`}>{formatDate(invoice.due_date)}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{invoice.po_number}</p>
+                <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-red-400' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
                 <div className="col-span-1"><StatusBadge status={invoice.payment_status} /></div>
-                <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-red-400' : 'text-[var(--fg-4)]'}`}>
                   {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
                 </p>
                 <div className="col-span-1 flex justify-end gap-1">
                   {invoice.payment_status !== 'PAID' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
-                      className="p-1 text-cyber-green hover:text-white bg-cyber-green/10 rounded" title="จ่ายเงิน">
+                      className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title="จ่ายเงิน">
                       <DollarSign className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)} className="p-1 text-gray-500 hover:text-white bg-cyber-dark rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}
@@ -2423,37 +2423,37 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(invoice => (
-              <div key={invoice.id} className={`bg-cyber-card border rounded-xl p-4 transition-colors flex flex-col ${invoice.payment_status === 'UNPAID' ? 'border-red-500/30 hover:border-red-400/50' : 'border-cyber-border hover:border-cyber-primary/40'}`}>
+              <div key={invoice.id} className={`bg-phopy-card border rounded-xl p-4 transition-colors flex flex-col ${invoice.payment_status === 'UNPAID' ? 'border-red-500/30 hover:border-red-400/50' : 'border-[var(--border)] hover:border-phopy-indigo/40'}`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{invoice.pi_number}</p>
+                    <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.pi_number}</p>
                     <p className="font-semibold text-white mt-0.5 truncate">{invoice.supplier_name}</p>
-                    <p className="text-sm text-gray-400">PO: {invoice.po_number}</p>
+                    <p className="text-sm text-[var(--fg-3)]">PO: {invoice.po_number}</p>
                   </div>
                   <StatusBadge status={invoice.payment_status} />
                 </div>
-                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>ออก {formatDate(invoice.invoice_date)}</span>
                   <span>ครบ {formatDate(invoice.due_date)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">ยอดรวม {formatCurrency(invoice.total_amount)}</span>
+                  <span className="text-xs text-[var(--fg-4)]">ยอดรวม {formatCurrency(invoice.total_amount)}</span>
                   {invoice.balance_amount > 0 && (
                     <span className="text-sm font-bold text-red-400">ค้าง {formatCurrency(invoice.balance_amount)}</span>
                   )}
                 </div>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('pi', invoice.id)} title="พิมพ์ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {invoice.payment_status !== 'PAID' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
-                      className="flex-1 py-1.5 text-xs text-cyber-green bg-cyber-green/10 rounded-lg hover:bg-cyber-green/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-success-soft font-medium transition-colors flex items-center justify-center gap-1">
                       <DollarSign className="w-3 h-3" /> จ่ายเงิน
                     </button>
                   )}
@@ -2482,14 +2482,14 @@ const Purchase = () => {
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('payment', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 whitespace-nowrap text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /> บันทึกจ่ายเงิน
             </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการจ่ายเงิน" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">วิธีชำระ</span><span className="col-span-2">วันที่</span>
               <span className="col-span-2">JV</span>
@@ -2497,42 +2497,42 @@ const Purchase = () => {
             </div>
             {paginated.map((payment, i) => (
               <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{payment.payment_number}</p>
+                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{payment.payment_number}</p>
                 <p className="col-span-3 text-white font-medium truncate">{payment.supplier_name}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
-                <p className="col-span-2 text-gray-400 text-xs">{formatDate(payment.payment_date)}</p>
-                <p className="col-span-2 text-cyber-primary/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
-                <p className="col-span-1 text-right text-cyber-green font-bold text-xs">{formatCurrency(payment.amount)}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
+                <p className="col-span-2 text-phopy-indigo/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
+                <p className="col-span-1 text-right text-success font-bold text-xs">{formatCurrency(payment.amount)}</p>
               </div>
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(payment => (
-              <div key={payment.id} className="bg-cyber-card border border-cyber-border hover:border-cyber-primary/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={payment.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{payment.payment_number}</p>
+                    <p className="text-xs text-[var(--fg-4)] font-mono">{payment.payment_number}</p>
                     <p className="font-semibold text-white mt-0.5 truncate">{payment.supplier_name}</p>
-                    <p className="text-sm text-gray-400">{methodLabel[payment.payment_method] || payment.payment_method}</p>
+                    <p className="text-sm text-[var(--fg-3)]">{methodLabel[payment.payment_method] || payment.payment_method}</p>
                   </div>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400">จ่ายแล้ว</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-soft text-green-400">จ่ายแล้ว</span>
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                  <span className="text-xs text-gray-500">{formatDate(payment.payment_date)}</span>
-                  <span className="font-bold text-cyber-green text-sm">{formatCurrency(payment.amount)}</span>
+                  <span className="text-xs text-[var(--fg-4)]">{formatDate(payment.payment_date)}</span>
+                  <span className="font-bold text-success text-sm">{formatCurrency(payment.amount)}</span>
                 </div>
                 {payment.journal_entry_number && (
-                  <p className="text-xs text-cyber-primary/70 mt-1">สมุดรายวัน: {payment.journal_entry_number}</p>
+                  <p className="text-xs text-phopy-indigo/70 mt-1">สมุดรายวัน: {payment.journal_entry_number}</p>
                 )}
-                <div className="flex gap-2 mt-3 pt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModal('payment', 'view', payment)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('payment', payment.id)} title="พิมพ์ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -2570,17 +2570,17 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการคืนสินค้า" /> : viewMode === 'list' ? (
-          <div className="bg-cyber-card border border-cyber-border rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 px-4 py-2 bg-cyber-darker text-xs text-gray-500 font-medium border-b border-cyber-border/50">
+          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">PO อ้างอิง</span><span className="col-span-3">สาเหตุ</span>
               <span className="col-span-1">สถานะ</span><span className="col-span-1 text-right">ยอด</span>
             </div>
             {paginated.map((ret, i) => (
-              <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-cyber-dark/50 transition-colors border-b border-cyber-border/20 last:border-0 ${i % 2 === 1 ? 'bg-cyber-darker/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-gray-400">{ret.pr_number}</p>
+              <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
+                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{ret.pr_number}</p>
                 <p className="col-span-3 text-white font-medium truncate">{ret.supplier_name}</p>
-                <p className="col-span-2 text-gray-400 text-xs font-mono">{ret.po_number}</p>
+                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{ret.po_number}</p>
                 <p className="col-span-3 text-orange-400/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
                 <div className="col-span-1"><StatusBadge status={ret.status} /></div>
                 <p className="col-span-1 text-right text-red-400 font-bold text-xs">{formatCurrency(ret.total_amount)}</p>
@@ -2590,24 +2590,24 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(ret => (
-              <div key={ret.id} className="bg-cyber-card border border-cyber-border hover:border-red-400/30 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={ret.id} className="bg-phopy-card border border-[var(--border)] hover:border-red-400/30 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-gray-500 font-mono">{ret.pr_number}</p>
+                    <p className="text-xs text-[var(--fg-4)] font-mono">{ret.pr_number}</p>
                     <p className="font-semibold text-white mt-0.5 truncate">{ret.supplier_name}</p>
-                    <p className="text-sm text-gray-400">PO: {ret.po_number}</p>
+                    <p className="text-sm text-[var(--fg-3)]">PO: {ret.po_number}</p>
                   </div>
                   <StatusBadge status={ret.status} />
                 </div>
                 <p className="text-xs text-orange-400/80 mt-1">{reasonLabel[ret.reason] || ret.reason}</p>
                 <p className="font-bold text-red-400 text-sm mt-2 text-right">{formatCurrency(ret.total_amount)}</p>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-cyber-border/40">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('return', 'view', ret.id, ret)}
-                    className="flex-1 py-1.5 text-xs text-gray-300 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     ดูรายละเอียด
                   </button>
                   <button onClick={() => handlePrint('return', ret.id)} title="พิมพ์ A4"
-                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white bg-cyber-dark rounded-lg transition-colors">
+                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {ret.status === 'DRAFT' && (
@@ -2624,7 +2624,7 @@ const Purchase = () => {
                   )}
                   {ret.status === 'APPROVED' && (
                     <button onClick={() => handleConfirmReturn(ret.id)}
-                      className="flex-1 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20 font-medium transition-colors flex items-center justify-center gap-1">
+                      className="flex-1 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-danger-soft font-medium transition-colors flex items-center justify-center gap-1">
                       <Check className="w-3 h-3" /> ยืนยันคืนสินค้า
                     </button>
                   )}
@@ -2646,22 +2646,22 @@ const Purchase = () => {
       footer={
         modalMode !== 'view' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={modalMode === 'create' ? handleCreateRequest : handleUpdateRequest} disabled={formLoading}
-              className="px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+              className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
               {modalMode === 'create' ? 'สร้างใบขอซื้อ' : 'บันทึก'}
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
       }
     >
       {/* Header info row */}
       {modalMode === 'view' && modalData?.pr_number && (
-        <div className="flex items-center gap-2 p-3 bg-cyber-primary/10 border border-cyber-primary/20 rounded-xl">
-          <FileText className="w-4 h-4 text-cyber-primary shrink-0" />
-          <span className="text-sm font-mono text-cyber-primary font-semibold">{modalData.pr_number}</span>
-          <span className="text-xs text-gray-400 ml-auto">สร้างโดย: {modalData.requester_name}</span>
+        <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
+          <FileText className="w-4 h-4 text-phopy-indigo shrink-0" />
+          <span className="text-sm font-mono text-phopy-indigo font-semibold">{modalData.pr_number}</span>
+          <span className="text-xs text-[var(--fg-3)] ml-auto">สร้างโดย: {modalData.requester_name}</span>
         </div>
       )}
 
@@ -2685,10 +2685,10 @@ const Purchase = () => {
         </Field>
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-gray-300">ผู้ขายที่แนะนำ (optional)</label>
+            <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขายที่แนะนำ (optional)</label>
             {modalMode !== 'view' && (
               <button onClick={() => openQuickAddSupplier(id => setRequestForm(p => ({ ...p, preferred_supplier_id: id })))}
-                className="text-xs text-cyber-primary hover:text-cyber-primary/80 flex items-center gap-1 px-2 py-0.5 border border-cyber-primary/30 rounded-lg hover:bg-cyber-primary/10 transition-colors">
+                className="text-xs text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
                 <Plus className="w-3 h-3" /> เพิ่มใหม่
               </button>
             )}
@@ -2711,19 +2711,19 @@ const Purchase = () => {
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-gray-300">รายการสินค้า/วัตถุดิบ
-            <span className="ml-2 text-xs text-gray-500">({requestForm.items.length} รายการ)</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า/วัตถุดิบ
+            <span className="ml-2 text-xs text-[var(--fg-4)]">({requestForm.items.length} รายการ)</span>
           </span>
           {modalMode !== 'view' && (
             <button onClick={addRequestItem}
-              className="flex items-center gap-1 px-2.5 py-1 bg-cyber-primary/10 text-cyber-primary text-xs rounded-lg hover:bg-cyber-primary/20 transition-colors">
+              className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-phopy-indigo text-xs rounded-lg hover:bg-phopy-indigo-50 transition-colors">
               <Plus className="w-3 h-3" /> เพิ่มรายการ
             </button>
           )}
         </div>
         <div className="space-y-3">
           {requestForm.items.map((item, index) => (
-            <div key={index} className="p-3 bg-cyber-dark rounded-xl space-y-2 border border-cyber-border/40">
+            <div key={index} className="p-3 bg-[var(--bg)] rounded-xl space-y-2 border border-[var(--border)]/40">
               {/* Row 1: material + description */}
               <div className="grid grid-cols-2 gap-2">
                 <MaterialSearchInput materials={materials}
@@ -2746,24 +2746,24 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียดเพิ่มเติม" value={item.description}
                   onChange={e => updateRequestItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               {/* Row 2: qty + unit + price + total + delete */}
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">จำนวน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white text-center focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateRequestItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -2772,23 +2772,23 @@ const Purchase = () => {
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย (ประมาณ)</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย (ประมาณ)</label>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">฿</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.estimated_unit_price}
                       onChange={e => updateRequestItem(index, 'estimated_unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-4 flex items-end justify-between">
                   <div>
-                    <label className="text-xs text-gray-500 mb-0.5 block">รวม</label>
-                    <span className="text-sm font-semibold text-cyber-primary">{formatCurrency(item.estimated_total_price)}</span>
+                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
+                    <span className="text-sm font-semibold text-phopy-indigo">{formatCurrency(item.estimated_total_price)}</span>
                   </div>
                   {modalMode !== 'view' && (
                     <button onClick={() => removeRequestItem(index)}
-                      className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors">
+                      className="p-1.5 hover:bg-danger-soft rounded-lg text-red-400 transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
@@ -2797,16 +2797,16 @@ const Purchase = () => {
             </div>
           ))}
           {requestForm.items.length === 0 && (
-            <div className="text-center py-6 text-gray-500 text-sm border border-dashed border-cyber-border rounded-xl">
+            <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)] rounded-xl">
               ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
             </div>
           )}
         </div>
         {requestForm.items.length > 0 && (
-          <div className="flex justify-end mt-3 p-3 bg-cyber-primary/5 rounded-xl">
+          <div className="flex justify-end mt-3 p-3 bg-phopy-indigo/5 rounded-xl">
             <div className="text-right">
-              <p className="text-xs text-gray-400">รวมประมาณการทั้งหมด</p>
-              <p className="text-lg font-bold text-cyber-primary">
+              <p className="text-xs text-[var(--fg-3)]">รวมประมาณการทั้งหมด</p>
+              <p className="text-lg font-bold text-phopy-indigo">
                 {formatCurrency(requestForm.items.reduce((s, i) => s + i.estimated_total_price, 0))}
               </p>
             </div>
@@ -2828,22 +2828,22 @@ const Purchase = () => {
       footer={
         modalMode !== 'view' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={handleCreateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
-              className="px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+              className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
               สร้างใบสั่งซื้อ
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
       }
     >
       {/* PO header display when viewing */}
       {modalMode === 'view' && modalData?.po_number && (
-        <div className="flex items-center gap-2 p-3 bg-cyber-primary/10 border border-cyber-primary/20 rounded-xl">
-          <ShoppingCart className="w-4 h-4 text-cyber-primary shrink-0" />
-          <span className="text-sm font-mono text-cyber-primary font-semibold">{modalData.po_number}</span>
-          <span className="text-xs text-gray-400 ml-auto">{modalData.supplier_name}</span>
+        <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
+          <ShoppingCart className="w-4 h-4 text-phopy-indigo shrink-0" />
+          <span className="text-sm font-mono text-phopy-indigo font-semibold">{modalData.po_number}</span>
+          <span className="text-xs text-[var(--fg-3)] ml-auto">{modalData.supplier_name}</span>
         </div>
       )}
 
@@ -2871,10 +2871,10 @@ const Purchase = () => {
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-gray-300">ผู้ขาย <span className="text-red-400">*</span></label>
+            <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขาย <span className="text-red-400">*</span></label>
             {modalMode !== 'view' && (
               <button onClick={() => openQuickAddSupplier(id => setOrderForm(p => ({ ...p, supplier_id: id })))}
-                className="text-xs text-cyber-primary hover:text-cyber-primary/80 flex items-center gap-1 px-2 py-0.5 border border-cyber-primary/30 rounded-lg hover:bg-cyber-primary/10 transition-colors">
+                className="text-xs text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
                 <Plus className="w-3 h-3" /> เพิ่มผู้ขายใหม่
               </button>
             )}
@@ -2905,19 +2905,19 @@ const Purchase = () => {
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-gray-300">รายการสินค้า
-            <span className="ml-2 text-xs text-gray-500">({orderForm.items.length} รายการ)</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า
+            <span className="ml-2 text-xs text-[var(--fg-4)]">({orderForm.items.length} รายการ)</span>
           </span>
           {modalMode !== 'view' && (
             <button onClick={addOrderItem}
-              className="flex items-center gap-1 px-2.5 py-1 bg-cyber-primary/10 text-cyber-primary text-xs rounded-lg hover:bg-cyber-primary/20">
+              className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-phopy-indigo text-xs rounded-lg hover:bg-phopy-indigo-50">
               <Plus className="w-3 h-3" /> เพิ่มรายการ
             </button>
           )}
         </div>
         <div className="space-y-3">
           {orderForm.items.map((item, index) => (
-            <div key={index} className="p-3 bg-cyber-dark rounded-xl space-y-2 border border-cyber-border/40">
+            <div key={index} className="p-3 bg-[var(--bg)] rounded-xl space-y-2 border border-[var(--border)]/40">
               <div className="grid grid-cols-2 gap-2">
                 <MaterialSearchInput materials={materials} value={item.material_id} disabled={modalMode === 'view'}
                   onChange={(id, mat) => updateOrderItemFields(index, {
@@ -2939,46 +2939,46 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียด" value={item.description}
                   onChange={e => updateOrderItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">จำนวน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white text-center focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateOrderItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย (บาท)</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย (บาท)</label>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">฿</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-5 flex items-end justify-between">
                   <div>
-                    <label className="text-xs text-gray-500 mb-0.5 block">รวม</label>
-                    <span className="text-sm font-semibold text-cyber-primary">{formatCurrency(item.total_price)}</span>
+                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
+                    <span className="text-sm font-semibold text-phopy-indigo">{formatCurrency(item.total_price)}</span>
                   </div>
                   {modalMode !== 'view' && (
                     <button onClick={() => removeOrderItem(index)}
-                      className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors">
+                      className="p-1.5 hover:bg-danger-soft rounded-lg text-red-400 transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
@@ -2987,7 +2987,7 @@ const Purchase = () => {
             </div>
           ))}
           {orderForm.items.length === 0 && (
-            <div className="text-center py-6 text-gray-500 text-sm border border-dashed border-cyber-border rounded-xl">
+            <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)] rounded-xl">
               ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
             </div>
           )}
@@ -2996,34 +2996,34 @@ const Purchase = () => {
 
       {/* Amounts breakdown */}
       {orderForm.items.length > 0 && (
-        <div className="p-4 bg-cyber-dark rounded-xl space-y-2 text-sm">
-          <div className="flex justify-between text-gray-400">
+        <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2 text-sm">
+          <div className="flex justify-between text-[var(--fg-3)]">
             <span>ก่อนหักส่วนลด</span><span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between gap-2 items-center">
-            <span className="text-gray-400">ส่วนลด (บาท)</span>
+            <span className="text-[var(--fg-3)]">ส่วนลด (บาท)</span>
             {modalMode !== 'view' ? (
               <div className="relative w-32">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">฿</span>
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                 <input type="number" min="0" value={orderForm.discount}
                   onChange={e => setOrderForm(p => ({ ...p, discount: parseFloat(e.target.value) || 0 }))}
-                  className="w-full pl-5 pr-2 py-1 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary text-right" />
+                  className="w-full pl-5 pr-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
             ) : <span className="text-orange-400">-{formatCurrency(orderForm.discount)}</span>}
           </div>
           <div className="flex justify-between gap-2 items-center">
-            <span className="text-gray-400">ภาษี (%)</span>
+            <span className="text-[var(--fg-3)]">ภาษี (%)</span>
             {modalMode !== 'view' ? (
               <div className="relative w-32">
                 <input type="number" min="0" max="30" value={orderForm.tax_rate}
                   onChange={e => setOrderForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-2 py-1 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary text-right" />
+                  className="w-full px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
-            ) : <span className="text-gray-300">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
+            ) : <span className="text-[var(--fg-2)]">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-cyber-border pt-2">
+          <div className="flex justify-between font-bold text-white border-t border-[var(--border)] pt-2">
             <span>รวมทั้งสิ้น</span>
-            <span className="text-lg text-cyber-primary">{formatCurrency(grandTotal)}</span>
+            <span className="text-lg text-phopy-indigo">{formatCurrency(grandTotal)}</span>
           </div>
         </div>
       )}
@@ -3048,30 +3048,30 @@ const Purchase = () => {
       onClose={closeModal}
       footer={
         <div className="flex justify-between items-center w-full">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[var(--fg-4)]">
             {receiptForm.items.length > 0
               ? `${receiptForm.items.length} รายการ · รวมรับ ${receiptForm.items.reduce((s, i) => s + i.accepted_qty, 0).toFixed(2)} หน่วย`
               : 'เลือก PO เพื่อโหลดรายการ'}
           </span>
           <div className="flex gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             {modalMode === 'view' && modalData?.status === 'DRAFT' ? (
               <button onClick={() => handleConfirmReceipt(modalData.id)}
                 disabled={formLoading}
-                className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+                className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
                 {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
                 <Check className="w-4 h-4" /> ยืนยันรับสินค้า
               </button>
             ) : modalMode === 'create' ? (
               <button onClick={handleCreateReceipt}
                 disabled={formLoading || !receiptForm.purchase_order_id || receiptForm.items.length === 0}
-                className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+                className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
                 {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
                 <Check className="w-4 h-4" /> ยืนยันรับสินค้า
               </button>
             ) : (
               <button onClick={closeModal}
-                className="px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 flex items-center gap-2 text-sm">
+                className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 flex items-center gap-2 text-sm">
                 ปิด
               </button>
             )}
@@ -3092,21 +3092,21 @@ const Purchase = () => {
 
         {/* PO summary */}
         {selectedPO && (
-          <div className="grid grid-cols-4 gap-3 p-3 bg-cyber-green/5 border border-cyber-green/20 rounded-xl text-sm">
+          <div className="grid grid-cols-4 gap-3 p-3 bg-success/5 border border-success-soft rounded-xl text-sm">
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">ผู้ขาย</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
               <p className="text-white font-medium truncate">{selectedPO.supplier_name}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">มูลค่า PO</p>
-              <p className="text-cyber-primary font-semibold">{formatCurrency(selectedPO.total_amount)}</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">มูลค่า PO</p>
+              <p className="text-phopy-indigo font-semibold">{formatCurrency(selectedPO.total_amount)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">กำหนดส่ง</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">กำหนดส่ง</p>
               <p className="text-white">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString('th-TH') : '-'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">สถานะ</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">สถานะ</p>
               <p className={`text-xs font-medium ${selectedPO.status === 'PARTIAL' ? 'text-yellow-400' : 'text-green-400'}`}>
                 {selectedPO.status === 'PARTIAL' ? 'รับบางส่วนแล้ว' : 'รอรับสินค้า'}
               </p>
@@ -3141,32 +3141,32 @@ const Purchase = () => {
       {/* ── Section 3: รายการสินค้า ── */}
       {receiptForm.items.length > 0 ? (
         <div>
-          <p className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
             รายการสินค้าที่ต้องรับ
-            <span className="text-xs font-normal text-gray-500">({receiptForm.items.length} รายการ)</span>
+            <span className="text-xs font-normal text-[var(--fg-4)]">({receiptForm.items.length} รายการ)</span>
           </p>
           <div className="space-y-4">
             {receiptForm.items.map((item, index) => {
               const pendingPct = item.ordered_qty > 0 ? (item.pending_qty / item.ordered_qty) * 100 : 0
               return (
-                <div key={index} className="p-4 bg-cyber-dark rounded-xl border border-cyber-border/40 space-y-3">
+                <div key={index} className="p-4 bg-[var(--bg)] rounded-xl border border-[var(--border)]/40 space-y-3">
 
                   {/* ── Item header ── */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white truncate">{item.description || item.material_name || item.material_id}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        ราคา/หน่วย: <span className="text-cyber-primary font-medium">{formatCurrency(item.unit_price)}</span>
-                        {item.unit && <span className="ml-2 text-gray-600">· {item.unit}</span>}
+                      <p className="text-xs text-[var(--fg-4)] mt-0.5">
+                        ราคา/หน่วย: <span className="text-phopy-indigo font-medium">{formatCurrency(item.unit_price)}</span>
+                        {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {item.unit}</span>}
                       </p>
                     </div>
                     {/* Progress bar: already received vs ordered */}
                     <div className="text-right shrink-0">
-                      <p className="text-xs text-gray-500 mb-1">
+                      <p className="text-xs text-[var(--fg-4)] mb-1">
                         รับแล้ว {item.already_received_qty}/{item.ordered_qty} {item.unit}
                       </p>
-                      <div className="w-32 h-1.5 bg-cyber-border rounded-full overflow-hidden">
-                        <div className="h-full bg-cyber-green rounded-full transition-all"
+                      <div className="w-32 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
+                        <div className="h-full bg-success rounded-full transition-all"
                           style={{ width: `${Math.min(100 - pendingPct, 100)}%` }} />
                       </div>
                       <p className="text-xs text-yellow-400 mt-0.5">คงค้าง {item.pending_qty} {item.unit}</p>
@@ -3177,14 +3177,14 @@ const Purchase = () => {
                   <div className="grid grid-cols-3 gap-2">
                     {([
                       { label: 'รับจริง (ครั้งนี้)', key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
-                      { label: 'รับเข้าสต็อก ✓', key: 'accepted_qty' as const, color: 'border-cyber-green/50 focus:border-cyber-green' },
+                      { label: 'รับเข้าสต็อก ✓', key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
                       { label: 'ปฏิเสธ / เสียหาย ✗', key: 'rejected_qty' as const, color: 'border-red-500/50 focus:border-red-400' },
                     ] as const).map(f => (
                       <div key={f.key}>
-                        <label className="text-xs text-gray-500 mb-1 block">{f.label}</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
                         <input type="number" min="0" step="0.01" value={item[f.key]}
                           onChange={e => updateItem(index, f.key, parseFloat(e.target.value) || 0)}
-                          className={`w-full px-2 py-2 bg-cyber-card border ${f.color} rounded-lg text-sm text-white text-center focus:outline-none`} />
+                          className={`w-full px-2 py-2 bg-phopy-card border ${f.color} rounded-lg text-sm text-white text-center focus:outline-none`} />
                       </div>
                     ))}
                   </div>
@@ -3204,30 +3204,30 @@ const Purchase = () => {
                   {/* ── Lot + Location + Rejection notes ── */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 flex items-center gap-1 block">
+                      <label className="text-xs text-[var(--fg-4)] mb-1 flex items-center gap-1 block">
                         <span className="text-yellow-400">*</span> Lot / Batch No.
                       </label>
                       <input type="text" value={item.lot_number} placeholder="เช่น LOT-2026-001"
                         onChange={e => updateItem(index, 'lot_number', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-cyber-card border border-yellow-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
+                        className="w-full px-2.5 py-1.5 bg-phopy-card border border-yellow-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">สถานที่จัดเก็บ</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">สถานที่จัดเก็บ</label>
                       <input type="text" value={item.location} placeholder="เช่น คลัง A, ชั้น 3"
                         onChange={e => updateItem(index, 'location', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
+                        className="w-full px-2.5 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   {item.rejected_qty > 0 && (
                     <input type="text" value={item.notes} placeholder="สาเหตุที่ปฏิเสธ / รายละเอียดความเสียหาย..."
                       onChange={e => updateItem(index, 'notes', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-cyber-card border border-red-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400" />
+                      className="w-full px-2.5 py-1.5 bg-phopy-card border border-red-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400" />
                   )}
 
                   {/* ── Line total ── */}
-                  <div className="flex justify-end pt-1 border-t border-cyber-border/30">
-                    <span className="text-xs text-gray-500 mr-2">มูลค่ารับเข้า</span>
-                    <span className="text-sm font-semibold text-cyber-primary">
+                  <div className="flex justify-end pt-1 border-t border-[var(--border)]/30">
+                    <span className="text-xs text-[var(--fg-4)] mr-2">มูลค่ารับเข้า</span>
+                    <span className="text-sm font-semibold text-phopy-indigo">
                       {formatCurrency(item.accepted_qty * item.unit_price)}
                     </span>
                   </div>
@@ -3237,20 +3237,20 @@ const Purchase = () => {
           </div>
 
           {/* Total summary */}
-          <div className="mt-3 p-3 bg-cyber-primary/5 border border-cyber-primary/20 rounded-xl flex justify-between items-center">
-            <span className="text-sm text-gray-400">มูลค่ารับเข้าสต็อกรวม</span>
-            <span className="text-lg font-bold text-cyber-primary">
+          <div className="mt-3 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-xl flex justify-between items-center">
+            <span className="text-sm text-[var(--fg-3)]">มูลค่ารับเข้าสต็อกรวม</span>
+            <span className="text-lg font-bold text-phopy-indigo">
               {formatCurrency(receiptForm.items.reduce((s, i) => s + i.accepted_qty * i.unit_price, 0))}
             </span>
           </div>
         </div>
       ) : receiptForm.purchase_order_id ? (
-        <div className="text-center py-8 text-gray-500 text-sm">
-          <div className="w-5 h-5 border-2 border-cyber-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+        <div className="text-center py-8 text-[var(--fg-4)] text-sm">
+          <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto mb-2" />
           กำลังโหลดรายการจาก PO...
         </div>
       ) : (
-        <div className="text-center py-8 text-gray-600 text-sm border border-dashed border-cyber-border/40 rounded-xl">
+        <div className="text-center py-8 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)]/40 rounded-xl">
           เลือกใบสั่งซื้อด้านบนเพื่อโหลดรายการสินค้าที่ต้องรับ
         </div>
       )}
@@ -3280,40 +3280,40 @@ const Purchase = () => {
       footer={
         modalMode !== 'view' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={handleCreateInvoice} disabled={formLoading || !invoiceForm.purchase_order_id}
-              className="px-6 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+              className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
               สร้างใบแจ้งหนี้
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
       }
     >
       {/* ── Procurement Chain (Option A: PO as master) ── */}
       {(selectedPO || (isView && invoiceForm._po_number)) && (
-        <div className="flex items-center gap-1.5 p-3 bg-cyber-dark rounded-xl overflow-x-auto">
+        <div className="flex items-center gap-1.5 p-3 bg-[var(--bg)] rounded-xl overflow-x-auto">
           {linkedPR && (<>
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono text-gray-400 bg-gray-500/15 px-2 py-1 rounded-lg">{linkedPR.pr_number}</span>
-              <span className="text-gray-600 text-xs">PR</span>
+              <span className="text-xs font-mono text-[var(--fg-3)] bg-gray-500/15 px-2 py-1 rounded-lg">{linkedPR.pr_number}</span>
+              <span className="text-[var(--fg-4)] text-xs">PR</span>
             </div>
-            <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
+            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
           </>)}
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs font-mono text-cyber-primary bg-cyber-primary/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
-            <span className="text-gray-600 text-xs">PO ★</span>
+            <span className="text-xs font-mono text-phopy-indigo bg-phopy-indigo/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
+            <span className="text-[var(--fg-4)] text-xs">PO ★</span>
           </div>
           {selectedGRs.length > 0 && (<>
-            <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
+            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
             <div className="flex items-center gap-1 shrink-0 flex-wrap">
               {selectedGRs.map(gr => (
-                <span key={gr.id} className="text-xs font-mono text-cyber-green bg-cyber-green/15 px-2 py-1 rounded-lg">{gr.gr_number}</span>
+                <span key={gr.id} className="text-xs font-mono text-success bg-success/15 px-2 py-1 rounded-lg">{gr.gr_number}</span>
               ))}
-              <span className="text-gray-600 text-xs">GR</span>
+              <span className="text-[var(--fg-4)] text-xs">GR</span>
             </div>
           </>)}
-          <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
+          <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
           {isView
             ? <span className="text-xs font-mono text-yellow-400 bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{invoiceForm._pi_number}</span>
             : <span className="text-xs font-mono text-yellow-400 bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">INV-????</span>
@@ -3324,9 +3324,9 @@ const Purchase = () => {
       {/* ── Section 1: PO + GR reference ── */}
       <div className="space-y-3">
         {isView ? (
-          <div className="p-3 bg-cyber-dark rounded-xl text-sm">
-            <p className="text-xs text-gray-500 mb-0.5">ใบสั่งซื้อ (PO)</p>
-            <p className="text-cyber-primary font-mono font-semibold">{displayPO || '-'}</p>
+          <div className="p-3 bg-[var(--bg)] rounded-xl text-sm">
+            <p className="text-xs text-[var(--fg-4)] mb-0.5">ใบสั่งซื้อ (PO)</p>
+            <p className="text-phopy-indigo font-mono font-semibold">{displayPO || '-'}</p>
           </div>
         ) : (
         <Field label="ใบสั่งซื้อ (PO)" required>
@@ -3361,20 +3361,20 @@ const Purchase = () => {
 
         {/* PO + Supplier summary */}
         {(selectedPO || (isView && displaySupplier)) && (
-          <div className="grid grid-cols-2 gap-3 p-3 bg-cyber-primary/5 border border-cyber-primary/20 rounded-xl text-sm">
+          <div className="grid grid-cols-2 gap-3 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-xl text-sm">
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">ผู้ขาย</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
               <p className="text-white font-medium truncate">{displaySupplier}</p>
               {supplierDetail?.tax_id && (
-                <p className="text-xs text-gray-400 font-mono mt-0.5">เลขผู้เสียภาษี: {supplierDetail.tax_id}</p>
+                <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">เลขผู้เสียภาษี: {supplierDetail.tax_id}</p>
               )}
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">{isView ? 'มูลค่าใบแจ้งหนี้' : 'มูลค่า PO'}</p>
-              <p className="text-cyber-primary font-semibold">{formatCurrency(isView ? invoiceForm._total_amount : (selectedPO?.total_amount ?? 0))}</p>
-              {!isView && <p className="text-xs text-cyber-green mt-0.5">GR ยืนยันแล้ว {poGRs.length} ใบ {selectedGRs.length > 0 ? `(เลือก ${selectedGRs.length} ใบ)` : ''}</p>}
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{isView ? 'มูลค่าใบแจ้งหนี้' : 'มูลค่า PO'}</p>
+              <p className="text-phopy-indigo font-semibold">{formatCurrency(isView ? invoiceForm._total_amount : (selectedPO?.total_amount ?? 0))}</p>
+              {!isView && <p className="text-xs text-success mt-0.5">GR ยืนยันแล้ว {poGRs.length} ใบ {selectedGRs.length > 0 ? `(เลือก ${selectedGRs.length} ใบ)` : ''}</p>}
               {isView && invoiceForm._payment_status && (
-                <p className={`text-xs mt-0.5 ${invoiceForm._payment_status === 'PAID' ? 'text-cyber-green' : invoiceForm._payment_status === 'PARTIAL' ? 'text-yellow-400' : 'text-red-400'}`}>
+                <p className={`text-xs mt-0.5 ${invoiceForm._payment_status === 'PAID' ? 'text-success' : invoiceForm._payment_status === 'PARTIAL' ? 'text-yellow-400' : 'text-red-400'}`}>
                   {invoiceForm._payment_status === 'PAID' ? 'ชำระครบแล้ว' : invoiceForm._payment_status === 'PARTIAL' ? `ชำระแล้ว ${formatCurrency(invoiceForm._paid_amount)} / ค้าง ${formatCurrency(invoiceForm._balance_amount)}` : `ยังไม่ชำระ (ค้าง ${formatCurrency(invoiceForm._balance_amount)})`}
                 </p>
               )}
@@ -3404,23 +3404,23 @@ const Purchase = () => {
 
       {/* ── Section 3: Amount breakdown ── */}
       {selectedPO && (
-        <div className="p-4 bg-cyber-dark rounded-xl space-y-2.5 text-sm">
-          <div className="flex justify-between text-gray-400">
+        <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2.5 text-sm">
+          <div className="flex justify-between text-[var(--fg-3)]">
             <span>ราคาสินค้า (จาก PO)</span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-400">VAT (%)</span>
+            <span className="text-[var(--fg-3)]">VAT (%)</span>
             <div className="flex items-center gap-2">
               <input type="number" min="0" max="30" value={invoiceForm.tax_rate}
                 onChange={e => setInvoiceForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-20 px-2 py-1 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white text-right focus:outline-none focus:border-cyber-primary" />
-              <span className="text-gray-500 text-xs">= {formatCurrency(taxAmt)}</span>
+                className="w-20 px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
+              <span className="text-[var(--fg-4)] text-xs">= {formatCurrency(taxAmt)}</span>
             </div>
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-cyber-border/50 pt-2.5">
+          <div className="flex justify-between font-bold text-white border-t border-[var(--border)]/50 pt-2.5">
             <span>รวมทั้งสิ้น</span>
-            <span className="text-xl text-cyber-primary">{formatCurrency(total)}</span>
+            <span className="text-xl text-phopy-indigo">{formatCurrency(total)}</span>
           </div>
         </div>
       )}
@@ -3447,7 +3447,7 @@ const Purchase = () => {
             )
           })}
         </select>
-        <p className="text-xs text-gray-500 mt-1">เปลี่ยนได้หากซื้อของสำนักงาน / ค่าใช้จ่าย ที่ไม่เข้า stock</p>
+        <p className="text-xs text-[var(--fg-4)] mt-1">เปลี่ยนได้หากซื้อของสำนักงาน / ค่าใช้จ่าย ที่ไม่เข้า stock</p>
       </Field>
 
       {/* Journal preview */}
@@ -3473,21 +3473,21 @@ const Purchase = () => {
     return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-cyber-card rounded-2xl border border-cyber-border w-full max-w-lg flex flex-col max-h-[90vh]">
-        <div className="p-5 border-b border-cyber-border flex justify-between items-center shrink-0">
+        className="bg-phopy-card rounded-2xl border border-[var(--border)] w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-cyber-green" /> บันทึกการจ่ายเงิน
+            <CreditCard className="w-5 h-5 text-success" /> บันทึกการจ่ายเงิน
           </h2>
-          <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-cyber-dark text-gray-400 hover:text-white"><X className="w-4 h-4" /></button>
+          <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
 
           {/* Supplier */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-gray-300">ผู้ขาย <span className="text-red-400">*</span></label>
+              <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขาย <span className="text-red-400">*</span></label>
               <button onClick={() => openQuickAddSupplier(id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0 })))}
-                className="text-xs text-cyber-primary hover:text-cyber-primary/80 flex items-center gap-1 px-2 py-0.5 border border-cyber-primary/30 rounded-lg hover:bg-cyber-primary/10 transition-colors">
+                className="text-xs text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
                 <Plus className="w-3 h-3" /> เพิ่มผู้ขายใหม่
               </button>
             </div>
@@ -3518,15 +3518,15 @@ const Purchase = () => {
           {selectedInv && (
             <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl grid grid-cols-3 gap-3 text-sm">
               <div>
-                <p className="text-xs text-gray-500">ยอดรวม</p>
+                <p className="text-xs text-[var(--fg-4)]">ยอดรวม</p>
                 <p className="text-white font-medium">{formatCurrency(selectedInv.total_amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">ชำระแล้ว</p>
-                <p className="text-cyber-green font-medium">{formatCurrency(selectedInv.paid_amount)}</p>
+                <p className="text-xs text-[var(--fg-4)]">ชำระแล้ว</p>
+                <p className="text-success font-medium">{formatCurrency(selectedInv.paid_amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">คงค้าง</p>
+                <p className="text-xs text-[var(--fg-4)]">คงค้าง</p>
                 <p className="text-red-400 font-bold">{formatCurrency(selectedInv.balance_amount)}</p>
               </div>
             </div>
@@ -3549,24 +3549,24 @@ const Purchase = () => {
           </div>
 
           {/* Amount + WHT */}
-          <div className="p-4 bg-cyber-dark rounded-xl space-y-3">
+          <div className="p-4 bg-[var(--bg)] rounded-xl space-y-3">
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <label className="text-xs text-gray-400 mb-1 block">จำนวนเงินที่จ่าย (บาท)</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">จำนวนเงินที่จ่าย (บาท)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">฿</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.amount}
                     onChange={e => setPaymentForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-cyber-card border border-cyber-border rounded-xl text-white text-lg font-bold focus:outline-none focus:border-cyber-primary" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-phopy-card border border-[var(--border)] rounded-xl text-white text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-40">
-                <label className="text-xs text-gray-400 mb-1 block">อัตรา WHT</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">อัตรา WHT</label>
                 <select
                   onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: p.amount * (parseFloat(e.target.value) / 100) }))}
-                  className="w-full px-2.5 py-2 bg-cyber-card border border-cyber-border rounded-xl text-sm text-white focus:outline-none focus:border-cyber-primary">
+                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-xl text-sm text-white focus:outline-none focus:border-phopy-indigo">
                   <option value="0">ไม่หัก WHT</option>
                   <option value="1">1% — บริการทั่วไป</option>
                   <option value="3">3% — ค่าเช่า/บริการ</option>
@@ -3574,18 +3574,18 @@ const Purchase = () => {
                 </select>
               </div>
               <div className="flex-1">
-                <label className="text-xs text-gray-400 mb-1 block">หัก ณ ที่จ่าย (คำนวณอัตโนมัติ)</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">หัก ณ ที่จ่าย (คำนวณอัตโนมัติ)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">฿</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.withholding_tax}
                     onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-cyber-card border border-cyber-border rounded-xl text-white focus:outline-none focus:border-cyber-primary" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-phopy-card border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
-            <div className={`flex justify-between items-center p-3 rounded-xl font-semibold ${netPay > 0 ? 'bg-cyber-green/10 border border-cyber-green/30' : 'bg-cyber-dark'}`}>
-              <span className="text-sm text-gray-300">ยอดที่โอน/จ่ายจริง</span>
-              <span className="text-xl text-cyber-green">{formatCurrency(netPay)}</span>
+            <div className={`flex justify-between items-center p-3 rounded-xl font-semibold ${netPay > 0 ? 'bg-success/10 border border-success/30' : 'bg-[var(--bg)]'}`}>
+              <span className="text-sm text-[var(--fg-2)]">ยอดที่โอน/จ่ายจริง</span>
+              <span className="text-xl text-success">{formatCurrency(netPay)}</span>
             </div>
           </div>
 
@@ -3605,10 +3605,10 @@ const Purchase = () => {
             ]} />
           )}
         </div>
-        <div className="p-5 border-t border-cyber-border flex justify-end gap-3 shrink-0">
-          <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleCreatePayment} disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount}
-            className="px-6 py-2.5 bg-cyber-green text-cyber-dark font-semibold rounded-xl hover:bg-cyber-green/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+            className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
             {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
             <Check className="w-4 h-4" /> ยืนยันจ่ายเงิน
           </button>
@@ -3629,7 +3629,7 @@ const Purchase = () => {
       onClose={closeModal}
       footer={
         <div className="flex justify-end gap-3">
-          <button onClick={closeModal} className="px-4 py-2 text-gray-400 hover:text-white text-sm">ยกเลิก</button>
+          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleCreateReturn}
             disabled={formLoading || !returnForm.reason || returnForm.items.length === 0}
             className="px-6 py-2.5 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 disabled:opacity-50 flex items-center gap-2 text-sm">
@@ -3683,15 +3683,15 @@ const Purchase = () => {
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-gray-300">รายการที่คืน</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการที่คืน</span>
           <button onClick={addReturnItem}
-            className="flex items-center gap-1 px-2.5 py-1 bg-red-500/10 text-red-400 text-xs rounded-lg hover:bg-red-500/20">
+            className="flex items-center gap-1 px-2.5 py-1 bg-red-500/10 text-red-400 text-xs rounded-lg hover:bg-danger-soft">
             <Plus className="w-3 h-3" /> เพิ่มรายการ
           </button>
         </div>
         <div className="space-y-3">
           {returnForm.items.map((item, index) => (
-            <div key={index} className="p-3 bg-cyber-dark rounded-xl space-y-2 border border-red-500/20">
+            <div key={index} className="p-3 bg-[var(--bg)] rounded-xl space-y-2 border border-red-500/20">
               <MaterialSearchInput materials={materials} value={item.material_id}
                 onChange={(id) => {
                   const mat = materials.find(m => m.id === id)
@@ -3699,17 +3699,17 @@ const Purchase = () => {
                 }} />
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">จำนวนคืน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวนคืน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-red-500/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-red-500/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateReturnItem(index, 'unit', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary"
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -3718,27 +3718,27 @@ const Purchase = () => {
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-gray-500 mb-0.5 block">ราคา/หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย</label>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">฿</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateReturnItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                      className="w-full pl-5 pr-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white focus:outline-none focus:border-cyber-primary" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo" />
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">หมายเหตุ item</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หมายเหตุ item</label>
                   <input type="text" value={item.reason} placeholder="สาเหตุเพิ่มเติม"
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyber-primary" />
+                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                 </div>
                 <div className="col-span-2 text-right">
-                  <label className="text-xs text-gray-500 mb-0.5 block">รวม</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
                   <span className="text-sm font-semibold text-red-400">{formatCurrency(item.total_price)}</span>
                 </div>
                 <div className="col-span-1 flex items-end justify-center pb-0.5">
                   <button onClick={() => removeReturnItem(index)}
-                    className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors">
+                    className="p-1.5 hover:bg-danger-soft rounded-lg text-red-400 transition-colors">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -3746,7 +3746,7 @@ const Purchase = () => {
             </div>
           ))}
           {returnForm.items.length === 0 && (
-            <div className="text-center py-6 text-gray-500 text-sm border border-dashed border-red-500/30 rounded-xl">
+            <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-red-500/30 rounded-xl">
               ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
             </div>
           )}
@@ -3755,19 +3755,19 @@ const Purchase = () => {
 
       {/* Amount breakdown */}
       {returnForm.items.length > 0 && (
-        <div className="p-4 bg-cyber-dark rounded-xl space-y-2 text-sm">
-          <div className="flex justify-between text-gray-400">
+        <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2 text-sm">
+          <div className="flex justify-between text-[var(--fg-3)]">
             <span>ก่อนภาษี</span><span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-400">ภาษี (%)</span>
+            <span className="text-[var(--fg-3)]">ภาษี (%)</span>
             <div className="w-24">
               <input type="number" min="0" max="30" value={returnForm.tax_rate}
                 onChange={e => setReturnForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-full px-2 py-1 bg-cyber-card border border-cyber-border rounded-lg text-sm text-white text-right focus:outline-none focus:border-cyber-primary" />
+                className="w-full px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-cyber-border pt-2">
+          <div className="flex justify-between font-bold text-white border-t border-[var(--border)] pt-2">
             <span>มูลค่าคืนทั้งสิ้น</span>
             <span className="text-lg text-red-400">{formatCurrency(total)}</span>
           </div>
@@ -3816,29 +3816,29 @@ const Purchase = () => {
         className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <ShoppingCart className="w-8 h-8 text-cyber-primary" /> การจัดซื้อ
+            <ShoppingCart className="w-8 h-8 text-phopy-indigo" /> การจัดซื้อ
           </h1>
-          <p className="text-gray-400 mt-1">จัดการใบขอซื้อ ใบสั่งซื้อ รับสินค้า และการจ่ายเงิน</p>
+          <p className="text-[var(--fg-3)] mt-1">จัดการใบขอซื้อ ใบสั่งซื้อ รับสินค้า และการจ่ายเงิน</p>
         </div>
         <button onClick={() => openModal('request', 'create')}
-          className="flex items-center gap-2 px-5 py-2.5 bg-cyber-primary text-cyber-dark font-semibold rounded-xl hover:bg-cyber-primary/80 transition-colors">
+          className="flex items-center gap-2 px-5 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors">
           <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
         </button>
       </motion.div>
 
       {/* Tab navigation */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-cyber-card p-2 rounded-2xl border border-cyber-border">
+        className="flex flex-wrap gap-1.5 bg-phopy-card p-2 rounded-2xl border border-[var(--border)]">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1) }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all relative ${
-              activeTab === tab.id ? 'bg-cyber-primary text-cyber-dark shadow-lg' : 'text-gray-400 hover:text-white hover:bg-cyber-dark'
+              activeTab === tab.id ? 'bg-phopy-indigo text-white shadow-lg' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)]'
             }`}>
             <tab.icon className="w-4 h-4" />
             <span className="hidden md:inline">{tab.label}</span>
             {tab.badge > 0 && (
               <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                activeTab === tab.id ? 'bg-cyber-dark/30 text-cyber-dark' : 'bg-yellow-500 text-black'
+                activeTab === tab.id ? 'bg-[var(--bg)]/30 text-white' : 'bg-yellow-500 text-black'
               }`}>
                 {tab.badge}
               </span>
@@ -3850,7 +3850,7 @@ const Purchase = () => {
       {/* Content */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-primary" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-phopy-indigo" />
         </div>
       ) : (
         <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>

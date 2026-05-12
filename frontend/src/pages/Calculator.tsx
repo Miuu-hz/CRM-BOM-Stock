@@ -321,16 +321,16 @@ function Calculator() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-100 mb-2">
-            <span className="neon-text">Cost Calculator</span>
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
+            <span className="text-[var(--fg-1)]">Cost Calculator</span>
           </h1>
-          <p className="text-gray-400">
+          <p className="text-[var(--fg-3)]">
             คำนวณต้นทุนการผลิตและกำไรจาก E-commerce Platforms
           </p>
         </div>
         <button
           onClick={resetForm}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-[var(--fg-2)] rounded-lg hover:bg-gray-600 transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           รีเซ็ต
@@ -340,23 +340,23 @@ function Calculator() {
       {/* Main Content - Single Column */}
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Product Search */}
-        <div className="cyber-card p-4">
+        <div className="phopy-card p-4">
           <div className="flex items-center gap-3 mb-6">
-            <Package className="w-6 h-6 text-cyber-primary" />
-            <h2 className="text-xl font-bold text-gray-100">
+            <Package className="w-6 h-6 text-phopy-indigo" />
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">
               ค้นหาสินค้า
             </h2>
           </div>
 
           <div className="relative">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchQuery && setShowDropdown(true)}
-                className="cyber-input w-full pl-12"
+                className="phopy-input w-full pl-12"
                 placeholder="ค้นหาด้วยรหัสหรือชื่อสินค้า..."
                 disabled={loading}
               />
@@ -364,16 +364,16 @@ function Calculator() {
 
             {/* Search Results Dropdown */}
             {showDropdown && filteredProducts.length > 0 && (
-              <div className="absolute z-10 w-full mt-2 bg-cyber-darker border border-cyber-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {(filteredProducts || []).map((product) => (
                   <button
                     key={product.id}
                     onClick={() => handleProductSelect(product)}
-                    className="w-full text-left px-4 py-3 hover:bg-cyber-primary/10 border-b border-cyber-border last:border-b-0 transition-colors"
+                    className="w-full text-left px-4 py-3 hover:bg-phopy-indigo/10 border-b border-[var(--border)] last:border-b-0 transition-colors"
                   >
-                    <div className="font-semibold text-gray-100">{product.code}</div>
-                    <div className="text-sm text-gray-400">{product.name}</div>
-                    <div className="text-xs text-cyber-primary">{product.category}</div>
+                    <div className="font-semibold text-[var(--fg-1)]">{product.code}</div>
+                    <div className="text-sm text-[var(--fg-3)]">{product.name}</div>
+                    <div className="text-xs text-phopy-indigo">{product.category}</div>
                   </button>
                 ))}
               </div>
@@ -381,15 +381,15 @@ function Calculator() {
           </div>
 
           {selectedBOM && (
-            <div className="mt-4 p-4 bg-cyber-primary/10 rounded-lg border border-cyber-primary/30">
+            <div className="mt-4 p-4 bg-phopy-indigo/10 rounded-lg border border-phopy-indigo/30">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-sm text-gray-400">BOM Version:</span>
-                  <p className="font-semibold text-cyber-primary">{selectedBOM.version}</p>
+                  <span className="text-sm text-[var(--fg-3)]">BOM Version:</span>
+                  <p className="font-semibold text-phopy-indigo">{selectedBOM.version}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-400">จำนวนวัตถุดิบ:</span>
-                  <p className="font-semibold text-cyber-green">
+                  <span className="text-sm text-[var(--fg-3)]">จำนวนวัตถุดิบ:</span>
+                  <p className="font-semibold text-success">
                     {selectedBOM.materials.length} รายการ
                   </p>
                 </div>
@@ -400,10 +400,10 @@ function Calculator() {
 
         {/* Materials List */}
         {selectedBOM && (
-          <div className="cyber-card p-4">
+          <div className="phopy-card p-4">
             <div className="flex items-center gap-3 mb-6">
-              <Package className="w-6 h-6 text-cyber-green" />
-              <h2 className="text-xl font-bold text-gray-100">
+              <Package className="w-6 h-6 text-success" />
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 รายการวัตถุดิบ
               </h2>
             </div>
@@ -412,37 +412,37 @@ function Calculator() {
               {(selectedBOM.materials || []).map((material, index) => (
                 <div
                   key={index}
-                  className="p-4 bg-cyber-darker/50 rounded-lg border border-cyber-border"
+                  className="p-4 bg-[var(--surface-2)]/50 rounded-lg border border-[var(--border)]"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-100 text-lg">
+                      <h3 className="font-semibold text-[var(--fg-1)] text-lg">
                         {material.materialName}
                       </h3>
-                      <p className="text-sm text-gray-400">{material.materialCode}</p>
+                      <p className="text-sm text-[var(--fg-3)]">{material.materialCode}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-cyber-green">
+                      <p className="text-xl font-bold text-success">
                         ฿{((material.unitCost || 0) * material.quantity).toFixed(2)}
                       </p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm bg-cyber-darker/30 p-3 rounded">
+                  <div className="grid grid-cols-3 gap-4 text-sm bg-[var(--surface-2)]/30 p-3 rounded">
                     <div>
-                      <span className="text-gray-400 block mb-1">จำนวน:</span>
-                      <p className="text-gray-200 font-medium">
+                      <span className="text-[var(--fg-3)] block mb-1">จำนวน:</span>
+                      <p className="text-[var(--fg-2)] font-medium">
                         {material.quantity} {material.unit}
                       </p>
                     </div>
                     <div>
-                      <span className="text-gray-400 block mb-1">ราคา/หน่วย:</span>
-                      <p className="text-gray-200 font-medium">
+                      <span className="text-[var(--fg-3)] block mb-1">ราคา/หน่วย:</span>
+                      <p className="text-[var(--fg-2)] font-medium">
                         ฿{(material.unitCost || 0).toFixed(2)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-gray-400 block mb-1">รวม:</span>
-                      <p className="text-gray-200 font-medium">
+                      <span className="text-[var(--fg-3)] block mb-1">รวม:</span>
+                      <p className="text-[var(--fg-2)] font-medium">
                         ฿{((material.unitCost || 0) * material.quantity).toFixed(2)}
                       </p>
                     </div>
@@ -455,17 +455,17 @@ function Calculator() {
 
         {/* Operating Costs */}
         {selectedBOM && (
-          <div className="cyber-card p-4">
+          <div className="phopy-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <DollarSign className="w-6 h-6 text-cyber-purple" />
-                <h2 className="text-xl font-bold text-gray-100">
+                <DollarSign className="w-6 h-6 text-purple-500" />
+                <h2 className="text-xl font-bold text-[var(--fg-1)]">
                   ค่าดำเนินการ
                 </h2>
               </div>
               <button
                 onClick={addOperatingCost}
-                className="flex items-center gap-2 px-3 py-2 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/50 rounded-lg hover:bg-cyber-primary/30 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50 rounded-lg hover:bg-phopy-indigo/30 transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 เพิ่มหมวด
@@ -482,7 +482,7 @@ function Calculator() {
                       onChange={(e) =>
                         updateOperatingCost(cost.id, 'category', e.target.value)
                       }
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                       placeholder="หมวดค่าใช้จ่าย (เช่น ค่าแรง, ค่าไฟ)"
                     />
                   </div>
@@ -493,7 +493,7 @@ function Calculator() {
                       onChange={(e) =>
                         updateOperatingCost(cost.id, 'amount', parseFloat(e.target.value) || 0)
                       }
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                       placeholder={cost.type === 'percent' ? '0' : '฿0.00'}
                     />
                   </div>
@@ -503,7 +503,7 @@ function Calculator() {
                       onChange={(e) =>
                         updateOperatingCost(cost.id, 'type', e.target.value)
                       }
-                      className="cyber-input w-full"
+                      className="phopy-input w-full"
                     >
                       <option value="fixed">฿</option>
                       <option value="percent">%</option>
@@ -520,10 +520,10 @@ function Calculator() {
                 </div>
               ))}
 
-              <div className="pt-3 border-t border-cyber-border">
+              <div className="pt-3 border-t border-[var(--border)]">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">รวมค่าดำเนินการทั้งหมด:</span>
-                  <span className="text-xl font-bold text-cyber-green">
+                  <span className="text-[var(--fg-3)]">รวมค่าดำเนินการทั้งหมด:</span>
+                  <span className="text-xl font-bold text-success">
                     {selectedBOM ? (() => {
                       const rawMaterialCost = selectedBOM.materials.reduce(
                         (sum, m) => sum + (m.unitCost || 0) * m.quantity,
@@ -545,21 +545,21 @@ function Calculator() {
             </div>
 
             <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                 มูลค่าของเสีย (ถ้ามี)
               </label>
               <input
                 type="number"
                 value={scrapValue || ''}
                 onChange={(e) => setScrapValue(parseFloat(e.target.value) || 0)}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 placeholder="฿0.00"
               />
             </div>
 
             <button
               onClick={calculateCost}
-              className="w-full mt-6 cyber-btn-primary flex items-center justify-center gap-2"
+              className="w-full mt-6 phopy-btn-primary flex items-center justify-center gap-2"
             >
               <CalcIcon className="w-5 h-5" />
               คำนวณต้นทุนการผลิต
@@ -569,49 +569,49 @@ function Calculator() {
 
         {/* Cost Result */}
         {costBreakdown && (
-          <div className="cyber-card p-4">
+          <div className="phopy-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <TrendingUp className="w-6 h-6 text-cyber-green" />
-                <h2 className="text-xl font-bold text-gray-100">
+                <TrendingUp className="w-6 h-6 text-success" />
+                <h2 className="text-xl font-bold text-[var(--fg-1)]">
                   ผลการคำนวณ
                 </h2>
               </div>
               <button
                 onClick={saveStandardCost}
-                className="flex items-center gap-2 px-4 py-2 cyber-btn-secondary"
+                className="flex items-center gap-2 px-4 py-2 phopy-btn-secondary"
               >
                 <Save className="w-4 h-4" />
                 บันทึกต้นทุนมาตรฐาน
               </button>
             </div>
 
-            <div className="p-5 bg-gradient-to-br from-cyber-primary/10 to-cyber-green/10 rounded-lg border border-cyber-border">
+            <div className="p-5 bg-gradient-to-br from-phopy-indigo/10 to-success/10 rounded-lg border border-[var(--border)]">
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-lg">
-                  <span className="text-gray-400">ต้นทุนวัตถุดิบ:</span>
-                  <span className="text-gray-200 font-semibold">
+                  <span className="text-[var(--fg-3)]">ต้นทุนวัตถุดิบ:</span>
+                  <span className="text-[var(--fg-2)] font-semibold">
                     ฿{costBreakdown.rawMaterialCost.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-lg">
-                  <span className="text-gray-400">ค่าดำเนินการ:</span>
-                  <span className="text-gray-200 font-semibold">
+                  <span className="text-[var(--fg-3)]">ค่าดำเนินการ:</span>
+                  <span className="text-[var(--fg-2)] font-semibold">
                     +฿{costBreakdown.operatingCost.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-lg">
-                  <span className="text-gray-400">มูลค่าของเสีย:</span>
+                  <span className="text-[var(--fg-3)]">มูลค่าของเสีย:</span>
                   <span className="text-red-400 font-semibold">
                     -฿{costBreakdown.scrapValue.toFixed(2)}
                   </span>
                 </div>
-                <div className="pt-4 border-t-2 border-cyber-border">
+                <div className="pt-4 border-t-2 border-[var(--border)]">
                   <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-cyber-primary">
+                    <span className="text-2xl font-bold text-phopy-indigo">
                       ต้นทุนรวมต่อหน่วย:
                     </span>
-                    <span className="text-4xl font-bold text-cyber-green">
+                    <span className="text-4xl font-bold text-success">
                       ฿{costBreakdown.totalCost.toFixed(2)}
                     </span>
                   </div>
@@ -623,77 +623,77 @@ function Calculator() {
 
         {/* Platform Comparison */}
         {costBreakdown && (
-          <div className="cyber-card p-4">
+          <div className="phopy-card p-4">
             <div className="flex items-center gap-3 mb-6">
-              <ShoppingCart className="w-6 h-6 text-cyber-purple" />
-              <h2 className="text-xl font-bold text-gray-100">
+              <ShoppingCart className="w-6 h-6 text-purple-500" />
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 เปรียบเทียบกำไร E-commerce
               </h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                   ราคาขาย (บาท/หน่วย)
                 </label>
                 <input
                   type="number"
                   value={sellingPrice || ''}
                   onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="฿0.00"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                   จำนวน (หน่วย)
                 </label>
                 <input
                   type="number"
                   value={quantity || ''}
                   onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="1"
                   min="1"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                   Target GP (%)
                 </label>
                 <input
                   type="number"
                   value={targetGP || ''}
                   onChange={(e) => setTargetGP(parseFloat(e.target.value) || 0)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="30"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                   Affiliate (%)
                 </label>
                 <input
                   type="number"
                   value={affiliateRate || ''}
                   onChange={(e) => setAffiliateRate(parseFloat(e.target.value) || 0)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="0"
                 />
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
                   VAT (%)
                 </label>
                 <input
                   type="number"
                   value={vatRate || ''}
                   onChange={(e) => setVatRate(parseFloat(e.target.value) || 0)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="7"
                 />
               </div>
@@ -701,7 +701,7 @@ function Calculator() {
 
             <button
               onClick={comparePlatforms}
-              className="w-full cyber-btn-secondary flex items-center justify-center gap-2 mb-6"
+              className="w-full phopy-btn-secondary flex items-center justify-center gap-2 mb-6"
             >
               <TrendingUp className="w-5 h-5" />
               เปรียบเทียบ Platforms
@@ -710,7 +710,7 @@ function Calculator() {
             {/* Platform Results */}
             {platformResults.length > 0 && (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3">
+                <h3 className="text-sm font-semibold text-[var(--fg-2)] mb-3">
                   ผลการเปรียบเทียบ (เรียงตามกำไรสูงสุด)
                 </h3>
 
@@ -719,17 +719,17 @@ function Calculator() {
                     key={result.platform}
                     className={`p-6 rounded-lg border ${
                       index === 0
-                        ? 'bg-cyber-green/10 border-cyber-green/50 shadow-lg'
-                        : 'bg-cyber-darker/50 border-cyber-border'
+                        ? 'bg-success/10 border-success/50 shadow-lg'
+                        : 'bg-[var(--surface-2)]/50 border-[var(--border)]'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl font-bold text-gray-100 capitalize">
+                        <span className="text-2xl font-bold text-[var(--fg-1)] capitalize">
                           {result.platform}
                         </span>
                         {index === 0 && (
-                          <span className="px-3 py-1 text-sm bg-cyber-green/20 text-cyber-green rounded-full font-semibold">
+                          <span className="px-3 py-1 text-sm bg-success-soft text-success rounded-full font-semibold">
                             คุ้มที่สุด
                           </span>
                         )}
@@ -738,43 +738,43 @@ function Calculator() {
 
                     <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-400">รายได้รวม:</span>
-                        <span className="text-gray-200 font-medium">
+                        <span className="text-[var(--fg-3)]">รายได้รวม:</span>
+                        <span className="text-[var(--fg-2)] font-medium">
                           ฿{result.grossRevenue.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">ค่าธรรมเนียม:</span>
+                        <span className="text-[var(--fg-3)]">ค่าธรรมเนียม:</span>
                         <span className="text-red-400 font-medium">
                           -฿{result.platformFees.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Affiliate:</span>
+                        <span className="text-[var(--fg-3)]">Affiliate:</span>
                         <span className="text-red-400 font-medium">
                           -฿{((result.grossRevenue * affiliateRate) / 100).toFixed(2)}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">VAT:</span>
+                        <span className="text-[var(--fg-3)]">VAT:</span>
                         <span className="text-red-400 font-medium">
                           -฿{((result.grossRevenue * vatRate) / 100).toFixed(2)}
                         </span>
                       </div>
                     </div>
 
-                    <div className="pt-4 border-t border-cyber-border/50">
+                    <div className="pt-4 border-t border-[var(--border)]/50">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-lg font-semibold text-gray-300">
+                        <span className="text-lg font-semibold text-[var(--fg-2)]">
                           กำไรสุทธิ:
                         </span>
-                        <span className="text-3xl font-bold text-cyber-green">
+                        <span className="text-3xl font-bold text-success">
                           ฿{result.netProfit.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-400">% กำไร:</span>
-                        <span className="text-lg font-semibold text-cyber-primary">
+                        <span className="text-sm text-[var(--fg-3)]">% กำไร:</span>
+                        <span className="text-lg font-semibold text-phopy-indigo">
                           {result.profitMargin.toFixed(2)}%
                         </span>
                       </div>

@@ -101,7 +101,7 @@ function MaterialsTab() {
     const config: Record<string, { icon: any; className: string; label: string }> = {
       CRITICAL: {
         icon: AlertCircle,
-        className: 'bg-red-500/20 text-red-400 border-red-500/30',
+        className: 'bg-danger-soft text-red-400 border-red-500/30',
         label: 'Critical',
       },
       LOW: {
@@ -111,7 +111,7 @@ function MaterialsTab() {
       },
       ADEQUATE: {
         icon: CheckCircle,
-        className: 'bg-cyber-green/20 text-cyber-green border-cyber-green/30',
+        className: 'bg-success-soft text-success border-success/30',
         label: 'Adequate',
       },
       OVERSTOCK: {
@@ -121,7 +121,7 @@ function MaterialsTab() {
       },
       NO_STOCK: {
         icon: Package,
-        className: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+        className: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
         label: 'No Stock',
       },
     }
@@ -140,7 +140,7 @@ function MaterialsTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-cyber-primary animate-spin" />
+        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
       </div>
     )
   }
@@ -149,8 +149,8 @@ function MaterialsTab() {
     return (
       <div className="text-center py-12">
         <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-        <p className="text-gray-300">{error}</p>
-        <button onClick={fetchData} className="cyber-btn-primary mt-4">
+        <p className="text-[var(--fg-2)]">{error}</p>
+        <button onClick={fetchData} className="phopy-btn-primary mt-4">
           ลองใหม่
         </button>
       </div>
@@ -161,21 +161,21 @@ function MaterialsTab() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="cyber-card p-4">
+        <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Total Materials</p>
-              <p className="text-2xl font-bold text-cyber-primary">
+              <p className="text-sm text-[var(--fg-3)]">Total Materials</p>
+              <p className="text-2xl font-bold text-phopy-indigo">
                 {stats?.totalMaterials || 0}
               </p>
             </div>
-            <Package className="w-8 h-8 text-cyber-primary/50" />
+            <Package className="w-8 h-8 text-phopy-indigo/50" />
           </div>
         </div>
-        <div className="cyber-card p-4">
+        <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Low Stock</p>
+              <p className="text-sm text-[var(--fg-3)]">Low Stock</p>
               <p className="text-2xl font-bold text-yellow-400">
                 {stats?.lowStockCount || 0}
               </p>
@@ -183,26 +183,26 @@ function MaterialsTab() {
             <TrendingDown className="w-8 h-8 text-yellow-400/50" />
           </div>
         </div>
-        <div className="cyber-card p-4">
+        <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Total Value</p>
-              <p className="text-2xl font-bold text-cyber-green">
+              <p className="text-sm text-[var(--fg-3)]">Total Value</p>
+              <p className="text-2xl font-bold text-success">
                 ฿{(stats?.totalValue || 0).toLocaleString()}
               </p>
             </div>
-            <DollarSign className="w-8 h-8 text-cyber-green/50" />
+            <DollarSign className="w-8 h-8 text-success/50" />
           </div>
         </div>
-        <div className="cyber-card p-4">
+        <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Active Items</p>
-              <p className="text-2xl font-bold text-cyber-primary">
+              <p className="text-sm text-[var(--fg-3)]">Active Items</p>
+              <p className="text-2xl font-bold text-phopy-indigo">
                 {stats?.activeItems || 0}
               </p>
             </div>
-            <Boxes className="w-8 h-8 text-cyber-primary/50" />
+            <Boxes className="w-8 h-8 text-phopy-indigo/50" />
           </div>
         </div>
       </div>
@@ -210,25 +210,25 @@ function MaterialsTab() {
       {/* Search & Add */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
           <input
             type="text"
             placeholder="Search materials..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="cyber-input pl-10 w-full"
+            className="phopy-input pl-10 w-full"
           />
         </div>
-        <button onClick={handleCreate} className="cyber-btn-primary flex items-center gap-2">
+        <button onClick={handleCreate} className="phopy-btn-primary flex items-center gap-2">
           <Plus className="w-5 h-5" />
           Add Material
         </button>
       </div>
 
       {/* Materials Table */}
-      <div className="cyber-card overflow-hidden">
+      <div className="phopy-card overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="cyber-table w-full">
+        <table className="phopy-table w-full">
           <thead>
             <tr>
               <th>Code</th>
@@ -245,55 +245,55 @@ function MaterialsTab() {
           <tbody>
             {filteredMaterials.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center py-8 text-gray-500">
+                <td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">
                   {searchTerm ? 'ไม่พบวัตถุดิบที่ค้นหา' : 'ยังไม่มีวัตถุดิบ'}
                 </td>
               </tr>
             ) : (
               (filteredMaterials || []).map((material) => (
                 <tr key={material.id}>
-                  <td className="text-cyber-primary font-mono">{material.code}</td>
-                  <td className="text-gray-200">{material.name}</td>
+                  <td className="text-phopy-indigo font-mono">{material.code}</td>
+                  <td className="text-[var(--fg-2)]">{material.name}</td>
                   <td>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-cyber-card rounded text-xs text-cyber-primary">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-phopy-card rounded text-xs text-phopy-indigo">
                       <Tag className="w-3 h-3" />
                       {material.categoryName || 'Uncategorized'}
                     </span>
                   </td>
-                  <td className="text-gray-400">{material.unit}</td>
-                  <td className="text-gray-400">฿{Number(material.unitCost).toLocaleString()}</td>
+                  <td className="text-[var(--fg-3)]">{material.unit}</td>
+                  <td className="text-[var(--fg-3)]">฿{Number(material.unitCost).toLocaleString()}</td>
                   <td>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-300">{material.currentStock || 0}</span>
-                      <span className="text-gray-500 text-sm">
+                      <span className="text-[var(--fg-2)]">{material.currentStock || 0}</span>
+                      <span className="text-[var(--fg-4)] text-sm">
                         / {material.minStock}-{material.maxStock}
                       </span>
                     </div>
                   </td>
                   <td>{getStatusBadge(material.stockStatus)}</td>
-                  <td className="text-gray-400">{material.usedInBOMs || 0} BOMs</td>
+                  <td className="text-[var(--fg-3)]">{material.usedInBOMs || 0} BOMs</td>
                   <td>
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleStockAdjust(material)}
-                        className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+                        className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
                         title="Adjust Stock"
                       >
-                        <Boxes className="w-4 h-4 text-gray-400 hover:text-cyber-green" />
+                        <Boxes className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
                       </button>
                       <button
                         onClick={() => handleEdit(material)}
-                        className="p-2 rounded-lg hover:bg-cyber-card/50 transition-colors"
+                        className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
                         title="Edit"
                       >
-                        <Edit className="w-4 h-4 text-gray-400 hover:text-cyber-primary" />
+                        <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
                       </button>
                       <button
                         onClick={() => handleDelete(material.id, material.name)}
                         className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-400" />
+                        <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-red-400" />
                       </button>
                     </div>
                   </td>
@@ -424,37 +424,37 @@ function MaterialModal({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="cyber-card w-full max-w-lg"
+          className="phopy-card w-full max-w-lg"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between p-6 border-b border-cyber-border">
-            <h2 className="text-xl font-bold text-gray-100">
+          <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">
               {isEdit ? 'แก้ไขวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่'}
             </h2>
-            <button onClick={onClose} className="p-2 hover:bg-cyber-card/50 rounded-lg">
-              <X className="w-5 h-5 text-gray-400" />
+            <button onClick={onClose} className="p-2 hover:bg-phopy-card/50 rounded-lg">
+              <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Code *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Code *</label>
                 <input
                   type="text"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   placeholder="MAT-001"
                   disabled={isEdit}
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Category *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Category *</label>
                 <select
                   value={formData.categoryId}
                   onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   disabled={isEdit} // ห้ามเปลี่ยน category ตอน edit เพราะจะทำให้ unit เปลี่ยน
                 >
                   <option value="">เลือกหมวดหมู่</option>
@@ -468,12 +468,12 @@ function MaterialModal({
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Name *</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">Name *</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 placeholder="Material name"
               />
             </div>
@@ -481,23 +481,23 @@ function MaterialModal({
             {/* Unit - แสดงเป็น read-only ตามที่กำหนดโดย category */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Unit (Auto)</label>
-                <div className="cyber-input w-full bg-cyber-dark/50 text-gray-400 flex items-center">
-                  <span className={selectedCategory ? 'text-cyber-primary font-semibold' : ''}>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Unit (Auto)</label>
+                <div className="phopy-input w-full bg-[var(--surface-2)] text-[var(--fg-3)] flex items-center">
+                  <span className={selectedCategory ? 'text-phopy-indigo font-semibold' : ''}>
                     {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--fg-4)] mt-1">
                   หน่วยถูกกำหนดโดยอัตโนมัติตามหมวดหมู่
                 </p>
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Cost per Unit (฿) *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Cost per Unit (฿) *</label>
                 <input
                   type="number"
                   value={formData.unitCost}
                   onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   min="0"
                   step="0.01"
                 />
@@ -506,22 +506,22 @@ function MaterialModal({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Min Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Min Stock</label>
                 <input
                   type="number"
                   value={formData.minStock}
                   onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   min="0"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Max Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Max Stock</label>
                 <input
                   type="number"
                   value={formData.maxStock}
                   onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   min="0"
                 />
               </div>
@@ -529,25 +529,25 @@ function MaterialModal({
 
             {!isEdit && (
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Initial Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">Initial Stock</label>
                 <input
                   type="number"
                   value={formData.initialStock}
                   onChange={(e) => setFormData({ ...formData, initialStock: parseInt(e.target.value) || 0 })}
-                  className="cyber-input w-full"
+                  className="phopy-input w-full"
                   min="0"
                 />
               </div>
             )}
 
             <div className="flex justify-end gap-3 pt-4">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)]">
                 ยกเลิก
               </button>
               <button 
                 type="submit" 
                 disabled={submitting || !selectedCategory} 
-                className="cyber-btn-primary disabled:opacity-50"
+                className="phopy-btn-primary disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 {isEdit ? 'บันทึก' : 'เพิ่ม'}
@@ -620,35 +620,35 @@ function StockAdjustModal({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="cyber-card w-full max-w-md"
+          className="phopy-card w-full max-w-md"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between p-6 border-b border-cyber-border">
-            <h2 className="text-xl font-bold text-gray-100">Adjust Stock</h2>
-            <button onClick={onClose} className="p-2 hover:bg-cyber-card/50 rounded-lg">
-              <X className="w-5 h-5 text-gray-400" />
+          <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">Adjust Stock</h2>
+            <button onClick={onClose} className="p-2 hover:bg-phopy-card/50 rounded-lg">
+              <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            <div className="text-center p-4 bg-cyber-dark/50 rounded-lg">
-              <p className="text-gray-400 text-sm">Material</p>
-              <p className="text-lg font-bold text-gray-100">{material.name}</p>
-              <p className="text-cyber-primary">
+            <div className="text-center p-4 bg-[var(--surface-2)] rounded-lg">
+              <p className="text-[var(--fg-3)] text-sm">Material</p>
+              <p className="text-lg font-bold text-[var(--fg-1)]">{material.name}</p>
+              <p className="text-phopy-indigo">
                 Current Stock: {material.currentStock || 0} {material.unit}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Type</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">Type</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setType('IN')}
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'IN'
-                      ? 'border-cyber-green bg-cyber-green/20 text-cyber-green'
-                      : 'border-cyber-border text-gray-400'
+                      ? 'border-success bg-success-soft text-success'
+                      : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
                   <ArrowDownCircle className="w-5 h-5" />
@@ -660,7 +660,7 @@ function StockAdjustModal({
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'OUT'
                       ? 'border-red-400 bg-red-400/20 text-red-400'
-                      : 'border-cyber-border text-gray-400'
+                      : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
                   <ArrowUpCircle className="w-5 h-5" />
@@ -671,8 +671,8 @@ function StockAdjustModal({
                   onClick={() => setType('ADJUST')}
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'ADJUST'
-                      ? 'border-cyber-primary bg-cyber-primary/20 text-cyber-primary'
-                      : 'border-cyber-border text-gray-400'
+                      ? 'border-phopy-indigo bg-phopy-indigo-50 text-phopy-indigo'
+                      : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
                   <Edit className="w-5 h-5" />
@@ -682,34 +682,34 @@ function StockAdjustModal({
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-[var(--fg-3)] mb-1">
                 {type === 'ADJUST' ? 'New Quantity' : 'Quantity'}
               </label>
               <input
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 min="0"
                 step="0.01"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Notes</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">Notes</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="cyber-input w-full"
+                className="phopy-input w-full"
                 rows={2}
                 placeholder="Optional notes..."
               />
             </div>
 
             {type !== 'ADJUST' && (
-              <div className="text-center p-3 bg-cyber-dark/30 rounded-lg">
-                <p className="text-sm text-gray-400">New Stock:</p>
-                <p className="text-xl font-bold text-cyber-primary">
+              <div className="text-center p-3 bg-[var(--bg)]/30 rounded-lg">
+                <p className="text-sm text-[var(--fg-3)]">New Stock:</p>
+                <p className="text-xl font-bold text-phopy-indigo">
                   {type === 'IN'
                     ? (material.currentStock || 0) + quantity
                     : (material.currentStock || 0) - quantity}{' '}
@@ -719,10 +719,10 @@ function StockAdjustModal({
             )}
 
             <div className="flex justify-end gap-3 pt-4">
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-cyber-border rounded-lg text-gray-300">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)]">
                 ยกเลิก
               </button>
-              <button type="submit" disabled={submitting} className="cyber-btn-primary">
+              <button type="submit" disabled={submitting} className="phopy-btn-primary">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Confirm
               </button>

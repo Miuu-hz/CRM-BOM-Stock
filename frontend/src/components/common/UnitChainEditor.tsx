@@ -218,17 +218,17 @@ export default function UnitChainEditor({
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-      <div className="cyber-card w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+      <div className="phopy-card w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
-        <div className="px-5 py-3 border-b border-cyber-border flex items-center justify-between flex-shrink-0">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <Network className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-semibold text-gray-100">Unit Chain Editor</h3>
-            <span className="text-xs text-gray-500 hidden sm:block">ลากโหนดได้ · คลิก → เชื่อม · Esc ยกเลิก</span>
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">Unit Chain Editor</h3>
+            <span className="text-xs text-[var(--fg-4)] hidden sm:block">ลากโหนดได้ · คลิก → เชื่อม · Esc ยกเลิก</span>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 hover:bg-cyber-dark rounded-lg">
-            <X className="w-4 h-4 text-gray-400" />
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-[var(--bg)] rounded-lg">
+            <X className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
         </div>
 
@@ -286,8 +286,8 @@ export default function UnitChainEditor({
                 className={`absolute rounded-xl border transition-shadow ${
                   isSource ? 'border-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.5)]'
                   : isBase ? 'border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.35)]'
-                  : isDisplay ? 'border-cyber-primary/70'
-                  : 'border-cyber-border/60 hover:border-cyber-primary/40'
+                  : isDisplay ? 'border-phopy-indigo/70'
+                  : 'border-[var(--border)]/60 hover:border-phopy-indigo/40'
                 } bg-[#12122a]/95`}
                 style={{
                   left: pos.x, top: pos.y,
@@ -300,10 +300,10 @@ export default function UnitChainEditor({
                 onClick={() => connectFrom && handleNodeClick(unit)}
               >
                 <div className="flex items-center h-full px-2 gap-1.5">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isBase ? 'bg-purple-400' : isDisplay ? 'bg-cyber-primary' : 'bg-gray-600'}`} />
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isBase ? 'bg-purple-400' : isDisplay ? 'bg-phopy-indigo' : 'bg-gray-600'}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-gray-200 truncate leading-tight">{ul(unit)}</p>
-                    <p className="text-[10px] text-gray-500 font-mono truncate leading-tight">{unit}</p>
+                    <p className="text-xs font-semibold text-[var(--fg-2)] truncate leading-tight">{ul(unit)}</p>
+                    <p className="text-[10px] text-[var(--fg-4)] font-mono truncate leading-tight">{unit}</p>
                   </div>
                   <button
                     type="button"
@@ -319,7 +319,7 @@ export default function UnitChainEditor({
                   </button>
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-red-500/20 text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"
+                    className="p-1 rounded hover:bg-danger-soft text-[var(--fg-4)] hover:text-red-400 transition-colors flex-shrink-0"
                     title="ลบโหนด"
                     onClick={(e) => { e.stopPropagation(); handleRemoveNode(unit) }}
                   >
@@ -331,7 +331,7 @@ export default function UnitChainEditor({
           })}
 
           {activeUnits.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center text-[var(--fg-4)] text-sm pointer-events-none">
               ยังไม่มีหน่วย — เพิ่มหน่วยด้านล่าง
             </div>
           )}
@@ -345,7 +345,7 @@ export default function UnitChainEditor({
 
         {/* Conversion tags */}
         {conversions.length > 0 && (
-          <div className="px-4 py-2 border-t border-cyber-border/40 flex-shrink-0 overflow-x-auto">
+          <div className="px-4 py-2 border-t border-[var(--border)]/40 flex-shrink-0 overflow-x-auto">
             <div className="flex flex-wrap gap-1.5">
               {conversions.map(conv => (
                 <div key={conv.id} className="flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-xs text-purple-300 whitespace-nowrap">
@@ -360,13 +360,13 @@ export default function UnitChainEditor({
         )}
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-cyber-border flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <div className="px-4 py-3 border-t border-[var(--border)] flex items-center gap-2 flex-shrink-0 flex-wrap">
           {addingUnit ? (
             <>
               <select
                 value={newUnitValue}
                 onChange={e => setNewUnitValue(e.target.value)}
-                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-gray-200 focus:outline-none focus:border-purple-500/50"
+                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                 autoFocus
               >
                 <option value="">เลือกหน่วย</option>
@@ -377,7 +377,7 @@ export default function UnitChainEditor({
               <button type="button" onClick={handleAddNode} disabled={!newUnitValue} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium">
                 เพิ่ม
               </button>
-              <button type="button" onClick={() => { setAddingUnit(false); setNewUnitValue('') }} className="px-3 py-1.5 border border-cyber-border text-gray-400 rounded-lg text-xs">
+              <button type="button" onClick={() => { setAddingUnit(false); setNewUnitValue('') }} className="px-3 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs">
                 ยกเลิก
               </button>
             </>
@@ -391,7 +391,7 @@ export default function UnitChainEditor({
               เพิ่มหน่วย
             </button>
           )}
-          <button type="button" onClick={onClose} className="px-4 py-1.5 border border-cyber-border text-gray-400 rounded-lg text-xs hover:text-gray-200 ml-auto">
+          <button type="button" onClick={onClose} className="px-4 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs hover:text-[var(--fg-2)] ml-auto">
             ปิด
           </button>
         </div>
@@ -400,14 +400,14 @@ export default function UnitChainEditor({
       {/* Factor input dialog */}
       {pendingEdge && (
         <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center">
-          <div className="cyber-card p-5 w-80">
-            <h4 className="text-sm font-semibold text-gray-200 mb-1">ตั้งค่าการแปลงหน่วย</h4>
-            <p className="text-xs text-gray-400 mb-3">
+          <div className="phopy-card p-5 w-80">
+            <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-1">ตั้งค่าการแปลงหน่วย</h4>
+            <p className="text-xs text-[var(--fg-3)] mb-3">
               <span className="font-mono text-purple-300">{ul(pendingEdge.from)}</span>
-              <span className="mx-1 text-gray-600">→</span>
-              <span className="font-mono text-cyber-primary">{ul(pendingEdge.to)}</span>
+              <span className="mx-1 text-[var(--fg-4)]">→</span>
+              <span className="font-mono text-phopy-indigo">{ul(pendingEdge.to)}</span>
             </p>
-            <label className="text-xs text-gray-500 block mb-1">
+            <label className="text-xs text-[var(--fg-4)] block mb-1">
               1 {ul(pendingEdge.from)} = ? {ul(pendingEdge.to)}
             </label>
             <input
@@ -417,12 +417,12 @@ export default function UnitChainEditor({
               placeholder="เช่น 24"
               min="0.000001"
               step="any"
-              className="cyber-input w-full text-sm mb-3"
+              className="phopy-input w-full text-sm mb-3"
               autoFocus
               onKeyDown={e => { if (e.key === 'Enter') handleConfirmEdge(); if (e.key === 'Escape') setPendingEdge(null) }}
             />
             <div className="flex gap-2">
-              <button type="button" onClick={() => setPendingEdge(null)} className="flex-1 py-2 border border-cyber-border text-gray-400 rounded-lg text-xs">
+              <button type="button" onClick={() => setPendingEdge(null)} className="flex-1 py-2 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs">
                 ยกเลิก
               </button>
               <button
