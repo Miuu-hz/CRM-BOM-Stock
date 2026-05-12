@@ -58,7 +58,7 @@ function CostSimulation() {
   useEffect(() => {
     if (selectedBom) {
       const initialPrices: Record<string, number> = {}
-      selectedBom.materials.forEach((item) => {
+      ;(selectedBom.materials || []).forEach((item) => {
         initialPrices[item.materialId!] = Number(item.material?.unitCost)
       })
       setPriceChanges(initialPrices)
@@ -109,7 +109,7 @@ function CostSimulation() {
   const resetPrices = () => {
     if (selectedBom) {
       const initialPrices: Record<string, number> = {}
-      selectedBom.materials.forEach((item) => {
+      ;(selectedBom.materials || []).forEach((item) => {
         initialPrices[item.materialId!] = Number(item.material?.unitCost)
       })
       setPriceChanges(initialPrices)
@@ -119,7 +119,7 @@ function CostSimulation() {
   const applyPercentageChange = (percent: number) => {
     if (selectedBom) {
       const newPrices: Record<string, number> = {}
-      selectedBom.materials.forEach((item) => {
+      ;(selectedBom.materials || []).forEach((item) => {
         const original = Number(item.material?.unitCost)
         newPrices[item.materialId!] = Math.round(original * (1 + percent / 100) * 100) / 100
       })

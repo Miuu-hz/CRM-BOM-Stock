@@ -9,14 +9,6 @@ export interface Material {
   unitCost: number
 }
 
-export interface BOMItemMaterial {
-  id: string
-  materialId: string
-  quantity: number
-  unit: string
-  material: Material
-}
-
 // Nested BOM Types
 export interface BOMItem {
   id: string
@@ -90,7 +82,7 @@ export interface BOM {
   parentVersion?: string
   parentProductName?: string
   items?: BOMItem[]
-  materials: BOMItemMaterial[] | BOMItem[]
+  materials?: BOMItem[]
   totalCost: number
   isTopLevel?: boolean
 }
