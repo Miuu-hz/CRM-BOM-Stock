@@ -7,6 +7,13 @@
 
 @layer base {
   :root {
+    --brand-indigo: #3949E5;
+    --brand-mango: #F5A524;
+    --success: #16A34A;
+    --warning: #F5A524;
+    --danger: #DC2626;
+    --info: #3949E5;
+
     --bg: #FBF8F1;
     --surface: #FFFFFF;
     --surface-2: #F5F0E2;
@@ -32,6 +39,33 @@
     --shadow-2: 0 4px 12px -2px rgba(30, 27, 22, 0.08);
     --shadow-3: 0 12px 32px -8px rgba(30, 27, 22, 0.16);
     --shadow-focus: 0 0 0 4px rgba(57, 73, 229, 0.18);
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #16140F;
+    --surface: #1F1D17;
+    --surface-2: #29261E;
+    --surface-sunken: #14110C;
+    --border: #34302A;
+    --border-subtle: #2A2722;
+    --border-strong: #45413A;
+
+    --fg: #F4EEDD;
+    --fg-1: #F8F3E5;
+    --fg-2: #E2DBC7;
+    --fg-3: #A89F87;
+    --fg-4: #6B6354;
+    --fg-on-brand: #FFFFFF;
+
+    --primary-soft: color-mix(in oklab, var(--brand-indigo) 22%, transparent);
+    --success-soft: color-mix(in oklab, var(--success) 22%, transparent);
+    --warning-soft: color-mix(in oklab, var(--warning) 22%, transparent);
+    --danger-soft: color-mix(in oklab, var(--danger) 22%, transparent);
+    --info-soft: color-mix(in oklab, var(--info) 22%, transparent);
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+    --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
   }
 
   html, body {

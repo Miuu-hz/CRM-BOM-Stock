@@ -21,10 +21,13 @@ import {
   FileText,
   Receipt,
   Sparkles,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import searchService from '../../services/search'
 import { useAuth } from '../../contexts/AuthContext'
+import { useTheme } from '../../contexts/ThemeContext'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -33,6 +36,7 @@ interface HeaderProps {
 function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
   const { user, isMaster } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -426,6 +430,21 @@ function Header({ onMenuClick }: HeaderProps) {
             aria-label="ระบบขายหน้าร้าน"
           >
             <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+          </motion.button>
+
+          {/* Theme Toggle */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleTheme}
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label={theme === 'light' ? 'เปลี่ยนเป็นธีมมืด' : 'เปลี่ยนเป็นธีมสว่าง'}
+          >
+            {theme === 'light' ? (
+              <Moon className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+            ) : (
+              <Sun className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-mango transition-colors" />
+            )}
           </motion.button>
 
           {/* Settings */}
