@@ -121,6 +121,7 @@ class POSAccountingService {
       customer_name?: string
       subtotal: number
       service_charge_amount: number
+      tax_rate?: number
       tax_amount: number
       total_amount: number
     },
