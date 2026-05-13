@@ -92,7 +92,7 @@ export function SearchableDropdown({
   const dropdownContent = (
     <div
       data-searchable-dropdown-portal
-      className="fixed z-[100] bg-phopy-card border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
+      className="fixed z-[100] bg-white border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
     >
       {/* Search Input */}

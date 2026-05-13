@@ -102,7 +102,7 @@ const FinancialReports = () => {
               className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${
                 activeReport === report.id
                   ? 'bg-phopy-indigo text-white'
-                  : 'bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                  : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'
               }`}
             >
               <Icon className="w-4 h-4" />

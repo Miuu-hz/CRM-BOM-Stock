@@ -476,7 +476,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+                className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
               >
                 <X className="w-5 h-5 text-[var(--fg-3)]" />
               </button>
@@ -786,7 +786,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-phopy-card/50 transition-colors"
+                className="px-6 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors"
               >
                 ยกเลิก
               </button>

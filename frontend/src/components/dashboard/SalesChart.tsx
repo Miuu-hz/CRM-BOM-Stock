@@ -34,10 +34,10 @@ function SalesChart() {
           <button className="px-3 py-1 text-xs rounded-lg bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30">
             7 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-phopy-card/50 text-[var(--fg-3)]">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
             30 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-phopy-card/50 text-[var(--fg-3)]">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
             90 Days
           </button>
         </div>
@@ -47,30 +47,30 @@ function SalesChart() {
         <AreaChart data={data}>
           <defs>
             <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#00f0ff" stopOpacity={0} />
+              <stop offset="5%" stopColor="#3949E5" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#3949E5" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2d3250" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#ECE6D8" opacity={0.5} />
           <XAxis
             dataKey="month"
-            stroke="#6b7280"
+            stroke="#6B6658"
             style={{ fontSize: '12px' }}
           />
           <YAxis
-            stroke="#6b7280"
+            stroke="#6B6658"
             style={{ fontSize: '12px' }}
             tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#151932',
-              border: '1px solid #2d3250',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #ECE6D8',
               borderRadius: '8px',
-              boxShadow: '0 0 10px rgba(0, 240, 255, 0.3)',
+              boxShadow: '0 4px 12px -2px rgba(30, 27, 22, 0.08)',
             }}
-            labelStyle={{ color: '#00f0ff' }}
-            itemStyle={{ color: '#e5e7eb' }}
+            labelStyle={{ color: '#3949E5' }}
+            itemStyle={{ color: '#1E1B16' }}
             formatter={(value: number) => [
               `฿${(value / 1000000).toFixed(2)}M`,
               'Sales',
@@ -79,7 +79,7 @@ function SalesChart() {
           <Area
             type="monotone"
             dataKey="sales"
-            stroke="#00f0ff"
+            stroke="#3949E5"
             strokeWidth={2}
             fill="url(#salesGradient)"
           />
@@ -97,7 +97,7 @@ function SalesChart() {
         </div>
         <div className="text-center">
           <p className="text-xs text-[var(--fg-3)] mb-1">Total Orders</p>
-          <p className="text-lg font-bold text-purple-500">366</p>
+          <p className="text-lg font-bold text-phopy-indigo">366</p>
         </div>
       </div>
     </div>

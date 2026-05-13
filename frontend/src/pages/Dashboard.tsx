@@ -362,16 +362,16 @@ export default function Dashboard() {
           ) : (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={topCustomers} layout="vertical" barSize={16}>
-                <XAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+                <XAxis type="number" tick={{ fill: '#6B6658', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#383426', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
                 <Tooltip
                   formatter={(v: number) => [fmt(v), 'รายได้']}
-                  cursor={{ fill: 'rgba(99,102,241,0.08)' }}
-                  contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, fontSize: 12 }}
+                  cursor={{ fill: 'rgba(57,73,229,0.08)' }}
+                  contentStyle={{ background: '#FFFFFF', border: '1px solid #ECE6D8', borderRadius: 8, fontSize: 12, color: '#1E1B16' }}
                 />
                 <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
                   {topCustomers.map((_, i) => (
-                    <Cell key={i} fill={['#6366f1','#8b5cf6','#06b6d4','#22c55e','#f59e0b'][i]} />
+                    <Cell key={i} fill={['#3949E5','#9333EA','#0EA5E9','#16A34A','#F5A524'][i]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -385,17 +385,17 @@ export default function Dashboard() {
         {/* Pending Delivery */}
         <button
           onClick={() => navigate('/sales')}
-          className="phopy-card p-4 border border-orange-500/20 text-left cursor-pointer hover:border-orange-500/50 transition-colors group"
+          className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
           aria-label="ดูรายการรอจัดส่งทั้งหมด"
         >
           <div className="flex items-center gap-2 mb-2">
-            <Truck className="w-4 h-4 text-orange-400" />
+            <Truck className="w-4 h-4 text-warning" />
             <h3 className="text-sm font-bold text-[var(--fg-2)]">รอจัดส่ง</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-orange-400 transition-colors" />
+            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
           </div>
           {loading || !funnel ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-orange-400">{funnel.pendingDelivery.count} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
+              <p className="text-2xl font-bold text-warning">{funnel.pendingDelivery.count} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
               <p className="text-xs text-[var(--fg-4)] mt-1">มูลค่ารอส่ง {fmt(funnel.pendingDelivery.value)}</p>
             </>
           )}
@@ -404,17 +404,17 @@ export default function Dashboard() {
         {/* Critical Stock */}
         <button
           onClick={() => navigate('/stock')}
-          className="phopy-card p-4 border border-yellow-500/20 text-left cursor-pointer hover:border-yellow-500/50 transition-colors group"
+          className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
           aria-label="ดูรายการสต๊อกวิกฤตทั้งหมด"
         >
           <div className="flex items-center gap-2 mb-2">
-            <Package className="w-4 h-4 text-yellow-400" />
+            <Package className="w-4 h-4 text-warning" />
             <h3 className="text-sm font-bold text-[var(--fg-2)]">สต๊อกวิกฤต</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-yellow-400 transition-colors" />
+            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
           </div>
           {loading ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-yellow-400">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
+              <p className="text-2xl font-bold text-warning">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
               {lowStock.slice(0, 2).map(s => (
                 <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · เหลือ {s.quantity} {s.unit}</p>
               ))}
@@ -425,17 +425,17 @@ export default function Dashboard() {
         {/* Overdue Invoices */}
         <button
           onClick={() => navigate('/sales')}
-          className="phopy-card p-4 border border-red-500/20 text-left cursor-pointer hover:border-red-500/50 transition-colors group"
+          className="phopy-card p-4 border border-danger/20 text-left cursor-pointer hover:border-danger/50 transition-colors group"
           aria-label="ดู Invoice เกินกำหนดทั้งหมด"
         >
           <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
+            <AlertTriangle className="w-4 h-4 text-danger" />
             <h3 className="text-sm font-bold text-[var(--fg-2)]">Invoice เกินกำหนด</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-red-400 transition-colors" />
+            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-danger transition-colors" />
           </div>
           {loading || !cf ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-red-400">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
+              <p className="text-2xl font-bold text-danger">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
               <p className="text-xs text-[var(--fg-4)] mt-1">ค้างรับ {fmt(cf.ar.overdue.reduce((s,i) => s + i.amount, 0))}</p>
               {cf.ar.overdue.slice(0, 2).map(i => (
                 <p key={i.id} className="text-xs text-red-400/70 truncate">{i.party_name} · {fmt(i.amount)}</p>

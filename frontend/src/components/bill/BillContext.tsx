@@ -52,7 +52,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบสั่งขาย',
       refNumber: 'อ้างอิงใบเสนอราคา',
     },
-    themeColor: '#00f0ff', // phopy-indigo
+    themeColor: '#3949E5', // phopy-indigo
   },
   PURCHASE: {
     type: 'PURCHASE',
@@ -73,7 +73,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบสั่งซื้อ',
       refNumber: 'อ้างอิงใบขอซื้อ',
     },
-    themeColor: '#9d00ff', // purple-500
+    themeColor: '#9333EA', // purple-500
   },
   WORK_ORDER: {
     type: 'WORK_ORDER',
@@ -115,7 +115,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบเสนอราคา',
       refNumber: 'อ้างอิง',
     },
-    themeColor: '#ff00ff', // pink-500
+    themeColor: '#EC4899', // pink-500
   },
   DELIVERY: {
     type: 'DELIVERY',
@@ -157,7 +157,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       docNumber: 'เลขที่ใบเสร็จ',
       refNumber: 'อ้างอิงใบแจ้งหนี้',
     },
-    themeColor: '#00f0ff',
+    themeColor: '#3949E5',
   },
 }
 

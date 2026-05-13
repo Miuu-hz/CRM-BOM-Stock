@@ -11,11 +11,11 @@ interface BillViewerProps {
 
 // Bill Type Selector
 const billTypeOptions: { type: BillType; label: string; icon: any; color: string }[] = [
-  { type: 'QUOTATION', label: 'ใบเสนอราคา', icon: FileText, color: '#ff00ff' },
-  { type: 'SALE', label: 'ใบสั่งขาย', icon: ShoppingCart, color: '#00f0ff' },
+  { type: 'QUOTATION', label: 'ใบเสนอราคา', icon: FileText, color: '#EC4899' },
+  { type: 'SALE', label: 'ใบสั่งขาย', icon: ShoppingCart, color: '#3949E5' },
   { type: 'DELIVERY', label: 'ใบส่งของ', icon: Truck, color: '#0066ff' },
-  { type: 'RECEIPT', label: 'ใบเสร็จ', icon: Receipt, color: '#00f0ff' },
-  { type: 'PURCHASE', label: 'ใบสั่งซื้อ', icon: Package, color: '#9d00ff' },
+  { type: 'RECEIPT', label: 'ใบเสร็จ', icon: Receipt, color: '#3949E5' },
+  { type: 'PURCHASE', label: 'ใบสั่งซื้อ', icon: Package, color: '#9333EA' },
   { type: 'WORK_ORDER', label: 'ใบสั่งผลิต', icon: Wrench, color: '#00ff88' },
 ]
 
@@ -152,12 +152,12 @@ interface QuickPrintButtonProps {
 export function QuickPrintButton({ type, documentId, label, className = '' }: QuickPrintButtonProps) {
   const [showViewer, setShowViewer] = useState(false)
   const config = {
-    SALE: { label: 'พิมพ์ใบสั่งขาย', color: '#00f0ff' },
-    PURCHASE: { label: 'พิมพ์ใบสั่งซื้อ', color: '#9d00ff' },
+    SALE: { label: 'พิมพ์ใบสั่งขาย', color: '#3949E5' },
+    PURCHASE: { label: 'พิมพ์ใบสั่งซื้อ', color: '#9333EA' },
     WORK_ORDER: { label: 'พิมพ์ใบสั่งผลิต', color: '#00ff88' },
-    QUOTATION: { label: 'พิมพ์ใบเสนอราคา', color: '#ff00ff' },
+    QUOTATION: { label: 'พิมพ์ใบเสนอราคา', color: '#EC4899' },
     DELIVERY: { label: 'พิมพ์ใบส่งของ', color: '#0066ff' },
-    RECEIPT: { label: 'พิมพ์ใบเสร็จ', color: '#00f0ff' },
+    RECEIPT: { label: 'พิมพ์ใบเสร็จ', color: '#3949E5' },
   }[type]
   
   return (

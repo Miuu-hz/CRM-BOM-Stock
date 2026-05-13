@@ -181,7 +181,7 @@ export default function MaterialCategories() {
                 key={c.id}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-phopy-card/30 transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-2)] transition-colors"
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-lg bg-phopy-indigo/10 flex items-center justify-center flex-shrink-0">

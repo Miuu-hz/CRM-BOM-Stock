@@ -107,7 +107,7 @@ const KDS: React.FC = () => {
           >
             {soundEnabled ? '🔔 เสียงเปิด' : '🔕 กดเพื่อเปิดเสียง'}
           </button>
-          <div className="px-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg flex items-center gap-2">
+          <div className="px-4 py-2 bg-white border border-[var(--border)] rounded-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-sm font-medium">Live</span>
           </div>
@@ -133,7 +133,7 @@ const KDS: React.FC = () => {
           <div className="w-12 h-12 border-4 border-phopy-indigo/30 border-t-phopy-indigo rounded-full animate-spin" />
         </div>
       ) : tickets.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center border-2 border-dashed border-[var(--border)] rounded-xl bg-phopy-card/30">
+        <div className="flex flex-1 flex-col items-center justify-center border-2 border-dashed border-[var(--border)] rounded-xl bg-white/30">
           <ClipboardList className="w-16 h-16 text-[var(--fg-4)] mb-4" />
           <h3 className="text-xl font-bold text-[var(--fg-3)]">ไม่มี ticket ที่รอดำเนินการ</h3>
           <p className="text-[var(--fg-4)] text-sm mt-1">รอ POS ส่งออร์เดอร์มาครัว...</p>
@@ -147,7 +147,7 @@ const KDS: React.FC = () => {
             return (
               <div
                 key={ticket.id}
-                className={`bg-phopy-card border rounded-xl shadow-lg flex flex-col transition-all ${isUrgent ? 'border-red-500/70 shadow-red-500/10' : cfg.border}`}
+                className={`bg-white border rounded-xl shadow-lg flex flex-col transition-all ${isUrgent ? 'border-red-500/70 shadow-red-500/10' : cfg.border}`}
               >
                 {/* Ticket Header */}
                 <div className={`p-4 border-b border-[var(--border)] ${cfg.bg} rounded-t-xl`}>

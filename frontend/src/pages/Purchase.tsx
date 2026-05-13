@@ -242,7 +242,7 @@ function ModalShell({ title, onClose, children, footer }: {
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
       onClick={e => e.stopPropagation()}
-      className="bg-phopy-card rounded-2xl border border-[var(--border)] w-full max-w-4xl max-h-[90vh] flex flex-col">
+      className="bg-white rounded-2xl border border-[var(--border)] w-full max-w-4xl max-h-[90vh] flex flex-col">
       <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white">{title}</h2>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
@@ -299,7 +299,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-center">
               <p className="text-xs text-[var(--fg-4)] mb-2">ไม่พบสินค้า "{query}"</p>
@@ -376,7 +376,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบผู้ขาย</p>
           ) : (
@@ -428,7 +428,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
           ) : (
@@ -499,7 +499,7 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
         <p className="text-xs text-[var(--fg-4)] py-2">— เลือก PO ก่อน —</p>
       )}
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">
               {values.length > 0 ? 'เพิ่มทุก GR แล้ว' : 'ไม่พบใบรับสินค้า'}
@@ -557,7 +557,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-[70] left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบใบขอซื้อ</p>
           ) : (
@@ -623,7 +623,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
           <h3 className="text-white font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
           <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
@@ -730,7 +730,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg shadow-2xl">
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg shadow-2xl">
         <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
           <div>
             <h3 className="text-white font-semibold text-sm flex items-center gap-2">
@@ -1691,7 +1691,7 @@ const Purchase = () => {
   const ConvertToPOModal = () => (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md">
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-white">แปลงเป็นใบสั่งซื้อ</h2>
@@ -1796,7 +1796,7 @@ const Purchase = () => {
         {/* Pending actions */}
         {pendingActions.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="bg-phopy-card border border-yellow-500/30 rounded-xl p-5">
+            className="bg-white border border-yellow-500/30 rounded-xl p-5">
             <h3 className="text-sm font-semibold text-yellow-400 mb-3 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" /> รายการรอดำเนินการ
             </h3>
@@ -1820,7 +1820,7 @@ const Purchase = () => {
 
         {/* Workflow pipeline */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          className="bg-white border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[var(--fg-3)] mb-4">กระบวนการจัดซื้อ</h3>
           <div className="flex items-center gap-2 flex-wrap">
             {[
@@ -1843,7 +1843,7 @@ const Purchase = () => {
 
         {/* Status grids */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          <div className="bg-white border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-phopy-indigo" /> สถานะใบสั่งซื้อ
             </h3>
@@ -1861,7 +1861,7 @@ const Purchase = () => {
               ))}
             </div>
           </div>
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          <div className="bg-white border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-success" /> สถานะการจ่ายเงิน
             </h3>
@@ -1893,7 +1893,7 @@ const Purchase = () => {
   )
 
   const EmptyState = ({ text }: { text: string }) => (
-    <div className="text-center py-16 text-[var(--fg-4)] bg-phopy-card border border-[var(--border)] rounded-xl">{text}</div>
+    <div className="text-center py-16 text-[var(--fg-4)] bg-white border border-[var(--border)] rounded-xl">{text}</div>
   )
 
   const ViewToggle = () => (
@@ -1972,7 +1972,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบขอซื้อ" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขอ</span><span className="col-span-2">แผนก</span>
               <span className="col-span-2">วันที่ขอ</span><span className="col-span-1">สถานะ</span>
@@ -1998,7 +1998,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(req => (
-              <div key={req.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={req.id} className="bg-white border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -2086,7 +2086,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ PO</span><span className="col-span-2">ผู้ขาย</span><span className="col-span-1">วันสั่ง</span>
               <span className="col-span-1">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
@@ -2155,7 +2155,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(order => (
-              <div key={order.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={order.id} className="bg-white border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{order.po_number}</p>
@@ -2284,7 +2284,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการรับสินค้า" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ GR</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">อ้างอิง PO</span><span className="col-span-1">วันที่รับ</span>
@@ -2325,7 +2325,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(receipt => (
-              <div key={receipt.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={receipt.id} className="bg-white border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{receipt.gr_number}</p>
@@ -2391,7 +2391,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบวางบิล" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่ PI</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">ครบกำหนด</span>
@@ -2423,7 +2423,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(invoice => (
-              <div key={invoice.id} className={`bg-phopy-card border rounded-xl p-4 transition-colors flex flex-col ${invoice.payment_status === 'UNPAID' ? 'border-red-500/30 hover:border-red-400/50' : 'border-[var(--border)] hover:border-phopy-indigo/40'}`}>
+              <div key={invoice.id} className={`bg-white border rounded-xl p-4 transition-colors flex flex-col ${invoice.payment_status === 'UNPAID' ? 'border-red-500/30 hover:border-red-400/50' : 'border-[var(--border)] hover:border-phopy-indigo/40'}`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.pi_number}</p>
@@ -2488,7 +2488,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการจ่ายเงิน" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">วิธีชำระ</span><span className="col-span-2">วันที่</span>
@@ -2510,7 +2510,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(payment => (
-              <div key={payment.id} className="bg-phopy-card border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={payment.id} className="bg-white border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{payment.payment_number}</p>
@@ -2570,7 +2570,7 @@ const Purchase = () => {
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text="ไม่พบรายการคืนสินค้า" /> : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
               <span className="col-span-2">PO อ้างอิง</span><span className="col-span-3">สาเหตุ</span>
@@ -2590,7 +2590,7 @@ const Purchase = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(ret => (
-              <div key={ret.id} className="bg-phopy-card border border-[var(--border)] hover:border-red-400/30 rounded-xl p-4 transition-colors flex flex-col">
+              <div key={ret.id} className="bg-white border border-[var(--border)] hover:border-red-400/30 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{ret.pr_number}</p>
@@ -2746,7 +2746,7 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียดเพิ่มเติม" value={item.description}
                   onChange={e => updateRequestItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-white border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               {/* Row 2: qty + unit + price + total + delete */}
               <div className="grid grid-cols-12 gap-2 items-center">
@@ -2755,7 +2755,7 @@ const Purchase = () => {
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
@@ -2763,7 +2763,7 @@ const Purchase = () => {
                     value={item.unit || ''}
                     onChange={e => updateRequestItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -2778,7 +2778,7 @@ const Purchase = () => {
                     <input type="number" min="0" step="0.01" value={item.estimated_unit_price}
                       onChange={e => updateRequestItem(index, 'estimated_unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-4 flex items-end justify-between">
@@ -2939,7 +2939,7 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียด" value={item.description}
                   onChange={e => updateOrderItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-white border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
@@ -2947,7 +2947,7 @@ const Purchase = () => {
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
@@ -2955,7 +2955,7 @@ const Purchase = () => {
                     value={item.unit || ''}
                     onChange={e => updateOrderItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
@@ -2968,7 +2968,7 @@ const Purchase = () => {
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-5 flex items-end justify-between">
@@ -3007,7 +3007,7 @@ const Purchase = () => {
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                 <input type="number" min="0" value={orderForm.discount}
                   onChange={e => setOrderForm(p => ({ ...p, discount: parseFloat(e.target.value) || 0 }))}
-                  className="w-full pl-5 pr-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
+                  className="w-full pl-5 pr-2 py-1 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
             ) : <span className="text-orange-400">-{formatCurrency(orderForm.discount)}</span>}
           </div>
@@ -3017,7 +3017,7 @@ const Purchase = () => {
               <div className="relative w-32">
                 <input type="number" min="0" max="30" value={orderForm.tax_rate}
                   onChange={e => setOrderForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
+                  className="w-full px-2 py-1 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
             ) : <span className="text-[var(--fg-2)]">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
           </div>
@@ -3184,7 +3184,7 @@ const Purchase = () => {
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
                         <input type="number" min="0" step="0.01" value={item[f.key]}
                           onChange={e => updateItem(index, f.key, parseFloat(e.target.value) || 0)}
-                          className={`w-full px-2 py-2 bg-phopy-card border ${f.color} rounded-lg text-sm text-white text-center focus:outline-none`} />
+                          className={`w-full px-2 py-2 bg-white border ${f.color} rounded-lg text-sm text-white text-center focus:outline-none`} />
                       </div>
                     ))}
                   </div>
@@ -3209,19 +3209,19 @@ const Purchase = () => {
                       </label>
                       <input type="text" value={item.lot_number} placeholder="เช่น LOT-2026-001"
                         onChange={e => updateItem(index, 'lot_number', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-phopy-card border border-yellow-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
+                        className="w-full px-2.5 py-1.5 bg-white border border-yellow-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
                     </div>
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 block">สถานที่จัดเก็บ</label>
                       <input type="text" value={item.location} placeholder="เช่น คลัง A, ชั้น 3"
                         onChange={e => updateItem(index, 'location', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+                        className="w-full px-2.5 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   {item.rejected_qty > 0 && (
                     <input type="text" value={item.notes} placeholder="สาเหตุที่ปฏิเสธ / รายละเอียดความเสียหาย..."
                       onChange={e => updateItem(index, 'notes', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-phopy-card border border-red-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400" />
+                      className="w-full px-2.5 py-1.5 bg-white border border-red-500/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400" />
                   )}
 
                   {/* ── Line total ── */}
@@ -3414,7 +3414,7 @@ const Purchase = () => {
             <div className="flex items-center gap-2">
               <input type="number" min="0" max="30" value={invoiceForm.tax_rate}
                 onChange={e => setInvoiceForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-20 px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
+                className="w-20 px-2 py-1 bg-white border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
               <span className="text-[var(--fg-4)] text-xs">= {formatCurrency(taxAmt)}</span>
             </div>
           </div>
@@ -3473,7 +3473,7 @@ const Purchase = () => {
     return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-phopy-card rounded-2xl border border-[var(--border)] w-full max-w-lg flex flex-col max-h-[90vh]">
+        className="bg-white rounded-2xl border border-[var(--border)] w-full max-w-lg flex flex-col max-h-[90vh]">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-success" /> บันทึกการจ่ายเงิน
@@ -3557,7 +3557,7 @@ const Purchase = () => {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.amount}
                     onChange={e => setPaymentForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-phopy-card border border-[var(--border)] rounded-xl text-white text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-white border border-[var(--border)] rounded-xl text-white text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
@@ -3566,7 +3566,7 @@ const Purchase = () => {
                 <label className="text-xs text-[var(--fg-3)] mb-1 block">อัตรา WHT</label>
                 <select
                   onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: p.amount * (parseFloat(e.target.value) / 100) }))}
-                  className="w-full px-2.5 py-2 bg-phopy-card border border-[var(--border)] rounded-xl text-sm text-white focus:outline-none focus:border-phopy-indigo">
+                  className="w-full px-2.5 py-2 bg-white border border-[var(--border)] rounded-xl text-sm text-white focus:outline-none focus:border-phopy-indigo">
                   <option value="0">ไม่หัก WHT</option>
                   <option value="1">1% — บริการทั่วไป</option>
                   <option value="3">3% — ค่าเช่า/บริการ</option>
@@ -3579,7 +3579,7 @@ const Purchase = () => {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.withholding_tax}
                     onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-phopy-card border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-white border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
@@ -3702,14 +3702,14 @@ const Purchase = () => {
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวนคืน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-red-500/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
+                    className="w-full px-2 py-1.5 bg-white border border-red-500/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateReturnItem(index, 'unit', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -3723,14 +3723,14 @@ const Purchase = () => {
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateReturnItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                      className="w-full pl-5 pr-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo" />
                   </div>
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หมายเหตุ item</label>
                   <input type="text" value={item.reason} placeholder="สาเหตุเพิ่มเติม"
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full px-2 py-1.5 bg-white border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                 </div>
                 <div className="col-span-2 text-right">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
@@ -3764,7 +3764,7 @@ const Purchase = () => {
             <div className="w-24">
               <input type="number" min="0" max="30" value={returnForm.tax_rate}
                 onChange={e => setReturnForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-full px-2 py-1 bg-phopy-card border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-2 py-1 bg-white border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
           <div className="flex justify-between font-bold text-white border-t border-[var(--border)] pt-2">
@@ -3828,7 +3828,7 @@ const Purchase = () => {
 
       {/* Tab navigation */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-phopy-card p-2 rounded-2xl border border-[var(--border)]">
+        className="flex flex-wrap gap-1.5 bg-white p-2 rounded-2xl border border-[var(--border)]">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1) }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all relative ${

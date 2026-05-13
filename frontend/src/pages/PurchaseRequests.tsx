@@ -266,7 +266,7 @@ export default function PurchaseRequests() {
                             onClick={closeDetail}
                         />
                         <motion.div
-                            className="fixed right-0 top-0 h-full w-full max-w-xl bg-phopy-card border-l border-[var(--border)] z-50 flex flex-col"
+                            className="fixed right-0 top-0 h-full w-full max-w-xl bg-white border-l border-[var(--border)] z-50 flex flex-col"
                             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
                             transition={{ type: 'tween', duration: 0.25 }}
                         >

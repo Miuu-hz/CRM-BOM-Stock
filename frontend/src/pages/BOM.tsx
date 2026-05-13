@@ -432,7 +432,7 @@ function BOMPage() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition-all whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
-                    : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-phopy-card/30'
+                    : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -487,7 +487,7 @@ function BOMPage() {
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap text-sm ${
                     bomFilter === tab.id
                       ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30'
-                      : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-phopy-card/30 border border-transparent'
+                      : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)] border border-transparent'
                   }`}
                 >
                   {tab.icon && <tab.icon className="w-4 h-4" />}
@@ -672,7 +672,7 @@ function BOMPage() {
                     {filteredBOMs.map((bom) => (
                       <React.Fragment key={bom.id}>
                         <tr
-                          className="cursor-pointer hover:bg-phopy-card/30"
+                          className="cursor-pointer hover:bg-[var(--surface-2)]"
                           onClick={() => toggleExpanded(bom.id)}
                         >
                           <td>
@@ -718,14 +718,14 @@ function BOMPage() {
                             >
                               <button
                                 onClick={() => handleEdit(bom)}
-                                className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+                                className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                                 title="แก้ไข"
                               >
                                 <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
                               </button>
                               <button
                                 onClick={() => handleCopy(bom)}
-                                className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+                                className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                                 title="คัดลอก"
                               >
                                 <Copy className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
@@ -802,7 +802,7 @@ function TreeNode({
             <>
               <button
                 onClick={() => onToggle(item.id)}
-                className="p-1 rounded hover:bg-phopy-card/50"
+                className="p-1 rounded hover:bg-[var(--surface-2)]"
               >
                 {expandedNodes.has(item.id) ? (
                   <ChevronDown className="w-4 h-4 text-phopy-indigo" />
@@ -863,7 +863,7 @@ function TreeNode({
         {childItems.some((i) => i.itemType === 'CHILD_BOM') ? (
           <button
             onClick={() => onToggle(bomNode.id)}
-            className="p-1 rounded hover:bg-phopy-card/50"
+            className="p-1 rounded hover:bg-[var(--surface-2)]"
           >
             {isExpanded ? (
               <ChevronDown className="w-5 h-5 text-phopy-indigo" />
@@ -1061,14 +1061,14 @@ function BOMCard({
           <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'} />
           <button
             onClick={() => onEdit(bom)}
-            className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
             title="แก้ไข"
           >
             <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-phopy-indigo" />
           </button>
           <button
             onClick={() => onCopy(bom)}
-            className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
             title="คัดลอก"
           >
             <Copy className="w-5 h-5 text-[var(--fg-3)] hover:text-success" />

@@ -113,7 +113,7 @@ interface PivotRow {
   [key: string]: any
 }
 
-const COLORS = ['#00f0ff', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
+const COLORS = ['#3949E5', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
 
 const PLATFORMS = [
   { id: 'SHOPEE', name: 'Shopee', color: 'from-orange-500 to-red-500' },
@@ -129,7 +129,7 @@ const CHART_TYPES = [
 ]
 
 const METRIC_OPTIONS = [
-  { key: 'sales', label: 'ยอดขาย', color: '#00f0ff' },
+  { key: 'sales', label: 'ยอดขาย', color: '#3949E5' },
   { key: 'adCost', label: 'ค่าโฆษณา', color: '#a855f7' },
   { key: 'orders', label: 'คำสั่งซื้อ', color: '#10b981' },
   { key: 'impressions', label: 'การมองเห็น', color: '#f59e0b' },
@@ -711,7 +711,7 @@ function Marketing() {
       </motion.div>
 
       {/* Main Tab Switcher */}
-      <div className="flex gap-1 bg-phopy-card border border-[var(--border)] rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-white border border-[var(--border)] rounded-xl p-1 w-fit">
         <button
           onClick={() => setMainTab('analytics')}
           className={mainTab === 'analytics' ? 'px-4 py-2 rounded-lg bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
@@ -752,7 +752,7 @@ function Marketing() {
                   className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
                     selectedPlatform === platform.id
                       ? `bg-gradient-to-r ${platform.color} shadow-2`
-                      : 'bg-phopy-card/50 hover:bg-phopy-card text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                      : 'bg-white/50 hover:bg-white text-[var(--fg-3)] hover:text-[var(--fg-1)]'
                   }`}
                 >
                   {platform.name}
@@ -773,7 +773,7 @@ function Marketing() {
               <select
                 value={selectedShop}
                 onChange={(e) => setSelectedShop(e.target.value)}
-                className="flex-1 bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+                className="flex-1 bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               >
                 <option value="">เลือกร้านค้า</option>
                 {(shops || []).map(shop => (
@@ -790,14 +790,14 @@ function Marketing() {
                 type="date"
                 value={dateRange.start}
                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+                className="bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               />
               <span className="text-[var(--fg-3)]">ถึง</span>
               <input
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+                className="bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               />
             </div>
 
@@ -808,7 +808,7 @@ function Marketing() {
                 className={`p-2 rounded-lg transition-all ${
                   viewMode === 'chart'
                     ? 'bg-phopy-indigo text-white'
-                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
+                    : 'bg-white/50 text-[var(--fg-3)] hover:bg-white hover:text-[var(--fg-1)]'
                 }`}
                 title="Chart View"
               >
@@ -819,7 +819,7 @@ function Marketing() {
                 className={`p-2 rounded-lg transition-all ${
                   viewMode === 'table'
                     ? 'bg-phopy-indigo text-white'
-                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
+                    : 'bg-white/50 text-[var(--fg-3)] hover:bg-white hover:text-[var(--fg-1)]'
                 }`}
                 title="Table View"
               >
@@ -836,7 +836,7 @@ function Marketing() {
                   className={`p-2 rounded-lg transition-all ${
                     chartType === type.id
                       ? 'bg-phopy-indigo text-white'
-                      : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
+                      : 'bg-white/50 text-[var(--fg-3)] hover:bg-white hover:text-[var(--fg-1)]'
                   }`}
                   title={type.name}
                 >
@@ -852,7 +852,7 @@ function Marketing() {
                 className={`p-2 rounded-lg transition-all ${
                   showPivotSettings
                     ? 'bg-phopy-indigo text-white'
-                    : 'bg-phopy-card/50 text-[var(--fg-3)] hover:bg-phopy-card hover:text-[var(--fg-1)]'
+                    : 'bg-white/50 text-[var(--fg-3)] hover:bg-white hover:text-[var(--fg-1)]'
                 }`}
                 title="Pivot Settings"
               >
@@ -917,7 +917,7 @@ function Marketing() {
                   <select
                     value={pivotConfig.rowBy}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, rowBy: e.target.value as any })}
-                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     {ROW_OPTIONS.map(opt => (
                       <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -926,9 +926,9 @@ function Marketing() {
                 </div>
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-2">Metrics</label>
-                  <div className="space-y-1 bg-phopy-card border border-[var(--border)] rounded-lg p-2 max-h-32 overflow-y-auto">
+                  <div className="space-y-1 bg-white border border-[var(--border)] rounded-lg p-2 max-h-32 overflow-y-auto">
                     {METRIC_OPTIONS.map(metric => (
-                      <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-phopy-card/50 p-1 rounded">
+                      <label key={metric.key} className="flex items-center gap-2 cursor-pointer hover:bg-[var(--surface-2)] p-1 rounded">
                         <input
                           type="checkbox"
                           checked={pivotConfig.metrics.includes(metric.key)}
@@ -951,7 +951,7 @@ function Marketing() {
                   <select
                     value={pivotConfig.aggregation}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, aggregation: e.target.value as any })}
-                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="sum">รวม (Sum)</option>
                     <option value="avg">เฉลี่ย (Average)</option>
@@ -964,7 +964,7 @@ function Marketing() {
                     value={pivotConfig.groupBy}
                     onChange={(e) => setPivotConfig({ ...pivotConfig, groupBy: e.target.value as any })}
                     disabled={pivotConfig.rowBy !== 'date'}
-                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                    className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="day">รายวัน</option>
                     <option value="week">รายสัปดาห์</option>
@@ -1026,7 +1026,7 @@ function Marketing() {
                     {(pivotData || []).map((row, idx) => (
                       <tr
                         key={idx}
-                        className="border-b border-[var(--border)]/30 hover:bg-phopy-card/30 transition-colors"
+                        className="border-b border-[var(--border)]/30 hover:bg-[var(--surface-2)] transition-colors"
                       >
                         <td className="py-3 px-4 text-sm font-medium text-white">{row.key}</td>
                         {pivotConfig.metrics.map(metricKey => {
@@ -1049,7 +1049,7 @@ function Marketing() {
                       </tr>
                     ))}
                     {pivotData.length > 1 && (
-                      <tr className="border-t-2 border-phopy-indigo/50 bg-phopy-card/50 font-bold">
+                      <tr className="border-t-2 border-phopy-indigo/50 bg-white/50 font-bold">
                         <td className="py-3 px-4 text-sm text-white">
                           รวมทั้งหมด ({pivotConfig.aggregation === 'avg' ? 'เฉลี่ย' : 'รวม'})
                         </td>
@@ -1122,14 +1122,14 @@ function Marketing() {
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
+              className="bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
             />
             <span className="text-[var(--fg-3)]">ถึง</span>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
+              className="bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-success"
             />
           </div>
 
@@ -1157,7 +1157,7 @@ function Marketing() {
                     type="date"
                     value={adForm.date}
                     onChange={(e) => setAdForm({ ...adForm, date: e.target.value })}
-                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
+                    className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                   />
                 </div>
                 <div>
@@ -1165,7 +1165,7 @@ function Marketing() {
                   <select
                     value={adForm.platform}
                     onChange={(e) => setAdForm({ ...adForm, platform: e.target.value })}
-                    className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
+                    className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                   >
                     <option value="FACEBOOK">Facebook</option>
                     <option value="GOOGLE">Google</option>
@@ -1184,7 +1184,7 @@ function Marketing() {
                   placeholder="เช่น Summer Sale Campaign"
                   value={adForm.channel}
                   onChange={(e) => setAdForm({ ...adForm, channel: e.target.value })}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                 />
               </div>
 
@@ -1197,7 +1197,7 @@ function Marketing() {
                   step="0.01"
                   value={adForm.amount}
                   onChange={(e) => setAdForm({ ...adForm, amount: e.target.value })}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm"
                 />
               </div>
 
@@ -1208,7 +1208,7 @@ function Marketing() {
                   value={adForm.notes}
                   onChange={(e) => setAdForm({ ...adForm, notes: e.target.value })}
                   rows={2}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm resize-none"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-success text-sm resize-none"
                 />
               </div>
 
@@ -1249,7 +1249,7 @@ function Marketing() {
                       OTHER: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
                     }
                     return (
-                      <div key={spend.id} className="flex items-center gap-2 p-2 bg-phopy-card/50 rounded-lg border border-[var(--border)]/30 hover:border-[var(--border)] transition-colors">
+                      <div key={spend.id} className="flex items-center gap-2 p-2 bg-white/50 rounded-lg border border-[var(--border)]/30 hover:border-[var(--border)] transition-colors">
                         <span className="text-xs text-[var(--fg-3)] w-20 shrink-0">{spend.date}</span>
                         <span className={`text-xs px-2 py-0.5 rounded border shrink-0 ${badgeColors[spend.platform] || badgeColors.OTHER}`}>
                           {spend.platform}
@@ -1340,7 +1340,7 @@ function Marketing() {
                   </thead>
                   <tbody>
                     {profitReport.map((row, idx) => (
-                      <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30 transition-colors">
+                      <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-[var(--surface-2)] transition-colors">
                         <td className="py-2 px-3 text-[var(--fg-2)] font-medium">{row.date}</td>
                         <td className="py-2 px-3 text-right font-mono text-cyan-400">
                           ฿{row.revenue.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
@@ -1383,7 +1383,7 @@ function Marketing() {
                       const tMargin = tRev > 0 ? (tNet / tRev) * 100 : 0
                       const tRoas = tTotAd > 0 ? tRev / tTotAd : 0
                       return (
-                        <tr className="border-t-2 border-success/40 bg-phopy-card/50 font-bold">
+                        <tr className="border-t-2 border-success/40 bg-white/50 font-bold">
                           <td className="py-2 px-3 text-white text-xs">รวมทั้งหมด</td>
                           <td className="py-2 px-3 text-right font-mono text-cyan-400">฿{tRev.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className="py-2 px-3 text-right font-mono text-orange-400">฿{tCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
@@ -1425,7 +1425,7 @@ function Marketing() {
                 <select
                   value={platPlatform}
                   onChange={e => setPlatPlatform(e.target.value)}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
                 >
                   <option value="SHOPEE">Shopee</option>
                   <option value="LAZADA">Lazada</option>
@@ -1438,7 +1438,7 @@ function Marketing() {
                   type="date"
                   value={platImportDate}
                   onChange={e => setPlatImportDate(e.target.value)}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm"
                 />
               </div>
               <div>
@@ -1447,7 +1447,7 @@ function Marketing() {
                   type="file"
                   accept=".csv"
                   onChange={e => setPlatFile(e.target.files?.[0] || null)}
-                  className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-purple-500/20 file:text-purple-500"
+                  className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500 text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-purple-500/20 file:text-purple-500"
                 />
               </div>
             </div>
@@ -1500,7 +1500,7 @@ function Marketing() {
                     </thead>
                     <tbody>
                       {(platPreview.items || []).map((item: any, idx: number) => (
-                        <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                        <tr key={idx} className="border-b border-[var(--border)]/20 hover:bg-[var(--surface-2)]">
                           <td className="py-2 px-2 font-mono text-[var(--fg-2)]">{item.sku}</td>
                           <td className="py-2 px-2 text-[var(--fg-2)] max-w-[140px] truncate">{item.productName}</td>
                           <td className="py-2 px-2 text-right text-phopy-indigo font-mono">{item.itemsSold}</td>
@@ -1528,11 +1528,11 @@ function Marketing() {
                                     placeholder="ค้นหาสินค้า..."
                                     value={platSkuSearchMap[item.sku] || ''}
                                     onChange={e => handlePlatSkuSearch(item.sku, e.target.value)}
-                                    className="flex-1 bg-phopy-card border border-[var(--border)] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-yellow-400 min-w-0"
+                                    className="flex-1 bg-white border border-[var(--border)] rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-yellow-400 min-w-0"
                                   />
                                 </div>
                                 {(platSkuResults[item.sku] || []).length > 0 && (
-                                  <div className="bg-phopy-card border border-[var(--border)] rounded shadow-lg z-10 max-h-32 overflow-y-auto">
+                                  <div className="bg-white border border-[var(--border)] rounded shadow-lg z-10 max-h-32 overflow-y-auto">
                                     {(platSkuResults[item.sku] || []).map((si: any) => (
                                       <button
                                         key={si.id}
@@ -1595,7 +1595,7 @@ function Marketing() {
                   </thead>
                   <tbody>
                     {platPendingJE.map((pje: any) => (
-                      <tr key={pje.id} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                      <tr key={pje.id} className="border-b border-[var(--border)]/20 hover:bg-[var(--surface-2)]">
                         <td className="py-2 px-2 text-[var(--fg-2)]">{pje.import_date}</td>
                         <td className="py-2 px-2">
                           <span className="px-2 py-0.5 bg-purple-500/20 text-purple-500 border border-purple-500/30 rounded text-xs">
@@ -1667,7 +1667,7 @@ function Marketing() {
                   </thead>
                   <tbody>
                     {platImports.map((imp: any) => (
-                      <tr key={imp.id} className="border-b border-[var(--border)]/20 hover:bg-phopy-card/30">
+                      <tr key={imp.id} className="border-b border-[var(--border)]/20 hover:bg-[var(--surface-2)]">
                         <td className="py-2 px-2 text-[var(--fg-2)]">{imp.import_date}</td>
                         <td className="py-2 px-2">
                           <span className="px-2 py-0.5 bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30 rounded text-xs">
@@ -1718,7 +1718,7 @@ function Marketing() {
               </button>
             </div>
 
-            <div className="bg-phopy-card/50 rounded-lg p-3 border border-[var(--border)]/30 text-sm space-y-1">
+            <div className="bg-white/50 rounded-lg p-3 border border-[var(--border)]/30 text-sm space-y-1">
               <p className="text-[var(--fg-3)] text-xs">รายการ</p>
               <p className="text-white">{platJEModal.description}</p>
               <p className="text-yellow-400 font-bold text-lg font-mono">
@@ -1731,7 +1731,7 @@ function Marketing() {
               <select
                 value={platJEDr}
                 onChange={e => setPlatJEDr(e.target.value)}
-                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+                className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
               >
                 <option value="">-- เลือกบัญชี --</option>
                 {platAccounts
@@ -1747,7 +1747,7 @@ function Marketing() {
               <select
                 value={platJECr}
                 onChange={e => setPlatJECr(e.target.value)}
-                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
+                className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm"
               >
                 <option value="">-- เลือกบัญชี --</option>
                 {platAccounts
@@ -1765,7 +1765,7 @@ function Marketing() {
                 onChange={e => setPlatJENotes(e.target.value)}
                 rows={2}
                 placeholder="หมายเหตุเพิ่มเติม (ไม่บังคับ)"
-                className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm resize-none"
+                className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-400 text-sm resize-none"
               />
             </div>
 
@@ -1782,7 +1782,7 @@ function Marketing() {
               </button>
               <button
                 onClick={() => setPlatJEModal(null)}
-                className="px-4 py-2 bg-phopy-card hover:bg-danger-soft rounded-lg text-sm transition-all"
+                className="px-4 py-2 bg-white hover:bg-danger-soft rounded-lg text-sm transition-all"
               >
                 ยกเลิก
               </button>
@@ -1864,7 +1864,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         {children}
         <button
           onClick={onClose}
-          className="mt-4 w-full px-4 py-2 bg-phopy-card hover:bg-danger-soft rounded-lg transition-all"
+          className="mt-4 w-full px-4 py-2 bg-white hover:bg-danger-soft rounded-lg transition-all"
         >
           ปิด
         </button>
@@ -1912,7 +1912,7 @@ function UploadModal({
         {/* Platform */}
         <div>
           <label className="block text-sm text-[var(--fg-3)] mb-2">Platform</label>
-          <div className="w-full bg-phopy-card/50 border border-[var(--border)] rounded-lg px-4 py-2 text-white">
+          <div className="w-full bg-white/50 border border-[var(--border)] rounded-lg px-4 py-2 text-white">
             {PLATFORMS.find(p => p.id === platform)?.name}
           </div>
         </div>
@@ -1925,12 +1925,12 @@ function UploadModal({
             placeholder="🔍 ค้นหาร้านค้า..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo mb-2"
+            className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo mb-2"
           />
           <select
             value={selectedShop}
             onChange={(e) => setSelectedShop(e.target.value)}
-            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+            className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           >
             <option value="">เลือกร้านค้า</option>
@@ -1950,7 +1950,7 @@ function UploadModal({
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+              className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               required
             />
           </div>
@@ -1960,7 +1960,7 @@ function UploadModal({
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+              className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
               required
             />
           </div>
@@ -1974,7 +1974,7 @@ function UploadModal({
             accept=".csv"
             onChange={onUpload}
             disabled={uploading || !canUpload}
-            className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg bg-phopy-card/50 hover:border-phopy-indigo transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg bg-white/50 hover:border-phopy-indigo transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           />
           {!canUpload && (
             <p className="text-sm text-yellow-500 mt-2">กรุณาเลือกร้านค้าและวันที่ก่อนอัพโหลด</p>
@@ -2019,7 +2019,7 @@ function AddShopModal({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+            className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           />
         </div>
@@ -2029,7 +2029,7 @@ function AddShopModal({
             type="text"
             value={shopId}
             onChange={(e) => setShopId(e.target.value)}
-            className="w-full bg-phopy-card border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
+            className="w-full bg-white border border-[var(--border)] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-phopy-indigo"
             required
           />
         </div>

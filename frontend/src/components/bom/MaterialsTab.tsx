@@ -255,7 +255,7 @@ function MaterialsTab() {
                   <td className="text-phopy-indigo font-mono">{material.code}</td>
                   <td className="text-[var(--fg-2)]">{material.name}</td>
                   <td>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-phopy-card rounded text-xs text-phopy-indigo">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded text-xs text-phopy-indigo">
                       <Tag className="w-3 h-3" />
                       {material.categoryName || 'Uncategorized'}
                     </span>
@@ -276,14 +276,14 @@ function MaterialsTab() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleStockAdjust(material)}
-                        className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+                        className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                         title="Adjust Stock"
                       >
                         <Boxes className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
                       </button>
                       <button
                         onClick={() => handleEdit(material)}
-                        className="p-2 rounded-lg hover:bg-phopy-card/50 transition-colors"
+                        className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                         title="Edit"
                       >
                         <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
@@ -431,7 +431,7 @@ function MaterialModal({
             <h2 className="text-xl font-bold text-[var(--fg-1)]">
               {isEdit ? 'แก้ไขวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่'}
             </h2>
-            <button onClick={onClose} className="p-2 hover:bg-phopy-card/50 rounded-lg">
+            <button onClick={onClose} className="p-2 hover:bg-[var(--surface-2)] rounded-lg">
               <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
           </div>
@@ -625,7 +625,7 @@ function StockAdjustModal({
         >
           <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-bold text-[var(--fg-1)]">Adjust Stock</h2>
-            <button onClick={onClose} className="p-2 hover:bg-phopy-card/50 rounded-lg">
+            <button onClick={onClose} className="p-2 hover:bg-[var(--surface-2)] rounded-lg">
               <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
           </div>

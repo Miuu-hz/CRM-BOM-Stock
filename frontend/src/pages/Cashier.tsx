@@ -466,7 +466,7 @@ export default function Cashier() {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex bg-phopy-card rounded-lg p-1">
+            <div className="flex bg-white rounded-lg p-1">
               <button
                 onClick={() => setView('bills')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
@@ -527,7 +527,7 @@ export default function Cashier() {
                     <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
                   </div>
                 ) : openBills.length === 0 ? (
-                  <div className="text-center py-12 bg-phopy-card border border-[var(--border)] rounded-xl">
+                  <div className="text-center py-12 bg-white border border-[var(--border)] rounded-xl">
                     <Receipt className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
                     <p className="text-[var(--fg-3)]">ยังไม่มีบิล</p>
                     <p className="text-sm text-[var(--fg-4)] mt-1">สร้างบิลใหม่เพื่อเริ่มขาย</p>
@@ -540,7 +540,7 @@ export default function Cashier() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => openBill(bill.id)}
-                        className={`relative p-4 bg-phopy-card border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all ${
+                        className={`relative p-4 bg-white border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all ${
                           currentBill?.id === bill.id ? 'ring-2 ring-phopy-indigo' : ''
                         }`}
                       >
@@ -590,7 +590,7 @@ export default function Cashier() {
                       value={searchQuery}
                       onChange={handleSearchChange}
                       disabled={scanningBarcode}
-                      className="w-full pl-12 pr-12 py-3 bg-phopy-card border border-[var(--border)] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                      className="w-full pl-12 pr-12 py-3 bg-white border border-[var(--border)] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                     />
                     {scanningBarcode && (
                       <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -606,7 +606,7 @@ export default function Cashier() {
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
                           selectedCategory === 'all'
                             ? 'bg-gradient-to-r from-phopy-indigo to-purple-500 text-white'
-                            : 'bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
+                            : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
                         }`}
                       >
                         <span>ทั้งหมด</span>
@@ -618,7 +618,7 @@ export default function Cashier() {
                           className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
                             selectedCategory === cat.id
                               ? 'text-white'
-                              : 'bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
+                              : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
                           }`}
                           style={{
                             background: selectedCategory === cat.id
@@ -632,7 +632,7 @@ export default function Cashier() {
                     </div>
                     <button
                       onClick={() => setShowCategoryModal(true)}
-                      className="flex-shrink-0 p-2 rounded-lg bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-phopy-indigo transition-all"
+                      className="flex-shrink-0 p-2 rounded-lg bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-phopy-indigo transition-all"
                       title="จัดการหมวดหมู่"
                     >
                       <Settings className="w-4 h-4" />
@@ -648,11 +648,11 @@ export default function Cashier() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => addToBill(menu)}
-                      className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group"
+                      className="p-4 bg-white border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group"
                     >
                       <div
                         className="aspect-video rounded-lg mb-3 flex items-center justify-center overflow-hidden"
-                        style={{ backgroundColor: `${menu.category_color || '#00f0ff'}20` }}
+                        style={{ backgroundColor: `${menu.category_color || '#3949E5'}20` }}
                       >
                         {menu.image_url ? (
                           <img src={menu.image_url} alt={menu.product_name} className="w-full h-full object-cover" />
@@ -681,7 +681,7 @@ export default function Cashier() {
         </div>
 
         {/* Right Panel - Current Bill */}
-        <div className="w-full md:w-[400px] bg-phopy-card border-l border-[var(--border)] flex flex-col">
+        <div className="w-full md:w-[400px] bg-white border-l border-[var(--border)] flex flex-col">
           {currentBill ? (
             <>
               {/* Bill Header */}
@@ -710,7 +710,7 @@ export default function Cashier() {
                 {currentBill.customer_id ? (
                   <div className="mt-2 flex items-center justify-between bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-lg px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Star className="w-4 h-4 text-yellow-400 shrink-0" />
+                      <Star className="w-4 h-4 text-warning shrink-0" />
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-white truncate">{currentBill.customer_name}</p>
                         <p className="text-xs text-[var(--fg-3)]">{currentBill.customer_phone} · แต้ม <span className="text-phopy-indigo font-medium">{(currentBill.customer_loyalty_points ?? 0).toLocaleString()}</span></p>
@@ -724,7 +724,7 @@ export default function Cashier() {
                           if (r.success) setCurrentBill(r.data)
                         } catch { toast.error('ยกเลิกสมาชิกไม่สำเร็จ') }
                       }}
-                      className="p-1 rounded text-[var(--fg-4)] hover:text-red-400 shrink-0"
+                      className="p-1 rounded text-[var(--fg-4)] hover:text-danger shrink-0"
                       title="ยกเลิกสมาชิก"
                     >
                       <UserX className="w-4 h-4" />
@@ -767,14 +767,14 @@ export default function Cashier() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => updateQuantity(item.id, -1, item.quantity)}
-                                className="p-1 rounded bg-phopy-card hover:bg-phopy-indigo-50 text-phopy-indigo"
+                                className="p-1 rounded bg-white hover:bg-phopy-indigo-50 text-phopy-indigo"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
                               <span className="w-6 text-center text-sm">{item.quantity}</span>
                               <button
                                 onClick={() => updateQuantity(item.id, 1, item.quantity)}
-                                className="p-1 rounded bg-phopy-card hover:bg-phopy-indigo-50 text-phopy-indigo"
+                                className="p-1 rounded bg-white hover:bg-phopy-indigo-50 text-phopy-indigo"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -814,7 +814,7 @@ export default function Cashier() {
                         </div>
                       )}
                       {billing.vatEnabled && (
-                        <div className="flex justify-between text-yellow-400">
+                        <div className="flex justify-between text-warning">
                           <span>VAT ({billing.vatRate}%)</span>
                           <span>+฿{vatAmt.toLocaleString()}</span>
                         </div>
@@ -823,7 +823,7 @@ export default function Cashier() {
                       {/* Discount row */}
                       <div className="border-t border-[var(--border)]/50 pt-1">
                         <button
-                          className="w-full flex items-center justify-between py-1 text-yellow-400 hover:text-yellow-300 transition-colors"
+                          className="w-full flex items-center justify-between py-1 text-warning hover:text-warning transition-colors"
                           onClick={() => setExpandedRow(expandedRow === 'discount' ? null : 'discount')}
                         >
                           <span className="flex items-center gap-1">
@@ -836,7 +836,7 @@ export default function Cashier() {
                             )}
                           </span>
                           <span className="flex items-center gap-1">
-                            {discountAmt > 0 && <span className="text-yellow-400">-฿{discountAmt.toLocaleString()}</span>}
+                            {discountAmt > 0 && <span className="text-warning">-฿{discountAmt.toLocaleString()}</span>}
                             {expandedRow === 'discount' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </span>
                         </button>
@@ -845,11 +845,11 @@ export default function Cashier() {
                             <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-xs">
                               <button
                                 onClick={() => setDiscount(d => ({ ...d, type: 'pct' }))}
-                                className={`px-2 py-1 transition-colors ${discount.type === 'pct' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
+                                className={`px-2 py-1 transition-colors ${discount.type === 'pct' ? 'bg-warning-soft text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >%</button>
                               <button
                                 onClick={() => setDiscount(d => ({ ...d, type: 'fixed' }))}
-                                className={`px-2 py-1 transition-colors ${discount.type === 'fixed' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
+                                className={`px-2 py-1 transition-colors ${discount.type === 'fixed' ? 'bg-warning-soft text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >฿</button>
                             </div>
                             <div className="flex gap-1 flex-1">
@@ -857,7 +857,7 @@ export default function Cashier() {
                                 ? [5, 10, 15, 20].map(p => (
                                     <button key={p}
                                       onClick={() => { setDiscount({ type: 'pct', value: p }); setExpandedRow(null) }}
-                                      className={`flex-1 py-1 rounded text-xs transition-colors ${discount.value === p ? 'bg-yellow-500/30 text-yellow-300' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-yellow-400'}`}
+                                      className={`flex-1 py-1 rounded text-xs transition-colors ${discount.value === p ? 'bg-warning/20 text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-warning'}`}
                                     >{p}%</button>
                                   ))
                                 : (
@@ -876,7 +876,7 @@ export default function Cashier() {
                             </div>
                             {discount.value > 0 && (
                               <button onClick={() => { setDiscount({ type: 'pct', value: 0 }); setExpandedRow(null) }}
-                                className="text-[var(--fg-4)] hover:text-red-400 text-xs">ล้าง</button>
+                                className="text-[var(--fg-4)] hover:text-danger text-xs">ล้าง</button>
                             )}
                           </div>
                         )}
@@ -918,7 +918,7 @@ export default function Cashier() {
                             />
                             {extraCharge.amount > 0 && (
                               <button onClick={() => { setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 }); setExpandedRow(null) }}
-                                className="text-[var(--fg-4)] hover:text-red-400 text-xs">ล้าง</button>
+                                className="text-[var(--fg-4)] hover:text-danger text-xs">ล้าง</button>
                             )}
                           </div>
                         )}
@@ -934,7 +934,7 @@ export default function Cashier() {
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={cancelBill}
-                        className="px-3 py-3 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-all text-sm"
+                        className="px-3 py-3 rounded-lg border border-danger/50 text-red-400 hover:bg-danger-soft transition-all text-sm"
                       >
                         ยกเลิก
                       </button>
@@ -944,7 +944,7 @@ export default function Cashier() {
                           <button
                             onClick={sendToKitchen}
                             disabled={sendingToKitchen || unsentCount === 0}
-                            className="relative px-3 py-3 rounded-lg bg-orange-500/20 border border-orange-500/50 text-orange-400 hover:bg-orange-500/30 transition-all disabled:opacity-40 flex items-center justify-center gap-1 text-sm"
+                            className="relative px-3 py-3 rounded-lg bg-warning-soft border border-warning/50 text-warning hover:bg-warning/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1 text-sm"
                           >
                             {sendingToKitchen
                               ? <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
@@ -982,7 +982,7 @@ export default function Cashier() {
                         }}
                         disabled={currentBill.items.length === 0}
                         title="ใบเสร็จฉบับย่อ (80mm)"
-                        className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-yellow-400 hover:border-yellow-400/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
+                        className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-warning hover:border-yellow-400/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
                       >
                         <Printer className="w-4 h-4" />
                         <span className="text-[9px] leading-none">ย่อ</span>
@@ -1076,7 +1076,7 @@ export default function Cashier() {
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-phopy-card border border-[var(--border)] rounded-2xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
+            className="bg-white border border-[var(--border)] rounded-2xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
@@ -1092,7 +1092,7 @@ export default function Cashier() {
               {payActionIssues.map((issue, idx) => (
                 <div key={idx} className="p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]/50">
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-8 h-8 rounded-lg bg-danger-soft flex items-center justify-center shrink-0 mt-0.5">
                       {issue.type === 'INSUFFICIENT_STOCK' ? (
                         <Package className="w-4 h-4 text-red-400" />
                       ) : issue.type === 'MISSING_CONVERSION' ? (
@@ -1189,7 +1189,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold text-white mb-4">สร้างบิลใหม่</h2>
 
@@ -1206,7 +1206,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
         {/* Member search */}
         <div className="mb-4">
           <label className="block text-sm text-[var(--fg-3)] mb-1.5 flex items-center gap-1.5">
-            <Star className="w-3.5 h-3.5 text-yellow-400" /> สมาชิก (ค้นหาชื่อหรือเบอร์โทร)
+            <Star className="w-3.5 h-3.5 text-warning" /> สมาชิก (ค้นหาชื่อหรือเบอร์โทร)
           </label>
           {selectedMember ? (
             <div className="flex items-center justify-between bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-lg px-3 py-2">
@@ -1215,7 +1215,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
                 <p className="text-xs text-[var(--fg-3)]">{selectedMember.phone} · แต้ม {selectedMember.loyalty_points.toLocaleString()}</p>
               </div>
               <button onClick={() => { setSelectedMember(null); setMemberQuery('') }}
-                className="p-1 text-[var(--fg-3)] hover:text-red-400">
+                className="p-1 text-[var(--fg-3)] hover:text-danger">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1230,7 +1230,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
                 className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm"
               />
               {memberResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-phopy-card border border-[var(--border)] rounded-lg shadow-xl z-10 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-lg shadow-xl z-10 max-h-48 overflow-y-auto">
                   {memberResults.map(c => (
                     <button key={c.id} onClick={() => { setSelectedMember(c); setMemberQuery(''); setMemberResults([]) }}
                       className="w-full px-4 py-2.5 text-left hover:bg-[var(--bg)] flex items-center justify-between">
@@ -1292,7 +1292,7 @@ function AssignMemberModal({ onClose, onAssign }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
       >
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -1365,7 +1365,7 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold text-white mb-4">แก้ไขชื่อบิล</h2>
         <input
@@ -1399,8 +1399,8 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
 // ==================== Category Manager Modal ====================
 
 const PRESET_COLORS = [
-  '#00f0ff', '#a855f7', '#22c55e', '#f59e0b', '#ef4444',
-  '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6',
+  '#3949E5', '#9333EA', '#16A34A', '#F5A524', '#DC2626',
+  '#3949E5', '#9333EA', '#0EA5E9', '#F5A524', '#9333EA',
 ]
 
 function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
@@ -1482,7 +1482,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -1556,7 +1556,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleEdit(cat.id)}
-                        className="flex-1 px-2 py-1 bg-phopy-card border border-[var(--border)] rounded text-white text-sm focus:outline-none focus:border-phopy-indigo"
+                        className="flex-1 px-2 py-1 bg-white border border-[var(--border)] rounded text-white text-sm focus:outline-none focus:border-phopy-indigo"
                         autoFocus
                       />
                       <div className="flex gap-1">
@@ -1586,7 +1586,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                       >
                         <Edit2 className="w-3 h-3" />
                       </button>
-                      <button onClick={() => handleDelete(cat.id)} className="p-1 text-[var(--fg-3)] hover:text-red-400">
+                      <button onClick={() => handleDelete(cat.id)} className="p-1 text-[var(--fg-3)] hover:text-danger">
                         <Trash2 className="w-3 h-3" />
                       </button>
                     </>
@@ -1635,7 +1635,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                           className={`px-2 py-0.5 rounded-full text-xs transition-all ${
                             !currentCatId
                               ? 'bg-gray-500/30 text-[var(--fg-2)] ring-1 ring-gray-400'
-                              : 'bg-phopy-card text-[var(--fg-4)] hover:text-[var(--fg-2)]'
+                              : 'bg-white text-[var(--fg-4)] hover:text-[var(--fg-2)]'
                           }`}
                         >
                           ไม่มี
@@ -1701,7 +1701,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-white border border-[var(--border)] rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-white">ชำระเงิน</h2>
@@ -1712,10 +1712,10 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
 
         {/* Redeem Points UI */}
         {canRedeem && (
-          <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl space-y-3">
+          <div className="mb-4 p-4 bg-warning-soft border border-warning/30 rounded-xl space-y-3">
             <div className="flex items-center gap-2">
-              <Star className="w-4 h-4 text-yellow-400" />
-              <p className="text-sm font-medium text-yellow-300">แลกแต้มสมาชิก</p>
+              <Star className="w-4 h-4 text-warning" />
+              <p className="text-sm font-medium text-warning">แลกแต้มสมาชิก</p>
               <span className="text-xs text-[var(--fg-3)] ml-auto">มี {customerPoints!.toLocaleString()} แต้ม</span>
             </div>
             <div className="flex items-center gap-2">
@@ -1742,7 +1742,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
             )}
             <button
               onClick={() => setRedeemInput(maxRedeemable)}
-              className="text-xs text-yellow-400 hover:text-yellow-300"
+              className="text-xs text-warning hover:text-warning"
             >
               แลกทั้งหมด ({maxRedeemable.toLocaleString()} แต้ม = ลด ฿{Math.floor(maxRedeemable / loyalty.redeemRate).toLocaleString()})
             </button>
@@ -1756,7 +1756,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
           <p className="text-[var(--fg-3)] mb-2">ยอดที่ต้องชำระ</p>
           <p className="text-4xl font-bold text-success">฿{finalTotal.toLocaleString()}</p>
           {redeemDiscount > 0 && (
-            <p className="text-xs text-yellow-400 mt-1">ลดด้วยแต้ม ฿{redeemDiscount.toLocaleString()}</p>
+            <p className="text-xs text-warning mt-1">ลดด้วยแต้ม ฿{redeemDiscount.toLocaleString()}</p>
           )}
         </div>
 

@@ -26,11 +26,10 @@ function Login() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Effects */}
+      {/* Subtle Background */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-phopy-indigo/10 rounded-full blur-[120px] animate-pulse-slow" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[120px] animate-pulse-slow" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-success/5 rounded-full blur-[120px] animate-pulse-slow" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-phopy-indigo/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-phopy-mango/5 rounded-full blur-[120px]" />
       </div>
 
       {/* Login Card */}
@@ -42,28 +41,18 @@ function Login() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <motion.div
-            animate={{
-              rotate: [0, 360],
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
-            className="w-16 h-16 bg-gradient-to-br from-phopy-indigo via-purple-500 to-success rounded-2xl flex items-center justify-center shadow-2-strong mb-4"
-          >
-            <Zap className="w-8 h-8 text-white" />
-          </motion.div>
+          <div className="w-16 h-16 bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700 rounded-2xl flex items-center justify-center shadow-2 mb-4">
+            <span className="text-white font-extrabold text-2xl">P</span>
+          </div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)]">
-            CRM-BOM-STOCK
+            Phopy
           </h1>
-          <p className="text-[var(--fg-3)] mt-2">Bedding Factory Management</p>
+          <p className="text-[var(--fg-3)] mt-2">ERP · BB Pillow + POS</p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+          <div className="mb-6 p-3 bg-danger-soft border border-danger/30 rounded-lg text-danger text-sm">
             {error}
           </div>
         )}
@@ -145,25 +134,10 @@ function Login() {
         {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-xs text-[var(--fg-4)]">
-            © 2024 CRM-BOM-Stock. All rights reserved.
+            © 2024 Phopy ERP. All rights reserved.
           </p>
         </div>
       </motion.div>
-
-      {/* Decorative Scan Lines */}
-      <div className="fixed inset-0 pointer-events-none opacity-10">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="h-px bg-phopy-indigo"
-            style={{
-              marginTop: `${i * 5}vh`,
-              animation: `scan-line ${3 + i * 0.1}s linear infinite`,
-              animationDelay: `${i * 0.2}s`,
-            }}
-          />
-        ))}
-      </div>
     </div>
   )
 }

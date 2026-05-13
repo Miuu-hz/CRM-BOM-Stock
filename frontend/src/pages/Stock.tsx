@@ -481,7 +481,7 @@ function Stock() {
           {/* Column picker dropdown */}
           {showColumnPicker && (
             <div
-              className="absolute top-10 right-0 z-30 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
+              className="absolute top-10 right-0 z-30 bg-white border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
               onClick={(e) => e.stopPropagation()}
             >
               <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>

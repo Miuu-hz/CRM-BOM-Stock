@@ -188,7 +188,7 @@ export default function POSMenuSettings() {
           <p className="text-[var(--fg-3)] mt-1">Configure which products are available for sale in POS</p>
         </div>
         
-        <div className="flex bg-phopy-card rounded-lg p-1">
+        <div className="flex bg-white rounded-lg p-1">
           <button
             onClick={() => setActiveTab('menus')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
@@ -219,7 +219,7 @@ export default function POSMenuSettings() {
         type="button"
         onClick={() => !savingBomSetting && handleToggleBomDeduct(!posBomDeduct)}
         disabled={savingBomSetting}
-        className="w-full flex items-center justify-between gap-4 p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/40 transition-colors text-left disabled:opacity-60"
+        className="w-full flex items-center justify-between gap-4 p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/40 transition-colors text-left disabled:opacity-60"
       >
         <div>
           <p className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2">
@@ -249,14 +249,14 @@ export default function POSMenuSettings() {
                 placeholder="Search menus..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
+                className="w-full pl-10 pr-4 py-2 bg-white border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
               />
             </div>
             
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+              className="px-4 py-2 bg-white border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
             >
               <option value="all">All Categories</option>
               {categories.map(cat => (
@@ -280,23 +280,23 @@ export default function POSMenuSettings() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Total Menus</p>
               <p className="text-2xl font-bold text-white">{menus.length}</p>
             </div>
-            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Available</p>
               <p className="text-2xl font-bold text-success">
                 {menus.filter(m => m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Unavailable</p>
               <p className="text-2xl font-bold text-red-400">
                 {menus.filter(m => !m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Categories</p>
               <p className="text-2xl font-bold text-phopy-indigo">{categories.length}</p>
             </div>
@@ -309,7 +309,7 @@ export default function POSMenuSettings() {
               <p className="text-[var(--fg-3)] mt-2">Loading...</p>
             </div>
           ) : filteredMenus.length === 0 ? (
-            <div className="text-center py-12 bg-phopy-card border border-[var(--border)] rounded-xl">
+            <div className="text-center py-12 bg-white border border-[var(--border)] rounded-xl">
               <Store className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
               <p className="text-[var(--fg-3)]">No menus found</p>
               <p className="text-sm text-[var(--fg-4)] mt-1">
@@ -324,14 +324,14 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all group"
+                  className="p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: menu.category_color || '#00f0ff' }}
+                          style={{ backgroundColor: menu.category_color || '#3949E5' }}
                         />
                         <span className="text-xs text-[var(--fg-3)]">
                           {menu.category_name || 'Uncategorized'}
@@ -438,7 +438,7 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-phopy-card border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all"
+                  className="p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -688,7 +688,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
@@ -988,12 +988,12 @@ interface CategoryModalProps {
 function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProps) {
   useModalClose(onClose)
   const [name, setName] = useState('')
-  const [color, setColor] = useState('#00f0ff')
+  const [color, setColor] = useState('#3949E5')
   const [icon, setIcon] = useState('')
   const [saving, setSaving] = useState(false)
 
   const colors = [
-    '#00f0ff', '#00ff88', '#9d00ff', '#ff00ff', '#ff4757',
+    '#3949E5', '#00ff88', '#9333EA', '#EC4899', '#ff4757',
     '#ffa502', '#2ed573', '#1e90ff', '#ff6348', '#a4b0be',
   ]
 
@@ -1004,7 +1004,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
       setIcon(category.icon || '')
     } else {
       setName('')
-      setColor('#00f0ff')
+      setColor('#3949E5')
       setIcon('')
     }
   }, [category, isOpen])
@@ -1051,7 +1051,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">

@@ -248,7 +248,7 @@ export default function JournalEntries() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchEntries} className="p-2 rounded-lg bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+          <button onClick={fetchEntries} className="p-2 rounded-lg bg-white border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => setShowQuickModal(true)}
@@ -264,11 +264,11 @@ export default function JournalEntries() {
 
       {/* Summary Bar */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-phopy-card border border-[var(--border)] rounded-xl px-4 py-3">
+        <div className="bg-white border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม</p>
           <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalDebit)}</p>
         </div>
-        <div className="bg-phopy-card border border-[var(--border)] rounded-xl px-4 py-3">
+        <div className="bg-white border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-xs text-[var(--fg-4)] mb-0.5">เครดิตรวม</p>
           <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalCredit)}</p>
         </div>
@@ -290,24 +290,24 @@ export default function JournalEntries() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
           <input type="text" placeholder="ค้นหาเลขที่ หรือคำอธิบาย..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex gap-2">
           <input type="date" value={dateRange.start}
             onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-            className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
           <span className="self-center text-[var(--fg-4)]">–</span>
           <input type="date" value={dateRange.end}
             onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-            className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
           {(['all', 'draft', 'posted'] as const).map(f => (
             <button key={f} onClick={() => setFilterPosted(f)}
-              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-phopy-card text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-white text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               {f === 'all' ? 'ทั้งหมด' : f === 'draft' ? 'รอดำเนินการ' : 'ยืนยันแล้ว'}
             </button>
           ))}
@@ -315,7 +315,7 @@ export default function JournalEntries() {
       </div>
 
       {/* Entries List */}
-      <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
         {/* Table header */}
         <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">
           <span>เลขที่</span>
@@ -460,7 +460,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-start justify-between shrink-0">
@@ -658,7 +658,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -840,7 +840,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
         <X className="w-3.5 h-3.5" />
       </button>
       <select value={l.accountId} onChange={e => updateLine(l.i, 'accountId', e.target.value)}
-        className="w-full px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
+        className="w-full px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
         <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
         {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map(type => {
           const group = accounts.filter(a => a.type === type)
@@ -856,20 +856,20 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="คำอธิบาย (optional)" value={l.description}
           onChange={e => updateLine(l.i, 'description', e.target.value)}
-          className="px-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
+          className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Dr.</span>
           <input type="number" placeholder="0" value={l.debit}
             onChange={e => updateLine(l.i, 'debit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
+            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Cr.</span>
           <input type="number" placeholder="0" value={l.credit}
             onChange={e => updateLine(l.i, 'credit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-phopy-card border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
+            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
         </div>
       </div>
     </div>
@@ -879,7 +879,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">

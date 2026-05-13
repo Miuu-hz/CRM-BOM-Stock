@@ -479,7 +479,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         className="w-full max-w-5xl max-h-[95vh] flex overflow-hidden rounded-2xl border border-[var(--border)] shadow-2xl"
       >
         {/* ── LEFT SIDEBAR ──────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-phopy-card border-r border-[var(--border)] flex flex-col overflow-y-auto">
+        <div className="w-64 flex-shrink-0 bg-white border-r border-[var(--border)] flex flex-col overflow-y-auto">
           {/* Avatar */}
           <div className="p-6 flex flex-col items-center text-center border-b border-[var(--border)]">
             <div className="w-20 h-20 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center mb-3">
@@ -605,7 +605,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         {/* ── RIGHT PANEL ───────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-phopy-card/30">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-white/30">
             <div className="flex gap-1">
               {tabs.map(tab => (
                 <button
@@ -798,7 +798,7 @@ function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: numb
           />
           <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">{t.month.slice(5)}</span>
           {/* Tooltip */}
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-phopy-card border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-white border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
             <p className="text-[var(--fg-2)]">{t.month}</p>
             <p className="text-success">฿{t.totalAmount.toLocaleString()}</p>
             <p className="text-[var(--fg-4)]">{t.orderCount} ออเดอร์</p>

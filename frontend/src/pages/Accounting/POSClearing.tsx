@@ -152,14 +152,14 @@ export default function POSClearing() {
         </div>
         <button
           onClick={() => fetchData(selectedDate)}
-          className="p-2 rounded-lg bg-phopy-card border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+          className="p-2 rounded-lg bg-white border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
         >
           <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {/* Date Selector */}
-      <div className="flex items-center gap-2 bg-phopy-card border border-[var(--border)] rounded-xl px-3 py-2">
+      <div className="flex items-center gap-2 bg-white border border-[var(--border)] rounded-xl px-3 py-2">
         <button
           onClick={() => shiftDate(-1)}
           className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
@@ -200,7 +200,7 @@ export default function POSClearing() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-5 bg-phopy-card border border-[var(--border)] rounded-xl"
+          className="p-5 bg-white border border-[var(--border)] rounded-xl"
         >
           <p className="text-xs text-[var(--fg-3)] uppercase tracking-wide mb-2">ยอดรอนำเข้า</p>
           <p className="text-3xl font-bold text-phopy-indigo">{fmt(pendingTotal)}</p>
@@ -221,7 +221,7 @@ export default function POSClearing() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="p-5 bg-phopy-card border border-[var(--border)] rounded-xl"
+          className="p-5 bg-white border border-[var(--border)] rounded-xl"
         >
           <p className="text-xs text-[var(--fg-3)] uppercase tracking-wide mb-2">นำเข้าแล้วรวม</p>
           <p className="text-3xl font-bold text-success">
@@ -258,7 +258,7 @@ export default function POSClearing() {
 
       {/* Pending Bills */}
       {pendingBills.length > 0 && (
-        <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <h2 className="font-semibold text-white flex items-center gap-2">
               <Receipt className="w-4 h-4 text-phopy-indigo" />
@@ -289,7 +289,7 @@ export default function POSClearing() {
       )}
 
       {pendingBills.length === 0 && !loading && (
-        <div className="bg-phopy-card border border-[var(--border)] rounded-xl p-10 text-center">
+        <div className="bg-white border border-[var(--border)] rounded-xl p-10 text-center">
           <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-success" />
           <p className="text-white font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
           <p className="text-[var(--fg-4)] text-sm mt-1">ไม่มีบิลค้างอยู่</p>
@@ -303,7 +303,7 @@ export default function POSClearing() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden"
+            className="bg-white border border-[var(--border)] rounded-xl overflow-hidden"
           >
             <div className="px-5 py-4 border-b border-[var(--border)]">
               <h2 className="font-semibold text-white flex items-center gap-2">
@@ -509,7 +509,7 @@ function DepositModal({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col"
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}
       >
         {/* Header */}

@@ -24,7 +24,7 @@ function ProductionChart() {
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Activity className="w-6 h-6 text-purple-500" />
+          <Activity className="w-6 h-6 text-phopy-indigo" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Production Status
           </h2>
@@ -39,25 +39,25 @@ function ProductionChart() {
 
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2d3250" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#ECE6D8" opacity={0.5} />
           <XAxis
             dataKey="product"
-            stroke="#6b7280"
+            stroke="#6B6658"
             style={{ fontSize: '12px' }}
             angle={-15}
             textAnchor="end"
             height={80}
           />
-          <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+          <YAxis stroke="#6B6658" style={{ fontSize: '12px' }} />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#151932',
-              border: '1px solid #2d3250',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid #ECE6D8',
               borderRadius: '8px',
-              boxShadow: '0 0 10px rgba(157, 0, 255, 0.3)',
+              boxShadow: '0 4px 12px -2px rgba(30, 27, 22, 0.08)',
             }}
-            labelStyle={{ color: '#9d00ff' }}
-            itemStyle={{ color: '#e5e7eb' }}
+            labelStyle={{ color: '#9333EA' }}
+            itemStyle={{ color: '#1E1B16' }}
           />
           <Legend
             wrapperStyle={{
@@ -65,8 +65,8 @@ function ProductionChart() {
               paddingTop: '20px',
             }}
           />
-          <Bar dataKey="produced" fill="#00ff88" radius={[8, 8, 0, 0]} />
-          <Bar dataKey="target" fill="#9d00ff" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="produced" fill="#16A34A" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="target" fill="#9333EA" radius={[8, 8, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
 

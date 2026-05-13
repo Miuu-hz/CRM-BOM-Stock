@@ -249,7 +249,7 @@ function ModalShell({ title, icon: Icon, iconColor = 'text-phopy-indigo', onClos
   <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
     <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
       onClick={e => e.stopPropagation()}
-      className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+      className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
       <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <Icon className={`w-5 h-5 ${iconColor}`} /> {title}
@@ -641,7 +641,7 @@ const Sales = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pending actions */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="lg:col-span-1 bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          className="lg:col-span-1 bg-white border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
             <Clock className="w-4 h-4 text-yellow-400" /> รายการรอดำเนินการ
           </h3>
@@ -667,7 +667,7 @@ const Sales = () => {
 
         {/* Sales workflow pipeline */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="lg:col-span-2 bg-phopy-card border border-[var(--border)] rounded-xl p-5">
+          className="lg:col-span-2 bg-white border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <ArrowRight className="w-4 h-4 text-phopy-indigo" /> กระบวนการขาย
           </h3>
@@ -785,7 +785,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบเสนอราคา</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -856,7 +856,7 @@ const Sales = () => {
               return (
                 <motion.div key={q.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-phopy-indigo/50 transition-colors">
+                  className="bg-white border border-[var(--border)] rounded-xl p-4 hover:border-phopy-indigo/50 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-phopy-indigo">{q.quotation_number}</p>
@@ -951,7 +951,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบคำสั่งขาย</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1057,7 +1057,7 @@ const Sales = () => {
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors">
+                  className="bg-white border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="font-mono text-sm font-semibold text-purple-400">{order.so_number}</p>
@@ -1150,7 +1150,7 @@ const Sales = () => {
             <p>ไม่พบใบแจ้งหนี้</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1231,7 +1231,7 @@ const Sales = () => {
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className={`bg-phopy-card border rounded-xl p-4 hover:brightness-105 transition-all ${isOverdue ? 'border-red-500/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
+                  className={`bg-white border rounded-xl p-4 hover:brightness-105 transition-all ${isOverdue ? 'border-red-500/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-yellow-400">{inv.invoice_number}</p>
@@ -1303,7 +1303,7 @@ const Sales = () => {
             <p>ไม่พบใบลดหนี้</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1349,7 +1349,7 @@ const Sales = () => {
             {items.map((cn, i) => (
               <motion.div key={cn.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-red-500/40 transition-colors">
+                className="bg-white border border-[var(--border)] rounded-xl p-4 hover:border-red-500/40 transition-colors">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-red-400">{cn.cn_number}</p>
@@ -1396,7 +1396,7 @@ const Sales = () => {
             <p>ไม่พบใบค้างส่ง</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1438,7 +1438,7 @@ const Sales = () => {
             {items.map((bo, i) => (
               <motion.div key={bo.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-orange-500/40 transition-colors">
+                className="bg-white border border-[var(--border)] rounded-xl p-4 hover:border-orange-500/40 transition-colors">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-orange-400">{bo.bo_number}</p>
@@ -1488,7 +1488,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบส่งของ</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1541,7 +1541,7 @@ const Sales = () => {
               return (
                 <motion.div key={do_.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-phopy-card border border-[var(--border)] rounded-xl p-4 hover:border-blue-500/40 transition-colors">
+                  className="bg-white border border-[var(--border)] rounded-xl p-4 hover:border-blue-500/40 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-blue-400">{do_.do_number}</p>
@@ -1592,7 +1592,7 @@ const Sales = () => {
         {templates.map((template, i) => (
           <motion.div key={template.id}
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            className="bg-phopy-card rounded-xl border border-[var(--border)] p-5 hover:border-phopy-indigo/50 transition-colors">
+            className="bg-white rounded-xl border border-[var(--border)] p-5 hover:border-phopy-indigo/50 transition-colors">
             <div className="flex justify-between items-start mb-3">
               <div className="p-2.5 bg-phopy-indigo-50 rounded-lg">
                 <LayoutTemplate className="w-5 h-5 text-phopy-indigo" />
@@ -1642,7 +1642,7 @@ const Sales = () => {
   const PendingBillsPanel = ({ bills, onVoid }: { bills: POSPendingBill[]; onVoid: (b: POSPendingBill) => void }) => {
     const [expanded, setExpanded] = useState(false)
     return (
-      <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
         <button onClick={() => setExpanded(!expanded)}
           className="w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30">
           <div className="flex items-center gap-2">
@@ -1755,7 +1755,7 @@ const Sales = () => {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+          className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
           <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <X className="w-5 h-5 text-red-400" /> ปิดกะ — {shift.shift_number}
@@ -1845,7 +1845,7 @@ const Sales = () => {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-phopy-card border border-red-500/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
+          className="bg-white border border-red-500/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
           <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Ban className="w-5 h-5 text-red-400" /> ยกเลิกบิล
@@ -1901,7 +1901,7 @@ const Sales = () => {
         </div>
       ) : posCurrentShift === null ? (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-phopy-card border border-[var(--border)] rounded-xl p-8 text-center space-y-4">
+          className="bg-white border border-[var(--border)] rounded-xl p-8 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-gray-700/50 flex items-center justify-center mx-auto">
             <Store className="w-8 h-8 text-[var(--fg-4)]" />
           </div>
@@ -1916,7 +1916,7 @@ const Sales = () => {
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-phopy-card border border-success/40 rounded-xl overflow-hidden">
+          className="bg-white border border-success/40 rounded-xl overflow-hidden">
           <div className="px-5 py-3 bg-success/10 border-b border-success/30 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-success font-medium text-sm">กะกำลังเปิดอยู่</span>
@@ -1951,7 +1951,7 @@ const Sales = () => {
       )}
 
       {posShifts.filter(s => s.status === 'CLOSED').length > 0 && (
-        <div className="bg-phopy-card border border-[var(--border)] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-[var(--border)]">
             <h3 className="text-sm font-medium text-[var(--fg-3)]">ประวัติกะ</h3>
           </div>
@@ -2017,7 +2017,7 @@ const Sales = () => {
 
       {/* Tabs */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-phopy-card p-1.5 rounded-xl border border-[var(--border)]">
+        className="flex flex-wrap gap-1.5 bg-white p-1.5 rounded-xl border border-[var(--border)]">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setSearchQuery(''); setActiveTab(tab.id as any) }}
             className={`relative flex items-center gap-2 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
@@ -2178,7 +2178,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
         <div className="p-4 border-b border-[var(--border)] flex justify-between items-center">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <Plus className="w-4 h-4 text-phopy-indigo" /> เพิ่มลูกค้าใหม่ (ด่วน)
@@ -2283,7 +2283,7 @@ function CustomerSearch({ value, onChange }: {
           className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:border-phopy-indigo"
         />
         {open && (results.length > 0 || searched) && (
-          <div className="absolute z-50 w-full mt-1 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+          <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
             {results.map(c => (
               <button key={c.id} onMouseDown={() => { onChange(c); setQuery(''); setOpen(false); setSearched(false) }}
                 className="w-full px-4 py-2.5 flex items-start gap-2 hover:bg-[var(--bg)] text-left">
@@ -2360,7 +2360,7 @@ function ProductSearch({ value, products, onSelect, onClear }: {
         className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
       />
       {open && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-0.5 bg-phopy-card border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-0.5 bg-white border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
           {filtered.map(p => (
             <button key={p.id} type="button"
               onMouseDown={() => { onSelect(p); setQuery(''); setOpen(false) }}
@@ -2578,7 +2578,7 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <FileText className="w-5 h-5 text-phopy-indigo" /> สร้างใบเสนอราคา (QT)
@@ -2673,7 +2673,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <p className="font-mono text-sm text-phopy-indigo font-semibold">{quotation.quotation_number}</p>
@@ -2865,7 +2865,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-purple-400" />
@@ -2974,7 +2974,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <p className="font-mono text-sm text-purple-400 font-semibold">{salesOrder.so_number}</p>
@@ -3177,7 +3177,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-start shrink-0">
@@ -3484,7 +3484,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <RotateCcw className="w-5 h-5 text-orange-400" /> สร้างใบลดหนี้ (CN)
@@ -3580,7 +3580,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white font-mono">{creditNote.cn_number}</h2>
@@ -3682,7 +3682,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-phopy-card border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white font-mono">{backorder.bo_number}</h2>
