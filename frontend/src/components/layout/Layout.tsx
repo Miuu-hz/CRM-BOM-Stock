@@ -1,5 +1,5 @@
 import { ReactNode, useState } from 'react'
-import Sidebar from './Sidebar'
+import Sidebar, { SidebarMode } from './Sidebar'
 import Header from './Header'
 
 interface LayoutProps {
@@ -7,11 +7,13 @@ interface LayoutProps {
 }
 
 function Layout({ children }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('full')
+
+  const toggleSidebar = () =>
+    setSidebarMode(m => (m === 'full' ? 'rail' : 'full'))
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
-      {/* Skip Link — keyboard accessibility */}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-phopy-indigo focus:text-white focus:font-semibold focus:rounded-md"
@@ -19,15 +21,10 @@ function Layout({ children }: LayoutProps) {
         ข้ามไปเนื้อหาหลัก
       </a>
 
-      {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} />
+      <Sidebar mode={sidebarMode} />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-
-        {/* Page Content */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <Header onMenuClick={toggleSidebar} />
         <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6">
           <div className="max-w-[1920px] mx-auto">
             {children}

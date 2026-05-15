@@ -453,25 +453,25 @@ export default function Cashier() {
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       {/* Header */}
-      <div className="bg-gradient-card border-b border-[var(--border)] px-6 py-4">
+      <div className="bg-[var(--surface)] border-b border-[var(--border)] px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-gradient-to-br from-phopy-indigo to-purple-500 rounded-xl">
               <Store className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">ระบบขายหน้าร้าน</h1>
+              <h1 className="text-xl font-bold text-[var(--fg-1)]">ระบบขายหน้าร้าน</h1>
               <p className="text-sm text-[var(--fg-3)]">Open Bill / POS</p>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex bg-white rounded-lg p-1">
+            <div className="flex bg-[var(--surface)] rounded-lg p-1">
               <button
                 onClick={() => setView('bills')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   view === 'bills' 
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo' 
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)]' 
                     : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
                 }`}
               >
@@ -483,7 +483,7 @@ export default function Cashier() {
                 disabled={!currentBill}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   view === 'menu' 
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo' 
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)]' 
                     : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] disabled:opacity-50'
                 }`}
               >
@@ -509,7 +509,7 @@ export default function Cashier() {
               >
                 {/* Create Bill Button */}
                 <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-semibold text-white">บิลที่เปิดอยู่</h2>
+                  <h2 className="text-lg font-semibold text-[var(--fg-1)]">บิลที่เปิดอยู่</h2>
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -527,7 +527,7 @@ export default function Cashier() {
                     <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
                   </div>
                 ) : openBills.length === 0 ? (
-                  <div className="text-center py-12 bg-white border border-[var(--border)] rounded-xl">
+                  <div className="text-center py-12 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
                     <Receipt className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
                     <p className="text-[var(--fg-3)]">ยังไม่มีบิล</p>
                     <p className="text-sm text-[var(--fg-4)] mt-1">สร้างบิลใหม่เพื่อเริ่มขาย</p>
@@ -540,16 +540,16 @@ export default function Cashier() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => openBill(bill.id)}
-                        className={`relative p-4 bg-white border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all ${
+                        className={`relative p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all ${
                           currentBill?.id === bill.id ? 'ring-2 ring-phopy-indigo' : ''
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-lg font-bold text-white truncate">
+                          <span className="text-lg font-bold text-[var(--fg-1)] truncate">
                             {bill.display_name}
                           </span>
                           {bill.item_count > 0 && (
-                            <span className="px-2 py-0.5 bg-phopy-indigo-50 text-phopy-indigo rounded text-xs">
+                            <span className="px-2 py-0.5 bg-[var(--primary-soft)] text-[var(--primary)] rounded text-xs">
                               {bill.item_count}
                             </span>
                           )}
@@ -590,7 +590,7 @@ export default function Cashier() {
                       value={searchQuery}
                       onChange={handleSearchChange}
                       disabled={scanningBarcode}
-                      className="w-full pl-12 pr-12 py-3 bg-white border border-[var(--border)] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                      className="w-full pl-12 pr-12 py-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                     />
                     {scanningBarcode && (
                       <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -606,7 +606,7 @@ export default function Cashier() {
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
                           selectedCategory === 'all'
                             ? 'bg-gradient-to-r from-phopy-indigo to-purple-500 text-white'
-                            : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
+                            : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
                         }`}
                       >
                         <span>ทั้งหมด</span>
@@ -617,8 +617,8 @@ export default function Cashier() {
                           onClick={() => setSelectedCategory(cat.id)}
                           className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
                             selectedCategory === cat.id
-                              ? 'text-white'
-                              : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
+                              ? 'text-[var(--fg-1)]'
+                              : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50'
                           }`}
                           style={{
                             background: selectedCategory === cat.id
@@ -632,7 +632,7 @@ export default function Cashier() {
                     </div>
                     <button
                       onClick={() => setShowCategoryModal(true)}
-                      className="flex-shrink-0 p-2 rounded-lg bg-white border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-phopy-indigo transition-all"
+                      className="flex-shrink-0 p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-[var(--primary)] transition-all"
                       title="จัดการหมวดหมู่"
                     >
                       <Settings className="w-4 h-4" />
@@ -648,7 +648,7 @@ export default function Cashier() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => addToBill(menu)}
-                      className="p-4 bg-white border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group"
+                      className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group"
                     >
                       <div
                         className="aspect-video rounded-lg mb-3 flex items-center justify-center overflow-hidden"
@@ -660,7 +660,7 @@ export default function Cashier() {
                           <span className="text-4xl">🍽️</span>
                         )}
                       </div>
-                      <h3 className="font-semibold text-white group-hover:text-phopy-indigo transition-colors truncate">
+                      <h3 className="font-semibold text-[var(--fg-1)] group-hover:text-[var(--primary)] transition-colors truncate">
                         {menu.product_name}
                       </h3>
                       <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
@@ -681,7 +681,7 @@ export default function Cashier() {
         </div>
 
         {/* Right Panel - Current Bill */}
-        <div className="w-full md:w-[400px] bg-white border-l border-[var(--border)] flex flex-col">
+        <div className="w-full md:w-[400px] bg-[var(--surface)] border-l border-[var(--border)] flex flex-col">
           {currentBill ? (
             <>
               {/* Bill Header */}
@@ -689,10 +689,10 @@ export default function Cashier() {
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold text-white truncate">{currentBill.display_name}</h2>
+                      <h2 className="text-lg font-bold text-[var(--fg-1)] truncate">{currentBill.display_name}</h2>
                       <button
                         onClick={() => setShowEditNameModal(true)}
-                        className="p-1 rounded hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-phopy-indigo"
+                        className="p-1 rounded hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--primary)]"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
@@ -712,8 +712,8 @@ export default function Cashier() {
                     <div className="flex items-center gap-2 min-w-0">
                       <Star className="w-4 h-4 text-warning shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{currentBill.customer_name}</p>
-                        <p className="text-xs text-[var(--fg-3)]">{currentBill.customer_phone} · แต้ม <span className="text-phopy-indigo font-medium">{(currentBill.customer_loyalty_points ?? 0).toLocaleString()}</span></p>
+                        <p className="text-sm font-medium text-[var(--fg-1)] truncate">{currentBill.customer_name}</p>
+                        <p className="text-xs text-[var(--fg-3)]">{currentBill.customer_phone} · แต้ม <span className="text-[var(--primary)] font-medium">{(currentBill.customer_loyalty_points ?? 0).toLocaleString()}</span></p>
                       </div>
                     </div>
                     <button
@@ -733,7 +733,7 @@ export default function Cashier() {
                 ) : (
                   <button
                     onClick={() => setShowAssignMemberModal(true)}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-[var(--border)] text-xs text-[var(--fg-4)] hover:text-phopy-indigo hover:border-phopy-indigo/40 transition-colors"
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-[var(--border)] text-xs text-[var(--fg-4)] hover:text-[var(--primary)] hover:border-phopy-indigo/40 transition-colors"
                   >
                     <UserPlus className="w-3.5 h-3.5" /> + สมาชิก
                   </button>
@@ -759,7 +759,7 @@ export default function Cashier() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <h4 className="font-medium text-white">{item.product_name}</h4>
+                          <h4 className="font-medium text-[var(--fg-1)]">{item.product_name}</h4>
                           {item.special_instructions && (
                             <p className="text-xs text-[var(--fg-4)] mt-1">{item.special_instructions}</p>
                           )}
@@ -767,14 +767,14 @@ export default function Cashier() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => updateQuantity(item.id, -1, item.quantity)}
-                                className="p-1 rounded bg-white hover:bg-phopy-indigo-50 text-phopy-indigo"
+                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)]"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
                               <span className="w-6 text-center text-sm">{item.quantity}</span>
                               <button
                                 onClick={() => updateQuantity(item.id, 1, item.quantity)}
-                                className="p-1 rounded bg-white hover:bg-phopy-indigo-50 text-phopy-indigo"
+                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)]"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -808,7 +808,7 @@ export default function Cashier() {
                         <span>฿{subtotal.toLocaleString()}</span>
                       </div>
                       {billing.serviceEnabled && (
-                        <div className="flex justify-between text-blue-400">
+                        <div className="flex justify-between text-[var(--primary)]">
                           <span>Service Charge ({billing.serviceRate}%)</span>
                           <span>+฿{serviceAmt.toLocaleString()}</span>
                         </div>
@@ -830,7 +830,7 @@ export default function Cashier() {
                             <Tag className="w-3.5 h-3.5" />
                             ส่วนลด
                             {discount.value > 0 && (
-                              <span className="text-xs text-yellow-500">
+                              <span className="text-xs text-warning">
                                 ({discount.type === 'pct' ? `${discount.value}%` : `฿${discount.value}`})
                               </span>
                             )}
@@ -845,11 +845,11 @@ export default function Cashier() {
                             <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-xs">
                               <button
                                 onClick={() => setDiscount(d => ({ ...d, type: 'pct' }))}
-                                className={`px-2 py-1 transition-colors ${discount.type === 'pct' ? 'bg-warning-soft text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
+                                className={`px-2 py-1 transition-colors ${discount.type === 'pct' ? 'bg-[var(--warning-soft)] text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >%</button>
                               <button
                                 onClick={() => setDiscount(d => ({ ...d, type: 'fixed' }))}
-                                className={`px-2 py-1 transition-colors ${discount.type === 'fixed' ? 'bg-warning-soft text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
+                                className={`px-2 py-1 transition-colors ${discount.type === 'fixed' ? 'bg-[var(--warning-soft)] text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >฿</button>
                             </div>
                             <div className="flex gap-1 flex-1">
@@ -869,7 +869,7 @@ export default function Cashier() {
                                     onChange={e => setDiscount(d => ({ ...d, value: Number(e.target.value) || 0 }))}
                                     onKeyDown={e => e.key === 'Enter' && setExpandedRow(null)}
                                     autoFocus
-                                    className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-white focus:outline-none focus:border-yellow-500"
+                                    className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
                                   />
                                 )
                               }
@@ -885,7 +885,7 @@ export default function Cashier() {
                       {/* Extra charge row */}
                       <div>
                         <button
-                          className="w-full flex items-center justify-between py-1 text-blue-400 hover:text-blue-300 transition-colors"
+                          className="w-full flex items-center justify-between py-1 text-[var(--primary)] hover:text-[var(--primary)] transition-colors"
                           onClick={() => setExpandedRow(expandedRow === 'extra' ? null : 'extra')}
                         >
                           <span className="flex items-center gap-1">
@@ -893,7 +893,7 @@ export default function Cashier() {
                             {extraCharge.amount > 0 ? extraCharge.label : 'เพิ่มค่าบริการ'}
                           </span>
                           <span className="flex items-center gap-1">
-                            {extraCharge.amount > 0 && <span className="text-blue-400">+฿{extraCharge.amount.toLocaleString()}</span>}
+                            {extraCharge.amount > 0 && <span className="text-[var(--primary)]">+฿{extraCharge.amount.toLocaleString()}</span>}
                             {expandedRow === 'extra' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </span>
                         </button>
@@ -904,7 +904,7 @@ export default function Cashier() {
                               placeholder="ชื่อ"
                               value={extraCharge.label}
                               onChange={e => setExtraCharge(c => ({ ...c, label: e.target.value }))}
-                              className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                              className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
                             />
                             <input
                               type="number"
@@ -914,7 +914,7 @@ export default function Cashier() {
                               onChange={e => setExtraCharge(c => ({ ...c, amount: Number(e.target.value) || 0 }))}
                               onKeyDown={e => e.key === 'Enter' && setExpandedRow(null)}
                               autoFocus
-                              className="w-20 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                              className="w-20 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
                             />
                             {extraCharge.amount > 0 && (
                               <button onClick={() => { setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 }); setExpandedRow(null) }}
@@ -926,7 +926,7 @@ export default function Cashier() {
 
                       {/* Grand total */}
                       <div className="border-t border-[var(--border)] pt-2 flex justify-between text-lg font-bold">
-                        <span className="text-white">ยอดสุทธิ</span>
+                        <span className="text-[var(--fg-1)]">ยอดสุทธิ</span>
                         <span className="text-success">฿{finalTotal.toLocaleString()}</span>
                       </div>
                     </div>
@@ -934,7 +934,7 @@ export default function Cashier() {
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={cancelBill}
-                        className="px-3 py-3 rounded-lg border border-danger/50 text-red-400 hover:bg-danger-soft transition-all text-sm"
+                        className="px-3 py-3 rounded-lg border border-danger/50 text-danger hover:bg-[var(--danger-soft)] transition-all text-sm"
                       >
                         ยกเลิก
                       </button>
@@ -944,7 +944,7 @@ export default function Cashier() {
                           <button
                             onClick={sendToKitchen}
                             disabled={sendingToKitchen || unsentCount === 0}
-                            className="relative px-3 py-3 rounded-lg bg-warning-soft border border-warning/50 text-warning hover:bg-warning/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1 text-sm"
+                            className="relative px-3 py-3 rounded-lg bg-[var(--warning-soft)] border border-warning/50 text-warning hover:bg-warning/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1 text-sm"
                           >
                             {sendingToKitchen
                               ? <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
@@ -952,7 +952,7 @@ export default function Cashier() {
                             }
                             ครัว
                             {unsentCount > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-orange-500 text-white text-xs flex items-center justify-center font-bold">
+                              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-warning text-[var(--fg-1)] text-xs flex items-center justify-center font-bold">
                                 {unsentCount}
                               </span>
                             )}
@@ -994,7 +994,7 @@ export default function Cashier() {
                         }}
                         disabled={currentBill.items.length === 0}
                         title={billing.vatEnabled ? 'ใบกำกับภาษี A4' : 'ใบเสร็จรับเงิน A4'}
-                        className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-phopy-indigo hover:border-phopy-indigo/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
+                        className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
                       >
                         <Printer className="w-4 h-4" />
                         <span className="text-[9px] leading-none">A4</span>
@@ -1010,7 +1010,7 @@ export default function Cashier() {
               <p className="text-lg font-medium">เลือกบิลหรือสร้างบิลใหม่</p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="mt-6 px-6 py-3 rounded-xl bg-phopy-indigo-50 text-phopy-indigo hover:bg-phopy-indigo/30 transition-all flex items-center gap-2"
+                className="mt-6 px-6 py-3 rounded-xl bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-phopy-indigo/30 transition-all flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 สร้างบิลใหม่
@@ -1072,18 +1072,18 @@ export default function Cashier() {
 
       {/* Pay Action Issues Modal */}
       {payActionIssues && payActionIssues.length > 0 && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white border border-[var(--border)] rounded-2xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
+            className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <div className="w-10 h-10 rounded-full bg-[var(--warning-soft)] flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">ไม่สามารถชำระเงินได้</h2>
+                <h2 className="text-lg font-bold text-[var(--fg-1)]">ไม่สามารถชำระเงินได้</h2>
                 <p className="text-sm text-[var(--fg-3)]">พบปัญหาที่ต้องแก้ไขก่อน</p>
               </div>
             </div>
@@ -1092,24 +1092,24 @@ export default function Cashier() {
               {payActionIssues.map((issue, idx) => (
                 <div key={idx} className="p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]/50">
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-danger-soft flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--danger-soft)] flex items-center justify-center shrink-0 mt-0.5">
                       {issue.type === 'INSUFFICIENT_STOCK' ? (
-                        <Package className="w-4 h-4 text-red-400" />
+                        <Package className="w-4 h-4 text-danger" />
                       ) : issue.type === 'MISSING_CONVERSION' ? (
-                        <Scale className="w-4 h-4 text-amber-400" />
+                        <Scale className="w-4 h-4 text-warning" />
                       ) : (
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <AlertTriangle className="w-4 h-4 text-warning" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white">
+                      <p className="text-sm font-medium text-[var(--fg-1)]">
                         {issue.type === 'INSUFFICIENT_STOCK' ? 'สต็อกไม่พอ' : issue.type === 'MISSING_CONVERSION' ? 'หน่วยไม่ครบ' : 'ปัญหาอื่น'}
                       </p>
                       <p className="text-xs text-[var(--fg-3)] mt-0.5">{issue.message}</p>
                       {issue.link && (
                         <button
                           onClick={() => { window.open(issue.link, '_blank'); setPayActionIssues(null) }}
-                          className="mt-2 text-xs px-3 py-1.5 bg-phopy-indigo/15 text-phopy-indigo rounded-lg hover:bg-phopy-indigo/25 transition-colors"
+                          className="mt-2 text-xs px-3 py-1.5 bg-phopy-indigo/15 text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/25 transition-colors"
                         >
                           ไปแก้ไข
                         </button>
@@ -1129,7 +1129,7 @@ export default function Cashier() {
               </button>
               <button
                 onClick={() => { window.open('/stock', '_blank'); setPayActionIssues(null) }}
-                className="flex-1 py-2.5 text-sm bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors"
+                className="flex-1 py-2.5 text-sm bg-phopy-indigo text-[var(--fg-1)] font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors"
               >
                 ไปหน้าสต็อก
               </button>
@@ -1184,14 +1184,14 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
-        <h2 className="text-xl font-bold text-white mb-4">สร้างบิลใหม่</h2>
+        <h2 className="text-xl font-bold text-[var(--fg-1)] mb-4">สร้างบิลใหม่</h2>
 
         {/* Bill name */}
         <input
@@ -1200,7 +1200,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          className="w-full px-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo mb-4"
+          className="w-full px-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo mb-4"
         />
 
         {/* Member search */}
@@ -1211,7 +1211,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
           {selectedMember ? (
             <div className="flex items-center justify-between bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-lg px-3 py-2">
               <div>
-                <p className="text-sm font-medium text-white">{selectedMember.name}</p>
+                <p className="text-sm font-medium text-[var(--fg-1)]">{selectedMember.name}</p>
                 <p className="text-xs text-[var(--fg-3)]">{selectedMember.phone} · แต้ม {selectedMember.loyalty_points.toLocaleString()}</p>
               </div>
               <button onClick={() => { setSelectedMember(null); setMemberQuery('') }}
@@ -1227,18 +1227,18 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
                 placeholder="ค้นหา..."
                 value={memberQuery}
                 onChange={(e) => setMemberQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm"
+                className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo text-sm"
               />
               {memberResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[var(--border)] rounded-lg shadow-xl z-10 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl z-10 max-h-48 overflow-y-auto">
                   {memberResults.map(c => (
                     <button key={c.id} onClick={() => { setSelectedMember(c); setMemberQuery(''); setMemberResults([]) }}
                       className="w-full px-4 py-2.5 text-left hover:bg-[var(--bg)] flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-white">{c.name}</p>
+                        <p className="text-sm font-medium text-[var(--fg-1)]">{c.name}</p>
                         <p className="text-xs text-[var(--fg-4)]">{c.phone}</p>
                       </div>
-                      <span className="text-xs text-phopy-indigo">{c.loyalty_points.toLocaleString()} แต้ม</span>
+                      <span className="text-xs text-[var(--primary)]">{c.loyalty_points.toLocaleString()} แต้ม</span>
                     </button>
                   ))}
                 </div>
@@ -1287,16 +1287,16 @@ function AssignMemberModal({ onClose, onAssign }: {
   }, [query])
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto"
       >
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-phopy-indigo" /> เพิ่มสมาชิก
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-[var(--primary)]" /> เพิ่มสมาชิก
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -1311,7 +1311,7 @@ function AssignMemberModal({ onClose, onAssign }: {
               placeholder="ค้นหาชื่อหรือเบอร์โทร..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
+              className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo"
             />
           </div>
 
@@ -1323,11 +1323,11 @@ function AssignMemberModal({ onClose, onAssign }: {
                 <button key={c.id} onClick={() => onAssign(c)}
                   className="w-full px-4 py-3 text-left hover:bg-[var(--bg)] rounded-lg flex items-center justify-between group">
                   <div>
-                    <p className="text-sm font-medium text-white group-hover:text-phopy-indigo">{c.name}</p>
+                    <p className="text-sm font-medium text-[var(--fg-1)] group-hover:text-[var(--primary)]">{c.name}</p>
                     <p className="text-xs text-[var(--fg-4)]">{c.phone}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-phopy-indigo font-medium">{c.loyalty_points.toLocaleString()} แต้ม</p>
+                    <p className="text-xs text-[var(--primary)] font-medium">{c.loyalty_points.toLocaleString()} แต้ม</p>
                     <p className="text-xs text-[var(--fg-4)]">ยอดสะสม ฿{(c.total_spent || 0).toLocaleString()}</p>
                   </div>
                 </button>
@@ -1360,19 +1360,19 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[80vh] overflow-y-auto"
       >
-        <h2 className="text-xl font-bold text-white mb-4">แก้ไขชื่อบิล</h2>
+        <h2 className="text-xl font-bold text-[var(--fg-1)] mb-4">แก้ไขชื่อบิล</h2>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full px-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo mb-4"
+          className="w-full px-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo mb-4"
         />
         <div className="flex gap-3">
           <button
@@ -1477,17 +1477,17 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Settings className="w-5 h-5 text-phopy-indigo" />
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+            <Settings className="w-5 h-5 text-[var(--primary)]" />
             จัดการหมวดหมู่
           </h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg)] text-[var(--fg-3)]">
@@ -1499,13 +1499,13 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
         <div className="flex gap-1 bg-[var(--bg)] rounded-lg p-1 mb-4">
           <button
             onClick={() => setTab('cats')}
-            className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'cats' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
+            className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'cats' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
           >
             หมวดหมู่
           </button>
           <button
             onClick={() => setTab('assign')}
-            className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'assign' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
+            className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'assign' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
           >
             จัดเมนู
           </button>
@@ -1521,7 +1521,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                className="flex-1 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm"
+                className="flex-1 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo text-sm"
               />
               <div className="flex gap-1 items-center">
                 {PRESET_COLORS.slice(0, 5).map(c => (
@@ -1536,7 +1536,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
               <button
                 onClick={handleAdd}
                 disabled={saving || !name.trim()}
-                className="px-3 py-2 bg-phopy-indigo-50 text-phopy-indigo rounded-lg hover:bg-phopy-indigo/30 transition-all disabled:opacity-50"
+                className="px-3 py-2 bg-[var(--primary-soft)] text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/30 transition-all disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1556,7 +1556,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleEdit(cat.id)}
-                        className="flex-1 px-2 py-1 bg-white border border-[var(--border)] rounded text-white text-sm focus:outline-none focus:border-phopy-indigo"
+                        className="flex-1 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
                         autoFocus
                       />
                       <div className="flex gap-1">
@@ -1569,7 +1569,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                           />
                         ))}
                       </div>
-                      <button onClick={() => handleEdit(cat.id)} className="p-1 text-success hover:text-green-400">
+                      <button onClick={() => handleEdit(cat.id)} className="p-1 text-success hover:text-success">
                         <Check className="w-4 h-4" />
                       </button>
                       <button onClick={() => setEditingId(null)} className="p-1 text-[var(--fg-3)] hover:text-[var(--fg-1)]">
@@ -1579,10 +1579,10 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                   ) : (
                     <>
                       <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: cat.color }} />
-                      <span className="flex-1 text-sm text-white">{cat.name}</span>
+                      <span className="flex-1 text-sm text-[var(--fg-1)]">{cat.name}</span>
                       <button
                         onClick={() => { setEditingId(cat.id); setEditName(cat.name); setEditColor(cat.color) }}
-                        className="p-1 text-[var(--fg-3)] hover:text-phopy-indigo"
+                        className="p-1 text-[var(--fg-3)] hover:text-[var(--primary)]"
                       >
                         <Edit2 className="w-3 h-3" />
                       </button>
@@ -1606,7 +1606,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                 placeholder="ค้นหาเมนู..."
                 value={assignSearch}
                 onChange={(e) => setAssignSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm"
+                className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo text-sm"
               />
             </div>
 
@@ -1626,7 +1626,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                   return (
                     <div key={menu.id} className="p-2 bg-[var(--bg)] rounded-lg space-y-2">
                       <div>
-                        <p className="text-sm text-white">{menu.product_name}</p>
+                        <p className="text-sm text-[var(--fg-1)]">{menu.product_name}</p>
                         <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -1635,7 +1635,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
                           className={`px-2 py-0.5 rounded-full text-xs transition-all ${
                             !currentCatId
                               ? 'bg-gray-500/30 text-[var(--fg-2)] ring-1 ring-gray-400'
-                              : 'bg-white text-[var(--fg-4)] hover:text-[var(--fg-2)]'
+                              : 'bg-[var(--surface)] text-[var(--fg-4)] hover:text-[var(--fg-2)]'
                           }`}
                         >
                           ไม่มี
@@ -1696,15 +1696,15 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">ชำระเงิน</h2>
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">ชำระเงิน</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]">
             <X className="w-5 h-5" />
           </button>
@@ -1712,7 +1712,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
 
         {/* Redeem Points UI */}
         {canRedeem && (
-          <div className="mb-4 p-4 bg-warning-soft border border-warning/30 rounded-xl space-y-3">
+          <div className="mb-4 p-4 bg-[var(--warning-soft)] border border-warning/30 rounded-xl space-y-3">
             <div className="flex items-center gap-2">
               <Star className="w-4 h-4 text-warning" />
               <p className="text-sm font-medium text-warning">แลกแต้มสมาชิก</p>
@@ -1738,7 +1738,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
               )}
             </div>
             {redeemInput > 0 && redeemInput < loyalty.minRedeemPoints && (
-              <p className="text-xs text-red-400">ต้องแลกขั้นต่ำ {loyalty.minRedeemPoints} แต้ม</p>
+              <p className="text-xs text-danger">ต้องแลกขั้นต่ำ {loyalty.minRedeemPoints} แต้ม</p>
             )}
             <button
               onClick={() => setRedeemInput(maxRedeemable)}
@@ -1762,11 +1762,11 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
 
         <div className="grid grid-cols-3 gap-3">
           <button onClick={() => handlePay('CASH')} className="p-4 bg-[var(--bg)] rounded-xl border border-[var(--border)] hover:border-phopy-indigo/50 flex flex-col items-center gap-2">
-            <Banknote className="w-8 h-8 text-green-400" />
+            <Banknote className="w-8 h-8 text-success" />
             <span className="text-sm text-[var(--fg-2)]">เงินสด</span>
           </button>
           <button onClick={() => handlePay('QR_CODE')} className="p-4 bg-[var(--bg)] rounded-xl border border-[var(--border)] hover:border-phopy-indigo/50 flex flex-col items-center gap-2">
-            <QrCode className="w-8 h-8 text-phopy-indigo" />
+            <QrCode className="w-8 h-8 text-[var(--primary)]" />
             <span className="text-sm text-[var(--fg-2)]">QR Code</span>
           </button>
           <button onClick={() => handlePay('CREDIT_CARD')} className="p-4 bg-[var(--bg)] rounded-xl border border-[var(--border)] hover:border-phopy-indigo/50 flex flex-col items-center gap-2">

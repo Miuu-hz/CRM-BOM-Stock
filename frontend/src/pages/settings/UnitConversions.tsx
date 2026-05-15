@@ -319,7 +319,7 @@ export default function UnitConversions() {
           1 {unitLabel(c.from_unit)}
         </span>
         <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
-        <span className="px-2.5 py-1 bg-success-soft text-green-300 rounded-md text-sm font-mono whitespace-nowrap">
+        <span className="px-2.5 py-1 bg-[var(--success-soft)] text-green-300 rounded-md text-sm font-mono whitespace-nowrap">
           {c.conversion_factor} {unitLabel(c.to_unit)}
         </span>
         <span className="text-[var(--fg-4)] text-xs font-mono hidden sm:block">
@@ -331,7 +331,7 @@ export default function UnitConversions() {
         <button onClick={() => openEdit(c)} className="p-1.5 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors">
           <Edit2 className="w-3.5 h-3.5" />
         </button>
-        <button onClick={() => handleDelete(c.id, `${c.from_unit} → ${c.to_unit}`)} className="p-1.5 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+        <button onClick={() => handleDelete(c.id, `${c.from_unit} → ${c.to_unit}`)} className="p-1.5 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -368,7 +368,7 @@ export default function UnitConversions() {
           placeholder="ค้นหาหน่วย หรือชื่อสินค้า..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 bg-gray-800/50 border border-gray-700/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+          className="w-full pl-9 pr-4 py-2 bg-gray-800/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
         />
         {searchTerm && (
           <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]">
@@ -378,11 +378,11 @@ export default function UnitConversions() {
       </div>
 
       {/* ── SECTION 1: Global Conversions ── */}
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
-        <div className="p-4 border-b border-gray-700/50 flex items-center gap-2">
+      <div className="bg-gray-800/50 rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
+        <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Globe className="w-4 h-4 text-blue-400" />
           <span className="text-sm font-medium text-[var(--fg-2)]">ทั่วไป (ใช้กับทุกสินค้า)</span>
-          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full">
+          <span className="px-2 py-0.5 bg-[var(--info-soft)] text-blue-300 text-xs rounded-full">
             {globalConversions.length} รายการ
           </span>
           <button
@@ -409,8 +409,8 @@ export default function UnitConversions() {
       </div>
 
       {/* ── SECTION 2: Per-Material Conversions ── */}
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
-        <div className="p-4 border-b border-gray-700/50 flex items-center gap-2">
+      <div className="bg-gray-800/50 rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
+        <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Package className="w-4 h-4 text-amber-400" />
           <span className="text-sm font-medium text-[var(--fg-2)]">เฉพาะสินค้า (override per item)</span>
           <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs rounded-full">
@@ -453,8 +453,8 @@ export default function UnitConversions() {
       </div>
 
       {/* ── SECTION 3: Built-in Standards ── */}
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
-        <div className="p-4 border-b border-gray-700/50 flex items-center gap-2">
+      <div className="bg-gray-800/50 rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
+        <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Globe className="w-4 h-4 text-emerald-400" />
           <span className="text-sm font-medium text-[var(--fg-2)]">มาตราสากล (Built-in)</span>
           <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-xs rounded-full">{standards.length} รายการ</span>
@@ -478,7 +478,7 @@ export default function UnitConversions() {
             )
             const isOpen = expandedGroups[group.label]
             return (
-              <div key={group.label} className="border border-gray-700/30 rounded-lg overflow-hidden">
+              <div key={group.label} className="border border-[var(--border-strong)] rounded-lg overflow-hidden">
                 <button
                   onClick={() => toggleGroup(group.label)}
                   className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-700/20 hover:bg-gray-700/30 transition-colors"
@@ -515,15 +515,15 @@ export default function UnitConversions() {
         {showForm && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={closeForm}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="bg-gray-800 border border-[var(--border-strong)] rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
             >
-              <div className="flex items-center justify-between p-5 border-b border-gray-700">
+              <div className="flex items-center justify-between p-5 border-b border-[var(--border-strong)]">
                 <div className="flex items-center gap-2">
                   <ArrowLeftRight className="w-5 h-5 text-purple-400" />
                   <h3 className="font-semibold text-[var(--fg-1)]">
@@ -548,7 +548,7 @@ export default function UnitConversions() {
 
                 {/* ── Path Advisor (create mode only) ── */}
                 {!editTarget && (
-                  <div className="p-3 bg-gray-700/30 border border-gray-600/40 rounded-xl space-y-2">
+                  <div className="p-3 bg-gray-700/30 border border-[var(--border-strong)]/40 rounded-xl space-y-2">
                     <p className="text-xs font-medium text-[var(--fg-3)] flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                       ตรวจสอบเส้นทาง / ขอคำแนะนำ AI
@@ -559,7 +559,7 @@ export default function UnitConversions() {
                         value={checkFrom}
                         onChange={e => { setCheckFrom(e.target.value); setPathResult(null); setSuggestion(null) }}
                         placeholder="จาก (pack)"
-                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                       />
                       <span className="text-[var(--fg-4)] self-center">→</span>
                       <input
@@ -567,7 +567,7 @@ export default function UnitConversions() {
                         value={checkTo}
                         onChange={e => { setCheckTo(e.target.value); setPathResult(null); setSuggestion(null) }}
                         placeholder="ถึง (liter)"
-                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                        className="flex-1 px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                       />
                       <button
                         onClick={handleCheckPath}
@@ -653,7 +653,7 @@ export default function UnitConversions() {
                         onChange={e => handleMaterialSearch(e.target.value)}
                         onFocus={() => { setShowMaterialDropdown(true); setMaterialResults(allStock.slice(0, 8)) }}
                         placeholder="ค้นหาสินค้า หรือเว้นว่างเพื่อใช้ทั่วไป..."
-                        className="w-full pl-9 pr-8 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                        className="w-full pl-9 pr-8 py-2 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                       />
                       {selectedMaterial && (
                         <button
@@ -675,7 +675,7 @@ export default function UnitConversions() {
                       {showMaterialDropdown && materialResults.length > 0 && !selectedMaterial && (
                         <motion.div
                           initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                          className="absolute z-10 mt-1 w-full bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"
+                          className="absolute z-10 mt-1 w-full bg-gray-800 border border-[var(--border-strong)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"
                           style={{ width: 'calc(100% - 2.5rem)' }}
                         >
                           {materialResults.map(s => (
@@ -709,7 +709,7 @@ export default function UnitConversions() {
                       onChange={e => setFromUnit(e.target.value)}
                       disabled={!!editTarget}
                       placeholder="เช่น pack, ลัง, ซอง"
-                      className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
+                      className="w-full px-3 py-2 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
                     />
                     {fromUnit && <p className="text-xs text-[var(--fg-4)] mt-1">{unitLabel(fromUnit)}</p>}
                   </div>
@@ -721,7 +721,7 @@ export default function UnitConversions() {
                       onChange={e => setToUnit(e.target.value)}
                       disabled={!!editTarget}
                       placeholder="เช่น pcs, ชิ้น, g"
-                      className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
+                      className="w-full px-3 py-2 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
                     />
                     {toUnit && <p className="text-xs text-[var(--fg-4)] mt-1">{unitLabel(toUnit)}</p>}
                   </div>
@@ -738,7 +738,7 @@ export default function UnitConversions() {
                     placeholder="เช่น 24"
                     min="0.0000001"
                     step="any"
-                    className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                    className="w-full px-3 py-2 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                   />
                 </div>
 
@@ -749,12 +749,12 @@ export default function UnitConversions() {
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
                     placeholder="เช่น บรรจุภัณฑ์ไซส์ L"
-                    className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                    className="w-full px-3 py-2 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                   />
                 </div>
 
                 <div className="flex gap-3 pt-1">
-                  <button onClick={closeForm} className="flex-1 py-2.5 border border-gray-600 text-[var(--fg-2)] hover:text-[var(--fg-1)] rounded-lg text-sm transition-colors">
+                  <button onClick={closeForm} className="flex-1 py-2.5 border border-[var(--border-strong)] text-[var(--fg-2)] hover:text-[var(--fg-1)] rounded-lg text-sm transition-colors">
                     ยกเลิก
                   </button>
                   <button

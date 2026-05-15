@@ -15,7 +15,7 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
     primary: {
       bg: 'from-phopy-indigo/20 to-phopy-indigo-600/20',
       border: 'border-phopy-indigo/50',
-      text: 'text-phopy-indigo',
+      text: 'text-[var(--primary)]',
       shadow: 'shadow-2',
     },
     green: {
@@ -54,17 +54,17 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardPr
           </div>
           <div
             className={`flex items-center gap-1 px-2 py-1 rounded-full ${
-              trend === 'up' ? 'bg-success-soft' : 'bg-danger-soft'
+              trend === 'up' ? 'bg-[var(--success-soft)]' : 'bg-[var(--danger-soft)]'
             }`}
           >
             {trend === 'up' ? (
               <TrendingUp className="w-3 h-3 text-success" />
             ) : (
-              <TrendingDown className="w-3 h-3 text-red-400" />
+              <TrendingDown className="w-3 h-3 text-danger" />
             )}
             <span
               className={`text-xs font-semibold ${
-                trend === 'up' ? 'text-success' : 'text-red-400'
+                trend === 'up' ? 'text-success' : 'text-danger'
               }`}
             >
               {change}

@@ -309,7 +309,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -318,7 +318,7 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
         {/* Header */}
         <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Upload className="w-6 h-6 text-phopy-indigo" />
+            <Upload className="w-6 h-6 text-[var(--primary)]" />
             นำเข้า{type === 'customers' ? 'ลูกค้า' : 'สินค้า'}
           </h2>
           <button onClick={handleClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
@@ -366,21 +366,21 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+              <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
               <span className="ml-2 text-[var(--fg-3)]">กำลังอ่านไฟล์...</span>
             </div>
           )}
 
           {/* Validation Result */}
           {validation && !result && (
-            <div className={`p-4 rounded-lg ${validation.invalid > 0 ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-green-500/10 border border-green-500/30'}`}>
+            <div className={`p-4 rounded-lg ${validation.invalid > 0 ? 'bg-[var(--warning-soft)] border border-warning/30' : 'bg-[var(--success-soft)] border border-green-500/30'}`}>
               <div className="flex items-center gap-2 mb-2">
                 {validation.invalid > 0 ? (
-                  <AlertCircle className="w-5 h-5 text-yellow-400" />
+                  <AlertCircle className="w-5 h-5 text-warning" />
                 ) : (
-                  <CheckCircle className="w-5 h-5 text-green-400" />
+                  <CheckCircle className="w-5 h-5 text-success" />
                 )}
-                <span className={validation.invalid > 0 ? 'text-yellow-400' : 'text-green-400'}>
+                <span className={validation.invalid > 0 ? 'text-warning' : 'text-success'}>
                   ตรวจสอบข้อมูล: {validation.valid} ถูกต้อง, {validation.invalid} มีปัญหา
                 </span>
               </div>
@@ -426,9 +426,9 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
 
           {/* Import Result */}
           {result && (
-            <div className={`p-6 rounded-lg ${result.failed > 0 ? 'bg-yellow-500/10' : 'bg-green-500/10'} border ${result.failed > 0 ? 'border-yellow-500/30' : 'border-green-500/30'}`}>
+            <div className={`p-6 rounded-lg ${result.failed > 0 ? 'bg-[var(--warning-soft)]' : 'bg-[var(--success-soft)]'} border ${result.failed > 0 ? 'border-warning/30' : 'border-green-500/30'}`}>
               <div className="flex items-center gap-3 mb-4">
-                <CheckCircle className={`w-8 h-8 ${result.failed > 0 ? 'text-yellow-400' : 'text-green-400'}`} />
+                <CheckCircle className={`w-8 h-8 ${result.failed > 0 ? 'text-warning' : 'text-success'}`} />
                 <div>
                   <h3 className="text-lg font-bold text-white">นำเข้าเสร็จสิ้น</h3>
                   <p className="text-[var(--fg-3)]">{result.success} สำเร็จ, {result.failed} ล้มเหลว</p>
@@ -436,8 +436,8 @@ const ImportModal = ({ isOpen, onClose, type, onSuccess }: ImportModalProps) => 
               </div>
               
               {result.errors.length > 0 && (
-                <div className="mt-4 p-4 bg-black/30 rounded-lg max-h-48 overflow-auto">
-                  <h4 className="text-sm font-medium text-yellow-400 mb-2">ข้อผิดพลาด:</h4>
+                <div className="mt-4 p-4 bg-[var(--fg-1)]/30 rounded-lg max-h-48 overflow-auto">
+                  <h4 className="text-sm font-medium text-warning mb-2">ข้อผิดพลาด:</h4>
                   {result.errors.map((err: string, i: number) => (
                     <div key={i} className="text-sm text-[var(--fg-3)] py-1">• {err}</div>
                   ))}

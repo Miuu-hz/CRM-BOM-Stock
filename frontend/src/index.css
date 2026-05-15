@@ -10,17 +10,21 @@
     --brand-indigo: #3949E5;
     --brand-mango: #F5A524;
     --success: #16A34A;
+    --success-soft: #DCFCE7;
     --warning: #F5A524;
+    --warning-soft: #FEF4E2;
     --danger: #DC2626;
+    --danger-soft: #FEE2E2;
     --info: #3949E5;
+    --info-soft: #EEF0FE;
 
-    --bg: #FBF8F1;
-    --surface: #FFFFFF;
-    --surface-2: #F5F0E2;
-    --surface-sunken: #ECE6D8;
-    --border: #ECE6D8;
-    --border-subtle: color-mix(in oklab, #ECE6D8 70%, white);
-    --border-strong: #D9D2C0;
+    --bg: #F0ECE2;
+    --surface: #F8F5EE;
+    --surface-2: #E8E3D4;
+    --surface-sunken: #DEDACF;
+    --border: #DEDACF;
+    --border-subtle: color-mix(in oklab, #DEDACF 70%, white);
+    --border-strong: #CFCAB8;
 
     --fg: #1E1B16;
     --fg-1: #1E1B16;
@@ -96,7 +100,7 @@
 @layer components {
   /* Phopy Card */
   .phopy-card {
-    @apply bg-white border border-[var(--border)] rounded-lg shadow-1;
+    @apply bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-1;
     @apply transition-all duration-200 ease-phopy-out;
   }
   .phopy-card:hover {
@@ -142,7 +146,7 @@
 
   /* Phopy Input */
   .phopy-input {
-    @apply bg-white border border-[var(--border)] text-[var(--fg-2)];
+    @apply bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-2)];
     @apply px-4 py-2.5 rounded-md;
     @apply transition-all duration-120 ease-phopy-out;
   }
@@ -178,18 +182,18 @@
   }
   .status-badge.active,
   .status-badge.success {
-    @apply bg-success-soft text-success;
+    @apply bg-[var(--success-soft)] text-success;
   }
   .status-badge.pending,
   .status-badge.warning {
-    @apply bg-warning-soft text-warning;
+    @apply bg-[var(--warning-soft)] text-warning;
   }
   .status-badge.inactive,
   .status-badge.danger {
-    @apply bg-danger-soft text-danger;
+    @apply bg-[var(--danger-soft)] text-danger;
   }
   .status-badge.info {
-    @apply bg-info-soft text-info;
+    @apply bg-[var(--info-soft)] text-info;
   }
 
   /* Scrollbar */
@@ -215,6 +219,13 @@
   /* Hide scrollbar but keep scroll */
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Header frosted glass — adapts to light/dark */
+  .phopy-header {
+    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
 }
 
 /* KPI number styling */

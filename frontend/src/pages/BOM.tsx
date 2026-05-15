@@ -353,7 +353,7 @@ function BOMPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-phopy-indigo animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-[var(--primary)] animate-spin mx-auto mb-4" />
           <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูล BOM...</p>
         </div>
       </div>
@@ -365,7 +365,7 @@ function BOMPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
           <p className="text-[var(--fg-2)] mb-4">{error}</p>
           <button
             onClick={fetchData}
@@ -431,7 +431,7 @@ function BOMPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-t-lg transition-all whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
                     : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
                 }`}
               >
@@ -486,7 +486,7 @@ function BOMPage() {
                   onClick={() => setBomFilter(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap text-sm ${
                     bomFilter === tab.id
-                      ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30'
+                      ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30'
                       : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)] border border-transparent'
                   }`}
                 >
@@ -520,7 +520,7 @@ function BOMPage() {
                       onClick={() => setViewMode('card')}
                       className={`p-2 rounded-md transition-colors ${
                         viewMode === 'card'
-                          ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                          ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                       }`}
                       title="Card View"
@@ -531,7 +531,7 @@ function BOMPage() {
                       onClick={() => setViewMode('list')}
                       className={`p-2 rounded-md transition-colors ${
                         viewMode === 'list'
-                          ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                          ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                       }`}
                       title="List View"
@@ -568,7 +568,7 @@ function BOMPage() {
                 {/* BOM Selector */}
                 <div className="phopy-card p-4">
                   <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
-                    <FolderTree className="w-5 h-5 text-phopy-indigo" />
+                    <FolderTree className="w-5 h-5 text-[var(--primary)]" />
                     Select BOM to View
                   </h3>
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
@@ -578,7 +578,7 @@ function BOMPage() {
                         onClick={() => loadBOMTree(bom)}
                         className={`w-full text-left p-3 rounded-lg transition-all ${
                           selectedTreeBOM?.id === bom.id
-                            ? 'bg-phopy-indigo-50 border border-phopy-indigo/50'
+                            ? 'bg-[var(--primary-soft)] border border-phopy-indigo/50'
                             : 'bg-[var(--bg)]/30 hover:bg-[var(--surface-2)] border border-[var(--border)]/30'
                         }`}
                       >
@@ -600,16 +600,16 @@ function BOMPage() {
                 <div className="lg:col-span-2 phopy-card p-4">
                   {treeLoading ? (
                     <div className="flex items-center justify-center h-[400px]">
-                      <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+                      <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
                     </div>
                   ) : treeData ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-[var(--fg-2)] flex items-center gap-2">
-                          <GitBranch className="w-5 h-5 text-phopy-indigo" />
+                          <GitBranch className="w-5 h-5 text-[var(--primary)]" />
                           BOM Hierarchy: {treeData.productName}
                         </h3>
-                        <span className="text-2xl font-bold text-phopy-indigo">
+                        <span className="text-2xl font-bold text-[var(--primary)]">
                           ฿{treeData.totalCost?.toLocaleString()}
                         </span>
                       </div>
@@ -701,7 +701,7 @@ function BOMPage() {
                               isTopLevel={bom.isTopLevel || bom.level === 0}
                             />
                           </td>
-                          <td className="text-phopy-indigo">{bom.version}</td>
+                          <td className="text-[var(--primary)]">{bom.version}</td>
                           <td className="text-[var(--fg-3)]">{bom.items?.length || bom.materials?.length || 0} items</td>
                           <td>
                             <StatusBadge
@@ -721,7 +721,7 @@ function BOMPage() {
                                 className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                                 title="แก้ไข"
                               >
-                                <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
+                                <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--primary)]" />
                               </button>
                               <button
                                 onClick={() => handleCopy(bom)}
@@ -732,10 +732,10 @@ function BOMPage() {
                               </button>
                               <button
                                 onClick={() => handleDelete(bom.id, bom.productName)}
-                                className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                                className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
                                 title="ลบ"
                               >
-                                <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-red-400" />
+                                <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-danger" />
                               </button>
                             </div>
                           </td>
@@ -805,16 +805,16 @@ function TreeNode({
                 className="p-1 rounded hover:bg-[var(--surface-2)]"
               >
                 {expandedNodes.has(item.id) ? (
-                  <ChevronDown className="w-4 h-4 text-phopy-indigo" />
+                  <ChevronDown className="w-4 h-4 text-[var(--primary)]" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-phopy-indigo" />
+                  <ChevronRight className="w-4 h-4 text-[var(--primary)]" />
                 )}
               </button>
               <FolderTree className="w-4 h-4 text-purple-500" />
               <span className="text-[var(--fg-2)] font-medium">{item.childBomProductName}</span>
               <LevelBadge level={item.childBOM?.level || level + 1} />
               <span className="text-xs text-[var(--fg-4)]">{item.childBomProductCode}</span>
-              <span className="text-xs text-phopy-indigo">× {item.quantity}</span>
+              <span className="text-xs text-[var(--primary)]">× {item.quantity}</span>
               <span className="ml-auto text-success text-sm">
                 ฿{((item.childBOM?.totalCost || 0) * item.quantity).toLocaleString()}
               </span>
@@ -866,20 +866,20 @@ function TreeNode({
             className="p-1 rounded hover:bg-[var(--surface-2)]"
           >
             {isExpanded ? (
-              <ChevronDown className="w-5 h-5 text-phopy-indigo" />
+              <ChevronDown className="w-5 h-5 text-[var(--primary)]" />
             ) : (
-              <ChevronRight className="w-5 h-5 text-phopy-indigo" />
+              <ChevronRight className="w-5 h-5 text-[var(--primary)]" />
             )}
           </button>
         ) : (
           <div className="w-7" />
         )}
-        <Layers className="w-5 h-5 text-phopy-indigo" />
+        <Layers className="w-5 h-5 text-[var(--primary)]" />
         <span className="text-[var(--fg-1)] font-semibold">{bomNode.productName}</span>
         <LevelBadge level={bomNode.level} />
         <BOMTypeBadge isSemiFinished={bomNode.isSemiFinished} isTopLevel={bomNode.level === 0} />
         <span className="text-xs text-[var(--fg-4)]">{bomNode.productCode}</span>
-        <span className="ml-auto text-phopy-indigo font-bold">
+        <span className="ml-auto text-[var(--primary)] font-bold">
           ฿{(bomNode.totalCost || 0).toLocaleString()}
         </span>
       </div>
@@ -907,7 +907,7 @@ function BOMItemsTable({ items }: { items: BOMItem[] }) {
   return (
     <div>
       <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
-        <Boxes className="w-4 h-4 text-phopy-indigo" />
+        <Boxes className="w-4 h-4 text-[var(--primary)]" />
         BOM Items
       </h4>
       <table className="w-full text-sm">
@@ -1044,7 +1044,7 @@ function BOMCard({
             <div className="flex items-center gap-3 mt-1">
               <span className="text-sm text-[var(--fg-3)]">{bom.productCode}</span>
               <span className="text-sm text-[var(--fg-3)]">•</span>
-              <span className="text-sm text-phopy-indigo">{bom.version}</span>
+              <span className="text-sm text-[var(--primary)]">{bom.version}</span>
               <span className="text-sm text-[var(--fg-3)]">•</span>
               <span className="text-sm text-[var(--fg-3)]">{bom.productCategory}</span>
             </div>
@@ -1064,7 +1064,7 @@ function BOMCard({
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
             title="แก้ไข"
           >
-            <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-phopy-indigo" />
+            <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-[var(--primary)]" />
           </button>
           <button
             onClick={() => onCopy(bom)}
@@ -1075,10 +1075,10 @@ function BOMCard({
           </button>
           <button
             onClick={() => onDelete(bom.id, bom.productName)}
-            className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+            className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
             title="ลบ"
           >
-            <Trash2 className="w-5 h-5 text-[var(--fg-3)] hover:text-red-400" />
+            <Trash2 className="w-5 h-5 text-[var(--fg-3)] hover:text-danger" />
           </button>
         </div>
       </div>
@@ -1087,7 +1087,7 @@ function BOMCard({
       <div className="mb-4">
         <button
           onClick={handleToggle}
-          className="flex items-center gap-1.5 text-sm text-phopy-indigo hover:text-phopy-indigo/80 mb-2"
+          className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 mb-2"
         >
           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           <span className="font-medium">รายการวัตถุดิบ ({itemCount})</span>
@@ -1177,7 +1177,7 @@ function BOMCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[var(--fg-3)]">ต้นทุนผลิตรวม:</span>
-          <span className="text-2xl font-bold text-phopy-indigo">
+          <span className="text-2xl font-bold text-[var(--primary)]">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>
         </div>
@@ -1189,11 +1189,11 @@ function BOMCard({
 // Level Badge Component
 function LevelBadge({ level }: { level: number }) {
   const colors = [
-    'bg-phopy-indigo-50 text-phopy-indigo border-phopy-indigo/30',
+    'bg-[var(--primary-soft)] text-[var(--primary)] border-phopy-indigo/30',
     'bg-purple-500/20 text-purple-500 border-purple-500/30',
-    'bg-success-soft text-success border-success/30',
-    'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    'bg-[var(--success-soft)] text-success border-success/30',
+    'bg-[var(--warning-soft)] text-warning border-warning/30',
+    'bg-[var(--warning-soft)] text-warning border-warning/30',
   ]
   const colorClass = colors[level % colors.length]
 
@@ -1214,7 +1214,7 @@ function BOMTypeBadge({
 }) {
   if (isTopLevel) {
     return (
-      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-success-soft text-success border-success/30 flex items-center gap-1">
+      <span className="px-2 py-0.5 rounded text-xs font-medium border bg-[var(--success-soft)] text-success border-success/30 flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" />
         Finished
       </span>
@@ -1231,7 +1231,7 @@ function BOMTypeBadge({
   }
 
   return (
-    <span className="px-2 py-0.5 rounded text-xs font-medium border bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30 flex items-center gap-1">
+    <span className="px-2 py-0.5 rounded text-xs font-medium border bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)] flex items-center gap-1">
       <Box className="w-3 h-3" />
       Component
     </span>
@@ -1250,10 +1250,10 @@ function StatCard({
   color: string
 }) {
   const colorClasses: Record<string, string> = {
-    primary: 'text-phopy-indigo',
+    primary: 'text-[var(--primary)]',
     green: 'text-success',
     purple: 'text-purple-500',
-    yellow: 'text-yellow-400',
+    yellow: 'text-warning',
   }
 
   return (
@@ -1261,11 +1261,11 @@ function StatCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color] || 'text-phopy-indigo'}`}>
+          <p className={`text-2xl font-bold ${colorClasses[color] || 'text-[var(--primary)]'}`}>
             {value}
           </p>
         </div>
-        <Icon className={`w-8 h-8 opacity-50 ${colorClasses[color] || 'text-phopy-indigo'}`} />
+        <Icon className={`w-8 h-8 opacity-50 ${colorClasses[color] || 'text-[var(--primary)]'}`} />
       </div>
     </div>
   )
@@ -1275,15 +1275,15 @@ function StatusBadge({ status }: { status: 'active' | 'draft' | 'archived' }) {
   const config = {
     active: {
       label: 'Active',
-      className: 'bg-success-soft text-success border-success/30',
+      className: 'bg-[var(--success-soft)] text-success border-success/30',
     },
     draft: {
       label: 'Draft',
-      className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     archived: {
       label: 'Archived',
-      className: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
+      className: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
     },
   }
 

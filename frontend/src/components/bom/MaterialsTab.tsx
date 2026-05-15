@@ -101,27 +101,27 @@ function MaterialsTab() {
     const config: Record<string, { icon: any; className: string; label: string }> = {
       CRITICAL: {
         icon: AlertCircle,
-        className: 'bg-danger-soft text-red-400 border-red-500/30',
+        className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
         label: 'Critical',
       },
       LOW: {
         icon: AlertTriangle,
-        className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+        className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
         label: 'Low',
       },
       ADEQUATE: {
         icon: CheckCircle,
-        className: 'bg-success-soft text-success border-success/30',
+        className: 'bg-[var(--success-soft)] text-success border-success/30',
         label: 'Adequate',
       },
       OVERSTOCK: {
         icon: Boxes,
-        className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+        className: 'bg-[var(--info-soft)] text-blue-400 border-info/30',
         label: 'Overstock',
       },
       NO_STOCK: {
         icon: Package,
-        className: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
+        className: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
         label: 'No Stock',
       },
     }
@@ -140,7 +140,7 @@ function MaterialsTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
       </div>
     )
   }
@@ -148,7 +148,7 @@ function MaterialsTab() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+        <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
         <p className="text-[var(--fg-2)]">{error}</p>
         <button onClick={fetchData} className="phopy-btn-primary mt-4">
           ลองใหม่
@@ -165,22 +165,22 @@ function MaterialsTab() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-[var(--fg-3)]">Total Materials</p>
-              <p className="text-2xl font-bold text-phopy-indigo">
+              <p className="text-2xl font-bold text-[var(--primary)]">
                 {stats?.totalMaterials || 0}
               </p>
             </div>
-            <Package className="w-8 h-8 text-phopy-indigo/50" />
+            <Package className="w-8 h-8 text-[var(--primary)]/50" />
           </div>
         </div>
         <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-[var(--fg-3)]">Low Stock</p>
-              <p className="text-2xl font-bold text-yellow-400">
+              <p className="text-2xl font-bold text-warning">
                 {stats?.lowStockCount || 0}
               </p>
             </div>
-            <TrendingDown className="w-8 h-8 text-yellow-400/50" />
+            <TrendingDown className="w-8 h-8 text-warning/50" />
           </div>
         </div>
         <div className="phopy-card p-4">
@@ -198,11 +198,11 @@ function MaterialsTab() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-[var(--fg-3)]">Active Items</p>
-              <p className="text-2xl font-bold text-phopy-indigo">
+              <p className="text-2xl font-bold text-[var(--primary)]">
                 {stats?.activeItems || 0}
               </p>
             </div>
-            <Boxes className="w-8 h-8 text-phopy-indigo/50" />
+            <Boxes className="w-8 h-8 text-[var(--primary)]/50" />
           </div>
         </div>
       </div>
@@ -252,10 +252,10 @@ function MaterialsTab() {
             ) : (
               (filteredMaterials || []).map((material) => (
                 <tr key={material.id}>
-                  <td className="text-phopy-indigo font-mono">{material.code}</td>
+                  <td className="text-[var(--primary)] font-mono">{material.code}</td>
                   <td className="text-[var(--fg-2)]">{material.name}</td>
                   <td>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded text-xs text-phopy-indigo">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--surface)] rounded text-xs text-[var(--primary)]">
                       <Tag className="w-3 h-3" />
                       {material.categoryName || 'Uncategorized'}
                     </span>
@@ -286,14 +286,14 @@ function MaterialsTab() {
                         className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
                         title="Edit"
                       >
-                        <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-phopy-indigo" />
+                        <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--primary)]" />
                       </button>
                       <button
                         onClick={() => handleDelete(material.id, material.name)}
-                        className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-red-400" />
+                        <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-danger" />
                       </button>
                     </div>
                   </td>
@@ -417,7 +417,7 @@ function MaterialModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
@@ -483,7 +483,7 @@ function MaterialModal({
               <div>
                 <label className="block text-sm text-[var(--fg-3)] mb-1">Unit (Auto)</label>
                 <div className="phopy-input w-full bg-[var(--surface-2)] text-[var(--fg-3)] flex items-center">
-                  <span className={selectedCategory ? 'text-phopy-indigo font-semibold' : ''}>
+                  <span className={selectedCategory ? 'text-[var(--primary)] font-semibold' : ''}>
                     {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
                   </span>
                 </div>
@@ -613,7 +613,7 @@ function StockAdjustModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
@@ -634,7 +634,7 @@ function StockAdjustModal({
             <div className="text-center p-4 bg-[var(--surface-2)] rounded-lg">
               <p className="text-[var(--fg-3)] text-sm">Material</p>
               <p className="text-lg font-bold text-[var(--fg-1)]">{material.name}</p>
-              <p className="text-phopy-indigo">
+              <p className="text-[var(--primary)]">
                 Current Stock: {material.currentStock || 0} {material.unit}
               </p>
             </div>
@@ -647,7 +647,7 @@ function StockAdjustModal({
                   onClick={() => setType('IN')}
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'IN'
-                      ? 'border-success bg-success-soft text-success'
+                      ? 'border-success bg-[var(--success-soft)] text-success'
                       : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
@@ -659,7 +659,7 @@ function StockAdjustModal({
                   onClick={() => setType('OUT')}
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'OUT'
-                      ? 'border-red-400 bg-red-400/20 text-red-400'
+                      ? 'border-red-400 bg-[var(--danger-soft)] text-danger'
                       : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
@@ -671,7 +671,7 @@ function StockAdjustModal({
                   onClick={() => setType('ADJUST')}
                   className={`p-3 rounded-lg border flex flex-col items-center gap-1 ${
                     type === 'ADJUST'
-                      ? 'border-phopy-indigo bg-phopy-indigo-50 text-phopy-indigo'
+                      ? 'border-phopy-indigo bg-[var(--primary-soft)] text-[var(--primary)]'
                       : 'border-[var(--border)] text-[var(--fg-3)]'
                   }`}
                 >
@@ -709,7 +709,7 @@ function StockAdjustModal({
             {type !== 'ADJUST' && (
               <div className="text-center p-3 bg-[var(--bg)]/30 rounded-lg">
                 <p className="text-sm text-[var(--fg-3)]">New Stock:</p>
-                <p className="text-xl font-bold text-phopy-indigo">
+                <p className="text-xl font-bold text-[var(--primary)]">
                   {type === 'IN'
                     ? (material.currentStock || 0) + quantity
                     : (material.currentStock || 0) - quantity}{' '}

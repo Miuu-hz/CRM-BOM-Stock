@@ -23,12 +23,12 @@ import materialService, { Material } from '../services/materials'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  DRAFT: { label: 'Draft', color: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30', icon: FileText },
-  SUBMITTED: { label: 'Submitted', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Send },
-  APPROVED: { label: 'Approved', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', icon: CheckCircle },
-  RECEIVED: { label: 'Received', color: 'bg-success-soft text-success border-success/30', icon: Package },
-  PARTIAL: { label: 'Partial', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: Clock },
-  CANCELLED: { label: 'Cancelled', color: 'bg-danger-soft text-red-400 border-red-500/30', icon: X },
+  DRAFT: { label: 'Draft', color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
+  SUBMITTED: { label: 'Submitted', color: 'bg-[var(--info-soft)] text-blue-400 border-info/30', icon: Send },
+  APPROVED: { label: 'Approved', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: CheckCircle },
+  RECEIVED: { label: 'Received', color: 'bg-[var(--success-soft)] text-success border-success/30', icon: Package },
+  PARTIAL: { label: 'Partial', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Clock },
+  CANCELLED: { label: 'Cancelled', color: 'bg-[var(--danger-soft)] text-danger border-danger/30', icon: X },
 }
 
 function PurchaseOrders() {
@@ -97,7 +97,7 @@ function PurchaseOrders() {
   })
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" /></div>
+    return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" /></div>
   }
 
   return (
@@ -118,9 +118,9 @@ function PurchaseOrders() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <StatCard label="Total POs" value={(stats?.totalOrders ?? 0).toString()} color="text-phopy-indigo" />
+        <StatCard label="Total POs" value={(stats?.totalOrders ?? 0).toString()} color="text-[var(--primary)]" />
         <StatCard label="Draft" value={(stats?.draftOrders ?? 0).toString()} color="text-[var(--fg-3)]" />
-        <StatCard label="Pending" value={(stats?.pendingOrders ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="Pending" value={(stats?.pendingOrders ?? 0).toString()} color="text-warning" />
         <StatCard label="Received" value={(stats?.receivedOrders ?? 0).toString()} color="text-success" />
         <StatCard label="Total Value" value={`฿${(stats?.totalValue ?? 0).toLocaleString()}`} color="text-purple-500" />
       </div>
@@ -137,7 +137,7 @@ function PurchaseOrders() {
             {['all', 'DRAFT', 'SUBMITTED', 'APPROVED', 'RECEIVED', 'CANCELLED'].map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
-                  statusFilter === s ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                  statusFilter === s ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]'
                 }`}>
                 {s === 'all' ? 'All' : STATUS_CONFIG[s]?.label || s}
@@ -172,7 +172,7 @@ function PurchaseOrders() {
                   return (
                     <motion.tr key={po.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
                       <td>
-                        <span className="text-phopy-indigo font-mono font-semibold">{po.po_number}</span>
+                        <span className="text-[var(--primary)] font-mono font-semibold">{po.po_number}</span>
                       </td>
                       <td>
                         <div>
@@ -193,7 +193,7 @@ function PurchaseOrders() {
                       <td>
                         <div className="flex items-center gap-1">
                           <button onClick={() => handleViewDetail(po)}
-                            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg">
+                            className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg">
                             <Eye className="w-4 h-4" />
                           </button>
                           {po.status === 'DRAFT' && (
@@ -204,7 +204,7 @@ function PurchaseOrders() {
                           )}
                           {po.status === 'SUBMITTED' && (
                             <button onClick={() => handleStatusChange(po.id, 'APPROVED')}
-                              className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg" title="Approve">
+                              className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg" title="Approve">
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
@@ -216,7 +216,7 @@ function PurchaseOrders() {
                           )}
                           {po.status === 'DRAFT' && (
                             <button onClick={() => handleDelete(po.id)}
-                              className="p-2 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg">
+                              className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
@@ -314,7 +314,7 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
             onClick={(e) => e.stopPropagation()}
             className="phopy-card w-full max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -348,7 +348,7 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
               <div>
                 <div className="flex justify-between items-center mb-3">
                   <label className="text-sm text-[var(--fg-3)] font-semibold">Items</label>
-                  <button type="button" onClick={addItem} className="text-sm text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1">
+                  <button type="button" onClick={addItem} className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
                     <Plus className="w-4 h-4" /> Add Item
                   </button>
                 </div>
@@ -408,7 +408,7 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
                       </div>
                       <div className="col-span-2 text-right">
                         {items.length > 1 && (
-                          <button type="button" onClick={() => removeItem(idx)} className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg">
+                          <button type="button" onClick={() => removeItem(idx)} className="p-2 text-danger hover:bg-[var(--danger-soft)] rounded-lg">
                             <X className="w-4 h-4" />
                           </button>
                         )}
@@ -474,7 +474,7 @@ function PODetailModal({ po, onClose, onStatusChange }: {
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
         <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
           onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
@@ -496,7 +496,7 @@ function PODetailModal({ po, onClose, onStatusChange }: {
                   <div className={`px-3 py-1 rounded-full ${
                     po.status === s ? STATUS_CONFIG[s].color + ' font-semibold'
                     : ['DRAFT', 'SUBMITTED', 'APPROVED', 'RECEIVED'].indexOf(po.status) > i
-                    ? 'bg-success-soft text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
+                    ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
                   }`}>
                     {STATUS_CONFIG[s].label}
                   </div>
@@ -549,7 +549,7 @@ function PODetailModal({ po, onClose, onStatusChange }: {
               <div className="flex justify-end gap-3 pt-4">
                 {po.status !== 'RECEIVED' && (
                   <button onClick={() => { onStatusChange(po.id, 'CANCELLED'); onClose() }}
-                    className="px-4 py-2 border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10">
+                    className="px-4 py-2 border border-danger/30 text-danger rounded-lg hover:bg-[var(--danger-soft)]">
                     Cancel Order
                   </button>
                 )}

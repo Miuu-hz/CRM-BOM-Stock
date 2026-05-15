@@ -50,8 +50,8 @@ const daysLeft = (dateStr: string) => {
 const dueDateBadge = (dateStr: string) => {
   const d = daysLeft(dateStr)
   if (d === null) return <span className="text-[var(--fg-4)] text-xs">ไม่ระบุ</span>
-  if (d < 0)  return <span className="text-xs text-red-400 font-bold">เกิน {Math.abs(d)} วัน</span>
-  if (d === 0) return <span className="text-xs text-orange-400 font-bold">วันนี้</span>
+  if (d < 0)  return <span className="text-xs text-danger font-bold">เกิน {Math.abs(d)} วัน</span>
+  if (d === 0) return <span className="text-xs text-warning font-bold">วันนี้</span>
   return <span className="text-xs text-[var(--fg-3)]">อีก {d} วัน</span>
 }
 
@@ -68,7 +68,7 @@ function ChangeChip({ pct }: { pct: number | null }) {
   if (pct === null) return <span className="text-xs text-[var(--fg-4)]">ไม่มีข้อมูลก่อนหน้า</span>
   const up = pct >= 0
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-success-soft text-green-400' : 'bg-red-500/15 text-red-400'}`}>
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'}`}>
       {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
       {up ? '+' : ''}{pct.toFixed(1)}%
     </span>
@@ -99,15 +99,15 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-1.5 text-xs rounded transition-colors cursor-pointer min-h-[36px] ${
+            className={`flex-1 py-1.5 text-xs rounded transition-all cursor-pointer min-h-[36px] font-medium ${
               tab === t.key
-                ? `bg-[var(--surface-2)] border border-[var(--border-strong)] ${color}`
-                : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'
+                ? `bg-[var(--surface)] border border-[var(--border-strong)] shadow-1 ${color} font-semibold`
+                : 'text-[var(--fg-4)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
             }`}
           >
             {t.label}
             {t.key === 'overdue' && items.length > 0 && (
-              <span className="ml-1 bg-red-500 text-white rounded-full px-1 text-[10px]">{items.length}</span>
+              <span className="ml-1 bg-[var(--danger)] text-white rounded-full px-1 text-[10px]">{items.length}</span>
             )}
           </button>
         ))}
@@ -117,7 +117,7 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
         {items.length === 0 ? (
           <p className="text-[var(--fg-4)] text-xs text-center py-6">ไม่มีรายการ</p>
         ) : items.map(item => (
-          <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-var(--surface-2)/60 border border-[var(--border)]">
+          <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
             <div className="flex-1 min-w-0">
               <p className="text-sm text-[var(--fg-2)] truncate font-medium">{item.party_name}</p>
               <p className="text-xs text-[var(--fg-4)] font-mono">{item.doc_number}</p>
@@ -205,7 +205,7 @@ export default function Dashboard() {
                 key={p}
                 onClick={() => setPeriod(p)}
                 aria-pressed={period === p}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer min-h-[36px] ${period === p ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'}`}
+                className={`px-3 py-1.5 text-xs transition-all cursor-pointer min-h-[36px] ${period === p ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-semibold' : 'font-medium text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'}`}
               >
                 {PERIOD_LABELS[p]}
               </button>
@@ -214,7 +214,7 @@ export default function Dashboard() {
           <button
             onClick={() => { loadAll(); loadRevenue(period) }}
             aria-label="รีเฟรชข้อมูล"
-            className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-phopy-indigo hover:border-phopy-indigo/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
+            className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
           >
             <RefreshCw className={`w-4 h-4 ${loading || revLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -224,24 +224,24 @@ export default function Dashboard() {
       {/* Section 1: Revenue + Gross Profit */}
       <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Revenue */}
-        <div className="phopy-card p-5 border border-phopy-indigo-50">
+        <div className="phopy-card p-5 border border-[var(--primary)]/20">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
-              <DollarSign className="w-4 h-4 text-phopy-indigo" />
+              <DollarSign className="w-4 h-4 text-[var(--primary)]" />
               รายได้ ({PERIOD_LABELS[period]})
             </div>
             {!revLoading && revenue && <ChangeChip pct={revenue.revenueChangePercent} />}
           </div>
           {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
             <>
-              <p className="text-3xl font-bold text-phopy-indigo mt-1">{fmt(revenue.current.revenue)}</p>
+              <p className="text-3xl font-bold text-[var(--primary)] mt-1">{fmt(revenue.current.revenue)}</p>
               <p className="text-xs text-[var(--fg-4)] mt-1">ก่อนหน้า: {fmt(revenue.previous.revenue)}</p>
             </>
           )}
         </div>
 
         {/* Gross Profit */}
-        <div className="phopy-card p-5 border border-success-soft">
+        <div className="phopy-card p-5 border border-[var(--success)]/20">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
               <TrendingUp className="w-4 h-4 text-success" />
@@ -251,7 +251,7 @@ export default function Dashboard() {
           </div>
           {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
             <>
-              <p className={`text-3xl font-bold mt-1 ${revenue.current.grossProfit >= 0 ? 'text-success' : 'text-red-400'}`}>
+              <p className={`text-3xl font-bold mt-1 ${revenue.current.grossProfit >= 0 ? 'text-success' : 'text-danger'}`}>
                 {fmt(revenue.current.grossProfit)}
               </p>
               <p className="text-xs text-[var(--fg-4)] mt-1">Margin {revenue.grossMargin.toFixed(1)}% · ต้นทุน {fmt(revenue.current.cost)}</p>
@@ -263,17 +263,17 @@ export default function Dashboard() {
       {/* Section 2: Cash Flow Forecast */}
       <motion.div variants={item}>
         <div className="flex items-center gap-2 mb-3">
-          <BarChart2 className="w-4 h-4 text-phopy-indigo" />
+          <BarChart2 className="w-4 h-4 text-[var(--primary)]" />
           <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">พยากรณ์กระแสเงินสด</h2>
           {cf && (
             <div className="ml-auto flex items-center gap-3 text-xs">
               <span className="text-[var(--fg-3)]">สุทธิ 7 วัน:
-                <span className={`ml-1 font-bold ${cf.netCashflow.week >= 0 ? 'text-success' : 'text-red-400'}`}>
+                <span className={`ml-1 font-bold ${cf.netCashflow.week >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                   {cf.netCashflow.week >= 0 ? '+' : ''}{fmt(cf.netCashflow.week)}
                 </span>
               </span>
               <span className="text-[var(--fg-3)]">30 วัน:
-                <span className={`ml-1 font-bold ${cf.netCashflow.month >= 0 ? 'text-success' : 'text-red-400'}`}>
+                <span className={`ml-1 font-bold ${cf.netCashflow.month >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                   {cf.netCashflow.month >= 0 ? '+' : ''}{fmt(cf.netCashflow.month)}
                 </span>
               </span>
@@ -304,7 +304,7 @@ export default function Dashboard() {
                 tab={apTab}
                 setTab={setApTab}
                 total={cf?.ap.total ?? 0}
-                color="text-red-400"
+                color="text-danger"
               />
             </>
           )}
@@ -316,7 +316,7 @@ export default function Dashboard() {
         {/* Sales Funnel */}
         <div className="phopy-card p-5">
           <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-4 h-4 text-phopy-indigo" />
+            <FileText className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--fg-1)]">Sales Pipeline</h3>
           </div>
           {loading || !funnel ? (
@@ -325,9 +325,9 @@ export default function Dashboard() {
             <div className="space-y-3">
               {[
                 { label: 'ใบเสนอราคา (QT)', data: funnel.quotations, icon: FileText, color: 'bg-purple-500', textColor: 'text-purple-400' },
-                { label: 'คำสั่งขาย (SO)', data: funnel.salesOrders, icon: ShoppingBag, color: 'bg-phopy-indigo', textColor: 'text-phopy-indigo' },
-                { label: 'ใบแจ้งหนี้ (INV)', data: funnel.invoices, icon: Receipt, color: 'bg-yellow-500', textColor: 'text-yellow-400' },
-                { label: 'รอจัดส่ง', data: funnel.pendingDelivery, icon: Truck, color: 'bg-orange-500', textColor: 'text-orange-400' },
+                { label: 'คำสั่งขาย (SO)', data: funnel.salesOrders, icon: ShoppingBag, color: 'bg-phopy-indigo', textColor: 'text-[var(--primary)]' },
+                { label: 'ใบแจ้งหนี้ (INV)', data: funnel.invoices, icon: Receipt, color: 'bg-yellow-500', textColor: 'text-warning' },
+                { label: 'รอจัดส่ง', data: funnel.pendingDelivery, icon: Truck, color: 'bg-orange-500', textColor: 'text-warning' },
               ].map(({ label, data, color, textColor }) => (
                 <div key={label} className="flex items-center gap-3">
                   <div className="w-32 flex-shrink-0">
@@ -351,7 +351,7 @@ export default function Dashboard() {
         {/* Top 5 Customers */}
         <div className="phopy-card p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Users className="w-4 h-4 text-phopy-indigo" />
+            <Users className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--fg-1)]">Top 5 ลูกค้า</h3>
             <span className="text-xs text-[var(--fg-4)] ml-auto">{PERIOD_LABELS[period]}</span>
           </div>
@@ -367,7 +367,13 @@ export default function Dashboard() {
                 <Tooltip
                   formatter={(v: number) => [fmt(v), 'รายได้']}
                   cursor={{ fill: 'rgba(57,73,229,0.08)' }}
-                  contentStyle={{ background: '#FFFFFF', border: '1px solid #ECE6D8', borderRadius: 8, fontSize: 12, color: '#1E1B16' }}
+                  contentStyle={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: 'var(--fg-1)',
+                  }}
                 />
                 <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
                   {topCustomers.map((_, i) => (
@@ -438,7 +444,7 @@ export default function Dashboard() {
               <p className="text-2xl font-bold text-danger">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
               <p className="text-xs text-[var(--fg-4)] mt-1">ค้างรับ {fmt(cf.ar.overdue.reduce((s,i) => s + i.amount, 0))}</p>
               {cf.ar.overdue.slice(0, 2).map(i => (
-                <p key={i.id} className="text-xs text-red-400/70 truncate">{i.party_name} · {fmt(i.amount)}</p>
+                <p key={i.id} className="text-xs text-danger/70 truncate">{i.party_name} · {fmt(i.amount)}</p>
               ))}
             </>
           )}

@@ -38,10 +38,10 @@ function AppContent() {
     <>
     {/* Session timeout warning overlay */}
     {showTimeoutWarning && (
-      <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center">
-        <div className="bg-[var(--bg)] border border-yellow-500/50 rounded-xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl">
-          <div className="text-yellow-400 text-4xl mb-4">⏱</div>
-          <h2 className="text-xl font-bold text-white mb-2">Session กำลังหมดอายุ</h2>
+      <div className="fixed inset-0 z-[9999] bg-[var(--fg-1)]/70 flex items-center justify-center">
+        <div className="bg-[var(--surface)] border border-[var(--warning)]/40 rounded-xl p-8 max-w-sm w-full mx-4 text-center shadow-3">
+          <div className="text-[var(--warning)] text-4xl mb-4">⏱</div>
+          <h2 className="text-xl font-bold text-[var(--fg-1)] mb-2">Session กำลังหมดอายุ</h2>
           <p className="text-[var(--fg-3)] mb-6 text-sm">ไม่มีการใช้งานนานกว่า 30 นาที<br/>ระบบจะ logout อัตโนมัติใน 1 นาที</p>
           <div className="flex gap-3">
             <button
@@ -52,7 +52,7 @@ function AppContent() {
             </button>
             <button
               onClick={logout}
-              className="flex-1 py-2 text-sm border border-gray-600 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:border-gray-400 transition-colors"
+              className="flex-1 py-2 text-sm border border-[var(--border-strong)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:border-[var(--border-strong)] transition-colors"
             >
               Logout
             </button>

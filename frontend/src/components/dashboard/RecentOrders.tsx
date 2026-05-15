@@ -55,12 +55,12 @@ function RecentOrders() {
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <ShoppingCart className="w-6 h-6 text-phopy-indigo" />
+          <ShoppingCart className="w-6 h-6 text-[var(--primary)]" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Recent Orders
           </h2>
         </div>
-        <button className="text-sm text-phopy-indigo hover:text-phopy-indigo-600 transition-colors flex items-center gap-1 group">
+        <button className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors flex items-center gap-1 group">
           View All
           <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
@@ -87,7 +87,7 @@ function RecentOrders() {
                 transition={{ delay: index * 0.1 }}
               >
                 <td>
-                  <span className="text-phopy-indigo font-semibold">
+                  <span className="text-[var(--primary)] font-semibold">
                     {order.id}
                   </span>
                 </td>
@@ -121,15 +121,15 @@ function StatusBadge({ status }: { status: Order['status'] }) {
   const statusConfig = {
     pending: {
       label: 'Pending',
-      className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     processing: {
       label: 'Processing',
-      className: 'bg-phopy-indigo-50 text-phopy-indigo border-phopy-indigo/30',
+      className: 'bg-[var(--primary-soft)] text-[var(--primary)] border-phopy-indigo/30',
     },
     completed: {
       label: 'Completed',
-      className: 'bg-success-soft text-success border-success/30',
+      className: 'bg-[var(--success-soft)] text-success border-success/30',
     },
   }
 

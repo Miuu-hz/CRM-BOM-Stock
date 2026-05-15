@@ -44,10 +44,10 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-    DRAFT:    'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
-    PENDING:  'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    APPROVED: 'bg-success-soft text-success border-success/30',
-    REJECTED: 'bg-danger-soft text-red-400 border-red-500/30',
+    DRAFT:    'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
+    PENDING:  'bg-[var(--warning-soft)] text-warning border-warning/30',
+    APPROVED: 'bg-[var(--success-soft)] text-success border-success/30',
+    REJECTED: 'bg-[var(--danger-soft)] text-danger border-danger/30',
 }
 
 const STATUS_ICON: Record<string, JSX.Element> = {
@@ -177,7 +177,7 @@ export default function PurchaseRequests() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <ShoppingCart className="w-7 h-7 text-phopy-indigo" />
+                    <ShoppingCart className="w-7 h-7 text-[var(--primary)]" />
                     <div>
                         <h1 className="text-2xl font-bold text-[var(--fg-1)]">ใบขอซื้อ (PR)</h1>
                         <p className="text-[var(--fg-3)] text-sm">จัดการใบขอซื้อจาก LINE และเว็บ</p>
@@ -209,7 +209,7 @@ export default function PurchaseRequests() {
             {/* List */}
             {loading ? (
                 <div className="flex justify-center py-16">
-                    <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+                    <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
                 </div>
             ) : list.length === 0 ? (
                 <div className="phopy-card p-12 text-center text-[var(--fg-4)]">
@@ -228,7 +228,7 @@ export default function PurchaseRequests() {
                         >
                             <div className="flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-lg bg-phopy-indigo/10 flex items-center justify-center">
-                                    <MessageSquare className="w-5 h-5 text-phopy-indigo" />
+                                    <MessageSquare className="w-5 h-5 text-[var(--primary)]" />
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
@@ -238,7 +238,7 @@ export default function PurchaseRequests() {
                                             {STATUS_LABEL[pr.status]}
                                         </span>
                                         {pr.source === 'LINE' && (
-                                            <span className="px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30">LINE</span>
+                                            <span className="px-1.5 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success border border-green-500/30">LINE</span>
                                         )}
                                     </div>
                                     <p className="text-sm text-[var(--fg-3)] mt-0.5">
@@ -261,12 +261,12 @@ export default function PurchaseRequests() {
                 {selected && (
                     <>
                         <motion.div
-                            className="fixed inset-0 bg-black/50 z-40"
+                            className="fixed inset-0 bg-[var(--fg-1)]/50 z-40"
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             onClick={closeDetail}
                         />
                         <motion.div
-                            className="fixed right-0 top-0 h-full w-full max-w-xl bg-white border-l border-[var(--border)] z-50 flex flex-col"
+                            className="fixed right-0 top-0 h-full w-full max-w-xl bg-[var(--surface)] border-l border-[var(--border)] z-50 flex flex-col"
                             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
                             transition={{ type: 'tween', duration: 0.25 }}
                         >
@@ -291,7 +291,7 @@ export default function PurchaseRequests() {
                             <div className="flex-1 overflow-y-auto p-5 space-y-5">
                                 {detailLoading ? (
                                     <div className="flex justify-center py-12">
-                                        <Loader2 className="w-7 h-7 text-phopy-indigo animate-spin" />
+                                        <Loader2 className="w-7 h-7 text-[var(--primary)] animate-spin" />
                                     </div>
                                 ) : (
                                     <>
@@ -315,7 +315,7 @@ export default function PurchaseRequests() {
 
                                         {/* Rejection reason */}
                                         {selected.status === 'REJECTED' && selected.rejection_reason && (
-                                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 flex gap-2">
+                                            <div className="p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-sm text-danger flex gap-2">
                                                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                                                 <p>เหตุผลที่ปฏิเสธ: {selected.rejection_reason}</p>
                                             </div>
@@ -324,7 +324,7 @@ export default function PurchaseRequests() {
                                         {/* Items table */}
                                         <div>
                                             <div className="flex items-center gap-2 mb-3">
-                                                <Edit3 className="w-4 h-4 text-phopy-indigo" />
+                                                <Edit3 className="w-4 h-4 text-[var(--primary)]" />
                                                 <h3 className="font-medium text-[var(--fg-2)]">รายการสินค้า</h3>
                                                 {['DRAFT', 'PENDING'].includes(selected.status) && (
                                                     <span className="text-xs text-[var(--fg-4)]">— กรอกจำนวนและราคา</span>
@@ -406,7 +406,7 @@ export default function PurchaseRequests() {
                                                 {totalAmount > 0 && (
                                                     <div className="flex justify-end pt-2 border-t border-[var(--border)]">
                                                         <p className="text-sm text-[var(--fg-2)]">
-                                                            รวมทั้งหมด: <span className="font-bold text-phopy-indigo text-base ml-2">{totalAmount.toLocaleString()} บาท</span>
+                                                            รวมทั้งหมด: <span className="font-bold text-[var(--primary)] text-base ml-2">{totalAmount.toLocaleString()} บาท</span>
                                                         </p>
                                                     </div>
                                                 )}
@@ -428,7 +428,7 @@ export default function PurchaseRequests() {
                                                     <button
                                                         onClick={handleReject}
                                                         disabled={!rejectReason.trim() || submitting}
-                                                        className="flex-1 flex items-center justify-center gap-2 py-2 bg-danger-soft border border-red-500/40 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition-all disabled:opacity-50"
+                                                        className="flex-1 flex items-center justify-center gap-2 py-2 bg-[var(--danger-soft)] border border-danger/40 text-danger rounded-lg text-sm hover:bg-[var(--danger-soft)] transition-all disabled:opacity-50"
                                                     >
                                                         {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                                                         ยืนยันปฏิเสธ
@@ -477,14 +477,14 @@ export default function PurchaseRequests() {
                                                     <button
                                                         onClick={handleApprove}
                                                         disabled={submitting}
-                                                        className="flex items-center justify-center gap-2 py-2.5 bg-success-soft border border-success/40 text-success rounded-lg text-sm hover:bg-success/30 transition-all disabled:opacity-50"
+                                                        className="flex items-center justify-center gap-2 py-2.5 bg-[var(--success-soft)] border border-success/40 text-success rounded-lg text-sm hover:bg-success/30 transition-all disabled:opacity-50"
                                                     >
                                                         {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                                         อนุมัติ
                                                     </button>
                                                     <button
                                                         onClick={() => setShowRejectForm(true)}
-                                                        className="flex items-center justify-center gap-2 py-2.5 bg-danger-soft border border-red-500/40 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition-all"
+                                                        className="flex items-center justify-center gap-2 py-2.5 bg-[var(--danger-soft)] border border-danger/40 text-danger rounded-lg text-sm hover:bg-[var(--danger-soft)] transition-all"
                                                     >
                                                         <XCircle className="w-4 h-4" />
                                                         ปฏิเสธ

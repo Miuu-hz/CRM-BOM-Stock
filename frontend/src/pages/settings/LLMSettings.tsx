@@ -216,7 +216,7 @@ export default function LLMSettings() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-            <Brain className="w-5 h-5 text-phopy-indigo" />
+            <Brain className="w-5 h-5 text-[var(--primary)]" />
             AI / LLM Providers
           </h2>
           <p className="text-sm text-[var(--fg-3)]">จัดการและทดสอบการเชื่อมต่อ LLM Provider</p>
@@ -237,7 +237,7 @@ export default function LLMSettings() {
           <div className="p-8 text-center text-[var(--fg-3)]">
             <Bot className="w-12 h-12 mx-auto mb-3 text-[var(--fg-4)]" />
             <p>ยังไม่มี LLM Provider ที่ตั้งค่าไว้</p>
-            <button onClick={openAdd} className="mt-3 text-phopy-indigo hover:underline text-sm">
+            <button onClick={openAdd} className="mt-3 text-[var(--primary)] hover:underline text-sm">
               เพิ่ม Provider แรก
             </button>
           </div>
@@ -265,7 +265,7 @@ export default function LLMSettings() {
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => setDefault(p)}
-                        className={`p-1.5 rounded-lg transition-colors ${p.is_default ? 'text-yellow-400 hover:text-yellow-300' : 'text-[var(--fg-4)] hover:text-[var(--fg-3)]'}`}
+                        className={`p-1.5 rounded-lg transition-colors ${p.is_default ? 'text-warning hover:text-yellow-300' : 'text-[var(--fg-4)] hover:text-[var(--fg-3)]'}`}
                         title={p.is_default ? 'ค่าเริ่มต้น' : 'ตั้งเป็นค่าเริ่มต้น'}
                       >
                         <Star className={`w-5 h-5 ${p.is_default ? 'fill-current' : ''}`} />
@@ -284,14 +284,14 @@ export default function LLMSettings() {
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => openEdit(p)}
-                          className="p-1.5 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg transition-colors"
+                          className="p-1.5 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors"
                           title="แก้ไข"
                         >
                           <RefreshCw className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(p.id)}
-                          className="p-1.5 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                          className="p-1.5 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
                           title="ลบ"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -309,7 +309,7 @@ export default function LLMSettings() {
       {/* LLM Playground */}
       <div className="phopy-card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-phopy-indigo" />
+          <Bot className="w-5 h-5 text-[var(--primary)]" />
           <h3 className="text-lg font-bold text-[var(--fg-1)]">LLM Playground</h3>
         </div>
         <p className="text-sm text-[var(--fg-3)]">ทดสอบส่งข้อความเพื่อตรวจสอบว่า Token/API ตอบสนองหรือไม่</p>
@@ -368,7 +368,7 @@ export default function LLMSettings() {
             animate={{ opacity: 1, y: 0 }}
             className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
           >
-            <div className="flex items-center gap-2 text-phopy-indigo text-sm font-medium">
+            <div className="flex items-center gap-2 text-[var(--primary)] text-sm font-medium">
               <Bot className="w-4 h-4" />
               ตอบกลับจาก LLM
             </div>
@@ -386,7 +386,7 @@ export default function LLMSettings() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => setShowModal(false)}
           >
             <motion.div
@@ -506,7 +506,7 @@ export default function LLMSettings() {
                   <button
                     onClick={handleTestConnection}
                     disabled={testing}
-                    className="px-4 py-2 rounded-lg border border-phopy-indigo/50 text-phopy-indigo hover:bg-phopy-indigo/10 transition-colors text-sm flex items-center gap-2"
+                    className="px-4 py-2 rounded-lg border border-phopy-indigo/50 text-[var(--primary)] hover:bg-phopy-indigo/10 transition-colors text-sm flex items-center gap-2"
                   >
                     {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     ทดสอบการเชื่อมต่อ

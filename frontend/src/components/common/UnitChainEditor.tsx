@@ -217,7 +217,7 @@ export default function UnitChainEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 z-[60] flex items-center justify-center p-4">
       <div className="phopy-card w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
@@ -319,7 +319,7 @@ export default function UnitChainEditor({
                   </button>
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-danger-soft text-[var(--fg-4)] hover:text-red-400 transition-colors flex-shrink-0"
+                    className="p-1 rounded hover:bg-[var(--danger-soft)] text-[var(--fg-4)] hover:text-danger transition-colors flex-shrink-0"
                     title="ลบโหนด"
                     onClick={(e) => { e.stopPropagation(); handleRemoveNode(unit) }}
                   >
@@ -350,7 +350,7 @@ export default function UnitChainEditor({
               {conversions.map(conv => (
                 <div key={conv.id} className="flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-xs text-purple-300 whitespace-nowrap">
                   <span className="font-mono">{ul(conv.from_unit)} →×{conv.conversion_factor}→ {ul(conv.to_unit)}</span>
-                  <button type="button" onClick={() => onDelete(conv.id)} className="text-purple-400/50 hover:text-red-400 transition-colors ml-0.5">
+                  <button type="button" onClick={() => onDelete(conv.id)} className="text-purple-400/50 hover:text-danger transition-colors ml-0.5">
                     <X className="w-2.5 h-2.5" />
                   </button>
                 </div>
@@ -366,7 +366,7 @@ export default function UnitChainEditor({
               <select
                 value={newUnitValue}
                 onChange={e => setNewUnitValue(e.target.value)}
-                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                 autoFocus
               >
                 <option value="">เลือกหน่วย</option>
@@ -399,13 +399,13 @@ export default function UnitChainEditor({
 
       {/* Factor input dialog */}
       {pendingEdge && (
-        <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--fg-1)]/40 z-[70] flex items-center justify-center">
           <div className="phopy-card p-5 w-80">
             <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-1">ตั้งค่าการแปลงหน่วย</h4>
             <p className="text-xs text-[var(--fg-3)] mb-3">
               <span className="font-mono text-purple-300">{ul(pendingEdge.from)}</span>
               <span className="mx-1 text-[var(--fg-4)]">→</span>
-              <span className="font-mono text-phopy-indigo">{ul(pendingEdge.to)}</span>
+              <span className="font-mono text-[var(--primary)]">{ul(pendingEdge.to)}</span>
             </p>
             <label className="text-xs text-[var(--fg-4)] block mb-1">
               1 {ul(pendingEdge.from)} = ? {ul(pendingEdge.to)}

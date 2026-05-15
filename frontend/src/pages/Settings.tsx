@@ -205,14 +205,14 @@ function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
     <button
       onClick={onClick}
       className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${active
-          ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+          ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
         }`}
     >
       <Icon className="w-5 h-5" />
       <span>{label}</span>
       {badge !== undefined && (
-        <span className="ml-1 px-2 py-0.5 bg-phopy-indigo/30 text-phopy-indigo rounded-full text-xs">
+        <span className="ml-1 px-2 py-0.5 bg-phopy-indigo/30 text-[var(--primary)] rounded-full text-xs">
           {badge}
         </span>
       )}
@@ -297,11 +297,11 @@ function BillingSettings() {
       className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
     >
       <div className="text-left">
-        <p className={`font-medium ${enabled ? 'text-phopy-indigo' : 'text-[var(--fg-2)]'}`}>{label}</p>
+        <p className={`font-medium ${enabled ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{label}</p>
         <p className="text-xs text-[var(--fg-4)] mt-0.5">{sub}</p>
       </div>
       {enabled
-        ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+        ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
         : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
       }
     </button>
@@ -345,7 +345,7 @@ function BillingSettings() {
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, vatRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                   >
                     {r}%
                   </button>
@@ -387,7 +387,7 @@ function BillingSettings() {
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, serviceRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                   >
                     {r}%
                   </button>
@@ -412,7 +412,7 @@ function BillingSettings() {
             </div>
           )}
           {cfg.vatEnabled && (
-            <div className="flex justify-between text-yellow-400">
+            <div className="flex justify-between text-warning">
               <span>VAT ({cfg.vatRate}%)</span>
               <span>+฿{(1000 * cfg.vatRate / 100).toFixed(2)}</span>
             </div>
@@ -426,7 +426,7 @@ function BillingSettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-success-soft text-success border border-success/50' : 'phopy-btn-primary'}`}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
         {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
       </button>
@@ -475,11 +475,11 @@ function LoyaltySettings() {
       className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${enabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
     >
       <div className="text-left">
-        <p className={`font-medium ${enabled ? 'text-phopy-indigo' : 'text-[var(--fg-2)]'}`}>{label}</p>
+        <p className={`font-medium ${enabled ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{label}</p>
         <p className="text-xs text-[var(--fg-4)] mt-0.5">{sub}</p>
       </div>
       {enabled
-        ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+        ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
         : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
       }
     </button>
@@ -489,7 +489,7 @@ function LoyaltySettings() {
     <div className="space-y-6 max-w-lg">
       <div>
         <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1 flex items-center gap-2">
-          <Star className="w-5 h-5 text-yellow-400" />
+          <Star className="w-5 h-5 text-warning" />
           ระบบสะสมแต้มสมาชิก (CRM)
         </h2>
         <p className="text-sm text-[var(--fg-3)]">ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS</p>
@@ -508,7 +508,7 @@ function LoyaltySettings() {
           {/* Earn Rate */}
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
-              <Gift className="w-4 h-4 text-phopy-indigo" />
+              <Gift className="w-4 h-4 text-[var(--primary)]" />
               <p className="font-medium text-[var(--fg-2)]">อัตราสะสมแต้ม</p>
             </div>
             <p className="text-xs text-[var(--fg-4)]">ซื้อสินค้าครบ X บาท ได้ 1 แต้ม</p>
@@ -531,7 +531,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, earnRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-phopy-indigo-50 border-phopy-indigo text-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                 >
                   {r} บาท
                 </button>
@@ -542,7 +542,7 @@ function LoyaltySettings() {
           {/* Redeem Rate */}
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
-              <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
+              <ArrowLeftRight className="w-4 h-4 text-warning" />
               <p className="font-medium text-[var(--fg-2)]">อัตราแลกแต้ม</p>
             </div>
             <p className="text-xs text-[var(--fg-4)]">ใช้ X แต้ม แลกส่วนลด 1 บาท</p>
@@ -565,7 +565,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, redeemRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-yellow-400' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-warning' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
                 >
                   {r} แต้ม
                 </button>
@@ -599,11 +599,11 @@ function LoyaltySettings() {
             <p className="text-[var(--fg-3)] font-medium mb-2">ตัวอย่างการคำนวณ</p>
             <div className="flex justify-between text-[var(--fg-3)]">
               <span>ซื้อ ฿{(cfg.earnRate * 10).toLocaleString()}</span>
-              <span className="text-phopy-indigo">ได้ 10 แต้ม</span>
+              <span className="text-[var(--primary)]">ได้ 10 แต้ม</span>
             </div>
             <div className="flex justify-between text-[var(--fg-3)]">
               <span>แลก {cfg.redeemRate * 10} แต้ม</span>
-              <span className="text-yellow-400">ลด ฿10</span>
+              <span className="text-warning">ลด ฿10</span>
             </div>
             <div className="flex justify-between text-[var(--fg-4)] text-xs border-t border-[var(--border)] pt-2">
               <span>ค่าแต้มสะสม 1 แต้ม</span>
@@ -615,7 +615,7 @@ function LoyaltySettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-success-soft text-success border border-success/50' : 'phopy-btn-primary'}`}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
         {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
       </button>
@@ -668,7 +668,7 @@ function GeneralSettings() {
       <div className="phopy-card p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-phopy-indigo" />
+            <Building2 className="w-5 h-5 text-[var(--primary)]" />
             ข้อมูลบริษัท (สำหรับใบบิล)
           </h3>
           <button
@@ -683,7 +683,7 @@ function GeneralSettings() {
         </div>
 
         {saveMsg && (
-          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-success/10 text-success border border-success/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
+          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-success/10 text-success border border-success/30' : 'bg-[var(--danger-soft)] text-danger border border-danger/30'}`}>
             {saveMsg}
           </div>
         )}
@@ -700,11 +700,11 @@ function GeneralSettings() {
                 : <Building2 className="w-8 h-8 text-[var(--fg-4)]" />}
             </div>
             <div>
-              <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-phopy-indigo hover:underline">
+              <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-[var(--primary)] hover:underline">
                 อัปโหลดโลโก้
               </button>
               {co.logo_base64 && (
-                <button type="button" onClick={() => setCo(p => ({ ...p, logo_base64: '' }))} className="ml-3 text-sm text-red-400 hover:underline">
+                <button type="button" onClick={() => setCo(p => ({ ...p, logo_base64: '' }))} className="ml-3 text-sm text-danger hover:underline">
                   ลบ
                 </button>
               )}
@@ -739,7 +739,7 @@ function GeneralSettings() {
       {/* Tenant meta (read-only) */}
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-phopy-indigo" />
+          <Shield className="w-5 h-5 text-[var(--primary)]" />
           ข้อมูลบัญชี
         </h3>
         <div className="grid grid-cols-2 gap-4">
@@ -749,7 +749,7 @@ function GeneralSettings() {
           </div>
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">ประเภทบัญชี</label>
-            <p className={`font-semibold ${isMaster ? 'text-success' : 'text-phopy-indigo'}`}>
+            <p className={`font-semibold ${isMaster ? 'text-success' : 'text-[var(--primary)]'}`}>
               {isMaster ? 'Master Account' : 'Standard Account'}
             </p>
           </div>
@@ -783,18 +783,18 @@ function GeneralSettings() {
       {/* Time Lock Info */}
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-phopy-indigo" />
+          <Clock className="w-5 h-5 text-[var(--primary)]" />
           กฎการแก้ไขข้อมูล (24 Hour Rule)
         </h3>
         <div className="space-y-3 text-[var(--fg-2)]">
           <p className="flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
             <span>
-              ข้อมูลทุกรายการที่สร้างขึ้น <strong className="text-phopy-indigo">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง
+              ข้อมูลทุกรายการที่สร้างขึ้น <strong className="text-[var(--primary)]">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง
             </span>
           </p>
           <p className="flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
             <span>
               หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้
               {isMaster && <strong className="text-success"> (ยกเว้น Master Account)</strong>}
@@ -833,14 +833,14 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-          <Users className="w-5 h-5 text-phopy-indigo" />
+          <Users className="w-5 h-5 text-[var(--primary)]" />
           รายชื่อผู้ใช้งานในสายงาน
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors"
+            className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors"
             title="รีเฟรช"
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -901,7 +901,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
                     <button
                       onClick={() => handleDelete(child.id)}
                       disabled={deleting === child.id}
-                      className="p-2 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                      className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
                       title="ลบ"
                     >
                       {deleting === child.id ? (
@@ -925,10 +925,10 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
 // Role Badge
 function RoleBadge({ role }: { role: string }) {
   const colors: Record<string, string> = {
-    ADMIN: 'bg-success-soft text-success',
-    MANAGER: 'bg-phopy-indigo-50 text-phopy-indigo',
-    USER: 'bg-blue-500/20 text-blue-400',
-    VIEWER: 'bg-gray-500/20 text-[var(--fg-3)]',
+    ADMIN: 'bg-[var(--success-soft)] text-success',
+    MANAGER: 'bg-[var(--primary-soft)] text-[var(--primary)]',
+    USER: 'bg-[var(--info-soft)] text-blue-400',
+    VIEWER: 'bg-[var(--surface-sunken)] text-[var(--fg-3)]',
   }
 
   return (
@@ -976,7 +976,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
       <motion.div
@@ -995,7 +995,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-400 text-sm">
+            <div className="p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-2 text-danger text-sm">
               <AlertCircle className="w-4 h-4" />
               {error}
             </div>
@@ -1079,7 +1079,7 @@ function SecuritySettings() {
     <div className="space-y-6">
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-          <Key className="w-5 h-5 text-phopy-indigo" />
+          <Key className="w-5 h-5 text-[var(--primary)]" />
           เปลี่ยนรหัสผ่าน
         </h3>
         <p className="text-[var(--fg-3)] text-sm mb-4">
@@ -1092,7 +1092,7 @@ function SecuritySettings() {
 
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-phopy-indigo" />
+          <Shield className="w-5 h-5 text-[var(--primary)]" />
           การยืนยันตัวตนแบบ 2 ชั้น (2FA)
         </h3>
         <p className="text-[var(--fg-3)] text-sm mb-4">

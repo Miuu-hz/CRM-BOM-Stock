@@ -165,7 +165,7 @@ export default function LineSettings() {
     if (loading) {
         return (
             <div className="phopy-card p-12 text-center">
-                <RefreshCw className="w-8 h-8 text-phopy-indigo mx-auto animate-spin mb-4" />
+                <RefreshCw className="w-8 h-8 text-[var(--primary)] mx-auto animate-spin mb-4" />
                 <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูล...</p>
             </div>
         )
@@ -175,16 +175,16 @@ export default function LineSettings() {
         <div className="space-y-6">
             <div className="phopy-card p-6 border-l-4 border-phopy-indigo">
                 <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-2 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-phopy-indigo" />
+                    <MessageSquare className="w-5 h-5 text-[var(--primary)]" />
                     การตั้งค่า LINE Messaging API
                 </h3>
                 <p className="text-[var(--fg-3)] text-sm mb-6">
                     ตั้งค่าเพื่อใช้งาน LINE Bot สำหรับแจ้งเตือนใบสั่งผลิต แจ้งเตือนสถานะต่างๆ
-                    Webhook URL: <span className="font-mono text-phopy-indigo px-2 py-1 bg-phopy-indigo/10 rounded">https://crm.phopy.net/api/line/webhook</span>
+                    Webhook URL: <span className="font-mono text-[var(--primary)] px-2 py-1 bg-phopy-indigo/10 rounded">https://crm.phopy.net/api/line/webhook</span>
                 </p>
 
                 {error && (
-                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3 text-red-400">
+                    <div className="mb-6 p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3 text-danger">
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
                         <p>{error}</p>
                     </div>
@@ -247,7 +247,7 @@ export default function LineSettings() {
                             id="is_active"
                             checked={config.is_active}
                             onChange={(e) => setConfig({ ...config, is_active: e.target.checked })}
-                            className="rounded bg-[var(--bg)] border-[var(--border)] text-phopy-indigo focus:ring-phopy-indigo"
+                            className="rounded bg-[var(--bg)] border-[var(--border)] text-[var(--primary)] focus:ring-phopy-indigo"
                             disabled={!isMaster}
                         />
                         <label htmlFor="is_active" className="text-[var(--fg-2)]">
@@ -294,7 +294,7 @@ export default function LineSettings() {
                 <div className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-3 text-sm ${
                     linkStatus.linked
                         ? 'bg-success/10 border border-success/30 text-success'
-                        : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
+                        : 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
                 }`}>
                     <span className="flex items-center gap-2">
                         {linkStatus.linked
@@ -306,7 +306,7 @@ export default function LineSettings() {
                         <button
                             onClick={handleUnlink}
                             disabled={unlinking}
-                            className="flex items-center gap-1 px-2 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs transition-all"
+                            className="flex items-center gap-1 px-2 py-1 rounded border border-danger/40 text-danger hover:bg-[var(--danger-soft)] text-xs transition-all"
                         >
                             {unlinking ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
                             ยกเลิกการเชื่อม
@@ -338,7 +338,7 @@ export default function LineSettings() {
 
                 {linkToken && (
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <div className="flex-1 font-mono text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-phopy-indigo select-all">
+                        <div className="flex-1 font-mono text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--primary)] select-all">
                             ลิงก์ {linkToken}
                         </div>
                         <button
@@ -357,7 +357,7 @@ export default function LineSettings() {
         {isMaster && (
             <div className="phopy-card p-6 border-l-4 border-phopy-indigo/50">
                 <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-phopy-indigo" />
+                    <Users className="w-5 h-5 text-[var(--primary)]" />
                     ผู้ใช้ที่เชื่อมต่อ LINE แล้ว
                 </h3>
                 <p className="text-[var(--fg-3)] text-sm mb-4">รายชื่อผู้ใช้ในระบบที่เชื่อมบัญชี LINE ไว้แล้ว</p>
@@ -381,7 +381,7 @@ export default function LineSettings() {
                                 <button
                                     onClick={() => handleUnlinkUser(u.user_id)}
                                     disabled={unlinkingUserId === u.user_id}
-                                    className="flex items-center gap-1 px-2 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs transition-all"
+                                    className="flex items-center gap-1 px-2 py-1 rounded border border-danger/40 text-danger hover:bg-[var(--danger-soft)] text-xs transition-all"
                                 >
                                     {unlinkingUserId === u.user_id
                                         ? <RefreshCw className="w-3 h-3 animate-spin" />

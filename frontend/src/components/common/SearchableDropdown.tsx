@@ -92,7 +92,7 @@ export function SearchableDropdown({
   const dropdownContent = (
     <div
       data-searchable-dropdown-portal
-      className="fixed z-[100] bg-white border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
+      className="fixed z-[100] bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
     >
       {/* Search Input */}
@@ -125,9 +125,9 @@ export function SearchableDropdown({
                 e.preventDefault()
                 handleSelect(option.id)
               }}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-phopy-indigo-50 transition-colors ${
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--primary-soft)] transition-colors ${
                 value === option.id
-                  ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                  ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                   : 'text-[var(--fg-2)]'
               }`}
             >

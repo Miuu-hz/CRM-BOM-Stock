@@ -24,7 +24,7 @@ function ProductionChart() {
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Activity className="w-6 h-6 text-phopy-indigo" />
+          <Activity className="w-6 h-6 text-[var(--primary)]" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
             Production Status
           </h2>

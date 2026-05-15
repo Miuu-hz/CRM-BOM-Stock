@@ -388,7 +388,7 @@ function CRM() {
           onClick={() => setMainTab('customers')}
           className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
             mainTab === 'customers'
-              ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+              ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
               : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
           }`}
         >
@@ -474,7 +474,7 @@ function CRM() {
                 onClick={() => setSelectedType(t)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
                   selectedType === t
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
                 }`}
               >
@@ -492,7 +492,7 @@ function CRM() {
                 onClick={() => setCustomerLimit(n)}
                 className={`px-2.5 py-1.5 rounded-lg text-xs transition-all ${
                   customerLimit === n
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
                 }`}
               >
@@ -505,13 +505,13 @@ function CRM() {
           <div className="flex items-center gap-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-1">
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
+              className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
             >
               <LayoutList className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('card')}
-              className={`p-1.5 rounded transition-all ${viewMode === 'card' ? 'bg-phopy-indigo-50 text-phopy-indigo' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
+              className={`p-1.5 rounded transition-all ${viewMode === 'card' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -558,7 +558,7 @@ function CRM() {
                   >
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50 flex items-center justify-center text-sm font-bold text-phopy-indigo">
+                        <div className="w-9 h-9 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50 flex items-center justify-center text-sm font-bold text-[var(--primary)]">
                           {customer.name?.charAt(0)?.toUpperCase()}
                         </div>
                         <div>
@@ -571,7 +571,7 @@ function CRM() {
                       <span className={`status-badge text-xs ${
                         customer.type === 'HOTEL' ? 'text-cyan-400 bg-cyan-500/20 border-cyan-500/30' :
                         customer.type === 'WHOLESALE' ? 'text-purple-400 bg-purple-500/20 border-purple-500/30' :
-                        'text-yellow-400 bg-yellow-500/20 border-yellow-500/30'
+                        'text-warning bg-[var(--warning-soft)] border-warning/30'
                       }`}>
                         {customer.type}
                       </span>
@@ -582,12 +582,12 @@ function CRM() {
                         {customer.phone && <p className="text-[var(--fg-4)] text-xs">{customer.phone}</p>}
                       </div>
                     </td>
-                    <td className="text-phopy-indigo font-semibold">{customer.totalOrders ?? 0}</td>
+                    <td className="text-[var(--primary)] font-semibold">{customer.totalOrders ?? 0}</td>
                     <td className="text-success font-semibold">฿{(customer.totalRevenue ?? 0).toLocaleString()}</td>
                     <td>
                       <span className={`status-badge text-xs ${
-                        customer.status === 'ACTIVE' ? 'bg-success-soft text-success border-success/30' :
-                        'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30'
+                        customer.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/30' :
+                        'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]'
                       }`}>{customer.status}</span>
                     </td>
                   </motion.tr>
@@ -630,7 +630,7 @@ function CRM() {
           <button
             onClick={() => setCustomerPageNum(p => Math.max(1, p - 1))}
             disabled={customerPageNum === 1}
-            className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] disabled:opacity-30 transition-colors"
           >
             <ChevronLeft className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
@@ -644,7 +644,7 @@ function CRM() {
                 className={`w-8 h-8 text-xs rounded-lg transition-all ${
                   p === customerPageNum
                     ? 'bg-phopy-indigo text-white'
-                    : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
+                    : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 {p}
@@ -654,7 +654,7 @@ function CRM() {
           <button
             onClick={() => setCustomerPageNum(p => Math.min(totalCustomerPages, p + 1))}
             disabled={customerPageNum === totalCustomerPages}
-            className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] disabled:opacity-30 transition-colors"
           >
             <ChevronRight className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
@@ -752,7 +752,7 @@ function CustomerModal({ open, customer, onClose, onSave }: {
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()}
             className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -998,7 +998,7 @@ function CustomerDetailModal({
   })()
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-2" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1007,10 +1007,10 @@ function CustomerDetailModal({
         className="bg-[var(--surface-2)] border border-phopy-indigo/40 rounded-2xl shadow-2xl shadow-phopy-indigo/10 w-full max-w-5xl max-h-[95vh] flex overflow-hidden"
       >
         {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-white/40 border-r border-[var(--border)] flex flex-col overflow-y-auto modal-scroll">
+        <div className="w-64 flex-shrink-0 bg-[var(--surface-2)] border-r border-[var(--border)] flex flex-col overflow-y-auto modal-scroll">
           {/* Avatar + Name */}
           <div className="relative p-5 text-center bg-gradient-to-b from-phopy-indigo/10 to-transparent border-b border-[var(--border)]/50">
-            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-white/60 transition-colors">
+            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
               <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-1)]" />
             </button>
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-phopy-indigo/30">
@@ -1019,21 +1019,21 @@ function CustomerDetailModal({
             <h2 className="text-base font-bold text-white leading-tight">{customer.name}</h2>
             <p className="text-xs text-[var(--fg-4)] mt-0.5">{customer.code}</p>
             <div className="flex items-center justify-center gap-1.5 mt-2 flex-wrap">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-phopy-indigo/15 text-phopy-indigo border border-phopy-indigo-50">{customer.type}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{customer.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด'}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] border border-phopy-indigo-50">{customer.type}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/20' : 'bg-[var(--danger-soft)] text-danger border-danger/20'}`}>{customer.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด'}</span>
             </div>
             {/* Action buttons */}
             <div className="flex items-center gap-2 mt-3 justify-center">
               <button
                 onClick={onEdit}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 text-phopy-indigo border border-phopy-indigo-50 hover:bg-phopy-indigo-50 text-xs transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] border border-phopy-indigo-50 hover:bg-[var(--primary-soft)] text-xs transition-all"
               >
                 <Pencil className="w-3 h-3" />แก้ไข
               </button>
               {!confirmDelete ? (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-danger-soft text-xs transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--danger-soft)] text-danger border border-danger/20 hover:bg-[var(--danger-soft)] text-xs transition-all"
                 >
                   <Trash2 className="w-3 h-3" />ลบ
                 </button>
@@ -1047,7 +1047,7 @@ function CustomerDetailModal({
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="px-2 py-1.5 rounded-lg bg-white text-[var(--fg-3)] text-xs hover:bg-[var(--surface-2)] transition-all"
+                    className="px-2 py-1.5 rounded-lg bg-[var(--surface)] text-[var(--fg-3)] text-xs hover:bg-[var(--surface-2)] transition-all"
                   >
                     ยกเลิก
                   </button>
@@ -1073,7 +1073,7 @@ function CustomerDetailModal({
             )}
             {customer.phone && (
               <div className="flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5 text-phopy-indigo flex-shrink-0" />
+                <Phone className="w-3.5 h-3.5 text-[var(--primary)] flex-shrink-0" />
                 <span className="text-xs text-white font-semibold">{customer.phone}</span>
               </div>
             )}
@@ -1106,7 +1106,7 @@ function CustomerDetailModal({
                 <div className="mt-1.5">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-[var(--fg-4)]">ใช้ไป</span>
-                    <span className={customer.creditUsed > customer.creditLimit * 0.9 ? 'text-red-400' : customer.creditUsed > customer.creditLimit * 0.7 ? 'text-yellow-400' : 'text-green-400'}>
+                    <span className={customer.creditUsed > customer.creditLimit * 0.9 ? 'text-danger' : customer.creditUsed > customer.creditLimit * 0.7 ? 'text-warning' : 'text-success'}>
                       {((customer.creditUsed / customer.creditLimit) * 100).toFixed(0)}%
                     </span>
                   </div>
@@ -1119,11 +1119,11 @@ function CustomerDetailModal({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-var(--surface-2)/60 rounded-lg p-2.5">
+              <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
                 <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ออเดอร์</p>
-                <p className="text-lg font-bold text-phopy-indigo">{totalOrders}</p>
+                <p className="text-lg font-bold text-[var(--primary)]">{totalOrders}</p>
               </div>
-              <div className="bg-var(--surface-2)/60 rounded-lg p-2.5">
+              <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
                 <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ล่าสุด</p>
                 <p className="text-xs font-semibold text-white">{lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</p>
               </div>
@@ -1137,7 +1137,7 @@ function CustomerDetailModal({
                 </div>
                 <div className="bg-orange-500/5 border border-orange-500/10 rounded-lg p-2.5">
                   <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ค้างชำระ</p>
-                  <p className="text-xs font-bold text-orange-400">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                  <p className="text-xs font-bold text-warning">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
             )}
@@ -1145,13 +1145,13 @@ function CustomerDetailModal({
             {/* Loyalty Points */}
             <button
               onClick={() => setActiveTab('loyalty')}
-              className={`w-full bg-yellow-500/5 border rounded-lg p-3 text-left transition-all hover:bg-yellow-500/10 ${activeTab === 'loyalty' ? 'border-yellow-500/50' : 'border-yellow-500/20'}`}
+              className={`w-full bg-yellow-500/5 border rounded-lg p-3 text-left transition-all hover:bg-[var(--warning-soft)] ${activeTab === 'loyalty' ? 'border-yellow-500/50' : 'border-yellow-500/20'}`}
             >
               <div className="flex items-center justify-between mb-0.5">
-                <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-yellow-400" />แต้มสะสม</p>
-                <span className="text-[10px] text-yellow-400/60">คลิกดูรายละเอียด →</span>
+                <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-warning" />แต้มสะสม</p>
+                <span className="text-[10px] text-warning/60">คลิกดูรายละเอียด →</span>
               </div>
-              <p className="text-xl font-bold text-yellow-400">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
+              <p className="text-xl font-bold text-warning">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
               <p className="text-[10px] text-[var(--fg-4)]">แต้ม</p>
             </button>
           </div>
@@ -1168,8 +1168,8 @@ function CustomerDetailModal({
                   onClick={() => setActiveTab(id as typeof activeTab)}
                   className={`px-3 py-2 flex items-center gap-1.5 text-xs font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
                     activeTab === id
-                      ? 'border-phopy-indigo text-phopy-indigo'
-                      : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-600'
+                      ? 'border-phopy-indigo text-[var(--primary)]'
+                      : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-[var(--border-strong)]'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -1195,7 +1195,7 @@ function CustomerDetailModal({
                   <div className="grid grid-cols-3 gap-3">
                     <div className="phopy-card p-3 text-center border border-phopy-indigo/10">
                       <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ทั้งหมด</p>
-                      <p className="text-2xl font-bold text-phopy-indigo">
+                      <p className="text-2xl font-bold text-[var(--primary)]">
                         {((insights.stats.totalOrders ?? 0) + (insights.stats.totalSO ?? 0)).toLocaleString()}
                       </p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">SO {insights.stats.totalSO ?? 0} · เก่า {insights.stats.totalOrders ?? 0}</p>
@@ -1207,13 +1207,13 @@ function CustomerDetailModal({
                       </p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">ชำระแล้ว ฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                     </div>
-                    <div className="phopy-card p-3 text-center border border-gray-700/30">
+                    <div className="phopy-card p-3 text-center border border-[var(--border-strong)]">
                       <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ล่าสุด</p>
                       <p className="text-sm font-bold text-white">
                         {lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
                       </p>
                       {insights.stats.daysSinceLastOrder !== undefined && (
-                        <p className={`text-xs mt-0.5 ${insights.stats.daysSinceLastOrder > 60 ? 'text-red-400' : insights.stats.daysSinceLastOrder > 30 ? 'text-yellow-400' : 'text-[var(--fg-4)]'}`}>
+                        <p className={`text-xs mt-0.5 ${insights.stats.daysSinceLastOrder > 60 ? 'text-danger' : insights.stats.daysSinceLastOrder > 30 ? 'text-warning' : 'text-[var(--fg-4)]'}`}>
                           {insights.stats.daysSinceLastOrder} วันที่แล้ว
                         </p>
                       )}
@@ -1252,10 +1252,10 @@ function CustomerDetailModal({
                       </div>
                       <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <AlertCircle className="w-4 h-4 text-orange-400" />
+                          <AlertCircle className="w-4 h-4 text-warning" />
                           <span className="text-xs text-[var(--fg-3)]">ค้างชำระ</span>
                         </div>
-                        <p className="text-lg font-bold text-orange-400">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-lg font-bold text-warning">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                       </div>
                     </div>
                   </div>
@@ -1273,7 +1273,7 @@ function CustomerDetailModal({
               {/* Toolbar */}
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5 text-phopy-indigo" />
+                  <ShoppingCart className="w-5 h-5 text-[var(--primary)]" />
                   ประวัติออเดอร์
                   {orderPage && <span className="text-sm text-[var(--fg-3)] font-normal">({orderPage.pagination.total} รายการ)</span>}
                 </h3>
@@ -1281,7 +1281,7 @@ function CustomerDetailModal({
                   <span className="text-xs text-[var(--fg-3)]">แสดง</span>
                   {[25, 50, 100].map(l => (
                     <button key={l} onClick={() => onOrderLimitChange(l)}
-                      className={`px-2 py-1 text-xs rounded ${orderLimit === l ? 'bg-phopy-indigo text-white' : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]'}`}>
+                      className={`px-2 py-1 text-xs rounded ${orderLimit === l ? 'bg-phopy-indigo text-white' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'}`}>
                       {l}
                     </button>
                   ))}
@@ -1297,7 +1297,7 @@ function CustomerDetailModal({
                       <div key={order.id} className="phopy-card p-4">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-phopy-indigo">{order.orderNumber}</span>
+                            <span className="font-semibold text-[var(--primary)]">{order.orderNumber}</span>
                             {order.source === 'SO' && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/20">SO</span>
                             )}
@@ -1313,7 +1313,7 @@ function CustomerDetailModal({
                             {order.items.map((item: any, idx: number) => (
                               <div key={idx} className="flex justify-between">
                                 <span>{item.productName}</span>
-                                <span className="text-phopy-indigo">x{item.quantity}</span>
+                                <span className="text-[var(--primary)]">x{item.quantity}</span>
                               </div>
                             ))}
                           </div>
@@ -1330,7 +1330,7 @@ function CustomerDetailModal({
                       </span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => onOrderPageChange(orderPageNum - 1)} disabled={orderPageNum <= 1}
-                          className="p-1 rounded hover:bg-white disabled:opacity-30">
+                          className="p-1 rounded hover:bg-[var(--surface-2)] disabled:opacity-30">
                           <ChevronLeft className="w-4 h-4 text-[var(--fg-3)]" />
                         </button>
                         {Array.from({ length: Math.min(5, orderPage.pagination.totalPages) }, (_, i) => {
@@ -1338,13 +1338,13 @@ function CustomerDetailModal({
                           const p = start + i
                           return (
                             <button key={p} onClick={() => onOrderPageChange(p)}
-                              className={`w-7 h-7 text-xs rounded ${p === orderPageNum ? 'bg-phopy-indigo text-white' : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]'}`}>
+                              className={`w-7 h-7 text-xs rounded ${p === orderPageNum ? 'bg-phopy-indigo text-white' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'}`}>
                               {p}
                             </button>
                           )
                         })}
                         <button onClick={() => onOrderPageChange(orderPageNum + 1)} disabled={orderPageNum >= orderPage.pagination.totalPages}
-                          className="p-1 rounded hover:bg-white disabled:opacity-30">
+                          className="p-1 rounded hover:bg-[var(--surface-2)] disabled:opacity-30">
                           <ChevronRight className="w-4 h-4 text-[var(--fg-3)]" />
                         </button>
                       </div>
@@ -1365,7 +1365,7 @@ function CustomerDetailModal({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-                  <Lightbulb className="w-5 h-5 text-phopy-indigo" />สินค้าแนะนำ
+                  <Lightbulb className="w-5 h-5 text-[var(--primary)]" />สินค้าแนะนำ
                 </h3>
                 <button onClick={() => setShowAddRec(!showAddRec)} className="phopy-btn-secondary text-sm flex items-center gap-2">
                   <Plus className="w-4 h-4" />เพิ่ม
@@ -1389,7 +1389,7 @@ function CustomerDetailModal({
                             <p className="text-xs text-[var(--fg-3)]">{product.sku} • {product.category}</p>
                           </div>
                           <button onClick={() => handleAddRecommendation(product)} disabled={addingRec}
-                            className="px-2 py-1 bg-phopy-indigo-50 text-phopy-indigo rounded text-xs hover:bg-phopy-indigo/30">
+                            className="px-2 py-1 bg-[var(--primary-soft)] text-[var(--primary)] rounded text-xs hover:bg-phopy-indigo/30">
                             {addingRec ? '...' : 'เพิ่ม'}
                           </button>
                         </div>
@@ -1412,10 +1412,10 @@ function CustomerDetailModal({
                         <p className="font-semibold text-white text-sm truncate">{rec.productName}</p>
                         <p className="text-xs text-[var(--fg-3)]">{rec.productCategory || '-'}</p>
                         <span className={`text-xs px-2 py-0.5 rounded inline-block mt-1 ${
-                          rec.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
-                          rec.status === 'OFFERED' ? 'bg-blue-500/20 text-blue-400' :
-                          rec.status === 'ACCEPTED' ? 'bg-green-500/20 text-green-400' :
-                          'bg-danger-soft text-red-400'
+                          rec.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning' :
+                          rec.status === 'OFFERED' ? 'bg-[var(--info-soft)] text-blue-400' :
+                          rec.status === 'ACCEPTED' ? 'bg-[var(--success-soft)] text-success' :
+                          'bg-[var(--danger-soft)] text-danger'
                         }`}>
                           {rec.status === 'PENDING' ? 'รอเสนอ' : rec.status === 'OFFERED' ? 'เสนอแล้ว' : rec.status === 'ACCEPTED' ? 'สนใจ' : 'ไม่สนใจ'}
                         </span>
@@ -1424,22 +1424,22 @@ function CustomerDetailModal({
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {rec.status === 'PENDING' && (
                           <button onClick={() => handleUpdateRec(rec.id, 'OFFERED')}
-                            className="px-2 py-1 text-xs rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30">เสนอแล้ว</button>
+                            className="px-2 py-1 text-xs rounded bg-[var(--info-soft)] text-blue-400 hover:bg-blue-500/30">เสนอแล้ว</button>
                         )}
                         {rec.status === 'OFFERED' && (
                           <>
                             <button onClick={() => handleUpdateRec(rec.id, 'ACCEPTED')}
-                              className="px-2 py-1 text-xs rounded bg-green-500/20 text-green-400 hover:bg-green-500/30 flex items-center gap-1">
+                              className="px-2 py-1 text-xs rounded bg-[var(--success-soft)] text-success hover:bg-green-500/30 flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" />สนใจ
                             </button>
                             <button onClick={() => handleUpdateRec(rec.id, 'REJECTED')}
-                              className="px-2 py-1 text-xs rounded bg-danger-soft text-red-400 hover:bg-red-500/30 flex items-center gap-1">
+                              className="px-2 py-1 text-xs rounded bg-[var(--danger-soft)] text-danger hover:bg-[var(--danger-soft)] flex items-center gap-1">
                               <XCircle className="w-3 h-3" />ไม่สนใจ
                             </button>
                           </>
                         )}
                         <button onClick={() => handleDeleteRec(rec.id)}
-                          className="p-1 text-[var(--fg-4)] hover:text-red-400 rounded">
+                          className="p-1 text-[var(--fg-4)] hover:text-danger rounded">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1455,15 +1455,15 @@ function CustomerDetailModal({
           {!insightsLoading && activeTab === 'proposals' && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-                <FileText className="w-5 h-5 text-phopy-indigo" />ใบเสนอราคา (QT) ที่เคยส่ง
+                <FileText className="w-5 h-5 text-[var(--primary)]" />ใบเสนอราคา (QT) ที่เคยส่ง
               </h3>
               {insights && insights.quotations && insights.quotations.length > 0 ? (
                 <div className="space-y-3">
                   {insights.quotations.map((qt) => {
                     const statusColor: Record<string, string> = {
-                      DRAFT: 'bg-gray-500/20 text-[var(--fg-3)]', SENT: 'bg-blue-500/20 text-blue-400',
-                      ACCEPTED: 'bg-green-500/20 text-green-400', REJECTED: 'bg-danger-soft text-red-400',
-                      EXPIRED: 'bg-orange-500/20 text-orange-400', CONVERTED: 'bg-purple-500/20 text-purple-400',
+                      DRAFT: 'bg-[var(--surface-sunken)] text-[var(--fg-3)]', SENT: 'bg-[var(--info-soft)] text-blue-400',
+                      ACCEPTED: 'bg-[var(--success-soft)] text-success', REJECTED: 'bg-[var(--danger-soft)] text-danger',
+                      EXPIRED: 'bg-[var(--warning-soft)] text-warning', CONVERTED: 'bg-purple-500/20 text-purple-400',
                     }
                     const statusTH: Record<string, string> = {
                       DRAFT: 'ร่าง', SENT: 'ส่งแล้ว', ACCEPTED: 'อนุมัติ', REJECTED: 'ปฏิเสธ',
@@ -1473,7 +1473,7 @@ function CustomerDetailModal({
                       <details key={qt.id} className="phopy-card group">
                         <summary className="p-4 cursor-pointer list-none flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="font-semibold text-phopy-indigo">{qt.quotation_number}</span>
+                            <span className="font-semibold text-[var(--primary)]">{qt.quotation_number}</span>
                             <span className={`text-xs px-2 py-0.5 rounded ${statusColor[qt.status] || statusColor.DRAFT}`}>
                               {statusTH[qt.status] || qt.status}
                             </span>
@@ -1555,7 +1555,7 @@ function ActivityLogTab({
 
   const typeConfig = {
     CALL:    { label: 'โทรติดตาม',     icon: Phone,        dot: 'bg-blue-500',   border: 'border-l-blue-500',   badge: 'bg-blue-500/10 text-blue-400',   iconColor: 'text-blue-400'   },
-    EMAIL:   { label: 'ส่งอีเมล',      icon: Mail,         dot: 'bg-green-500',  border: 'border-l-green-500',  badge: 'bg-green-500/10 text-green-400', iconColor: 'text-green-400'  },
+    EMAIL:   { label: 'ส่งอีเมล',      icon: Mail,         dot: 'bg-green-500',  border: 'border-l-green-500',  badge: 'bg-[var(--success-soft)] text-success', iconColor: 'text-success'  },
     MEETING: { label: 'พบลูกค้า',      icon: UserCheck,    dot: 'bg-purple-500', border: 'border-l-purple-500', badge: 'bg-purple-500/10 text-purple-400',iconColor: 'text-purple-400' },
     NOTE:    { label: 'บันทึกเพิ่มเติม',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-[var(--fg-3)]',   iconColor: 'text-[var(--fg-3)]'   },
   } as const
@@ -1584,10 +1584,10 @@ function ActivityLogTab({
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-          <Clock className="w-5 h-5 text-phopy-indigo" />
+          <Clock className="w-5 h-5 text-[var(--primary)]" />
           ประวัติการติดตามลูกค้า
           {activities?.length > 0 && (
-            <span className="text-xs bg-phopy-indigo-50 text-phopy-indigo px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-[var(--primary-soft)] text-[var(--primary)] px-2 py-0.5 rounded-full">
               {activities.length}
             </span>
           )}
@@ -1616,7 +1616,7 @@ function ActivityLogTab({
                   className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all border ${
                     activityType === type
                       ? `${cfg.badge} border-current font-semibold`
-                      : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)] border-[var(--border)]'
+                      : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)] border-[var(--border)]'
                   }`}
                 >
                   <Icon className={`w-3.5 h-3.5 ${activityType === type ? '' : 'opacity-60'}`} />
@@ -1629,12 +1629,12 @@ function ActivityLogTab({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="บันทึกรายละเอียด..."
-            className="w-full bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo min-h-[80px] resize-none"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo min-h-[80px] resize-none"
           />
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => { setShowAddForm(false); setNote('') }}
-              className="px-4 py-1.5 rounded-lg text-sm bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]"
+              className="px-4 py-1.5 rounded-lg text-sm bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]"
             >
               ยกเลิก
             </button>
@@ -1657,7 +1657,7 @@ function ActivityLogTab({
             className={`px-3 py-1 rounded-full text-xs transition-all ${
               filter === 'ALL'
                 ? 'bg-phopy-indigo text-white font-semibold'
-                : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
+                : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
             }`}
           >
             ทั้งหมด ({activities.length})
@@ -1672,7 +1672,7 @@ function ActivityLogTab({
                 className={`px-3 py-1 rounded-full text-xs flex items-center gap-1 transition-all ${
                   filter === type
                     ? `${cfg.badge} font-semibold ring-1 ring-current`
-                    : 'bg-white text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
+                    : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 <Icon className="w-3 h-3" />
@@ -1699,7 +1699,7 @@ function ActivityLogTab({
                   )}
                 </div>
                 {/* Card */}
-                <div className={`flex-1 bg-white rounded-lg p-3 mb-2 border-l-2 ${cfg.border} transition-all group-hover:bg-[var(--surface-2)]`}>
+                <div className={`flex-1 bg-[var(--surface)] rounded-lg p-3 mb-2 border-l-2 ${cfg.border} transition-all group-hover:bg-[var(--surface-2)]`}>
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
@@ -1728,7 +1728,7 @@ function ActivityLogTab({
             {filter !== 'ALL' ? (
               <>
                 <p className="text-[var(--fg-4)]">ไม่มีบันทึกประเภท "{typeConfig[filter as keyof typeof typeConfig]?.label}"</p>
-                <button onClick={() => setFilter('ALL')} className="text-xs text-phopy-indigo mt-2 hover:underline">ดูทั้งหมด</button>
+                <button onClick={() => setFilter('ALL')} className="text-xs text-[var(--primary)] mt-2 hover:underline">ดูทั้งหมด</button>
               </>
             ) : (
               <>
@@ -1816,7 +1816,7 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
   return (
     <div className="space-y-4">
       <h3 className="text-base font-semibold text-[var(--fg-1)] flex items-center gap-2">
-        <Heart className="w-4 h-4 text-phopy-indigo" />สินค้าที่ซื้อบ่อย
+        <Heart className="w-4 h-4 text-[var(--primary)]" />สินค้าที่ซื้อบ่อย
         <span className="text-xs text-[var(--fg-4)] font-normal">รวม {totalQty.toLocaleString()} ชิ้น</span>
       </h3>
 
@@ -1872,11 +1872,11 @@ function StatCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
-          <p className="text-2xl font-bold text-phopy-indigo">
+          <p className="text-2xl font-bold text-[var(--primary)]">
             {value}
           </p>
         </div>
-        <Icon className="w-8 h-8 text-phopy-indigo/50" />
+        <Icon className="w-8 h-8 text-[var(--primary)]/50" />
       </div>
     </div>
   )
@@ -1885,10 +1885,10 @@ function StatCard({
 // Helper function สำหรับ segment badge
 function getSegmentInfo(segment: CustomerSegment) {
   const segmentMap = {
-    VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: '👑', textColor: 'text-yellow-400' },
+    VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: '👑', textColor: 'text-warning' },
     PREMIUM: { label: 'Premium', color: 'from-purple-500 to-pink-500', icon: '⭐', textColor: 'text-purple-400' },
-    GROWING: { label: 'เติบโต', color: 'from-green-500 to-success', icon: '📈', textColor: 'text-green-400' },
-    AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: '⚠️', textColor: 'text-red-400' },
+    GROWING: { label: 'เติบโต', color: 'from-green-500 to-success', icon: '📈', textColor: 'text-success' },
+    AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: '⚠️', textColor: 'text-danger' },
     NEW: { label: 'ใหม่', color: 'from-blue-500 to-cyan-500', icon: '🎯', textColor: 'text-blue-400' },
     SEASONAL: { label: 'ตามฤดู', color: 'from-indigo-500 to-violet-500', icon: '🔄', textColor: 'text-indigo-400' },
     REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: '👤', textColor: 'text-[var(--fg-3)]' },
@@ -1949,7 +1949,7 @@ function CustomerCard({
         {onEdit && (
           <button
             onClick={onEdit}
-            className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors ml-2"
+            className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg transition-colors ml-2"
             title="Edit Customer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1961,20 +1961,20 @@ function CustomerCard({
 
       <div className="space-y-3 mb-4">
         <div className="flex items-center gap-2 text-sm">
-          <Users className="w-4 h-4 text-phopy-indigo" />
+          <Users className="w-4 h-4 text-[var(--primary)]" />
           <span className="text-[var(--fg-3)]">Contact:</span>
           <span className="text-[var(--fg-2)]">{customer.contactName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Mail className="w-4 h-4 text-phopy-indigo" />
+          <Mail className="w-4 h-4 text-[var(--primary)]" />
           <span className="text-[var(--fg-3)]">{customer.email}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Phone className="w-4 h-4 text-phopy-indigo" />
+          <Phone className="w-4 h-4 text-[var(--primary)]" />
           <span className="text-[var(--fg-3)]">{customer.phone}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <MapPin className="w-4 h-4 text-phopy-indigo" />
+          <MapPin className="w-4 h-4 text-[var(--primary)]" />
           <span className="text-[var(--fg-3)]">{customer.city}</span>
         </div>
       </div>
@@ -1982,7 +1982,7 @@ function CustomerCard({
       <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--border)]">
         <div>
           <p className="text-xs text-[var(--fg-3)] mb-1">Orders</p>
-          <p className="text-sm font-semibold text-phopy-indigo">
+          <p className="text-sm font-semibold text-[var(--primary)]">
             {(customer.totalOrders ?? 0).toLocaleString('th-TH')}
           </p>
         </div>
@@ -2089,8 +2089,8 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
   const typeLabel = { EARN: 'รับแต้ม', REDEEM: 'แลกแต้ม', ADJUST: 'ปรับแต้ม' }
   const typeBadge = {
-    EARN:   'bg-success-soft text-green-400 border border-green-500/20',
-    REDEEM: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20',
+    EARN:   'bg-[var(--success-soft)] text-success border border-success/20',
+    REDEEM: 'bg-yellow-500/15 text-warning border border-yellow-500/20',
     ADJUST: 'bg-blue-500/15 text-blue-400 border border-blue-500/20',
   }
 
@@ -2099,10 +2099,10 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
-          <Star className="w-5 h-5 text-yellow-400" />
+          <Star className="w-5 h-5 text-warning" />
           ระบบแต้มสะสม
         </h3>
-        <button onClick={fetchLoyalty} className="p-1.5 text-[var(--fg-3)] hover:text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors">
+        <button onClick={fetchLoyalty} className="p-1.5 text-[var(--fg-3)] hover:text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
@@ -2112,29 +2112,29 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-xs text-[var(--fg-3)] mb-1">แต้มสะสมคงเหลือ</p>
-            <p className="text-4xl font-bold text-yellow-400">{points.toLocaleString()}</p>
+            <p className="text-4xl font-bold text-warning">{points.toLocaleString()}</p>
             <p className="text-xs text-[var(--fg-4)] mt-0.5">แต้ม</p>
           </div>
-          <div className="w-16 h-16 rounded-2xl bg-yellow-500/20 flex items-center justify-center">
-            <Star className="w-8 h-8 text-yellow-400" />
+          <div className="w-16 h-16 rounded-2xl bg-[var(--warning-soft)] flex items-center justify-center">
+            <Star className="w-8 h-8 text-warning" />
           </div>
         </div>
 
         {/* Config info */}
         <div className="grid grid-cols-2 gap-2 text-xs border-t border-yellow-500/10 pt-3">
           <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
-            <Gift className="w-3.5 h-3.5 text-green-400" />
+            <Gift className="w-3.5 h-3.5 text-success" />
             ซื้อ ฿{loyaltyCfg.earnRate.toLocaleString()} = 1 แต้ม
           </div>
           <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
-            <ArrowLeftRight className="w-3.5 h-3.5 text-yellow-400" />
+            <ArrowLeftRight className="w-3.5 h-3.5 text-warning" />
             {loyaltyCfg.redeemRate} แต้ม = ลด ฿1
           </div>
         </div>
 
         {/* Redeem value */}
         {points > 0 && (
-          <div className="mt-2 text-xs text-yellow-400/70">
+          <div className="mt-2 text-xs text-warning/70">
             มูลค่าแต้มปัจจุบัน ≈ ฿{(points / loyaltyCfg.redeemRate).toLocaleString('th-TH', { maximumFractionDigits: 2 })}
           </div>
         )}
@@ -2144,7 +2144,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
           <button
             onClick={() => { setMode(mode === 'earn' ? null : 'earn'); setError(''); setInputPoints(''); setInputAmount(''); setNote('') }}
             className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 transition-all border ${
-              mode === 'earn' ? 'bg-green-500/20 text-green-400 border-green-500/40' : 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20'
+              mode === 'earn' ? 'bg-[var(--success-soft)] text-success border-green-500/40' : 'bg-[var(--success-soft)] text-success border-success/20 hover:bg-[var(--success-soft)]'
             }`}
           >
             <Gift className="w-4 h-4" /> เพิ่มแต้ม
@@ -2153,7 +2153,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             onClick={() => { setMode(mode === 'redeem' ? null : 'redeem'); setError(''); setInputPoints(''); setNote('') }}
             disabled={points < loyaltyCfg.minRedeemPoints}
             className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 transition-all border disabled:opacity-40 disabled:cursor-not-allowed ${
-              mode === 'redeem' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20'
+              mode === 'redeem' ? 'bg-[var(--warning-soft)] text-warning border-yellow-500/40' : 'bg-[var(--warning-soft)] text-warning border-yellow-500/20 hover:bg-[var(--warning-soft)]'
             }`}
           >
             <ArrowLeftRight className="w-4 h-4" /> แลกแต้ม
@@ -2163,8 +2163,8 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
       {/* Earn form */}
       {mode === 'earn' && (
-        <div className="phopy-card p-4 space-y-3 border border-green-500/20">
-          <h4 className="font-semibold text-green-400 text-sm flex items-center gap-2">
+        <div className="phopy-card p-4 space-y-3 border border-success/20">
+          <h4 className="font-semibold text-success text-sm flex items-center gap-2">
             <Gift className="w-4 h-4" /> เพิ่มแต้มให้ลูกค้า
           </h4>
           <div className="grid grid-cols-2 gap-3">
@@ -2190,9 +2190,9 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
               className="phopy-input w-full" placeholder="เช่น ซื้อสินค้า SO-2026-00001" />
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-white text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
             <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 font-semibold">
               {saving ? 'กำลังบันทึก...' : 'เพิ่มแต้ม'}
             </button>
@@ -2203,7 +2203,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
       {/* Redeem form */}
       {mode === 'redeem' && (
         <div className="phopy-card p-4 space-y-3 border border-yellow-500/20">
-          <h4 className="font-semibold text-yellow-400 text-sm flex items-center gap-2">
+          <h4 className="font-semibold text-warning text-sm flex items-center gap-2">
             <ArrowLeftRight className="w-4 h-4" /> แลกแต้มเป็นส่วนลด
           </h4>
           <div className="grid grid-cols-2 gap-3">
@@ -2217,7 +2217,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             </div>
             <div className="flex flex-col justify-end">
               <p className="text-xs text-[var(--fg-3)] mb-1">มูลค่าส่วนลด</p>
-              <p className="text-xl font-bold text-yellow-400">
+              <p className="text-xl font-bold text-warning">
                 ฿{inputPoints ? (parseInt(inputPoints || '0') / loyaltyCfg.redeemRate).toFixed(2) : '0.00'}
               </p>
             </div>
@@ -2227,9 +2227,9 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
               className="phopy-input w-full" placeholder="เช่น แลกส่วนลดสำหรับ SO-2026-00002" />
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-white text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
             <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 font-semibold">
               {saving ? 'กำลังบันทึก...' : 'แลกแต้ม'}
             </button>
@@ -2242,7 +2242,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         <h4 className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2 mb-3">
           <History className="w-4 h-4 text-[var(--fg-3)]" />
           ประวัติการใช้งานแต้ม
-          {transactions.length > 0 && <span className="text-xs bg-white px-2 py-0.5 rounded-full text-[var(--fg-3)]">{transactions.length} รายการ</span>}
+          {transactions.length > 0 && <span className="text-xs bg-[var(--surface)] px-2 py-0.5 rounded-full text-[var(--fg-3)]">{transactions.length} รายการ</span>}
         </h4>
 
         {loading ? (
@@ -2255,11 +2255,11 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         ) : (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="flex items-start gap-3 p-3 bg-var(--surface-2)/60 rounded-lg border border-[var(--border)]/50 hover:border-[var(--border)] transition-colors">
+              <div key={tx.id} className="flex items-start gap-3 p-3 bg-[var(--surface-2)/60 rounded-lg border border-[var(--border)]/50 hover:border-[var(--border)] transition-colors">
                 {/* Icon */}
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-success-soft' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
-                  {tx.type === 'EARN' ? <Gift className="w-4 h-4 text-green-400" />
-                    : tx.type === 'REDEEM' ? <ArrowLeftRight className="w-4 h-4 text-yellow-400" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-[var(--success-soft)]' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
+                  {tx.type === 'EARN' ? <Gift className="w-4 h-4 text-success" />
+                    : tx.type === 'REDEEM' ? <ArrowLeftRight className="w-4 h-4 text-warning" />
                     : <Star className="w-4 h-4 text-blue-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -2267,7 +2267,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeBadge[tx.type]}`}>
                       {typeLabel[tx.type]}
                     </span>
-                    <span className={`text-sm font-bold ${tx.points > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className={`text-sm font-bold ${tx.points > 0 ? 'text-success' : 'text-danger'}`}>
                       {tx.points > 0 ? '+' : ''}{tx.points.toLocaleString()} แต้ม
                     </span>
                   </div>

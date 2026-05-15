@@ -124,19 +124,19 @@ const fmtDate = (s: string) =>
 const SOURCE_BADGE: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   POS_SALE:             { label: 'POS ขาย',      color: 'bg-cyan-500/20 text-cyan-400',    icon: <ShoppingBag className="w-3 h-3" /> },
   POS_CLEARING_TRANSFER:{ label: 'POS Clearing',  color: 'bg-purple-500/20 text-purple-400',icon: <ArrowUpDown className="w-3 h-3" /> },
-  PURCHASE_ORDER:       { label: 'ซื้อ',           color: 'bg-orange-500/20 text-orange-400',icon: <ShoppingCart className="w-3 h-3" /> },
-  SALES_ORDER:          { label: 'SO ขาย',         color: 'bg-green-500/20 text-green-400',  icon: <ShoppingCart className="w-3 h-3" /> },
-  INVOICE:              { label: 'ใบแจ้งหนี้',     color: 'bg-blue-500/20 text-blue-400',    icon: <FileText className="w-3 h-3" /> },
+  PURCHASE_ORDER:       { label: 'ซื้อ',           color: 'bg-[var(--warning-soft)] text-warning',icon: <ShoppingCart className="w-3 h-3" /> },
+  SALES_ORDER:          { label: 'SO ขาย',         color: 'bg-[var(--success-soft)] text-success',  icon: <ShoppingCart className="w-3 h-3" /> },
+  INVOICE:              { label: 'ใบแจ้งหนี้',     color: 'bg-[var(--info-soft)] text-blue-400',    icon: <FileText className="w-3 h-3" /> },
   PAYMENT:              { label: 'รับชำระ',         color: 'bg-emerald-500/20 text-emerald-400', icon: <Zap className="w-3 h-3" /> },
-  PURCHASE_INVOICE:     { label: 'ใบแจ้งหนี้ซื้อ', color: 'bg-orange-500/20 text-orange-400',icon: <FileText className="w-3 h-3" /> },
-  SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-danger-soft text-red-400',   icon: <ShoppingCart className="w-3 h-3" /> },
-  MANUAL:               { label: 'Manual',         color: 'bg-gray-500/20 text-[var(--fg-3)]',    icon: <FileText className="w-3 h-3" /> },
+  PURCHASE_INVOICE:     { label: 'ใบแจ้งหนี้ซื้อ', color: 'bg-[var(--warning-soft)] text-warning',icon: <FileText className="w-3 h-3" /> },
+  SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-[var(--danger-soft)] text-danger',   icon: <ShoppingCart className="w-3 h-3" /> },
+  MANUAL:               { label: 'Manual',         color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)]',    icon: <FileText className="w-3 h-3" /> },
 }
 
 const getSourceBadge = (refType?: string, isAuto?: boolean) => {
   if (refType && SOURCE_BADGE[refType]) return SOURCE_BADGE[refType]
   if (!isAuto) return SOURCE_BADGE.MANUAL
-  return { label: 'ระบบ', color: 'bg-blue-500/20 text-blue-400', icon: <Zap className="w-3 h-3" /> }
+  return { label: 'ระบบ', color: 'bg-[var(--info-soft)] text-blue-400', icon: <Zap className="w-3 h-3" /> }
 }
 
 // ==================== Main Component ====================
@@ -239,20 +239,20 @@ export default function JournalEntries() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <FileText className="w-7 h-7 text-phopy-indigo" />
+            <FileText className="w-7 h-7 text-[var(--primary)]" />
             สมุดรายวัน
           </h1>
           <p className="text-[var(--fg-3)] text-sm mt-0.5">
             {filtered.length} รายการ
-            {draftCount > 0 && <span className="ml-2 text-yellow-400">· {draftCount} รอดำเนินการ</span>}
+            {draftCount > 0 && <span className="ml-2 text-warning">· {draftCount} รอดำเนินการ</span>}
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={fetchEntries} className="p-2 rounded-lg bg-white border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+          <button onClick={fetchEntries} className="p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => setShowQuickModal(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-phopy-indigo rounded-lg hover:bg-phopy-indigo/10 transition-colors">
+            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors">
             <Zap className="w-4 h-4" /> บันทึกด่วน
           </button>
           <button onClick={() => setShowCreateModal(true)}
@@ -264,21 +264,21 @@ export default function JournalEntries() {
 
       {/* Summary Bar */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white border border-[var(--border)] rounded-xl px-4 py-3">
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม</p>
-          <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalDebit)}</p>
+          <p className="text-lg font-bold text-[var(--primary)]">฿{fmt(totalDebit)}</p>
         </div>
-        <div className="bg-white border border-[var(--border)] rounded-xl px-4 py-3">
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-xs text-[var(--fg-4)] mb-0.5">เครดิตรวม</p>
-          <p className="text-lg font-bold text-phopy-indigo">฿{fmt(totalCredit)}</p>
+          <p className="text-lg font-bold text-[var(--primary)]">฿{fmt(totalCredit)}</p>
         </div>
         <div className={`rounded-xl px-4 py-3 border ${
           Math.abs(totalDebit - totalCredit) < 0.01
             ? 'bg-success/10 border-success/30'
-            : 'bg-red-500/10 border-red-500/30'
+            : 'bg-[var(--danger-soft)] border-danger/30'
         }`}>
           <p className="text-xs text-[var(--fg-4)] mb-0.5">สมดุล</p>
-          <p className={`text-lg font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-success' : 'text-red-400'}`}>
+          <p className={`text-lg font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-success' : 'text-danger'}`}>
             {Math.abs(totalDebit - totalCredit) < 0.01 ? '✓ สมดุล' : `ต่าง ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
           </p>
         </div>
@@ -290,24 +290,24 @@ export default function JournalEntries() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
           <input type="text" placeholder="ค้นหาเลขที่ หรือคำอธิบาย..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex gap-2">
           <input type="date" value={dateRange.start}
             onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-            className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
           <span className="self-center text-[var(--fg-4)]">–</span>
           <input type="date" value={dateRange.end}
             onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-            className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
           {(['all', 'draft', 'posted'] as const).map(f => (
             <button key={f} onClick={() => setFilterPosted(f)}
-              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-white text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               {f === 'all' ? 'ทั้งหมด' : f === 'draft' ? 'รอดำเนินการ' : 'ยืนยันแล้ว'}
             </button>
           ))}
@@ -315,7 +315,7 @@ export default function JournalEntries() {
       </div>
 
       {/* Entries List */}
-      <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
         {/* Table header */}
         <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">
           <span>เลขที่</span>
@@ -345,7 +345,7 @@ export default function JournalEntries() {
                   onClick={() => openDetail(entry)}
                   className="grid grid-cols-1 sm:grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-3.5 hover:bg-[var(--bg)]/40 cursor-pointer transition-colors items-center">
                   {/* Entry number */}
-                  <span className="font-mono text-sm text-phopy-indigo font-semibold">
+                  <span className="font-mono text-sm text-[var(--primary)] font-semibold">
                     {entry.entryNumber || <span className="text-[var(--fg-4)] italic text-xs">ไม่มีเลขที่</span>}
                   </span>
                   {/* Date */}
@@ -377,7 +377,7 @@ export default function JournalEntries() {
                         <Lock className="w-3 h-3" /> ยืนยัน
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-xs text-warning bg-[var(--warning-soft)] px-2 py-1 rounded-full">
                         <Unlock className="w-3 h-3" /> Draft
                       </span>
                     )}
@@ -387,11 +387,11 @@ export default function JournalEntries() {
                     {!entry.isPosted && (
                       <>
                         <button onClick={e => handlePost(entry.id, e)}
-                          className="p-1.5 rounded-lg hover:bg-success-soft text-success transition-colors" title="ยืนยัน">
+                          className="p-1.5 rounded-lg hover:bg-[var(--success-soft)] text-success transition-colors" title="ยืนยัน">
                           <CheckCircle className="w-4 h-4" />
                         </button>
                         <button onClick={e => handleDelete(entry.id, entry.isPosted, e)}
-                          className="p-1.5 rounded-lg hover:bg-danger-soft text-red-400 transition-colors" title="ลบ">
+                          className="p-1.5 rounded-lg hover:bg-[var(--danger-soft)] text-danger transition-colors" title="ลบ">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </>
@@ -457,16 +457,16 @@ function DetailModal({ entry, loading, onClose, onPost }: {
   const creditLines = entry.lines?.filter(l => l.credit > 0) ?? []
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-start justify-between shrink-0">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-lg font-bold font-mono text-phopy-indigo">{entry.entryNumber}</span>
+              <span className="text-lg font-bold font-mono text-[var(--primary)]">{entry.entryNumber}</span>
               <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${badge.color}`}>
                 {badge.icon}{badge.label}
               </span>
@@ -475,7 +475,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
                   <Lock className="w-3 h-3" /> ยืนยันแล้ว
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center gap-1 text-xs text-warning bg-[var(--warning-soft)] px-2 py-0.5 rounded-full">
                   <Unlock className="w-3 h-3" /> รอดำเนินการ
                 </span>
               )}
@@ -544,7 +544,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
               <div className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${
                 Math.abs(entry.totalDebit - entry.totalCredit) < 0.01
                   ? 'bg-success/10 border border-success/30 text-success'
-                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                  : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
               }`}>
                 <span className="flex items-center gap-2">
                   <Calculator className="w-4 h-4" /> ตรวจสอบสมดุล
@@ -568,7 +568,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
           {!entry.isPosted && (
             <button onClick={() => onPost(entry.id)}
-              className="flex items-center gap-2 px-5 py-2 bg-success-soft border border-success/40 text-success font-medium rounded-lg hover:bg-success/30 text-sm">
+              className="flex items-center gap-2 px-5 py-2 bg-[var(--success-soft)] border border-success/40 text-success font-medium rounded-lg hover:bg-success/30 text-sm">
               <CheckCircle className="w-4 h-4" /> ยืนยันรายการ
             </button>
           )}
@@ -655,14 +655,14 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Zap className="w-5 h-5 text-phopy-indigo" /> บันทึกรายการด่วน
+            <Zap className="w-5 h-5 text-[var(--primary)]" /> บันทึกรายการด่วน
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
         </div>
@@ -671,11 +671,11 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
           {/* Type toggle */}
           <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
             <button onClick={() => switchType('expense')}
-              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'expense' ? 'bg-danger-soft text-red-400 border-r border-[var(--border)]' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] border-r border-[var(--border)]'}`}>
+              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'expense' ? 'bg-[var(--danger-soft)] text-danger border-r border-[var(--border)]' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)] border-r border-[var(--border)]'}`}>
               รายจ่าย
             </button>
             <button onClick={() => switchType('income')}
-              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'income' ? 'bg-success-soft text-success' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              className={`flex-1 py-2.5 font-medium transition-colors ${entryType === 'income' ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               รายรับ
             </button>
           </div>
@@ -697,14 +697,14 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
           {/* No accounts warning */}
           {accountsLoaded && accounts.length === 0 && (
-            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2.5 text-xs text-yellow-400">
+            <div className="rounded-lg border border-warning/30 bg-[var(--warning-soft)] px-3 py-2.5 text-xs text-warning">
               ⚠️ ยังไม่มีผังบัญชี — กรุณาไปที่ <strong>Chart of Accounts</strong> แล้วกด Initialize ก่อน
             </div>
           )}
 
           {/* DR Account */}
           <div>
-            <label className="block text-xs text-yellow-400 mb-1.5 font-medium">
+            <label className="block text-xs text-warning mb-1.5 font-medium">
               DR (เดบิต) — {entryType === 'expense' ? 'ค่าใช้จ่ายอะไร?' : 'รับเงินที่ไหน?'}
             </label>
             <select value={drAccountId} onChange={e => setDrAccountId(e.target.value)}
@@ -745,7 +745,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               </div>
               <div className="px-3 py-2 space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-yellow-400 font-mono text-xs">DR</span>
+                  <span className="text-warning font-mono text-xs">DR</span>
                   <span className="text-white text-xs flex-1 ml-2 truncate">{drAccount?.code} {drAccount?.name}</span>
                   <span className="text-white font-mono text-xs ml-2">{fmt(parsedAmount)}</span>
                 </div>
@@ -836,11 +836,11 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
   const LineRow = ({ l, i }: { l: typeof lines[0] & { i: number }; i: number }) => (
     <div className="space-y-2 p-3 bg-[var(--bg)] rounded-lg relative">
-      <button onClick={() => removeLine(l.i)} className="absolute top-2 right-2 p-1 text-[var(--fg-4)] hover:text-red-400">
+      <button onClick={() => removeLine(l.i)} className="absolute top-2 right-2 p-1 text-[var(--fg-4)] hover:text-danger">
         <X className="w-3.5 h-3.5" />
       </button>
       <select value={l.accountId} onChange={e => updateLine(l.i, 'accountId', e.target.value)}
-        className="w-full px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
+        className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
         <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
         {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map(type => {
           const group = accounts.filter(a => a.type === type)
@@ -856,34 +856,34 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="คำอธิบาย (optional)" value={l.description}
           onChange={e => updateLine(l.i, 'description', e.target.value)}
-          className="px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
+          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Dr.</span>
           <input type="number" placeholder="0" value={l.debit}
             onChange={e => updateLine(l.i, 'debit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Cr.</span>
           <input type="number" placeholder="0" value={l.credit}
             onChange={e => updateLine(l.i, 'credit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
         </div>
       </div>
     </div>
   )
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-phopy-indigo" /> บันทึกรายการคู่
+            <FileText className="w-5 h-5 text-[var(--primary)]" /> บันทึกรายการคู่
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
         </div>
@@ -909,13 +909,13 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
             {/* Debit */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-yellow-400 uppercase tracking-wide">เดบิต (Dr.)</span>
-                <span className="text-xs font-mono text-yellow-400">฿{fmt(totalDebit)}</span>
+                <span className="text-xs font-semibold text-warning uppercase tracking-wide">เดบิต (Dr.)</span>
+                <span className="text-xs font-mono text-warning">฿{fmt(totalDebit)}</span>
               </div>
               <div className="space-y-2">
                 {debitLines.map((l) => <LineRow key={l.i} l={l} i={l.i} />)}
                 <button onClick={() => addLine('debit')}
-                  className="w-full py-2 border border-dashed border-yellow-500/30 text-yellow-400/60 hover:text-yellow-400 hover:border-yellow-500/60 rounded-lg text-xs transition-colors">
+                  className="w-full py-2 border border-dashed border-warning/30 text-warning/60 hover:text-warning hover:border-warning/60 rounded-lg text-xs transition-colors">
                   + เพิ่มบรรทัดเดบิต
                 </button>
               </div>
@@ -929,7 +929,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               <div className="space-y-2">
                 {creditLines.map((l) => <LineRow key={l.i} l={l} i={l.i} />)}
                 <button onClick={() => addLine('credit')}
-                  className="w-full py-2 border border-dashed border-blue-500/30 text-blue-400/60 hover:text-blue-400 hover:border-blue-500/60 rounded-lg text-xs transition-colors">
+                  className="w-full py-2 border border-dashed border-info/30 text-blue-400/60 hover:text-blue-400 hover:border-blue-500/60 rounded-lg text-xs transition-colors">
                   + เพิ่มบรรทัดเครดิต
                 </button>
               </div>
@@ -938,9 +938,9 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
 
           {/* Balance Check */}
           <div className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm ${
-            balanced ? 'bg-success/10 border border-success/30' : 'bg-red-500/10 border border-red-500/30'
+            balanced ? 'bg-success/10 border border-success/30' : 'bg-[var(--danger-soft)] border border-danger/30'
           }`}>
-            <span className={`flex items-center gap-2 ${balanced ? 'text-success' : 'text-red-400'}`}>
+            <span className={`flex items-center gap-2 ${balanced ? 'text-success' : 'text-danger'}`}>
               <Calculator className="w-4 h-4" />
               {balanced ? '✓ สมดุล — พร้อมบันทึก' : `ไม่สมดุล: ต่างกัน ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
             </span>

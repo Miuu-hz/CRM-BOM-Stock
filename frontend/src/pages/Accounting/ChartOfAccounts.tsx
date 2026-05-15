@@ -34,11 +34,11 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
   const isExpanded = expandedIds.has(account.id)
   
   const typeColors: Record<AccountType, string> = {
-    ASSET: 'text-green-400 border-green-400/30 bg-green-400/10',
-    LIABILITY: 'text-red-400 border-red-400/30 bg-red-400/10',
+    ASSET: 'text-success border-success/30 bg-[var(--success-soft)]',
+    LIABILITY: 'text-danger border-danger/30 bg-[var(--danger-soft)]',
     EQUITY: 'text-purple-400 border-purple-400/30 bg-purple-400/10',
     REVENUE: 'text-cyan-400 border-cyan-400/30 bg-cyan-400/10',
-    EXPENSE: 'text-orange-400 border-orange-400/30 bg-orange-400/10',
+    EXPENSE: 'text-warning border-warning/30 bg-[var(--warning-soft)]',
   }
   
   const typeIcons: Record<AccountType, any> = {
@@ -106,7 +106,7 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
             </button>
             <button
               onClick={() => onDelete(account)}
-              className="p-1.5 hover:bg-danger-soft rounded-lg text-red-400"
+              className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg text-danger"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -291,7 +291,7 @@ const ChartOfAccounts = () => {
       <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-8 h-8 text-phopy-indigo" />
+            <BookOpen className="w-8 h-8 text-[var(--primary)]" />
             ผังบัญชี (Chart of Accounts)
           </h1>
           <p className="text-[var(--fg-3)] mt-1">จัดการผังบัญชีตามประมวลบัญชีไทย</p>
@@ -321,19 +321,19 @@ const ChartOfAccounts = () => {
         
         {/* Init Confirmation Modal */}
         {showInitConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4">
             <div className="phopy-card max-w-md w-full p-6">
               <div className="flex items-center gap-3 mb-4">
-                <AlertCircle className="w-8 h-8 text-yellow-400" />
+                <AlertCircle className="w-8 h-8 text-warning" />
                 <h3 className="text-lg font-bold text-white">ยืนยันการสร้างผังบัญชี</h3>
               </div>
               <ul className="space-y-2 text-sm text-[var(--fg-2)] mb-6">
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  <CheckCircle className="w-4 h-4 text-success" />
                   บัญชีสินทรัพย์ (1xxxx) - เงินสด ลูกหนี้ สต็อก
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-red-400" />
+                  <CheckCircle className="w-4 h-4 text-danger" />
                   บัญชีหนี้สิน (2xxxx) - เจ้าหนี้ เงินกู้
                 </li>
                 <li className="flex items-center gap-2">
@@ -345,7 +345,7 @@ const ChartOfAccounts = () => {
                   บัญชีรายได้ (4xxxx) - รายได้ขาย รายได้อื่น
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-orange-400" />
+                  <CheckCircle className="w-4 h-4 text-warning" />
                   บัญชีค่าใช้จ่าย (5xxxx) - ต้นทุน ค่าใช้จ่ายดำเนินงาน
                 </li>
               </ul>
@@ -377,7 +377,7 @@ const ChartOfAccounts = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-8 h-8 text-phopy-indigo" />
+            <BookOpen className="w-8 h-8 text-[var(--primary)]" />
             ผังบัญชี (Chart of Accounts)
           </h1>
           <p className="text-[var(--fg-3)] mt-1">
@@ -545,15 +545,15 @@ const ChartOfAccounts = () => {
                                 isActive: account.isActive,
                               })
                             }}
-                            className="p-1.5 hover:bg-phopy-indigo-50 rounded-lg"
+                            className="p-1.5 hover:bg-[var(--primary-soft)] rounded-lg"
                           >
-                            <Edit className="w-4 h-4 text-phopy-indigo" />
+                            <Edit className="w-4 h-4 text-[var(--primary)]" />
                           </button>
                           <button
                             onClick={() => handleDelete(account)}
-                            className="p-1.5 hover:bg-danger-soft rounded-lg"
+                            className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg"
                           >
-                            <Trash2 className="w-4 h-4 text-red-400" />
+                            <Trash2 className="w-4 h-4 text-danger" />
                           </button>
                         </div>
                       )}
@@ -575,7 +575,7 @@ const ChartOfAccounts = () => {
 
       {/* Create/Edit Modal */}
       {(showCreateModal || editingAccount) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}

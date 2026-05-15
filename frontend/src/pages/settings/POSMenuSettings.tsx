@@ -188,12 +188,12 @@ export default function POSMenuSettings() {
           <p className="text-[var(--fg-3)] mt-1">Configure which products are available for sale in POS</p>
         </div>
         
-        <div className="flex bg-white rounded-lg p-1">
+        <div className="flex bg-[var(--surface)] rounded-lg p-1">
           <button
             onClick={() => setActiveTab('menus')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
               activeTab === 'menus'
-                ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                 : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
             }`}
           >
@@ -204,7 +204,7 @@ export default function POSMenuSettings() {
             onClick={() => setActiveTab('categories')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
               activeTab === 'categories'
-                ? 'bg-phopy-indigo-50 text-phopy-indigo'
+                ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                 : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
             }`}
           >
@@ -219,11 +219,11 @@ export default function POSMenuSettings() {
         type="button"
         onClick={() => !savingBomSetting && handleToggleBomDeduct(!posBomDeduct)}
         disabled={savingBomSetting}
-        className="w-full flex items-center justify-between gap-4 p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/40 transition-colors text-left disabled:opacity-60"
+        className="w-full flex items-center justify-between gap-4 p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl hover:border-phopy-indigo/40 transition-colors text-left disabled:opacity-60"
       >
         <div>
           <p className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2">
-            <Package className="w-4 h-4 text-phopy-indigo" />
+            <Package className="w-4 h-4 text-[var(--primary)]" />
             ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน
           </p>
           <p className="text-xs text-[var(--fg-4)] mt-0.5 ml-6">
@@ -233,7 +233,7 @@ export default function POSMenuSettings() {
         {savingBomSetting
           ? <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin flex-shrink-0" />
           : posBomDeduct
-            ? <ToggleRight className="w-8 h-8 text-phopy-indigo flex-shrink-0" />
+            ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
             : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />
         }
       </button>
@@ -249,14 +249,14 @@ export default function POSMenuSettings() {
                 placeholder="Search menus..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
+                className="w-full pl-10 pr-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
               />
             </div>
             
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 bg-white border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+              className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
             >
               <option value="all">All Categories</option>
               {categories.map(cat => (
@@ -280,25 +280,25 @@ export default function POSMenuSettings() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Total Menus</p>
               <p className="text-2xl font-bold text-white">{menus.length}</p>
             </div>
-            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Available</p>
               <p className="text-2xl font-bold text-success">
                 {menus.filter(m => m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Unavailable</p>
-              <p className="text-2xl font-bold text-red-400">
+              <p className="text-2xl font-bold text-danger">
                 {menus.filter(m => !m.is_available).length}
               </p>
             </div>
-            <div className="p-4 bg-white border border-[var(--border)] rounded-xl">
+            <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">Categories</p>
-              <p className="text-2xl font-bold text-phopy-indigo">{categories.length}</p>
+              <p className="text-2xl font-bold text-[var(--primary)]">{categories.length}</p>
             </div>
           </div>
 
@@ -309,7 +309,7 @@ export default function POSMenuSettings() {
               <p className="text-[var(--fg-3)] mt-2">Loading...</p>
             </div>
           ) : filteredMenus.length === 0 ? (
-            <div className="text-center py-12 bg-white border border-[var(--border)] rounded-xl">
+            <div className="text-center py-12 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <Store className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
               <p className="text-[var(--fg-3)]">No menus found</p>
               <p className="text-sm text-[var(--fg-4)] mt-1">
@@ -324,7 +324,7 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all group"
+                  className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -337,7 +337,7 @@ export default function POSMenuSettings() {
                           {menu.category_name || 'Uncategorized'}
                         </span>
                         {menu.bom_id && (
-                          <span className="text-xs px-1.5 py-0.5 bg-phopy-indigo-50 text-phopy-indigo rounded">
+                          <span className="text-xs px-1.5 py-0.5 bg-[var(--primary-soft)] text-[var(--primary)] rounded">
                             BOM v{menu.bom_version}
                           </span>
                         )}
@@ -369,13 +369,13 @@ export default function POSMenuSettings() {
                           setEditingMenu(menu)
                           setShowMenuModal(true)
                         }}
-                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => deleteMenu(menu.id)}
-                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)]"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -438,7 +438,7 @@ export default function POSMenuSettings() {
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-white border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all"
+                  className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl hover:border-phopy-indigo/50 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -463,13 +463,13 @@ export default function POSMenuSettings() {
                           setEditingCategory(category)
                           setShowCategoryModal(true)
                         }}
-                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => deleteCategory(category.id)}
-                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10"
+                        className="p-2 rounded-lg text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)]"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -682,13 +682,13 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
@@ -740,12 +740,12 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       className="w-full p-4 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-left hover:border-phopy-indigo/50 transition-all flex items-center justify-between group"
                     >
                       <div>
-                        <p className="font-medium text-white group-hover:text-phopy-indigo">
+                        <p className="font-medium text-white group-hover:text-[var(--primary)]">
                           {product.name}
                         </p>
                         <p className="text-sm text-[var(--fg-4)]">{product.code}</p>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-[var(--fg-4)] group-hover:text-phopy-indigo" />
+                      <ChevronRight className="w-5 h-5 text-[var(--fg-4)] group-hover:text-[var(--primary)]" />
                     </button>
                   ))}
                 </div>
@@ -778,7 +778,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   <label className="block text-sm text-[var(--fg-3)] mb-1">
                     BOM (Bill of Materials)
                     {boms.length > 0 && (
-                      <span className="text-phopy-indigo ml-1">({boms.length} available)</span>
+                      <span className="text-[var(--primary)] ml-1">({boms.length} available)</span>
                     )}
                   </label>
                   <select
@@ -809,7 +809,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
 
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-1">
-                    POS Price <span className="text-red-400">*</span>
+                    POS Price <span className="text-danger">*</span>
                   </label>
                   <div className="relative">
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
@@ -923,7 +923,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   type="checkbox"
                   checked={formData.is_available}
                   onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
-                  className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
+                  className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
                 />
                 <span className="text-white">Available for sale</span>
               </label>
@@ -1045,13 +1045,13 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white border border-[var(--border)] rounded-2xl w-full max-w-md"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
@@ -1068,7 +1068,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">
-              Name <span className="text-red-400">*</span>
+              Name <span className="text-danger">*</span>
             </label>
             <input
               type="text"

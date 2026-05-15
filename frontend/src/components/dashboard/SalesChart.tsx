@@ -31,7 +31,7 @@ function SalesChart() {
           </h2>
         </div>
         <div className="flex gap-2">
-          <button className="px-3 py-1 text-xs rounded-lg bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/30">
+          <button className="px-3 py-1 text-xs rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30">
             7 Days
           </button>
           <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
@@ -89,7 +89,7 @@ function SalesChart() {
       <div className="mt-4 grid grid-cols-3 gap-4">
         <div className="text-center">
           <p className="text-xs text-[var(--fg-3)] mb-1">Total Sales</p>
-          <p className="text-lg font-bold text-phopy-indigo">฿22.7M</p>
+          <p className="text-lg font-bold text-[var(--primary)]">฿22.7M</p>
         </div>
         <div className="text-center">
           <p className="text-xs text-[var(--fg-3)] mb-1">Avg. Order Value</p>
@@ -97,7 +97,7 @@ function SalesChart() {
         </div>
         <div className="text-center">
           <p className="text-xs text-[var(--fg-3)] mb-1">Total Orders</p>
-          <p className="text-lg font-bold text-phopy-indigo">366</p>
+          <p className="text-lg font-bold text-[var(--primary)]">366</p>
         </div>
       </div>
     </div>

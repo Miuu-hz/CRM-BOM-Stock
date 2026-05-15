@@ -42,8 +42,10 @@ function Header({ onMenuClick }: HeaderProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [showNotifications, setShowNotifications] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
 
   // Debounce search
   useEffect(() => {
@@ -77,6 +79,9 @@ function Header({ onMenuClick }: HeaderProps) {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setShowResults(false)
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setShowNotifications(false)
       }
     }
 
@@ -189,7 +194,7 @@ function Header({ onMenuClick }: HeaderProps) {
     : 0
 
   return (
-    <header className="bg-white/92 backdrop-blur-xl border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
+    <header className="phopy-header border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
       <div className="flex items-center justify-between h-full">
         {/* Left Section */}
         <div className="flex items-center gap-4">
@@ -217,7 +222,7 @@ function Header({ onMenuClick }: HeaderProps) {
               className="phopy-input pl-10 pr-10 w-64 lg:w-96"
             />
             {isSearching ? (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-phopy-indigo animate-spin" aria-hidden="true" />
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--primary)] animate-spin" aria-hidden="true" />
             ) : searchQuery ? (
               <button
                 onClick={clearSearch}
@@ -235,7 +240,7 @@ function Header({ onMenuClick }: HeaderProps) {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="absolute top-full mt-2 left-0 right-0 w-[500px] max-h-[70vh] overflow-y-auto bg-white border border-[var(--border)] rounded-lg shadow-3"
+                  className="absolute top-full mt-2 left-0 right-0 w-[500px] max-h-[70vh] overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-3"
                 >
                   {searchError && !isSearching && (
                     <div className="p-6 text-center text-danger">
@@ -264,7 +269,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Users}
                           items={searchResults.customers}
                           onItemClick={handleResultClick}
-                          color="text-phopy-indigo"
+                          color="text-[var(--primary)]"
                         />
                       )}
 
@@ -330,7 +335,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Truck}
                           items={searchResults.suppliers}
                           onItemClick={handleResultClick}
-                          color="text-phopy-indigo"
+                          color="text-[var(--primary)]"
                         />
                       )}
 
@@ -352,7 +357,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={Wrench}
                           items={searchResults.work_orders}
                           onItemClick={handleResultClick}
-                          color="text-phopy-indigo"
+                          color="text-[var(--primary)]"
                         />
                       )}
 
@@ -374,7 +379,7 @@ function Header({ onMenuClick }: HeaderProps) {
                           icon={FileText}
                           items={searchResults.quotations}
                           onItemClick={handleResultClick}
-                          color="text-phopy-indigo"
+                          color="text-[var(--primary)]"
                         />
                       )}
 
@@ -403,7 +408,8 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => navigate('/ai')}
-            className="hidden md:flex items-center gap-2 h-10 px-3 rounded-md bg-[var(--ink-900)] text-white text-sm font-semibold cursor-pointer hover:bg-[var(--ink-700)] transition-colors"
+            className="hidden md:flex items-center gap-2 h-10 px-3 rounded-[10px] text-white text-sm font-semibold cursor-pointer hover:opacity-90 transition-all shadow-1"
+            style={{ background: 'linear-gradient(120deg, #3949E5, #2632A8)' }}
             aria-label="ถาม Phopy AI"
           >
             <Sparkles className="w-4 h-4" />
@@ -411,15 +417,38 @@ function Header({ onMenuClick }: HeaderProps) {
           </motion.button>
 
           {/* Notifications */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-            aria-label="แจ้งเตือน"
-          >
-            <Bell className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-success rounded-full" aria-hidden="true" />
-          </motion.button>
+          <div ref={notifRef} className="relative">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowNotifications(v => !v)}
+              className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+              aria-label="แจ้งเตือน"
+              aria-expanded={showNotifications}
+            >
+              <Bell className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
+            </motion.button>
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-3 z-50 overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+                    <span className="text-sm font-semibold text-[var(--fg-1)]">การแจ้งเตือน</span>
+                    <span className="text-xs text-[var(--fg-4)]">ทั้งหมด</span>
+                  </div>
+                  <div className="py-10 flex flex-col items-center justify-center gap-2">
+                    <Bell className="w-8 h-8 text-[var(--fg-4)]" />
+                    <p className="text-sm text-[var(--fg-3)]">ยังไม่มีการแจ้งเตือน</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* Cashier - Quick Access */}
           <motion.button
@@ -429,7 +458,7 @@ function Header({ onMenuClick }: HeaderProps) {
             className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="ระบบขายหน้าร้าน"
           >
-            <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+            <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
           </motion.button>
 
           {/* Theme Toggle */}
@@ -441,7 +470,7 @@ function Header({ onMenuClick }: HeaderProps) {
             aria-label={theme === 'light' ? 'เปลี่ยนเป็นธีมมืด' : 'เปลี่ยนเป็นธีมสว่าง'}
           >
             {theme === 'light' ? (
-              <Moon className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+              <Moon className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
             ) : (
               <Sun className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-mango transition-colors" />
             )}
@@ -455,13 +484,13 @@ function Header({ onMenuClick }: HeaderProps) {
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="การตั้งค่า"
           >
-            <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-phopy-indigo transition-colors" />
+            <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
           </motion.button>
 
           {/* User Profile */}
           <motion.div
             whileHover={{ scale: 1.02 }}
-            className="flex items-center gap-3 pl-3 pr-4 py-1.5 rounded-lg bg-white border border-[var(--border)] hover:border-[var(--border-strong)] transition-all cursor-pointer"
+            className="flex items-center gap-3 pl-3 pr-4 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--border-strong)] transition-all cursor-pointer"
             onClick={() => navigate('/settings')}
           >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
@@ -513,9 +542,9 @@ function ResultSection({
             key={`${item.type}-${item.id}`}
             whileHover={{ x: 4 }}
             onClick={() => onItemClick(item)}
-            className="w-full text-left px-4 py-2 rounded-lg hover:bg-phopy-indigo-50 transition-colors group"
+            className="w-full text-left px-4 py-2 rounded-lg hover:bg-[var(--primary-soft)] transition-colors group"
           >
-            <p className="text-[var(--fg-1)] group-hover:text-phopy-indigo transition-colors text-sm">
+            <p className="text-[var(--fg-1)] group-hover:text-[var(--primary)] transition-colors text-sm">
               {item.label}
             </p>
             <p className="text-xs text-[var(--fg-4)]">{item.subtitle}</p>

@@ -20,19 +20,19 @@ import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  DRAFT: { label: 'Draft', color: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30', icon: FileText },
-  PLANNED: { label: 'Planned', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Clock },
-  IN_PROGRESS: { label: 'In Progress', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', icon: Play },
-  ON_HOLD: { label: 'On Hold', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: Pause },
-  COMPLETED: { label: 'Completed', color: 'bg-success-soft text-success border-success/30', icon: CheckCircle },
-  CANCELLED: { label: 'Cancelled', color: 'bg-danger-soft text-red-400 border-red-500/30', icon: X },
+  DRAFT: { label: 'Draft', color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
+  PLANNED: { label: 'Planned', color: 'bg-[var(--info-soft)] text-blue-400 border-info/30', icon: Clock },
+  IN_PROGRESS: { label: 'In Progress', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Play },
+  ON_HOLD: { label: 'On Hold', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Pause },
+  COMPLETED: { label: 'Completed', color: 'bg-[var(--success-soft)] text-success border-success/30', icon: CheckCircle },
+  CANCELLED: { label: 'Cancelled', color: 'bg-[var(--danger-soft)] text-danger border-danger/30', icon: X },
 }
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  URGENT: { label: 'Urgent', color: 'text-red-400 bg-danger-soft border-red-500/30' },
-  HIGH: { label: 'High', color: 'text-orange-400 bg-orange-500/20 border-orange-500/30' },
-  NORMAL: { label: 'Normal', color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
-  LOW: { label: 'Low', color: 'text-[var(--fg-3)] bg-gray-500/20 border-gray-500/30' },
+  URGENT: { label: 'Urgent', color: 'text-danger bg-[var(--danger-soft)] border-danger/30' },
+  HIGH: { label: 'High', color: 'text-warning bg-[var(--warning-soft)] border-warning/30' },
+  NORMAL: { label: 'Normal', color: 'text-blue-400 bg-[var(--info-soft)] border-info/30' },
+  LOW: { label: 'Low', color: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]' },
 }
 
 function WorkOrders() {
@@ -99,7 +99,7 @@ function WorkOrders() {
   })
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" /></div>
+    return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" /></div>
   }
 
   return (
@@ -120,9 +120,9 @@ function WorkOrders() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <StatCard label="Total WOs" value={(stats?.totalOrders ?? 0).toString()} color="text-phopy-indigo" />
+        <StatCard label="Total WOs" value={(stats?.totalOrders ?? 0).toString()} color="text-[var(--primary)]" />
         <StatCard label="Planned" value={(stats?.planned ?? 0).toString()} color="text-blue-400" />
-        <StatCard label="In Progress" value={(stats?.inProgress ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="In Progress" value={(stats?.inProgress ?? 0).toString()} color="text-warning" />
         <StatCard label="Completed" value={(stats?.completed ?? 0).toString()} color="text-success" />
         <StatCard label="Total Produced" value={(stats?.totalProduced ?? 0).toLocaleString()} color="text-purple-500" />
       </div>
@@ -139,7 +139,7 @@ function WorkOrders() {
             {['all', 'DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
-                  statusFilter === s ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                  statusFilter === s ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]'
                 }`}>
                 {s === 'all' ? 'All' : STATUS_CONFIG[s]?.label || s}
@@ -179,7 +179,7 @@ function WorkOrders() {
                   return (
                     <motion.tr key={wo.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
                       <td>
-                        <span className="text-phopy-indigo font-mono font-semibold">{wo.wo_number}</span>
+                        <span className="text-[var(--primary)] font-mono font-semibold">{wo.wo_number}</span>
                       </td>
                       <td>
                         <div>
@@ -213,8 +213,8 @@ function WorkOrders() {
                       </td>
                       <td>
                         <div className="flex items-center gap-1">
-                          {isOverdue && <AlertTriangle className="w-3 h-3 text-red-400" />}
-                          <span className={`text-sm ${isOverdue ? 'text-red-400' : 'text-[var(--fg-3)]'}`}>
+                          {isOverdue && <AlertTriangle className="w-3 h-3 text-danger" />}
+                          <span className={`text-sm ${isOverdue ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
                             {wo.due_date ? new Date(wo.due_date).toLocaleDateString() : '-'}
                           </span>
                         </div>
@@ -223,7 +223,7 @@ function WorkOrders() {
                       <td>
                         <div className="flex items-center gap-1">
                           <button onClick={() => handleViewDetail(wo)}
-                            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg">
+                            className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg">
                             <Eye className="w-4 h-4" />
                           </button>
                           {wo.status === 'DRAFT' && (
@@ -234,7 +234,7 @@ function WorkOrders() {
                           )}
                           {wo.status === 'PLANNED' && (
                             <button onClick={() => handleStatusChange(wo.id, 'IN_PROGRESS')}
-                              className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg" title="Start Production">
+                              className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg" title="Start Production">
                               <Play className="w-4 h-4" />
                             </button>
                           )}
@@ -246,7 +246,7 @@ function WorkOrders() {
                           )}
                           {wo.status === 'DRAFT' && (
                             <button onClick={() => handleDelete(wo.id)}
-                              className="p-2 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg">
+                              className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
@@ -361,17 +361,17 @@ function CreateWOModal({ open, onClose, onSave }: {
 
   const selectedBom = boms.find(b => b.id === selectedBomId)
   const priorityOptions = [
-    { value: 'LOW', label: 'Low', color: 'text-[var(--fg-3)] border-gray-500/30 hover:border-gray-400' },
-    { value: 'NORMAL', label: 'Normal', color: 'text-blue-400 border-blue-500/30 hover:border-blue-400' },
-    { value: 'HIGH', label: 'High', color: 'text-orange-400 border-orange-500/30 hover:border-orange-400' },
-    { value: 'URGENT', label: 'Urgent', color: 'text-red-400 border-red-500/30 hover:border-red-400' },
+    { value: 'LOW', label: 'Low', color: 'text-[var(--fg-3)] border-[var(--border-strong)] hover:border-[var(--border)]' },
+    { value: 'NORMAL', label: 'Normal', color: 'text-blue-400 border-info/30 hover:border-blue-400' },
+    { value: 'HIGH', label: 'High', color: 'text-warning border-warning/30 hover:border-orange-400' },
+    { value: 'URGENT', label: 'Urgent', color: 'text-danger border-danger/30 hover:border-red-400' },
   ]
 
   return (
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
           <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
             onClick={(e) => e.stopPropagation()}
             className="phopy-card w-full max-w-2xl max-h-[92vh] flex flex-col">
@@ -392,11 +392,11 @@ function CreateWOModal({ open, onClose, onSave }: {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-phopy-indigo-50 text-phopy-indigo text-xs flex items-center justify-center font-bold">1</span>
+                      <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">1</span>
                       เลือก BOM
                     </p>
                     <button type="button" onClick={() => { setManualMode(true); setSelectedBomId(''); setProductName(''); setMaterials([]) }}
-                      className={`text-xs px-2 py-1 rounded border transition-all ${manualMode ? 'border-phopy-indigo/50 text-phopy-indigo bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}>
+                      className={`text-xs px-2 py-1 rounded border transition-all ${manualMode ? 'border-phopy-indigo/50 text-[var(--primary)] bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}>
                       Manual entry
                     </button>
                   </div>
@@ -416,7 +416,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                           }`}>
                           <div className="flex items-start justify-between gap-1">
                             <p className="text-sm font-medium text-[var(--fg-2)] leading-tight">{bom.product_name}</p>
-                            {selectedBomId === bom.id && <CheckCircle className="w-3.5 h-3.5 text-phopy-indigo shrink-0 mt-0.5" />}
+                            {selectedBomId === bom.id && <CheckCircle className="w-3.5 h-3.5 text-[var(--primary)] shrink-0 mt-0.5" />}
                           </div>
                           <p className="text-xs text-[var(--fg-4)] mt-0.5">{bom.product_code} · v{bom.version}</p>
                           <div className="flex items-center gap-2 mt-1.5">
@@ -442,7 +442,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                 {/* STEP 2: Details */}
                 <div>
                   <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                    <span className="w-4 h-4 rounded-full bg-phopy-indigo-50 text-phopy-indigo text-xs flex items-center justify-center font-bold">2</span>
+                    <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">2</span>
                     รายละเอียด
                   </p>
 
@@ -505,13 +505,13 @@ function CreateWOModal({ open, onClose, onSave }: {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-phopy-indigo-50 text-phopy-indigo text-xs flex items-center justify-center font-bold">3</span>
+                      <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">3</span>
                       วัตถุดิบที่ต้องใช้
-                      {bomLoading && <Loader2 className="w-3 h-3 animate-spin text-phopy-indigo" />}
+                      {bomLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
                     </p>
                     <button type="button"
                       onClick={() => setMaterials([...materials, { materialName: '', requiredQty: 1, unit: 'pcs' }])}
-                      className="text-xs text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1">
+                      className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
                       <Plus className="w-3 h-3" /> เพิ่ม
                     </button>
                   </div>
@@ -528,7 +528,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                         <div key={idx} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
                           mat.materialId ? 'border-phopy-indigo/15 bg-phopy-indigo/5' : 'border-[var(--border)]/20 bg-[var(--surface-2)]'
                         }`}>
-                          {mat.materialId && <CheckCircle className="w-3.5 h-3.5 text-phopy-indigo shrink-0" />}
+                          {mat.materialId && <CheckCircle className="w-3.5 h-3.5 text-[var(--primary)] shrink-0" />}
                           <input value={mat.materialName} onChange={(e) => {
                             const u = [...materials]; u[idx].materialName = e.target.value; setMaterials(u)
                           }} className="flex-1 bg-transparent text-sm text-[var(--fg-2)] outline-none placeholder-gray-600 min-w-0"
@@ -542,7 +542,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                           }} className="w-12 bg-transparent text-xs text-[var(--fg-4)] outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
                             placeholder="unit" />
                           <button type="button" onClick={() => setMaterials(materials.filter((_, i) => i !== idx))}
-                            className="text-[var(--fg-4)] hover:text-red-400 shrink-0">
+                            className="text-[var(--fg-4)] hover:text-danger shrink-0">
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -564,7 +564,7 @@ function CreateWOModal({ open, onClose, onSave }: {
               <div className="p-5 border-t border-[var(--border)] flex items-center justify-between shrink-0">
                 <div className="text-xs text-[var(--fg-4)]">
                   {selectedBom ? (
-                    <span className="flex items-center gap-1 text-phopy-indigo">
+                    <span className="flex items-center gap-1 text-[var(--primary)]">
                       <CheckCircle className="w-3 h-3" /> ใช้ BOM: {selectedBom.product_name}
                     </span>
                   ) : manualMode ? 'Manual entry' : 'ยังไม่ได้เลือก BOM'}
@@ -608,7 +608,7 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
         <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
           onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
@@ -631,7 +631,7 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                   <div className={`px-3 py-1 rounded-full whitespace-nowrap ${
                     wo.status === s ? STATUS_CONFIG[s].color + ' font-semibold'
                     : ['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].indexOf(wo.status) > i
-                    ? 'bg-success-soft text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
+                    ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
                   }`}>
                     {STATUS_CONFIG[s].label}
                   </div>
@@ -687,9 +687,9 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                         </p>
                       </div>
                       <span className={`px-2 py-1 rounded text-xs ${
-                        mat.status === 'ISSUED' ? 'bg-success-soft text-success' :
-                        mat.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-gray-500/20 text-[var(--fg-3)]'
+                        mat.status === 'ISSUED' ? 'bg-[var(--success-soft)] text-success' :
+                        mat.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning' :
+                        'bg-[var(--surface-sunken)] text-[var(--fg-3)]'
                       }`}>
                         {mat.status}
                       </span>
@@ -725,19 +725,19 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
             <div className="flex justify-end gap-3 pt-4">
               {wo.status === 'IN_PROGRESS' && (
                 <button onClick={() => { onStatusChange(wo.id, 'ON_HOLD'); onClose() }}
-                  className="px-4 py-2 border border-orange-500/30 text-orange-400 rounded-lg hover:bg-orange-500/10 flex items-center gap-2">
+                  className="px-4 py-2 border border-warning/30 text-warning rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-2">
                   <Pause className="w-4 h-4" /> Put On Hold
                 </button>
               )}
               {wo.status === 'ON_HOLD' && (
                 <button onClick={() => { onStatusChange(wo.id, 'IN_PROGRESS'); onClose() }}
-                  className="px-4 py-2 border border-yellow-500/30 text-yellow-400 rounded-lg hover:bg-yellow-500/10 flex items-center gap-2">
+                  className="px-4 py-2 border border-warning/30 text-warning rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-2">
                   <Play className="w-4 h-4" /> Resume
                 </button>
               )}
               {wo.status !== 'COMPLETED' && wo.status !== 'CANCELLED' && (
                 <button onClick={() => { onStatusChange(wo.id, 'CANCELLED'); onClose() }}
-                  className="px-4 py-2 border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10">
+                  className="px-4 py-2 border border-danger/30 text-danger rounded-lg hover:bg-[var(--danger-soft)]">
                   Cancel Order
                 </button>
               )}

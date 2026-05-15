@@ -69,7 +69,7 @@ export default function SupplierTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
       </div>
     )
   }
@@ -78,9 +78,9 @@ export default function SupplierTab() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard label="Total Suppliers" value={(stats?.totalSuppliers ?? 0).toString()} color="text-phopy-indigo" />
+        <StatCard label="Total Suppliers" value={(stats?.totalSuppliers ?? 0).toString()} color="text-[var(--primary)]" />
         <StatCard label="Active" value={(stats?.activeSuppliers ?? 0).toString()} color="text-success" />
-        <StatCard label="Purchase Orders" value={(stats?.totalPOs ?? 0).toString()} color="text-yellow-400" />
+        <StatCard label="Purchase Orders" value={(stats?.totalPOs ?? 0).toString()} color="text-warning" />
         <StatCard label="Total Spent" value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-purple-500" />
       </div>
 
@@ -104,7 +104,7 @@ export default function SupplierTab() {
                 onClick={() => setSelectedType(t)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
                   selectedType === t
-                    ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+                    ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]'
                 }`}
               >
@@ -159,15 +159,15 @@ export default function SupplierTab() {
                           <Truck className="w-5 h-5 text-purple-500" />
                         </div>
                         <div>
-                          <p className="text-[var(--fg-2)] font-medium hover:text-phopy-indigo transition-colors">{supplier.name}</p>
+                          <p className="text-[var(--fg-2)] font-medium hover:text-[var(--primary)] transition-colors">{supplier.name}</p>
                           <p className="text-[var(--fg-4)] text-xs">{supplier.code}</p>
                         </div>
                       </div>
                     </td>
                     <td>
                       <span className={`status-badge ${
-                        supplier.type === 'RAW_MATERIAL' ? 'text-blue-400 bg-blue-500/20 border-blue-500/30' :
-                        supplier.type === 'PACKAGING' ? 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' :
+                        supplier.type === 'RAW_MATERIAL' ? 'text-blue-400 bg-[var(--info-soft)] border-info/30' :
+                        supplier.type === 'PACKAGING' ? 'text-warning bg-[var(--warning-soft)] border-warning/30' :
                         'text-purple-400 bg-purple-500/20 border-purple-500/30'
                       }`}>
                         {supplier.type === 'RAW_MATERIAL' ? 'Raw Material' : supplier.type === 'PACKAGING' ? 'Packaging' : 'Service'}
@@ -183,17 +183,17 @@ export default function SupplierTab() {
                     <td>
                       <div className="flex gap-0.5">
                         {[1, 2, 3, 4, 5].map((star) => (
-                          <Star key={star} className={`w-3.5 h-3.5 ${star <= supplier.rating ? 'text-yellow-400 fill-yellow-400' : 'text-[var(--fg-4)]'}`} />
+                          <Star key={star} className={`w-3.5 h-3.5 ${star <= supplier.rating ? 'text-warning fill-warning' : 'text-[var(--fg-4)]'}`} />
                         ))}
                       </div>
                     </td>
-                    <td><span className="text-phopy-indigo font-semibold">{supplier.total_orders || 0}</span></td>
+                    <td><span className="text-[var(--primary)] font-semibold">{supplier.total_orders || 0}</span></td>
                     <td><span className="text-success">฿{(supplier.total_spent || 0).toLocaleString()}</span></td>
                     <td>
                       <span className={`status-badge ${
-                        supplier.status === 'ACTIVE' ? 'bg-success-soft text-success border-success/30' :
-                        supplier.status === 'BLOCKED' ? 'bg-danger-soft text-red-400 border-red-500/30' :
-                        'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30'
+                        supplier.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/30' :
+                        supplier.status === 'BLOCKED' ? 'bg-[var(--danger-soft)] text-danger border-danger/30' :
+                        'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]'
                       }`}>
                         {supplier.status}
                       </span>
@@ -201,11 +201,11 @@ export default function SupplierTab() {
                     <td>
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => { setEditingSupplier(supplier); setShowModal(true) }}
-                          className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg">
+                          className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button onClick={() => handleDelete(supplier.id)}
-                          className="p-2 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 rounded-lg">
+                          className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -307,7 +307,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()}
             className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -441,18 +441,18 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
   }, [supplier.id])
 
   const typeColor: Record<string, string> = {
-    RAW_MATERIAL: 'text-blue-400 bg-blue-500/20 border-blue-500/30',
-    PACKAGING: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30',
+    RAW_MATERIAL: 'text-blue-400 bg-[var(--info-soft)] border-info/30',
+    PACKAGING: 'text-warning bg-[var(--warning-soft)] border-warning/30',
     SERVICE: 'text-purple-400 bg-purple-500/20 border-purple-500/30',
-    OTHER: 'text-[var(--fg-3)] bg-gray-500/20 border-gray-500/30',
+    OTHER: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]',
   }
   const typeLabel: Record<string, string> = {
     RAW_MATERIAL: 'Raw Material', PACKAGING: 'Packaging', SERVICE: 'Service', OTHER: 'Other',
   }
   const statusColor: Record<string, string> = {
-    ACTIVE: 'bg-success-soft text-success border-success/30',
-    INACTIVE: 'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30',
-    BLOCKED: 'bg-danger-soft text-red-400 border-red-500/30',
+    ACTIVE: 'bg-[var(--success-soft)] text-success border-success/30',
+    INACTIVE: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
+    BLOCKED: 'bg-[var(--danger-soft)] text-danger border-danger/30',
   }
 
   const tabs = [
@@ -468,7 +468,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
       <motion.div
@@ -479,7 +479,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         className="w-full max-w-5xl max-h-[95vh] flex overflow-hidden rounded-2xl border border-[var(--border)] shadow-2xl"
       >
         {/* ── LEFT SIDEBAR ──────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-white border-r border-[var(--border)] flex flex-col overflow-y-auto">
+        <div className="w-64 flex-shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col overflow-y-auto">
           {/* Avatar */}
           <div className="p-6 flex flex-col items-center text-center border-b border-[var(--border)]">
             <div className="w-20 h-20 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center mb-3">
@@ -488,7 +488,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <p className="text-lg font-bold text-[var(--fg-1)] leading-tight">{supplier.name}</p>
             <p className="text-xs text-[var(--fg-4)] mt-1 font-mono">{supplier.code}</p>
             <div className="flex gap-1.5 mt-3 flex-wrap justify-center">
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${typeColor[supplier.type] ?? 'text-[var(--fg-3)] bg-gray-500/20 border-gray-500/30'}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${typeColor[supplier.type] ?? 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]'}`}>
                 {typeLabel[supplier.type] ?? supplier.type}
               </span>
               <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor[supplier.status] ?? ''}`}>
@@ -500,14 +500,14 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <div className="mt-4 flex gap-2 w-full">
               <button
                 onClick={onEdit}
-                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 text-phopy-indigo border border-phopy-indigo/30 text-xs hover:bg-phopy-indigo-50 transition-colors"
+                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] border border-phopy-indigo/30 text-xs hover:bg-[var(--primary-soft)] transition-colors"
               >
                 <Pencil className="w-3 h-3" /> แก้ไข
               </button>
               {!confirmDelete ? (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 text-xs hover:bg-danger-soft transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--danger-soft)] text-danger border border-danger/30 text-xs hover:bg-[var(--danger-soft)] transition-colors"
                 >
                   <Trash2 className="w-3 h-3" /> ลบ
                 </button>
@@ -515,7 +515,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                 <div className="flex-1 flex flex-col gap-1">
                   <button
                     onClick={onDelete}
-                    className="w-full px-2 py-1 rounded-lg bg-danger-soft text-red-400 border border-red-500/40 text-xs hover:bg-red-500/30"
+                    className="w-full px-2 py-1 rounded-lg bg-[var(--danger-soft)] text-danger border border-danger/40 text-xs hover:bg-[var(--danger-soft)]"
                   >
                     ยืนยันลบ
                   </button>
@@ -540,7 +540,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             )}
             {supplier.phone && (
               <div className="flex items-center gap-2 text-sm text-[var(--fg-3)]">
-                <Phone className="w-3.5 h-3.5 text-phopy-indigo" /> {supplier.phone}
+                <Phone className="w-3.5 h-3.5 text-[var(--primary)]" /> {supplier.phone}
               </div>
             )}
             {supplier.email && (
@@ -551,7 +551,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             )}
             {supplier.city && (
               <div className="flex items-center gap-2 text-sm text-[var(--fg-3)]">
-                <MapPin className="w-3.5 h-3.5 text-red-400" /> {supplier.city}
+                <MapPin className="w-3.5 h-3.5 text-danger" /> {supplier.city}
               </div>
             )}
           </div>
@@ -561,7 +561,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">เงื่อนไข</p>
             <div className="flex justify-between text-xs">
               <span className="text-[var(--fg-4)]">Payment Terms</span>
-              <span className="text-yellow-400 font-medium">{supplier.payment_terms || '-'}</span>
+              <span className="text-warning font-medium">{supplier.payment_terms || '-'}</span>
             </div>
             {supplier.tax_id && (
               <div className="flex justify-between text-xs">
@@ -571,7 +571,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             )}
             <div className="flex gap-0.5 mt-1">
               {[1,2,3,4,5].map(s => (
-                <Star key={s} className={`w-3.5 h-3.5 ${s <= supplier.rating ? 'text-yellow-400 fill-yellow-400' : 'text-[var(--fg-4)]'}`} />
+                <Star key={s} className={`w-3.5 h-3.5 ${s <= supplier.rating ? 'text-warning fill-warning' : 'text-[var(--fg-4)]'}`} />
               ))}
             </div>
           </div>
@@ -581,7 +581,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">สถิติ</p>
             <div className="flex justify-between text-xs">
               <span className="text-[var(--fg-4)]">คำสั่งซื้อ</span>
-              <span className="text-phopy-indigo font-bold">{supplier.total_orders || 0}</span>
+              <span className="text-[var(--primary)] font-bold">{supplier.total_orders || 0}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-[var(--fg-4)]">ยอดซื้อรวม</span>
@@ -605,7 +605,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         {/* ── RIGHT PANEL ───────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-white/30">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-[var(--surface-2)]">
             <div className="flex gap-1">
               {tabs.map(tab => (
                 <button
@@ -640,9 +640,9 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     {/* Stats cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       {[
-                        { label: 'คำสั่งซื้อทั้งหมด', value: stats?.totalOrders ?? 0, suffix: 'ครั้ง', color: 'text-phopy-indigo' },
+                        { label: 'คำสั่งซื้อทั้งหมด', value: stats?.totalOrders ?? 0, suffix: 'ครั้ง', color: 'text-[var(--primary)]' },
                         { label: 'ยอดซื้อรวม', value: `฿${(stats?.totalSpent ?? 0).toLocaleString()}`, suffix: '', color: 'text-success' },
-                        { label: 'เฉลี่ย/ออเดอร์', value: `฿${Math.round(stats?.avgOrderValue ?? 0).toLocaleString()}`, suffix: '', color: 'text-yellow-400' },
+                        { label: 'เฉลี่ย/ออเดอร์', value: `฿${Math.round(stats?.avgOrderValue ?? 0).toLocaleString()}`, suffix: '', color: 'text-warning' },
                         { label: 'ห่างจากออเดอร์ล่าสุด', value: stats?.daysSinceLastOrder ?? '-', suffix: stats?.daysSinceLastOrder != null ? 'วัน' : '', color: 'text-purple-500' },
                       ].map((item, i) => (
                         <div key={i} className="phopy-card p-4">
@@ -690,12 +690,12 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                             onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
                           >
                             <div className="flex items-center gap-3">
-                              <span className="text-phopy-indigo font-mono text-sm font-bold">{order.poNumber}</span>
+                              <span className="text-[var(--primary)] font-mono text-sm font-bold">{order.poNumber}</span>
                               <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                                order.status === 'COMPLETED' ? 'bg-success-soft text-success border-success/30' :
-                                order.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
-                                order.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                                'bg-gray-500/20 text-[var(--fg-3)] border-gray-500/30'
+                                order.status === 'COMPLETED' ? 'bg-[var(--success-soft)] text-success border-success/30' :
+                                order.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning border-warning/30' :
+                                order.status === 'APPROVED' ? 'bg-[var(--info-soft)] text-blue-400 border-info/30' :
+                                'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]'
                               }`}>{order.status}</span>
                             </div>
                             <div className="flex items-center gap-4">
@@ -764,7 +764,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                               {insights.topMaterials.map((m: any, i: number) => (
                                 <tr key={i} className="border-b border-[var(--border)]/40 last:border-0 hover:bg-[var(--border)]/10">
                                   <td className="px-4 py-3 text-[var(--fg-2)] font-medium">{m.materialName || m.materialId || '-'}</td>
-                                  <td className="px-4 py-3 text-right text-phopy-indigo font-semibold">{m.totalQuantity}</td>
+                                  <td className="px-4 py-3 text-right text-[var(--primary)] font-semibold">{m.totalQuantity}</td>
                                   <td className="px-4 py-3 text-right text-[var(--fg-3)]">฿{Math.round(m.avgUnitPrice ?? 0).toLocaleString()}</td>
                                   <td className="px-4 py-3 text-right text-success font-semibold">฿{(m.totalSpent ?? 0).toLocaleString()}</td>
                                 </tr>
@@ -798,7 +798,7 @@ function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: numb
           />
           <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">{t.month.slice(5)}</span>
           {/* Tooltip */}
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-white border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
             <p className="text-[var(--fg-2)]">{t.month}</p>
             <p className="text-success">฿{t.totalAmount.toLocaleString()}</p>
             <p className="text-[var(--fg-4)]">{t.orderCount} ออเดอร์</p>

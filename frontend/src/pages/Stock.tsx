@@ -288,7 +288,7 @@ function Stock() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
       </div>
     )
   }
@@ -343,7 +343,7 @@ function Stock() {
             </button>
             <button
               onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors border-r border-[var(--border)]"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-danger hover:bg-[var(--danger-soft)] transition-colors border-r border-[var(--border)]"
               title="Stock Out"
             >
               <ArrowDownCircle className="w-4 h-4" />
@@ -451,10 +451,10 @@ function Stock() {
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3 mb-3 p-3 bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-xl">
-            <span className="text-phopy-indigo text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
+            <span className="text-[var(--primary)] text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
             <button
               onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-danger-soft text-red-400 border border-red-500/30 rounded-lg text-sm hover:bg-red-500/30 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--danger-soft)] text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
               ลบที่เลือก
@@ -472,7 +472,7 @@ function Stock() {
         <div className="flex items-center justify-end mb-3 relative">
           <button
             onClick={() => setShowColumnPicker(v => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-phopy-indigo text-phopy-indigo bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-[var(--fg-2)]'}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-phopy-indigo text-[var(--primary)] bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-[var(--fg-2)]'}`}
           >
             <Settings2 className="w-4 h-4" />
             ปรับคอลัมน์
@@ -481,7 +481,7 @@ function Stock() {
           {/* Column picker dropdown */}
           {showColumnPicker && (
             <div
-              className="absolute top-10 right-0 z-30 bg-white border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
+              className="absolute top-10 right-0 z-30 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
               onClick={(e) => e.stopPropagation()}
             >
               <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>
@@ -495,10 +495,10 @@ function Stock() {
                     disabled={always}
                     className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-colors mb-0.5 ${
                       always ? 'opacity-50 cursor-not-allowed' :
-                      active ? 'bg-phopy-indigo/10 text-phopy-indigo' : 'text-[var(--fg-3)] hover:bg-[var(--bg)] hover:text-[var(--fg-2)]'
+                      active ? 'bg-phopy-indigo/10 text-[var(--primary)]' : 'text-[var(--fg-3)] hover:bg-[var(--bg)] hover:text-[var(--fg-2)]'
                     }`}
                   >
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-phopy-indigo border-phopy-indigo' : 'border-gray-600'}`}>
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-phopy-indigo border-phopy-indigo' : 'border-[var(--border-strong)]'}`}>
                       {active && <Check className="w-3 h-3 text-black" />}
                     </span>
                     {COLUMN_LABELS[key]}
@@ -519,7 +519,7 @@ function Stock() {
                     type="checkbox"
                     checked={paginatedItems.length > 0 && selectedIds.size === paginatedItems.length}
                     onChange={handleSelectAll}
-                    className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo cursor-pointer"
+                    className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] cursor-pointer"
                     aria-label="เลือกทั้งหมด"
                   />
                 </th>
@@ -565,7 +565,7 @@ function Stock() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelect(item.id)}
-                          className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo cursor-pointer"
+                          className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] cursor-pointer"
                           aria-label={`เลือก ${item.name}`}
                         />
                       </td>
@@ -601,7 +601,7 @@ function Stock() {
                         <td>
                           <div className="flex flex-col gap-0.5">
                             {/* จำนวนสต็อกหลัก = หน่วยฐาน */}
-                            <span className={`font-semibold ${item.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
+                            <span className={`font-semibold ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
                               {item.quantity} {item.baseUnit || item.unit}
                             </span>
                             {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info */}
@@ -620,7 +620,7 @@ function Stock() {
                       )}
                       {visibleCols.displayQty && (
                         <td>
-                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-[var(--fg-4)]' : 'text-phopy-indigo'}`}>
+                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-[var(--fg-4)]' : 'text-[var(--primary)]'}`}>
                             {item.sealedQty ?? 0} {item.displayUnit || item.unit}
                           </span>
                         </td>
@@ -661,14 +661,14 @@ function Stock() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleOpenDetail(item)}
-                            className="p-2 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`ดูรายละเอียด ${item.name}`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setEditModal({ open: true, item })}
-                            className="p-2 text-[var(--fg-3)] hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors cursor-pointer"
+                            className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg transition-colors cursor-pointer"
                             aria-label={`แก้ไข ${item.name}`}
                           >
                             <Edit2 className="w-4 h-4" />
@@ -685,7 +685,7 @@ function Stock() {
                             disabled={item.quantity === 0}
                             className={`p-2 rounded-lg transition-colors ${item.quantity === 0
                               ? 'text-[var(--fg-4)] cursor-not-allowed'
-                              : 'text-[var(--fg-3)] hover:text-red-400 hover:bg-red-400/10 cursor-pointer'
+                              : 'text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] cursor-pointer'
                               }`}
                             aria-label={item.quantity === 0 ? `${item.name} สต๊อกหมด` : `ตัดสินค้าออก ${item.name}`}
                           >
@@ -713,7 +713,7 @@ function Stock() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-[var(--border)]">
           <div className="flex items-center gap-4">
             <span className="text-[var(--fg-3)] text-sm">
-              แสดง <span className="text-phopy-indigo font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-phopy-indigo font-semibold">{totalItems}</span> รายการ
+              แสดง <span className="text-[var(--primary)] font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-[var(--primary)] font-semibold">{totalItems}</span> รายการ
             </span>
 
             {/* Items Per Page Selector */}
@@ -748,7 +748,7 @@ function Stock() {
               ก่อนหน้า
             </button>
 
-            <span className="px-4 py-1 text-sm text-phopy-indigo font-semibold bg-phopy-indigo/10 rounded border border-phopy-indigo/30">
+            <span className="px-4 py-1 text-sm text-[var(--primary)] font-semibold bg-phopy-indigo/10 rounded border border-phopy-indigo/30">
               หน้า {currentPage} / {totalPages || 1}
             </span>
 
@@ -841,7 +841,7 @@ function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -875,10 +875,10 @@ function DetailModal({
             </div>
             <div>
               <p className="text-sm text-[var(--fg-3)] mb-1">Current Stock (Base)</p>
-              <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
+              <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
                 {item.quantity} {item.baseUnit || item.unit}
                 {item.quantity === 0 && (
-                  <span className="ml-2 text-xs bg-danger-soft text-red-400 px-2 py-1 rounded">
+                  <span className="ml-2 text-xs bg-[var(--danger-soft)] text-danger px-2 py-1 rounded">
                     OUT OF STOCK
                   </span>
                 )}
@@ -922,7 +922,7 @@ function DetailModal({
             <div className="col-span-2">
               <p className="text-sm text-[var(--fg-3)] mb-1">Location</p>
               <div className="flex items-center gap-2 text-[var(--fg-2)]">
-                <MapPin className="w-4 h-4 text-phopy-indigo" />
+                <MapPin className="w-4 h-4 text-[var(--primary)]" />
                 {item.location || 'Not specified'}
               </div>
             </div>
@@ -947,7 +947,7 @@ function DetailModal({
           {/* Movement History */}
           <div>
             <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
-              <History className="w-5 h-5 text-phopy-indigo" />
+              <History className="w-5 h-5 text-[var(--primary)]" />
               ประวัติการเคลื่อนไหว
             </h3>
             {item.movements && item.movements.length > 0 ? (
@@ -961,17 +961,17 @@ function DetailModal({
                       {movement.type === 'IN' ? (
                         <ArrowUpCircle className="w-5 h-5 text-success flex-shrink-0" />
                       ) : movement.type === 'OUT' ? (
-                        <ArrowDownCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                        <ArrowDownCircle className="w-5 h-5 text-danger flex-shrink-0" />
                       ) : movement.type === 'PRICE_CHANGE' ? (
-                        <DollarSign className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+                        <DollarSign className="w-5 h-5 text-warning flex-shrink-0" />
                       ) : (
                         <Package className="w-5 h-5 text-blue-400 flex-shrink-0" />
                       )}
                       <div>
                         <p className={`font-medium ${
                           movement.type === 'IN' ? 'text-success' :
-                          movement.type === 'OUT' ? 'text-red-400' :
-                          movement.type === 'PRICE_CHANGE' ? 'text-yellow-400' : 'text-blue-400'
+                          movement.type === 'OUT' ? 'text-danger' :
+                          movement.type === 'PRICE_CHANGE' ? 'text-warning' : 'text-blue-400'
                         }`}>
                           {movement.type === 'IN' ? `+${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
                            movement.type === 'OUT' ? `-${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
@@ -1191,7 +1191,7 @@ function EditModal({
   return (
     <>
       <div
-        className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
+        className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
         onClick={onClose}
       >
         <div
@@ -1219,7 +1219,7 @@ function EditModal({
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
                   activeTab === tab
-                    ? 'text-phopy-indigo border-phopy-indigo'
+                    ? 'text-[var(--primary)] border-phopy-indigo'
                     : 'text-[var(--fg-4)] border-transparent hover:text-[var(--fg-2)]'
                 }`}
               >
@@ -1242,7 +1242,7 @@ function EditModal({
                         {imagePreview ? (
                           <>
                             <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <div className="absolute inset-0 bg-[var(--fg-1)]/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <Upload className="w-5 h-5 text-white" />
                             </div>
                           </>
@@ -1256,7 +1256,7 @@ function EditModal({
                       <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                     </label>
                     <div className="flex-1">
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
+                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อสินค้า <span className="text-danger">*</span></label>
                       <input
                         type="text"
                         value={formData.name}
@@ -1276,7 +1276,7 @@ function EditModal({
                               onSave()
                             }
                           }}
-                          className="mt-1.5 text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                          className="mt-1.5 text-xs text-danger hover:text-red-300 flex items-center gap-1"
                         >
                           <Trash2 className="w-3 h-3" /> ลบรูปภาพ
                         </button>
@@ -1393,13 +1393,13 @@ function EditModal({
                       id="isPosEnabled"
                       checked={formData.isPosEnabled}
                       onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                      className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
+                      className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
                     />
                     <div className="flex-1">
                       <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
                       <p className="text-xs text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-success-soft text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
                       {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                     </span>
                   </label>
@@ -1514,7 +1514,7 @@ function EditModal({
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteConversion(c.id)}
-                                  className="ml-auto p-1 text-[var(--fg-4)] hover:text-red-400 transition-colors"
+                                  className="ml-auto p-1 text-[var(--fg-4)] hover:text-danger transition-colors"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
@@ -1528,7 +1528,7 @@ function EditModal({
                             <select
                               value={convForm.from_unit}
                               onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -1541,7 +1541,7 @@ function EditModal({
                             <select
                               value={convForm.to_unit}
                               onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -1558,7 +1558,7 @@ function EditModal({
                               placeholder="24"
                               min="0.000001"
                               step="any"
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-gray-600/50 rounded-lg text-xs text-[var(--fg-2)] placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
                             />
                           </div>
                           <button
@@ -1759,20 +1759,20 @@ function MovementModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
       >
-        <div className={`p-6 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-success/10' : 'bg-red-500/10'
+        <div className={`p-6 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-success/10' : 'bg-[var(--danger-soft)]'
           }`}>
           <div className="flex items-center gap-3">
             {type === 'IN' ? (
               <ArrowUpCircle className="w-6 h-6 text-success" />
             ) : (
-              <ArrowDownCircle className="w-6 h-6 text-red-400" />
+              <ArrowDownCircle className="w-6 h-6 text-danger" />
             )}
             <h2 className="text-xl font-bold text-[var(--fg-1)]">
               Stock {type === 'IN' ? 'In' : 'Out'}
@@ -1798,7 +1798,7 @@ function MovementModal({
               disabled={!!item}
             />
             {type === 'OUT' && availableItems.length === 0 && (
-              <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
+              <p className="text-danger text-sm mt-2 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
                 No items available for Stock Out
               </p>
@@ -1812,7 +1812,7 @@ function MovementModal({
                     onClose()
                     setShowAddModal(true)
                   }}
-                  className="text-sm text-phopy-indigo hover:text-phopy-indigo-600 flex items-center gap-1"
+                  className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
                   Create New Item
@@ -1825,12 +1825,12 @@ function MovementModal({
             <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-1">
               <div className="flex justify-between items-center">
                 <span className="text-[var(--fg-3)]">Current Stock:</span>
-                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-red-400' : 'text-phopy-indigo'}`}>
+                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
                     ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
                     : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
                   {selectedItem.quantity === 0 && (
-                    <span className="ml-2 text-xs bg-danger-soft text-red-400 px-2 py-1 rounded">
+                    <span className="ml-2 text-xs bg-[var(--danger-soft)] text-danger px-2 py-1 rounded">
                       OUT OF STOCK
                     </span>
                   )}
@@ -1846,11 +1846,11 @@ function MovementModal({
           )}
 
           {isOutOfStock && (
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
-              <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0" />
+            <div className="p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-danger flex-shrink-0" />
               <div>
-                <p className="text-red-400 font-medium">Cannot Proceed</p>
-                <p className="text-red-400/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
+                <p className="text-danger font-medium">Cannot Proceed</p>
+                <p className="text-danger/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
               </div>
             </div>
           )}
@@ -1900,7 +1900,7 @@ function MovementModal({
             </div>
           </div>
           {exceedsStock && (
-            <p className="text-red-400 text-sm mt-1">
+            <p className="text-danger text-sm mt-1">
               Cannot exceed available stock ({selectedItem?.quantity} {selectedItem?.baseUnit || selectedItem?.unit})
             </p>
           )}
@@ -1991,10 +1991,10 @@ function StatCard({
   color: string
 }) {
   const colorClass = {
-    primary: 'text-phopy-indigo',
+    primary: 'text-[var(--primary)]',
     green: 'text-success',
-    yellow: 'text-yellow-400',
-    red: 'text-red-400',
+    yellow: 'text-warning',
+    red: 'text-danger',
   }[color]
 
   return (
@@ -2025,7 +2025,7 @@ function FilterButton({
     <button
       onClick={onClick}
       className={`px-4 py-2 rounded-lg transition-all whitespace-nowrap ${active
-        ? 'bg-phopy-indigo-50 text-phopy-indigo border border-phopy-indigo/50'
+        ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
         : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
         }`}
     >
@@ -2048,9 +2048,9 @@ function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'mater
 
 function CategoryBadge({ category }: { category: string }) {
   const config: Record<string, { label: string; color: string }> = {
-    raw:      { label: 'วัตถุดิบ',       color: 'text-blue-400 bg-blue-500/20 border-blue-500/30' },
-    wip:      { label: 'กึ่งสำเร็จรูป', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
-    finished: { label: 'สินค้าสำเร็จรูป', color: 'text-success bg-success-soft border-success/30' },
+    raw:      { label: 'วัตถุดิบ',       color: 'text-blue-400 bg-[var(--info-soft)] border-info/30' },
+    wip:      { label: 'กึ่งสำเร็จรูป', color: 'text-warning bg-[var(--warning-soft)] border-warning/30' },
+    finished: { label: 'สินค้าสำเร็จรูป', color: 'text-success bg-[var(--success-soft)] border-success/30' },
     material: { label: 'วัสดุ/อื่นๆ',   color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
   }
   const selected = config[getCategoryGroup(category)]
@@ -2063,15 +2063,15 @@ function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
     adequate: {
       label: 'Adequate',
-      className: 'bg-success-soft text-success border-success/30',
+      className: 'bg-[var(--success-soft)] text-success border-success/30',
     },
     low: {
       label: 'Low',
-      className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     critical: {
       label: 'Critical',
-      className: 'bg-danger-soft text-red-400 border-red-500/30',
+      className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
     },
     overstock: {
       label: 'Overstock',
@@ -2111,12 +2111,12 @@ function SortTh({
   return (
     <th
       onClick={() => onSort(colKey)}
-      className="cursor-pointer select-none hover:text-phopy-indigo transition-colors"
+      className="cursor-pointer select-none hover:text-[var(--primary)] transition-colors"
     >
       <span className="flex items-center gap-1">
         {label}
         {active ? (
-          sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-phopy-indigo" /> : <ChevronDown className="w-3.5 h-3.5 text-phopy-indigo" />
+          sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-[var(--primary)]" /> : <ChevronDown className="w-3.5 h-3.5 text-[var(--primary)]" />
         ) : (
           <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--fg-4)]" />
         )}
@@ -2210,7 +2210,7 @@ function AdjustModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -2251,7 +2251,7 @@ function AdjustModal({
             <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-[var(--fg-3)] text-sm">ยอดในระบบ:</span>
-                <span className="font-bold text-phopy-indigo">
+                <span className="font-bold text-[var(--primary)]">
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
                     ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
                     : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
@@ -2293,9 +2293,9 @@ function AdjustModal({
                 </div>
               </div>
               {diff !== 0 && (
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-success/10 border-success/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-success/10 border-success/30' : 'bg-[var(--danger-soft)] border-danger/30'}`}>
                   <span className="text-sm text-[var(--fg-2)]">ผลต่าง:</span>
-                  <span className={`font-bold text-lg ${diff > 0 ? 'text-success' : 'text-red-400'}`}>
+                  <span className={`font-bold text-lg ${diff > 0 ? 'text-success' : 'text-danger'}`}>
                     {diff > 0 ? '+' : ''}{diff} {selectedItem.baseUnit || selectedItem.unit}
                   </span>
                 </div>
@@ -2431,7 +2431,7 @@ function AddStockModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -2651,13 +2651,13 @@ function AddStockModal({
                   id="isPosEnabledAdd"
                   checked={formData.isPosEnabled}
                   onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                  className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-phopy-indigo focus:ring-phopy-indigo"
+                  className="w-4 h-4 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
                 />
                 <div className="flex-1">
                   <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
                   <p className="text-[10px] text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-success-soft text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
                   {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                 </span>
               </label>

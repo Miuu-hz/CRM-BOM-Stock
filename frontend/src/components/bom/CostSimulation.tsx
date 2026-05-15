@@ -135,7 +135,7 @@ function CostSimulation() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
       </div>
     )
   }
@@ -178,25 +178,25 @@ function CostSimulation() {
               <div className="flex gap-2">
                 <button
                   onClick={() => applyPercentageChange(-10)}
-                  className="px-3 py-2 bg-danger-soft text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                  className="px-3 py-2 bg-[var(--danger-soft)] text-danger rounded-lg hover:bg-[var(--danger-soft)] text-sm"
                 >
                   -10%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(-5)}
-                  className="px-3 py-2 bg-danger-soft text-red-400 rounded-lg hover:bg-red-500/30 text-sm"
+                  className="px-3 py-2 bg-[var(--danger-soft)] text-danger rounded-lg hover:bg-[var(--danger-soft)] text-sm"
                 >
                   -5%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(5)}
-                  className="px-3 py-2 bg-success-soft text-success rounded-lg hover:bg-success/30 text-sm"
+                  className="px-3 py-2 bg-[var(--success-soft)] text-success rounded-lg hover:bg-success/30 text-sm"
                 >
                   +5%
                 </button>
                 <button
                   onClick={() => applyPercentageChange(10)}
-                  className="px-3 py-2 bg-success-soft text-success rounded-lg hover:bg-success/30 text-sm"
+                  className="px-3 py-2 bg-[var(--success-soft)] text-success rounded-lg hover:bg-success/30 text-sm"
                 >
                   +10%
                 </button>
@@ -235,7 +235,7 @@ function CostSimulation() {
               className="phopy-card p-4"
             >
               <p className="text-sm text-[var(--fg-3)] mb-1">Simulated Cost</p>
-              <p className="text-2xl font-bold text-phopy-indigo">
+              <p className="text-2xl font-bold text-[var(--primary)]">
                 ฿{simulatedTotal.toLocaleString()}
               </p>
             </motion.div>
@@ -246,7 +246,7 @@ function CostSimulation() {
               transition={{ delay: 0.2 }}
               className={`phopy-card p-4 ${
                 totalChange > 0
-                  ? 'border-red-500/50'
+                  ? 'border-danger/50'
                   : totalChange < 0
                   ? 'border-success/50'
                   : ''
@@ -255,7 +255,7 @@ function CostSimulation() {
               <p className="text-sm text-[var(--fg-3)] mb-1">Difference</p>
               <div className="flex items-center gap-2">
                 {totalChange > 0 ? (
-                  <TrendingUp className="w-6 h-6 text-red-400" />
+                  <TrendingUp className="w-6 h-6 text-danger" />
                 ) : totalChange < 0 ? (
                   <TrendingDown className="w-6 h-6 text-success" />
                 ) : (
@@ -264,7 +264,7 @@ function CostSimulation() {
                 <span
                   className={`text-2xl font-bold ${
                     totalChange > 0
-                      ? 'text-red-400'
+                      ? 'text-danger'
                       : totalChange < 0
                       ? 'text-success'
                       : 'text-[var(--fg-3)]'
@@ -275,7 +275,7 @@ function CostSimulation() {
                 <span
                   className={`text-sm ${
                     totalChange > 0
-                      ? 'text-red-400'
+                      ? 'text-danger'
                       : totalChange < 0
                       ? 'text-success'
                       : 'text-[var(--fg-3)]'
@@ -338,13 +338,13 @@ function CostSimulation() {
                       </div>
                     </td>
                     <td className="text-[var(--fg-3)]">฿{cost.originalTotal.toLocaleString()}</td>
-                    <td className="text-phopy-indigo font-semibold">
+                    <td className="text-[var(--primary)] font-semibold">
                       ฿{cost.simulatedTotal.toLocaleString()}
                     </td>
                     <td>
                       <div className="flex items-center gap-1">
                         {cost.change > 0 ? (
-                          <TrendingUp className="w-4 h-4 text-red-400" />
+                          <TrendingUp className="w-4 h-4 text-danger" />
                         ) : cost.change < 0 ? (
                           <TrendingDown className="w-4 h-4 text-success" />
                         ) : (
@@ -353,7 +353,7 @@ function CostSimulation() {
                         <span
                           className={
                             cost.change > 0
-                              ? 'text-red-400'
+                              ? 'text-danger'
                               : cost.change < 0
                               ? 'text-success'
                               : 'text-[var(--fg-4)]'
@@ -377,7 +377,7 @@ function CostSimulation() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className={`phopy-card p-6 ${
-                totalChange > 0 ? 'border-red-500/30' : 'border-success/30'
+                totalChange > 0 ? 'border-danger/30' : 'border-success/30'
               }`}
             >
               <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4">Impact Analysis</h3>
@@ -386,7 +386,7 @@ function CostSimulation() {
                   <p className="text-[var(--fg-3)] mb-2">Per Unit Impact</p>
                   <p
                     className={`text-3xl font-bold ${
-                      totalChange > 0 ? 'text-red-400' : 'text-success'
+                      totalChange > 0 ? 'text-danger' : 'text-success'
                     }`}
                   >
                     {totalChange > 0 ? '+' : ''}฿{totalChange.toLocaleString()}
@@ -396,7 +396,7 @@ function CostSimulation() {
                   <p className="text-[var(--fg-3)] mb-2">For 100 Units</p>
                   <p
                     className={`text-3xl font-bold ${
-                      totalChange > 0 ? 'text-red-400' : 'text-success'
+                      totalChange > 0 ? 'text-danger' : 'text-success'
                     }`}
                   >
                     {totalChange > 0 ? '+' : ''}฿{(totalChange * 100).toLocaleString()}

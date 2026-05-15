@@ -83,7 +83,7 @@ const FinancialReports = () => {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <BarChart3 className="w-8 h-8 text-phopy-indigo" />
+          <BarChart3 className="w-8 h-8 text-[var(--primary)]" />
           รายงานทางการเงิน (Financial Reports)
         </h1>
         <p className="text-[var(--fg-3)] mt-1">
@@ -102,7 +102,7 @@ const FinancialReports = () => {
               className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${
                 activeReport === report.id
                   ? 'bg-phopy-indigo text-white'
-                  : 'bg-white border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                  : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -210,7 +210,7 @@ const FinancialReports = () => {
                 ))}
               </tbody>
               <tfoot className="border-t-2 border-phopy-indigo">
-                <tr className="font-bold text-phopy-indigo">
+                <tr className="font-bold text-[var(--primary)]">
                   <td colSpan={2}>รวม</td>
                   <td className="text-right">{formatCurrency(trialBalance.totals.openingDebit)}</td>
                   <td className="text-right">{formatCurrency(trialBalance.totals.openingCredit)}</td>
@@ -237,7 +237,7 @@ const FinancialReports = () => {
             <div className="grid md:grid-cols-2 gap-8">
               {/* Assets */}
               <div>
-                <h3 className="text-lg font-bold text-green-400 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-success mb-4 flex items-center gap-2">
                   <ArrowUpRight className="w-5 h-5" />
                   สินทรัพย์
                 </h3>
@@ -255,7 +255,7 @@ const FinancialReports = () => {
                 ))}
                 
                 <div className="border-t border-[var(--border)] pt-2 mt-4">
-                  <div className="flex justify-between font-bold text-green-400">
+                  <div className="flex justify-between font-bold text-success">
                     <span>รวมสินทรัพย์</span>
                     <span>{formatCurrency(balanceSheet.assets.total)}</span>
                   </div>
@@ -264,7 +264,7 @@ const FinancialReports = () => {
               
               {/* Liabilities & Equity */}
               <div>
-                <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-danger mb-4 flex items-center gap-2">
                   <ArrowDownRight className="w-5 h-5" />
                   หนี้สิน
                 </h3>
@@ -282,7 +282,7 @@ const FinancialReports = () => {
                 ))}
                 
                 <div className="border-t border-[var(--border)] pt-2">
-                  <div className="flex justify-between font-bold text-red-400">
+                  <div className="flex justify-between font-bold text-danger">
                     <span>รวมหนี้สิน</span>
                     <span>{formatCurrency(balanceSheet.liabilities.total)}</span>
                   </div>
@@ -312,7 +312,7 @@ const FinancialReports = () => {
                 </div>
                 
                 <div className="border-t-2 border-phopy-indigo pt-2 mt-4">
-                  <div className="flex justify-between font-bold text-phopy-indigo">
+                  <div className="flex justify-between font-bold text-[var(--primary)]">
                     <span>รวมหนี้สินและส่วนของผู้ถือหุ้น</span>
                     <span>{formatCurrency(balanceSheet.totalLiabilitiesAndEquity)}</span>
                   </div>
@@ -321,7 +321,7 @@ const FinancialReports = () => {
             </div>
             
             {!balanceSheet.balanced && (
-              <div className="mt-6 p-4 bg-danger-soft border border-red-500/50 rounded-lg text-red-400 text-center">
+              <div className="mt-6 p-4 bg-[var(--danger-soft)] border border-danger/50 rounded-lg text-danger text-center">
                 ⚠️ งบดุลไม่สมดุล! กรุณาตรวจสอบรายการ
               </div>
             )}
@@ -339,7 +339,7 @@ const FinancialReports = () => {
             
             {/* Revenue */}
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-green-400 mb-2">รายได้</h3>
+              <h3 className="text-lg font-bold text-success mb-2">รายได้</h3>
               {Object.entries(profitLoss.revenue.grouped).map(([category, items]) => (
                 <div key={category} className="ml-4">
                   {items.map(item => (
@@ -350,7 +350,7 @@ const FinancialReports = () => {
                   ))}
                 </div>
               ))}
-              <div className="flex justify-between font-bold text-green-400 border-t border-[var(--border)] pt-2">
+              <div className="flex justify-between font-bold text-success border-t border-[var(--border)] pt-2">
                 <span>รวมรายได้</span>
                 <span>{formatCurrency(profitLoss.revenue.total)}</span>
               </div>
@@ -359,14 +359,14 @@ const FinancialReports = () => {
             {/* COGS */}
             {profitLoss.cogs.total > 0 && (
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-orange-400 mb-2">ต้นทุนขาย</h3>
+                <h3 className="text-lg font-bold text-warning mb-2">ต้นทุนขาย</h3>
                 {profitLoss.cogs.items.map(item => (
                   <div key={item.id} className="flex justify-between py-1 ml-4">
                     <span className="text-[var(--fg-2)]">{item.name}</span>
                     <span className="text-[var(--fg-2)]">{formatCurrency(item.balance)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between font-bold text-orange-400 border-t border-[var(--border)] pt-2">
+                <div className="flex justify-between font-bold text-warning border-t border-[var(--border)] pt-2">
                   <span>รวมต้นทุนขาย</span>
                   <span>{formatCurrency(profitLoss.cogs.total)}</span>
                 </div>
@@ -374,14 +374,14 @@ const FinancialReports = () => {
             )}
             
             {/* Gross Profit */}
-            <div className="flex justify-between font-bold text-phopy-indigo border-t-2 border-[var(--border)] pt-2 mb-6">
+            <div className="flex justify-between font-bold text-[var(--primary)] border-t-2 border-[var(--border)] pt-2 mb-6">
               <span>กำไรขั้นต้น</span>
               <span>{formatCurrency(profitLoss.grossProfit)}</span>
             </div>
             
             {/* Operating Expenses */}
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-red-400 mb-2">ค่าใช้จ่ายในการดำเนินงาน</h3>
+              <h3 className="text-lg font-bold text-danger mb-2">ค่าใช้จ่ายในการดำเนินงาน</h3>
               {Object.entries(profitLoss.operatingExpenses.grouped).map(([category, items]) => (
                 <div key={category} className="ml-4 mb-2">
                   <h4 className="text-sm text-[var(--fg-3)]">{category}</h4>
@@ -393,22 +393,22 @@ const FinancialReports = () => {
                   ))}
                 </div>
               ))}
-              <div className="flex justify-between font-bold text-red-400 border-t border-[var(--border)] pt-2">
+              <div className="flex justify-between font-bold text-danger border-t border-[var(--border)] pt-2">
                 <span>รวมค่าใช้จ่าย</span>
                 <span>{formatCurrency(profitLoss.operatingExpenses.total)}</span>
               </div>
             </div>
             
             {/* Operating Profit */}
-            <div className="flex justify-between font-bold text-phopy-indigo border-t-2 border-[var(--border)] pt-2 mb-6">
+            <div className="flex justify-between font-bold text-[var(--primary)] border-t-2 border-[var(--border)] pt-2 mb-6">
               <span>กำไรจากการดำเนินงาน</span>
               <span>{formatCurrency(profitLoss.operatingProfit)}</span>
             </div>
             
             {/* Net Profit */}
-            <div className="flex justify-between font-bold text-2xl text-phopy-indigo border-t-2 border-phopy-indigo pt-4">
+            <div className="flex justify-between font-bold text-2xl text-[var(--primary)] border-t-2 border-phopy-indigo pt-4">
               <span>กำไรสุทธิ</span>
-              <span className={profitLoss.netProfit >= 0 ? 'text-green-400' : 'text-red-400'}>
+              <span className={profitLoss.netProfit >= 0 ? 'text-success' : 'text-danger'}>
                 {formatCurrency(profitLoss.netProfit)}
               </span>
             </div>

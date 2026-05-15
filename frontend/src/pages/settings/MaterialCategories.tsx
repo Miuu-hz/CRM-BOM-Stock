@@ -114,8 +114,8 @@ export default function MaterialCategories() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-phopy-indigo-50 rounded-lg">
-            <Tag className="w-5 h-5 text-phopy-indigo" />
+          <div className="p-2 bg-[var(--primary-soft)] rounded-lg">
+            <Tag className="w-5 h-5 text-[var(--primary)]" />
           </div>
           <div>
             <h2 className="text-lg font-semibold text-[var(--fg-1)]">หมวดหมู่วัตถุดิบ</h2>
@@ -133,7 +133,7 @@ export default function MaterialCategories() {
 
       {/* Info */}
       <div className="flex items-start gap-2 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-lg">
-        <Info className="w-4 h-4 text-phopy-indigo mt-0.5 flex-shrink-0" />
+        <Info className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
         <p className="text-xs text-[var(--fg-3)]">
           หมวดหมู่ถูกใช้ในการจัดกลุ่มวัตถุดิบและกำหนดหน่วยนับเริ่มต้นอัตโนมัติ เมื่อสร้างวัตถุดิบใหม่ใน BOM จะไม่สามารถเปลี่ยนหมวดหมู่ได้ภายหลัง
         </p>
@@ -159,9 +159,9 @@ export default function MaterialCategories() {
       {/* Categories List */}
       <div className="phopy-card overflow-hidden">
         <div className="p-4 border-b border-[var(--border)] flex items-center gap-2">
-          <Package className="w-4 h-4 text-phopy-indigo" />
+          <Package className="w-4 h-4 text-[var(--primary)]" />
           <span className="text-sm font-medium text-[var(--fg-2)]">รายการหมวดหมู่</span>
-          <span className="px-2 py-0.5 bg-phopy-indigo-50 text-phopy-indigo text-xs rounded-full">
+          <span className="px-2 py-0.5 bg-[var(--primary-soft)] text-[var(--primary)] text-xs rounded-full">
             {categories.length} รายการ
           </span>
         </div>
@@ -185,15 +185,15 @@ export default function MaterialCategories() {
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-lg bg-phopy-indigo/10 flex items-center justify-center flex-shrink-0">
-                    <Tag className="w-4 h-4 text-phopy-indigo" />
+                    <Tag className="w-4 h-4 text-[var(--primary)]" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[var(--fg-2)] font-medium text-sm">{c.name}</span>
-                      <span className="px-2 py-0.5 bg-phopy-indigo-50 border border-phopy-indigo/30 rounded text-[11px] text-phopy-indigo font-mono font-bold tracking-wide">{c.code}</span>
+                      <span className="px-2 py-0.5 bg-[var(--primary-soft)] border border-phopy-indigo/30 rounded text-[11px] text-[var(--primary)] font-mono font-bold tracking-wide">{c.code}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-[var(--fg-4)] mt-0.5">
-                      <span>หน่วยเริ่มต้น: <span className="text-phopy-indigo font-medium">{ul(c.defaultUnit)}</span></span>
+                      <span>หน่วยเริ่มต้น: <span className="text-[var(--primary)] font-medium">{ul(c.defaultUnit)}</span></span>
                       {c.description && <span className="truncate max-w-[200px]">· {c.description}</span>}
                     </div>
                   </div>
@@ -201,14 +201,14 @@ export default function MaterialCategories() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => openEdit(c)}
-                    className="p-1.5 text-[var(--fg-3)] hover:text-phopy-indigo hover:bg-phopy-indigo/10 rounded-lg transition-colors"
+                    className="p-1.5 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors"
                     title="แก้ไข"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDelete(c.id, c.name)}
-                    className="p-1.5 text-[var(--fg-3)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    className="p-1.5 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
                     title="ลบ"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -225,7 +225,7 @@ export default function MaterialCategories() {
         {showForm && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={closeForm}
           >
             <motion.div
@@ -235,7 +235,7 @@ export default function MaterialCategories() {
             >
               <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
-                  <Tag className="w-5 h-5 text-phopy-indigo" />
+                  <Tag className="w-5 h-5 text-[var(--primary)]" />
                   <h3 className="font-semibold text-[var(--fg-1)]">
                     {editTarget ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่วัตถุดิบ'}
                   </h3>

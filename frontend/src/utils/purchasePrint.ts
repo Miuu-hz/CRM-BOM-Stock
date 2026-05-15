@@ -21,43 +21,47 @@ const STATUS_TH: Record<string, string> = {
 
 // ── CSS base ──────────────────────────────────────────────────
 const CSS_A4 = `
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap');
   @page { size: A4 portrait; margin: 12mm 15mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 10pt; color: #111; background: #fff; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 10pt; color: #1a1a1a; background: #fff; }
   .page { max-width: 175mm; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a1a2e; padding-bottom: 6mm; margin-bottom: 5mm; }
-  .company-block { font-size: 9pt; color: #444; }
-  .company-name { font-size: 13pt; font-weight: 700; color: #1a1a2e; }
-  .doc-title { text-align: right; }
-  .doc-title h1 { font-size: 16pt; font-weight: 700; color: #1a1a2e; }
-  .doc-title .doc-number { font-size: 11pt; font-weight: 600; color: #333; margin-top: 2mm; }
-  .doc-title .doc-date { font-size: 9pt; color: #666; margin-top: 1mm; }
-  .info-row { display: flex; gap: 8mm; margin-bottom: 4mm; }
-  .info-box { flex: 1; border: 1px solid #ddd; border-radius: 3px; padding: 3mm 4mm; }
-  .info-box label { font-size: 7.5pt; color: #888; display: block; margin-bottom: 1mm; }
-  .info-box .value { font-size: 9.5pt; font-weight: 600; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #3949E5; padding-bottom: 6mm; margin-bottom: 5mm; }
+  .company-block { font-size: 9pt; color: #444; line-height: 1.65; }
+  .company-name { font-size: 13pt; font-weight: 800; color: #111; margin-bottom: 1mm; }
+  .doc-title { text-align: right; padding: 4mm 5mm; background: #eef0fe; border: 1.5px solid #c5caf8; border-radius: 6px; min-width: 52mm; }
+  .doc-title h1 { font-size: 15pt; font-weight: 800; color: #3949E5; }
+  .doc-title .doc-number { font-size: 11pt; font-weight: 600; color: #111; margin-top: 1.5mm; font-family: monospace; }
+  .doc-title .doc-date { font-size: 8.5pt; color: #666; margin-top: 1mm; }
+  .info-row { display: flex; gap: 5mm; margin-bottom: 4mm; }
+  .info-box { flex: 1; border: 1px solid #e8e8e8; border-radius: 5px; padding: 2.5mm 3.5mm; background: #fafafa; }
+  .info-box label { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .info-box .value { font-size: 9.5pt; font-weight: 700; color: #111; }
   .info-box .sub { font-size: 8pt; color: #666; margin-top: 0.5mm; }
   table { width: 100%; border-collapse: collapse; margin-top: 4mm; }
-  table th { background: #1a1a2e; color: #fff; font-size: 8.5pt; font-weight: 600; padding: 2mm 3mm; text-align: left; }
+  table th { background: #3949E5; color: #fff; font-size: 8pt; font-weight: 700; padding: 2.5mm 3mm; text-align: left; }
   table th.right, table td.right { text-align: right; }
   table th.center, table td.center { text-align: center; }
-  table td { font-size: 9pt; padding: 2mm 3mm; border-bottom: 1px solid #eee; vertical-align: top; }
+  table td { font-size: 9pt; padding: 2mm 3mm; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
   table tr:nth-child(even) td { background: #fafafa; }
+  table tr:last-child td { border-bottom: 2px solid #e5e7eb; }
   .totals { margin-top: 3mm; display: flex; justify-content: flex-end; }
-  .totals-box { width: 70mm; }
-  .totals-row { display: flex; justify-content: space-between; padding: 1.5mm 0; font-size: 9.5pt; border-bottom: 1px solid #eee; }
-  .totals-row.grand { font-size: 12pt; font-weight: 700; color: #1a1a2e; border-top: 2px solid #1a1a2e; border-bottom: none; padding-top: 2mm; }
-  .notes-box { margin-top: 5mm; padding: 3mm 4mm; border: 1px solid #ddd; border-radius: 3px; }
-  .notes-box label { font-size: 7.5pt; color: #888; display: block; margin-bottom: 1mm; }
-  .sig-row { display: flex; gap: 8mm; margin-top: 12mm; }
-  .sig-box { flex: 1; text-align: center; border-top: 1px solid #333; padding-top: 2mm; font-size: 8.5pt; color: #555; }
-  .status-badge { display: inline-block; padding: 1mm 3mm; border-radius: 2px; font-size: 8pt; font-weight: 600; }
+  .totals-box { width: 72mm; border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
+  .totals-row { display: flex; justify-content: space-between; padding: 2mm 3.5mm; font-size: 9.5pt; border-bottom: 1px solid #f3f3f3; color: #333; }
+  .totals-row:last-child { border-bottom: none; }
+  .totals-row.grand { font-size: 11.5pt; font-weight: 800; color: #fff; background: #3949E5; padding: 3mm 3.5mm; border-bottom: none; }
+  .totals-row.balance { color: #dc2626; font-weight: 700; }
+  .notes-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid #e8e8e8; border-radius: 5px; background: #fafafa; }
+  .notes-box label { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .journal-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid #e0e6ff; border-left: 3px solid #3949E5; border-radius: 5px; font-size: 8.5pt; color: #444; line-height: 1.7; background: #f8f9ff; }
+  .status-badge { display: inline-block; padding: 1mm 3mm; border-radius: 3px; font-size: 8pt; font-weight: 600; }
   .badge-draft { background: #f3f4f6; color: #374151; }
   .badge-approved { background: #d1fae5; color: #065f46; }
   .badge-pending { background: #fef3c7; color: #92400e; }
-  .footer { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid #ddd; font-size: 7.5pt; color: #999; text-align: center; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  .sig-row { display: flex; gap: 8mm; margin-top: 12mm; }
+  .sig-box { flex: 1; text-align: center; border-top: 1px solid #cccccc; padding-top: 2mm; font-size: 8.5pt; color: #555; }
+  .footer { margin-top: 7mm; padding-top: 3mm; border-top: 1px dashed #dddddd; font-size: 7.5pt; color: #aaa; text-align: center; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } table th { background: #3949E5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .totals-row.grand { background: #3949E5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
 
 const CSS_THERMAL = `
@@ -68,19 +72,19 @@ const CSS_THERMAL = `
   .center { text-align: center; }
   .right { text-align: right; }
   .bold { font-weight: 700; }
-  .company-name { font-size: 11pt; font-weight: 700; }
-  .doc-type { font-size: 9pt; font-weight: 600; margin: 1mm 0; }
-  .doc-no { font-size: 9pt; font-weight: 700; }
+  .company-name { font-size: 12pt; font-weight: 800; }
+  .doc-type { font-size: 9pt; font-weight: 700; margin: 1mm 0; }
+  .doc-no { font-size: 9pt; font-weight: 600; font-family: monospace; }
   .divider { border: none; border-top: 1px dashed #000; margin: 2mm 0; }
-  .divider-solid { border: none; border-top: 1px solid #000; margin: 2mm 0; }
+  .divider-solid { border: none; border-top: 1.5px solid #000; margin: 2mm 0; }
   .row { display: flex; justify-content: space-between; font-size: 8pt; margin: 0.8mm 0; }
   .row label { color: #444; flex-shrink: 0; }
   .row span { text-align: right; }
   table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
-  table th { font-weight: 700; border-bottom: 1px solid #000; padding: 1mm 1mm; }
-  table td { padding: 1mm 1mm; vertical-align: top; border-bottom: 1px dashed #ccc; }
+  table th { font-weight: 700; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1mm; }
+  table td { padding: 1mm; vertical-align: top; border-bottom: 1px dashed #ccc; }
   table td.right { text-align: right; }
-  .total-line { font-size: 10pt; font-weight: 700; }
+  .total-line { font-size: 11pt; font-weight: 800; }
   .sig-area { margin-top: 6mm; border-top: 1px solid #000; padding-top: 2mm; text-align: center; font-size: 7.5pt; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `

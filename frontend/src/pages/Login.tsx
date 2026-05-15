@@ -52,7 +52,7 @@ function Login() {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 p-3 bg-danger-soft border border-danger/30 rounded-lg text-danger text-sm">
+          <div className="mb-6 p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-danger text-sm">
             {error}
           </div>
         )}
@@ -100,13 +100,13 @@ function Login() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-phopy-indigo focus:ring-phopy-indigo focus:ring-2"
+                className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--primary)] focus:ring-phopy-indigo focus:ring-2"
               />
               <span className="text-sm text-[var(--fg-3)]">Remember me</span>
             </label>
             <button
               type="button"
-              className="text-sm text-phopy-indigo hover:text-phopy-indigo-600 transition-colors"
+              className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors"
             >
               Forgot Password?
             </button>

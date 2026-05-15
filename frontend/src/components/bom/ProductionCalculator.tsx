@@ -108,9 +108,9 @@ function ProductionCalculator() {
       case 'OK':
         return <CheckCircle className="w-5 h-5 text-success" />
       case 'LOW':
-        return <AlertTriangle className="w-5 h-5 text-yellow-400" />
+        return <AlertTriangle className="w-5 h-5 text-warning" />
       case 'INSUFFICIENT':
-        return <AlertCircle className="w-5 h-5 text-red-400" />
+        return <AlertCircle className="w-5 h-5 text-danger" />
       case 'OUT_OF_STOCK':
         return <AlertCircle className="w-5 h-5 text-red-500" />
       default:
@@ -124,7 +124,7 @@ function ProductionCalculator() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
       </div>
     )
   }
@@ -186,7 +186,7 @@ function ProductionCalculator() {
               className="phopy-card p-4"
             >
               <p className="text-sm text-[var(--fg-3)] mb-1">Total Materials</p>
-              <p className="text-2xl font-bold text-phopy-indigo">{requirements.length}</p>
+              <p className="text-2xl font-bold text-[var(--primary)]">{requirements.length}</p>
             </motion.div>
 
             <motion.div
@@ -206,7 +206,7 @@ function ProductionCalculator() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
               className={`phopy-card p-4 ${
-                canProduce ? 'border-success/50' : hasZeroStock ? 'border-red-600/70' : 'border-red-500/50'
+                canProduce ? 'border-success/50' : hasZeroStock ? 'border-red-600/70' : 'border-danger/50'
               }`}
             >
               <p className="text-sm text-[var(--fg-3)] mb-1">Production Status</p>
@@ -223,8 +223,8 @@ function ProductionCalculator() {
                   </>
                 ) : (
                   <>
-                    <AlertCircle className="w-6 h-6 text-red-400" />
-                    <span className="text-xl font-bold text-red-400">Insufficient</span>
+                    <AlertCircle className="w-6 h-6 text-danger" />
+                    <span className="text-xl font-bold text-danger">Insufficient</span>
                   </>
                 )}
               </div>
@@ -259,7 +259,7 @@ function ProductionCalculator() {
                 {(requirements || []).map((req) => (
                   <tr
                     key={req.materialId}
-                    className={req.status === 'OUT_OF_STOCK' ? 'bg-red-600/20' : req.status === 'INSUFFICIENT' ? 'bg-red-500/10' : ''}
+                    className={req.status === 'OUT_OF_STOCK' ? 'bg-red-600/20' : req.status === 'INSUFFICIENT' ? 'bg-[var(--danger-soft)]' : ''}
                   >
                     <td>{getStatusIcon(req.status)}</td>
                     <td className="text-[var(--fg-2)]">{req.materialName}</td>
@@ -272,9 +272,9 @@ function ProductionCalculator() {
                         req.status === 'OUT_OF_STOCK'
                           ? 'text-red-500'
                           : req.status === 'INSUFFICIENT'
-                          ? 'text-red-400'
+                          ? 'text-danger'
                           : req.status === 'LOW'
-                          ? 'text-yellow-400'
+                          ? 'text-warning'
                           : 'text-success'
                       }
                     >
@@ -287,7 +287,7 @@ function ProductionCalculator() {
                         `${req.availableStock.toLocaleString()} ${req.unit}`
                       )}
                     </td>
-                    <td className={req.shortage > 0 ? 'text-red-400 font-semibold' : 'text-[var(--fg-4)]'}>
+                    <td className={req.shortage > 0 ? 'text-danger font-semibold' : 'text-[var(--fg-4)]'}>
                       {req.shortage > 0 ? `-${req.shortage.toLocaleString()}` : '-'}
                     </td>
                     <td className="text-[var(--fg-3)]">฿{req.unitCost.toLocaleString()}</td>
@@ -302,7 +302,7 @@ function ProductionCalculator() {
                   <td colSpan={7} className="text-right text-[var(--fg-3)] font-semibold">
                     Total Production Cost:
                   </td>
-                  <td className="text-2xl font-bold text-phopy-indigo">
+                  <td className="text-2xl font-bold text-[var(--primary)]">
                     ฿{totalCost.toLocaleString()}
                   </td>
                 </tr>
@@ -342,7 +342,7 @@ function ProductionCalculator() {
                         </li>
                       ))}
                   </ul>
-                  <p className="text-red-400/80 text-sm mt-4">
+                  <p className="text-danger/80 text-sm mt-4">
                     Please restock these materials before attempting production.
                   </p>
                 </div>
@@ -355,12 +355,12 @@ function ProductionCalculator() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="phopy-card p-6 border-red-500/50"
+              className="phopy-card p-6 border-danger/50"
             >
               <div className="flex items-start gap-4">
-                <AlertCircle className="w-8 h-8 text-red-400 flex-shrink-0" />
+                <AlertCircle className="w-8 h-8 text-danger flex-shrink-0" />
                 <div>
-                  <h3 className="text-lg font-semibold text-red-400 mb-2">
+                  <h3 className="text-lg font-semibold text-danger mb-2">
                     Insufficient Materials
                   </h3>
                   <p className="text-[var(--fg-3)] mb-4">
@@ -371,10 +371,10 @@ function ProductionCalculator() {
                       .filter((r) => r.status === 'INSUFFICIENT')
                       .map((r) => (
                         <li key={r.materialId} className="flex items-center gap-2 text-[var(--fg-2)]">
-                          <Package className="w-4 h-4 text-red-400" />
+                          <Package className="w-4 h-4 text-danger" />
                           <span>
                             {r.materialName}: Need{' '}
-                            <span className="text-red-400 font-semibold">
+                            <span className="text-danger font-semibold">
                               {r.shortage.toLocaleString()} {r.unit}
                             </span>{' '}
                             more

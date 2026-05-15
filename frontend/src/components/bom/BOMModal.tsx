@@ -444,7 +444,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={onClose}
         >
           <motion.div
@@ -486,7 +486,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 text-phopy-indigo animate-spin" />
+                  <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -494,7 +494,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-1">
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        สินค้า <span className="text-red-400">*</span>
+                        สินค้า <span className="text-danger">*</span>
                       </label>
                       <SearchableDropdown
                         value={productId}
@@ -511,7 +511,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
                     <div>
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        เวอร์ชัน <span className="text-red-400">*</span>
+                        เวอร์ชัน <span className="text-danger">*</span>
                       </label>
                       <input
                         type="text"
@@ -564,13 +564,13 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <label className="block text-sm font-medium text-[var(--fg-2)]">
-                        รายการวัตถุดิบ / Child BOM <span className="text-red-400">*</span>
+                        รายการวัตถุดิบ / Child BOM <span className="text-danger">*</span>
                       </label>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleAddItem('MATERIAL')}
-                          className="text-sm text-phopy-indigo hover:text-phopy-indigo/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50"
+                          className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50"
                         >
                           <Box className="w-4 h-4" />
                           เพิ่มวัตถุดิบ
@@ -607,7 +607,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               <div className={`w-full h-10 rounded-lg flex items-center justify-center ${isMaterial ? 'bg-phopy-indigo/10' : 'bg-purple-500/20'
                                 }`}>
                                 {isMaterial ? (
-                                  <Box className="w-4 h-4 text-phopy-indigo" />
+                                  <Box className="w-4 h-4 text-[var(--primary)]" />
                                 ) : (
                                   <GitBranch className="w-4 h-4 text-purple-500" />
                                 )}
@@ -634,7 +634,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                       <button
                                         type="button"
                                         onClick={() => setIsMaterialModalOpen(true)}
-                                        className="text-xs text-phopy-indigo hover:text-phopy-indigo-600 flex items-center gap-1"
+                                        className="text-xs text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
                                       >
                                         <Plus className="w-3 h-3" />
                                         เพิ่มวัตถุดิบใหม่
@@ -693,7 +693,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                   })()}
                                 </select>
                               ) : (
-                                <div className="phopy-input w-full text-sm bg-[var(--surface-2)] text-phopy-indigo font-semibold flex items-center justify-center">
+                                <div className="phopy-input w-full text-sm bg-[var(--surface-2)] text-[var(--primary)] font-semibold flex items-center justify-center">
                                   {selectedChildBOM ? 'ชุด' : '-'}
                                 </div>
                               )}
@@ -721,7 +721,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 type="button"
                                 onClick={() => handleRemoveItem(row.id)}
                                 disabled={itemRows.length === 1}
-                                className="p-1.5 rounded hover:bg-danger-soft text-[var(--fg-3)] hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                                className="p-1.5 rounded hover:bg-[var(--danger-soft)] text-[var(--fg-3)] hover:text-danger disabled:opacity-30 disabled:cursor-not-allowed"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -773,7 +773,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   {/* Total Cost */}
                   <div className="flex items-center justify-end gap-4 pt-4 border-t border-[var(--border)]">
                     <span className="text-[var(--fg-3)]">ต้นทุนรวม:</span>
-                    <span className="text-2xl font-bold text-phopy-indigo">
+                    <span className="text-2xl font-bold text-[var(--primary)]">
                       ฿{totalCost.toLocaleString()}
                     </span>
                   </div>
@@ -807,7 +807,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           {categoryChangeModal && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
+              className="fixed inset-0 bg-[var(--fg-1)]/70 flex items-center justify-center z-[60] p-4"
               onClick={() => setCategoryChangeModal(null)}
             >
               <motion.div
@@ -816,8 +816,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 className="phopy-card w-full max-w-md"
               >
                 <div className="p-5 border-b border-[var(--border)] flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                    <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                  <div className="w-10 h-10 rounded-lg bg-[var(--warning-soft)] flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-warning" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-[var(--fg-1)]">ต้องเปลี่ยนประเภทสินค้าก่อน</h3>
@@ -827,7 +827,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
                 <div className="p-5 space-y-4">
                   <p className="text-sm text-[var(--fg-2)]">
-                    <span className="text-phopy-indigo font-semibold">{categoryChangeModal.productName}</span>{' '}
+                    <span className="text-[var(--primary)] font-semibold">{categoryChangeModal.productName}</span>{' '}
                     ถูกตั้งค่าเป็น วัตถุดิบ (Material) ซึ่งไม่สามารถใช้เป็น output ของ BOM ได้
                   </p>
                   <p className="text-sm text-[var(--fg-3)]">กรุณาเลือกประเภทที่ถูกต้องสำหรับสินค้าที่จะผลิต:</p>
@@ -836,9 +836,9 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     <button
                       onClick={() => handleConfirmCategoryChange('finished')}
                       disabled={changingCategory}
-                      className="p-4 rounded-lg border border-phopy-indigo/30 bg-phopy-indigo/10 hover:bg-phopy-indigo-50 text-left transition-all group"
+                      className="p-4 rounded-lg border border-phopy-indigo/30 bg-phopy-indigo/10 hover:bg-[var(--primary-soft)] text-left transition-all group"
                     >
-                      <div className="text-phopy-indigo font-semibold text-sm mb-1">✅ สินค้าสำเร็จรูป</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1">✅ สินค้าสำเร็จรูป</div>
                       <div className="text-xs text-[var(--fg-3)]">Finished Good</div>
                       <div className="text-xs text-[var(--fg-4)] mt-2">สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง</div>
                     </button>
@@ -980,7 +980,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-[60] p-4"
           onClick={onClose}
         >
           <motion.div
@@ -993,7 +993,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
           >
             <div className="p-4 border-b border-[var(--border)] flex items-center justify-between bg-phopy-indigo/10">
               <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-phopy-indigo" />
+                <Package className="w-5 h-5 text-[var(--primary)]" />
                 <h3 className="text-lg font-bold text-[var(--fg-1)]">เพิ่มวัตถุดิบใหม่</h3>
               </div>
               <button onClick={onClose} className="p-1 hover:bg-[var(--bg)] rounded">

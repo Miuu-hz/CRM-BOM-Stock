@@ -63,7 +63,7 @@ function StockAlerts() {
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center gap-3 mb-6">
-        <AlertTriangle className="w-6 h-6 text-yellow-400" />
+        <AlertTriangle className="w-6 h-6 text-warning" />
         <h2 className="text-xl font-bold text-[var(--fg-1)]">
           Stock Alerts
         </h2>
@@ -82,19 +82,19 @@ function StockAlerts() {
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   alert.level === 'critical'
-                    ? 'bg-danger-soft border border-red-500/30'
+                    ? 'bg-[var(--danger-soft)] border border-danger/30'
                     : alert.level === 'warning'
-                    ? 'bg-yellow-500/20 border border-yellow-500/30'
-                    : 'bg-orange-500/20 border border-orange-500/30'
+                    ? 'bg-[var(--warning-soft)] border border-warning/30'
+                    : 'bg-[var(--warning-soft)] border border-warning/30'
                 }`}
               >
                 <Package
                   className={`w-5 h-5 ${
                     alert.level === 'critical'
-                      ? 'text-red-400'
+                      ? 'text-danger'
                       : alert.level === 'warning'
-                      ? 'text-yellow-400'
-                      : 'text-orange-400'
+                      ? 'text-warning'
+                      : 'text-warning'
                   }`}
                 />
               </div>
@@ -116,10 +116,10 @@ function StockAlerts() {
                     <span
                       className={`font-semibold ${
                         alert.level === 'critical'
-                          ? 'text-red-400'
+                          ? 'text-danger'
                           : alert.level === 'warning'
-                          ? 'text-yellow-400'
-                          : 'text-orange-400'
+                          ? 'text-warning'
+                          : 'text-warning'
                       }`}
                     >
                       {alert.current} {alert.unit}
@@ -163,15 +163,15 @@ function LevelBadge({ level }: { level: StockAlert['level'] }) {
   const config = {
     critical: {
       label: 'Critical',
-      className: 'bg-danger-soft text-red-400 border-red-500/30',
+      className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
     },
     warning: {
       label: 'Warning',
-      className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     low: {
       label: 'Low',
-      className: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
   }
 

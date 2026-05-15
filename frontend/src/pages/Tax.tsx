@@ -107,9 +107,9 @@ function Tax() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'OPEN': return 'text-green-400'
+      case 'OPEN': return 'text-success'
       case 'CLOSED': return 'text-[var(--fg-3)]'
-      case 'FILING': return 'text-yellow-400'
+      case 'FILING': return 'text-warning'
       default: return 'text-[var(--fg-3)]'
     }
   }
@@ -173,25 +173,25 @@ function Tax() {
               key={idx}
               className={`p-4 rounded-lg border ${
                 alert.type === 'danger' 
-                  ? 'bg-red-500/10 border-red-500/30' 
+                  ? 'bg-[var(--danger-soft)] border-danger/30' 
                   : alert.type === 'warning'
-                  ? 'bg-yellow-500/10 border-yellow-500/30'
-                  : 'bg-blue-500/10 border-blue-500/30'
+                  ? 'bg-[var(--warning-soft)] border-warning/30'
+                  : 'bg-blue-500/10 border-info/30'
               }`}
             >
               <div className="flex items-center gap-2">
                 {alert.type === 'danger' ? (
-                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <AlertCircle className="w-5 h-5 text-danger" />
                 ) : alert.type === 'warning' ? (
-                  <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                  <AlertTriangle className="w-5 h-5 text-warning" />
                 ) : (
                   <CheckCircle className="w-5 h-5 text-blue-400" />
                 )}
                 <span className={
                   alert.type === 'danger' 
-                    ? 'text-red-400' 
+                    ? 'text-danger' 
                     : alert.type === 'warning'
-                    ? 'text-yellow-400'
+                    ? 'text-warning'
                     : 'text-blue-400'
                 }>
                   {alert.message}
@@ -274,7 +274,7 @@ function Tax() {
           {/* Quick Actions */}
           <div className="phopy-card p-6">
             <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-phopy-indigo" />
+              <Settings className="w-5 h-5 text-[var(--primary)]" />
               การดำเนินการด่วน
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -302,7 +302,7 @@ function Tax() {
           {/* Tax Calendar */}
           <div className="phopy-card p-6">
             <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-phopy-indigo" />
+              <Calendar className="w-5 h-5 text-[var(--primary)]" />
               ปฏิทินภาษี
             </h3>
             <div className="space-y-3">
@@ -368,12 +368,12 @@ function Tax() {
                         <td>{t.partner_name}</td>
                         <td className="max-w-xs truncate">{t.description}</td>
                         <td className="text-right">{formatCurrency(t.base_amount)}</td>
-                        <td className="text-right text-phopy-indigo">{formatCurrency(t.tax_amount)}</td>
+                        <td className="text-right text-[var(--primary)]">{formatCurrency(t.tax_amount)}</td>
                         <td>
                           <span className={`px-2 py-1 rounded text-xs ${
                             t.is_deductible 
-                              ? 'bg-green-500/20 text-green-400' 
-                              : 'bg-yellow-500/20 text-yellow-400'
+                              ? 'bg-[var(--success-soft)] text-success' 
+                              : 'bg-[var(--warning-soft)] text-warning'
                           }`}>
                             {t.is_deductible ? 'หักได้' : 'หักไม่ได้'}
                           </span>
@@ -446,7 +446,7 @@ function Tax() {
                         <td className="max-w-xs truncate">{t.description}</td>
                         <td className="text-right">{formatCurrency(t.base_amount)}</td>
                         <td>{t.tax_rate}%</td>
-                        <td className="text-right text-phopy-indigo">{formatCurrency(t.tax_amount)}</td>
+                        <td className="text-right text-[var(--primary)]">{formatCurrency(t.tax_amount)}</td>
                       </tr>
                     ))
                   )}
@@ -462,7 +462,7 @@ function Tax() {
         <div className="space-y-6">
           <div className="phopy-card p-6">
             <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-phopy-indigo" />
+              <Calculator className="w-5 h-5 text-[var(--primary)]" />
               การคำนวณภาษีเงินได้นิติบุคคล (CIT)
             </h3>
             
@@ -474,18 +474,18 @@ function Tax() {
                 </div>
                 <div>
                   <p className="text-[var(--fg-3)] text-sm">ปรับปรุงเพิ่ม (Add-backs)</p>
-                  <p className="text-2xl font-bold text-red-400">{formatCurrency(0)}</p>
+                  <p className="text-2xl font-bold text-danger">{formatCurrency(0)}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 p-4 bg-[var(--surface-2)] rounded-lg">
                 <div>
                   <p className="text-[var(--fg-3)] text-sm">หักค่าใช้จ่ายเพิ่ม (Double Deductions)</p>
-                  <p className="text-2xl font-bold text-green-400">{formatCurrency(0)}</p>
+                  <p className="text-2xl font-bold text-success">{formatCurrency(0)}</p>
                 </div>
                 <div>
                   <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิทางภาษี</p>
-                  <p className="text-2xl font-bold text-phopy-indigo">{formatCurrency(0)}</p>
+                  <p className="text-2xl font-bold text-[var(--primary)]">{formatCurrency(0)}</p>
                 </div>
               </div>
 
@@ -493,7 +493,7 @@ function Tax() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[var(--fg-3)] text-sm">ภาษีเงินได้นิติบุคคลโดยประมาณ</p>
-                    <p className="text-3xl font-bold text-phopy-indigo">{formatCurrency(0)}</p>
+                    <p className="text-3xl font-bold text-[var(--primary)]">{formatCurrency(0)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[var(--fg-3)] text-sm">อัตราภาษี</p>
@@ -507,7 +507,7 @@ function Tax() {
           {/* Tax Optimization Tips */}
           <div className="phopy-card p-6">
             <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <Percent className="w-5 h-5 text-phopy-indigo" />
+              <Percent className="w-5 h-5 text-[var(--primary)]" />
               แนะนำการวางแผนภาษี (Tax Optimization)
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -596,7 +596,7 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
       onClick={onClick}
       className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
         active
-          ? 'bg-phopy-indigo-50 text-phopy-indigo border-b-2 border-phopy-indigo'
+          ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'
       }`}
     >
@@ -609,10 +609,10 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
 // Component: Tax Card
 function TaxCard({ title, amount, icon: Icon, color, description }: { title: string; amount: number; icon: any; color: string; description: string }) {
   const colorClasses: Record<string, string> = {
-    red: 'text-red-400',
-    green: 'text-green-400',
-    yellow: 'text-yellow-400',
-    primary: 'text-phopy-indigo',
+    red: 'text-danger',
+    green: 'text-success',
+    yellow: 'text-warning',
+    primary: 'text-[var(--primary)]',
   }
 
   return (
@@ -640,7 +640,7 @@ function QuickActionButton({ icon: Icon, title, description, onClick }: { icon: 
       onClick={onClick}
       className="p-4 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg hover:border-phopy-indigo/50 transition-colors text-left"
     >
-      <Icon className="w-8 h-8 text-phopy-indigo mb-3" />
+      <Icon className="w-8 h-8 text-[var(--primary)] mb-3" />
       <h4 className="text-[var(--fg-2)] font-semibold mb-1">{title}</h4>
       <p className="text-[var(--fg-4)] text-sm">{description}</p>
     </motion.button>
@@ -651,11 +651,11 @@ function QuickActionButton({ icon: Icon, title, description, onClick }: { icon: 
 function OptimizationCard({ title, description, potentialSaving, action }: { title: string; description: string; potentialSaving: string; action: string }) {
   return (
     <div className="p-4 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg">
-      <h4 className="text-phopy-indigo font-semibold mb-2">{title}</h4>
+      <h4 className="text-[var(--primary)] font-semibold mb-2">{title}</h4>
       <p className="text-[var(--fg-3)] text-sm mb-3">{description}</p>
       <div className="flex items-center justify-between">
-        <span className="text-green-400 text-sm font-medium">{potentialSaving}</span>
-        <button className="text-phopy-indigo text-sm hover:underline">{action} →</button>
+        <span className="text-success text-sm font-medium">{potentialSaving}</span>
+        <button className="text-[var(--primary)] text-sm hover:underline">{action} →</button>
       </div>
     </div>
   )
@@ -664,16 +664,16 @@ function OptimizationCard({ title, description, potentialSaving, action }: { tit
 // Component: Filing Card
 function FilingCard({ formCode, formName, dueDate, status, onGenerate }: { formCode: string; formName: string; dueDate: string; status: string; onGenerate: () => void }) {
   const statusColors: Record<string, string> = {
-    pending: 'bg-yellow-500/20 text-yellow-400',
-    ready: 'bg-blue-500/20 text-blue-400',
-    submitted: 'bg-green-500/20 text-green-400',
+    pending: 'bg-[var(--warning-soft)] text-warning',
+    ready: 'bg-[var(--info-soft)] text-blue-400',
+    submitted: 'bg-[var(--success-soft)] text-success',
   }
 
   return (
     <div className="p-4 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <span className="text-2xl font-bold text-phopy-indigo">{formCode}</span>
+          <span className="text-2xl font-bold text-[var(--primary)]">{formCode}</span>
           <span className={`ml-2 px-2 py-0.5 rounded text-xs ${statusColors[status]}`}>
             {status === 'pending' ? 'รอดำเนินการ' : status === 'ready' ? 'พร้อมยื่น' : 'ยื่นแล้ว'}
           </span>
@@ -685,7 +685,7 @@ function FilingCard({ formCode, formName, dueDate, status, onGenerate }: { formC
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={onGenerate}
-        className="w-full py-2 bg-phopy-indigo-50 text-phopy-indigo rounded-lg hover:bg-phopy-indigo/30 transition-colors"
+        className="w-full py-2 bg-[var(--primary-soft)] text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/30 transition-colors"
       >
         สร้างแบบฟอร์ม
       </motion.button>
