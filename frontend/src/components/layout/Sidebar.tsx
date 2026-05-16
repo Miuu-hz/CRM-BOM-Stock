@@ -19,6 +19,7 @@ import {
   Store,
   MonitorPlay,
   Megaphone,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../utils/api'
@@ -41,6 +42,7 @@ const menuItems = [
     subMenu: [
       { path: '/bom', label: 'BOM', icon: FileText },
       { path: '/work-orders', label: 'Work Orders', icon: Wrench },
+      { path: '/qc', label: 'Quality Control', icon: ClipboardCheck },
     ],
   },
   { path: '/stock', label: 'Stock', icon: Package, description: 'Inventory Management' },

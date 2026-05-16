@@ -11,6 +11,7 @@ import Marketing from './pages/Marketing'
 import Sales from './pages/Sales'
 import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
+import QC from './pages/QC'
 import Settings from './pages/Settings'
 import { ChartOfAccounts, JournalEntries, FinancialReports } from './pages/Accounting'
 import Tax from './pages/Tax'
@@ -71,6 +72,7 @@ function AppContent() {
         <Route path="/sales" element={<Sales />} />
         <Route path="/purchase" element={<Purchase />} />
         <Route path="/work-orders" element={<WorkOrders />} />
+        <Route path="/qc" element={<QC />} />
         <Route path="/production" element={<Navigate to="/bom" replace />} />
         <Route path="/settings" element={<Settings />} />
 
