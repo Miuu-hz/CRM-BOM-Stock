@@ -7,6 +7,9 @@ const KDS: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(false)
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    'Notification' in window ? Notification.permission : 'denied'
+  )
   const [isFullscreen, setIsFullscreen] = useState(false)
   const isFirstLoad = useRef(true)
   const lastCount = useRef(0)
@@ -26,15 +29,18 @@ const KDS: React.FC = () => {
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  const unlockAudio = () => {
-    if (soundEnabled) return
-    try {
-      const audio = new Audio('/sounds/order-voice.m4a')
-      audio.volume = 1.0
-      audio.load()
-      audioRef.current = audio
-      setSoundEnabled(true)
-    } catch {}
+  const unlockAudio = async () => {
+    if (!soundEnabled) {
+      try {
+        const audio = new Audio('/sounds/order-voice.m4a')
+        audio.volume = 1.0
+        audio.load()
+        audioRef.current = audio
+        setSoundEnabled(true)
+      } catch {}
+    }
+    const perm = await kdsService.requestNotificationPermission()
+    setNotifPermission(perm)
   }
 
   const fetchTickets = async () => {
@@ -45,6 +51,7 @@ const KDS: React.FC = () => {
       const count = data.length
       if (!isFirstLoad.current && count > lastCount.current) {
         playNotificationSound()
+        kdsService.notifyNewTickets(count - lastCount.current)
       }
       lastCount.current = count
       isFirstLoad.current = false
@@ -115,12 +122,16 @@ const KDS: React.FC = () => {
           <button
             onClick={unlockAudio}
             className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${
-              soundEnabled
+              soundEnabled && notifPermission === 'granted'
                 ? 'bg-success/10 border-success/40 text-success'
                 : 'bg-[var(--warning-soft)] border-yellow-500/40 text-warning animate-pulse'
             }`}
           >
-            {soundEnabled ? '🔔 เสียงเปิด' : '🔕 กดเพื่อเปิดเสียง'}
+            {soundEnabled && notifPermission === 'granted'
+              ? '🔔 เสียง + แจ้งเตือนเปิด'
+              : soundEnabled
+              ? '🔔 เสียงเปิด · กดขออนุญาตแจ้งเตือน'
+              : '🔕 กดเพื่อเปิดเสียง + แจ้งเตือน'}
           </button>
           <div className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />

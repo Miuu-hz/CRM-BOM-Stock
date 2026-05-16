@@ -46,6 +46,8 @@ import settingsRoutes from './routes/settings.routes'
 import llmProviderRoutes from './routes/llmProvider.routes'
 import { agentRoutes, startWorker } from './agent'
 import analyticsRoutes from './analytics/routes'
+import backupRoutes from './routes/backup.routes'
+import { startBackupScheduler } from './services/backup.scheduler'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -157,6 +159,7 @@ app.use('/api/pos/kds', kdsRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/llm-providers', llmProviderRoutes)
 app.use('/api/analytics', analyticsRoutes)
+app.use('/api/backup', backupRoutes)
 
 // Serve frontend (production) — must be after all API routes
 const frontendDist = path.join(__dirname, '../../frontend/dist')
@@ -184,6 +187,7 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🌐 API URL: http://localhost:${PORT}/api`)
   startWorker()
+  startBackupScheduler()
 })
 
 export default app

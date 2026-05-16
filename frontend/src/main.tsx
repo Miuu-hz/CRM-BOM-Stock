@@ -6,6 +6,9 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { registerSW } from './registerSW'
+
+registerSW()
 
 const queryClient = new QueryClient({
   defaultOptions: {

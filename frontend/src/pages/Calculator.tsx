@@ -330,7 +330,7 @@ function Calculator() {
         </div>
         <button
           onClick={resetForm}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-[var(--fg-2)] rounded-lg hover:bg-gray-600 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-[var(--surface-2)] text-[var(--fg-2)] border border-[var(--border)] rounded-lg hover:brightness-95 transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           รีเซ็ต
@@ -458,7 +458,7 @@ function Calculator() {
           <div className="phopy-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <DollarSign className="w-6 h-6 text-purple-500" />
+                <DollarSign className="w-6 h-6 text-[#7C3AED]" />
                 <h2 className="text-xl font-bold text-[var(--fg-1)]">
                   ค่าดำเนินการ
                 </h2>
@@ -625,7 +625,7 @@ function Calculator() {
         {costBreakdown && (
           <div className="phopy-card p-4">
             <div className="flex items-center gap-3 mb-6">
-              <ShoppingCart className="w-6 h-6 text-purple-500" />
+              <ShoppingCart className="w-6 h-6 text-[#7C3AED]" />
               <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 เปรียบเทียบกำไร E-commerce
               </h2>

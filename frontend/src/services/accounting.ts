@@ -253,12 +253,12 @@ export const reportsApi = {
 
 // ==================== CONSTANTS ====================
 
-export const ACCOUNT_TYPES: { value: AccountType; label: string; color: string }[] = [
-  { value: 'ASSET', label: 'สินทรัพย์', color: 'text-success' },
-  { value: 'LIABILITY', label: 'หนี้สิน', color: 'text-danger' },
-  { value: 'EQUITY', label: 'ส่วนของผู้ถือหุ้น', color: 'text-purple-400' },
-  { value: 'REVENUE', label: 'รายได้', color: 'text-cyan-400' },
-  { value: 'EXPENSE', label: 'ค่าใช้จ่าย', color: 'text-warning' },
+export const ACCOUNT_TYPES: { value: AccountType; label: string; color: string; bgColor: string }[] = [
+  { value: 'ASSET',     label: 'สินทรัพย์',        color: 'text-success',           bgColor: 'bg-[var(--success-soft)]' },
+  { value: 'LIABILITY', label: 'หนี้สิน',           color: 'text-danger',            bgColor: 'bg-[var(--danger-soft)]' },
+  { value: 'EQUITY',    label: 'ส่วนของผู้ถือหุ้น', color: 'text-[#7C3AED]',         bgColor: 'bg-[#7C3AED]/10' },
+  { value: 'REVENUE',   label: 'รายได้',            color: 'text-[var(--primary)]',  bgColor: 'bg-[var(--primary-soft)]' },
+  { value: 'EXPENSE',   label: 'ค่าใช้จ่าย',        color: 'text-warning',           bgColor: 'bg-[var(--warning-soft)]' },
 ]
 
 export const ACCOUNT_CATEGORIES: Record<AccountType, string[]> = {

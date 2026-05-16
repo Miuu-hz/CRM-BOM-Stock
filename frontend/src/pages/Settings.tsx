@@ -26,12 +26,14 @@ import {
   Tag,
   Info,
   Brain,
+  Database,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
 import LLMSettings from './settings/LLMSettings'
+import BackupSettings from './settings/BackupSettings'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -46,7 +48,7 @@ interface ChildUser {
 
 export default function SettingsPage() {
   const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -150,6 +152,14 @@ export default function SettingsPage() {
           icon={Brain}
           label="AI / LLM"
         />
+        {isMaster && (
+          <TabButton
+            active={activeTab === 'backup'}
+            onClick={() => setActiveTab('backup')}
+            icon={Database}
+            label="Auto Backup"
+          />
+        )}
       </div>
 
       {/* Content */}
@@ -181,6 +191,8 @@ export default function SettingsPage() {
         {activeTab === 'material-categories' && <MaterialCategories />}
 
         {activeTab === 'llm' && <LLMSettings />}
+
+        {activeTab === 'backup' && isMaster && <BackupSettings />}
       </div>
 
       {/* Add User Modal */}

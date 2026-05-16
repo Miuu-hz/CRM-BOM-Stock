@@ -45,6 +45,27 @@ export interface KDSTicket {
 }
 
 const kdsService = {
+    // ==================== Notification helpers ====================
+
+    requestNotificationPermission: async (): Promise<NotificationPermission> => {
+        if (!('Notification' in window)) return 'denied'
+        if (Notification.permission !== 'default') return Notification.permission
+        return Notification.requestPermission()
+    },
+
+    notifyNewTickets: (newCount: number): void => {
+        if (Notification.permission === 'granted') {
+            new Notification('KDS · ออร์เดอร์ใหม่', {
+                body: `มี ${newCount} ออร์เดอร์ใหม่รอดำเนินการในครัว`,
+                icon: '/favicon.ico',
+                tag: 'kds-alert',
+            })
+        }
+        if ('vibrate' in navigator) {
+            navigator.vibrate([200, 100, 200, 100, 200])
+        }
+    },
+
     // ==================== Ticket-based (new) ====================
 
     sendToKitchen: async (billId: string): Promise<{ ticket_id: string; round: number; item_count: number }> => {

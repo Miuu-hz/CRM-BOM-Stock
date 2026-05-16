@@ -34,11 +34,11 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
   const isExpanded = expandedIds.has(account.id)
   
   const typeColors: Record<AccountType, string> = {
-    ASSET: 'text-success border-success/30 bg-[var(--success-soft)]',
-    LIABILITY: 'text-danger border-danger/30 bg-[var(--danger-soft)]',
-    EQUITY: 'text-purple-400 border-purple-400/30 bg-purple-400/10',
-    REVENUE: 'text-cyan-400 border-cyan-400/30 bg-cyan-400/10',
-    EXPENSE: 'text-warning border-warning/30 bg-[var(--warning-soft)]',
+    ASSET:     'text-success         border-success/30          bg-[var(--success-soft)]',
+    LIABILITY: 'text-danger          border-danger/30           bg-[var(--danger-soft)]',
+    EQUITY:    'text-[#7C3AED]       border-[#7C3AED]/30        bg-[#7C3AED]/10',
+    REVENUE:   'text-[var(--primary)] border-[var(--primary)]/30 bg-[var(--primary-soft)]',
+    EXPENSE:   'text-warning         border-warning/30          bg-[var(--warning-soft)]',
   }
   
   const typeIcons: Record<AccountType, any> = {
@@ -56,8 +56,8 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className={`flex items-center gap-2 p-3 rounded-lg border ${
-          level === 0 ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--bg)]/30'
+        className={`group flex items-center gap-2 p-3 rounded-lg border ${
+          level === 0 ? '' : 'hover:brightness-95'
         } ${typeColors[account.type]} mb-1`}
         style={{ marginLeft: `${level * 24}px` }}
       >
@@ -290,13 +290,13 @@ const ChartOfAccounts = () => {
     return (
       <div className="p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
             <BookOpen className="w-8 h-8 text-[var(--primary)]" />
             ผังบัญชี (Chart of Accounts)
           </h1>
           <p className="text-[var(--fg-3)] mt-1">จัดการผังบัญชีตามประมวลบัญชีไทย</p>
         </div>
-        
+
         <div className="phopy-card p-12 text-center">
           <BookOpen className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
@@ -325,7 +325,7 @@ const ChartOfAccounts = () => {
             <div className="phopy-card max-w-md w-full p-6">
               <div className="flex items-center gap-3 mb-4">
                 <AlertCircle className="w-8 h-8 text-warning" />
-                <h3 className="text-lg font-bold text-white">ยืนยันการสร้างผังบัญชี</h3>
+                <h3 className="text-lg font-bold text-[var(--fg-1)]">ยืนยันการสร้างผังบัญชี</h3>
               </div>
               <ul className="space-y-2 text-sm text-[var(--fg-2)] mb-6">
                 <li className="flex items-center gap-2">
@@ -376,7 +376,7 @@ const ChartOfAccounts = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
             <BookOpen className="w-8 h-8 text-[var(--primary)]" />
             ผังบัญชี (Chart of Accounts)
           </h1>
@@ -415,7 +415,7 @@ const ChartOfAccounts = () => {
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${type.color.replace('text', 'bg').replace('400', '400/20')}`}>
+                <div className={`p-2 rounded-lg ${type.bgColor}`}>
                   {type.value === 'ASSET' && <Wallet className={`w-5 h-5 ${type.color}`} />}
                   {type.value === 'LIABILITY' && <ArrowLeftRight className={`w-5 h-5 ${type.color}`} />}
                   {type.value === 'EQUITY' && <Building2 className={`w-5 h-5 ${type.color}`} />}
@@ -508,9 +508,9 @@ const ChartOfAccounts = () => {
                     <td className="font-mono text-[var(--fg-3)]">{account.code}</td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <span className="text-white">{account.name}</span>
+                        <span className="text-[var(--fg-1)]">{account.name}</span>
                         {account.isSystem && (
-                          <span className="text-xs bg-gray-700 text-[var(--fg-2)] px-2 py-0.5 rounded">
+                          <span className="text-xs bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] px-2 py-0.5 rounded">
                             ระบบ
                           </span>
                         )}
@@ -582,7 +582,7 @@ const ChartOfAccounts = () => {
             className="phopy-card w-full max-w-lg max-h-[90vh] overflow-auto"
           >
             <div className="p-6 border-b border-[var(--border)]">
-              <h2 className="text-xl font-bold text-white">
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 {editingAccount ? 'แก้ไขบัญชี' : 'เพิ่มบัญชีใหม่'}
               </h2>
             </div>
