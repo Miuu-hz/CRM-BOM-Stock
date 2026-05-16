@@ -32,16 +32,27 @@ export function initBackupTable() {
 }
 
 // ── Google Drive helper ──────────────────────────────────────────────────────
+// Supports two auth methods (checked in order):
+//   1. OAuth2 refresh token  — GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN
+//   2. Service Account JSON  — GOOGLE_SERVICE_ACCOUNT_JSON
 function getDriveClient() {
-  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON ยังไม่ได้ตั้งค่า')
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, GOOGLE_SERVICE_ACCOUNT_JSON } = process.env
 
-  const key = JSON.parse(keyJson)
-  const auth = new google.auth.GoogleAuth({
-    credentials: key,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  })
-  return google.drive({ version: 'v3', auth })
+  if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN) {
+    const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+    oauth2.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN })
+    return google.drive({ version: 'v3', auth: oauth2 })
+  }
+
+  if (GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON),
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+    })
+    return google.drive({ version: 'v3', auth })
+  }
+
+  throw new Error('Google Drive ยังไม่ได้ตั้งค่า credential')
 }
 
 async function uploadToDrive(filePath: string, filename: string): Promise<{ id: string; webViewLink: string }> {

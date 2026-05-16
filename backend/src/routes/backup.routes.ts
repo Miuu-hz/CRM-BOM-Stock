@@ -18,9 +18,11 @@ router.use(authenticate, requireMaster)
 router.get('/', (_req: Request, res: Response): void => {
   const backups = listBackups()
   const lastBackup = getLastBackupTime()
-  const driveConfigured = !!(
-    process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.GOOGLE_DRIVE_FOLDER_ID
-  )
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_DRIVE_FOLDER_ID } = process.env
+  const driveConfigured = !!(GOOGLE_DRIVE_FOLDER_ID && (
+    (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN) ||
+    GOOGLE_SERVICE_ACCOUNT_JSON
+  ))
   res.json({ success: true, data: { backups, lastBackup, driveConfigured } })
 })
 
