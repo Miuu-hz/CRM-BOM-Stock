@@ -174,10 +174,14 @@
   font-weight: 600;
   display: inline-block;
 }
-.bill-status-badge[data-status="DRAFT"]     { background: #fef3c7; color: #92400e; }
-.bill-status-badge[data-status="CONFIRMED"] { background: #d1fae5; color: #065f46; }
-.bill-status-badge[data-status="COMPLETED"] { background: #dbeafe; color: #1e40af; }
-.bill-status-badge[data-status="CANCELLED"] { background: #fee2e2; color: #991b1b; }
+.bill-status-badge[data-status="DRAFT"]       { background: #fef3c7; color: #92400e; }
+.bill-status-badge[data-status="CONFIRMED"]   { background: #d1fae5; color: #065f46; }
+.bill-status-badge[data-status="COMPLETED"]   { background: #dbeafe; color: #1e40af; }
+.bill-status-badge[data-status="CANCELLED"]   { background: #fee2e2; color: #991b1b; }
+/* WO statuses */
+.bill-status-badge[data-status="PLANNED"]     { background: #dbeafe; color: #1e40af; }
+.bill-status-badge[data-status="IN_PROGRESS"] { background: #fef3c7; color: #92400e; }
+.bill-status-badge[data-status="ON_HOLD"]     { background: #fff3e0; color: #c2410c; }
 
 /* ═══════════════════════════════════
    INFO GRID
@@ -641,4 +645,236 @@
   .bill-info-grid,
   .bill-summary-section { grid-template-columns: 1fr; }
   .bill-signatures { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ใบสั่งงาน / WORK ORDER — PRINT SPECIFIC STYLES
+   (ใช้คู่กับ bill-a4 หรือ bill-thermal ตามปกติ)
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Priority badge ── */
+.wo-priority {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.wo-priority[data-priority="URGENT"] { background: #fee2e2; color: #991b1b; }
+.wo-priority[data-priority="HIGH"]   { background: #fef3c7; color: #92400e; }
+.wo-priority[data-priority="NORMAL"] { background: #dbeafe; color: #1e40af; }
+.wo-priority[data-priority="LOW"]    { background: #f3f4f6; color: #4b5563; }
+
+/* ── Production summary cards ── */
+.wo-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.wo-summary-card {
+  padding: 12px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  text-align: center;
+  background: #fafafa;
+}
+.wo-summary-card.highlight {
+  border-color: color-mix(in oklab, var(--theme-color, #3949E5) 30%, white);
+  background: color-mix(in oklab, var(--theme-color, #3949E5) 5%, white);
+}
+
+.wo-summary-label {
+  font-size: 9.5px;
+  color: #888888;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+
+.wo-summary-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--theme-color, #3949E5);
+  line-height: 1;
+}
+
+.wo-summary-unit {
+  font-size: 10.5px;
+  color: #777777;
+  margin-top: 3px;
+}
+
+/* ── Progress bar ── */
+.wo-progress-container { margin-bottom: 18px; }
+
+.wo-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #666666;
+  margin-bottom: 5px;
+}
+
+.wo-progress-bar {
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.wo-progress-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--theme-color, #3949E5);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.wo-progress-fill[data-complete="true"] { background: #16a34a; }
+
+/* ── Materials required table ── */
+.wo-materials-section { margin-bottom: 20px; }
+
+.wo-materials-section > h3 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--theme-color, #3949E5);
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1.5px solid #eeeeee;
+}
+
+.wo-materials-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.wo-materials-table th {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+  white-space: nowrap;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.wo-materials-table thead tr th:first-child { border-radius: 5px 0 0 5px; }
+.wo-materials-table thead tr th:last-child  { border-radius: 0 5px 5px 0; }
+
+.wo-materials-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+  color: #1a1a1a;
+}
+.wo-materials-table tbody tr:nth-child(even) td {
+  background: #fafafa;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.wo-materials-table tbody tr:last-child td { border-bottom: 2px solid #e5e7eb; }
+
+/* Column widths */
+.wo-col-no     { width: 32px; text-align: center; }
+.wo-col-name   { text-align: left; min-width: 150px; }
+.wo-col-req    { width: 80px; text-align: right; }
+.wo-col-unit   { width: 56px; text-align: center; }
+.wo-col-stock  { width: 96px; text-align: center; }
+.wo-col-issued { width: 80px; text-align: center; }
+.wo-col-check  { width: 48px; text-align: center; }
+
+/* Stock status colours */
+.wo-stock-ok      { color: #16a34a; font-weight: 600; }
+.wo-stock-short   { color: #dc2626; font-weight: 600; }
+.wo-stock-mismatch{ color: #d97706; }
+.wo-stock-unknown { color: #9ca3af; }
+
+/* Checkbox for operator tick-off */
+.wo-check-box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #999999;
+  border-radius: 3px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* ── Production instructions ── */
+.wo-instructions {
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1.5px solid #fcd34d;
+  border-left-width: 4px;
+  border-left-color: #f59e0b;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.wo-instructions-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 5px;
+}
+.wo-instructions-text {
+  font-size: 12.5px;
+  color: #444444;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+/* ── Signatures — 4 boxes for WO ── */
+/* re-uses .bill-footer + .bill-signatures from base */
+/* signature labels can be overridden via inline HTML */
+
+/* ── Thermal 80 mm overrides ── */
+.bill-thermal .wo-summary-grid    { grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+.bill-thermal .wo-summary-card    { padding: 7px 9px; border-radius: 5px; border-width: 1px; }
+.bill-thermal .wo-summary-value   { font-size: 15px; }
+.bill-thermal .wo-summary-label   { font-size: 8px; }
+.bill-thermal .wo-summary-unit    { font-size: 9px; }
+
+.bill-thermal .wo-progress-bar    { height: 7px; }
+.bill-thermal .wo-progress-container { margin-bottom: 10px; }
+.bill-thermal .wo-progress-label  { font-size: 9px; }
+
+.bill-thermal .wo-materials-section > h3  { font-size: 9px; margin-bottom: 6px; }
+.bill-thermal .wo-materials-table         { font-size: 9px; }
+.bill-thermal .wo-materials-table th      { padding: 4px 5px; font-size: 8px; }
+.bill-thermal .wo-materials-table td      { padding: 4px 5px; }
+
+/* Hide less critical columns on narrow thermal */
+.bill-thermal .wo-col-stock,
+.bill-thermal .wo-col-issued  { display: none; }
+.bill-thermal .wo-check-box   { width: 13px; height: 13px; }
+
+.bill-thermal .wo-instructions        { padding: 6px 9px; border-radius: 5px; margin-bottom: 10px; }
+.bill-thermal .wo-instructions-label  { font-size: 8.5px; }
+.bill-thermal .wo-instructions-text   { font-size: 9px; }
+
+/* ── Print overrides ── */
+@media print {
+  .wo-progress-fill,
+  .wo-materials-table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .wo-materials-table tbody tr:nth-child(even) td {
+    background: #f8f8f8 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .wo-summary-card.highlight {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

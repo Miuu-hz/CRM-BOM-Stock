@@ -14,6 +14,8 @@ import {
   FileText,
   ArrowRight,
   AlertTriangle,
+  ShoppingCart,
+  PackageCheck,
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
 import api from '../services/api'
@@ -297,6 +299,9 @@ function CreateWOModal({ open, onClose, onSave }: {
   const [selectedBomId, setSelectedBomId] = useState('')
   const [bomLoading, setBomLoading] = useState(false)
   const [manualMode, setManualMode] = useState(false)
+  const [stockMap, setStockMap] = useState<Record<string, { qty: number; unit: string }>>({})
+  const [stockChecking, setStockChecking] = useState(false)
+  const [creatingPR, setCreatingPR] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -308,21 +313,43 @@ function CreateWOModal({ open, onClose, onSave }: {
       setProductName(''); setQuantity(1); setPriority('NORMAL')
       setDueDate(''); setAssignedTo(''); setNotes('')
       setMaterials([]); setSelectedBomId(''); setManualMode(false)
+      setStockMap({}); setCreatingPR(false)
     }
   }, [open])
 
-  const loadBomMaterials = async (bomId: string, qty: number) => {
+  const loadStockForMaterials = async (mats: { materialId?: string; unit: string }[]) => {
+    const ids = mats.filter(m => m.materialId).map(m => m.materialId!)
+    if (ids.length === 0) { setStockMap({}); return }
+    setStockChecking(true)
+    try {
+      const res = await api.get('/stock')
+      const items: any[] = res.data?.data || []
+      const map: Record<string, { qty: number; unit: string }> = {}
+      for (const item of items) {
+        const mid = item.material_id || item.materialId
+        if (mid && ids.includes(mid)) {
+          map[mid] = { qty: Number(item.quantity ?? item.qty ?? 0), unit: item.unit || 'pcs' }
+        }
+      }
+      setStockMap(map)
+    } catch { setStockMap({}) }
+    finally { setStockChecking(false) }
+  }
+
+  const loadBomMaterials = async (bomId: string, qty: number, fetchStock = false) => {
     setBomLoading(true)
     try {
       const res = await api.get(`/bom/explode/${bomId}?multiplier=${qty}`)
       const data = res.data?.data
       if (data?.materials?.length > 0) {
-        setMaterials(data.materials.map((m: any) => ({
+        const mats = data.materials.map((m: any) => ({
           materialId: m.materialId,
           materialName: m.materialName || m.materialCode || '',
           requiredQty: Number(m.quantity.toFixed(4)),
           unit: m.unit || 'pcs',
-        })))
+        }))
+        setMaterials(mats)
+        if (fetchStock) await loadStockForMaterials(mats)
       }
     } catch {}
     finally { setBomLoading(false) }
@@ -332,12 +359,48 @@ function CreateWOModal({ open, onClose, onSave }: {
     setSelectedBomId(bom.id)
     setProductName(bom.product_name || '')
     setManualMode(false)
-    await loadBomMaterials(bom.id, quantity)
+    setStockMap({})
+    await loadBomMaterials(bom.id, quantity, true)
   }
 
   const handleQuantityChange = async (newQty: number) => {
     setQuantity(newQty)
-    if (selectedBomId && newQty > 0) await loadBomMaterials(selectedBomId, newQty)
+    if (selectedBomId && newQty > 0) await loadBomMaterials(selectedBomId, newQty, false)
+  }
+
+  const getStockStatus = (mat: { materialId?: string; requiredQty: number; unit: string }) => {
+    if (!mat.materialId) return null
+    const stock = stockMap[mat.materialId]
+    if (!stock) return { type: 'unknown' as const }
+    const sameUnit = stock.unit.toLowerCase() === mat.unit.toLowerCase()
+    if (sameUnit) {
+      const shortage = mat.requiredQty - stock.qty
+      return shortage > 0
+        ? { type: 'short' as const, shortage: Number(shortage.toFixed(4)), unit: mat.unit, stockQty: stock.qty }
+        : { type: 'ok' as const, stockQty: stock.qty, unit: mat.unit }
+    }
+    return { type: 'mismatch' as const, stockQty: stock.qty, stockUnit: stock.unit }
+  }
+
+  const shortages = materials.filter(m => getStockStatus(m)?.type === 'short')
+
+  const handleCreateAutoPR = async () => {
+    if (shortages.length === 0) return
+    setCreatingPR(true)
+    try {
+      const items = shortages.map(m => {
+        const s = getStockStatus(m)
+        const qty = s?.type === 'short' ? s.shortage : m.requiredQty
+        return { material_id: m.materialId, material_name: m.materialName, quantity: qty, unit: m.unit }
+      })
+      await api.post('/purchase-requests', {
+        reason: `ขาดวัตถุดิบสำหรับผลิต: ${productName} จำนวน ${quantity} หน่วย`,
+        items,
+      })
+      alert(`สร้าง Purchase Request สำเร็จ — ${items.length} รายการ`)
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'ไม่สามารถสร้าง PR ได้')
+    } finally { setCreatingPR(false) }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -507,7 +570,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                     <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">3</span>
                       วัตถุดิบที่ต้องใช้
-                      {bomLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
+                      {(bomLoading || stockChecking) && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
                     </p>
                     <button type="button"
                       onClick={() => setMaterials([...materials, { materialName: '', requiredQty: 1, unit: 'pcs' }])}
@@ -515,6 +578,21 @@ function CreateWOModal({ open, onClose, onSave }: {
                       <Plus className="w-3 h-3" /> เพิ่ม
                     </button>
                   </div>
+
+                  {/* Stock summary banner */}
+                  {materials.length > 0 && Object.keys(stockMap).length > 0 && !stockChecking && (
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mb-2 border ${
+                      shortages.length > 0
+                        ? 'bg-[var(--danger-soft)] border-danger/20 text-danger'
+                        : 'bg-[var(--success-soft)] border-success/20 text-success'
+                    }`}>
+                      {shortages.length > 0 ? (
+                        <><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> ขาดวัตถุดิบ {shortages.length} รายการ — กดปุ่ม "สร้าง PR" ด้านล่างเพื่อสั่งซื้ออัตโนมัติ</>
+                      ) : (
+                        <><PackageCheck className="w-3.5 h-3.5 shrink-0" /> วัตถุดิบเพียงพอสำหรับการผลิตนี้ทั้งหมด</>
+                      )}
+                    </div>
+                  )}
 
                   {materials.length === 0 ? (
                     <div className="text-center py-5 bg-[var(--surface-2)] rounded-lg border border-dashed border-[var(--border)]/40">
@@ -524,29 +602,42 @@ function CreateWOModal({ open, onClose, onSave }: {
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      {materials.map((mat, idx) => (
-                        <div key={idx} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                          mat.materialId ? 'border-phopy-indigo/15 bg-phopy-indigo/5' : 'border-[var(--border)]/20 bg-[var(--surface-2)]'
-                        }`}>
-                          {mat.materialId && <CheckCircle className="w-3.5 h-3.5 text-[var(--primary)] shrink-0" />}
-                          <input value={mat.materialName} onChange={(e) => {
-                            const u = [...materials]; u[idx].materialName = e.target.value; setMaterials(u)
-                          }} className="flex-1 bg-transparent text-sm text-[var(--fg-2)] outline-none placeholder-gray-600 min-w-0"
-                            placeholder="ชื่อวัตถุดิบ" />
-                          <input type="number" value={mat.requiredQty} onChange={(e) => {
-                            const u = [...materials]; u[idx].requiredQty = Number(e.target.value); setMaterials(u)
-                          }} className="w-20 bg-transparent text-sm text-success text-right outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
-                            min="0.001" step="any" />
-                          <input value={mat.unit} onChange={(e) => {
-                            const u = [...materials]; u[idx].unit = e.target.value; setMaterials(u)
-                          }} className="w-12 bg-transparent text-xs text-[var(--fg-4)] outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
-                            placeholder="unit" />
-                          <button type="button" onClick={() => setMaterials(materials.filter((_, i) => i !== idx))}
-                            className="text-[var(--fg-4)] hover:text-danger shrink-0">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                      {materials.map((mat, idx) => {
+                        const ss = getStockStatus(mat)
+                        return (
+                          <div key={idx} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                            ss?.type === 'short' ? 'border-danger/20 bg-[var(--danger-soft)]'
+                            : mat.materialId ? 'border-phopy-indigo/15 bg-phopy-indigo/5'
+                            : 'border-[var(--border)]/20 bg-[var(--surface-2)]'
+                          }`}>
+                            {mat.materialId && <CheckCircle className={`w-3.5 h-3.5 shrink-0 ${ss?.type === 'short' ? 'text-danger' : 'text-[var(--primary)]'}`} />}
+                            <input value={mat.materialName} onChange={(e) => {
+                              const u = [...materials]; u[idx].materialName = e.target.value; setMaterials(u)
+                            }} className="flex-1 bg-transparent text-sm text-[var(--fg-2)] outline-none placeholder-gray-600 min-w-0"
+                              placeholder="ชื่อวัตถุดิบ" />
+                            <input type="number" value={mat.requiredQty} onChange={(e) => {
+                              const u = [...materials]; u[idx].requiredQty = Number(e.target.value); setMaterials(u)
+                            }} className="w-20 bg-transparent text-sm text-success text-right outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
+                              min="0.001" step="any" />
+                            <input value={mat.unit} onChange={(e) => {
+                              const u = [...materials]; u[idx].unit = e.target.value; setMaterials(u)
+                            }} className="w-12 bg-transparent text-xs text-[var(--fg-4)] outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
+                              placeholder="unit" />
+                            {/* Stock status badge */}
+                            {mat.materialId && (() => {
+                              if (stockChecking) return <Loader2 key="spin" className="w-3 h-3 animate-spin text-[var(--fg-4)] shrink-0" />
+                              if (!ss || ss.type === 'unknown') return <span key="unk" className="text-xs text-[var(--fg-4)] shrink-0 w-16 text-right">?</span>
+                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium">✓ {ss.stockQty} {ss.unit}</span>
+                              if (ss.type === 'short') return <span key="sh" className="text-xs text-danger shrink-0 w-16 text-right font-semibold">-{ss.shortage} {ss.unit}</span>
+                              return <span key="mm" className="text-xs text-warning shrink-0 w-16 text-right">{ss.stockQty} {ss.stockUnit}</span>
+                            })()}
+                            <button type="button" onClick={() => setMaterials(materials.filter((_, i) => i !== idx))}
+                              className="text-[var(--fg-4)] hover:text-danger shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )
+                      })}
                       <p className="text-xs text-[var(--fg-4)] text-right">{materials.length} รายการ</p>
                     </div>
                   )}
@@ -561,23 +652,39 @@ function CreateWOModal({ open, onClose, onSave }: {
               </div>
 
               {/* Footer */}
-              <div className="p-5 border-t border-[var(--border)] flex items-center justify-between shrink-0">
-                <div className="text-xs text-[var(--fg-4)]">
-                  {selectedBom ? (
-                    <span className="flex items-center gap-1 text-[var(--primary)]">
-                      <CheckCircle className="w-3 h-3" /> ใช้ BOM: {selectedBom.product_name}
-                    </span>
-                  ) : manualMode ? 'Manual entry' : 'ยังไม่ได้เลือก BOM'}
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]">
-                    ยกเลิก
-                  </button>
-                  <button type="submit" disabled={saving || bomLoading || !productName.trim()}
-                    className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    สร้าง Work Order
-                  </button>
+              <div className="p-5 border-t border-[var(--border)] shrink-0 space-y-3">
+                {/* Auto-PR row — shown only when shortages exist */}
+                {shortages.length > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-[var(--danger-soft)] border border-danger/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs text-danger">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>ขาดวัตถุดิบ <strong>{shortages.length}</strong> รายการ</span>
+                    </div>
+                    <button type="button" onClick={handleCreateAutoPR} disabled={creatingPR}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-danger text-white rounded-lg hover:bg-danger/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                      {creatingPR ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShoppingCart className="w-3.5 h-3.5" />}
+                      สร้าง Purchase Request อัตโนมัติ
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-[var(--fg-4)]">
+                    {selectedBom ? (
+                      <span className="flex items-center gap-1 text-[var(--primary)]">
+                        <CheckCircle className="w-3 h-3" /> ใช้ BOM: {selectedBom.product_name}
+                      </span>
+                    ) : manualMode ? 'Manual entry' : 'ยังไม่ได้เลือก BOM'}
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]">
+                      ยกเลิก
+                    </button>
+                    <button type="submit" disabled={saving || bomLoading || !productName.trim()}
+                      className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      สร้าง Work Order
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>

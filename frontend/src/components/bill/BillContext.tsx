@@ -81,7 +81,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
     fields: {
       showBuyerCode: false,
       showBuyerTaxId: false,
-      showRefNumber: true,    // อ้างอิงใบสั่งขาย
+      showRefNumber: true,
       showDueDate: true,
       showPaymentTerms: false,
       showBankInfo: false,
@@ -89,12 +89,12 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       showQRCode: false,
     },
     labels: {
-      buyer: 'แผนกผลิต',
+      buyer: 'แผนกผลิต / ผู้รับผิดชอบ',
       buyerCode: 'รหัสแผนก',
       docNumber: 'เลขที่ใบสั่งผลิต',
       refNumber: 'อ้างอิงใบสั่งขาย',
     },
-    themeColor: '#00ff88', // success
+    themeColor: '#F59E0B', // amber — production docs
   },
   QUOTATION: {
     type: 'QUOTATION',
@@ -176,6 +176,10 @@ export interface BillItem {
   // สำหรับ work order
   materialId?: string
   bomId?: string
+  stockQty?: number
+  stockUnit?: string
+  stockStatus?: 'ok' | 'short' | 'mismatch' | 'unknown'
+  issuedQty?: number
 }
 
 export interface BillParty {
@@ -224,10 +228,17 @@ export interface BillData {
   // เพิ่มเติม
   notes?: string
   qrCode?: string
-  
-  // สถานะ
-  status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED'
-  
+
+  // สถานะ (WO เพิ่ม PLANNED | IN_PROGRESS | ON_HOLD)
+  status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD'
+
+  // Work Order specific fields
+  woProductName?: string
+  woQty?: number
+  woCompletedQty?: number
+  priority?: 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW'
+  assignedTo?: string
+
   // Metadata
   createdBy: string
   createdAt: string
@@ -430,17 +441,23 @@ function getMockData(type: BillType, id: string): BillData {
       },
       buyer: {
         name: 'แผนกผลิตที่ 1',
-        contactName: 'หัวหน้าแผนกผลิต',
+        contactName: 'คุณสมชาย มีสุข',
+        tel: '081-234-5678',
       },
       items: [
-        { id: '1', no: 1, name: 'ผลิตหมอนข้าง ขนาด 14×40 นิ้ว', quantity: 100, unit: 'ใบ', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-001' },
-        { id: '2', no: 2, name: 'ผลิตหมอนหนุน ขนาด 19×29 นิ้ว', quantity: 200, unit: 'ใบ', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-002' },
+        { id: '1', no: 1, name: 'ใยมะพร้าว', quantity: 25, unit: 'กก.', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-001', stockQty: 40, stockUnit: 'กก.', stockStatus: 'ok', issuedQty: 0 },
+        { id: '2', no: 2, name: 'Polyesters 3D×32', quantity: 15, unit: 'กก.', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-002', stockQty: 8, stockUnit: 'กก.', stockStatus: 'short', issuedQty: 0 },
+        { id: '3', no: 3, name: 'ผ้าคลุมหมอน (ผืน 14×40")', quantity: 100, unit: 'ผืน', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-003', stockQty: 120, stockUnit: 'ผืน', stockStatus: 'ok', issuedQty: 0 },
+        { id: '4', no: 4, name: 'ด้ายเย็บ #60', quantity: 2, unit: 'ม้วน', price: 0, discount: 0, vat: 0, total: 0, materialId: 'MAT-004', stockQty: 5, stockUnit: 'ม้วน', stockStatus: 'ok', issuedQty: 0 },
       ],
-      subtotal: 0,
-      discountTotal: 0,
-      vatTotal: 0,
-      total: 0,
+      subtotal: 0, discountTotal: 0, vatTotal: 0, total: 0,
       dueDate: '2026-01-20',
+      notes: 'ผลิตตามใบสั่งขาย SO-2026010039\nตรวจสอบคุณภาพทุกใบก่อนส่งออก',
+      woProductName: 'หมอนข้าง ขนาด 14×40 นิ้ว',
+      woQty: 100,
+      woCompletedQty: 0,
+      priority: 'HIGH',
+      assignedTo: 'คุณสมชาย มีสุข',
     },
     QUOTATION: {
       seller: {

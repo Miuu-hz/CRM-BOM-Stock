@@ -1,11 +1,67 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
+import { randomUUID } from 'crypto'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { lineBotService } from '../services/line-bot.service'
 
 const router = Router()
 router.use(authenticate)
+
+// ─── POST /api/purchase-requests — create PR from web (shortage auto-PR) ─────
+const CreatePRSchema = z.object({
+  reason: z.string().max(500).optional(),
+  items: z.array(z.object({
+    material_id: z.string().optional().nullable(),
+    material_name: z.string().min(1).max(255),
+    quantity: z.coerce.number().positive(),
+    unit: z.string().max(50).optional(),
+  })).min(1),
+})
+
+router.post('/', (req: Request, res: Response) => {
+  try {
+    const { tenantId, userId, email } = req.user!
+    const db = getDb()
+    const parsed = CreatePRSchema.safeParse(req.body)
+    if (!parsed.success) return void res.status(400).json({ success: false, message: parsed.error.issues[0].message })
+
+    const { reason, items } = parsed.data
+    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
+    const prNumber = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+    const prId = randomUUID()
+
+    db.prepare(`
+      INSERT INTO purchase_requests
+        (id, tenant_id, pr_number, requester_id, requester_name, supplier_name, source, status, notes)
+      VALUES (?, ?, ?, ?, ?, 'TBD', 'WEB', 'DRAFT', ?)
+    `).run(prId, tenantId, prNumber, userId, email, reason || null)
+
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_request_items
+        (id, tenant_id, purchase_request_id, pr_id, material_id, description, item_name, quantity, unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    db.transaction(() => {
+      for (const item of items) {
+        insertItem.run(
+          randomUUID(), tenantId, prId, prId,
+          item.material_id || null,
+          item.material_name,
+          item.material_name,
+          item.quantity,
+          item.unit || 'pcs',
+        )
+      }
+    })()
+
+    res.json({ success: true, data: { id: prId, pr_number: prNumber } })
+  } catch (e) {
+    console.error('Create PR error:', e)
+    res.status(500).json({ success: false, message: 'Failed to create PR' })
+  }
+})
 
 // ─── GET /api/purchase-requests — list (with filter) ──────────────────────────
 router.get('/', (req: Request, res: Response) => {
