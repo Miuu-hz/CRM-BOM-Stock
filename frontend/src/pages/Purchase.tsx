@@ -1035,7 +1035,7 @@ const Purchase = () => {
         }
         return {
           id: s.id,
-          code: s.sku || s.id.slice(0, 8),
+          code: s.sku || s.id?.slice(0, 8) || '',
           name: s.name,
           unit: s.unit,
           currentStock: qty,

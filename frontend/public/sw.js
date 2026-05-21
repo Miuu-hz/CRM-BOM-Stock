@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phopy-erp-v1'
+const CACHE_NAME = 'phopy-erp-v2'
 const PRECACHE = ['/', '/sounds/order-voice.m4a', '/icons/icon.svg']
 
 // ── Install: pre-cache critical assets ──────────────────────────────────────
@@ -22,13 +22,17 @@ self.addEventListener('activate', (event) => {
 // ── Fetch: network-first; cache fallback for non-API requests ────────────────
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
-  if (new URL(event.request.url).pathname.startsWith('/api')) return
+  const url = new URL(event.request.url)
+  if (url.origin !== self.location.origin) return  // skip cross-origin (fonts, CDN, etc.)
+  if (url.pathname.startsWith('/api')) return
 
   event.respondWith(
     fetch(event.request)
       .then(res => {
-        const clone = res.clone()
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone))
+        if (res.ok) {
+          const clone = res.clone()
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone))
+        }
         return res
       })
       .catch(() => caches.match(event.request))

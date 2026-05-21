@@ -13,6 +13,30 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
+function mapItem(item: any): any {
+  return {
+    id: item.id,
+    bomId: item.bom_id,
+    materialId: item.material_id,
+    childBomId: item.child_bom_id,
+    itemType: item.item_type,
+    quantity: item.quantity,
+    unit: item.unit,
+    notes: item.notes,
+    sortOrder: item.sort_order,
+    material: item.material_id ? {
+      id: item.material_id,
+      code: item.material_code || '',
+      name: item.material_name || '',
+      unit: item.material_unit || '',
+      unitCost: Number(item.unit_cost) || 0,
+    } : undefined,
+    childBomVersion: item.child_bom_version,
+    childBomProductName: item.child_bom_product_name,
+    childBomProductCode: item.child_bom_product_code,
+  }
+}
+
 // ============================================
 // NESTED BOM - Helper Functions
 // ============================================
@@ -32,7 +56,7 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
            m.unit as material_unit,
            child_bom.product_id as child_product_id
     FROM bom_items bi
-    LEFT JOIN materials m ON bi.material_id = m.id
+    LEFT JOIN stock_items m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
@@ -85,15 +109,15 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
     SELECT
       bi.*,
       m.name as material_name,
-      m.code as material_code,
+      m.sku as material_code,
       m.unit_cost,
-      m.unit,
+      m.unit as material_unit,
       child_bom.id as child_bom_id_ref,
       child_bom.version as child_bom_version,
       child_p.name as child_bom_product_name,
       child_p.sku as child_bom_product_code
     FROM bom_items bi
-    LEFT JOIN materials m ON bi.material_id = m.id
+    LEFT JOIN stock_items m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
     LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -101,16 +125,12 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
   `).all(bomId, tenantId) as any[]
 
   const processedItems = items.map(item => {
+    const mapped = mapItem(item)
     if (item.item_type === 'CHILD_BOM' && item.child_bom_id) {
-      // Recursively get child BOM tree
       const childTree = getBOMTree(item.child_bom_id, tenantId, level + 1, new Set(visited))
-      return {
-        ...item,
-        childBOM: childTree,
-        isExpanded: false
-      }
+      return { ...mapped, childBOM: childTree }
     }
-    return item
+    return mapped
   })
 
   const totalCost = calculateBOMCost(bomId, tenantId)
@@ -317,14 +337,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT
         bi.*,
         m.name as material_name,
-        m.code as material_code,
+        m.sku as material_code,
         m.unit_cost,
         m.unit as material_unit,
         child_bom.version as child_bom_version,
         child_p.name as child_bom_product_name,
         child_p.sku as child_bom_product_code
       FROM bom_items bi
-      LEFT JOIN materials m ON bi.material_id = m.id
+      LEFT JOIN stock_items m ON bi.material_id = m.id
       LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
       LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
       WHERE bi.bom_id = ? AND bi.tenant_id = ?
@@ -340,7 +360,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...bom,
-        items,
+        items: items.map(mapItem),
         totalCost,
         availableChildBOMs,
       },
@@ -612,9 +632,9 @@ router.get('/explode/:id', async (req: Request, res: Response) => {
       visited.add(currentBomId)
 
       const items = db.prepare(`
-        SELECT bi.*, m.name as material_name, m.code as material_code, m.unit
+        SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit
         FROM bom_items bi
-        LEFT JOIN materials m ON bi.material_id = m.id
+        LEFT JOIN stock_items m ON bi.material_id = m.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ?
       `).all(currentBomId, tenantId) as any[]
 

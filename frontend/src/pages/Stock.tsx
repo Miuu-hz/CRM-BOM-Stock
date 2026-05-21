@@ -160,11 +160,13 @@ function Stock() {
     }
   }
 
-  const getItemStatus = (item: StockItem): 'adequate' | 'low' | 'critical' | 'overstock' | 'out' => {
-    if (item.quantity === 0) return 'out'
+  const getItemStatus = (item: StockItem): 'adequate' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' => {
+    const hasSealed = (item.sealedQty ?? 0) > 0
+    if (item.quantity === 0 && !hasSealed) return 'out'
+    if (item.quantity === 0 && hasSealed) return 'sealed'
     if (item.quantity <= item.minStock * 0.3) return 'critical'
     if (item.quantity <= item.minStock) return 'low'
-    if (item.quantity >= item.maxStock) return 'overstock'
+    if (item.maxStock > 0 && item.quantity >= item.maxStock) return 'overstock'
     return 'adequate'
   }
 
@@ -437,6 +439,7 @@ function Stock() {
               <div className="flex gap-2 flex-wrap">
                 <FilterButton label="ทั้งหมด" active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
                 <FilterButton label="หมด" active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
+                <FilterButton label="ยังไม่แกะ" active={selectedStatus === 'sealed'} onClick={() => handleStatusChange('sealed')} />
                 <FilterButton label="วิกฤต" active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
                 <FilterButton label="ต่ำ" active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
                 <FilterButton label="เกิน" active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
@@ -1131,7 +1134,7 @@ function EditModal({
     }
   }, [item])
 
-  // Check if conversion exists when baseUnit ≠ displayUnit
+  // Check if a conversion PATH exists (BFS, supports chain) when baseUnit ≠ displayUnit
   useEffect(() => {
     if (!item || !formData.baseUnit || !formData.displayUnit) {
       setConversionWarning(null)
@@ -1141,16 +1144,33 @@ function EditModal({
       setConversionWarning(null)
       return
     }
-    const hasCustom = itemConversions.some(c =>
-      (c.from_unit === formData.displayUnit && c.to_unit === formData.baseUnit) ||
-      (c.from_unit === formData.baseUnit && c.to_unit === formData.displayUnit)
-    )
-    const hasStandard = standardConversions.some(c =>
-      (c.from_unit === formData.displayUnit && c.to_unit === formData.baseUnit) ||
-      (c.from_unit === formData.baseUnit && c.to_unit === formData.displayUnit)
-    )
-    if (!hasCustom && !hasStandard) {
-      setConversionWarning(`⚠️ ไม่พบการแปลงหน่วยจาก "${ul(formData.displayUnit)}" เป็น "${ul(formData.baseUnit)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
+    // Build undirected adjacency graph from all known conversions
+    const adj: Record<string, Set<string>> = {}
+    const addEdge = (a: string, b: string) => {
+      if (!adj[a]) adj[a] = new Set()
+      if (!adj[b]) adj[b] = new Set()
+      adj[a].add(b)
+      adj[b].add(a)
+    }
+    itemConversions.forEach(c => addEdge(c.from_unit, c.to_unit))
+    standardConversions.forEach(c => addEdge(c.from_unit, c.to_unit))
+
+    // BFS from displayUnit → check if baseUnit is reachable
+    const from = formData.displayUnit
+    const to = formData.baseUnit
+    const visited = new Set<string>([from])
+    const queue = [from]
+    let found = false
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      if (cur === to) { found = true; break }
+      for (const next of (adj[cur] ?? [])) {
+        if (!visited.has(next)) { visited.add(next); queue.push(next) }
+      }
+    }
+
+    if (!found) {
+      setConversionWarning(`⚠️ ไม่พบการแปลงหน่วยจาก "${ul(from)}" เป็น "${ul(to)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
     } else {
       setConversionWarning(null)
     }
@@ -2080,6 +2100,10 @@ function StatusBadge({ status }: { status: string }) {
     out: {
       label: 'Out of Stock',
       className: 'bg-red-600/30 text-red-300 border-red-600/50',
+    },
+    sealed: {
+      label: 'ยังไม่แกะ',
+      className: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
     },
   }
 

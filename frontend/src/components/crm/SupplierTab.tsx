@@ -796,7 +796,7 @@ function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: numb
             className="w-full rounded-t bg-purple-500/40 group-hover:bg-purple-500/70 transition-all cursor-default"
             style={{ height: `${Math.max((t.totalAmount / max) * 96, 4)}px` }}
           />
-          <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">{t.month.slice(5)}</span>
+          <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">{t.month?.slice(5)}</span>
           {/* Tooltip */}
           <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
             <p className="text-[var(--fg-2)]">{t.month}</p>
