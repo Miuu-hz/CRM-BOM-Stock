@@ -6,6 +6,8 @@ import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
 import api from '../../services/api'
 import { useUnits } from '../../hooks/useUnits'
+import { EditModal } from '../../pages/Stock'
+import { StockItem } from '../../services/stock'
 
 interface BOMModalProps {
   isOpen: boolean
@@ -64,6 +66,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false)
   const [categoryChangeModal, setCategoryChangeModal] = useState<{ productId: string; productName: string } | null>(null)
   const [changingCategory, setChangingCategory] = useState(false)
+  const [editStockItem, setEditStockItem] = useState<{ item: StockItem; convForm?: { from_unit: string; to_unit: string } } | null>(null)
 
   // Form state
   const [productId, setProductId] = useState('')
@@ -751,7 +754,30 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                             <div className="flex gap-2 mt-1.5">
                               <button
                                 type="button"
-                                onClick={() => window.open(`/stock/${issue.materialId}/edit?tab=units`, '_blank')}
+                                onClick={() => {
+                                  const mat = materials.find(m => m.id === issue.materialId)
+                                  if (mat) {
+                                    setEditStockItem({
+                                      item: {
+                                        id: mat.id,
+                                        sku: mat.code || mat.id,
+                                        name: mat.name,
+                                        quantity: (mat as any).currentStock ?? 0,
+                                        unit: mat.unit,
+                                        minStock: (mat as any).minStock ?? 0,
+                                        maxStock: (mat as any).maxStock ?? 0,
+                                        location: '',
+                                        status: (mat as any).stockStatus ?? 'NO_STOCK',
+                                        createdAt: new Date().toISOString(),
+                                        updatedAt: new Date().toISOString(),
+                                        unitCost: mat.unitCost,
+                                        category: (mat as any).categoryName ?? '',
+                                        materialId: mat.id,
+                                      },
+                                      convForm: { from_unit: issue.from, to_unit: issue.to },
+                                    })
+                                  }
+                                }}
                                 className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
                               >
                                 แก้ไขหน่วยใน Stock
@@ -874,6 +900,24 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           onSuccess={(newMaterial) => {
             setMaterials([...materials, newMaterial])
             setIsMaterialModalOpen(false)
+          }}
+        />
+
+        {/* Edit Material Modal — opens on units tab with pre-filled conversion form */}
+        <EditModal
+          open={!!editStockItem}
+          item={editStockItem?.item ?? null}
+          initialTab="units"
+          initialConvForm={editStockItem?.convForm}
+          onClose={() => setEditStockItem(null)}
+          onSave={async () => {
+            try {
+              const materialsData = await bomService.getMaterials()
+              setMaterials(materialsData || [])
+            } catch (err: any) {
+              console.error('Failed to reload materials:', err?.message || err)
+            }
+            setEditStockItem(null)
           }}
         />
       </AnimatePresence>

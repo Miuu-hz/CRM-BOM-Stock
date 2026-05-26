@@ -2505,6 +2505,15 @@ try {
   }
 } catch (e) { console.error('⚠️ stock_items sealed_qty migration error:', e) }
 
+// Migration: per-user MCP API key (linked to login account, not tenant)
+try {
+  const cols = db.prepare(`PRAGMA table_info(users)`).all() as any[]
+  if (!cols.some((c: any) => c.name === 'mcp_api_key')) {
+    db.exec(`ALTER TABLE users ADD COLUMN mcp_api_key TEXT`)
+    console.log('✅ Migration: users.mcp_api_key added')
+  }
+} catch (e) { console.error('⚠️ users.mcp_api_key migration error:', e) }
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db

@@ -49,6 +49,8 @@ import analyticsRoutes from './analytics/routes'
 import backupRoutes from './routes/backup.routes'
 import { startBackupScheduler } from './services/backup.scheduler'
 import qcRoutes from './routes/qc.routes'
+import { setupMcpRoutes } from './mcp/server'
+import mcpSettingsRoutes from './routes/mcpSettings.routes'
 
 const app: Express = express()
 const PORT = process.env.PORT || 5000
@@ -162,6 +164,8 @@ app.use('/api/llm-providers', llmProviderRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/backup', backupRoutes)
 app.use('/api/qc', qcRoutes)
+app.use('/api/mcp-settings', mcpSettingsRoutes)
+setupMcpRoutes(app as unknown as import('express').Router)
 
 // Serve frontend (production) — must be after all API routes
 const frontendDist = path.join(__dirname, '../../frontend/dist')

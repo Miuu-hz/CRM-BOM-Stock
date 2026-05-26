@@ -7,6 +7,12 @@ export interface Material {
   name: string
   unit: string
   unitCost: number
+  minStock?: number
+  maxStock?: number
+  currentStock?: number
+  stockStatus?: string
+  categoryId?: string
+  categoryName?: string
 }
 
 // Nested BOM Types

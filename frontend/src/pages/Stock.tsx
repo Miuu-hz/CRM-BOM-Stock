@@ -1013,16 +1013,20 @@ function DetailModal({
 }
 
 // Edit Modal Component
-function EditModal({
+export function EditModal({
   open,
   item,
   onClose,
   onSave,
+  initialTab = 'general',
+  initialConvForm,
 }: {
   open: boolean
   item: StockItem | null
   onClose: () => void
   onSave: () => void
+  initialTab?: 'general' | 'units'
+  initialConvForm?: { from_unit: string; to_unit: string }
 }) {
   useModalClose(onClose)
   const [formData, setFormData] = useState({
@@ -1048,7 +1052,7 @@ function EditModal({
   const { units: availableUnits } = useUnits(item?.id)
 
   // Per-material unit conversions
-  const [activeTab, setActiveTab] = useState<'general' | 'units'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'units'>(initialTab)
   const [showChainEditor, setShowChainEditor] = useState(false)
   const [convExpanded, setConvExpanded] = useState(false)
   const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
@@ -1123,9 +1127,13 @@ function EditModal({
       })
       setImagePreview(item.imageUrl || null)
       setImageFile(null)
-      setActiveTab('general')
+      setActiveTab(initialTab)
+      setConvForm(initialConvForm
+        ? { from_unit: initialConvForm.from_unit, to_unit: initialConvForm.to_unit, conversion_factor: '' }
+        : { from_unit: '', to_unit: '', conversion_factor: '' }
+      )
       setShowChainEditor(false)
-      setConvExpanded(false)
+      setConvExpanded(initialTab === 'units')
       setItemConversions([])
       setStandardConversions([])
       setConversionWarning(null)

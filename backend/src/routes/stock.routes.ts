@@ -222,7 +222,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { name, gs1Barcode, category, unit, baseUnit, saleUnit, displayUnit, minStock, maxStock, location, isPosEnabled, unitCost, unitPrice } = req.body
 
-    const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    let currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    // Fallback: if id is a material_id, find the linked stock item
+    if (!currentItem) {
+      currentItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    }
     if (!currentItem) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }

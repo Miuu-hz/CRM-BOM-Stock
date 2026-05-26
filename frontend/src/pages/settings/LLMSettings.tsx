@@ -25,11 +25,15 @@ import {
   deleteLLMProvider,
   testLLMProvider,
   testChat,
+  getMcpSettings,
+  regenerateMcpKey,
+  testMcpServer,
   type LLMProvider,
   type LLMProviderInput,
+  type McpTestStep,
 } from '../../services/llm'
 
-const PROVIDER_TYPES = ['openai', 'moonshot', 'anthropic', 'ollama', 'custom']
+const PROVIDER_TYPES = ['openai', 'anthropic', 'ollama', 'custom']
 
 const DEFAULT_FORM: LLMProviderInput = {
   name: '',
@@ -57,9 +61,54 @@ export default function LLMSettings() {
   const [playgroundReply, setPlaygroundReply] = useState('')
   const [playgroundLoading, setPlaygroundLoading] = useState(false)
 
+  // MCP Settings
+  const [mcpKey, setMcpKey] = useState<string | null>(null)
+  const [mcpRegenLoading, setMcpRegenLoading] = useState(false)
+  const [mcpTestLoading, setMcpTestLoading] = useState(false)
+  const [mcpTestSteps, setMcpTestSteps] = useState<McpTestStep[] | null>(null)
+  const mcpUrl = mcpKey ? `${window.location.origin}/mcp/sse?key=${mcpKey}` : null
+
   useEffect(() => {
     loadProviders()
+    loadMcpSettings()
   }, [])
+
+  const loadMcpSettings = async () => {
+    try {
+      const res = await getMcpSettings()
+      if (res.success) setMcpKey(res.data.key)
+    } catch { /* silent */ }
+  }
+
+  const handleMcpRegenerate = async () => {
+    if (!confirm('สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?')) return
+    setMcpRegenLoading(true)
+    setMcpTestSteps(null)
+    try {
+      const res = await regenerateMcpKey()
+      if (res.success) {
+        setMcpKey(res.data.key)
+        toast.success('สร้าง API Key ใหม่แล้ว')
+      }
+    } catch {
+      toast.error('สร้าง Key ไม่สำเร็จ')
+    } finally {
+      setMcpRegenLoading(false)
+    }
+  }
+
+  const handleMcpTest = async () => {
+    setMcpTestLoading(true)
+    setMcpTestSteps(null)
+    try {
+      const res = await testMcpServer()
+      setMcpTestSteps(res.steps)
+    } catch {
+      toast.error('ทดสอบไม่สำเร็จ')
+    } finally {
+      setMcpTestLoading(false)
+    }
+  }
 
   const loadProviders = async () => {
     setLoading(true)
@@ -376,6 +425,105 @@ export default function LLMSettings() {
               {playgroundReply}
             </div>
           </motion.div>
+        )}
+      </div>
+
+      {/* MCP Server Section */}
+      <div className="phopy-card p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Bot className="w-5 h-5 text-purple-400" />
+          <div>
+            <h3 className="text-lg font-bold text-[var(--fg-1)]">MCP Server</h3>
+            <p className="text-xs text-[var(--fg-3)]">สำหรับ Google AI Edge Gallery + Gemma 4B (on-device, ฟรี)</p>
+          </div>
+        </div>
+
+        {!mcpKey ? (
+          <div className="text-center py-4 space-y-3">
+            <p className="text-sm text-[var(--fg-3)]">ยังไม่มี API Key — สร้างเพื่อเปิดใช้งาน MCP</p>
+            <button
+              onClick={handleMcpRegenerate}
+              disabled={mcpRegenLoading}
+              className="phopy-btn-primary text-sm flex items-center gap-2 mx-auto"
+            >
+              {mcpRegenLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              สร้าง API Key
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">URL สำหรับ register ใน Google AI Edge Gallery</label>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={mcpUrl ?? ''}
+                  className="phopy-input w-full text-xs font-mono text-[var(--fg-2)] select-all"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  onClick={() => {
+                    if (mcpUrl) {
+                      navigator.clipboard.writeText(mcpUrl)
+                      toast.success('คัดลอก URL แล้ว')
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors text-sm whitespace-nowrap"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-xs text-[var(--fg-4)] mt-1">
+                เปิด Gallery → Agent Skills → Add MCP Server → วาง URL นี้
+              </p>
+            </div>
+
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleMcpTest}
+                disabled={mcpTestLoading}
+                className="px-4 py-2 rounded-lg border border-phopy-indigo/50 text-[var(--primary)] hover:bg-phopy-indigo/10 transition-colors text-sm flex items-center gap-2"
+              >
+                {mcpTestLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Test MCP
+              </button>
+              <button
+                onClick={handleMcpRegenerate}
+                disabled={mcpRegenLoading}
+                className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-danger hover:border-[var(--danger-soft)] transition-colors text-sm flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Regenerate Key
+              </button>
+            </div>
+
+            {mcpTestSteps && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
+              >
+                <p className="text-sm font-medium text-[var(--fg-2)] mb-2">ผลการทดสอบ MCP Server</p>
+                {mcpTestSteps.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    {s.ok
+                      ? <CheckCircle className="w-4 h-4 text-success flex-shrink-0" />
+                      : <AlertCircle className="w-4 h-4 text-danger flex-shrink-0" />
+                    }
+                    <span className={s.ok ? 'text-[var(--fg-2)]' : 'text-danger'}>{s.step}</span>
+                    {s.ms !== undefined && (
+                      <span className="text-[var(--fg-4)] text-xs ml-auto">{s.ms}ms</span>
+                    )}
+                  </div>
+                ))}
+                {mcpTestSteps.every((s) => s.ok) && (
+                  <p className="text-success text-sm font-medium pt-1">
+                    พร้อมใช้งานกับ Google AI Edge Gallery
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </div>
         )}
       </div>
 

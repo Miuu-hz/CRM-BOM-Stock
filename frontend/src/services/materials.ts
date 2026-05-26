@@ -17,8 +17,8 @@ export interface Material {
   name: string
   unit: string
   unitCost: number
-  minStock: number
-  maxStock: number
+  minStock?: number
+  maxStock?: number
   currentStock?: number
   stockStatus?: string
   usedInBOMs?: number
