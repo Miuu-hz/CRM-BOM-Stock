@@ -715,7 +715,7 @@ router.post('/platform/preview', upload.single('file'), async (req: MulterReques
     if (!platform || !importDate) return res.status(400).json({ success: false, message: 'platform and importDate are required' })
 
     // Detect if file has metadata header (Shopee full format) or direct data
-    const { parseSimplifiedCSV } = await import('../services/csvParser.service')
+    const { parseSimplifiedCSV } = await import('../services/csvParser.service.js')
     const parsed = await parseSimplifiedCSV(req.file.path, importDate, importDate)
 
     const importId = genId()

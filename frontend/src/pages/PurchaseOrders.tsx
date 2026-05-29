@@ -16,6 +16,7 @@ import {
   FileText,
   ArrowRight,
   AlertCircle,
+  Pencil,
 } from 'lucide-react'
 import purchaseOrderService, { PurchaseOrder, POStats } from '../services/purchaseOrder'
 import supplierService, { Supplier } from '../services/supplier'
@@ -40,6 +41,7 @@ function PurchaseOrders() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState<PurchaseOrder | null>(null)
+  const [showEditModal, setShowEditModal] = useState<PurchaseOrder | null>(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -197,6 +199,12 @@ function PurchaseOrders() {
                             <Eye className="w-4 h-4" />
                           </button>
                           {po.status === 'DRAFT' && (
+                            <button onClick={() => setShowEditModal(po)}
+                              className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg" title="Edit Draft">
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {po.status === 'DRAFT' && (
                             <button onClick={() => handleStatusChange(po.id, 'SUBMITTED')}
                               className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg" title="Submit">
                               <Send className="w-4 h-4" />
@@ -238,6 +246,10 @@ function PurchaseOrders() {
       {/* Detail Modal */}
       <PODetailModal po={showDetailModal} onClose={() => setShowDetailModal(null)}
         onStatusChange={handleStatusChange} />
+
+      {/* Edit Modal */}
+      <EditPOModal po={showEditModal} suppliers={suppliers}
+        onClose={() => setShowEditModal(null)} onSave={loadData} />
     </motion.div>
   )
 }
@@ -561,6 +573,218 @@ function PODetailModal({ po, onClose, onStatusChange }: {
               </div>
             )}
           </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+function EditPOModal({ po, suppliers, onClose, onSave }: {
+  po: PurchaseOrder | null; suppliers: Supplier[]; onClose: () => void; onSave: () => void
+}) {
+  useModalClose(onClose)
+  const [supplierId, setSupplierId] = useState('')
+  const [expectedDate, setExpectedDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [taxRate, setTaxRate] = useState(7)
+  const [items, setItems] = useState<{ description: string; quantity: number; unitPrice: number; unit: string; materialId?: string }[]>([])
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!po) return
+    setSupplierId(po.supplier_id ?? '')
+    setExpectedDate(po.expected_date ? po.expected_date.slice(0, 10) : '')
+    setNotes(po.notes ?? '')
+    setTaxRate(po.tax_rate ?? 7)
+    setItems(
+      (po.items ?? []).map((i) => ({
+        description: i.description ?? '',
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+        unit: i.unit ?? 'units',
+        materialId: i.material_id ?? '',
+      }))
+    )
+    materialService.getAll().then(setMaterials).catch(() => {})
+  }, [po])
+
+  if (!po) return null
+
+  const addItem = () => setItems([...items, { description: '', quantity: 1, unitPrice: 0, unit: 'units' }])
+  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
+  const updateItem = (idx: number, field: string, value: any) => {
+    const updated = [...items]; (updated[idx] as any)[field] = value; setItems(updated)
+  }
+
+  const subtotal = items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)
+  const taxAmount = subtotal * (taxRate / 100)
+  const total = subtotal + taxAmount
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await purchaseOrderService.update(po.id, { supplierId, expectedDate: expectedDate || undefined, notes, taxRate, items })
+      onSave()
+      onClose()
+    } catch {
+      alert('Failed to update PO')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+          onClick={(e) => e.stopPropagation()}
+          className="phopy-card w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+
+          <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">Edit Draft PO</h2>
+              <p className="text-sm text-[var(--fg-3)] font-mono">{po.po_number}</p>
+              {po.notes?.startsWith('[AI Draft]') && (
+                <p className="text-xs text-warning mt-1">⚠️ สร้างจาก AI — กรุณาตรวจสอบข้อมูลก่อน Submit</p>
+              )}
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
+              <X className="w-5 h-5 text-[var(--fg-3)]" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">Supplier</label>
+                <SearchableDropdown
+                  value={supplierId}
+                  onChange={setSupplierId}
+                  options={[
+                    { id: '', label: '-- ยังไม่เลือก Supplier --', searchText: '' },
+                    ...(suppliers || []).filter((s) => s.status === 'ACTIVE').map((s) => ({
+                      id: s.id, label: `${s.name} (${s.code})`, searchText: `${s.name} ${s.code}`,
+                    })),
+                  ]}
+                  placeholder="-- Select Supplier --"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">Expected Date</label>
+                <input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className="phopy-input w-full" />
+              </div>
+            </div>
+
+            {/* Items */}
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <label className="text-sm text-[var(--fg-3)] font-semibold">Items</label>
+                <button type="button" onClick={addItem} className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
+                  <Plus className="w-4 h-4" /> Add Item
+                </button>
+              </div>
+              <div className="space-y-3">
+                {items.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-[var(--surface-2)] p-3 rounded-lg">
+                    <div className="col-span-4">
+                      <label className="text-xs text-[var(--fg-4)]">Material/Item</label>
+                      <SearchableDropdown
+                        value={item.materialId || ''}
+                        onChange={(value) => {
+                          const m = materials.find((m) => m.id === value)
+                          if (m) {
+                            updateItem(idx, 'description', m.name)
+                            updateItem(idx, 'unitPrice', Number(m.unitCost))
+                            updateItem(idx, 'unit', m.unit)
+                            updateItem(idx, 'materialId', value)
+                          } else {
+                            updateItem(idx, 'materialId', '')
+                          }
+                        }}
+                        options={[
+                          { id: '', label: '-- Custom Item --', searchText: '' },
+                          ...materials.map((m) => ({
+                            id: m.id,
+                            label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${m.unit})`,
+                            searchText: `${m.code} ${m.name}`,
+                          })),
+                        ]}
+                        placeholder="Search material..."
+                      />
+                      {(!item.materialId || item.materialId === '') && (
+                        <input type="text" value={item.description}
+                          onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                          className="phopy-input w-full text-sm mt-2" placeholder="Enter item name" required />
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-[var(--fg-4)]">Qty</label>
+                      <input type="number" value={item.quantity}
+                        onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))}
+                        className="phopy-input w-full text-sm" min="0.01" step="0.01" required />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-[var(--fg-4)]">Unit</label>
+                      <input type="text" value={item.unit}
+                        onChange={(e) => updateItem(idx, 'unit', e.target.value)}
+                        className="phopy-input w-full text-sm" placeholder="กก." />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-[var(--fg-4)]">Unit Price</label>
+                      <input type="number" value={item.unitPrice}
+                        onChange={(e) => updateItem(idx, 'unitPrice', Number(e.target.value))}
+                        className="phopy-input w-full text-sm" min="0" step="0.01" required />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-xs text-[var(--fg-4)]">Total</label>
+                      <p className="text-success font-semibold text-sm py-2">฿{(item.quantity * item.unitPrice).toLocaleString()}</p>
+                    </div>
+                    <div className="col-span-1 text-right">
+                      {items.length > 1 && (
+                        <button type="button" onClick={() => removeItem(idx)}
+                          className="p-2 text-danger hover:bg-[var(--danger-soft)] rounded-lg">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="bg-[var(--surface-2)] p-4 rounded-lg space-y-2">
+              <div className="flex justify-between text-[var(--fg-3)]"><span>Subtotal</span><span>฿{subtotal.toLocaleString()}</span></div>
+              <div className="flex justify-between text-[var(--fg-3)] items-center">
+                <span>Tax</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))}
+                    className="phopy-input w-20 text-sm text-right" min="0" max="100" />
+                  <span>% = ฿{taxAmount.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="flex justify-between text-lg font-bold border-t border-[var(--border)] pt-2">
+                <span className="text-[var(--fg-2)]">Total</span>
+                <span className="text-success">฿{total.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">Notes</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="phopy-input w-full" rows={2} />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)]">Cancel</button>
+              <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
         </motion.div>
       </motion.div>
     </AnimatePresence>
