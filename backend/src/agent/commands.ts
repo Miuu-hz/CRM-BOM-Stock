@@ -71,23 +71,23 @@ const commands: Record<string, AgentCommand> = {
   // ── Mutations ────────────────────────────────────────────────────────────
   async create_pr(ctx: AgentContext, payload: { description: string; items?: Array<{ name: string; qty: number; unit: string }> }) {
     const id = crypto.randomUUID().replace(/-/g, '').substring(0, 25)
-    const prNumber = `PR-${new Date().getFullYear()}-${String(ctx.db.prepare('SELECT COUNT(*) as c FROM purchase_requests').get().c + 1).padStart(5, '0')}`
+    const prNumber = `PR-${new Date().getFullYear()}-${String((ctx.db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(ctx.tenantId) as any).c + 1).padStart(5, '0')}`
     const now = new Date().toISOString()
     ctx.db.prepare(
-      `INSERT INTO purchase_requests (id, tenant_id, pr_number, status, notes, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, 'DRAFT', ?, 'ai-agent', ?, ?)`
+      `INSERT INTO purchase_requests (id, tenant_id, pr_number, requester_id, requester_name, supplier_name, source, status, notes, created_at, updated_at)
+       VALUES (?, ?, ?, 'ai-agent', 'AI Agent', 'TBD', 'AGENT', 'DRAFT', ?, ?, ?)`
     ).run(id, ctx.tenantId, prNumber, payload.description ?? '', now, now)
     return { type: 'pr_created', prId: id, prNumber }
   },
 
   async create_wo(ctx: AgentContext, payload: { description: string; productId?: string; quantity?: number }) {
     const id = crypto.randomUUID().replace(/-/g, '').substring(0, 25)
-    const woNumber = `WO-${new Date().getFullYear()}-${String(ctx.db.prepare('SELECT COUNT(*) as c FROM work_orders').get().c + 1).padStart(5, '0')}`
+    const woNumber = `WO-${new Date().getFullYear()}-${String((ctx.db.prepare('SELECT COUNT(*) as c FROM work_orders WHERE tenant_id = ?').get(ctx.tenantId) as any).c + 1).padStart(5, '0')}`
     const now = new Date().toISOString()
     ctx.db.prepare(
-      `INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'PLANNED', ?, ?, ?)`
-    ).run(id, ctx.tenantId, woNumber, payload.productId ?? null, payload.quantity ?? 1, payload.description ?? '', now, now)
+      `INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'PLANNED', ?, ?, ?)`
+    ).run(id, ctx.tenantId, woNumber, payload.productId ?? null, payload.description ?? '', payload.quantity ?? 1, payload.description ?? '', now, now)
     return { type: 'wo_created', woId: id, woNumber }
   },
 

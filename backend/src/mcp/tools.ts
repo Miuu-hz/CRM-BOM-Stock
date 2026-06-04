@@ -1205,4 +1205,331 @@ PR ต้องมีสถานะ APPROVED ก่อน
       return ok({ success: false, message: 'action ไม่ถูกต้อง' })
     }
   )
+
+  // ── 16. get_purchase_requests ───────────────────────────────────────────────
+  server.tool(
+    'get_purchase_requests',
+    `ดูรายการใบขอซื้อ (PR) / List purchase requests with status filter.
+ใช้เมื่อถามว่า "PR ไหนรออนุมัติ" "ดู PR ที่สร้างจาก MCP" หรือหา PR number ก่อนอนุมัติ/แปลงเป็น PO
+status: DRAFT=ร่าง, PENDING=รออนุมัติ, APPROVED=อนุมัติแล้ว, REJECTED=ปฏิเสธ, CONVERTED=แปลงเป็น PO แล้ว`,
+    {
+      status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'CONVERTED']).optional()
+        .describe('กรองตามสถานะ ถ้าไม่ระบุแสดงทั้งหมด'),
+      limit: z.number().optional().describe('จำนวนสูงสุด (default: 20)'),
+    },
+    async (args) => {
+      const { status, limit = 20 } = args
+      const where = status ? 'AND pr.status = ?' : ''
+      const params: any[] = status ? [tenantId, status, limit] : [tenantId, limit]
+
+      const rows = db.prepare(`
+        SELECT pr.id, pr.pr_number, pr.status, pr.source, pr.requester_name,
+               pr.supplier_name, pr.notes, pr.created_at, pr.approved_at,
+               COUNT(pri.id) as item_count
+        FROM purchase_requests pr
+        LEFT JOIN purchase_request_items pri ON pri.purchase_request_id = pr.id OR pri.pr_id = pr.id
+        WHERE pr.tenant_id = ? ${where}
+        GROUP BY pr.id
+        ORDER BY pr.created_at DESC
+        LIMIT ?
+      `).all(...params)
+
+      return ok({ count: rows.length, items: rows })
+    }
+  )
+
+  // ── 17. get_suppliers ───────────────────────────────────────────────────────
+  server.tool(
+    'get_suppliers',
+    `ค้นหาและดูรายชื่อ Supplier / Search suppliers to get their ID for convert_pr_to_po.
+ใช้เมื่อต้องการหา supplier_id สำหรับสร้าง PO หรือดูรายชื่อซัพพลายเออร์ทั้งหมด
+ตัวอย่าง: "ซัพพลายเออร์ชื่อ ABC คือใคร" → get_suppliers(query="ABC")`,
+    {
+      query: z.string().optional().describe('ค้นหาจากชื่อ, รหัส, เบอร์โทร, ชื่อผู้ติดต่อ'),
+      status: z.enum(['ACTIVE', 'INACTIVE']).optional().describe('กรองตามสถานะ (default: ACTIVE)'),
+    },
+    async (args) => {
+      const { query, status = 'ACTIVE' } = args
+      const searchTerm = query ? `%${query}%` : null
+
+      const rows = searchTerm
+        ? db.prepare(`
+            SELECT id, code, name, contact_name, phone, email, payment_terms, rating, status
+            FROM suppliers
+            WHERE tenant_id = ? AND status = ?
+              AND (name LIKE ? OR code LIKE ? OR contact_name LIKE ? OR phone LIKE ?)
+            ORDER BY name LIMIT 20
+          `).all(tenantId, status, searchTerm, searchTerm, searchTerm, searchTerm)
+        : db.prepare(`
+            SELECT id, code, name, contact_name, phone, email, payment_terms, rating, status
+            FROM suppliers
+            WHERE tenant_id = ? AND status = ?
+            ORDER BY name LIMIT 30
+          `).all(tenantId, status)
+
+      return ok({ count: (rows as any[]).length, suppliers: rows })
+    }
+  )
+
+  // ── 18. get_stock_movements ─────────────────────────────────────────────────
+  server.tool(
+    'get_stock_movements',
+    `ดูประวัติการเคลื่อนไหวสต็อก / View stock movement history.
+ใช้เมื่อถามว่า "หมูสับรับเข้าเมื่อไหร่" "เบิกออกไปเท่าไหร่" "ประวัติการเคลื่อนไหวเดือนนี้"
+ต้องระบุ stock_item_id หรือใช้ search() หาก่อน`,
+    {
+      stock_item_id: z.string().describe('ID หรือ SKU ของ stock item'),
+      type: z.enum(['IN', 'OUT', 'ADJUST', 'UNPACK']).optional().describe('กรองประเภท IN=รับเข้า OUT=เบิก ADJUST=ปรับ'),
+      days: z.number().optional().describe('ย้อนหลังกี่วัน (default: 30)'),
+    },
+    async (args) => {
+      const { stock_item_id, type, days = 30 } = args
+
+      let item = db.prepare('SELECT id, name, sku, unit, quantity FROM stock_items WHERE id = ? AND tenant_id = ?').get(stock_item_id, tenantId) as any
+      if (!item) {
+        item = db.prepare('SELECT id, name, sku, unit, quantity FROM stock_items WHERE sku = ? AND tenant_id = ?').get(stock_item_id, tenantId) as any
+      }
+      if (!item) return ok({ success: false, message: `ไม่พบ stock item: ${stock_item_id}` })
+
+      const typeFilter = type ? 'AND type = ?' : ''
+      const queryParams: any[] = [item.id, `-${days} days`]
+      if (type) queryParams.push(type)
+
+      const movements = db.prepare(`
+        SELECT type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by
+        FROM stock_movements
+        WHERE stock_item_id = ? AND created_at >= date('now', ?)
+        ${typeFilter}
+        ORDER BY created_at DESC LIMIT 50
+      `).all(...queryParams)
+
+      const totalIn = (movements as any[]).filter(m => m.type === 'IN').reduce((s, m) => s + m.quantity, 0)
+      const totalOut = (movements as any[]).filter(m => m.type === 'OUT').reduce((s, m) => s + m.quantity, 0)
+
+      return ok({
+        item: { id: item.id, name: item.name, sku: item.sku, current_quantity: item.quantity, unit: item.unit },
+        period_days: days,
+        total_in: totalIn,
+        total_out: totalOut,
+        movements,
+      })
+    }
+  )
+
+  // ── 19. get_ar_aging ────────────────────────────────────────────────────────
+  server.tool(
+    'get_ar_aging',
+    `ดูลูกหนี้การค้า (AR Aging) — ลูกค้าใครยังไม่จ่ายเงิน ค้างนานแค่ไหน / Accounts Receivable aging report.
+ใช้เมื่อถาม "ลูกค้าใครค้างชำระ" "บิลไหนเกินกำหนด" "ยอดลูกหนี้รวมเท่าไหร่"
+แสดง: ชื่อลูกค้า, เลขบิล, ยอดค้าง, วันครบกำหนด, จำนวนวันที่เกิน`,
+    {
+      overdue_only: z.boolean().optional().describe('true=เฉพาะที่เกินกำหนดแล้ว, false=ทั้งหมดที่ยังไม่จ่าย (default: false)'),
+      customer_name: z.string().optional().describe('กรองเฉพาะลูกค้ารายนี้'),
+    },
+    async (args) => {
+      const { overdue_only = false, customer_name } = args
+
+      const overdueFilter = overdue_only ? "AND date(inv.due_date) < date('now')" : ''
+      const customerFilter = customer_name ? 'AND c.name LIKE ?' : ''
+      const params: any[] = [tenantId]
+      if (customer_name) params.push(`%${customer_name}%`)
+
+      const rows = db.prepare(`
+        SELECT inv.invoice_number, inv.invoice_date, inv.due_date,
+               inv.total_amount, inv.paid_amount, inv.balance_amount,
+               inv.payment_status,
+               c.name as customer_name, c.phone as customer_phone,
+               CAST(julianday('now') - julianday(inv.due_date) AS INTEGER) as days_overdue
+        FROM invoices inv
+        JOIN customers c ON inv.customer_id = c.id
+        WHERE inv.tenant_id = ?
+          AND inv.payment_status IN ('UNPAID','PARTIAL')
+          ${overdueFilter}
+          ${customerFilter}
+        ORDER BY days_overdue DESC, inv.due_date ASC
+        LIMIT 50
+      `).all(...params) as any[]
+
+      const totalBalance = rows.reduce((s, r) => s + (r.balance_amount || 0), 0)
+      const overdueCount = rows.filter(r => r.days_overdue > 0).length
+      const overdueAmount = rows.filter(r => r.days_overdue > 0).reduce((s, r) => s + (r.balance_amount || 0), 0)
+
+      // Bucket ตาม aging
+      const bucket = (days: number) =>
+        days <= 0 ? 'ยังไม่ถึงกำหนด' :
+        days <= 30 ? '1-30 วัน' :
+        days <= 60 ? '31-60 วัน' :
+        days <= 90 ? '61-90 วัน' : 'เกิน 90 วัน'
+
+      const buckets = rows.reduce((acc: Record<string, number>, r) => {
+        const b = bucket(r.days_overdue)
+        acc[b] = (acc[b] || 0) + (r.balance_amount || 0)
+        return acc
+      }, {})
+
+      return ok({
+        summary: { total_unpaid_invoices: rows.length, total_balance: totalBalance, overdue_count: overdueCount, overdue_amount: overdueAmount },
+        aging_buckets: buckets,
+        invoices: rows,
+      })
+    }
+  )
+
+  // ── 20. get_ap_aging ────────────────────────────────────────────────────────
+  server.tool(
+    'get_ap_aging',
+    `ดูเจ้าหนี้การค้า (AP Aging) — เราค้างจ่าย Supplier ไหน ครบกำหนดแล้วหรือยัง / Accounts Payable aging report.
+ใช้เมื่อถาม "เราต้องจ่าย supplier ไหนบ้าง" "บิลซื้อไหนถึงกำหนดแล้ว" "ยอดเจ้าหนี้รวมเท่าไหร่"`,
+    {
+      overdue_only: z.boolean().optional().describe('true=เฉพาะที่เกินกำหนดแล้ว (default: false)'),
+      supplier_name: z.string().optional().describe('กรองเฉพาะ supplier รายนี้'),
+    },
+    async (args) => {
+      const { overdue_only = false, supplier_name } = args
+
+      const overdueFilter = overdue_only ? "AND date(pi.due_date) < date('now')" : ''
+      const supplierFilter = supplier_name ? 'AND s.name LIKE ?' : ''
+      const params: any[] = [tenantId]
+      if (supplier_name) params.push(`%${supplier_name}%`)
+
+      const rows = db.prepare(`
+        SELECT pi.pi_number, pi.invoice_date, pi.due_date,
+               pi.total_amount, pi.paid_amount, pi.balance_amount,
+               pi.payment_status,
+               s.name as supplier_name, s.phone as supplier_phone,
+               CAST(julianday('now') - julianday(pi.due_date) AS INTEGER) as days_overdue
+        FROM purchase_invoices pi
+        JOIN suppliers s ON pi.supplier_id = s.id
+        WHERE pi.tenant_id = ?
+          AND pi.payment_status IN ('UNPAID','PARTIAL')
+          ${overdueFilter}
+          ${supplierFilter}
+        ORDER BY days_overdue DESC, pi.due_date ASC
+        LIMIT 50
+      `).all(...params) as any[]
+
+      const totalBalance = rows.reduce((s, r) => s + (r.balance_amount || 0), 0)
+      const overdueCount = rows.filter(r => r.days_overdue > 0).length
+      const overdueAmount = rows.filter(r => r.days_overdue > 0).reduce((s, r) => s + (r.balance_amount || 0), 0)
+
+      const bucket = (days: number) =>
+        days <= 0 ? 'ยังไม่ถึงกำหนด' :
+        days <= 30 ? '1-30 วัน' :
+        days <= 60 ? '31-60 วัน' :
+        days <= 90 ? '61-90 วัน' : 'เกิน 90 วัน'
+
+      const buckets = rows.reduce((acc: Record<string, number>, r) => {
+        const b = bucket(r.days_overdue)
+        acc[b] = (acc[b] || 0) + (r.balance_amount || 0)
+        return acc
+      }, {})
+
+      return ok({
+        summary: { total_unpaid_invoices: rows.length, total_balance: totalBalance, overdue_count: overdueCount, overdue_amount: overdueAmount },
+        aging_buckets: buckets,
+        invoices: rows,
+      })
+    }
+  )
+
+  // ── 21. get_financial_summary ───────────────────────────────────────────────
+  server.tool(
+    'get_financial_summary',
+    `สรุปภาพรวมการเงิน — รายรับ รายจ่าย กำไรขั้นต้น ยอด AR/AP / Financial P&L and balance summary.
+ใช้เมื่อถาม "สรุปบัญชีเดือนนี้" "รายรับรายจ่ายเป็นยังไง" "กำไรเดือนนี้เท่าไหร่" "ภาพรวมการเงิน"`,
+    {
+      period: z.enum(['7d', '30d', '90d', 'ytd']).optional()
+        .describe('ช่วงเวลา: 7d=7วัน, 30d=เดือนนี้, 90d=3เดือน, ytd=ตั้งแต่ต้นปี (default: 30d)'),
+    },
+    async (args) => {
+      const { period = '30d' } = args
+      const dateFilter = period === 'ytd'
+        ? `date('now','start of year')`
+        : `date('now', '-${({ '7d': 7, '30d': 30, '90d': 90 } as Record<string, number>)[period] ?? 30} days')`
+
+      // รายรับจากบิลขาย (invoices ที่ออกในช่วง)
+      const revenue = db.prepare(`
+        SELECT COALESCE(SUM(total_amount), 0) as total,
+               COALESCE(SUM(paid_amount), 0) as collected,
+               COALESCE(SUM(balance_amount), 0) as outstanding,
+               COUNT(*) as invoice_count
+        FROM invoices
+        WHERE tenant_id = ? AND invoice_date >= ${dateFilter}
+          AND status NOT IN ('CANCELLED','DRAFT')
+      `).get(tenantId) as any
+
+      // รายจ่ายจากบิลซื้อ (purchase_invoices)
+      const expense = db.prepare(`
+        SELECT COALESCE(SUM(total_amount), 0) as total,
+               COALESCE(SUM(paid_amount), 0) as paid,
+               COALESCE(SUM(balance_amount), 0) as outstanding,
+               COUNT(*) as invoice_count
+        FROM purchase_invoices
+        WHERE tenant_id = ? AND invoice_date >= ${dateFilter}
+          AND status NOT IN ('CANCELLED','DRAFT')
+      `).get(tenantId) as any
+
+      // ยอด AR รวม (ลูกหนี้ทั้งหมดที่ยังค้างอยู่)
+      const arTotal = db.prepare(`
+        SELECT COALESCE(SUM(balance_amount), 0) as total,
+               COUNT(*) as count
+        FROM invoices
+        WHERE tenant_id = ? AND payment_status IN ('UNPAID','PARTIAL')
+      `).get(tenantId) as any
+
+      // ยอด AP รวม (เจ้าหนี้ทั้งหมดที่ยังค้างอยู่)
+      const apTotal = db.prepare(`
+        SELECT COALESCE(SUM(balance_amount), 0) as total,
+               COUNT(*) as count
+        FROM purchase_invoices
+        WHERE tenant_id = ? AND payment_status IN ('UNPAID','PARTIAL')
+      `).get(tenantId) as any
+
+      // บิลเกินกำหนด
+      const arOverdue = db.prepare(`
+        SELECT COALESCE(SUM(balance_amount), 0) as total, COUNT(*) as count
+        FROM invoices
+        WHERE tenant_id = ? AND payment_status IN ('UNPAID','PARTIAL')
+          AND due_date IS NOT NULL AND date(due_date) < date('now')
+      `).get(tenantId) as any
+
+      const apOverdue = db.prepare(`
+        SELECT COALESCE(SUM(balance_amount), 0) as total, COUNT(*) as count
+        FROM purchase_invoices
+        WHERE tenant_id = ? AND payment_status IN ('UNPAID','PARTIAL')
+          AND due_date IS NOT NULL AND date(due_date) < date('now')
+      `).get(tenantId) as any
+
+      const grossProfit = revenue.collected - expense.paid
+
+      return ok({
+        period,
+        income: {
+          total_invoiced: revenue.total,
+          collected: revenue.collected,
+          outstanding: revenue.outstanding,
+          invoice_count: revenue.invoice_count,
+        },
+        expenses: {
+          total_invoiced: expense.total,
+          paid: expense.paid,
+          outstanding: expense.outstanding,
+          invoice_count: expense.invoice_count,
+        },
+        gross_profit: grossProfit,
+        accounts_receivable: {
+          total_outstanding: arTotal.total,
+          invoice_count: arTotal.count,
+          overdue_amount: arOverdue.total,
+          overdue_count: arOverdue.count,
+        },
+        accounts_payable: {
+          total_outstanding: apTotal.total,
+          invoice_count: apTotal.count,
+          overdue_amount: apOverdue.total,
+          overdue_count: apOverdue.count,
+        },
+      })
+    }
+  )
 }
