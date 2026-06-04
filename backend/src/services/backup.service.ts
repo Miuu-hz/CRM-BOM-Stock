@@ -19,6 +19,7 @@ export function initBackupTable() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS backup_logs (
       id          TEXT PRIMARY KEY,
+      tenant_id   TEXT,
       filename    TEXT NOT NULL,
       file_size   INTEGER,
       status      TEXT NOT NULL DEFAULT 'PENDING',
@@ -29,6 +30,13 @@ export function initBackupTable() {
       completed_at TEXT
     )
   `)
+  // Add tenant_id to existing tables that don't have it
+  try {
+    const cols = db.prepare(`PRAGMA table_info(backup_logs)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'tenant_id')) {
+      db.exec(`ALTER TABLE backup_logs ADD COLUMN tenant_id TEXT`)
+    }
+  } catch {}
 }
 
 // ── Google Drive helper ──────────────────────────────────────────────────────
@@ -76,7 +84,7 @@ async function uploadToDrive(filePath: string, filename: string): Promise<{ id: 
 }
 
 // ── Core backup function ─────────────────────────────────────────────────────
-export async function runBackup(): Promise<string> {
+export async function runBackup(tenantId?: string): Promise<string> {
   const db = getDb()
   const id = `bk_${Date.now()}`
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -84,8 +92,8 @@ export async function runBackup(): Promise<string> {
   const destPath = path.join(BACKUP_DIR, filename)
 
   db.prepare(
-    `INSERT INTO backup_logs (id, filename, status, created_at) VALUES (?, ?, 'RUNNING', datetime('now'))`
-  ).run(id, filename)
+    `INSERT INTO backup_logs (id, tenant_id, filename, status, created_at) VALUES (?, ?, ?, 'RUNNING', datetime('now'))`
+  ).run(id, tenantId ?? null, filename)
 
   try {
     // SQLite WAL checkpoint before copy to ensure consistency
@@ -148,9 +156,11 @@ function pruneLocalBackups(keep = 10) {
 }
 
 // ── Delete a backup (log + local file) ──────────────────────────────────────
-export async function deleteBackup(id: string) {
+export async function deleteBackup(id: string, tenantId?: string) {
   const db = getDb()
-  const row = db.prepare('SELECT filename, cloud_file_id FROM backup_logs WHERE id = ?').get(id) as any
+  const row = tenantId
+    ? db.prepare('SELECT filename, cloud_file_id FROM backup_logs WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId) as any
+    : db.prepare('SELECT filename, cloud_file_id FROM backup_logs WHERE id = ?').get(id) as any
   if (!row) throw new Error('ไม่พบ backup')
 
   // Delete local file
@@ -169,8 +179,15 @@ export async function deleteBackup(id: string) {
 }
 
 // ── List backup logs ─────────────────────────────────────────────────────────
-export function listBackups() {
+export function listBackups(tenantId?: string) {
   const db = getDb()
+  if (tenantId) {
+    return db.prepare(`
+      SELECT id, filename, file_size, status, cloud_url, error, created_at, completed_at
+      FROM backup_logs WHERE tenant_id = ? OR tenant_id IS NULL
+      ORDER BY created_at DESC LIMIT 50
+    `).all(tenantId)
+  }
   return db.prepare(`
     SELECT id, filename, file_size, status, cloud_url, error, created_at, completed_at
     FROM backup_logs ORDER BY created_at DESC LIMIT 50
@@ -178,9 +195,11 @@ export function listBackups() {
 }
 
 // ── Get local file path for download ────────────────────────────────────────
-export function getBackupFilePath(id: string): string {
+export function getBackupFilePath(id: string, tenantId?: string): string {
   const db = getDb()
-  const row = db.prepare('SELECT filename FROM backup_logs WHERE id = ?').get(id) as any
+  const row = tenantId
+    ? db.prepare('SELECT filename FROM backup_logs WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId) as any
+    : db.prepare('SELECT filename FROM backup_logs WHERE id = ?').get(id) as any
   if (!row) throw new Error('ไม่พบ backup')
   const p = path.join(BACKUP_DIR, row.filename)
   if (!fs.existsSync(p)) throw new Error('ไฟล์ถูกลบออกจากเซิร์ฟเวอร์แล้ว')
@@ -201,10 +220,14 @@ export async function testDriveConnection(): Promise<{ ok: boolean; message: str
 }
 
 // ── Scheduler: run every 3 days (uses node-cron via backup.scheduler.ts) ────
-export function getLastBackupTime(): string | null {
+export function getLastBackupTime(tenantId?: string): string | null {
   const db = getDb()
-  const row = db.prepare(
-    `SELECT created_at FROM backup_logs WHERE status IN ('SUCCESS','PARTIAL') ORDER BY created_at DESC LIMIT 1`
-  ).get() as any
+  const row = tenantId
+    ? db.prepare(
+        `SELECT created_at FROM backup_logs WHERE status IN ('SUCCESS','PARTIAL') AND (tenant_id = ? OR tenant_id IS NULL) ORDER BY created_at DESC LIMIT 1`
+      ).get(tenantId) as any
+    : db.prepare(
+        `SELECT created_at FROM backup_logs WHERE status IN ('SUCCESS','PARTIAL') ORDER BY created_at DESC LIMIT 1`
+      ).get() as any
   return row?.created_at ?? null
 }

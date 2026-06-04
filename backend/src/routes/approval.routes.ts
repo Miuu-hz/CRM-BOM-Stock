@@ -135,7 +135,7 @@ router.post('/permissions', requireRole('MASTER', 'ADMIN'), async (req: Request,
     `).run(id, tenantId, userId, moduleType, canApprove ? 1 : 0, canApproveUnlimited ? 1 : 0, 
       approvalLimit || 0, isMasterApprover ? 1 : 0, req.user!.userId, now, now)
 
-    const permission = db.prepare('SELECT * FROM user_approval_permissions WHERE id = ?').get(id)
+    const permission = db.prepare('SELECT * FROM user_approval_permissions WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.json({ success: true, data: permission, message: 'Permission granted' })
   } catch (error) {
     console.error('Grant permission error:', error)
@@ -375,7 +375,7 @@ router.post('/requests', async (req: Request, res: Response) => {
 
     transaction()
 
-    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ?').get(id)
+    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: request, message: 'Approval request created' })
   } catch (error) {
     console.error('Create approval request error:', error)
@@ -467,7 +467,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
 
     transaction()
 
-    const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ?').get(req.params.id)
+    const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: `Request ${decision.toLowerCase()}` })
   } catch (error) {
     console.error('Approval decision error:', error)
@@ -499,10 +499,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
       .run(now, request.reference_id)
   } else if (request.reference_type === 'stock_adjustments') {
     // Stock adjustment approved - execute the adjustment
-    const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ?').get(request.reference_id) as any
+    const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any
     if (adj) {
       // Update stock
-      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(adj.stock_item_id) as any
+      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(adj.stock_item_id, request.tenant_id) as any
       if (stockItem) {
         const newQty = adj.quantity_after
         db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?')
@@ -613,7 +613,7 @@ router.post('/stock-adjustments', async (req: Request, res: Response) => {
     `).run(id, tenantId, adjNumber, stockItemId, adjustmentType, qtyBefore, qtyAfter,
       qtyAdjusted, unitCost || 0, totalValue, reason, notes || '', req.user!.userId, now, now)
 
-    const adjustment = db.prepare('SELECT * FROM stock_adjustments WHERE id = ?').get(id)
+    const adjustment = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: adjustment, message: 'Stock adjustment created and pending approval' })
   } catch (error) {
     console.error('Create stock adjustment error:', error)

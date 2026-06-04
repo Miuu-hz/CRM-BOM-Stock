@@ -2514,6 +2514,51 @@ try {
   }
 } catch (e) { console.error('⚠️ users.mcp_api_key migration error:', e) }
 
+// Migration: make purchase_orders.supplier_id nullable (needed for AI-generated draft POs)
+try {
+  const poSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_orders'`).get() as any
+  if (poSQL?.sql && /supplier_id\s+TEXT\s+NOT\s+NULL/i.test(poSQL.sql)) {
+    db.pragma('foreign_keys = OFF')
+    const cols = db.prepare(`PRAGMA table_info(purchase_orders)`).all() as any[]
+    const hasLinkedPrId = cols.some((c: any) => c.name === 'linked_pr_id')
+    const baseColsCsv = 'id, tenant_id, po_number, supplier_id, status, order_date, expected_date, received_date, subtotal, tax_rate, tax_amount, total_amount, notes, created_by, approved_by, created_at, updated_at'
+    const allColsCsv = hasLinkedPrId ? `${baseColsCsv}, linked_pr_id` : baseColsCsv
+    db.exec(`
+      CREATE TABLE purchase_orders_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        po_number TEXT NOT NULL,
+        supplier_id TEXT,
+        status TEXT DEFAULT 'DRAFT',
+        order_date TEXT DEFAULT CURRENT_TIMESTAMP,
+        expected_date TEXT,
+        received_date TEXT,
+        subtotal REAL DEFAULT 0,
+        tax_rate REAL DEFAULT 0,
+        tax_amount REAL DEFAULT 0,
+        total_amount REAL DEFAULT 0,
+        notes TEXT,
+        created_by TEXT,
+        approved_by TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        ${hasLinkedPrId ? 'linked_pr_id TEXT,' : ''}
+        FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        UNIQUE(tenant_id, po_number)
+      );
+      INSERT OR IGNORE INTO purchase_orders_new (${allColsCsv})
+        SELECT ${allColsCsv} FROM purchase_orders;
+      DROP TABLE purchase_orders;
+      ALTER TABLE purchase_orders_new RENAME TO purchase_orders;
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('✅ Migration: purchase_orders.supplier_id is now nullable')
+  }
+} catch (e) {
+  console.error('⚠️ purchase_orders supplier_id nullable migration error:', e)
+  db.pragma('foreign_keys = ON')
+}
+
 console.log('✅ SQLite database initialized at:', dbPath)
 
 export default db

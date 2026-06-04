@@ -11,7 +11,7 @@ router.use(authenticate)
 router.get('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { q } = req.query
+    const { q, category: stockCategory } = req.query
 
     if (!q || typeof q !== 'string' || q.trim().length < 2) {
       return res.json({
@@ -97,16 +97,25 @@ router.get('/', (req: Request, res: Response) => {
     `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
 
     // Search stock items
+    let stockCategoryFilter = ''
+    let stockParams: any[] = [tenantId, searchTerm, searchTerm, searchTerm]
+    if (stockCategory && typeof stockCategory === 'string' && stockCategory !== 'all') {
+      const allowed = ['raw', 'RAW_MATERIAL', 'finished', 'FINISHED', 'wip', 'WIP']
+      if (allowed.includes(stockCategory)) {
+        stockCategoryFilter = 'AND category = ?'
+        stockParams.push(stockCategory)
+      }
+    }
     const stock = db.prepare(`
       SELECT id, sku, name, quantity, unit, category, location, status
       FROM stock_items
       WHERE tenant_id = ? AND (
-        LOWER(name) LIKE ? OR 
-        LOWER(sku) LIKE ? OR 
+        LOWER(name) LIKE ? OR
+        LOWER(sku) LIKE ? OR
         LOWER(location) LIKE ?
-      )
+      ) ${stockCategoryFilter}
       LIMIT 5
-    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
+    `).all(...stockParams) as any[]
 
     // Search suppliers
     const suppliers = db.prepare(`

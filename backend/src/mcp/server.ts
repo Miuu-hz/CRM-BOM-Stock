@@ -10,18 +10,20 @@ import { registerTools } from './tools'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
-function resolveTenant(key: string): string | null {
+interface TenantContext { tenantId: string; userId: string }
+
+function resolveTenant(key: string): TenantContext | null {
   // Regular user key
   const userRow = db.prepare(
-    `SELECT tenant_id FROM users WHERE mcp_api_key = ? AND status = 'active' LIMIT 1`
-  ).get(key) as { tenant_id: string } | undefined
-  if (userRow) return userRow.tenant_id
+    `SELECT id, tenant_id FROM users WHERE mcp_api_key = ? AND status = 'active' LIMIT 1`
+  ).get(key) as { id: string; tenant_id: string } | undefined
+  if (userRow) return { tenantId: userRow.tenant_id, userId: userRow.id }
 
   // Master account key (stored in company_settings)
   const csRow = db.prepare(
     `SELECT tenant_id FROM company_settings WHERE mcp_api_key = ? LIMIT 1`
   ).get(key) as { tenant_id: string } | undefined
-  return csRow?.tenant_id ?? null
+  return csRow ? { tenantId: csRow.tenant_id, userId: 'master' } : null
 }
 
 function extractKey(req: Request): string | null {
@@ -39,9 +41,9 @@ const sseSessions = new Map<string, ISSETransport>()  // legacy SSE (keep for co
 
 // ── MCP server factory ────────────────────────────────────────────────────────
 
-function buildServer(tenantId: string) {
+function buildServer(tenantId: string, userId: string) {
   const server = new McpServer({ name: 'mini-erp', version: '1.0.0' })
-  registerTools(server, tenantId)
+  registerTools(server, tenantId, userId)
   return server
 }
 
@@ -52,9 +54,9 @@ export function setupMcpRoutes(app: Router): void {
   app.get('/mcp/test', (req: Request, res: Response) => {
     const key = extractKey(req)
     if (!key) { res.status(401).json({ ok: false, error: 'Missing API key' }); return }
-    const tenantId = resolveTenant(key)
-    if (!tenantId) { res.status(401).json({ ok: false, error: 'Invalid API key' }); return }
-    res.json({ ok: true, tools: 5, server: 'mini-erp', tenantId })
+    const ctx = resolveTenant(key)
+    if (!ctx) { res.status(401).json({ ok: false, error: 'Invalid API key' }); return }
+    res.json({ ok: true, tools: 15, server: 'mini-erp', tenantId: ctx.tenantId })
   })
 
   // ── POST /mcp/sse — Streamable HTTP (Gallery sends this) ─────────────────────
@@ -72,15 +74,15 @@ export function setupMcpRoutes(app: Router): void {
     // New session — authenticate with ?key= or Authorization header
     const key = extractKey(req)
     if (!key) { res.status(401).json({ error: 'Missing API key' }); return }
-    const tenantId = resolveTenant(key)
-    if (!tenantId) { res.status(401).json({ error: 'Invalid API key' }); return }
+    const ctx = resolveTenant(key)
+    if (!ctx) { res.status(401).json({ error: 'Invalid API key' }); return }
 
     const sessionId = randomUUID()
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId })
     streamableSessions.set(sessionId, transport)
     transport.onclose = () => streamableSessions.delete(sessionId)
 
-    const server = buildServer(tenantId)
+    const server = buildServer(ctx.tenantId, ctx.userId)
     await server.connect(transport)
     await transport.handleRequest(req, res, req.body)
   })
@@ -101,11 +103,11 @@ export function setupMcpRoutes(app: Router): void {
     // Legacy SSE new connection (no session yet) — keep for backward compat
     const key = extractKey(req)
     if (!key) { res.status(401).json({ error: 'Missing API key' }); return }
-    const tenantId = resolveTenant(key)
-    if (!tenantId) { res.status(401).json({ error: 'Invalid API key' }); return }
+    const ctx = resolveTenant(key)
+    if (!ctx) { res.status(401).json({ error: 'Invalid API key' }); return }
 
     const transport = new SSEServerTransport('/mcp/messages', res)
-    const server = buildServer(tenantId)
+    const server = buildServer(ctx.tenantId, ctx.userId)
     sseSessions.set(transport.sessionId, transport)
     transport.onclose = () => sseSessions.delete(transport.sessionId)
     await server.connect(transport)

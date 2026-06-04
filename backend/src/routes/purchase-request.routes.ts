@@ -63,6 +63,158 @@ router.post('/', (req: Request, res: Response) => {
   }
 })
 
+// ─── POST /api/purchase-requests/from-image — OCR รูปภาพ → สร้าง Draft PR ──────
+// รองรับ 2 โหมด:
+//   1. imageBase64 — backend ส่งรูปไปยัง LLM provider (vision) เพื่อ OCR
+//   2. extractedItems — mobile (Gemma4 E2B/E4B บนเครื่อง) ส่ง items ที่อ่านแล้วมาเลย
+const FromImageSchema = z.object({
+  imageBase64:    z.string().optional(),
+  imageType:      z.string().default('image/jpeg'),
+  extractedItems: z.array(z.object({
+    name:       z.string().min(1).max(255),
+    quantity:   z.coerce.number().positive(),
+    unit:       z.string().max(50).default('pcs'),
+    unit_price: z.coerce.number().min(0).default(0),
+  })).optional(),
+  notes:      z.string().max(500).optional(),
+  providerId: z.string().optional(),
+})
+
+router.post('/from-image', async (req: Request, res: Response) => {
+  try {
+    const { tenantId, userId, email } = req.user!
+    const db = getDb()
+
+    const parsed = FromImageSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return void res.status(400).json({ success: false, message: parsed.error.issues[0].message })
+    }
+
+    const { imageBase64, imageType, extractedItems, notes, providerId } = parsed.data
+    type PRItem = { name: string; quantity: number; unit: string; unit_price: number }
+    let items: PRItem[] = []
+
+    if (extractedItems && extractedItems.length > 0) {
+      // โหมด 1: รับ items ที่ Gemma4 on-device อ่านมาแล้ว
+      items = extractedItems as PRItem[]
+    } else if (imageBase64) {
+      // โหมด 2: ส่งรูปไปให้ LLM provider (vision) อ่าน
+      const provider: any = providerId
+        ? db.prepare(`SELECT * FROM llm_providers WHERE id = ? AND tenant_id = ? AND is_active = 1`).get(providerId, tenantId)
+        : db.prepare(`SELECT * FROM llm_providers WHERE tenant_id = ? AND is_active = 1 AND is_default = 1 LIMIT 1`).get(tenantId)
+          ?? db.prepare(`SELECT * FROM llm_providers WHERE tenant_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1`).get(tenantId)
+
+      if (!provider) {
+        return void res.status(400).json({
+          success: false,
+          message: 'ไม่พบ LLM Provider ที่เปิดใช้งาน กรุณาตั้งค่าใน Settings > AI / LLM',
+        })
+      }
+
+      const visionPrompt =
+        'อ่านรายการสินค้าจากรูปภาพใบสั่งซื้อหรือรายการสั่งซื้อนี้\n' +
+        'ส่งคืนเฉพาะ JSON array เท่านั้น ห้ามมีข้อความอื่น รูปแบบ:\n' +
+        '[{"name":"ชื่อสินค้า","quantity":จำนวน,"unit":"หน่วย","unit_price":ราคาต่อหน่วย}]\n' +
+        'ถ้าไม่เห็นราคาให้ใส่ 0 ถ้าไม่เห็นหน่วยให้ใส่ "pcs"'
+
+      const llmRes = await fetch(`${(provider.base_url as string).replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${provider.api_key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: visionPrompt },
+            ],
+          }],
+          max_tokens: 1000,
+          temperature: 0,
+        }),
+        signal: AbortSignal.timeout(45_000),
+      })
+
+      if (!llmRes.ok) {
+        const detail = await llmRes.text()
+        return void res.status(502).json({ success: false, message: `LLM error ${llmRes.status}`, detail })
+      }
+
+      const llmData: any = await llmRes.json()
+      const rawContent: string = llmData.choices?.[0]?.message?.content?.trim() ?? '[]'
+
+      // รองรับ markdown code block ที่ LLM บางตัวห่อ JSON มาให้
+      const jsonStr = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+
+      try {
+        const parsed = JSON.parse(jsonStr)
+        items = Array.isArray(parsed) ? parsed : []
+      } catch {
+        return void res.status(422).json({
+          success: false,
+          message: 'LLM ไม่สามารถอ่านรายการสินค้าได้ กรุณาลองใหม่หรือป้อนรายการเอง',
+          rawContent,
+        })
+      }
+    } else {
+      return void res.status(400).json({ success: false, message: 'ต้องส่ง imageBase64 หรือ extractedItems' })
+    }
+
+    if (items.length === 0) {
+      return void res.status(422).json({ success: false, message: 'ไม่พบรายการสินค้าในรูปภาพ' })
+    }
+
+    // สร้าง PR
+    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
+    const prNumber = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+    const prId = randomUUID()
+    const now = new Date().toISOString()
+
+    db.prepare(`
+      INSERT INTO purchase_requests
+        (id, tenant_id, pr_number, requester_id, requester_name, supplier_name, source, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'TBD', 'IMAGE_OCR', 'DRAFT', ?, ?, ?)
+    `).run(prId, tenantId, prNumber, userId, email, notes || 'สร้างจากรูปภาพ', now, now)
+
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_request_items
+        (id, tenant_id, purchase_request_id, pr_id, description, item_name, quantity, unit,
+         estimated_unit_price, estimated_total_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    db.transaction(() => {
+      for (const item of items) {
+        const qty   = Number(item.quantity) || 0
+        const price = Number(item.unit_price) || 0
+        insertItem.run(
+          randomUUID(), tenantId, prId, prId,
+          item.name, item.name,
+          qty, item.unit || 'pcs',
+          price, qty * price,
+        )
+      }
+    })()
+
+    res.json({
+      success: true,
+      data: {
+        id:         prId,
+        pr_number:  prNumber,
+        item_count: items.length,
+        items,
+        message: `สร้าง ${prNumber} จากรูปภาพ (${items.length} รายการ) — กรุณาตรวจสอบและส่งอนุมัติ`,
+      },
+    })
+  } catch (e) {
+    console.error('from-image PR error:', e)
+    res.status(500).json({ success: false, message: 'ไม่สามารถสร้างใบขอซื้อจากรูปภาพได้' })
+  }
+})
+
 // ─── GET /api/purchase-requests — list (with filter) ──────────────────────────
 router.get('/', (req: Request, res: Response) => {
     try {

@@ -133,7 +133,7 @@ router.post('/login', loginIpLimiter, async (req, res) => {
 
     if (!user) {
       recordFailedAttempt(email)
-      return res.status(401).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
+      return res.status(401).json({ success: false, message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     }
 
     const isMatch = await bcrypt.compare(password, user.password)

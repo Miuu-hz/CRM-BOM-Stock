@@ -10,6 +10,29 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
+// Block SSRF: reject private/loopback addresses
+function validateBaseUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    const host = url.hostname.toLowerCase()
+    const blocked = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[01])\./,
+      /^192\.168\./,
+      /^0\./,
+      /^::1$/,
+      /^fc[0-9a-f]{2}:/i,
+      /^fd[0-9a-f]{2}:/i,
+    ]
+    return !blocked.some(p => p.test(host))
+  } catch {
+    return false
+  }
+}
+
 // GET /api/llm-providers — list all for tenant
 router.get('/', (req: Request, res: Response) => {
   const tenantId = (req as any).user.tenantId
@@ -50,6 +73,9 @@ router.post('/', (req: Request, res: Response) => {
   if (!name || !provider_type || !base_url || !api_key || !model) {
     return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
   }
+  if (!validateBaseUrl(base_url)) {
+    return res.status(400).json({ success: false, message: 'Base URL ไม่ถูกต้อง — ต้องเป็น http/https และไม่ใช่ IP ภายใน' })
+  }
 
   const id = generateId()
   const now = new Date().toISOString()
@@ -64,7 +90,10 @@ router.post('/', (req: Request, res: Response) => {
       db.prepare(`UPDATE llm_providers SET is_default = 0 WHERE tenant_id = ? AND id != ?`).run(tenantId, id)
     }
 
-    const created = db.prepare(`SELECT * FROM llm_providers WHERE id = ?`).get(id)
+    const created = db.prepare(
+      `SELECT id, tenant_id, name, provider_type, base_url, model, is_active, is_default, created_at, updated_at
+       FROM llm_providers WHERE id = ?`
+    ).get(id)
     res.status(201).json({ success: true, data: created })
   } catch (err: any) {
     console.error('create llm provider error:', err)
@@ -80,6 +109,10 @@ router.put('/:id', (req: Request, res: Response) => {
 
   const existing = db.prepare(`SELECT id FROM llm_providers WHERE id = ? AND tenant_id = ?`).get(id, tenantId)
   if (!existing) return res.status(404).json({ success: false, message: 'Not found' })
+
+  if (base_url && !validateBaseUrl(base_url)) {
+    return res.status(400).json({ success: false, message: 'Base URL ไม่ถูกต้อง — ต้องเป็น http/https และไม่ใช่ IP ภายใน' })
+  }
 
   const now = new Date().toISOString()
 
@@ -100,7 +133,10 @@ router.put('/:id', (req: Request, res: Response) => {
       db.prepare(`UPDATE llm_providers SET is_default = 0 WHERE tenant_id = ? AND id != ?`).run(tenantId, id)
     }
 
-    const updated = db.prepare(`SELECT * FROM llm_providers WHERE id = ?`).get(id)
+    const updated = db.prepare(
+      `SELECT id, tenant_id, name, provider_type, base_url, model, is_active, is_default, created_at, updated_at
+       FROM llm_providers WHERE id = ?`
+    ).get(id)
     res.json({ success: true, data: updated })
   } catch (err: any) {
     console.error('update llm provider error:', err)

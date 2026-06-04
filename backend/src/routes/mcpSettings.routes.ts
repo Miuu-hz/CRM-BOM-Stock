@@ -71,7 +71,7 @@ router.post('/test', authenticate, async (req: Request, res: Response) => {
   try {
     const server = new McpServer({ name: 'mini-erp', version: '1.0.0' })
     registerTools(server, tenantId)
-    steps.push({ step: 'MCP server ready (5 tools)', ok: true, ms: Date.now() - t1 })
+    steps.push({ step: 'MCP server ready (15 tools)', ok: true, ms: Date.now() - t1 })
   } catch (e: unknown) {
     steps.push({ step: 'MCP server init', ok: false, ms: Date.now() - t1, error: String(e) })
     res.json({ success: false, steps }); return

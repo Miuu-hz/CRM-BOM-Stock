@@ -15,9 +15,10 @@ const router = Router()
 router.use(authenticate, requireMaster)
 
 // ── GET /api/backup — list backup logs + config status ───────────────────────
-router.get('/', (_req: Request, res: Response): void => {
-  const backups = listBackups()
-  const lastBackup = getLastBackupTime()
+router.get('/', (req: Request, res: Response): void => {
+  const tenantId = req.user!.tenantId
+  const backups = listBackups(tenantId)
+  const lastBackup = getLastBackupTime(tenantId)
   const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_DRIVE_FOLDER_ID } = process.env
   const driveConfigured = !!(GOOGLE_DRIVE_FOLDER_ID && (
     (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN) ||
@@ -27,10 +28,11 @@ router.get('/', (_req: Request, res: Response): void => {
 })
 
 // ── POST /api/backup/trigger — manual backup ─────────────────────────────────
-router.post('/trigger', async (_req: Request, res: Response): Promise<void> => {
+router.post('/trigger', async (req: Request, res: Response): Promise<void> => {
+  const tenantId = req.user!.tenantId
   try {
-    const id = await runBackup()
-    const backups = listBackups()
+    const id = await runBackup(tenantId)
+    const backups = listBackups(tenantId)
     res.json({ success: true, data: { id, backups } })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
@@ -39,8 +41,9 @@ router.post('/trigger', async (_req: Request, res: Response): Promise<void> => {
 
 // ── GET /api/backup/download/:id — stream file to browser ────────────────────
 router.get('/download/:id', (req: Request, res: Response): void => {
+  const tenantId = req.user!.tenantId
   try {
-    const filePath = getBackupFilePath(req.params.id)
+    const filePath = getBackupFilePath(req.params.id, tenantId)
     const filename = filePath.split(/[\\/]/).pop()!
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
     res.setHeader('Content-Type', 'application/gzip')
@@ -52,8 +55,9 @@ router.get('/download/:id', (req: Request, res: Response): void => {
 
 // ── DELETE /api/backup/:id ───────────────────────────────────────────────────
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+  const tenantId = req.user!.tenantId
   try {
-    await deleteBackup(req.params.id)
+    await deleteBackup(req.params.id, tenantId)
     res.json({ success: true })
   } catch (err: any) {
     res.status(404).json({ success: false, message: err.message })

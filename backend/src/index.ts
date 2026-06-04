@@ -112,6 +112,9 @@ app.use('/api/line/webhook', express.raw({ type: 'application/json' }))
 app.use('/api/import', express.json({ limit: '10mb' }))
 app.use('/api/import', express.urlencoded({ extended: true, limit: '10mb' }))
 
+// Image-to-PR: base64 photo can reach ~3–4 MB — allow 5 MB for this specific path.
+app.use('/api/purchase-requests/from-image', express.json({ limit: '5mb' }))
+
 // All other routes: 1 MB is more than enough for any normal API payload.
 // Keeping this low prevents a single large request from blocking the Node.js event loop.
 app.use(express.json({ limit: '1mb' }))
