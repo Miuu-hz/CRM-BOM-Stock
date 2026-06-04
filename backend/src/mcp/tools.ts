@@ -94,6 +94,9 @@ function tokenParams(tokens: string[]): string[] {
 // ── Tool registration ─────────────────────────────────────────────────────────
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
+  // Resolve display name for audit trail — lookup from users table, fallback to userId
+  const callerRow = db.prepare(`SELECT name, email FROM users WHERE id = ? LIMIT 1`).get(userId) as any
+  const callerName: string = callerRow?.name ?? callerRow?.email ?? userId
 
   // ── 1. search ──────────────────────────────────────────────────────────────
   server.tool(
@@ -404,8 +407,8 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
       db.transaction(() => {
         db.prepare(
           `INSERT INTO purchase_requests (id, tenant_id, pr_number, requester_id, requester_name, supplier_name, source, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, 'mcp-agent', 'MCP Agent', 'TBD', 'MCP', 'DRAFT', ?, ?, ?)`
-        ).run(id, tenantId, prNumber, desc, now, now)
+           VALUES (?, ?, ?, ?, ?, 'TBD', 'MCP', 'DRAFT', ?, ?, ?)`
+        ).run(id, tenantId, prNumber, userId, callerName, desc, now, now)
 
         if (items.length > 0) {
           const insertItem = db.prepare(`
@@ -550,11 +553,11 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
           if (unpack && unpack.unpackedPacks > 0) {
             db.prepare(`
               INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'mcp-agent')
+              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)
             `).run(
               randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItemId,
               unpack.unpackedPacks, reference || 'AUTO',
-              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit || ''}`, now
+              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit || ''}`, now, userId
             )
             db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
               .run(unpack.sealed_qty, now, stockItemId)
@@ -582,8 +585,8 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
       const movementId = randomUUID().replace(/-/g, '').substring(0, 25)
       db.prepare(`
         INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mcp-agent')
-      `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, userId)
 
       const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
       return ok({
@@ -748,9 +751,9 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
                 db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
                   .run(unpack.sealed_qty, unpack.quantity, now, stock.id)
                 db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'mcp-agent')`)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)`)
                   .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stock.id, unpack.unpackedPacks,
-                    `WO: ${wo.wo_number}`, `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now)
+                    `WO: ${wo.wo_number}`, `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now, userId)
                 stock.quantity = unpack.quantity
               }
             }
@@ -762,9 +765,9 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
             db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
               .run(needed, now, stock.id)
             db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'mcp-agent')`)
+              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)`)
               .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stock.id, needed,
-                `WO: ${wo.wo_number}`, movementNotes, now)
+                `WO: ${wo.wo_number}`, movementNotes, now, userId)
             db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
               .run(m.required_qty, m.id)
           }
@@ -785,9 +788,9 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
               db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
                 .run(wo.quantity, now, finishedStock.id)
               db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'mcp-agent')`)
+                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)`)
                 .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, finishedStock.id, wo.quantity,
-                  `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+                  `WO: ${wo.wo_number}`, 'Finished goods from production', now, userId)
             }
           }
         }
@@ -972,9 +975,9 @@ PR ต้องมีสถานะ APPROVED ก่อน
                 }
 
                 db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                  VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'mcp-agent')`)
+                  VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)`)
                   .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItem.id,
-                    Math.floor(stockQty), `GR: ${gr.gr_number}`, movementNotes, now)
+                    Math.floor(stockQty), `GR: ${gr.gr_number}`, movementNotes, now, userId)
               }
 
               db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
