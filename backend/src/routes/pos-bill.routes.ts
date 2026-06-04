@@ -1,0 +1,808 @@
+import { Router } from 'express'
+import db from '../db/sqlite'
+import posStockService from '../services/pos-stock.service'
+import posAccountingService from '../services/pos-accounting.service'
+import { authenticate } from '../middleware/auth.middleware'
+
+const router = Router()
+
+router.use(authenticate)
+
+// Helper: Generate ID (24-char hex)
+const generateId = () => {
+  const chars = '0123456789abcdef'
+  let id = ''
+  for (let i = 0; i < 24; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return id
+}
+
+// Helper: Get current timestamp
+const now = () => new Date().toISOString()
+
+// Helper: Generate bill number (POS-2024-00001)
+const generateBillNumber = (tenantId: string) => {
+  const year = new Date().getFullYear()
+  const prefix = `POS-${year}-`
+  
+  const stmt = db.prepare(`
+    SELECT bill_number FROM pos_running_bills 
+    WHERE tenant_id = ? AND bill_number LIKE ?
+    ORDER BY bill_number DESC LIMIT 1
+  `)
+  const last = stmt.get(tenantId, `${prefix}%`) as { bill_number: string } | undefined
+  
+  let seq = 1
+  if (last) {
+    const match = last.bill_number.match(/-(\d+)$/)
+    if (match) seq = parseInt(match[1]) + 1
+  }
+  
+  return `${prefix}${String(seq).padStart(5, '0')}`
+}
+
+// ==================== BILLS ====================
+
+// Get all bills
+router.get('/bills', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { status } = req.query
+    
+    let query = `
+      SELECT 
+        b.*,
+        COUNT(bi.id) as item_count,
+        SUM(bi.quantity) as total_items
+      FROM pos_running_bills b
+      LEFT JOIN pos_bill_items bi ON b.id = bi.bill_id
+      WHERE b.tenant_id = ?
+    `
+    const params: any[] = [tenantId]
+    
+    if (status) {
+      query += ' AND b.status = ?'
+      params.push(status)
+    }
+    
+    query += ' GROUP BY b.id ORDER BY b.opened_at DESC'
+    
+    const stmt = db.prepare(query)
+    const bills = stmt.all(...params)
+    
+    res.json({ success: true, data: bills })
+  } catch (error) {
+    console.error('Error fetching bills:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch bills' })
+  }
+})
+
+// Get open bills only
+router.get('/bills/open', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    
+    const stmt = db.prepare(`
+      SELECT 
+        b.*,
+        COUNT(bi.id) as item_count,
+        SUM(bi.quantity) as total_items
+      FROM pos_running_bills b
+      LEFT JOIN pos_bill_items bi ON b.id = bi.bill_id
+      WHERE b.tenant_id = ? AND b.status = 'OPEN'
+      GROUP BY b.id
+      ORDER BY b.opened_at DESC
+    `)
+    
+    const bills = stmt.all(tenantId) as any[]
+    // Recalculate totals for open bills so they reflect current POS billing settings
+    for (const bill of bills) {
+      recalculateBillTotals(bill.id)
+    }
+    // Re-fetch to get updated totals
+    const refreshedBills = stmt.all(tenantId)
+    res.json({ success: true, data: refreshedBills })
+  } catch (error) {
+    console.error('Error fetching open bills:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch open bills' })
+  }
+})
+
+// Get single bill with items
+router.get('/bills/:id', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    
+    // Get bill (JOIN customer loyalty_points if linked)
+    const billStmt = db.prepare(`
+      SELECT b.*, c.loyalty_points as customer_loyalty_points
+      FROM pos_running_bills b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      WHERE b.id = ? AND b.tenant_id = ?
+    `)
+    const bill = billStmt.get(id, tenantId)
+    
+    if (!bill) {
+      return res.status(404).json({ success: false, message: 'Bill not found' })
+    }
+    
+    // Get items
+    const itemsStmt = db.prepare(`
+      SELECT 
+        bi.*,
+        pmc.pos_price as current_price
+      FROM pos_bill_items bi
+      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+      WHERE bi.bill_id = ?
+      ORDER BY bi.added_at ASC
+    `)
+    const items = itemsStmt.all(id)
+    
+    res.json({ success: true, data: { ...bill, items } })
+  } catch (error) {
+    console.error('Error fetching bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch bill' })
+  }
+})
+
+// Create new bill
+router.post('/bills', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
+    const { display_name, customer_name, customer_phone, customer_id, notes } = req.body
+
+    // If customer_id provided, pull name/phone from CRM
+    let resolvedCustomerName = customer_name || null
+    let resolvedCustomerPhone = customer_phone || null
+    if (customer_id) {
+      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+      if (cust) {
+        resolvedCustomerName = resolvedCustomerName || cust.name
+        resolvedCustomerPhone = resolvedCustomerPhone || cust.phone
+      }
+    }
+
+    const id = generateId()
+    const billNumber = generateBillNumber(tenantId)
+    const defaultDisplayName = display_name || `บิล ${billNumber.split('-')[2]}`
+
+    db.prepare(`
+      INSERT INTO pos_running_bills (
+        id, tenant_id, bill_number, display_name, customer_name, customer_phone,
+        customer_id, status, opened_at, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
+    `).run(
+      id, tenantId, billNumber, defaultDisplayName,
+      resolvedCustomerName, resolvedCustomerPhone, customer_id || null,
+      now(), notes || null, userId
+    )
+    
+    res.json({ 
+      success: true, 
+      message: 'Bill created successfully',
+      data: { 
+        id, 
+        bill_number: billNumber,
+        display_name: defaultDisplayName
+      }
+    })
+  } catch (error) {
+    console.error('Error creating bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to create bill' })
+  }
+})
+
+// Update bill (display_name, customer, notes)
+router.put('/bills/:id', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const { display_name, customer_name, customer_phone, notes } = req.body
+    
+    const stmt = db.prepare(`
+      UPDATE pos_running_bills 
+      SET display_name = ?, customer_name = ?, customer_phone = ?, notes = ?
+      WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+    `)
+    
+    const result = stmt.run(
+      display_name, customer_name || null, customer_phone || null, notes || null,
+      id, tenantId
+    )
+    
+    if (result.changes === 0) {
+      return res.status(400).json({ success: false, message: 'Bill not found or already closed' })
+    }
+    
+    res.json({ success: true, message: 'Bill updated successfully' })
+  } catch (error) {
+    console.error('Error updating bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to update bill' })
+  }
+})
+
+// Assign or remove CRM member on open bill
+router.patch('/bills/:id/member', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const { customer_id } = req.body  // null to unassign
+
+    let customerName = null
+    let customerPhone = null
+
+    if (customer_id) {
+      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+      if (!cust) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' })
+      customerName = cust.name
+      customerPhone = cust.phone
+    }
+
+    const result = db.prepare(`
+      UPDATE pos_running_bills
+      SET customer_id = ?, customer_name = ?, customer_phone = ?
+      WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+    `).run(customer_id || null, customerName, customerPhone, id, tenantId)
+
+    if (result.changes === 0) {
+      return res.status(400).json({ success: false, message: 'บิลไม่พบหรือปิดแล้ว' })
+    }
+
+    // Return updated customer info
+    const customer = customer_id
+      ? db.prepare('SELECT id, name, phone, loyalty_points, total_spent FROM customers WHERE id = ?').get(customer_id) as any
+      : null
+
+    res.json({ success: true, message: customer_id ? 'เพิ่มสมาชิกสำเร็จ' : 'ยกเลิกสมาชิกสำเร็จ', data: { customer } })
+  } catch (error) {
+    console.error('Assign member error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถกำหนดสมาชิกได้' })
+  }
+})
+
+// Delete bill (only if OPEN and no items)
+router.delete('/bills/:id', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    
+    // Check if bill has items
+    const checkStmt = db.prepare('SELECT COUNT(*) as count FROM pos_bill_items WHERE bill_id = ?')
+    const check = checkStmt.get(id) as { count: number }
+    
+    if (check.count > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot delete bill with items. Please cancel instead.' 
+      })
+    }
+    
+    const stmt = db.prepare(`
+      DELETE FROM pos_running_bills 
+      WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+    `)
+    
+    const result = stmt.run(id, tenantId)
+    
+    if (result.changes === 0) {
+      return res.status(400).json({ success: false, message: 'Bill not found or already closed' })
+    }
+    
+    res.json({ success: true, message: 'Bill deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete bill' })
+  }
+})
+
+// ==================== BILL ITEMS ====================
+
+// Add item to bill
+router.post('/bills/:id/items', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
+    const { id } = req.params
+    const { pos_menu_id, quantity, special_instructions } = req.body
+    
+    if (!pos_menu_id || !quantity) {
+      return res.status(400).json({ success: false, message: 'Menu ID and quantity required' })
+    }
+    
+    // Get menu details (JOIN stock_items to get product_name)
+    const menuStmt = db.prepare(`
+      SELECT pmc.*, si.name as product_name, si.sku as product_code
+      FROM pos_menu_configs pmc
+      LEFT JOIN stock_items si ON pmc.product_id = si.id
+      WHERE pmc.id = ? AND pmc.tenant_id = ?
+    `)
+    const menu = menuStmt.get(pos_menu_id, tenantId)
+
+    if (!menu) {
+      return res.status(404).json({ success: false, message: 'Menu not found' })
+    }
+
+    const itemId = generateId()
+    const totalPrice = (menu as any).pos_price * quantity
+
+    const stmt = db.prepare(`
+      INSERT INTO pos_bill_items (
+        id, tenant_id, bill_id, pos_menu_id, product_name,
+        quantity, unit_price, total_price, special_instructions, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    stmt.run(
+      itemId, tenantId, id, pos_menu_id, (menu as any).product_name || (menu as any).product_code || 'Unknown',
+      quantity, (menu as any).pos_price, totalPrice, special_instructions || null, userId
+    )
+    
+    // Recalculate bill totals
+    recalculateBillTotals(id)
+    
+    res.json({ 
+      success: true, 
+      message: 'Item added successfully',
+      data: { id: itemId }
+    })
+  } catch (error) {
+    console.error('Error adding item:', error)
+    res.status(500).json({ success: false, message: 'Failed to add item' })
+  }
+})
+
+// Update bill item (quantity, instructions)
+router.put('/bills/:billId/items/:itemId', (req, res) => {
+  try {
+    const { billId, itemId } = req.params
+    const { quantity, special_instructions } = req.body
+    
+    // Get current item
+    const itemStmt = db.prepare('SELECT * FROM pos_bill_items WHERE id = ? AND bill_id = ?')
+    const item = itemStmt.get(itemId, billId)
+    
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found' })
+    }
+    
+    const newQty = quantity || (item as any).quantity
+    const unitPrice = (item as any).unit_price
+    const newTotal = newQty * unitPrice
+    
+    const stmt = db.prepare(`
+      UPDATE pos_bill_items 
+      SET quantity = ?, total_price = ?, special_instructions = ?
+      WHERE id = ? AND bill_id = ?
+    `)
+    
+    stmt.run(newQty, newTotal, special_instructions || null, itemId, billId)
+    
+    // Recalculate bill totals
+    recalculateBillTotals(billId)
+    
+    res.json({ success: true, message: 'Item updated successfully' })
+  } catch (error) {
+    console.error('Error updating item:', error)
+    res.status(500).json({ success: false, message: 'Failed to update item' })
+  }
+})
+
+// Delete bill item
+router.delete('/bills/:billId/items/:itemId', (req, res) => {
+  try {
+    const { billId, itemId } = req.params
+    
+    const stmt = db.prepare('DELETE FROM pos_bill_items WHERE id = ? AND bill_id = ?')
+    const result = stmt.run(itemId, billId)
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: 'Item not found' })
+    }
+    
+    // Recalculate bill totals
+    recalculateBillTotals(billId)
+    
+    res.json({ success: true, message: 'Item removed successfully' })
+  } catch (error) {
+    console.error('Error deleting item:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete item' })
+  }
+})
+
+// ==================== PAYMENT & STOCK ====================
+
+// Process payment (deduct stock + record payment + accounting)
+router.post('/bills/:id/pay', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
+    const { id } = req.params
+    const { payment_method, received_amount, reference, earn_rate, redeem_points } = req.body
+
+    if (!payment_method) {
+      return res.status(400).json({ success: false, message: 'Payment method required' })
+    }
+    
+    // Get bill with items
+    const billStmt = db.prepare(`
+      SELECT b.*, COUNT(bi.id) as item_count
+      FROM pos_running_bills b
+      LEFT JOIN pos_bill_items bi ON b.id = bi.bill_id
+      WHERE b.id = ? AND b.tenant_id = ? AND b.status = 'OPEN'
+      GROUP BY b.id
+    `)
+    const bill = billStmt.get(id, tenantId)
+    
+    if (!bill) {
+      return res.status(404).json({ success: false, message: 'Bill not found or already paid' })
+    }
+    
+    if ((bill as any).item_count === 0) {
+      return res.status(400).json({ success: false, message: 'Cannot pay empty bill' })
+    }
+
+    // Ensure bill totals are up-to-date with current POS billing settings
+    recalculateBillTotals(id)
+    const refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    
+    // 1. Deduct stock using service
+    const stockResult = await posStockService.deductStockOnPayment(id, tenantId, userId)
+    
+    if (!stockResult.success) {
+      return res.json({ 
+        success: true,
+        data: {
+          canPay: false,
+          needsAction: true,
+          action: 'FIX_STOCK_ISSUES',
+          message: 'ไม่สามารถจ่ายเงินได้ — พบปัญหาสต็อกหรือหน่วย',
+          issues: stockResult.issues || stockResult.errors.map((e: string) => ({ type: 'UNKNOWN', message: e })),
+          errors: stockResult.errors,
+          links: {
+            stock: '/stock',
+            settings: '/settings/unit-conversions',
+          }
+        }
+      })
+    }
+    
+    // 2. Record payment
+    const paymentId = generateId()
+    const totalAmount = (refreshedBill as any).total_amount
+    const changeAmount = received_amount ? received_amount - totalAmount : 0
+    
+    const paymentStmt = db.prepare(`
+      INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    paymentStmt.run(
+      paymentId, tenantId, id, payment_method, totalAmount,
+      received_amount || totalAmount, changeAmount > 0 ? changeAmount : 0,
+      reference || null, userId
+    )
+    
+    // 3. Update bill status
+    const updateBill = db.prepare(`
+      UPDATE pos_running_bills 
+      SET status = 'PAID', closed_at = ?, closed_by = ?
+      WHERE id = ?
+    `)
+    updateBill.run(now(), userId, id)
+    
+    // 4. Record accounting entry
+    const payment = { payment_method, amount: totalAmount }
+    const accountingResult = await posAccountingService.recordSale(
+      refreshedBill as any, payment, tenantId, userId
+    )
+
+    // 5. Earn loyalty points (if bill has a CRM customer linked)
+    let pointsEarned = 0
+    let pointsRedeemed = 0
+    if ((refreshedBill as any).customer_id) {
+      const customerId = (refreshedBill as any).customer_id
+      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ?').get(customerId) as any
+      if (customer) {
+        // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
+        const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
+        pointsEarned = Math.floor(totalAmount / rate)
+        pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
+
+        const balanceBefore = customer.loyalty_points || 0
+        const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
+
+        db.prepare(`
+          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ?
+        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId)
+
+        if (pointsRedeemed > 0) {
+          db.prepare(`
+            INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
+            VALUES (?, ?, ?, ?, 'REDEEM', ?, ?, ?, ?, ?, ?)
+          `).run(
+            generateId(), tenantId, customerId, id,
+            pointsRedeemed, balanceBefore, Math.max(0, balanceBefore - pointsRedeemed),
+            `แลกแต้มลดราคาจากบิล ${(refreshedBill as any).bill_number}`,
+            userId, now()
+          )
+        }
+
+        db.prepare(`
+          INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
+          VALUES (?, ?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?)
+        `).run(
+          generateId(), tenantId, customerId, id,
+          pointsEarned,
+          Math.max(0, balanceBefore - pointsRedeemed),
+          balanceAfter,
+          `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
+          userId, now()
+        )
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment processed successfully',
+      data: {
+        payment_id: paymentId,
+        amount: totalAmount,
+        change: changeAmount > 0 ? changeAmount : 0,
+        stock_deductions: stockResult.deductions.length,
+        journal_entry_id: accountingResult.journalEntryId,
+        points_earned: pointsEarned,
+        points_redeemed: pointsRedeemed,
+      }
+    })
+  } catch (error) {
+    console.error('Error processing payment:', error)
+    res.status(500).json({ success: false, message: 'Failed to process payment' })
+  }
+})
+
+// Cancel bill (return stock + record accounting)
+router.post('/bills/:id/cancel', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.id || 'system'
+    const { id } = req.params
+    const { reason } = req.body
+    
+    // Get bill
+    const billStmt = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?')
+    const bill = billStmt.get(id, tenantId)
+    
+    if (!bill) {
+      return res.status(404).json({ success: false, message: 'Bill not found' })
+    }
+    
+    if ((bill as any).status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'Bill already cancelled' })
+    }
+    
+    // 1. Return stock using service
+    const stockResult = await posStockService.returnStockOnCancel(id, tenantId, userId, reason)
+    
+    if (!stockResult.success) {
+      console.warn('Stock return warnings:', stockResult.errors)
+    }
+    
+    // 2. Record accounting reversal
+    const accountingResult = await posAccountingService.recordCancelledSale(
+      bill as any, tenantId, userId, reason
+    )
+    
+    // 3. Update bill status
+    const updateBill = db.prepare(`
+      UPDATE pos_running_bills 
+      SET status = 'CANCELLED', closed_at = ?, closed_by = ?, notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
+      WHERE id = ?
+    `)
+    updateBill.run(now(), userId, (bill as any).notes, reason || 'No reason', id)
+    
+    res.json({ 
+      success: true, 
+      message: 'Bill cancelled successfully',
+      data: {
+        stock_returns: stockResult.returns.length,
+        journal_entry_id: accountingResult.journalEntryId
+      }
+    })
+  } catch (error) {
+    console.error('Error cancelling bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to cancel bill' })
+  }
+})
+
+// ==================== STOCK CHECK & REPORTS ====================
+
+// Check stock availability for menu item
+router.get('/menu-configs/:id/stock', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const { quantity } = req.query
+    const qty = parseInt(quantity as string) || 1
+
+    const result = await posStockService.checkStockAvailability(id, qty, tenantId)
+    res.json({ success: true, data: result })
+  } catch (error: any) {
+    console.error('Error checking stock:', error)
+    res.status(500).json({ success: false, message: error.message || 'Failed to check stock' })
+  }
+})
+
+// Get low stock menus
+router.get('/stock/low-stock', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const items = await posStockService.getLowStockMenus(tenantId)
+    res.json({ success: true, data: items })
+  } catch (error) {
+    console.error('Error fetching low stock:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch low stock' })
+  }
+})
+
+// Get menu stock level (how many can be made)
+router.get('/menu-configs/:id/stock-level', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const maxCanMake = await posStockService.getMenuStockLevel(id, tenantId)
+    res.json({ success: true, data: { menu_id: id, max_can_make: maxCanMake } })
+  } catch (error) {
+    console.error('Error getting stock level:', error)
+    res.status(500).json({ success: false, message: 'Failed to get stock level' })
+  }
+})
+
+// Get daily sales report
+router.get('/reports/daily-sales', async (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { date } = req.query
+    const report = await posAccountingService.getDailySalesSummary(tenantId, date as string)
+    res.json({ success: true, data: report })
+  } catch (error) {
+    console.error('Error getting daily sales:', error)
+    res.status(500).json({ success: false, message: 'Failed to get daily sales' })
+  }
+})
+
+// ==================== GS1 BARCODE SEARCH ====================
+
+// Search menu by GS1 barcode
+router.get('/search/gs1/:barcode', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { barcode } = req.params
+    
+    // Find stock item by GS1 barcode
+    const stockItem = db.prepare(`
+      SELECT * FROM stock_items 
+      WHERE gs1_barcode = ? AND tenant_id = ? AND is_pos_enabled = 1
+    `).get(barcode, tenantId) as any
+    
+    if (!stockItem) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'ไม่พบสินค้าสำหรับ barcode นี้' 
+      })
+    }
+    
+    // Find corresponding product
+    const product = db.prepare(`
+      SELECT * FROM products 
+      WHERE code = ? AND tenant_id = ?
+    `).get(stockItem.sku, tenantId) as any
+    
+    if (!product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'ไม่พบสินค้าในระบบ' 
+      })
+    }
+    
+    // Find POS menu config for this product
+    const menuConfig = db.prepare(`
+      SELECT 
+        pmc.*,
+        p.name as product_name,
+        p.code as product_code,
+        pc.name as category_name,
+        pc.color as category_color
+      FROM pos_menu_configs pmc
+      JOIN products p ON pmc.product_id = p.id
+      LEFT JOIN pos_categories pc ON pmc.category_id = pc.id
+      WHERE pmc.product_id = ? 
+        AND pmc.tenant_id = ? 
+        AND pmc.is_available = 1
+        AND pmc.is_pos_enabled = 1
+    `).get(product.id, tenantId) as any
+    
+    if (!menuConfig) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'สินค้านี้ไม่ได้เปิดใช้งานใน POS' 
+      })
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        id: menuConfig.id,
+        product_id: menuConfig.product_id,
+        product_name: menuConfig.product_name,
+        product_code: menuConfig.product_code,
+        category_id: menuConfig.category_id,
+        category_name: menuConfig.category_name,
+        category_color: menuConfig.category_color,
+        pos_price: menuConfig.pos_price,
+        gs1_barcode: stockItem.gs1_barcode,
+        stock_item: {
+          id: stockItem.id,
+          sku: stockItem.sku,
+          name: stockItem.name,
+          quantity: stockItem.quantity,
+          unit: stockItem.unit
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Error searching by GS1 barcode:', error)
+    res.status(500).json({ success: false, message: 'Failed to search by barcode' })
+  }
+})
+
+// ==================== HELPERS ====================
+
+function recalculateBillTotals(billId: string) {
+  // Get all items
+  const itemsStmt = db.prepare('SELECT * FROM pos_bill_items WHERE bill_id = ?')
+  const items = itemsStmt.all(billId)
+  
+  const subtotal = (items as any[]).reduce((sum, item) => sum + item.total_price, 0)
+  
+  // Get bill tenant to lookup company POS billing settings
+  const billRow = db.prepare('SELECT tenant_id FROM pos_running_bills WHERE id = ?').get(billId) as any
+  const tenantId = billRow?.tenant_id
+  
+  // Read POS billing settings from company_settings (fallback to legacy hardcoded values for backward compat)
+  let vatEnabled = true
+  let vatRate = 7
+  let serviceEnabled = true
+  let serviceRate = 10
+  
+  if (tenantId) {
+    const settings = db.prepare(`
+      SELECT pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate 
+      FROM company_settings 
+      WHERE tenant_id = ?
+    `).get(tenantId) as any
+    
+    if (settings && settings.pos_vat_enabled !== null) {
+      vatEnabled = settings.pos_vat_enabled === 1
+      vatRate = settings.pos_vat_rate ?? 7
+      serviceEnabled = settings.pos_service_enabled === 1
+      serviceRate = settings.pos_service_rate ?? 10
+    }
+  }
+  
+  // Match frontend calculation logic (Cashier.tsx)
+  const serviceChargeAmount = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0
+  const taxAmount = vatEnabled ? Math.round(subtotal * vatRate / 100) : 0
+  const totalAmount = subtotal + serviceChargeAmount + taxAmount
+  
+  const updateStmt = db.prepare(`
+    UPDATE pos_running_bills 
+    SET subtotal = ?, service_charge_amount = ?, service_charge_rate = ?,
+        tax_amount = ?, tax_rate = ?, total_amount = ?
+    WHERE id = ?
+  `)
+  updateStmt.run(subtotal, serviceChargeAmount, serviceRate, taxAmount, vatRate, totalAmount, billId)
+}
+
+export default router

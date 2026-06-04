@@ -1,0 +1,834 @@
+import { Router, Request, Response } from 'express'
+import { authenticate } from '../middleware/auth.middleware'
+import db from '../db/sqlite'
+import { randomUUID } from 'crypto'
+import {
+  listConversions,
+  listAllConversions,
+  createConversion,
+  updateConversion,
+  deleteConversion,
+  getStandardConversions,
+  convertQuantity,
+  convertQuantityBidirectional,
+  getCompatibleUnits,
+  getUnitDisplayName,
+  findConversionChain,
+  normalizeUnit,
+} from '../services/unitConversion.service'
+import { suggestUnitConversion } from '../services/llm.service'
+
+const router = Router()
+
+// ทุก Route ต้องมี Authentication
+router.use(authenticate)
+
+function generateId() {
+  return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+// Material Categories Routes
+// GET /api/materials/categories - ดึงหมวดหมู่วัตถุดิบทั้งหมด
+router.get('/categories', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const categories = db.prepare(`
+      SELECT id, code, name, default_unit as defaultUnit, description
+      FROM material_categories 
+      WHERE tenant_id = ? OR tenant_id IS NULL
+      ORDER BY name ASC
+    `).all(tenantId) as any[]
+    
+    res.json({ success: true, data: categories })
+  } catch (error) {
+    console.error('Get categories error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch categories' })
+  }
+})
+
+// POST /api/materials/categories - สร้างหมวดหมู่ใหม่
+router.post('/categories', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { code, name, defaultUnit, description } = req.body
+    
+    if (!code || !name || !defaultUnit) {
+      return res.status(400).json({ success: false, message: 'Code, name, and defaultUnit are required' })
+    }
+    
+    // Validate unit
+    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle']
+    if (!validUnits.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
+    }
+    
+    const id = generateId()
+    const now = new Date().toISOString()
+    
+    db.prepare(`
+      INSERT INTO material_categories (id, tenant_id, code, name, default_unit, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, defaultUnit, description || '', now, now)
+    
+    const category = db.prepare('SELECT * FROM material_categories WHERE id = ?').get(id)
+    res.json({ success: true, data: category })
+  } catch (error) {
+    console.error('Create category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create category' })
+  }
+})
+
+// PUT /api/materials/categories/:id — แก้ไขหมวดหมู่
+router.put('/categories/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const { name, defaultUnit, description } = req.body
+
+    if (!name || !defaultUnit) {
+      return res.status(400).json({ success: false, message: 'Name and defaultUnit are required' })
+    }
+
+    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle', 'ml', 'mg', 'lb', 'oz', 'inch', 'ft', 'gallon', 'can', 'tube', 'sachet', 'bag']
+    if (!validUnits.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
+    }
+
+    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found' })
+    }
+
+    db.prepare(`
+      UPDATE material_categories
+      SET name = ?, default_unit = ?, description = ?, updated_at = ?
+      WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)
+    `).run(name, defaultUnit, description || '', new Date().toISOString(), id, tenantId)
+
+    const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description FROM material_categories WHERE id = ?').get(id)
+    res.json({ success: true, data: category })
+  } catch (error) {
+    console.error('Update category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update category' })
+  }
+})
+
+// DELETE /api/materials/categories/:id — ลบหมวดหมู่
+router.delete('/categories/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+
+    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found' })
+    }
+
+    const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
+    if (materialCount.count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: Category is used by ${materialCount.count} material(s)`,
+      })
+    }
+
+    db.prepare('DELETE FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').run(id, tenantId)
+    res.json({ success: true, message: 'Category deleted successfully' })
+  } catch (error) {
+    console.error('Delete category error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete category' })
+  }
+})
+
+// Get materials statistics
+router.get('/stats', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    
+    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
+
+    // Get materials with low stock
+    const stockItems = db.prepare(`
+      SELECT si.*, m.min_stock, m.max_stock
+      FROM stock_items si
+      JOIN materials m ON si.material_id = m.id
+      WHERE si.material_id IS NOT NULL AND si.tenant_id = ?
+    `).all(tenantId) as any[]
+
+    const lowStockCount = stockItems.filter(
+      (item) => item.quantity <= item.min_stock
+    ).length
+
+    // Calculate total inventory value
+    const materials = db.prepare('SELECT id, unit_cost FROM materials WHERE tenant_id = ?').all(tenantId) as any[]
+    const totalValue = stockItems.reduce((sum, item) => {
+      const material = materials.find((m) => m.id === item.material_id)
+      if (material) {
+        return sum + item.quantity * Number(material.unit_cost)
+      }
+      return sum
+    }, 0)
+
+    res.json({
+      success: true,
+      data: {
+        totalMaterials,
+        lowStockCount,
+        totalValue: Math.round(totalValue),
+        activeItems: stockItems.length,
+      },
+    })
+  } catch (error) {
+    console.error('Get materials stats error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch materials stats' })
+  }
+})
+
+// ===================================================================
+// UNIT CONVERSION ROUTES
+// ===================================================================
+
+// GET /api/materials/unit-conversions/standards — มาตราสากลที่ built-in
+router.get('/unit-conversions/standards', (_req: Request, res: Response) => {
+  res.json({ success: true, data: getStandardConversions() })
+})
+
+// GET /api/materials/unit-conversions/compatible — หน่วยที่อยู่ใน category เดียวกัน + custom conversions
+router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
+  try {
+    const { unit, materialId } = req.query
+    if (!unit || typeof unit !== 'string') {
+      return res.status(400).json({ success: false, message: 'unit query param is required' })
+    }
+    const tenantId = req.user!.tenantId
+
+    // Standard category-based compatible units
+    const compatible = new Set(getCompatibleUnits(unit))
+
+    // Also include units reachable via custom conversions (global + per-material)
+    const customConvs = listConversions(tenantId, materialId as string | undefined)
+    for (const c of customConvs) {
+      if (c.from_unit === unit || c.to_unit === unit) {
+        compatible.add(c.from_unit)
+        compatible.add(c.to_unit)
+      }
+    }
+
+    const mapped = Array.from(compatible).map((u) => ({ code: u, label: getUnitDisplayName(u) }))
+    res.json({ success: true, data: { unit, compatible: mapped } })
+  } catch (error) {
+    console.error('Get compatible units error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch compatible units' })
+  }
+})
+
+// GET /api/materials/unit-conversions/all — ทั้งหมดรวม per-material พร้อมชื่อสินค้า
+router.get('/unit-conversions/all', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const data = listAllConversions(tenantId)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('List all conversions error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch conversions' })
+  }
+})
+
+// GET /api/materials/unit-conversions — custom conversions ของ tenant
+router.get('/unit-conversions', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { materialId } = req.query
+    const data = listConversions(tenantId, materialId as string | undefined)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('List conversions error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch unit conversions' })
+  }
+})
+
+// POST /api/materials/unit-conversions — สร้าง conversion ใหม่
+router.post('/unit-conversions', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { material_id, from_unit, to_unit, conversion_factor, notes } = req.body
+
+    if (!from_unit || !to_unit || conversion_factor == null) {
+      return res.status(400).json({ success: false, message: 'from_unit, to_unit และ conversion_factor จำเป็นต้องระบุ' })
+    }
+    if (Number(conversion_factor) <= 0) {
+      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
+    }
+    if (from_unit === to_unit) {
+      return res.status(400).json({ success: false, message: 'หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน' })
+    }
+
+    const record = createConversion(tenantId, { material_id, from_unit, to_unit, conversion_factor: Number(conversion_factor), notes })
+    res.status(201).json({ success: true, data: record })
+  } catch (error: any) {
+    if (error?.message?.includes('UNIQUE')) {
+      return res.status(409).json({ success: false, message: 'มีการแปลงหน่วยนี้อยู่แล้ว' })
+    }
+    console.error('Create conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create unit conversion' })
+  }
+})
+
+// PUT /api/materials/unit-conversions/:id — แก้ไข conversion
+router.put('/unit-conversions/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { conversion_factor, notes } = req.body
+
+    if (conversion_factor != null && Number(conversion_factor) <= 0) {
+      return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
+    }
+
+    const updated = updateConversion(req.params.id, tenantId, { conversion_factor: Number(conversion_factor), notes })
+    if (!updated) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถแก้ไขได้' })
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    console.error('Update conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update unit conversion' })
+  }
+})
+
+// DELETE /api/materials/unit-conversions/:id — ลบ conversion
+router.delete('/unit-conversions/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const ok = deleteConversion(req.params.id, tenantId)
+    if (!ok) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถลบได้' })
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete conversion error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete unit conversion' })
+  }
+})
+
+// POST /api/materials/unit-conversions/convert — คำนวณแปลงหน่วย
+router.post('/unit-conversions/convert', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { quantity, from_unit, to_unit, material_id } = req.body
+
+    if (quantity == null || !from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'quantity, from_unit, to_unit จำเป็นต้องระบุ' })
+    }
+
+    const result = convertQuantityBidirectional(Number(quantity), from_unit, to_unit, tenantId, material_id)
+    if (result) {
+      return res.json({ success: true, data: { quantity: Number(quantity), from_unit, to_unit, ...result } })
+    }
+
+    // ── Actionable response: บอกว่าขาดอะไร และแนะนำให้สร้าง ──
+    const chain = findConversionChain(normalizeUnit(from_unit), normalizeUnit(to_unit), tenantId, material_id)
+    const missingLinks: Array<{ from: string; to: string; reason: string }> = []
+
+    if (!chain) {
+      // ไม่มีเส้นทางเลย → ขาด link ตรงๆ
+      missingLinks.push({
+        from: from_unit,
+        to: to_unit,
+        reason: 'ยังไม่มีการแปลงหน่วยนี้ในระบบ'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        canConvert: false,
+        needsAction: true,
+        action: 'CREATE_CONVERSION',
+        message: `ยังไม่มีการแปลงหน่วย "${getUnitDisplayName(from_unit)}" → "${getUnitDisplayName(to_unit)}"`,
+        missingLinks,
+        from_unit,
+        to_unit,
+        material_id: material_id || null,
+        links: {
+          settings: '/settings/unit-conversions',
+          stockEdit: material_id ? `/stock/${material_id}/edit?tab=units` : null,
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Convert error:', error)
+    res.status(500).json({ success: false, message: 'Failed to convert' })
+  }
+})
+
+// POST /api/materials/unit-conversions/check-path — ตรวจสอบเส้นทาง (BFS, ไม่ใช้ LLM)
+router.post('/unit-conversions/check-path', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from_unit, to_unit, material_id } = req.body
+    if (!from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'from_unit และ to_unit จำเป็นต้องระบุ' })
+    }
+
+    const chain = findConversionChain(from_unit, to_unit, tenantId, material_id)
+    if (chain) {
+      return res.json({ success: true, data: { found: true, path: chain.path, factor: chain.factor } })
+    }
+
+    // หา partial path จาก from และจาก to เพื่อบอก gap
+    const fromNorm = normalizeUnit(from_unit)
+    const toNorm = normalizeUnit(to_unit)
+    return res.json({
+      success: true,
+      data: {
+        found: false,
+        from_norm: fromNorm,
+        to_norm: toNorm,
+        message: `ไม่พบเส้นทางแปลง ${fromNorm} → ${toNorm}`,
+      },
+    })
+  } catch (error) {
+    console.error('check-path error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// POST /api/materials/unit-conversions/suggest — ขอ AI แนะนำ factor
+router.post('/unit-conversions/suggest', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from_unit, to_unit, material_id, material_name } = req.body
+    if (!from_unit || !to_unit) {
+      return res.status(400).json({ success: false, message: 'from_unit และ to_unit จำเป็นต้องระบุ' })
+    }
+
+    // โหลด existing conversions เพื่อส่ง context ให้ LLM
+    const allConversions = listAllConversions(tenantId)
+    const existing = allConversions
+      .filter(c => !material_id || c.material_id === material_id || !c.material_id)
+      .map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: c.conversion_factor }))
+
+    const result = await suggestUnitConversion({ from_unit, to_unit, material_name, existing_conversions: existing }, tenantId)
+    res.json({ success: true, data: result })
+  } catch (error) {
+    console.error('suggest error:', error)
+    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// Get all materials with stock info
+router.get('/', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    
+    const materials = db.prepare(`
+      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity,
+             mc.name as category_name, mc.default_unit as category_default_unit
+      FROM materials m
+      LEFT JOIN stock_items si ON m.id = si.material_id
+      LEFT JOIN material_categories mc ON m.category_id = mc.id
+      WHERE m.tenant_id = ?
+      ORDER BY m.name ASC
+    `).all(tenantId) as any[]
+
+    // Enrich with stock status and convert to camelCase
+    const materialsWithStock = materials.map((material) => {
+      const currentStock = material.stock_quantity || 0
+      const minStock = material.min_stock
+      const maxStock = material.max_stock
+
+      let stockStatus = 'NO_STOCK'
+      if (material.stock_id) {
+        if (currentStock <= minStock * 0.3) {
+          stockStatus = 'CRITICAL'
+        } else if (currentStock <= minStock) {
+          stockStatus = 'LOW'
+        } else if (currentStock >= maxStock) {
+          stockStatus = 'OVERSTOCK'
+        } else {
+          stockStatus = 'ADEQUATE'
+        }
+      }
+
+      // Count usage in BOMs
+      const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(material.id) as any
+      const usedInBOMs = bomCount.count
+
+      return {
+        id: material.id,
+        categoryId: material.category_id,
+        categoryName: material.category_name,
+        categoryDefaultUnit: material.category_default_unit,
+        code: material.code,
+        name: material.name,
+        unit: material.unit,
+        unitCost: material.unit_cost,
+        minStock: material.min_stock,
+        maxStock: material.max_stock,
+        currentStock,
+        stockStatus,
+        usedInBOMs,
+        stockItem: material.stock_id ? { id: material.stock_id, quantity: currentStock } : null,
+      }
+    })
+
+    res.json({
+      success: true,
+      data: materialsWithStock,
+    })
+  } catch (error) {
+    console.error('Get materials error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch materials' })
+  }
+})
+
+// Get material by ID
+router.get('/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    
+    const material = db.prepare(`
+      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
+      FROM materials m
+      LEFT JOIN stock_items si ON m.id = si.material_id
+      WHERE m.id = ? AND m.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message: 'Material not found',
+      })
+    }
+
+    // Get stock movements if stock item exists
+    if (material.stock_id) {
+      material.movements = db.prepare(`
+        SELECT * FROM stock_movements
+        WHERE stock_item_id = ?
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all(material.stock_id)
+    }
+
+    // Get BOM usage
+    material.bomItems = db.prepare(`
+      SELECT bi.*, p.name as product_name, p.code as product_code
+      FROM bom_items bi
+      JOIN boms b ON bi.bom_id = b.id
+      JOIN products p ON b.product_id = p.id
+      WHERE bi.material_id = ?
+    `).all(req.params.id)
+
+    res.json({
+      success: true,
+      data: material,
+    })
+  } catch (error) {
+    console.error('Get material error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch material' })
+  }
+})
+
+// Create material
+router.post('/', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { code, name, categoryId, unitCost, minStock, maxStock, initialStock, unit: reqUnit } = req.body
+
+    // Validate required fields
+    if (!code || !name || !categoryId || unitCost === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code, name, categoryId, and unitCost are required',
+      })
+    }
+
+    // Get category to determine unit
+    const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid categoryId',
+      })
+    }
+
+    // Unit: allow override from request, fallback to category default
+    const unit = reqUnit || category.default_unit
+
+    // Check for duplicate code in materials
+    const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: 'Material code already exists',
+      })
+    }
+
+    // Check for duplicate SKU in stock_items
+    const existingStock = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(`STK-${code}`, tenantId)
+    if (existingStock) {
+      return res.status(400).json({
+        success: false,
+        message: 'Stock SKU already exists',
+      })
+    }
+
+    const id = generateId()
+    const now = new Date().toISOString()
+
+    // Create material with category
+    db.prepare(`
+      INSERT INTO materials (id, tenant_id, category_id, code, name, unit, unit_cost, min_stock, max_stock, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, categoryId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
+
+    // Create stock item automatically so it appears in BOM dropdown
+    const qty = initialStock || 0
+    const stockId = generateId()
+    db.prepare(`
+      INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
+    `).run(
+      stockId, 
+      tenantId, 
+      `STK-${code}`, 
+      `Stock: ${name}`, 
+      id, 
+      qty, 
+      unit,
+      minStock || 0, 
+      maxStock || 1000, 
+      qty > (minStock || 0) ? 'ADEQUATE' : (qty === 0 ? 'OUT' : 'LOW'),
+      now, 
+      now
+    )
+
+    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id)
+
+    res.json({
+      success: true,
+      message: 'Material created successfully',
+      data: { ...material, stockId },
+    })
+  } catch (error) {
+    console.error('Create material error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create material' })
+  }
+})
+
+// Update material
+router.put('/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { code, name, categoryId, unitCost, minStock, maxStock } = req.body
+
+    const existing = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Material not found',
+      })
+    }
+
+    // Check for duplicate code (excluding current)
+    if (code && code !== existing.code) {
+      const duplicate = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Material code already exists',
+        })
+      }
+    }
+
+    // If changing category, get new unit
+    let newUnit = existing.unit
+    if (categoryId && categoryId !== existing.category_id) {
+      const category = db.prepare('SELECT default_unit FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+      if (!category) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid categoryId',
+        })
+      }
+      newUnit = category.default_unit
+    }
+
+    const now = new Date().toISOString()
+
+    db.prepare(`
+      UPDATE materials SET
+        code = COALESCE(?, code),
+        name = COALESCE(?, name),
+        category_id = COALESCE(?, category_id),
+        unit = ?,
+        unit_cost = COALESCE(?, unit_cost),
+        min_stock = COALESCE(?, min_stock),
+        max_stock = COALESCE(?, max_stock),
+        updated_at = ?
+      WHERE id = ? AND tenant_id = ?
+    `).run(code, name, categoryId, newUnit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
+
+    // Update related stock items (including unit from material)
+    if (minStock !== undefined || maxStock !== undefined) {
+      db.prepare(`
+        UPDATE stock_items SET
+          min_stock = COALESCE(?, min_stock),
+          max_stock = COALESCE(?, max_stock),
+          unit = ?,
+          updated_at = ?
+        WHERE material_id = ? AND tenant_id = ?
+      `).run(minStock, maxStock, newUnit, now, req.params.id, tenantId)
+    }
+
+    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id)
+
+    res.json({
+      success: true,
+      message: 'Material updated successfully',
+      data: material,
+    })
+  } catch (error) {
+    console.error('Update material error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update material' })
+  }
+})
+
+// Delete material
+router.delete('/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    
+    const existing = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Material not found',
+      })
+    }
+
+    // Check if used in any BOM
+    const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(req.params.id) as any
+    if (bomCount.count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: Material is used in ${bomCount.count} BOM(s)`,
+      })
+    }
+
+    // Delete related stock items first
+    db.prepare('DELETE FROM stock_items WHERE material_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+
+    // Delete material
+    db.prepare('DELETE FROM materials WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+
+    res.json({
+      success: true,
+      message: 'Material deleted successfully',
+    })
+  } catch (error) {
+    console.error('Delete material error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete material' })
+  }
+})
+
+// Adjust stock for material
+router.post('/:id/stock', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { type, quantity, notes } = req.body
+
+    if (!type || quantity === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Type and quantity are required',
+      })
+    }
+
+    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message: 'Material not found',
+      })
+    }
+
+    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+
+    // Create stock item if doesn't exist
+    if (!stockItem) {
+      const stockId = generateId()
+      const now = new Date().toISOString()
+      db.prepare(`
+        INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, 0, ?, ?, ?, 'WAREHOUSE', 'NO_STOCK', ?, ?)
+      `).run(
+        stockId,
+        tenantId,
+        `STK-${material.code}`,
+        `Stock: ${material.name}`,
+        material.id,
+        material.unit,
+        material.min_stock,
+        material.max_stock,
+        now,
+        now
+      )
+      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockId)
+    }
+
+    // Calculate new quantity
+    let newQuantity = stockItem.quantity
+    if (type === 'IN') {
+      newQuantity += quantity
+    } else if (type === 'OUT') {
+      newQuantity -= quantity
+      if (newQuantity < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient stock',
+        })
+      }
+    } else if (type === 'ADJUST') {
+      newQuantity = quantity
+    }
+
+    // Determine status
+    let status = 'ADEQUATE'
+    if (newQuantity <= material.min_stock * 0.3) {
+      status = 'CRITICAL'
+    } else if (newQuantity <= material.min_stock) {
+      status = 'LOW'
+    } else if (newQuantity >= material.max_stock) {
+      status = 'OVERSTOCK'
+    }
+
+    const now = new Date().toISOString()
+
+    // Update stock item
+    db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ?').run(newQuantity, status, now, stockItem.id)
+
+    // Record movement
+    const movementId = generateId()
+    db.prepare(`
+      INSERT INTO stock_movements (id, stock_item_id, type, quantity, notes, created_at, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(movementId, stockItem.id, type, quantity, notes || '', now, 'system')
+
+    res.json({
+      success: true,
+      message: 'Stock adjusted successfully',
+      data: {
+        material,
+        stockItem: { ...stockItem, quantity: newQuantity, status },
+        previousQuantity: stockItem.quantity,
+        newQuantity,
+      },
+    })
+  } catch (error) {
+    console.error('Adjust stock error:', error)
+    res.status(500).json({ success: false, message: 'Failed to adjust stock' })
+  }
+})
+
+export default router

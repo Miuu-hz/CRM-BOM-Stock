@@ -1,0 +1,188 @@
+import { motion } from 'framer-motion'
+import { AlertTriangle, Package } from 'lucide-react'
+
+interface StockAlert {
+  id: string
+  item: string
+  category: string
+  current: number
+  minimum: number
+  unit: string
+  level: 'critical' | 'warning' | 'low'
+}
+
+const alerts: StockAlert[] = [
+  {
+    id: '1',
+    item: 'Foam Material',
+    category: 'Raw Material',
+    current: 150,
+    minimum: 500,
+    unit: 'kg',
+    level: 'critical',
+  },
+  {
+    id: '2',
+    item: 'Spring Coils',
+    category: 'Component',
+    current: 300,
+    minimum: 400,
+    unit: 'units',
+    level: 'warning',
+  },
+  {
+    id: '3',
+    item: 'Fabric Cover',
+    category: 'Raw Material',
+    current: 80,
+    minimum: 100,
+    unit: 'meters',
+    level: 'warning',
+  },
+  {
+    id: '4',
+    item: 'Thread',
+    category: 'Consumable',
+    current: 20,
+    minimum: 50,
+    unit: 'rolls',
+    level: 'critical',
+  },
+  {
+    id: '5',
+    item: 'Zipper',
+    category: 'Component',
+    current: 450,
+    minimum: 500,
+    unit: 'units',
+    level: 'low',
+  },
+]
+
+function StockAlerts() {
+  return (
+    <div className="phopy-card p-6">
+      <div className="flex items-center gap-3 mb-6">
+        <AlertTriangle className="w-6 h-6 text-warning" />
+        <h2 className="text-xl font-bold text-[var(--fg-1)]">
+          Stock Alerts
+        </h2>
+      </div>
+
+      <div className="space-y-3 max-h-[500px] overflow-y-auto phopy-scrollbar">
+        {(alerts || []).map((alert, index) => (
+          <motion.div
+            key={alert.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="p-4 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)] hover:border-phopy-indigo/30 transition-all"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  alert.level === 'critical'
+                    ? 'bg-[var(--danger-soft)] border border-danger/30'
+                    : alert.level === 'warning'
+                    ? 'bg-[var(--warning-soft)] border border-warning/30'
+                    : 'bg-[var(--warning-soft)] border border-warning/30'
+                }`}
+              >
+                <Package
+                  className={`w-5 h-5 ${
+                    alert.level === 'critical'
+                      ? 'text-danger'
+                      : alert.level === 'warning'
+                      ? 'text-warning'
+                      : 'text-warning'
+                  }`}
+                />
+              </div>
+
+              <div className="flex-1">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[var(--fg-2)]">
+                      {alert.item}
+                    </h3>
+                    <p className="text-xs text-[var(--fg-4)]">{alert.category}</p>
+                  </div>
+                  <LevelBadge level={alert.level} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--fg-3)]">Current Stock</span>
+                    <span
+                      className={`font-semibold ${
+                        alert.level === 'critical'
+                          ? 'text-danger'
+                          : alert.level === 'warning'
+                          ? 'text-warning'
+                          : 'text-warning'
+                      }`}
+                    >
+                      {alert.current} {alert.unit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--fg-3)]">Minimum Required</span>
+                    <span className="text-[var(--fg-2)] font-semibold">
+                      {alert.minimum} {alert.unit}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${(alert.current / alert.minimum) * 100}%`,
+                      }}
+                      transition={{ delay: index * 0.1, duration: 0.5 }}
+                      className={`h-full ${
+                        alert.level === 'critical'
+                          ? 'bg-red-500'
+                          : alert.level === 'warning'
+                          ? 'bg-yellow-500'
+                          : 'bg-orange-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LevelBadge({ level }: { level: StockAlert['level'] }) {
+  const config = {
+    critical: {
+      label: 'Critical',
+      className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
+    },
+    warning: {
+      label: 'Warning',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
+    },
+    low: {
+      label: 'Low',
+      className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
+    },
+  }
+
+  const selected = config[level]
+
+  return (
+    <span className={`status-badge ${selected.className}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+      {selected.label}
+    </span>
+  )
+}
+
+export default StockAlerts
