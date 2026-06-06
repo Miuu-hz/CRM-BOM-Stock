@@ -2,66 +2,33 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Brain,
-  Plus,
-  Trash2,
   CheckCircle,
   AlertCircle,
-  X,
   RefreshCw,
   Send,
   Bot,
-  User,
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Power,
-  Star,
+  Plus,
+  Terminal,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
-  getLLMProviders,
-  createLLMProvider,
-  updateLLMProvider,
-  deleteLLMProvider,
-  testLLMProvider,
-  testChat,
+  getKimiStatus,
+  kimiChat,
   getMcpSettings,
   regenerateMcpKey,
   testMcpServer,
-  type LLMProvider,
-  type LLMProviderInput,
   type McpTestStep,
 } from '../../services/llm'
 
-const PROVIDER_TYPES = ['openai', 'anthropic', 'ollama', 'custom']
-
-const DEFAULT_FORM: LLMProviderInput = {
-  name: '',
-  provider_type: 'openai',
-  base_url: 'https://api.openai.com/v1',
-  api_key: '',
-  model: 'gpt-4o',
-  is_active: true,
-  is_default: false,
-}
-
 export default function LLMSettings() {
-  const [providers, setProviders] = useState<LLMProvider[]>([])
-  const [loading, setLoading] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
-  const [form, setForm] = useState<LLMProviderInput>({ ...DEFAULT_FORM })
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [showKey, setShowKey] = useState(false)
+  const [kimiVersion, setKimiVersion] = useState<string | null>(null)
+  const [kimiOnline, setKimiOnline] = useState<boolean | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
 
-  // Playground
-  const [playgroundProvider, setPlaygroundProvider] = useState<string>('')
-  const [playgroundMsg, setPlaygroundMsg] = useState('')
-  const [playgroundReply, setPlaygroundReply] = useState('')
-  const [playgroundLoading, setPlaygroundLoading] = useState(false)
+  const [chatMsg, setChatMsg] = useState('')
+  const [chatReply, setChatReply] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
 
-  // MCP Settings
   const [mcpKey, setMcpKey] = useState<string | null>(null)
   const [mcpRegenLoading, setMcpRegenLoading] = useState(false)
   const [mcpTestLoading, setMcpTestLoading] = useState(false)
@@ -69,9 +36,23 @@ export default function LLMSettings() {
   const mcpUrl = mcpKey ? `${window.location.origin}/mcp/sse?key=${mcpKey}` : null
 
   useEffect(() => {
-    loadProviders()
+    checkKimiStatus()
     loadMcpSettings()
   }, [])
+
+  const checkKimiStatus = async () => {
+    setStatusLoading(true)
+    try {
+      const res = await getKimiStatus()
+      setKimiOnline(res.success)
+      setKimiVersion(res.version ?? null)
+    } catch {
+      setKimiOnline(false)
+      setKimiVersion(null)
+    } finally {
+      setStatusLoading(false)
+    }
+  }
 
   const loadMcpSettings = async () => {
     try {
@@ -110,331 +91,134 @@ export default function LLMSettings() {
     }
   }
 
-  const loadProviders = async () => {
-    setLoading(true)
+  const handleChatSend = async () => {
+    if (!chatMsg.trim()) return
+    setChatLoading(true)
+    setChatReply('')
     try {
-      const res = await getLLMProviders()
+      const res = await kimiChat(chatMsg)
       if (res.success) {
-        setProviders(res.data)
-        if (res.data.length > 0 && !playgroundProvider) {
-          setPlaygroundProvider(res.data[0].id)
-        }
-      }
-    } catch {
-      toast.error('โหลดข้อมูลไม่สำเร็จ')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const openAdd = () => {
-    setEditId(null)
-    setForm({ ...DEFAULT_FORM })
-    setShowKey(false)
-    setShowModal(true)
-  }
-
-  const openEdit = (p: LLMProvider) => {
-    setEditId(p.id)
-    setForm({
-      name: p.name,
-      provider_type: p.provider_type,
-      base_url: p.base_url,
-      api_key: '', // don't prefill key for security; if empty on update, backend keeps old
-      model: p.model,
-      is_active: p.is_active === 1,
-      is_default: p.is_default === 1,
-    })
-    setShowKey(false)
-    setShowModal(true)
-  }
-
-  const handleSave = async () => {
-    if (!form.name || !form.base_url || !form.model) {
-      toast.error('กรุณากรอกข้อมูลให้ครบ')
-      return
-    }
-    if (!editId && !form.api_key) {
-      toast.error('กรุณากรอก API Key')
-      return
-    }
-    setSaving(true)
-    try {
-      if (editId) {
-        const payload: Partial<LLMProviderInput> = { ...form }
-        if (!payload.api_key) delete payload.api_key
-        const res = await updateLLMProvider(editId, payload)
-        if (res.success) {
-          toast.success('บันทึกสำเร็จ')
-          setShowModal(false)
-          loadProviders()
-        } else {
-          toast.error(res.message || 'บันทึกไม่สำเร็จ')
-        }
-      } else {
-        const res = await createLLMProvider(form)
-        if (res.success) {
-          toast.success('สร้างสำเร็จ')
-          setShowModal(false)
-          loadProviders()
-        } else {
-          toast.error(res.message || 'สร้างไม่สำเร็จ')
-        }
-      }
-    } catch {
-      toast.error('เกิดข้อผิดพลาด')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('ต้องการลบ provider นี้?')) return
-    try {
-      const res = await deleteLLMProvider(id)
-      if (res.success) {
-        toast.success('ลบสำเร็จ')
-        loadProviders()
-      } else {
-        toast.error(res.message || 'ลบไม่สำเร็จ')
-      }
-    } catch {
-      toast.error('เกิดข้อผิดพลาด')
-    }
-  }
-
-  const handleTestConnection = async () => {
-    if (!editId) {
-      toast.error('กรุณาบันทึก provider ก่อนทดสอบ')
-      return
-    }
-    setTesting(true)
-    try {
-      const res = await testLLMProvider(editId)
-      if (res.success) {
-        toast.success(`เชื่อมต่อสำเร็จ: ${res.reply}`)
-      } else {
-        toast.error(res.message || 'เชื่อมต่อไม่สำเร็จ')
-      }
-    } catch {
-      toast.error('เชื่อมต่อไม่สำเร็จ')
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const handlePlaygroundSend = async () => {
-    if (!playgroundMsg.trim()) return
-    setPlaygroundLoading(true)
-    setPlaygroundReply('')
-    try {
-      const res = await testChat(playgroundMsg, playgroundProvider || undefined)
-      if (res.success) {
-        setPlaygroundReply(res.reply)
+        setChatReply(res.reply)
       } else {
         toast.error(res.message || 'ส่งข้อความไม่สำเร็จ')
       }
     } catch {
       toast.error('เกิดข้อผิดพลาด')
     } finally {
-      setPlaygroundLoading(false)
-    }
-  }
-
-  const toggleActive = async (p: LLMProvider) => {
-    try {
-      const res = await updateLLMProvider(p.id, { is_active: p.is_active !== 1 })
-      if (res.success) loadProviders()
-    } catch {
-      toast.error('อัปเดตไม่สำเร็จ')
-    }
-  }
-
-  const setDefault = async (p: LLMProvider) => {
-    try {
-      const res = await updateLLMProvider(p.id, { is_default: true })
-      if (res.success) loadProviders()
-    } catch {
-      toast.error('อัปเดตไม่สำเร็จ')
+      setChatLoading(false)
     }
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-            <Brain className="w-5 h-5 text-[var(--primary)]" />
-            AI / LLM Providers
-          </h2>
-          <p className="text-sm text-[var(--fg-3)]">จัดการและทดสอบการเชื่อมต่อ LLM Provider</p>
-        </div>
-        <button onClick={openAdd} className="phopy-btn-primary flex items-center gap-2 text-sm">
-          <Plus className="w-4 h-4" />
-          เพิ่ม Provider
-        </button>
+      <div>
+        <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+          <Brain className="w-5 h-5 text-[var(--primary)]" />
+          AI Assistant
+        </h2>
+        <p className="text-sm text-[var(--fg-3)]">Kimi Code CLI — ผู้ช่วย AI สำหรับระบบ ERP</p>
       </div>
 
-      {/* Provider List */}
-      <div className="phopy-card overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-[var(--fg-3)] flex items-center justify-center gap-2">
-            <RefreshCw className="w-5 h-5 animate-spin" /> กำลังโหลด...
+      {/* Kimi Status */}
+      <div className="phopy-card p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${kimiOnline ? 'bg-success/15' : kimiOnline === false ? 'bg-danger/15' : 'bg-[var(--surface-2)]'}`}>
+              <Terminal className={`w-5 h-5 ${kimiOnline ? 'text-success' : kimiOnline === false ? 'text-danger' : 'text-[var(--fg-4)]'}`} />
+            </div>
+            <div>
+              <p className="font-semibold text-[var(--fg-1)]">Kimi Code CLI</p>
+              <p className="text-xs text-[var(--fg-3)]">
+                {statusLoading
+                  ? 'กำลังตรวจสอบ...'
+                  : kimiOnline && kimiVersion
+                    ? `v${kimiVersion} — พร้อมใช้งาน`
+                    : kimiOnline === false
+                      ? 'ไม่สามารถเชื่อมต่อได้'
+                      : 'ยังไม่ได้ตรวจสอบ'}
+              </p>
+            </div>
           </div>
-        ) : providers.length === 0 ? (
-          <div className="p-8 text-center text-[var(--fg-3)]">
-            <Bot className="w-12 h-12 mx-auto mb-3 text-[var(--fg-4)]" />
-            <p>ยังไม่มี LLM Provider ที่ตั้งค่าไว้</p>
-            <button onClick={openAdd} className="mt-3 text-[var(--primary)] hover:underline text-sm">
-              เพิ่ม Provider แรก
+          <div className="flex items-center gap-2">
+            {kimiOnline !== null && (
+              kimiOnline
+                ? <CheckCircle className="w-5 h-5 text-success" />
+                : <AlertCircle className="w-5 h-5 text-danger" />
+            )}
+            <button
+              onClick={checkKimiStatus}
+              disabled={statusLoading}
+              className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:border-phopy-indigo/50 hover:text-[var(--primary)] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${statusLoading ? 'animate-spin' : ''}`} />
+              ตรวจสอบ
             </button>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-[var(--surface-2)]">
-                <tr>
-                  <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">ชื่อ</th>
-                  <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">ประเภท</th>
-                  <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">Model</th>
-                  <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">Base URL</th>
-                  <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">ค่าเริ่มต้น</th>
-                  <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">เปิดใช้งาน</th>
-                  <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]">
-                {providers.map((p) => (
-                  <tr key={p.id} className="hover:bg-[var(--bg)]/30">
-                    <td className="py-3 px-4 text-[var(--fg-2)] font-medium">{p.name}</td>
-                    <td className="py-3 px-4 text-[var(--fg-3)] capitalize">{p.provider_type}</td>
-                    <td className="py-3 px-4 text-[var(--fg-3)] text-sm">{p.model}</td>
-                    <td className="py-3 px-4 text-[var(--fg-4)] text-xs truncate max-w-[200px]">{p.base_url}</td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => setDefault(p)}
-                        className={`p-1.5 rounded-lg transition-colors ${p.is_default ? 'text-warning hover:text-yellow-300' : 'text-[var(--fg-4)] hover:text-[var(--fg-3)]'}`}
-                        title={p.is_default ? 'ค่าเริ่มต้น' : 'ตั้งเป็นค่าเริ่มต้น'}
-                      >
-                        <Star className={`w-5 h-5 ${p.is_default ? 'fill-current' : ''}`} />
-                      </button>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => toggleActive(p)}
-                        className={`p-1.5 rounded-lg transition-colors ${p.is_active ? 'text-success hover:text-success/80' : 'text-[var(--fg-4)] hover:text-[var(--fg-3)]'}`}
-                        title={p.is_active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
-                      >
-                        <Power className="w-5 h-5" />
-                      </button>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => openEdit(p)}
-                          className="p-1.5 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors"
-                          title="แก้ไข"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          className="p-1.5 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
-                          title="ลบ"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* LLM Playground */}
+      {/* Playground */}
       <div className="phopy-card p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-[var(--primary)]" />
-          <h3 className="text-lg font-bold text-[var(--fg-1)]">LLM Playground</h3>
-        </div>
-        <p className="text-sm text-[var(--fg-3)]">ทดสอบส่งข้อความเพื่อตรวจสอบว่า Token/API ตอบสนองหรือไม่</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-1">
-            <label className="block text-sm text-[var(--fg-3)] mb-2">เลือก Provider</label>
-            <div className="relative">
-              <select
-                value={playgroundProvider}
-                onChange={(e) => setPlaygroundProvider(e.target.value)}
-                className="phopy-input w-full appearance-none pr-8"
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.provider_type})
-                  </option>
-                ))}
-                {providers.length === 0 && <option value="">ไม่มี Provider</option>}
-              </select>
-              <ChevronDown className="w-4 h-4 text-[var(--fg-4)] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          <div className="md:col-span-3">
-            <label className="block text-sm text-[var(--fg-3)] mb-2">ข้อความ</label>
-            <div className="flex gap-2">
-              <textarea
-                value={playgroundMsg}
-                onChange={(e) => setPlaygroundMsg(e.target.value)}
-                placeholder="พิมพ์ข้อความที่ต้องการทดสอบ..."
-                className="phopy-input w-full resize-none"
-                rows={3}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handlePlaygroundSend()
-                  }
-                }}
-              />
-              <button
-                onClick={handlePlaygroundSend}
-                disabled={playgroundLoading || !playgroundMsg.trim()}
-                className="phopy-btn-primary px-4 flex flex-col items-center justify-center gap-1 disabled:opacity-50"
-              >
-                {playgroundLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                <span className="text-xs">ส่ง</span>
-              </button>
-            </div>
+          <div>
+            <h3 className="text-lg font-bold text-[var(--fg-1)]">AI Playground</h3>
+            <p className="text-xs text-[var(--fg-3)]">ทดสอบถามคำถามเกี่ยวกับข้อมูลในระบบ</p>
           </div>
         </div>
 
-        {playgroundReply && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
+        <div className="flex gap-2">
+          <textarea
+            value={chatMsg}
+            onChange={(e) => setChatMsg(e.target.value)}
+            placeholder="เช่น หมูสับในสต็อกมีเท่าไหร่, ยอดขายเดือนนี้เป็นยังไงบ้าง..."
+            className="phopy-input w-full resize-none"
+            rows={3}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleChatSend()
+              }
+            }}
+          />
+          <button
+            onClick={handleChatSend}
+            disabled={chatLoading || !chatMsg.trim() || !kimiOnline}
+            className="phopy-btn-primary px-4 flex flex-col items-center justify-center gap-1 disabled:opacity-50"
           >
-            <div className="flex items-center gap-2 text-[var(--primary)] text-sm font-medium">
-              <Bot className="w-4 h-4" />
-              ตอบกลับจาก LLM
-            </div>
-            <div className="text-[var(--fg-2)] whitespace-pre-wrap text-sm leading-relaxed">
-              {playgroundReply}
-            </div>
-          </motion.div>
-        )}
+            {chatLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+            <span className="text-xs">ส่ง</span>
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {chatReply && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
+            >
+              <div className="flex items-center gap-2 text-[var(--primary)] text-sm font-medium">
+                <Bot className="w-4 h-4" />
+                Kimi ตอบ
+              </div>
+              <div className="text-[var(--fg-2)] whitespace-pre-wrap text-sm leading-relaxed">
+                {chatReply}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* MCP Server Section */}
+      {/* MCP Server */}
       <div className="phopy-card p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-purple-400" />
           <div>
             <h3 className="text-lg font-bold text-[var(--fg-1)]">MCP Server</h3>
-            <p className="text-xs text-[var(--fg-3)]">สำหรับ Google AI Edge Gallery + Gemma 4B (on-device, ฟรี)</p>
+            <p className="text-xs text-[var(--fg-3)]">สำหรับ AI clients ที่รองรับ MCP protocol</p>
           </div>
         </div>
 
@@ -453,7 +237,7 @@ export default function LLMSettings() {
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1">URL สำหรับ register ใน Google AI Edge Gallery</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">MCP Server URL</label>
               <div className="flex gap-2">
                 <input
                   readOnly
@@ -473,9 +257,6 @@ export default function LLMSettings() {
                   Copy
                 </button>
               </div>
-              <p className="text-xs text-[var(--fg-4)] mt-1">
-                เปิด Gallery → Agent Skills → Add MCP Server → วาง URL นี้
-              </p>
             </div>
 
             <div className="flex gap-3 flex-wrap">
@@ -517,168 +298,13 @@ export default function LLMSettings() {
                   </div>
                 ))}
                 {mcpTestSteps.every((s) => s.ok) && (
-                  <p className="text-success text-sm font-medium pt-1">
-                    พร้อมใช้งานกับ Google AI Edge Gallery
-                  </p>
+                  <p className="text-success text-sm font-medium pt-1">MCP Server พร้อมใช้งาน</p>
                 )}
               </motion.div>
             )}
           </div>
         )}
       </div>
-
-      {/* Add/Edit Modal */}
-      <AnimatePresence>
-        {showModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="phopy-card w-full max-w-lg max-h-[85vh] overflow-y-auto"
-            >
-              <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
-                <h3 className="font-semibold text-[var(--fg-1)]">
-                  {editId ? 'แก้ไข Provider' : 'เพิ่ม Provider ใหม่'}
-                </h3>
-                <button onClick={() => setShowModal(false)} className="p-2 hover:bg-[var(--bg)] rounded-lg">
-                  <X className="w-5 h-5 text-[var(--fg-3)]" />
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อ Provider</label>
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="phopy-input w-full"
-                    placeholder="เช่น Kimi Production"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-[var(--fg-3)] mb-1">ประเภท</label>
-                    <div className="relative">
-                      <select
-                        value={form.provider_type}
-                        onChange={(e) => setForm({ ...form, provider_type: e.target.value })}
-                        className="phopy-input w-full appearance-none pr-8"
-                      >
-                        {PROVIDER_TYPES.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-[var(--fg-4)] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-[var(--fg-3)] mb-1">Model</label>
-                    <input
-                      type="text"
-                      value={form.model}
-                      onChange={(e) => setForm({ ...form, model: e.target.value })}
-                      className="phopy-input w-full"
-                      placeholder="เช่น gpt-4o"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Base URL</label>
-                  <input
-                    type="text"
-                    value={form.base_url}
-                    onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                    className="phopy-input w-full"
-                    placeholder="https://api.openai.com/v1"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">API Key</label>
-                  <div className="relative">
-                    <input
-                      type={showKey ? 'text' : 'password'}
-                      value={form.api_key}
-                      onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                      className="phopy-input w-full pr-10"
-                      placeholder="sk-..."
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] hover:text-[var(--fg-2)]"
-                    >
-                      {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {editId && !form.api_key && (
-                    <p className="text-xs text-[var(--fg-4)] mt-1">เว้นว่างไว้หากไม่ต้องการเปลี่ยน API Key</p>
-                  )}
-                </div>
-
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.is_active}
-                      onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                      className="w-4 h-4 accent-phopy-indigo rounded"
-                    />
-                    <span className="text-sm text-[var(--fg-2)]">เปิดใช้งาน</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.is_default}
-                      onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-                      className="w-4 h-4 accent-phopy-indigo rounded"
-                    />
-                    <span className="text-sm text-[var(--fg-2)]">ค่าเริ่มต้น</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="p-5 border-t border-[var(--border)] flex gap-3 justify-end">
-                {editId && (
-                  <button
-                    onClick={handleTestConnection}
-                    disabled={testing}
-                    className="px-4 py-2 rounded-lg border border-phopy-indigo/50 text-[var(--primary)] hover:bg-phopy-indigo/10 transition-colors text-sm flex items-center gap-2"
-                  >
-                    {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                    ทดสอบการเชื่อมต่อ
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--bg)] transition-colors text-sm"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="phopy-btn-primary px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-50"
-                >
-                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                  {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

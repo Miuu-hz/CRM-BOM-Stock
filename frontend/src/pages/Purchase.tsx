@@ -21,6 +21,7 @@ import {
   Printer,
   LayoutGrid,
   LayoutList,
+  Pencil,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -1135,14 +1136,29 @@ const Purchase = () => {
     if (!modalData?.id) return
     setFormLoading(true)
     try {
-      const { data } = await api.put(`/purchase/requests/${modalData.id}/status`, { status: (requestForm as any).status || modalData.status })
+      const items = requestForm.items.filter(i => i.material_id || i.description).map(item => ({
+        materialId: item.material_id,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        estimatedUnitPrice: item.estimated_unit_price,
+        estimatedTotalPrice: item.estimated_total_price,
+        notes: item.notes,
+      }))
+      const { data } = await api.put(`/purchase/requests/${modalData.id}`, {
+        department: requestForm.department,
+        requiredDate: requestForm.required_date,
+        priority: requestForm.priority,
+        notes: requestForm.notes,
+        items,
+      })
       if (data.success) {
-        toast.success('อัปเดตสถานะสำเร็จ')
+        toast.success('บันทึกการแก้ไขใบขอซื้อสำเร็จ')
         closeModal()
         fetchRequests()
-      }
-    } catch (error) {
-      toast.error('เกิดข้อผิดพลาด')
+      } else { toast.error(data.message || 'ไม่สามารถบันทึกการแก้ไขได้') }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'เกิดข้อผิดพลาด')
     } finally { setFormLoading(false) }
   }
 
@@ -1252,6 +1268,41 @@ const Purchase = () => {
         fetchOrders()
       } else { toast.error(data.message || 'ไม่สามารถสร้างใบสั่งซื้อได้') }
     } catch (error) { toast.error('เกิดข้อผิดพลาด') }
+    finally { setFormLoading(false) }
+  }
+
+  const handleUpdateOrder = async () => {
+    if (!modalData?.id) return
+    setFormLoading(true)
+    try {
+      const items = orderForm.items.filter(i => i.material_id || i.description).map(item => ({
+        materialId: item.material_id,
+        description: item.description,
+        quantity: item.quantity,
+        unit: normalizeUnit(item.unit),
+        unitPrice: item.unit_price,
+        notes: item.notes,
+      }))
+      const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
+      const taxRate = orderForm.tax_rate
+      const taxAmount = subtotal * (taxRate / 100)
+      const totalAmount = subtotal + taxAmount
+      const { data } = await api.put(`/purchase-orders/${modalData.id}`, {
+        supplierId: orderForm.supplier_id,
+        expectedDate: orderForm.expected_date,
+        taxRate,
+        notes: orderForm.notes,
+        items,
+        subtotal,
+        taxAmount,
+        totalAmount,
+      })
+      if (data.success) {
+        toast.success('บันทึกการแก้ไขใบสั่งซื้อสำเร็จ')
+        closeModal()
+        fetchOrders()
+      } else { toast.error(data.message || 'ไม่สามารถบันทึกการแก้ไขได้') }
+    } catch { toast.error('เกิดข้อผิดพลาด') }
     finally { setFormLoading(false) }
   }
 
@@ -1459,7 +1510,10 @@ const Purchase = () => {
           tax_rate: data.tax_rate || 7,
           notes: data.notes || '',
           linked_pr_id: data.linked_pr_id || '',
-          items: data.items || [{ material_id: '', description: '', quantity: 1, unit_price: 0, total_price: 0, notes: '' }]
+          items: (data.items || [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }]).map((item: any) => ({
+            ...item,
+            unit: normalizeUnit(item.unit || ''),
+          }))
         })
       } else if (type === 'receipt') {
         setReceiptForm({
@@ -1990,6 +2044,12 @@ const Purchase = () => {
                 <div className="col-span-1"><StatusBadge status={req.status} /></div>
                 <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(req.total_amount)}</p>
                 <div className="col-span-1 flex justify-end gap-1">
+                  {req.status === 'DRAFT' && (
+                    <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
+                      className="p-1 text-warning bg-[var(--warning-soft)] rounded" title="แก้ไข">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
@@ -2108,6 +2168,10 @@ const Purchase = () => {
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {order.status === 'DRAFT' && (<>
+                    <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
+                      className="p-1.5 text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] transition-colors" title="แก้ไข">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
                       className="px-2 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded hover:bg-[var(--info-soft)] font-medium transition-colors whitespace-nowrap">
                       ส่งอนุมัติ
@@ -2209,8 +2273,12 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  {/* DRAFT → ส่งอนุมัติ + ลบ */}
+                  {/* DRAFT → แก้ไข + ส่งอนุมัติ + ลบ */}
                   {order.status === 'DRAFT' && (<>
+                    <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
+                      className="px-2.5 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] transition-colors" title="แก้ไข">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
                       ส่งอนุมัติ
@@ -2823,16 +2891,25 @@ const Purchase = () => {
     const grandTotal = afterDisc + taxAmount
     return (
     <ModalShell
-      title={modalMode === 'create' ? 'สร้างใบสั่งซื้อ (PO)' : 'รายละเอียดใบสั่งซื้อ'}
+      title={modalMode === 'create' ? 'สร้างใบสั่งซื้อ (PO)' : modalMode === 'edit' ? 'แก้ไขใบสั่งซื้อ (Draft)' : 'รายละเอียดใบสั่งซื้อ'}
       onClose={closeModal}
       footer={
-        modalMode !== 'view' ? (
+        modalMode === 'create' ? (
           <div className="flex justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
             <button onClick={handleCreateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
               สร้างใบสั่งซื้อ
+            </button>
+          </div>
+        ) : modalMode === 'edit' ? (
+          <div className="flex justify-end gap-3">
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={handleUpdateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
+              className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+              {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+              บันทึกการแก้ไข
             </button>
           </div>
         ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>

@@ -39,6 +39,7 @@ import ImportModal from '../components/common/ImportModal'
 import UnitChainEditor from '../components/common/UnitChainEditor'
 import { useModalClose } from '../hooks/useModalClose'
 import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
+import { normalizeUnit } from '../utils/unitNormalize'
 
 type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
 
@@ -1155,17 +1156,18 @@ export function EditModal({
     // Build undirected adjacency graph from all known conversions
     const adj: Record<string, Set<string>> = {}
     const addEdge = (a: string, b: string) => {
-      if (!adj[a]) adj[a] = new Set()
-      if (!adj[b]) adj[b] = new Set()
-      adj[a].add(b)
-      adj[b].add(a)
+      const na = normalizeUnit(a); const nb = normalizeUnit(b)
+      if (!adj[na]) adj[na] = new Set()
+      if (!adj[nb]) adj[nb] = new Set()
+      adj[na].add(nb)
+      adj[nb].add(na)
     }
     itemConversions.forEach(c => addEdge(c.from_unit, c.to_unit))
     standardConversions.forEach(c => addEdge(c.from_unit, c.to_unit))
 
-    // BFS from displayUnit → check if baseUnit is reachable
-    const from = formData.displayUnit
-    const to = formData.baseUnit
+    // BFS from displayUnit → check if baseUnit is reachable (normalize to handle Thai names)
+    const from = normalizeUnit(formData.displayUnit)
+    const to = normalizeUnit(formData.baseUnit)
     const visited = new Set<string>([from])
     const queue = [from]
     let found = false

@@ -393,7 +393,11 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
       items: z.array(z.object({
         name: z.string(),
         qty: z.number(),
-        unit: z.string(),
+        unit: z.string().describe(
+          'หน่วยรหัสมาตรฐาน: กิโลกรัม/กก./กิโล/ก.ก. = kg | ขีด = hg | กรัม = g | ชิ้น/อัน/ตัว = pcs | ' +
+          'ฟอง = egg | กล่อง = box | แพ็ค/แพ๊ค/แพ๊ล/pack = pack | ถุง = bag | ขวด = bottle | โหล = dozen | ลัง = case | ' +
+          'ลิตร = ltr | มล./ซีซี = ml | ซอง = sachet — ถ้าไม่แน่ใจใช้ pcs'
+        ),
       })).optional().describe('รายการวัตถุดิบ (optional)'),
     },
     async (args) => {
@@ -421,7 +425,7 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
               randomUUID().replace(/-/g, '').substring(0, 25),
               tenantId, id, id,
               item.name, item.name,
-              item.qty, item.unit || 'pcs',
+              item.qty, normalizeUnit(item.unit || 'pcs'),
               0, 0
             )
           }
@@ -442,49 +446,146 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
     {
       items: z.array(z.object({
         description: z.string().describe('ชื่อสินค้า/วัตถุดิบ'),
-        quantity: z.number().describe('จำนวน'),
-        unit: z.string().describe('หน่วย เช่น กก. ฟอง ถุง ลัง'),
-        unitPrice: z.number().describe('ราคาต่อหน่วย (ถ้าไม่รู้ใส่ 0)'),
+        quantity: z.number().describe(
+          'จำนวนตามที่เขียนในบิล — คัดลอกตัวเลขตรงๆ ห้ามแปลงหน่วย\n' +
+          '✗ ผิด: "1.5 ขีด" → 150  ✓ ถูก: "1.5 ขีด" → 1.5'
+        ),
+        unit: z.string().describe(
+          'รหัสหน่วยมาตรฐาน — แปลงแค่ชื่อหน่วย ไม่แปลงตัวเลข:\n' +
+          '• น้ำหนัก: กิโลกรัม/กก./กิโล/ก.ก. = kg | ขีด = hg | กรัม/ก. = g | มิลลิกรัม/มก. = mg\n' +
+          '• ปริมาตร: ลิตร/ล. = ltr | มล./ซีซี/cc = ml\n' +
+          '• นับ: ชิ้น/อัน/ตัว/ใบ = pcs | ฟอง = egg | กล่อง = box | แพ็ค/แพ๊ค/แพ๊ล/pack = pack | ถุง = bag | ซอง = sachet | ขวด = bottle | โหล = dozen | ลัง = case\n' +
+          'ถ้าไม่แน่ใจให้ใช้ pcs'
+        ),
+        lineTotal: z.number().optional().describe(
+          'ราคารวมทั้งบรรทัดตามบิล (บาท) — สำหรับบิลตลาดที่แสดงราคารวมต่อแถว\n' +
+          '"หอมป. 1.5 ขีด 10 บาท" → lineTotal:10 | "ไข่ 30 ฟอง 120 บาท" → lineTotal:120\n' +
+          'ถ้าบิลแสดง ราคา/หน่วย (มี /กก. /ชิ้น ฯลฯ) ให้ใช้ unitPrice แทน'
+        ),
+        unitPrice: z.number().optional().describe(
+          'ราคาต่อหน่วย — สำหรับบิลระบบที่แสดงราคา/หน่วย\n' +
+          '"หมูสับ 5 กก. 120 บาท/กก." → unitPrice:120\n' +
+          'ถ้าไม่แน่ใจว่าเป็นราคาต่อหน่วยหรือราคารวม ให้ใช้ lineTotal แทน'
+        ),
       })).describe('รายการสินค้าที่อ่านได้จากรูปหรือข้อความ'),
       supplier_hint: z.string().optional().describe('ชื่อซัพพลายเออร์ถ้าอ่านได้จากรูป'),
+      billTotal: z.number().optional().describe(
+        'ยอดรวมที่เขียนไว้ในบิล — ใช้ cross-check กับ sum(lineTotal)\n' +
+        'ถ้ามีและตัวเลขไม่ตรงกัน (ต่างกัน >5%) ให้แจ้ง user ก่อนสร้าง'
+      ),
       notes: z.string().optional().describe('หมายเหตุ เช่น "จากรูปภาพใบสั่งซื้อ" หรือ "จาก AI อ่านรูป"'),
     },
     async (args) => {
-      const { items, supplier_hint, notes } = args
+      const { items, supplier_hint, billTotal, notes } = args
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
       const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as { c: number }).c
       const poNumber = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
       const now = new Date().toISOString()
 
-      const subtotal = items.reduce((s: number, i: { quantity: number; unitPrice: number }) => s + i.quantity * i.unitPrice, 0)
+      // ── Auto-find or create supplier ────────────────────────────────────────
+      let supplierId: string | null = null
+      let supplierCreated = false
+      if (supplier_hint) {
+        const existing = db.prepare(
+          `SELECT id, name FROM suppliers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1`
+        ).get(tenantId, `%${supplier_hint}%`, `%${supplier_hint}%`) as any
+        if (existing) {
+          supplierId = existing.id
+        } else {
+          const supCount = (db.prepare('SELECT COUNT(*) as c FROM suppliers WHERE tenant_id = ?').get(tenantId) as any).c
+          const supCode = `SUP-${new Date().getFullYear()}-${String(supCount + 1).padStart(4, '0')}`
+          const supId = randomUUID().replace(/-/g, '').substring(0, 25)
+          db.prepare(`
+            INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status, type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'RAW_MATERIAL', ?, ?)
+          `).run(supId, tenantId, supCode, supplier_hint, supplier_hint, now, now)
+          supplierId = supId
+          supplierCreated = true
+        }
+      }
+
+      // lineTotal (ราคารวมต่อบรรทัด) มี priority ก่อน unitPrice
+      const resolveLineTotal = (i: { quantity: number; lineTotal?: number; unitPrice?: number }): number => {
+        if (i.lineTotal != null) return i.lineTotal
+        if (i.unitPrice != null) return i.quantity * i.unitPrice
+        return 0
+      }
+      const resolveUnitPrice = (i: { quantity: number; lineTotal?: number; unitPrice?: number }): number => {
+        if (i.unitPrice != null) return i.unitPrice
+        if (i.lineTotal != null && i.quantity > 0) return i.lineTotal / i.quantity
+        return 0
+      }
+      const subtotal = items.reduce((s: number, i: { quantity: number; lineTotal?: number; unitPrice?: number }) => s + resolveLineTotal(i), 0)
 
       db.prepare(`
         INSERT INTO purchase_orders
           (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, notes, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, 0, 0, ?, ?, ?, ?)
-      `).run(id, tenantId, poNumber, null, now, subtotal, subtotal,
+      `).run(id, tenantId, poNumber, supplierId, now, subtotal, subtotal,
         `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`, now, now)
 
+      // ── Auto-match stock items + insert PO items ─────────────────────────────
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items
           (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, notes)
-        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, '')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
       `)
+
+      const dateStr = now.slice(0, 10).replace(/-/g, '')
+      let skuSeq = (db.prepare(`SELECT COUNT(*) as c FROM stock_items WHERE tenant_id = ? AND sku LIKE 'RAW-${dateStr}%'`).get(tenantId) as any).c
+
+      const resultItems: { description: string; matched: boolean; materialId: string; unit: string }[] = []
       for (const item of items) {
+        const found = db.prepare(
+          `SELECT id, name, sku, unit FROM stock_items WHERE tenant_id = ? AND name LIKE ? LIMIT 1`
+        ).get(tenantId, `%${item.description}%`) as any
+
+        let materialId: string
+        let resolvedUnit = normalizeUnit(item.unit || 'pcs')
+
+        if (found) {
+          materialId = found.id
+          resolvedUnit = normalizeUnit(item.unit) || found.unit || 'pcs'
+        } else {
+          skuSeq++
+          const sku = `RAW-${dateStr}-${String(skuSeq).padStart(3, '0')}`
+          const siId = randomUUID().replace(/-/g, '').substring(0, 25)
+          db.prepare(`
+            INSERT INTO stock_items
+              (id, tenant_id, sku, name, category, unit, location, status, quantity, unit_cost, min_stock, max_stock, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'raw', ?, 'ไม่ระบุ', 'ACTIVE', 0, ?, 0, 1000, ?, ?)
+          `).run(siId, tenantId, sku, item.description, resolvedUnit, resolveUnitPrice(item), now, now)
+          materialId = siId
+        }
+
+        const itemUnitPrice = resolveUnitPrice(item)
+        const itemLineTotal = resolveLineTotal(item)
         insertItem.run(
           randomUUID().replace(/-/g, '').substring(0, 25),
-          tenantId, id, item.description, item.quantity, item.unit,
-          item.unitPrice, item.quantity * item.unitPrice
+          tenantId, id, materialId, item.description, item.quantity,
+          resolvedUnit, itemUnitPrice, itemLineTotal
         )
+        resultItems.push({ description: item.description, matched: !!found, materialId, unit: resolvedUnit })
       }
 
+      const newItems = resultItems.filter(r => !r.matched).length
+      const billTotalMismatch = billTotal != null && Math.abs(subtotal - billTotal) / Math.max(billTotal, 1) > 0.05
       return ok({
         poNumber,
         poId: id,
         status: 'DRAFT',
         itemCount: items.length,
         totalAmount: subtotal,
-        message: `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()}) — กรุณาไปยืนยันและเลือก Supplier ใน ERP web ก่อน Submit`,
+        billTotal: billTotal ?? null,
+        billTotalMismatch: billTotalMismatch || null,
+        supplier: supplierId ? { id: supplierId, name: supplier_hint, isNew: supplierCreated } : null,
+        items: resultItems,
+        message: [
+          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()})`,
+          supplierCreated ? `— สร้าง Supplier "${supplier_hint}" ใหม่` : '',
+          newItems > 0 ? `— สร้าง stock item ใหม่ ${newItems} รายการ` : '',
+          billTotalMismatch ? `⚠️ ยอดรวมที่คำนวณ ฿${subtotal.toLocaleString()} ต่างจากยอดในบิล ฿${billTotal!.toLocaleString()} — กรุณาตรวจสอบ` : '',
+        ].filter(Boolean).join(' '),
         supplier_hint: supplier_hint ?? null,
       })
     }
@@ -1533,6 +1634,138 @@ status: DRAFT=ร่าง, PENDING=รออนุมัติ, APPROVED=อน
           overdue_count: apOverdue.count,
         },
       })
+    }
+  )
+
+  // ── update_purchase_request ────────────────────────────────────────────────
+  server.tool(
+    'update_purchase_request',
+    `แก้ไขใบขอซื้อ (PR) ที่สถานะ DRAFT หรือ PENDING — ใช้เมื่อข้อมูลผิดพลาดหรือต้องการแก้ไขรายการ
+pr_id รับได้ทั้ง UUID หรือเลขที่ PR เช่น "PR-2026-00001"
+items ถ้าส่งมาจะแทนที่รายการทั้งหมด ถ้าไม่ส่งจะไม่เปลี่ยนรายการ`,
+    {
+      pr_id:       z.string().describe('ID หรือเลขที่ PR เช่น PR-2026-00001'),
+      department:  z.string().optional().describe('แผนก'),
+      required_date: z.string().optional().describe('วันที่ต้องการ (YYYY-MM-DD)'),
+      priority:    z.enum(['LOW','NORMAL','HIGH','URGENT']).optional(),
+      notes:       z.string().optional().describe('หมายเหตุ'),
+      items:       z.array(z.object({
+        description:        z.string().describe('ชื่อสินค้า/วัตถุดิบ'),
+        quantity:           z.number().positive(),
+        unit:               z.string().default('pcs'),
+        estimatedUnitPrice: z.number().min(0).default(0).describe('ราคาต่อหน่วย'),
+      })).optional().describe('รายการสินค้า — ถ้าส่งจะแทนที่รายการทั้งหมด'),
+    },
+    async (args) => {
+      const { pr_id, department, required_date, priority, notes, items } = args
+      let pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(pr_id, tenantId) as any
+      if (!pr) pr = db.prepare('SELECT * FROM purchase_requests WHERE pr_number = ? AND tenant_id = ?').get(pr_id, tenantId) as any
+      if (!pr) return ok({ success: false, message: `ไม่พบ PR: ${pr_id}` })
+      if (!['DRAFT', 'PENDING'].includes(pr.status)) return ok({ success: false, message: `ไม่สามารถแก้ไขได้ — PR สถานะ ${pr.status}` })
+
+      const now = new Date().toISOString()
+      const mappedItems = items?.map((i: { description: string; quantity: number; unit: string; estimatedUnitPrice: number }) => ({ ...i, estimatedTotalPrice: i.quantity * i.estimatedUnitPrice }))
+      const totalAmount = mappedItems ? mappedItems.reduce((s: number, i: { estimatedTotalPrice: number }) => s + i.estimatedTotalPrice, 0) : pr.total_amount
+
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE purchase_requests
+          SET department = COALESCE(?, department), required_date = COALESCE(?, required_date),
+              priority = COALESCE(?, priority), notes = COALESCE(?, notes),
+              total_amount = ?, updated_at = ?
+          WHERE id = ?
+        `).run(department ?? null, required_date ?? null, priority ?? null, notes ?? null, totalAmount, now, pr.id)
+
+        if (mappedItems) {
+          db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(pr.id)
+          const ins = db.prepare(`
+            INSERT INTO purchase_request_items
+              (id, tenant_id, purchase_request_id, description, item_name, quantity, unit, estimated_unit_price, estimated_total_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          for (const it of mappedItems) {
+            ins.run(randomUUID(), tenantId, pr.id, it.description, it.description, it.quantity, it.unit, it.estimatedUnitPrice, it.estimatedTotalPrice)
+          }
+        }
+      })()
+
+      const updated = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(pr.id) as any
+      const updatedItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(pr.id)
+      return ok({ message: `แก้ไข ${updated.pr_number} สำเร็จ`, pr: updated, items: updatedItems })
+    }
+  )
+
+  // ── update_purchase_order ──────────────────────────────────────────────────
+  server.tool(
+    'update_purchase_order',
+    `แก้ไขใบสั่งซื้อ (PO) ที่สถานะ DRAFT — ใช้เมื่อข้อมูลผิดพลาดหรือต้องการแก้ไขรายการ
+po_id รับได้ทั้ง UUID หรือเลขที่ PO เช่น "PO-00001"
+items ถ้าส่งมาจะแทนที่รายการทั้งหมด`,
+    {
+      po_id:         z.string().describe('ID หรือเลขที่ PO เช่น PO-00006'),
+      supplier_hint: z.string().optional().describe('ชื่อหรือรหัส supplier เพื่อค้นหา'),
+      expected_date: z.string().optional().describe('วันที่คาดรับสินค้า (YYYY-MM-DD)'),
+      notes:         z.string().optional().describe('หมายเหตุ'),
+      tax_rate:      z.number().min(0).max(30).optional().describe('อัตราภาษี % เช่น 7'),
+      items:         z.array(z.object({
+        description: z.string().describe('ชื่อสินค้า'),
+        quantity:    z.number().positive(),
+        unit:        z.string().default('pcs'),
+        unitPrice:   z.number().min(0),
+        materialId:  z.string().optional().describe('ID วัตถุดิบ ถ้ามี'),
+      })).optional().describe('รายการสินค้า — ถ้าส่งจะแทนที่รายการทั้งหมด'),
+    },
+    async (args) => {
+      const { po_id, supplier_hint, expected_date, notes, tax_rate, items } = args
+      let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
+      if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any
+      if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })
+      if (po.status !== 'DRAFT') return ok({ success: false, message: `ไม่สามารถแก้ไขได้ — PO สถานะ ${po.status} (ต้องเป็น DRAFT เท่านั้น)` })
+
+      const now = new Date().toISOString()
+
+      let supplierId: string | null = null
+      if (supplier_hint) {
+        const sup = db.prepare(`
+          SELECT id FROM suppliers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1
+        `).get(tenantId, `%${supplier_hint}%`, `%${supplier_hint}%`) as any
+        if (sup) supplierId = sup.id
+      }
+
+      const taxPct = tax_rate ?? po.tax_rate ?? 7
+      const mappedItems = items?.map((i: { description: string; quantity: number; unit: string; unitPrice: number; materialId?: string }) => ({ ...i, totalPrice: i.quantity * i.unitPrice }))
+      const subtotal = mappedItems ? mappedItems.reduce((s: number, i: { totalPrice: number }) => s + i.totalPrice, 0) : po.subtotal
+      const taxAmount = subtotal * (taxPct / 100)
+      const totalAmount = subtotal + taxAmount
+
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE purchase_orders
+          SET supplier_id = COALESCE(?, supplier_id), expected_date = COALESCE(?, expected_date),
+              notes = COALESCE(?, notes), tax_rate = ?, subtotal = ?, tax_amount = ?, total_amount = ?, updated_at = ?
+          WHERE id = ? AND tenant_id = ?
+        `).run(supplierId, expected_date ?? null, notes ?? null, taxPct, subtotal, taxAmount, totalAmount, now, po.id, tenantId)
+
+        if (mappedItems) {
+          db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(po.id)
+          const ins = db.prepare(`
+            INSERT INTO purchase_order_items
+              (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          for (const it of mappedItems) {
+            ins.run(randomUUID(), tenantId, po.id, it.materialId || null, it.description, it.quantity, it.unit, it.unitPrice, it.totalPrice)
+          }
+        }
+      })()
+
+      const updated = db.prepare(`
+        SELECT po.*, s.name as supplier_name FROM purchase_orders po
+        LEFT JOIN suppliers s ON po.supplier_id = s.id
+        WHERE po.id = ?
+      `).get(po.id) as any
+      const updatedItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(po.id)
+      return ok({ message: `แก้ไข ${updated.po_number} สำเร็จ`, po: updated, items: updatedItems })
     }
   )
 }

@@ -113,6 +113,11 @@ const salesService = {
     return data
   },
 
+  updateQuotation: async (id: string, payload: CreateQuotationPayload) => {
+    const { data } = await api.put(`/sales/quotations/${id}`, payload)
+    return data
+  },
+
   // Sales Orders
   getSalesOrders: async () => {
     const { data } = await api.get('/sales/sales-orders')
@@ -131,6 +136,11 @@ const salesService = {
 
   updateSOStatus: async (id: string, status: string) => {
     const { data } = await api.put(`/sales/sales-orders/${id}/status`, { status })
+    return data
+  },
+
+  updateSalesOrder: async (id: string, payload: CreateSOPayload) => {
+    const { data } = await api.put(`/sales/sales-orders/${id}`, payload)
     return data
   },
 

@@ -380,10 +380,10 @@ class LineBotService {
 
         // สร้าง items — ต้องส่ง purchase_request_id และ description ด้วย (NOT NULL ใน original schema)
         const insertItem = db.prepare(`
-            INSERT INTO purchase_request_items (id, purchase_request_id, pr_id, description, item_name, sort_order)
-            VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?)
+            INSERT INTO purchase_request_items (id, tenant_id, purchase_request_id, pr_id, description, item_name, sort_order)
+            VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?, ?)
         `)
-        parsed.items.forEach((name, i) => insertItem.run(prId, prId, name, name, i))
+        parsed.items.forEach((name, i) => insertItem.run(tenantId, prId, prId, name, name, i))
 
         const webUrl = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/purchase-requests/${prId}`
 

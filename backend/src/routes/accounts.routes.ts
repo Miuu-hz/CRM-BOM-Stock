@@ -400,22 +400,23 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
     
     if (account.is_system) {
-      return res.status(400).json({ success: false, message: 'Cannot delete system account' })
+      return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีระบบได้' })
     }
     
     // Check for transactions
     const txCount = (db.prepare('SELECT COUNT(*) as count FROM journal_lines WHERE account_id = ?').get(req.params.id) as any).count
     if (txCount > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Cannot delete account with transactions. Deactivate instead.' 
+      return res.status(400).json({
+        success: false,
+        message: `ไม่สามารถลบบัญชีที่มีรายการบันทึก (${txCount} รายการ) — สามารถปิดใช้งานแทนได้`,
+        canDeactivate: true
       })
     }
-    
+
     // Check for children
     const childCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE parent_id = ?').get(req.params.id) as any).count
     if (childCount > 0) {
-      return res.status(400).json({ success: false, message: 'Cannot delete account with sub-accounts' })
+      return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีที่มีบัญชีย่อย กรุณาลบบัญชีย่อยก่อน' })
     }
     
     db.prepare('DELETE FROM accounts WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)

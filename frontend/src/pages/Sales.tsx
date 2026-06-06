@@ -31,6 +31,7 @@ import {
   ImageIcon,
   Trash2,
   Eye,
+  Pencil,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -317,6 +318,8 @@ const Sales = () => {
   const [showCreateQT, setShowCreateQT]     = useState(false)
   const [showCreateSO, setShowCreateSO]     = useState(false)
   const [showCreateCN, setShowCreateCN]     = useState(false)
+  const [editQTData, setEditQTData]         = useState<any>(null)
+  const [editSOData, setEditSOData]         = useState<any>(null)
   const [detailQT, setDetailQT]             = useState<Quotation | null>(null)
   const [detailSO, setDetailSO]             = useState<SalesOrder | null>(null)
   const [detailInv, setDetailInv]           = useState<Invoice | null>(null)
@@ -488,7 +491,18 @@ const Sales = () => {
     else if (type === 'ใบค้างส่ง') setDetailBO(item)
     else toast(`ดูรายละเอียด ${type} — กำลังพัฒนา`)
   }
-  const handleEdit = (_item: any, type: string) => toast(`แก้ไข ${type} — กำลังพัฒนา`)
+  const handleEditQT = async (q: Quotation) => {
+    try {
+      const r = await salesService.getQuotation(q.id)
+      setEditQTData(r.data)
+    } catch { toast.error('โหลดข้อมูลไม่สำเร็จ') }
+  }
+  const handleEditSO = async (so: SalesOrder) => {
+    try {
+      const r = await salesService.getSalesOrder(so.id)
+      setEditSOData(r.data)
+    } catch { toast.error('โหลดข้อมูลไม่สำเร็จ') }
+  }
   const handleRecordPayment    = (invoice: Invoice) => setDetailInv(invoice)
   const handleConvertQtToSO    = (quotation: Quotation) => setConvertQT(quotation)
 
@@ -822,6 +836,12 @@ const Sales = () => {
                       <div className="flex justify-end gap-1.5">
                         <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
                           className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                        {['DRAFT', 'SENT'].includes(q.status) && (
+                          <button onClick={() => handleEditQT(q)}
+                            className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
                         {next && (
                           <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
                             className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -876,6 +896,12 @@ const Sales = () => {
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
+                    {['DRAFT', 'SENT'].includes(q.status) && (
+                      <button onClick={() => handleEditQT(q)}
+                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
                     {next && (
                       <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
@@ -1026,6 +1052,12 @@ const Sales = () => {
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                          {order.status === 'DRAFT' && (
+                            <button onClick={() => handleEditSO(order)}
+                              className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
                           {next && (
                             <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -1105,6 +1137,12 @@ const Sales = () => {
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
+                    {order.status === 'DRAFT' && (
+                      <button onClick={() => handleEditSO(order)}
+                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
                     {next && (
                       <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
@@ -1608,7 +1646,7 @@ const Sales = () => {
               <span>หมดอายุ {template.expiration_days} วัน</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => handleEdit(template, 'เทมเพลต')}
+              <button onClick={() => toast('แก้ไขเทมเพลต: กำลังพัฒนา')}
                 className="flex-1 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm transition-colors">
                 แก้ไข
               </button>
@@ -2065,10 +2103,24 @@ const Sales = () => {
           onSaved={() => { setShowCreateQT(false); fetchQuotations() }}
         />
       )}
+      {editQTData && (
+        <CreateQuotationModal
+          editData={editQTData}
+          onClose={() => setEditQTData(null)}
+          onSaved={() => { setEditQTData(null); fetchQuotations() }}
+        />
+      )}
       {showCreateSO && (
         <CreateSOModal
           onClose={() => setShowCreateSO(false)}
           onSaved={() => { setShowCreateSO(false); fetchSalesOrders() }}
+        />
+      )}
+      {editSOData && (
+        <CreateSOModal
+          editData={editSOData}
+          onClose={() => setEditSOData(null)}
+          onSaved={() => { setEditSOData(null); fetchSalesOrders() }}
         />
       )}
       {convertQT && (
@@ -2528,21 +2580,38 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
   )
 }
 
-// ─── Create Quotation Modal ───────────────────────────────────────────────────
-function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+// ─── Create / Edit Quotation Modal ───────────────────────────────────────────
+function CreateQuotationModal({ onClose, onSaved, editData }: {
+  onClose: () => void; onSaved: () => void; editData?: any
+}) {
   useModalClose(onClose)
+  const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [expiryDate, setExpiryDate] = useState('')
-  const [taxRate, setTaxRate] = useState(0)
-  const [discountAmount, setDiscountAmount] = useState(0)
-  const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
+  const [expiryDate, setExpiryDate] = useState(editData?.expiry_date?.split('T')[0] || '')
+  const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
+  const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
+  const [notes, setNotes] = useState(editData?.notes || '')
+  const [items, setItems] = useState<LineItem[]>(
+    editData?.items?.length
+      ? editData.items.map((it: any) => ({
+          productId: it.stock_item_id || it.product_id || undefined,
+          productName: it.product_name || '',
+          quantity: it.quantity,
+          unit: it.unit || '',
+          unitPrice: it.unit_price,
+          discountPercent: it.discount_percent || 0,
+        }))
+      : [{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }]
+  )
   const [products, setProducts] = useState<Product[]>([])
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
 
   useEffect(() => {
     salesService.getProducts().then(setProducts).catch(() => {})
+    if (isEdit && editData?.customer_name) {
+      salesService.searchCustomers(editData.customer_name).then(r => { if (r.length) setCustomer(r[0]) }).catch(() => {})
+    }
   }, [])
 
   const handleSave = async () => {
@@ -2550,7 +2619,7 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
     if (items.every(it => !it.productName && !it.productId)) { toast.error('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return }
     setSaving(true)
     try {
-      await salesService.createQuotation({
+      const payload = {
         customerId: customer.id,
         expiryDate: expiryDate || undefined,
         taxRate,
@@ -2564,11 +2633,17 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
           unitPrice: it.unitPrice,
           discountPercent: it.discountPercent,
         })),
-      })
-      toast.success('สร้างใบเสนอราคาสำเร็จ')
+      }
+      if (isEdit) {
+        await salesService.updateQuotation(editData.id, payload)
+        toast.success('บันทึกการแก้ไขใบเสนอราคาสำเร็จ')
+      } else {
+        await salesService.createQuotation(payload)
+        toast.success('สร้างใบเสนอราคาสำเร็จ')
+      }
       onSaved()
     } catch {
-      toast.error('สร้างใบเสนอราคาไม่สำเร็จ')
+      toast.error(isEdit ? 'แก้ไขใบเสนอราคาไม่สำเร็จ' : 'สร้างใบเสนอราคาไม่สำเร็จ')
     } finally {
       setSaving(false)
     }
@@ -2581,7 +2656,8 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <FileText className="w-5 h-5 text-[var(--primary)]" /> สร้างใบเสนอราคา (QT)
+            <FileText className="w-5 h-5 text-[var(--primary)]" />
+            {isEdit ? `แก้ไขใบเสนอราคา ${editData.quotation_number}` : 'สร้างใบเสนอราคา (QT)'}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -2626,8 +2702,8 @@ function CreateQuotationModal({ onClose, onSaved }: { onClose: () => void; onSav
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
-            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
-            สร้างใบเสนอราคา
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : isEdit ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {isEdit ? 'บันทึกการแก้ไข' : 'สร้างใบเสนอราคา'}
           </button>
         </div>
       </motion.div>
@@ -2780,17 +2856,29 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
   )
 }
 
-// ─── Create Sales Order Modal ─────────────────────────────────────────────────
-function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
-  sourceQuotation?: Quotation; onClose: () => void; onSaved: () => void
+// ─── Create / Edit Sales Order Modal ─────────────────────────────────────────
+function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
+  sourceQuotation?: Quotation; onClose: () => void; onSaved: () => void; editData?: any
 }) {
   useModalClose(onClose)
+  const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [deliveryDate, setDeliveryDate] = useState('')
-  const [taxRate, setTaxRate] = useState(0)
-  const [discountAmount, setDiscountAmount] = useState(0)
-  const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<LineItem[]>([{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
+  const [deliveryDate, setDeliveryDate] = useState(editData?.delivery_date?.split('T')[0] || '')
+  const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
+  const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
+  const [notes, setNotes] = useState(editData?.notes || '')
+  const [items, setItems] = useState<LineItem[]>(
+    editData?.items?.length
+      ? editData.items.map((it: any) => ({
+          productId: it.stock_item_id || it.product_id || undefined,
+          productName: it.product_name || '',
+          quantity: it.quantity,
+          unit: it.unit || '',
+          unitPrice: it.unit_price,
+          discountPercent: it.discount_percent || 0,
+        }))
+      : [{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }]
+  )
   const [products, setProducts] = useState<Product[]>([])
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
@@ -2828,6 +2916,12 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
           }).catch(() => {})
         }
       }
+      // Edit mode: load existing customer
+      if (isEdit && editData?.customer_name) {
+        salesService.searchCustomers(editData.customer_name).then(r => {
+          if (r.length) setCustomer(r[0])
+        }).catch(() => {})
+      }
     }).catch(() => {})
   }, [])
 
@@ -2836,7 +2930,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
     if (items.every(it => !it.productName && !it.productId)) { toast.error('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return }
     setSaving(true)
     try {
-      await salesService.createSalesOrder({
+      const payload = {
         customerId: customer.id,
         quotationId: sourceQuotation?.id,
         deliveryDate: deliveryDate || undefined,
@@ -2851,11 +2945,17 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
           unitPrice: it.unitPrice,
           discountPercent: it.discountPercent,
         })),
-      })
-      toast.success('สร้างคำสั่งขายสำเร็จ')
+      }
+      if (isEdit) {
+        await salesService.updateSalesOrder(editData.id, payload)
+        toast.success('บันทึกการแก้ไขคำสั่งขายสำเร็จ')
+      } else {
+        await salesService.createSalesOrder(payload)
+        toast.success('สร้างคำสั่งขายสำเร็จ')
+      }
       onSaved()
     } catch {
-      toast.error('สร้างคำสั่งขายไม่สำเร็จ')
+      toast.error(isEdit ? 'แก้ไขคำสั่งขายไม่สำเร็จ' : 'สร้างคำสั่งขายไม่สำเร็จ')
     } finally {
       setSaving(false)
     }
@@ -2869,7 +2969,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-purple-400" />
-            {sourceQuotation ? `แปลง ${sourceQuotation.quotation_number} → SO` : 'สร้างคำสั่งขาย (SO)'}
+            {isEdit ? `แก้ไขคำสั่งขาย ${editData.so_number}` : sourceQuotation ? `แปลง ${sourceQuotation.quotation_number} → SO` : 'สร้างคำสั่งขาย (SO)'}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
@@ -2912,8 +3012,8 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved }: {
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
-            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
-            {sourceQuotation ? 'แปลงเป็นคำสั่งขาย' : 'สร้างคำสั่งขาย'}
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : isEdit ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {isEdit ? 'บันทึกการแก้ไข' : sourceQuotation ? 'แปลงเป็นคำสั่งขาย' : 'สร้างคำสั่งขาย'}
           </button>
         </div>
       </motion.div>

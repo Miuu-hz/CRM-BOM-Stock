@@ -342,6 +342,65 @@ router.post('/quotations', async (req: Request, res: Response) => {
   }
 })
 
+// PUT update quotation content (DRAFT/SENT only)
+router.put('/quotations/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { customerId, expiryDate, notes, items, taxRate, discountAmount } = req.body
+    const now = new Date().toISOString()
+
+    const existing = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!existing) return res.status(404).json({ success: false, message: 'Quotation not found' })
+    if (!['DRAFT', 'SENT'].includes(existing.status)) {
+      return res.status(400).json({ success: false, message: `ไม่สามารถแก้ไขได้ — สถานะ ${existing.status}` })
+    }
+
+    let subtotal = 0
+    if (items && items.length > 0) {
+      subtotal = items.reduce((sum: number, item: any) => {
+        return sum + item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
+      }, 0)
+    }
+    const discount = discountAmount || 0
+    const tax = taxRate ?? existing.tax_rate ?? 0
+    const afterDiscount = subtotal - discount
+    const taxAmount = afterDiscount * (tax / 100)
+    const totalAmount = afterDiscount + taxAmount
+
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE quotations
+        SET customer_id = COALESCE(?, customer_id), expiry_date = ?,
+            subtotal = ?, discount_amount = ?, tax_rate = ?, tax_amount = ?, total_amount = ?,
+            notes = COALESCE(?, notes), updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(customerId || null, expiryDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes ?? null, now, req.params.id, tenantId)
+
+      if (items) {
+        db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)
+        const ins = db.prepare(`
+          INSERT INTO quotation_items (id, tenant_id, quotation_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const item of items) {
+          const itemTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
+          ins.run(generateId(), tenantId, req.params.id,
+            item.productId || null, null, item.productName || null,
+            item.quantity, item.unit || '', item.unitPrice, item.discountPercent || 0, itemTotal, item.notes || '')
+        }
+      }
+    })
+    transaction()
+
+    const quotation = db.prepare('SELECT * FROM quotations WHERE id = ?').get(req.params.id)
+    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(req.params.id)
+    res.json({ success: true, data: { ...quotation, items: quotationItems } })
+  } catch (error) {
+    console.error('Update quotation error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update quotation' })
+  }
+})
+
 // PUT update quotation status
 router.put('/quotations/:id/status', async (req: Request, res: Response) => {
   try {
@@ -499,6 +558,65 @@ router.post('/sales-orders', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create sales order error:', error)
     res.status(500).json({ success: false, message: 'Failed to create sales order' })
+  }
+})
+
+// PUT update sales order content (DRAFT only)
+router.put('/sales-orders/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { customerId, deliveryDate, notes, items, taxRate, discountAmount } = req.body
+    const now = new Date().toISOString()
+
+    const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!existing) return res.status(404).json({ success: false, message: 'Sales order not found' })
+    if (existing.status !== 'DRAFT') {
+      return res.status(400).json({ success: false, message: `ไม่สามารถแก้ไขได้ — สถานะ ${existing.status} (ต้องเป็น DRAFT เท่านั้น)` })
+    }
+
+    let subtotal = 0
+    if (items && items.length > 0) {
+      subtotal = items.reduce((sum: number, item: any) => {
+        return sum + item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
+      }, 0)
+    }
+    const discount = discountAmount || 0
+    const tax = taxRate ?? existing.tax_rate ?? 0
+    const afterDiscount = subtotal - discount
+    const taxAmount = afterDiscount * (tax / 100)
+    const totalAmount = afterDiscount + taxAmount
+
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE sales_orders
+        SET customer_id = COALESCE(?, customer_id), delivery_date = ?,
+            subtotal = ?, discount_amount = ?, tax_rate = ?, tax_amount = ?, total_amount = ?,
+            notes = COALESCE(?, notes), updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(customerId || null, deliveryDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes ?? null, now, req.params.id, tenantId)
+
+      if (items) {
+        db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
+        const ins = db.prepare(`
+          INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const item of items) {
+          const itemTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
+          ins.run(generateId(), tenantId, req.params.id,
+            item.productId || null, null, item.productName || null,
+            item.quantity, item.unit || '', item.unitPrice, item.discountPercent || 0, itemTotal, item.notes || '')
+        }
+      }
+    })
+    transaction()
+
+    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id)
+    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(req.params.id)
+    res.json({ success: true, data: { ...salesOrder, items: salesOrderItems } })
+  } catch (error) {
+    console.error('Update sales order error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update sales order' })
   }
 })
 

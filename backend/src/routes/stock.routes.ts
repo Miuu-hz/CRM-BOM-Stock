@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
-import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
 
 // Multer config: store in uploads/stock-images/
@@ -195,14 +195,15 @@ router.post('/', async (req: Request, res: Response) => {
 
     const id = generateId()
     const now = new Date().toISOString()
-    const effectiveBaseUnit = baseUnit || unit
-    const effectiveDisplayUnit = displayUnit || unit
-    const effectiveSaleUnit = saleUnit || effectiveBaseUnit
+    const normUnit = normalizeUnit(unit)
+    const effectiveBaseUnit = normalizeUnit(baseUnit || unit)
+    const effectiveDisplayUnit = normalizeUnit(displayUnit || unit)
+    const effectiveSaleUnit = normalizeUnit(saleUnit || effectiveBaseUnit)
 
     db.prepare(`
       INSERT INTO stock_items (id, tenant_id, sku, gs1_barcode, name, category, quantity, unit, base_unit, sale_unit, display_unit, unit_cost, unit_price, min_stock, max_stock, location, status, is_pos_enabled, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
-    `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, unit, effectiveBaseUnit, effectiveSaleUnit, effectiveDisplayUnit, unitCost ? Number(unitCost) : 0, unitPrice ? Number(unitPrice) : 0, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
+    `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, normUnit, effectiveBaseUnit, effectiveSaleUnit, effectiveDisplayUnit, unitCost ? Number(unitCost) : 0, unitPrice ? Number(unitPrice) : 0, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
 
     const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id)
     
@@ -250,7 +251,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         is_pos_enabled = COALESCE(?, is_pos_enabled),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, gs1Barcode, category, unit || undefined, baseUnit || undefined, saleUnit || undefined, displayUnit || undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
+    `).run(name, gs1Barcode, category, unit ? normalizeUnit(unit) : undefined, baseUnit ? normalizeUnit(baseUnit) : undefined, saleUnit ? normalizeUnit(saleUnit) : undefined, displayUnit ? normalizeUnit(displayUnit) : undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
 
     // Record price change in movements
     if (unitCost !== undefined && currentItem && Number(unitCost) !== Number(currentItem.unit_cost)) {

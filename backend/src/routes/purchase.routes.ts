@@ -155,6 +155,63 @@ router.post('/requests', async (req: Request, res: Response) => {
   }
 })
 
+// PUT update PR content (DRAFT/PENDING only — keeps current status unless explicitly changed)
+router.put('/requests/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { department, requiredDate, priority, notes, items } = req.body
+    const now = new Date().toISOString()
+
+    const existing = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!existing) return res.status(404).json({ success: false, message: 'Purchase request not found' })
+    if (!['DRAFT', 'PENDING'].includes(existing.status)) {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถแก้ไขได้ — สถานะต้องเป็น DRAFT หรือ PENDING เท่านั้น' })
+    }
+
+    let totalAmount = 0
+    if (items && items.length > 0) {
+      totalAmount = items.reduce((sum: number, item: any) => sum + (item.estimatedTotalPrice || (item.quantity || 0) * (item.estimatedUnitPrice || 0)), 0)
+    }
+
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE purchase_requests
+        SET department = COALESCE(?, department), required_date = COALESCE(?, required_date),
+            priority = COALESCE(?, priority), notes = COALESCE(?, notes),
+            total_amount = ?, updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(department ?? null, requiredDate ?? null, priority ?? null, notes ?? null, totalAmount, now, req.params.id, tenantId)
+
+      if (items) {
+        db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(req.params.id)
+        const insertItem = db.prepare(`
+          INSERT INTO purchase_request_items (id, tenant_id, purchase_request_id, material_id, description,
+            quantity, unit, estimated_unit_price, estimated_total_price, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const item of items) {
+          const qty = item.quantity || 0
+          const price = item.estimatedUnitPrice || 0
+          insertItem.run(
+            generateId(), tenantId, req.params.id,
+            item.materialId || null, item.description || '',
+            qty, item.unit || '', price, item.estimatedTotalPrice || qty * price, item.notes || ''
+          )
+        }
+      }
+    })
+
+    transaction()
+
+    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(req.params.id)
+    const requestItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(req.params.id)
+    res.json({ success: true, data: { ...request, items: requestItems } })
+  } catch (error) {
+    console.error('Update PR error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update purchase request' })
+  }
+})
+
 // PUT update PR status (approve/reject)
 router.put('/requests/:id/status', async (req: Request, res: Response) => {
   try {

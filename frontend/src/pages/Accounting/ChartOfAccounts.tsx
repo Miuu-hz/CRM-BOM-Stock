@@ -232,7 +232,7 @@ const ChartOfAccounts = () => {
 
   const handleDelete = async (account: Account) => {
     if (!confirm(`ต้องการลบบัญชี "${account.name}" (${account.code})?`)) return
-    
+
     try {
       const response = await accountsApi.delete(account.id)
       if (response.data.success) {
@@ -240,7 +240,29 @@ const ChartOfAccounts = () => {
         fetchAccounts()
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'ลบบัญชีไม่สำเร็จ')
+      const data = error.response?.data
+      const msg = data?.message || 'ลบบัญชีไม่สำเร็จ'
+      if (data?.canDeactivate) {
+        const yes = confirm(
+          `⚠️ ${msg}\n\n` +
+          `การปิดใช้งานบัญชี "${account.name}" (${account.code}) จะมีผลดังนี้:\n` +
+          `• ไม่สามารถเลือกบัญชีนี้ในรายการบันทึกบัญชีใหม่ได้\n` +
+          `• รายการเก่าที่ผ่านมาแล้วจะยังคงแสดงบัญชีนี้ตามเดิม\n` +
+          `• สามารถเปิดใช้งานคืนได้ภายหลัง\n\n` +
+          `ต้องการปิดใช้งานบัญชีนี้หรือไม่?`
+        )
+        if (yes) {
+          try {
+            await accountsApi.update(account.id, { isActive: false })
+            toast.success(`ปิดใช้งานบัญชี "${account.name}" แล้ว`)
+            fetchAccounts()
+          } catch {
+            toast.error('ปิดใช้งานบัญชีไม่สำเร็จ')
+          }
+        }
+      } else {
+        toast.error(msg)
+      }
     }
   }
 

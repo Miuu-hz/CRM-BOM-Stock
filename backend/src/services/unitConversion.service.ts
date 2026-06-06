@@ -28,6 +28,11 @@ const STANDARD_CONVERSIONS: Record<string, number> = {
   'kg->lb': 2.20462,
   'oz->g': 28.3495,
   'g->oz': 0.035274,
+  // ขีด (hectogram) = 100 กรัม
+  'hg->g': 100,
+  'g->hg': 0.01,
+  'hg->kg': 0.1,
+  'kg->hg': 10,
 
   // ความยาว
   'inch->cm': 2.54,
@@ -82,7 +87,14 @@ const STANDARD_CONVERSIONS: Record<string, number> = {
 const UNIT_NAME_MAP: Record<string, string> = {
   // น้ำหนัก
   'กิโลกรัม': 'kg', 'กรัม': 'g', 'มิลลิกรัม': 'mg',
+  'ขีด': 'hg',
   'ปอนด์': 'lb', 'ออนซ์': 'oz',
+  // ตัวย่อ kg ที่ใช้ทั่วไป
+  'ก.ก.': 'kg', 'กก.': 'kg', 'กก': 'kg', 'กิโล': 'kg',
+  // ตัวย่อ g ที่ใช้ทั่วไป
+  'กรัม.': 'g',
+  // ตัวย่อ ml
+  'ซีซี': 'ml', 'cc': 'ml',
   // ความยาว
   'นิ้ว': 'inch', 'เซนติเมตร': 'cm', 'มิลลิเมตร': 'mm',
   'เมตร': 'm', 'กิโลเมตร': 'km', 'ฟุต': 'ft', 'หลา': 'yard',
@@ -125,7 +137,7 @@ export function getUnitDisplayName(unit: string): string {
 // Unit Category Mapping
 // ===================================================================
 const UNIT_CATEGORIES: Record<string, string[]> = {
-  weight: ['kg', 'g', 'mg', 'lb', 'oz'],
+  weight: ['kg', 'g', 'mg', 'hg', 'lb', 'oz'],
   length: ['inch', 'cm', 'mm', 'm', 'km', 'ft', 'yard'],
   volume: ['l', 'ml', 'ltr', 'gallon', 'fl_oz'],
   area: ['m2', 'cm2', 'sqm', 'sqcm'],

@@ -7,7 +7,7 @@ export interface UnitOption {
 }
 
 export const UNIT_LABELS: Record<string, string> = {
-  pcs: 'ชิ้น', kg: 'กิโลกรัม', g: 'กรัม', mg: 'มิลลิกรัม',
+  pcs: 'ชิ้น', kg: 'กิโลกรัม', g: 'กรัม', mg: 'มิลลิกรัม', hg: 'ขีด',
   lb: 'ปอนด์', oz: 'ออนซ์', m: 'เมตร', cm: 'เซนติเมตร',
   mm: 'มิลลิเมตร', km: 'กิโลเมตร', inch: 'นิ้ว', ft: 'ฟุต',
   yard: 'หลา', l: 'ลิตร', ltr: 'ลิตร', ml: 'มิลลิลิตร',
@@ -23,6 +23,7 @@ export const UNIT_LABELS: Record<string, string> = {
 export const BASE_UNITS: UnitOption[] = [
   { value: 'pcs', label: 'ชิ้น' },
   { value: 'kg', label: 'กิโลกรัม' },
+  { value: 'hg', label: 'ขีด' },
   { value: 'g', label: 'กรัม' },
   { value: 'm', label: 'เมตร' },
   { value: 'cm', label: 'เซนติเมตร' },
