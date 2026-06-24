@@ -12,8 +12,11 @@ export const getKimiStatus = async () => {
   return data as { success: boolean; provider: string; version: string }
 }
 
-export const kimiChat = async (message: string) => {
-  const { data } = await api.post('/llm-providers/chat', { message })
+export const kimiChat = async (message: string, imageBase64?: string, imageExt?: string) => {
+  const { data } = await api.post('/llm-providers/chat', {
+    message,
+    ...(imageBase64 ? { imageBase64, imageExt: imageExt || 'jpg' } : {}),
+  })
   return data as { success: boolean; reply: string; message?: string }
 }
 

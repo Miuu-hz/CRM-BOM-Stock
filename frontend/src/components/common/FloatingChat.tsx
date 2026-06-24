@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, X, Send, RefreshCw, Minimize2 } from 'lucide-react'
+import { Bot, X, Send, RefreshCw, Minimize2, Paperclip, ImageOff } from 'lucide-react'
 import { kimiChat } from '../../services/llm'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  image?: string  // data URL for preview
 }
 
 export default function FloatingChat() {
@@ -13,35 +14,54 @@ export default function FloatingChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [pendingImage, setPendingImage] = useState<{ dataUrl: string; ext: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 150)
-    }
+    if (open) setTimeout(() => inputRef.current?.focus(), 150)
   }, [open])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const reader = new FileReader()
+    reader.onload = ev => {
+      setPendingImage({ dataUrl: ev.target?.result as string, ext })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   const send = async () => {
     const msg = input.trim()
-    if (!msg || loading) return
+    if ((!msg && !pendingImage) || loading) return
 
+    const imageSnapshot = pendingImage
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: msg }])
+    setPendingImage(null)
+    setMessages(prev => [...prev, {
+      role: 'user',
+      content: msg || '(รูปภาพ)',
+      image: imageSnapshot?.dataUrl,
+    }])
     setLoading(true)
 
     try {
-      const res = await kimiChat(msg)
+      const res = await kimiChat(msg, imageSnapshot?.dataUrl, imageSnapshot?.ext)
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: res.success ? res.reply : (res.message ?? 'เกิดข้อผิดพลาด'),
       }])
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'เชื่อมต่อ Kimi ไม่สำเร็จ' }])
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? 'ระบบ AI ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่'
+      setMessages(prev => [...prev, { role: 'assistant', content: msg }])
     } finally {
       setLoading(false)
     }
@@ -131,6 +151,13 @@ export default function FloatingChat() {
                         : 'bg-[var(--surface-2)] text-[var(--fg-2)] rounded-bl-sm border border-[var(--border)]'
                     }`}
                   >
+                    {m.image && (
+                      <img
+                        src={m.image}
+                        alt="แนบรูป"
+                        className="rounded-lg mb-2 max-h-32 object-contain w-full"
+                      />
+                    )}
                     {m.content}
                   </div>
                 </div>
@@ -154,9 +181,43 @@ export default function FloatingChat() {
               <div ref={bottomRef} />
             </div>
 
+            {/* Image preview */}
+            {pendingImage && (
+              <div className="px-3 pt-2 shrink-0">
+                <div className="relative inline-block">
+                  <img
+                    src={pendingImage.dataUrl}
+                    alt="preview"
+                    className="h-16 w-auto rounded-lg border border-[var(--border)] object-cover"
+                  />
+                  <button
+                    onClick={() => setPendingImage(null)}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--fg-3)] text-[var(--bg)] flex items-center justify-center"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Input */}
             <div className="px-3 py-3 border-t border-[var(--border)] bg-[var(--surface-2)] shrink-0">
               <div className="flex gap-2 items-end">
+                {/* Image attach button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 text-[var(--fg-4)] hover:text-[var(--primary)] hover:bg-[var(--bg)] rounded-xl transition-colors shrink-0"
+                  title="แนบรูปภาพ"
+                >
+                  {pendingImage ? <ImageOff className="w-4 h-4 text-phopy-indigo" /> : <Paperclip className="w-4 h-4" />}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -174,7 +235,7 @@ export default function FloatingChat() {
                 />
                 <button
                   onClick={send}
-                  disabled={loading || !input.trim()}
+                  disabled={loading || (!input.trim() && !pendingImage)}
                   className="p-2 rounded-xl bg-phopy-indigo text-white hover:bg-phopy-indigo/80 disabled:opacity-40 transition-colors shrink-0"
                 >
                   {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
