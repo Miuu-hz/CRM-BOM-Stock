@@ -245,7 +245,7 @@ function ModalShell({ title, onClose, children, footer }: {
       onClick={e => e.stopPropagation()}
       className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] w-full max-w-4xl max-h-[90vh] flex flex-col">
       <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-        <h2 className="text-lg font-bold text-white">{title}</h2>
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">{title}</h2>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
           <X className="w-4 h-4" />
         </button>
@@ -267,7 +267,7 @@ const Field = ({ label, required, children }: { label: string; required?: boolea
 )
 
 const inputCls = (disabled?: boolean) =>
-  `w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white text-sm focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
+  `w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
 
 const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onAddNew }: {
   materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
@@ -290,7 +290,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           disabled={disabled}
           placeholder="ค้นหา รหัส / ชื่อวัสดุ..."
-          className={`w-full pl-8 pr-7 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
@@ -326,7 +326,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
                 <button key={m.id} onMouseDown={() => { onChange(m.id, m); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === m.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-20 shrink-0">{m.code}</span>
-                  <span className="text-sm text-white flex-1 truncate">{m.name}</span>
+                  <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{m.name}</span>
                   <span className="text-xs text-[var(--fg-4)] shrink-0">{m.unit}</span>
                   <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
                     m.stockStatus === 'ADEQUATE' ? 'text-success bg-[var(--success-soft)]' :
@@ -367,7 +367,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder={placeholder}
-          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
@@ -387,7 +387,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
                 <button key={s.id} onMouseDown={() => { onChange(s.id); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === s.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-24 shrink-0">{s.code}</span>
-                  <span className="text-sm text-white flex-1 truncate">{s.name}</span>
+                  <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{s.name}</span>
                 </button>
               ))}
             </>
@@ -419,7 +419,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder="ค้นหาเลขที่ใบสั่งซื้อ / ผู้ขาย..."
-          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('')}
@@ -439,7 +439,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
                 <button key={o.id} onMouseDown={() => { onChange(o.id); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === o.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-28 shrink-0">{o.po_number}</span>
-                  <span className="text-sm text-white flex-1 truncate">{o.supplier_name}</span>
+                  <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{o.supplier_name}</span>
                   <span className="text-xs text-[var(--fg-4)] shrink-0">{o.status === 'RECEIVED' ? 'รับครบ' : o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออนุมัติ/รับ'}</span>
                 </button>
               ))}
@@ -492,7 +492,7 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
             placeholder="+ เพิ่มใบรับสินค้า GR..."
-            className="w-full pl-8 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
+            className="w-full pl-8 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
           />
         </div>
       )}
@@ -548,7 +548,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
           placeholder="ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ..."
-          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
           <button onMouseDown={() => onChange('', undefined)}
@@ -568,7 +568,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
                 <button key={r.id} onMouseDown={() => { onChange(r.id, r); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === r.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-28 shrink-0">{r.pr_number}</span>
-                  <span className="text-sm text-white flex-1 truncate">{r.requester_name}</span>
+                  <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{r.requester_name}</span>
                   <span className={`text-xs shrink-0 px-1.5 py-0.5 rounded-full ${
                     r.status === 'APPROVED' ? 'text-success bg-[var(--success-soft)]' :
                     r.status === 'PENDING' ? 'text-blue-400 bg-blue-500/10' :
@@ -595,7 +595,7 @@ const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string;
         <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-danger'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
         <span className="text-[var(--fg-2)] flex-1">{e.account}</span>
         <span className="text-[var(--fg-3)]">{e.label}</span>
-        {e.amount !== undefined && <span className="text-white font-medium">{formatCurrency(e.amount)}</span>}
+        {e.amount !== undefined && <span className="text-[var(--fg-1)] font-medium">{formatCurrency(e.amount)}</span>}
       </div>
     ))}
   </div>
@@ -626,7 +626,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
-          <h3 className="text-white font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
+          <h3 className="text-[var(--fg-1)] font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
           <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 space-y-3">
@@ -635,33 +635,33 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1">รหัสผู้ขาย</label>
               <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value }))}
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อบริษัท <span className="text-danger">*</span></label>
               <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                 placeholder="ชื่อบริษัท / ร้านค้า"
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
           <div>
             <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อผู้ติดต่อ <span className="text-danger">*</span></label>
             <input value={form.contactName} onChange={e => setForm(p => ({ ...p, contactName: e.target.value }))}
               placeholder="ชื่อ-นามสกุล"
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1">เบอร์โทร</label>
               <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
                 placeholder="0xx-xxx-xxxx"
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1">อีเมล</label>
               <input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                 placeholder="email@example.com"
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
           <p className="text-xs text-[var(--fg-4)]">สามารถแก้ไขข้อมูลเพิ่มเติมได้ที่เมนู CRM → Suppliers</p>
@@ -725,7 +725,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
     setSaving(false)
   }
 
-  const inp = 'w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo'
+  const inp = 'w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo'
 
   return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
@@ -734,7 +734,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg shadow-2xl">
         <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
           <div>
-            <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+            <h3 className="text-[var(--fg-1)] font-semibold text-sm flex items-center gap-2">
               <Package className="w-4 h-4 text-success" />
               เพิ่มสินค้าใหม่เข้า Stock
             </h3>
@@ -1748,7 +1748,7 @@ const Purchase = () => {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-bold text-white">แปลงเป็นใบสั่งซื้อ</h2>
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">แปลงเป็นใบสั่งซื้อ</h2>
             <p className="text-sm text-[var(--fg-3)] mt-0.5">เลือกผู้ขายเพื่อสร้าง PO จากใบขอซื้อนี้</p>
           </div>
           <button onClick={() => setConvertPRId(null)} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
@@ -1761,7 +1761,7 @@ const Purchase = () => {
               ผู้ขาย <span className="text-danger">*</span>
             </label>
             <select value={convertForm.supplier_id} onChange={e => setConvertForm(p => ({ ...p, supplier_id: e.target.value }))}
-              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo">
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
               <option value="">-- เลือกผู้ขาย --</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
             </select>
@@ -1769,12 +1769,12 @@ const Purchase = () => {
           <div>
             <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">กำหนดส่งสินค้า</label>
             <input type="date" value={convertForm.expected_date} onChange={e => setConvertForm(p => ({ ...p, expected_date: e.target.value }))}
-              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div>
             <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">หมายเหตุ</label>
             <textarea value={convertForm.notes} onChange={e => setConvertForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
         <div className="p-5 border-t border-[var(--border)] flex gap-3">
@@ -1898,7 +1898,7 @@ const Purchase = () => {
         {/* Status grids */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-[var(--primary)]" /> สถานะใบสั่งซื้อ
             </h3>
             <div className="space-y-2">
@@ -1916,7 +1916,7 @@ const Purchase = () => {
             </div>
           </div>
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-success" /> สถานะการจ่ายเงิน
             </h3>
             <div className="space-y-2">
@@ -1942,7 +1942,7 @@ const Purchase = () => {
     <div className="relative flex-1 max-w-xs">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
       <input type="text" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)}
-        className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm" />
+        className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm" />
     </div>
   )
 
@@ -2038,11 +2038,11 @@ const Purchase = () => {
                   <p className="font-mono text-xs text-[var(--fg-3)]">{req.pr_number}</p>
                   {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success border border-green-500/30 leading-none">LINE</span>}
                 </div>
-                <p className="col-span-3 text-white font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
+                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs truncate">{req.department || '-'}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(req.request_date)}</p>
                 <div className="col-span-1"><StatusBadge status={req.status} /></div>
-                <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(req.total_amount)}</p>
+                <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(req.total_amount)}</p>
                 <div className="col-span-1 flex justify-end gap-1">
                   {req.status === 'DRAFT' && (
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
@@ -2065,7 +2065,7 @@ const Purchase = () => {
                       <p className="text-xs text-[var(--fg-4)] font-mono">{req.pr_number}</p>
                       {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success border border-green-500/30 leading-none">LINE</span>}
                     </div>
-                    <p className="font-semibold text-white mt-0.5 truncate">{req.requester_name || req.supplier_name || '-'}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{req.requester_name || req.supplier_name || '-'}</p>
                     <p className="text-sm text-[var(--fg-3)]">{req.department || req.supplier_name || '-'}</p>
                   </div>
                   <StatusBadge status={req.status} />
@@ -2079,7 +2079,7 @@ const Purchase = () => {
                     {req.priority === 'URGENT' && <span className="text-xs text-danger font-semibold">⚡ ด่วนมาก</span>}
                     {req.priority === 'HIGH' && <span className="text-xs text-warning font-semibold">↑ สำคัญ</span>}
                   </div>
-                  <p className="font-bold text-white text-sm">{formatCurrency(req.total_amount)}</p>
+                  <p className="font-bold text-[var(--fg-1)] text-sm">{formatCurrency(req.total_amount)}</p>
                 </div>
                 <div className="flex gap-2 mt-auto pt-3 mt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)}
@@ -2157,11 +2157,11 @@ const Purchase = () => {
                 onClick={() => openModalWithDetail('order', 'view', order.id, order)}
                 className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{order.po_number}</p>
-                <p className="col-span-2 text-white font-medium truncate">{order.supplier_name}</p>
+                <p className="col-span-2 text-[var(--fg-1)] font-medium truncate">{order.supplier_name}</p>
                 <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.order_date)}</p>
                 <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.expected_date)}</p>
                 <div className="col-span-1"><StatusBadge status={order.status} /></div>
-                <p className="col-span-1 text-right text-white font-medium text-xs">{formatCurrency(order.total_amount)}</p>
+                <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(order.total_amount)}</p>
                 <div className="col-span-4 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                   <button onClick={() => handlePrint('po', order.id)} title="พิมพ์ใบสั่งซื้อ A4"
                     className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
@@ -2223,7 +2223,7 @@ const Purchase = () => {
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{order.po_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{order.supplier_name}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{order.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">{order.supplier_code}</p>
                   </div>
                   <StatusBadge status={order.status} />
@@ -2262,7 +2262,7 @@ const Purchase = () => {
                     </span>
                   ) : null })()}
                 </div>
-                <p className="font-bold text-white text-sm mt-2 text-right">{formatCurrency(order.total_amount)}</p>
+                <p className="font-bold text-[var(--fg-1)] text-sm mt-2 text-right">{formatCurrency(order.total_amount)}</p>
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('order', 'view', order.id, order)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
@@ -2363,7 +2363,7 @@ const Purchase = () => {
                 onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
                 className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{receipt.gr_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{receipt.supplier_name}</p>
+                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{receipt.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{receipt.po_number}</p>
                 <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(receipt.receipt_date)}</p>
                 <div className="col-span-1"><StatusBadge status={receipt.status} /></div>
@@ -2397,7 +2397,7 @@ const Purchase = () => {
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{receipt.gr_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{receipt.supplier_name}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{receipt.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {receipt.po_number}</p>
                   </div>
                   <StatusBadge status={receipt.status} />
@@ -2469,7 +2469,7 @@ const Purchase = () => {
             {paginated.map((invoice, i) => (
               <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{invoice.pi_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{invoice.supplier_name}</p>
+                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{invoice.po_number}</p>
                 <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-danger' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
                 <div className="col-span-1"><StatusBadge status={invoice.payment_status} /></div>
@@ -2495,7 +2495,7 @@ const Purchase = () => {
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.pi_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{invoice.supplier_name}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{invoice.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {invoice.po_number}</p>
                   </div>
                   <StatusBadge status={invoice.payment_status} />
@@ -2567,7 +2567,7 @@ const Purchase = () => {
               <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
                 className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{payment.payment_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{payment.supplier_name}</p>
+                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{payment.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
                 <p className="col-span-2 text-[var(--primary)]/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
@@ -2582,7 +2582,7 @@ const Purchase = () => {
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{payment.payment_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{payment.supplier_name}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{payment.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">{methodLabel[payment.payment_method] || payment.payment_method}</p>
                   </div>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--success-soft)] text-success">จ่ายแล้ว</span>
@@ -2647,7 +2647,7 @@ const Purchase = () => {
             {paginated.map((ret, i) => (
               <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{ret.pr_number}</p>
-                <p className="col-span-3 text-white font-medium truncate">{ret.supplier_name}</p>
+                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{ret.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{ret.po_number}</p>
                 <p className="col-span-3 text-warning/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
                 <div className="col-span-1"><StatusBadge status={ret.status} /></div>
@@ -2662,7 +2662,7 @@ const Purchase = () => {
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--fg-4)] font-mono">{ret.pr_number}</p>
-                    <p className="font-semibold text-white mt-0.5 truncate">{ret.supplier_name}</p>
+                    <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{ret.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {ret.po_number}</p>
                   </div>
                   <StatusBadge status={ret.status} />
@@ -2814,7 +2814,7 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียดเพิ่มเติม" value={item.description}
                   onChange={e => updateRequestItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               {/* Row 2: qty + unit + price + total + delete */}
               <div className="grid grid-cols-12 gap-2 items-center">
@@ -2823,7 +2823,7 @@ const Purchase = () => {
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
@@ -2831,7 +2831,7 @@ const Purchase = () => {
                     value={item.unit || ''}
                     onChange={e => updateRequestItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -2846,7 +2846,7 @@ const Purchase = () => {
                     <input type="number" min="0" step="0.01" value={item.estimated_unit_price}
                       onChange={e => updateRequestItem(index, 'estimated_unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-4 flex items-end justify-between">
@@ -3016,7 +3016,7 @@ const Purchase = () => {
                 <input type="text" placeholder="รายละเอียด" value={item.description}
                   onChange={e => updateOrderItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
-                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
@@ -3024,7 +3024,7 @@ const Purchase = () => {
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
@@ -3032,7 +3032,7 @@ const Purchase = () => {
                     value={item.unit || ''}
                     onChange={e => updateOrderItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
@@ -3045,7 +3045,7 @@ const Purchase = () => {
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
-                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
                 <div className="col-span-5 flex items-end justify-between">
@@ -3084,7 +3084,7 @@ const Purchase = () => {
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                 <input type="number" min="0" value={orderForm.discount}
                   onChange={e => setOrderForm(p => ({ ...p, discount: parseFloat(e.target.value) || 0 }))}
-                  className="w-full pl-5 pr-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
+                  className="w-full pl-5 pr-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
             ) : <span className="text-warning">-{formatCurrency(orderForm.discount)}</span>}
           </div>
@@ -3094,11 +3094,11 @@ const Purchase = () => {
               <div className="relative w-32">
                 <input type="number" min="0" max="30" value={orderForm.tax_rate}
                   onChange={e => setOrderForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo text-right" />
+                  className="w-full px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right" />
               </div>
             ) : <span className="text-[var(--fg-2)]">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-[var(--border)] pt-2">
+          <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2">
             <span>รวมทั้งสิ้น</span>
             <span className="text-lg text-[var(--primary)]">{formatCurrency(grandTotal)}</span>
           </div>
@@ -3172,7 +3172,7 @@ const Purchase = () => {
           <div className="grid grid-cols-4 gap-3 p-3 bg-success/5 border border-success-soft rounded-xl text-sm">
             <div>
               <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
-              <p className="text-white font-medium truncate">{selectedPO.supplier_name}</p>
+              <p className="text-[var(--fg-1)] font-medium truncate">{selectedPO.supplier_name}</p>
             </div>
             <div>
               <p className="text-xs text-[var(--fg-4)] mb-0.5">มูลค่า PO</p>
@@ -3180,7 +3180,7 @@ const Purchase = () => {
             </div>
             <div>
               <p className="text-xs text-[var(--fg-4)] mb-0.5">กำหนดส่ง</p>
-              <p className="text-white">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString('th-TH') : '-'}</p>
+              <p className="text-[var(--fg-1)]">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString('th-TH') : '-'}</p>
             </div>
             <div>
               <p className="text-xs text-[var(--fg-4)] mb-0.5">สถานะ</p>
@@ -3231,7 +3231,7 @@ const Purchase = () => {
                   {/* ── Item header ── */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{item.description || item.material_name || item.material_id}</p>
+                      <p className="text-sm font-semibold text-[var(--fg-1)] truncate">{item.description || item.material_name || item.material_id}</p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">
                         ราคา/หน่วย: <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
                         {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {item.unit}</span>}
@@ -3261,7 +3261,7 @@ const Purchase = () => {
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
                         <input type="number" min="0" step="0.01" value={item[f.key]}
                           onChange={e => updateItem(index, f.key, parseFloat(e.target.value) || 0)}
-                          className={`w-full px-2 py-2 bg-[var(--surface)] border ${f.color} rounded-lg text-sm text-white text-center focus:outline-none`} />
+                          className={`w-full px-2 py-2 bg-[var(--surface)] border ${f.color} rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none`} />
                       </div>
                     ))}
                   </div>
@@ -3286,19 +3286,19 @@ const Purchase = () => {
                       </label>
                       <input type="text" value={item.lot_number} placeholder="เช่น LOT-2026-001"
                         onChange={e => updateItem(index, 'lot_number', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-warning/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
+                        className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-warning/30 rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
                     </div>
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 block">สถานที่จัดเก็บ</label>
                       <input type="text" value={item.location} placeholder="เช่น คลัง A, ชั้น 3"
                         onChange={e => updateItem(index, 'location', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+                        className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   {item.rejected_qty > 0 && (
                     <input type="text" value={item.notes} placeholder="สาเหตุที่ปฏิเสธ / รายละเอียดความเสียหาย..."
                       onChange={e => updateItem(index, 'notes', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400" />
+                      className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-red-400" />
                   )}
 
                   {/* ── Line total ── */}
@@ -3441,7 +3441,7 @@ const Purchase = () => {
           <div className="grid grid-cols-2 gap-3 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-xl text-sm">
             <div>
               <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
-              <p className="text-white font-medium truncate">{displaySupplier}</p>
+              <p className="text-[var(--fg-1)] font-medium truncate">{displaySupplier}</p>
               {supplierDetail?.tax_id && (
                 <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">เลขผู้เสียภาษี: {supplierDetail.tax_id}</p>
               )}
@@ -3491,11 +3491,11 @@ const Purchase = () => {
             <div className="flex items-center gap-2">
               <input type="number" min="0" max="30" value={invoiceForm.tax_rate}
                 onChange={e => setInvoiceForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-20 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
+                className="w-20 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-right focus:outline-none focus:border-phopy-indigo" />
               <span className="text-[var(--fg-4)] text-xs">= {formatCurrency(taxAmt)}</span>
             </div>
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-[var(--border)]/50 pt-2.5">
+          <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)]/50 pt-2.5">
             <span>รวมทั้งสิ้น</span>
             <span className="text-xl text-[var(--primary)]">{formatCurrency(total)}</span>
           </div>
@@ -3552,7 +3552,7 @@ const Purchase = () => {
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] w-full max-w-lg flex flex-col max-h-[90vh]">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-success" /> บันทึกการจ่ายเงิน
           </h2>
           <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
@@ -3596,7 +3596,7 @@ const Purchase = () => {
             <div className="p-3 bg-red-500/5 border border-danger/20 rounded-xl grid grid-cols-3 gap-3 text-sm">
               <div>
                 <p className="text-xs text-[var(--fg-4)]">ยอดรวม</p>
-                <p className="text-white font-medium">{formatCurrency(selectedInv.total_amount)}</p>
+                <p className="text-[var(--fg-1)] font-medium">{formatCurrency(selectedInv.total_amount)}</p>
               </div>
               <div>
                 <p className="text-xs text-[var(--fg-4)]">ชำระแล้ว</p>
@@ -3634,7 +3634,7 @@ const Purchase = () => {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.amount}
                     onChange={e => setPaymentForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-white text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
@@ -3643,7 +3643,7 @@ const Purchase = () => {
                 <label className="text-xs text-[var(--fg-3)] mb-1 block">อัตรา WHT</label>
                 <select
                   onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: p.amount * (parseFloat(e.target.value) / 100) }))}
-                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-sm text-white focus:outline-none focus:border-phopy-indigo">
+                  className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
                   <option value="0">ไม่หัก WHT</option>
                   <option value="1">1% — บริการทั่วไป</option>
                   <option value="3">3% — ค่าเช่า/บริการ</option>
@@ -3656,7 +3656,7 @@ const Purchase = () => {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.withholding_tax}
                     onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-7 pr-3 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-white focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full pl-7 pr-3 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
             </div>
@@ -3779,14 +3779,14 @@ const Purchase = () => {
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวนคืน</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-white text-center focus:outline-none focus:border-red-400" />
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-red-400" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateReturnItem(index, 'unit', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">เลือกหน่วย</option>
                     {availableUnits.map(u => (
@@ -3800,14 +3800,14 @@ const Purchase = () => {
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={e => updateReturnItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
-                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white focus:outline-none focus:border-phopy-indigo" />
+                      className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
                   </div>
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หมายเหตุ item</label>
                   <input type="text" value={item.reason} placeholder="สาเหตุเพิ่มเติม"
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                 </div>
                 <div className="col-span-2 text-right">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
@@ -3841,10 +3841,10 @@ const Purchase = () => {
             <div className="w-24">
               <input type="number" min="0" max="30" value={returnForm.tax_rate}
                 onChange={e => setReturnForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
-                className="w-full px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-white text-right focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-right focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
-          <div className="flex justify-between font-bold text-white border-t border-[var(--border)] pt-2">
+          <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2">
             <span>มูลค่าคืนทั้งสิ้น</span>
             <span className="text-lg text-danger">{formatCurrency(total)}</span>
           </div>
@@ -3892,7 +3892,7 @@ const Purchase = () => {
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-[var(--fg-1)] flex items-center gap-3">
             <ShoppingCart className="w-8 h-8 text-[var(--primary)]" /> การจัดซื้อ
           </h1>
           <p className="text-[var(--fg-3)] mt-1">จัดการใบขอซื้อ ใบสั่งซื้อ รับสินค้า และการจ่ายเงิน</p>
@@ -3915,7 +3915,7 @@ const Purchase = () => {
             <span className="hidden md:inline">{tab.label}</span>
             {tab.badge > 0 && (
               <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                activeTab === tab.id ? 'bg-[var(--bg)]/30 text-white' : 'bg-yellow-500 text-black'
+                activeTab === tab.id ? 'bg-[var(--bg)]/30 text-[var(--fg-1)]' : 'bg-yellow-500 text-black'
               }`}>
                 {tab.badge}
               </span>

@@ -33,6 +33,13 @@ interface TaxDashboard {
     collected: number
     paid: number
   }
+  cit: {
+    revenue: number
+    expense: number
+    netProfit: number
+    estimatedTax: number
+    taxRate: number
+  }
   alerts: Array<{
     type: 'warning' | 'danger' | 'info'
     message: string
@@ -102,6 +109,20 @@ function Tax() {
       setTransactions(res.data.data)
     } catch (error) {
       console.error('Failed to load transactions:', error)
+    }
+  }
+
+  const syncTaxData = async () => {
+    setLoading(true)
+    try {
+      await api.post('/tax/sync')
+      await loadData()
+      if (activeTab === 'vat') await loadTransactions('VAT')
+      if (activeTab === 'wht') await loadTransactions('WHT')
+    } catch (error) {
+      console.error('Failed to sync tax data:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -212,7 +233,7 @@ function Tax() {
         />
         <TabButton
           active={activeTab === 'vat'}
-          onClick={() => { setActiveTab('vat'); loadTransactions('VAT_OUTPUT') }}
+          onClick={() => { setActiveTab('vat'); loadTransactions('VAT') }}
           icon={Calculator}
           label="ภาษีมูลค่าเพิ่ม (VAT)"
         />
@@ -280,15 +301,15 @@ function Tax() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <QuickActionButton
                 icon={RefreshCw}
-                title="ซิงค์ข้อมูลจากใบแจ้งหนี้"
-                description="ดึงข้อมูล VAT จาก Sales Invoices"
-                onClick={() => {}}
+                title="ซิงค์ข้อมูลภาษี"
+                description="ดึง VAT/WHT จากเอกสารต้นทาง"
+                onClick={syncTaxData}
               />
               <QuickActionButton
                 icon={ArrowRightLeft}
-                title="ซิงค์ข้อมูลจากการซื้อ"
-                description="ดึงข้อมูล WHT จาก Purchase Orders"
-                onClick={() => {}}
+                title="ซิงค์ข้อมูลการซื้อ"
+                description="ดึงข้อมูล WHT จากการจ่ายเงิน"
+                onClick={syncTaxData}
               />
               <QuickActionButton
                 icon={Download}
@@ -469,23 +490,23 @@ function Tax() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 p-4 bg-[var(--surface-2)] rounded-lg">
                 <div>
-                  <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิตามบัญชี</p>
-                  <p className="text-2xl font-bold text-[var(--fg-1)]">{formatCurrency(0)}</p>
+                  <p className="text-[var(--fg-3)] text-sm">รายได้</p>
+                  <p className="text-2xl font-bold text-[var(--fg-1)]">{formatCurrency(dashboard?.cit?.revenue || 0)}</p>
                 </div>
                 <div>
-                  <p className="text-[var(--fg-3)] text-sm">ปรับปรุงเพิ่ม (Add-backs)</p>
-                  <p className="text-2xl font-bold text-danger">{formatCurrency(0)}</p>
+                  <p className="text-[var(--fg-3)] text-sm">ค่าใช้จ่าย</p>
+                  <p className="text-2xl font-bold text-danger">{formatCurrency(dashboard?.cit?.expense || 0)}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 p-4 bg-[var(--surface-2)] rounded-lg">
                 <div>
-                  <p className="text-[var(--fg-3)] text-sm">หักค่าใช้จ่ายเพิ่ม (Double Deductions)</p>
-                  <p className="text-2xl font-bold text-success">{formatCurrency(0)}</p>
+                  <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิตามบัญชี</p>
+                  <p className="text-2xl font-bold text-success">{formatCurrency(dashboard?.cit?.netProfit || 0)}</p>
                 </div>
                 <div>
                   <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิทางภาษี</p>
-                  <p className="text-2xl font-bold text-[var(--primary)]">{formatCurrency(0)}</p>
+                  <p className="text-2xl font-bold text-[var(--primary)]">{formatCurrency(dashboard?.cit?.netProfit || 0)}</p>
                 </div>
               </div>
 
@@ -493,11 +514,11 @@ function Tax() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[var(--fg-3)] text-sm">ภาษีเงินได้นิติบุคคลโดยประมาณ</p>
-                    <p className="text-3xl font-bold text-[var(--primary)]">{formatCurrency(0)}</p>
+                    <p className="text-3xl font-bold text-[var(--primary)]">{formatCurrency(dashboard?.cit?.estimatedTax || 0)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[var(--fg-3)] text-sm">อัตราภาษี</p>
-                    <p className="text-xl font-bold text-[var(--fg-1)]">20%</p>
+                    <p className="text-xl font-bold text-[var(--fg-1)]">{dashboard?.cit?.taxRate || 20}%</p>
                   </div>
                 </div>
               </div>

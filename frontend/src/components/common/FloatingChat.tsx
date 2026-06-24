@@ -84,7 +84,7 @@ export default function FloatingChat() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.18 }}
-            className="fixed bottom-20 left-6 z-50 w-80 flex flex-col phopy-card overflow-hidden shadow-2xl"
+            className="fixed bottom-20 right-6 z-50 w-80 flex flex-col phopy-card overflow-hidden shadow-2xl"
             style={{ height: '420px' }}
           >
             {/* Header */}
@@ -251,7 +251,7 @@ export default function FloatingChat() {
         onClick={() => setOpen(o => !o)}
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.95 }}
-        className="fixed bottom-6 left-6 z-50 w-12 h-12 rounded-2xl bg-phopy-indigo shadow-lg shadow-phopy-indigo/30 flex items-center justify-center text-white transition-colors hover:bg-phopy-indigo/90"
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-2xl bg-phopy-indigo shadow-lg shadow-phopy-indigo/30 flex items-center justify-center text-white transition-colors hover:bg-phopy-indigo/90"
         title="Kimi AI Assistant"
       >
         <AnimatePresence mode="wait">

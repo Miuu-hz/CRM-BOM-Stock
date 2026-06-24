@@ -20,7 +20,6 @@ import {
   FileCheck,
   FileText,
   Receipt,
-  Sparkles,
   Sun,
   Moon,
 } from 'lucide-react'
@@ -403,18 +402,6 @@ function Header({ onMenuClick }: HeaderProps) {
 
         {/* Right Section */}
         <div className="flex items-center gap-2">
-          {/* Ask AI */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/ai')}
-            className="hidden md:flex items-center gap-2 h-10 px-3 rounded-[10px] text-white text-sm font-semibold cursor-pointer hover:opacity-90 transition-all shadow-1"
-            style={{ background: 'linear-gradient(120deg, #3949E5, #2632A8)' }}
-            aria-label="ถาม Phopy AI"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Ask AI</span>
-          </motion.button>
 
           {/* Notifications */}
           <div ref={notifRef} className="relative">
