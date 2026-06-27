@@ -1,22 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import {
-  Upload,
-  TrendingUp,
-  DollarSign,
-  Eye,
-  MousePointer,
-  Store,
-  Plus,
-  BarChart3,
-  PieChart,
-  Calendar,
-  Settings,
-  Table,
-  Trash2,
-  X,
-  Calculator,
-} from 'lucide-react'
+import {Upload, TrendingUp, DollarSign, Eye, MousePointer, Store, Plus, BarChart3, PieChart, Calendar, Settings, Table, Trash2, X, Calculator, Check, AlertTriangle, Search} from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -113,7 +97,7 @@ interface PivotRow {
   [key: string]: any
 }
 
-const COLORS = ['#3949E5', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
+const COLORS = ['var(--primary)', 'var(--success)', 'var(--warning)', 'var(--danger)', 'var(--info)', 'var(--fg-4)']
 
 const PLATFORMS = [
   { id: 'SHOPEE', name: 'Shopee', color: 'from-orange-500 to-red-500' },
@@ -129,12 +113,12 @@ const CHART_TYPES = [
 ]
 
 const METRIC_OPTIONS = [
-  { key: 'sales', label: 'ยอดขาย', color: '#3949E5' },
-  { key: 'adCost', label: 'ค่าโฆษณา', color: '#a855f7' },
-  { key: 'orders', label: 'คำสั่งซื้อ', color: '#10b981' },
-  { key: 'impressions', label: 'การมองเห็น', color: '#f59e0b' },
-  { key: 'clicks', label: 'คลิก', color: '#ef4444' },
-  { key: 'roas', label: 'ROAS', color: '#3b82f6' },
+  { key: 'sales', label: 'ยอดขาย', color: 'var(--primary)' },
+  { key: 'adCost', label: 'ค่าโฆษณา', color: 'var(--info)' },
+  { key: 'orders', label: 'คำสั่งซื้อ', color: 'var(--success)' },
+  { key: 'impressions', label: 'การมองเห็น', color: 'var(--warning)' },
+  { key: 'clicks', label: 'คลิก', color: 'var(--danger)' },
+  { key: 'roas', label: 'ROAS', color: 'var(--fg-4)' },
 ]
 
 const ROW_OPTIONS = [
@@ -717,7 +701,7 @@ function Marketing() {
           onClick={() => setMainTab('analytics')}
           className={mainTab === 'analytics' ? 'px-4 py-2 rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
         >
-          📊 Analytics
+          <BarChart3 className="w-4 h-4" /> Analytics
         </button>
         <button
           onClick={() => setMainTab('profit')}
@@ -727,7 +711,7 @@ function Marketing() {
         </button>
         <button
           onClick={() => setMainTab('platform')}
-          className={mainTab === 'platform' ? 'px-4 py-2 rounded-lg bg-[#7C3AED]/20 text-[#7C3AED] border border-[#7C3AED]/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
+          className={mainTab === 'platform' ? 'px-4 py-2 rounded-lg bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/40 text-sm font-medium' : 'px-4 py-2 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm'}
         >
           <Upload className="w-4 h-4 inline mr-1" /> Platform Orders
         </button>
@@ -1042,7 +1026,7 @@ function Marketing() {
                             formatted = Math.round(value).toLocaleString('th-TH')
                           }
                           return (
-                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || '#9ca3af' }}>
+                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || 'var(--fg-4)' }}>
                               {formatted}
                             </td>
                           )
@@ -1068,7 +1052,7 @@ function Marketing() {
                             formatted = Math.round(value).toLocaleString('th-TH')
                           }
                           return (
-                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || '#9ca3af' }}>
+                            <td key={metricKey} className="py-3 px-4 text-sm text-right font-mono" style={{ color: metric?.color || 'var(--fg-4)' }}>
                               {formatted}
                             </td>
                           )
@@ -1242,7 +1226,7 @@ function Marketing() {
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {adSpends.map((spend) => {
                     const badgeColors: Record<string, string> = {
-                      FACEBOOK: 'bg-[var(--info-soft)] text-[#2563eb] border-info/30',
+                      FACEBOOK: 'bg-[var(--info-soft)] text-[var(--info)] border-[var(--info)]/30',
                       GOOGLE: 'bg-[var(--danger-soft)] text-danger border-danger/30',
                       LINE_OA: 'bg-[var(--success-soft)] text-success border-green-500/30',
                       TIKTOK_ADS: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
@@ -1292,7 +1276,7 @@ function Marketing() {
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
                   <p className="text-xs text-[var(--fg-3)] mb-1">ค่าโฆษณารวม</p>
-                  <p className="text-xl font-bold text-[#7C3AED]">฿{totalAdSpend.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
+                  <p className="text-xl font-bold text-[var(--primary)]">฿{totalAdSpend.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.02 }} className="phopy-card p-4">
                   <p className="text-xs text-[var(--fg-3)] mb-1">กำไรสุทธิรวม</p>
@@ -1331,12 +1315,12 @@ function Marketing() {
                       <th className="text-right py-2 px-3 text-[var(--primary)] font-semibold">ยอดขาย</th>
                       <th className="text-right py-2 px-3 text-warning font-semibold">COGS</th>
                       <th className="text-right py-2 px-3 text-success font-semibold">กำไรขั้นต้น</th>
-                      <th className="text-right py-2 px-3 text-[#9333ea] font-semibold">โฆษณา CSV</th>
-                      <th className="text-right py-2 px-3 text-[#a855f7] font-semibold">โฆษณา Manual</th>
-                      <th className="text-right py-2 px-3 text-[#7C3AED] font-semibold">โฆษณารวม</th>
+                      <th className="text-right py-2 px-3 text-[var(--primary)] font-semibold">โฆษณา CSV</th>
+                      <th className="text-right py-2 px-3 text-[var(--primary)] font-semibold">โฆษณา Manual</th>
+                      <th className="text-right py-2 px-3 text-[var(--primary)] font-semibold">โฆษณารวม</th>
                       <th className="text-right py-2 px-3 text-success font-semibold">กำไรสุทธิ</th>
                       <th className="text-right py-2 px-3 text-[var(--fg-3)] font-semibold">Net Margin</th>
-                      <th className="text-right py-2 px-3 text-[#2563eb] font-semibold">ROAS</th>
+                      <th className="text-right py-2 px-3 text-[var(--info)] font-semibold">ROAS</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1352,13 +1336,13 @@ function Marketing() {
                         <td className={`py-2 px-3 text-right font-mono ${row.grossProfit >= 0 ? 'text-success' : 'text-danger'}`}>
                           ฿{row.grossProfit.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono text-[#9333ea]">
+                        <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">
                           ฿{row.csvAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono text-[#a855f7]">
+                        <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">
                           ฿{row.manualAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono text-[#7C3AED]">
+                        <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">
                           ฿{row.totalAdSpend.toLocaleString('th-TH', { minimumFractionDigits: 0 })}
                         </td>
                         <td className={`py-2 px-3 text-right font-mono font-bold ${row.netProfit >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -1367,7 +1351,7 @@ function Marketing() {
                         <td className={`py-2 px-3 text-right font-mono ${row.netMargin >= 0 ? 'text-success' : 'text-danger'}`}>
                           {row.netMargin.toFixed(1)}%
                         </td>
-                        <td className="py-2 px-3 text-right font-mono text-[#2563eb]">
+                        <td className="py-2 px-3 text-right font-mono text-[var(--info)]">
                           {row.roas.toFixed(2)}x
                         </td>
                       </tr>
@@ -1389,12 +1373,12 @@ function Marketing() {
                           <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">฿{tRev.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className="py-2 px-3 text-right font-mono text-warning">฿{tCogs.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className={`py-2 px-3 text-right font-mono ${tGross >= 0 ? 'text-success' : 'text-danger'}`}>฿{tGross.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
-                          <td className="py-2 px-3 text-right font-mono text-[#9333ea]">฿{tCsvAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
-                          <td className="py-2 px-3 text-right font-mono text-[#a855f7]">฿{tManAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
-                          <td className="py-2 px-3 text-right font-mono text-[#7C3AED]">฿{tTotAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">฿{tCsvAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">฿{tManAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                          <td className="py-2 px-3 text-right font-mono text-[var(--primary)]">฿{tTotAd.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className={`py-2 px-3 text-right font-mono ${tNet >= 0 ? 'text-success' : 'text-danger'}`}>฿{tNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
                           <td className={`py-2 px-3 text-right font-mono ${tMargin >= 0 ? 'text-success' : 'text-danger'}`}>{tMargin.toFixed(1)}%</td>
-                          <td className="py-2 px-3 text-right font-mono text-[#2563eb]">{tRoas.toFixed(2)}x</td>
+                          <td className="py-2 px-3 text-right font-mono text-[var(--info)]">{tRoas.toFixed(2)}x</td>
                         </tr>
                       )
                     })()}
@@ -1415,7 +1399,7 @@ function Marketing() {
         >
           {/* A. Upload & Preview Panel */}
           <div className="phopy-card p-5 space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-[#7C3AED]">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-[var(--primary)]">
               <Upload className="w-5 h-5" />
               อัปโหลด CSV จาก Platform
             </h3>
@@ -1426,7 +1410,7 @@ function Marketing() {
                 <select
                   value={platPlatform}
                   onChange={e => setPlatPlatform(e.target.value)}
-                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-purple-500 text-sm"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] text-sm"
                 >
                   <option value="SHOPEE">Shopee</option>
                   <option value="LAZADA">Lazada</option>
@@ -1439,7 +1423,7 @@ function Marketing() {
                   type="date"
                   value={platImportDate}
                   onChange={e => setPlatImportDate(e.target.value)}
-                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-purple-500 text-sm"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] text-sm"
                 />
               </div>
               <div>
@@ -1448,7 +1432,7 @@ function Marketing() {
                   type="file"
                   accept=".csv"
                   onChange={e => setPlatFile(e.target.files?.[0] || null)}
-                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-purple-500 text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-purple-500/20 file:text-[#7C3AED]"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-[var(--primary)]/20 file:text-[var(--primary)]"
                 />
               </div>
             </div>
@@ -1480,7 +1464,7 @@ function Marketing() {
                   <span className="px-3 py-1 bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30 rounded-full">
                     ตัดสต๊อกรวม {platPreview.summary.totalItemsSold} ชิ้น
                   </span>
-                  <span className="px-3 py-1 bg-purple-500/20 text-[#7C3AED] border border-purple-500/30 rounded-full">
+                  <span className="px-3 py-1 bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30 rounded-full">
                     ค่าโฆษณา ฿{(platPreview.summary.totalAdCost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -1508,20 +1492,20 @@ function Marketing() {
                           <td className="py-2 px-2 text-right text-[var(--primary)] font-mono">
                             ฿{(item.revenue || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-2 text-right text-[#9333ea] font-mono">
+                          <td className="py-2 px-2 text-right text-[var(--primary)] font-mono">
                             ฿{(item.adCost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </td>
-                          <td className="py-2 px-2 text-right text-[#2563eb] font-mono">{(item.roas || 0).toFixed(2)}x</td>
+                          <td className="py-2 px-2 text-right text-[var(--info)] font-mono">{(item.roas || 0).toFixed(2)}x</td>
                           <td className="py-2 px-2 text-right text-[var(--fg-2)] font-mono">{item.currentStock ?? '-'}</td>
                           <td className="py-2 px-2 text-center">
                             {item.matchStatus === 'MATCHED' ? (
                               <span className="px-2 py-0.5 bg-[var(--success-soft)] text-success border border-green-500/30 rounded text-xs">
-                                ✅ พบสินค้า
+                                <Check className="w-4 h-4" /> พบสินค้า
                               </span>
                             ) : (
                               <div className="space-y-1">
                                 <span className="px-2 py-0.5 bg-[var(--warning-soft)] text-warning border border-warning/30 rounded text-xs block text-center">
-                                  ⚠️ ไม่พบ SKU
+                                  <AlertTriangle className="w-4 h-4" /> ไม่พบ SKU
                                 </span>
                                 <div className="flex gap-1">
                                   <input
@@ -1599,7 +1583,7 @@ function Marketing() {
                       <tr key={pje.id} className="border-b border-[var(--border)]/20 hover:bg-[var(--surface-2)]">
                         <td className="py-2 px-2 text-[var(--fg-2)]">{pje.import_date}</td>
                         <td className="py-2 px-2">
-                          <span className="px-2 py-0.5 bg-purple-500/20 text-[#7C3AED] border border-purple-500/30 rounded text-xs">
+                          <span className="px-2 py-0.5 bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30 rounded text-xs">
                             {pje.platform}
                           </span>
                         </td>
@@ -1680,7 +1664,7 @@ function Marketing() {
                           {imp.matched_rows}/{imp.total_rows}
                         </td>
                         <td className="py-2 px-2 text-right text-[var(--primary)] font-mono">{imp.total_items_sold}</td>
-                        <td className="py-2 px-2 text-right text-[#9333ea] font-mono">
+                        <td className="py-2 px-2 text-right text-[var(--primary)] font-mono">
                           ฿{(imp.total_ad_cost || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                         </td>
                         <td className="py-2 px-2 text-center">
@@ -1923,7 +1907,7 @@ function UploadModal({
           <label className="block text-sm text-[var(--fg-3)] mb-2">ร้านค้า</label>
           <input
             type="text"
-            placeholder="🔍 ค้นหาร้านค้า..."
+            placeholder="ค้นหาร้านค้า..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-2 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo mb-2"

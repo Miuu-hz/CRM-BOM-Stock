@@ -1180,7 +1180,7 @@ export function EditModal({
     }
 
     if (!found) {
-      setConversionWarning(`⚠️ ไม่พบการแปลงหน่วยจาก "${ul(from)}" เป็น "${ul(to)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
+      setConversionWarning(`<AlertTriangle className="w-4 h-4" /> ไม่พบการแปลงหน่วยจาก "${ul(from)}" เป็น "${ul(to)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
     } else {
       setConversionWarning(null)
     }
@@ -2407,7 +2407,7 @@ function AddStockModal({
   const addConversionWarning = (() => {
     if (!formData.baseUnit || !formData.displayUnit) return null
     if (formData.baseUnit === formData.displayUnit) return null
-    return `⚠️ หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
+    return `<AlertTriangle className="w-4 h-4" /> หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
   })()
 
   const handleSubmit = async (e: React.FormEvent) => {

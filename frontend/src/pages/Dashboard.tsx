@@ -99,7 +99,7 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-1.5 text-xs rounded transition-all cursor-pointer min-h-[36px] font-medium ${
+            className={`flex-1 py-1.5 text-xs rounded transition-all cursor-pointer min-h-[44px] font-medium ${
               tab === t.key
                 ? `bg-[var(--surface)] border border-[var(--border-strong)] shadow-1 ${color} font-semibold`
                 : 'text-[var(--fg-4)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
@@ -205,7 +205,7 @@ export default function Dashboard() {
                 key={p}
                 onClick={() => setPeriod(p)}
                 aria-pressed={period === p}
-                className={`px-3 py-1.5 text-xs transition-all cursor-pointer min-h-[36px] ${period === p ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-semibold' : 'font-medium text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'}`}
+                className={`px-3 py-1.5 text-xs transition-all cursor-pointer min-h-[44px] ${period === p ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-semibold' : 'font-medium text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'}`}
               >
                 {PERIOD_LABELS[p]}
               </button>
@@ -362,8 +362,8 @@ export default function Dashboard() {
           ) : (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={topCustomers} layout="vertical" barSize={16}>
-                <XAxis type="number" tick={{ fill: '#6B6658', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#383426', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+                <XAxis type="number" tick={{ fill: 'var(--fg-3)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
+                <YAxis type="category" dataKey="name" tick={{ fill: 'var(--fg-2)', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
                 <Tooltip
                   formatter={(v: number) => [fmt(v), 'รายได้']}
                   cursor={{ fill: 'rgba(57,73,229,0.08)' }}
@@ -377,7 +377,7 @@ export default function Dashboard() {
                 />
                 <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
                   {topCustomers.map((_, i) => (
-                    <Cell key={i} fill={['#3949E5','#9333EA','#0EA5E9','#16A34A','#F5A524'][i]} />
+                    <Cell key={i} fill={['var(--primary)','var(--success)','var(--warning)','var(--info)','var(--danger)'][i]} />
                   ))}
                 </Bar>
               </BarChart>

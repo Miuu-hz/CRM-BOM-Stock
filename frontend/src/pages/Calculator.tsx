@@ -458,7 +458,7 @@ function Calculator() {
           <div className="phopy-card p-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <DollarSign className="w-6 h-6 text-[#7C3AED]" />
+                <DollarSign className="w-6 h-6 text-[var(--primary)]" />
                 <h2 className="text-xl font-bold text-[var(--fg-1)]">
                   ค่าดำเนินการ
                 </h2>
@@ -625,7 +625,7 @@ function Calculator() {
         {costBreakdown && (
           <div className="phopy-card p-4">
             <div className="flex items-center gap-3 mb-6">
-              <ShoppingCart className="w-6 h-6 text-[#7C3AED]" />
+              <ShoppingCart className="w-6 h-6 text-[var(--primary)]" />
               <h2 className="text-xl font-bold text-[var(--fg-1)]">
                 เปรียบเทียบกำไร E-commerce
               </h2>

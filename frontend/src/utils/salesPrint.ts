@@ -25,69 +25,105 @@ const METHOD_TH: Record<string, string> = {
 }
 
 // ── CSS A4 ────────────────────────────────────────────────────
-const CSS_A4 = `
+const CSS_A4 = `:root {
+    --primary: #3949E5;
+    --primary-soft: #EEF0FE;
+    --success: #16A34A;
+    --warning: #F5A524;
+    --danger: #DC2626;
+    --info: #3949E5;
+    --fg-1: #1E1B16;
+    --fg-2: #383426;
+    --fg-3: #6B6658;
+    --fg-4: #A8A294;
+    --fg-on-brand: #FFFFFF;
+    --border: #DEDACF;
+    --border-strong: #CFCAB8;
+    --border-subtle: #E8E3D4;
+    --surface: #F8F5EE;
+    --surface-2: #E8E3D4;
+    --bg: #F0ECE2;
+  }
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap');
   @page { size: A4 portrait; margin: 12mm 15mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 10pt; color: #1a1a1a; background: #fff; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 10pt; color: var(--fg-1); background: var(--fg-on-brand); }
   .page { max-width: 175mm; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #3949E5; padding-bottom: 6mm; margin-bottom: 5mm; }
-  .company-block { font-size: 9pt; color: #444; line-height: 1.65; }
-  .company-name { font-size: 13pt; font-weight: 800; color: #111; margin-bottom: 1mm; }
-  .doc-title { text-align: right; padding: 4mm 5mm; background: #eef0fe; border: 1.5px solid #c5caf8; border-radius: 6px; min-width: 52mm; }
-  .doc-title h1 { font-size: 15pt; font-weight: 800; color: #3949E5; }
-  .doc-title .doc-number { font-size: 11pt; font-weight: 600; color: #111; margin-top: 1.5mm; font-family: monospace; }
-  .doc-title .doc-date { font-size: 8.5pt; color: #666; margin-top: 1mm; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid var(--primary); padding-bottom: 6mm; margin-bottom: 5mm; }
+  .company-block { font-size: 9pt; color: var(--fg-2); line-height: 1.65; }
+  .company-name { font-size: 13pt; font-weight: 800; color: var(--fg-1); margin-bottom: 1mm; }
+  .doc-title { text-align: right; padding: 4mm 5mm; background: var(--primary-soft); border: 1.5px solid var(--primary-soft); border-radius: 6px; min-width: 52mm; }
+  .doc-title h1 { font-size: 15pt; font-weight: 800; color: var(--primary); }
+  .doc-title .doc-number { font-size: 11pt; font-weight: 600; color: var(--fg-1); margin-top: 1.5mm; font-family: monospace; }
+  .doc-title .doc-date { font-size: 8.5pt; color: var(--fg-3); margin-top: 1mm; }
   .info-row { display: flex; gap: 5mm; margin-bottom: 4mm; }
-  .info-box { flex: 1; border: 1px solid #e8e8e8; border-radius: 5px; padding: 2.5mm 3.5mm; background: #fafafa; }
-  .info-box label { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
-  .info-box .value { font-size: 9.5pt; font-weight: 700; color: #111; }
-  .info-box .sub { font-size: 8pt; color: #666; margin-top: 0.5mm; }
+  .info-box { flex: 1; border: 1px solid var(--border); border-radius: 5px; padding: 2.5mm 3.5mm; background: var(--surface); }
+  .info-box label { font-size: 7pt; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .info-box .value { font-size: 9.5pt; font-weight: 700; color: var(--fg-1); }
+  .info-box .sub { font-size: 8pt; color: var(--fg-3); margin-top: 0.5mm; }
   table { width: 100%; border-collapse: collapse; margin-top: 4mm; }
-  table th { background: #3949E5; color: #fff; font-size: 8pt; font-weight: 700; padding: 2.5mm 3mm; text-align: left; }
+  table th { background: var(--primary); color: var(--fg-on-brand); font-size: 8pt; font-weight: 700; padding: 2.5mm 3mm; text-align: left; }
   table th.right, table td.right { text-align: right; }
   table th.center, table td.center { text-align: center; }
-  table td { font-size: 9pt; padding: 2mm 3mm; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
-  table tr:nth-child(even) td { background: #fafafa; }
-  table tr:last-child td { border-bottom: 2px solid #e5e7eb; }
+  table td { font-size: 9pt; padding: 2mm 3mm; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+  table tr:nth-child(even) td { background: var(--surface); }
+  table tr:last-child td { border-bottom: 2px solid var(--border-strong); }
   .totals { margin-top: 3mm; display: flex; justify-content: flex-end; }
-  .totals-box { width: 72mm; border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
-  .totals-row { display: flex; justify-content: space-between; padding: 2mm 3.5mm; font-size: 9.5pt; border-bottom: 1px solid #f3f3f3; color: #333; }
+  .totals-box { width: 72mm; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .totals-row { display: flex; justify-content: space-between; padding: 2mm 3.5mm; font-size: 9.5pt; border-bottom: 1px solid var(--border-subtle); color: var(--fg-2); }
   .totals-row:last-child { border-bottom: none; }
-  .totals-row.grand { font-size: 11.5pt; font-weight: 800; color: #fff; background: #3949E5; padding: 3mm 3.5mm; border-bottom: none; }
-  .totals-row.balance { color: #dc2626; font-weight: 700; }
-  .notes-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid #e8e8e8; border-radius: 5px; background: #fafafa; }
-  .notes-box label { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
-  .journal-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid #e0e6ff; border-left: 3px solid #3949E5; border-radius: 5px; font-size: 8.5pt; color: #444; line-height: 1.7; background: #f8f9ff; }
+  .totals-row.grand { font-size: 11.5pt; font-weight: 800; color: var(--fg-on-brand); background: var(--primary); padding: 3mm 3.5mm; border-bottom: none; }
+  .totals-row.balance { color: var(--danger); font-weight: 700; }
+  .notes-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
+  .notes-box label { font-size: 7pt; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .journal-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid var(--primary-soft); border-left: 3px solid var(--primary); border-radius: 5px; font-size: 8.5pt; color: var(--fg-2); line-height: 1.7; background: var(--primary-soft); }
   .sig-row { display: flex; gap: 8mm; margin-top: 12mm; }
-  .sig-box { flex: 1; text-align: center; border-top: 1px solid #cccccc; padding-top: 2mm; font-size: 8.5pt; color: #555; }
-  .footer { margin-top: 7mm; padding-top: 3mm; border-top: 1px dashed #dddddd; font-size: 7.5pt; color: #aaa; text-align: center; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } table th { background: #3949E5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .totals-row.grand { background: #3949E5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  .sig-box { flex: 1; text-align: center; border-top: 1px solid var(--border-strong); padding-top: 2mm; font-size: 8.5pt; color: var(--fg-3); }
+  .footer { margin-top: 7mm; padding-top: 3mm; border-top: 1px dashed var(--border); font-size: 7.5pt; color: var(--fg-4); text-align: center; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } table th { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .totals-row.grand { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
 
 // ── CSS Thermal ───────────────────────────────────────────────
-const CSS_THERMAL = `
+const CSS_THERMAL = `:root {
+    --primary: #3949E5;
+    --primary-soft: #EEF0FE;
+    --success: #16A34A;
+    --warning: #F5A524;
+    --danger: #DC2626;
+    --info: #3949E5;
+    --fg-1: #1E1B16;
+    --fg-2: #383426;
+    --fg-3: #6B6658;
+    --fg-4: #A8A294;
+    --fg-on-brand: #FFFFFF;
+    --border: #DEDACF;
+    --border-strong: #CFCAB8;
+    --border-subtle: #E8E3D4;
+    --surface: #F8F5EE;
+    --surface-2: #E8E3D4;
+    --bg: #F0ECE2;
+  }
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
   @page { size: 80mm auto; margin: 2mm 3mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 8pt; color: #000; background: #fff; width: 72mm; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 8pt; color: var(--fg-1); background: var(--fg-on-brand); width: 72mm; }
   .center { text-align: center; }
   .right { text-align: right; }
   .bold { font-weight: 700; }
   .company-name { font-size: 12pt; font-weight: 800; }
   .doc-type { font-size: 9pt; font-weight: 700; margin: 1mm 0; }
   .doc-no { font-size: 9pt; font-weight: 600; font-family: monospace; }
-  .divider { border: none; border-top: 1px dashed #000; margin: 2mm 0; }
-  .divider-solid { border: none; border-top: 1.5px solid #000; margin: 2mm 0; }
+  .divider { border: none; border-top: 1px dashed var(--fg-1); margin: 2mm 0; }
+  .divider-solid { border: none; border-top: 1.5px solid var(--fg-1); margin: 2mm 0; }
   .row { display: flex; justify-content: space-between; font-size: 8pt; margin: 0.8mm 0; }
-  .row label { color: #444; flex-shrink: 0; }
+  .row label { color: var(--fg-2); flex-shrink: 0; }
   .row span { text-align: right; }
   table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
-  table th { font-weight: 700; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1mm; }
-  table td { padding: 1mm; vertical-align: top; border-bottom: 1px dashed #ccc; }
+  table th { font-weight: 700; border-top: 1px solid var(--fg-1); border-bottom: 1px solid var(--fg-1); padding: 1mm; }
+  table td { padding: 1mm; vertical-align: top; border-bottom: 1px dashed var(--border-strong); }
   table td.right { text-align: right; }
   .total-line { font-size: 11pt; font-weight: 800; }
-  .sig-area { margin-top: 6mm; border-top: 1px solid #000; padding-top: 2mm; text-align: center; font-size: 7.5pt; }
+  .sig-area { margin-top: 6mm; border-top: 1px solid var(--fg-1); padding-top: 2mm; text-align: center; font-size: 7.5pt; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
 
@@ -116,7 +152,7 @@ function templateQT_A4(d: any): string {
       <td class="right">${it.discount_percent > 0 ? `${it.discount_percent}%` : '-'}</td>
       <td class="right">${fmt(it.total_price)}</td>
     </tr>`).join('')
-  const expiryColor = d.expiry_date && new Date(d.expiry_date) < new Date() ? 'color:#dc2626' : 'color:#111'
+  const expiryColor = d.expiry_date && new Date(d.expiry_date) < new Date() ? 'color:var(--danger)' : 'color:var(--fg-1)'
   return `<div class="page">
     <div class="header">
       <div class="company-block">
@@ -131,7 +167,7 @@ function templateQT_A4(d: any): string {
         <div class="doc-number">${d.quotation_number}</div>
         <div class="doc-date">วันที่: ${fmtDate(d.quotation_date)}</div>
         <div class="doc-date" style="${expiryColor}">หมดอายุ: ${fmtDate(d.expiry_date)}</div>
-        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:#f3f4f6;border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
+        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:var(--surface-2);border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
       </div>
     </div>
     <div class="info-row">
@@ -162,7 +198,7 @@ function templateQT_A4(d: any): string {
     <div class="totals">
       <div class="totals-box">
         <div class="totals-row"><span>ราคาสินค้า</span><span>${fmt(d.subtotal)}</span></div>
-        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:#dc2626"><span>ส่วนลดรวม</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
+        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:var(--danger)"><span>ส่วนลดรวม</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
         ${(d.tax_amount || 0) > 0 ? `<div class="totals-row"><span>VAT ${d.tax_rate}%</span><span>${fmt(d.tax_amount)}</span></div>` : ''}
         <div class="totals-row grand"><span>รวมทั้งสิ้น</span><span>${fmt(d.total_amount)}</span></div>
       </div>
@@ -210,7 +246,7 @@ function templateQT_Thermal(d: any): string {
   ${(d.discount_amount || 0) > 0 ? `<div class="row"><label>ส่วนลด</label><span>-${fmt(d.discount_amount)}</span></div>` : ''}
   ${(d.tax_amount || 0) > 0 ? `<div class="row"><label>VAT ${d.tax_rate}%</label><span>${fmt(d.tax_amount)}</span></div>` : ''}
   <div class="row total-line"><label>รวมสุทธิ</label><span>${fmt(d.total_amount)}</span></div>
-  <div class="center" style="font-size:7pt;color:#888;margin-top:3mm">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
+  <div class="center" style="font-size:7pt;color:var(--fg-4);margin-top:3mm">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -241,8 +277,8 @@ function templateSO_A4(d: any): string {
         <h1>ใบยืนยันคำสั่งขาย</h1>
         <div class="doc-number">${d.so_number}</div>
         <div class="doc-date">วันที่สั่ง: ${fmtDate(d.order_date)}</div>
-        <div class="doc-date" style="${isLate ? 'color:#dc2626;font-weight:600' : ''}">กำหนดส่ง: ${fmtDate(d.delivery_date)}${isLate ? ' ⚠' : ''}</div>
-        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:#f3f4f6;border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
+        <div class="doc-date" style="${isLate ? 'color:var(--danger);font-weight:600' : ''}">กำหนดส่ง: ${fmtDate(d.delivery_date)}${isLate ? ' <span style="color:var(--danger);font-weight:700">!</span>' : ''}</div>
+        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:var(--surface-2);border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
       </div>
     </div>
     <div class="info-row">
@@ -278,7 +314,7 @@ function templateSO_A4(d: any): string {
     <div class="totals">
       <div class="totals-box">
         <div class="totals-row"><span>ราคาสินค้า</span><span>${fmt(d.subtotal)}</span></div>
-        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:#dc2626"><span>ส่วนลดรวม</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
+        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:var(--danger)"><span>ส่วนลดรวม</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
         ${(d.tax_amount || 0) > 0 ? `<div class="totals-row"><span>VAT ${d.tax_rate}%</span><span>${fmt(d.tax_amount)}</span></div>` : ''}
         <div class="totals-row grand"><span>รวมทั้งสิ้น</span><span>${fmt(d.total_amount)}</span></div>
       </div>
@@ -321,7 +357,7 @@ function templateINV_A4(d: any): string {
         <h1>ใบแจ้งหนี้ / ใบกำกับภาษี</h1>
         <div class="doc-number">${d.invoice_number}</div>
         <div class="doc-date">วันที่ออกใบ: ${fmtDate(d.invoice_date)}</div>
-        <div class="doc-date" style="${isOverdue ? 'color:#dc2626;font-weight:600' : ''}">ครบกำหนด: ${fmtDate(d.due_date)}${isOverdue ? ' ⚠ เกินกำหนด' : ''}</div>
+        <div class="doc-date" style="${isOverdue ? 'color:var(--danger);font-weight:600' : ''}">ครบกำหนด: ${fmtDate(d.due_date)}${isOverdue ? ' <AlertTriangle className="w-4 h-4" /> เกินกำหนด' : ''}</div>
       </div>
     </div>
     <div class="info-row">
@@ -339,7 +375,7 @@ function templateINV_A4(d: any): string {
       </div>
       <div class="info-box">
         <label>สถานะชำระ</label>
-        <div class="value" style="${isOverdue ? 'color:#dc2626' : ''}">${STATUS_TH[d.payment_status] || d.payment_status}</div>
+        <div class="value" style="${isOverdue ? 'color:var(--danger)' : ''}">${STATUS_TH[d.payment_status] || d.payment_status}</div>
       </div>
     </div>
     <table>
@@ -358,9 +394,9 @@ function templateINV_A4(d: any): string {
         ${(d.tax_amount || 0) > 0 ? `
         <div class="totals-row"><span>มูลค่าสินค้าก่อนภาษี</span><span>${fmt(netRevenue)}</span></div>
         <div class="totals-row"><span>VAT ${d.tax_rate || 7}%</span><span>${fmt(d.tax_amount)}</span></div>` : ''}
-        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:#dc2626"><span>ส่วนลด</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
+        ${(d.discount_amount || 0) > 0 ? `<div class="totals-row" style="color:var(--danger)"><span>ส่วนลด</span><span>-${fmt(d.discount_amount)}</span></div>` : ''}
         <div class="totals-row grand"><span>รวมทั้งสิ้น</span><span>${fmt(d.total_amount)}</span></div>
-        ${(d.paid_amount || 0) > 0 ? `<div class="totals-row" style="color:#059669"><span>ชำระแล้ว</span><span>-${fmt(d.paid_amount)}</span></div>` : ''}
+        ${(d.paid_amount || 0) > 0 ? `<div class="totals-row" style="color:var(--success)"><span>ชำระแล้ว</span><span>-${fmt(d.paid_amount)}</span></div>` : ''}
         ${(d.balance_amount || 0) > 0 ? `<div class="totals-row balance"><span>ยอดคงค้าง</span><span>${fmt(d.balance_amount)}</span></div>` : ''}
       </div>
     </div>
@@ -413,7 +449,7 @@ function templateINV_Thermal(d: any): string {
   <div class="row total-line"><label>รวมสุทธิ</label><span>${fmt(d.total_amount)}</span></div>
   ${(d.paid_amount || 0) > 0 ? `<div class="row"><label>ชำระแล้ว</label><span>${fmt(d.paid_amount)}</span></div>
   <div class="row bold"><label>ยอดค้าง</label><span>${fmt(d.balance_amount)}</span></div>` : ''}
-  <div class="center" style="font-size:7pt;color:#888;margin-top:3mm">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
+  <div class="center" style="font-size:7pt;color:var(--fg-4);margin-top:3mm">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -497,7 +533,7 @@ function templateRC_Thermal(d: any): string {
   ${d.payment_reference ? `<div class="row"><label>อ้างอิง</label><span>${d.payment_reference}</span></div>` : ''}
   <hr class="divider-solid">
   <div class="row total-line"><label>รับชำระ</label><span>${fmt(d.amount)}</span></div>
-  <div class="sig-area">ลายเซ็นผู้รับ _______________<br><span style="font-size:7pt;color:#666">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span></div>`
+  <div class="sig-area">ลายเซ็นผู้รับ _______________<br><span style="font-size:7pt;color:var(--fg-3)">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span></div>`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -526,7 +562,7 @@ function templateCN_A4(d: any): string {
         <h1>ใบลดหนี้</h1>
         <div class="doc-number">${d.cn_number}</div>
         <div class="doc-date">วันที่: ${fmtDate(d.credit_date)}</div>
-        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:#fee2e2;color:#991b1b;border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
+        <div style="margin-top:2mm"><span style="display:inline-block;padding:1mm 3mm;background:var(--danger-soft);color:var(--danger);border-radius:2px;font-size:8pt;font-weight:600">${STATUS_TH[d.status] || d.status}</span></div>
       </div>
     </div>
     <div class="info-row">
@@ -540,9 +576,9 @@ function templateCN_A4(d: any): string {
         <div class="value">${d.invoice_number || '-'}</div>
       </div>
     </div>
-    <div style="margin-bottom:4mm;padding:3mm 4mm;border:1px solid #fecaca;border-radius:3px;background:#fff5f5">
-      <label style="font-size:7.5pt;color:#888;display:block;margin-bottom:1mm">เหตุผลการลดหนี้</label>
-      <div style="font-size:9.5pt;font-weight:600;color:#111">${d.reason || '-'}</div>
+    <div style="margin-bottom:4mm;padding:3mm 4mm;border:1px solid var(--danger-soft);border-radius:3px;background:var(--danger-soft)">
+      <label style="font-size:7.5pt;color:var(--fg-4);display:block;margin-bottom:1mm">เหตุผลการลดหนี้</label>
+      <div style="font-size:9.5pt;font-weight:600;color:var(--fg-1)">${d.reason || '-'}</div>
     </div>
     ${rows ? `
     <table>
@@ -558,7 +594,7 @@ function templateCN_A4(d: any): string {
     </table>` : ''}
     <div class="totals">
       <div class="totals-box">
-        <div class="totals-row" style="font-size:11.5pt;font-weight:800;color:#dc2626;background:#fee2e2;padding:3mm 3.5mm"><span>ยอดลดหนี้ทั้งสิ้น</span><span>-${fmt(d.total_amount)}</span></div>
+        <div class="totals-row" style="font-size:11.5pt;font-weight:800;color:var(--danger);background:var(--danger-soft);padding:3mm 3.5mm"><span>ยอดลดหนี้ทั้งสิ้น</span><span>-${fmt(d.total_amount)}</span></div>
       </div>
     </div>
     ${d.notes ? `<div class="notes-box"><label>หมายเหตุ</label>${d.notes}</div>` : ''}

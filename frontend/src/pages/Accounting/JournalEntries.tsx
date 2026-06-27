@@ -1,9 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FileText, Plus, Search, CheckCircle, Lock, Unlock,
-  Trash2, Calculator, X, ChevronDown, ChevronUp,
-  Zap, ShoppingCart, ShoppingBag, RefreshCw, ArrowUpDown,
+  AlertTriangle,
+  ArrowUpDown,
+  Calculator,
+  Check,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Lock,
+  Plus,
+  RefreshCw,
+  Search,
+  ShoppingBag,
+  ShoppingCart,
+  Trash2,
+  Unlock,
+  X,
+  Zap,
 } from 'lucide-react'
 import { journalApi, accountsApi, type Account } from '../../services/accounting'
 import toast from 'react-hot-toast'
@@ -279,7 +294,7 @@ export default function JournalEntries() {
         }`}>
           <p className="text-xs text-[var(--fg-4)] mb-0.5">สมดุล</p>
           <p className={`text-lg font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-success' : 'text-danger'}`}>
-            {Math.abs(totalDebit - totalCredit) < 0.01 ? '✓ สมดุล' : `ต่าง ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
+            {Math.abs(totalDebit - totalCredit) < 0.01 ? <><Check className="w-4 h-4 inline" /> สมดุล</> : `ต่าง ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
           </p>
         </div>
       </div>
@@ -550,7 +565,7 @@ function DetailModal({ entry, loading, onClose, onPost }: {
                   <Calculator className="w-4 h-4" /> ตรวจสอบสมดุล
                 </span>
                 <span className="font-bold">
-                  {Math.abs(entry.totalDebit - entry.totalCredit) < 0.01 ? '✓ สมดุล' : 'ไม่สมดุล'}
+                  {Math.abs(entry.totalDebit - entry.totalCredit) < 0.01 ? <><Check className="w-4 h-4 inline" /> สมดุล</> : 'ไม่สมดุล'}
                 </span>
               </div>
 
@@ -698,7 +713,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
           {/* No accounts warning */}
           {accountsLoaded && accounts.length === 0 && (
             <div className="rounded-lg border border-warning/30 bg-[var(--warning-soft)] px-3 py-2.5 text-xs text-warning">
-              ⚠️ ยังไม่มีผังบัญชี — กรุณาไปที่ <strong>Chart of Accounts</strong> แล้วกด Initialize ก่อน
+              <AlertTriangle className="w-4 h-4 inline" /> ยังไม่มีผังบัญชี — กรุณาไปที่ <strong>Chart of Accounts</strong> แล้วกด Initialize ก่อน
             </div>
           )}
 
@@ -942,7 +957,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
           }`}>
             <span className={`flex items-center gap-2 ${balanced ? 'text-success' : 'text-danger'}`}>
               <Calculator className="w-4 h-4" />
-              {balanced ? '✓ สมดุล — พร้อมบันทึก' : `ไม่สมดุล: ต่างกัน ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
+              {balanced ? <><Check className="w-4 h-4 inline" /> สมดุล — พร้อมบันทึก</> : `ไม่สมดุล: ต่างกัน ฿${fmt(Math.abs(totalDebit - totalCredit))}`}
             </span>
             <span className="text-xs text-[var(--fg-4)]">Dr. {fmt(totalDebit)} / Cr. {fmt(totalCredit)}</span>
           </div>

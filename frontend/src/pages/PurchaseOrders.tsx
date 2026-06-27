@@ -2,21 +2,22 @@ import { useState, useEffect } from 'react'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShoppingCart,
-  Plus,
-  Search,
-  Eye,
-  Trash2,
-  X,
-  Loader2,
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
   CheckCircle,
   Clock,
-  Send,
-  Package,
+  Eye,
   FileText,
-  ArrowRight,
-  AlertCircle,
+  Loader2,
+  Package,
   Pencil,
+  Plus,
+  Search,
+  Send,
+  ShoppingCart,
+  Trash2,
+  X,
 } from 'lucide-react'
 import purchaseOrderService, { PurchaseOrder, POStats } from '../services/purchaseOrder'
 import supplierService, { Supplier } from '../services/supplier'
@@ -648,7 +649,7 @@ function EditPOModal({ po, suppliers, onClose, onSave }: {
               <h2 className="text-xl font-bold text-[var(--fg-1)]">Edit Draft PO</h2>
               <p className="text-sm text-[var(--fg-3)] font-mono">{po.po_number}</p>
               {po.notes?.startsWith('[AI Draft]') && (
-                <p className="text-xs text-warning mt-1">⚠️ สร้างจาก AI — กรุณาตรวจสอบข้อมูลก่อน Submit</p>
+                <p className="text-xs text-warning mt-1"><AlertTriangle className="w-3.5 h-3.5 inline" /> สร้างจาก AI — กรุณาตรวจสอบข้อมูลก่อน Submit</p>
               )}
             </div>
             <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">

@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Check, ClipboardList, Clock, AlertCircle, MonitorPlay, ChefHat, RefreshCw, Maximize, Minimize } from 'lucide-react'
+import {
+  AlertCircle,
+  Bell,
+  BellOff,
+  Check,
+  ChefHat,
+  ClipboardList,
+  Clock,
+  Maximize,
+  Minimize,
+  MonitorPlay,
+  RefreshCw,
+  Star,
+} from 'lucide-react'
 import kdsService, { KDSTicket } from '../services/kds.service'
 
 const KDS: React.FC = () => {
@@ -128,10 +141,10 @@ const KDS: React.FC = () => {
             }`}
           >
             {soundEnabled && notifPermission === 'granted'
-              ? '🔔 เสียง + แจ้งเตือนเปิด'
+              ? <><Bell className="w-4 h-4" /> เสียง + แจ้งเตือนเปิด</>
               : soundEnabled
-              ? '🔔 เสียงเปิด · กดขออนุญาตแจ้งเตือน'
-              : '🔕 กดเพื่อเปิดเสียง + แจ้งเตือน'}
+              ? <><Bell className="w-4 h-4" /> เสียงเปิด · กดขออนุญาตแจ้งเตือน</>
+              : <><BellOff className="w-4 h-4" /> กดเพื่อเปิดเสียง + แจ้งเตือน</>}
           </button>
           <div className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
@@ -217,7 +230,7 @@ const KDS: React.FC = () => {
                         <p className="font-semibold text-[var(--fg-1)]">{item.product_name}</p>
                         {item.special_instructions && (
                           <p className="text-xs text-warning mt-1 bg-[var(--warning-soft)] px-2 py-0.5 rounded inline-block border border-yellow-400/20">
-                            ★ {item.special_instructions}
+                            <Star className="w-3 h-3 inline" /> {item.special_instructions}
                           </p>
                         )}
                       </div>

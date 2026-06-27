@@ -1,38 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  FileText,
-  ShoppingCart,
-  Receipt,
-  Plus,
-  Search,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  DollarSign,
-  TrendingUp,
-  Package,
-  RotateCcw,
-  LayoutTemplate,
-  LayoutList,
-  LayoutGrid,
-  ChevronRight,
-  ArrowRight,
-  X,
-  Store,
-  ShoppingBag,
-  Ban,
-  ChevronDown,
-  ChevronUp,
-  Banknote,
-  QrCode,
-  Printer,
-  Upload,
-  ImageIcon,
-  Trash2,
-  Eye,
-  Pencil,
-} from 'lucide-react'
+import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Upload, ImageIcon, Trash2, Eye, Pencil, AlertTriangle, Check} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import posService from '../services/pos.service'
@@ -1030,7 +998,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{formatDate(order.order_date)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">
                         <span className={`text-xs font-medium ${isLate ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                          {formatDate(order.delivery_date)}{isLate ? ' ⚠' : ''}
+                          {formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -1128,7 +1096,7 @@ const Sales = () => {
                   <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · ค้างส่ง ${order.pending_qty}` : ''}</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>วันสั่ง: <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
-                    <span>กำหนดส่ง: <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? ' ⚠' : ''}</span></span>
+                    <span>กำหนดส่ง: <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
                     <span>{order.item_count} รายการ</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</span>
                   </div>
@@ -1232,7 +1200,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(inv.invoice_date)}</td>
                       <td className="px-4 py-3 hidden md:table-cell">
                         <span className={`text-xs font-medium ${isOverdue ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                          {formatDate(inv.due_date)}{isOverdue ? ' ⚠' : ''}
+                          {formatDate(inv.due_date)}{isOverdue ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center"><StatusBadge status={inv.payment_status} /></td>
@@ -1841,7 +1809,7 @@ const Sales = () => {
               : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
             }`}>
               <span>ผลต่าง</span>
-              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? '✓ ตรง' : diff > 0 ? '(เกิน)' : '(ขาด)'}</span>
+              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? '<Check className="w-4 h-4" /> ตรง' : diff > 0 ? '(เกิน)' : '(ขาด)'}</span>
             </div>
             <Field label="หมายเหตุ (optional)">
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
@@ -2227,7 +2195,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
@@ -3129,7 +3097,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
                         <p className="text-[var(--fg-1)]">{it.product_name || `รายการ ${i + 1}`}</p>
                         <p className="text-xs text-[var(--fg-4)]">{it.quantity} × {fmt(it.unit_price)}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
                         {insufficient && (
-                          <p className="text-xs text-danger mt-0.5">⚠ สต็อกไม่พอ (มี {it.stock_qty ?? 0} ชิ้น)</p>
+                          <p className="text-xs text-danger mt-0.5"><AlertTriangle className="w-4 h-4" /> สต็อกไม่พอ (มี {it.stock_qty ?? 0} ชิ้น)</p>
                         )}
                       </div>
                       <p className="text-[var(--fg-1)] font-medium ml-3">{fmt(it.total_price)}</p>
@@ -3538,7 +3506,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
     {/* Image Preview Lightbox */}
     {previewUrl && (
-      <div className="fixed inset-0 bg-[var(--fg-1)]/90 z-[60] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
+      <div className="fixed inset-0 bg-[var(--fg-1)]/90 z-50 flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
         <button className="absolute top-4 right-4 p-2 bg-[var(--surface-2)] rounded-lg text-[var(--fg-1)] hover:bg-[var(--surface-2)]">
           <X className="w-5 h-5" />
         </button>

@@ -39,25 +39,25 @@ function ProductionChart() {
 
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#ECE6D8" opacity={0.5} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
           <XAxis
             dataKey="product"
-            stroke="#6B6658"
+            stroke="var(--fg-3)"
             style={{ fontSize: '12px' }}
             angle={-15}
             textAnchor="end"
             height={80}
           />
-          <YAxis stroke="#6B6658" style={{ fontSize: '12px' }} />
+          <YAxis stroke="var(--fg-3)" style={{ fontSize: '12px' }} />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #ECE6D8',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
-              boxShadow: '0 4px 12px -2px rgba(30, 27, 22, 0.08)',
+              boxShadow: 'var(--shadow-2)',
             }}
-            labelStyle={{ color: '#9333EA' }}
-            itemStyle={{ color: '#1E1B16' }}
+            labelStyle={{ color: 'var(--primary)' }}
+            itemStyle={{ color: 'var(--fg-1)' }}
           />
           <Legend
             wrapperStyle={{
@@ -65,8 +65,8 @@ function ProductionChart() {
               paddingTop: '20px',
             }}
           />
-          <Bar dataKey="produced" fill="#16A34A" radius={[8, 8, 0, 0]} />
-          <Bar dataKey="target" fill="#9333EA" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="produced" fill="var(--success)" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="target" fill="var(--primary)" radius={[8, 8, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
 

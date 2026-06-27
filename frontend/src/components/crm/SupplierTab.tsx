@@ -1,24 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Truck,
-  Plus,
-  Search,
-  Edit2,
-  Trash2,
-  X,
-  Star,
-  Loader2,
-  Phone,
-  Mail,
-  MapPin,
-  ShoppingCart,
-  TrendingUp,
-  Package,
-  ChevronDown,
-  ChevronUp,
-  Pencil,
-} from 'lucide-react'
+import {Truck, Plus, Search, Edit2, Trash2, X, Star, Loader2, Phone, Mail, MapPin, ShoppingCart, TrendingUp, Package, ChevronDown, ChevronUp, Pencil, User} from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
 
 export default function SupplierTab() {
@@ -81,7 +63,7 @@ export default function SupplierTab() {
         <StatCard label="Total Suppliers" value={(stats?.totalSuppliers ?? 0).toString()} color="text-[var(--primary)]" />
         <StatCard label="Active" value={(stats?.activeSuppliers ?? 0).toString()} color="text-success" />
         <StatCard label="Purchase Orders" value={(stats?.totalPOs ?? 0).toString()} color="text-warning" />
-        <StatCard label="Total Spent" value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-purple-500" />
+        <StatCard label="Total Spent" value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-[var(--primary)]" />
       </div>
 
       {/* Toolbar */}
@@ -155,8 +137,8 @@ export default function SupplierTab() {
                   >
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                          <Truck className="w-5 h-5 text-purple-500" />
+                        <div className="w-10 h-10 rounded-lg bg-[var(--primary)]/20 flex items-center justify-center">
+                          <Truck className="w-5 h-5 text-[var(--primary)]" />
                         </div>
                         <div>
                           <p className="text-[var(--fg-2)] font-medium hover:text-[var(--primary)] transition-colors">{supplier.name}</p>
@@ -168,7 +150,7 @@ export default function SupplierTab() {
                       <span className={`status-badge ${
                         supplier.type === 'RAW_MATERIAL' ? 'text-blue-400 bg-[var(--info-soft)] border-info/30' :
                         supplier.type === 'PACKAGING' ? 'text-warning bg-[var(--warning-soft)] border-warning/30' :
-                        'text-purple-400 bg-purple-500/20 border-purple-500/30'
+                        'text-purple-400 bg-[var(--primary)]/20 border-purple-500/30'
                       }`}>
                         {supplier.type === 'RAW_MATERIAL' ? 'Raw Material' : supplier.type === 'PACKAGING' ? 'Packaging' : 'Service'}
                       </span>
@@ -443,7 +425,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
   const typeColor: Record<string, string> = {
     RAW_MATERIAL: 'text-blue-400 bg-[var(--info-soft)] border-info/30',
     PACKAGING: 'text-warning bg-[var(--warning-soft)] border-warning/30',
-    SERVICE: 'text-purple-400 bg-purple-500/20 border-purple-500/30',
+    SERVICE: 'text-purple-400 bg-[var(--primary)]/20 border-purple-500/30',
     OTHER: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]',
   }
   const typeLabel: Record<string, string> = {
@@ -482,8 +464,8 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         <div className="w-64 flex-shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col overflow-y-auto">
           {/* Avatar */}
           <div className="p-6 flex flex-col items-center text-center border-b border-[var(--border)]">
-            <div className="w-20 h-20 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center mb-3">
-              <Truck className="w-10 h-10 text-purple-500" />
+            <div className="w-20 h-20 rounded-2xl bg-[var(--primary)]/20 border border-[var(--primary)]/40 flex items-center justify-center mb-3">
+              <Truck className="w-10 h-10 text-[var(--primary)]" />
             </div>
             <p className="text-lg font-bold text-[var(--fg-1)] leading-tight">{supplier.name}</p>
             <p className="text-xs text-[var(--fg-4)] mt-1 font-mono">{supplier.code}</p>
@@ -535,7 +517,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">ผู้ติดต่อ</p>
             {supplier.contact_name && (
               <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
-                <span className="text-[var(--fg-4)] text-xs">👤</span> {supplier.contact_name}
+                <span className="text-[var(--fg-4)] text-xs"><User className="w-4 h-4" /></span> {supplier.contact_name}
               </div>
             )}
             {supplier.phone && (
@@ -603,7 +585,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
         </div>
 
         {/* ── RIGHT PANEL ───────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[var(--surface)]">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-[var(--surface-2)]">
             <div className="flex gap-1">
@@ -613,7 +595,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                     activeTab === tab.id
-                      ? 'bg-purple-500/20 text-purple-500 border border-purple-500/40'
+                      ? 'bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/40'
                       : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--border)]/20'
                   }`}
                 >
@@ -630,7 +612,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
           <div className="flex-1 overflow-y-auto p-5">
             {loadingInsights ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
               </div>
             ) : (
               <>
@@ -643,7 +625,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                         { label: 'คำสั่งซื้อทั้งหมด', value: stats?.totalOrders ?? 0, suffix: 'ครั้ง', color: 'text-[var(--primary)]' },
                         { label: 'ยอดซื้อรวม', value: `฿${(stats?.totalSpent ?? 0).toLocaleString()}`, suffix: '', color: 'text-success' },
                         { label: 'เฉลี่ย/ออเดอร์', value: `฿${Math.round(stats?.avgOrderValue ?? 0).toLocaleString()}`, suffix: '', color: 'text-warning' },
-                        { label: 'ห่างจากออเดอร์ล่าสุด', value: stats?.daysSinceLastOrder ?? '-', suffix: stats?.daysSinceLastOrder != null ? 'วัน' : '', color: 'text-purple-500' },
+                        { label: 'ห่างจากออเดอร์ล่าสุด', value: stats?.daysSinceLastOrder ?? '-', suffix: stats?.daysSinceLastOrder != null ? 'วัน' : '', color: 'text-[var(--primary)]' },
                       ].map((item, i) => (
                         <div key={i} className="phopy-card p-4">
                           <p className="text-xs text-[var(--fg-4)] mb-1">{item.label}</p>
@@ -658,7 +640,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     {insights?.spendingTrend?.length > 0 && (
                       <div className="phopy-card p-4">
                         <p className="text-sm font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-purple-500" /> ยอดซื้อรายเดือน (12 เดือนล่าสุด)
+                          <TrendingUp className="w-4 h-4 text-[var(--primary)]" /> ยอดซื้อรายเดือน (12 เดือนล่าสุด)
                         </p>
                         <SpendingTrendBars trend={insights.spendingTrend} />
                       </div>
@@ -747,7 +729,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     ) : (
                       <>
                         <p className="text-sm text-[var(--fg-3)] flex items-center gap-2">
-                          <Package className="w-4 h-4 text-purple-500" /> วัตถุดิบที่สั่งซื้อบ่อย
+                          <Package className="w-4 h-4 text-[var(--primary)]" /> วัตถุดิบที่สั่งซื้อบ่อย
                         </p>
                         <TopMaterialsChart materials={insights.topMaterials} />
                         <div className="phopy-card overflow-hidden">
@@ -810,7 +792,7 @@ function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: numb
 }
 
 // ── Top Materials Horizontal Bars ─────────────────────────────────────────────
-const MATERIAL_COLORS = ['#a855f7','#06b6d4','#10b981','#f59e0b','#3b82f6','#ef4444','#8b5cf6','#14b8a6','#f97316','#6366f1']
+const MATERIAL_COLORS = ['var(--primary)','var(--info)','var(--success)','var(--warning)','var(--link)','var(--danger)','var(--fg-4)','var(--fg-3)','var(--fg-2)','var(--fg-1)']  // ponytail: token palette for distinct chart segments
 
 function TopMaterialsChart({ materials }: { materials: any[] }) {
   const top5 = materials.slice(0, 5)

@@ -256,7 +256,7 @@ export const reportsApi = {
 export const ACCOUNT_TYPES: { value: AccountType; label: string; color: string; bgColor: string }[] = [
   { value: 'ASSET',     label: 'สินทรัพย์',        color: 'text-success',           bgColor: 'bg-[var(--success-soft)]' },
   { value: 'LIABILITY', label: 'หนี้สิน',           color: 'text-danger',            bgColor: 'bg-[var(--danger-soft)]' },
-  { value: 'EQUITY',    label: 'ส่วนของผู้ถือหุ้น', color: 'text-[#7C3AED]',         bgColor: 'bg-[#7C3AED]/10' },
+  { value: 'EQUITY',    label: 'ส่วนของผู้ถือหุ้น', color: 'text-[var(--primary)]',         bgColor: 'bg-[var(--primary-soft)]' },
   { value: 'REVENUE',   label: 'รายได้',            color: 'text-[var(--primary)]',  bgColor: 'bg-[var(--primary-soft)]' },
   { value: 'EXPENSE',   label: 'ค่าใช้จ่าย',        color: 'text-warning',           bgColor: 'bg-[var(--warning-soft)]' },
 ]

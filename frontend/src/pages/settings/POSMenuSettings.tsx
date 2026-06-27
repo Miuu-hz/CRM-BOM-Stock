@@ -1,22 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Store,
-  Plus,
-  Search,
-  Edit2,
-  Trash2,
-  ToggleRight,
-  ToggleLeft,
-  Package,
-  Tag,
-  DollarSign,
-  Clock,
+  Check,
   ChevronRight,
-  X,
-  Save,
-  Utensils,
+  Clock,
+  DollarSign,
+  Edit2,
   Grid,
+  Package,
+  Plus,
+  Save,
+  Search,
+  Store,
+  Tag,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  Utensils,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../../hooks/useModalClose'
@@ -331,7 +332,7 @@ export default function POSMenuSettings() {
                       <div className="flex items-center gap-2">
                         <span 
                           className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: menu.category_color || '#3949E5' }}
+                          style={{ backgroundColor: menu.category_color || 'var(--primary)' }}
                         />
                         <span className="text-xs text-[var(--fg-3)]">
                           {menu.category_name || 'Uncategorized'}
@@ -797,7 +798,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   </select>
                   {formData.bom_id && (
                     <p className="text-xs text-success mt-1">
-                      ✓ Stock will be deducted from BOM ingredients
+                      <Check className="w-3.5 h-3.5 inline" /> Stock will be deducted from BOM ingredients
                     </p>
                   )}
                   {!formData.bom_id && boms.length > 0 && (

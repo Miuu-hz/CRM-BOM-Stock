@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeftRight,
   BookOpen,
-  Plus,
-  Search,
+  Building2,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
   Edit,
-  Trash2,
+  Plus,
   RefreshCw,
-  AlertCircle,
-  CheckCircle,
-  ArrowLeftRight,
-  Building2,
-  Wallet,
-  TrendingUp,
+  Search,
+  Trash2,
   TrendingDown,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react'
 import { accountsApi, ACCOUNT_TYPES, Account, AccountType } from '../../services/accounting'
 import toast from 'react-hot-toast'
@@ -36,7 +37,7 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
   const typeColors: Record<AccountType, string> = {
     ASSET:     'text-success         border-success/30          bg-[var(--success-soft)]',
     LIABILITY: 'text-danger          border-danger/30           bg-[var(--danger-soft)]',
-    EQUITY:    'text-[#7C3AED]       border-[#7C3AED]/30        bg-[#7C3AED]/10',
+    EQUITY:    'text-[var(--primary)] border-[var(--primary)]/30 bg-[var(--primary-soft)]',
     REVENUE:   'text-[var(--primary)] border-[var(--primary)]/30 bg-[var(--primary-soft)]',
     EXPENSE:   'text-warning         border-warning/30          bg-[var(--warning-soft)]',
   }
@@ -244,7 +245,7 @@ const ChartOfAccounts = () => {
       const msg = data?.message || 'ลบบัญชีไม่สำเร็จ'
       if (data?.canDeactivate) {
         const yes = confirm(
-          `⚠️ ${msg}\n\n` +
+          `${msg}\n\n` +
           `การปิดใช้งานบัญชี "${account.name}" (${account.code}) จะมีผลดังนี้:\n` +
           `• ไม่สามารถเลือกบัญชีนี้ในรายการบันทึกบัญชีใหม่ได้\n` +
           `• รายการเก่าที่ผ่านมาแล้วจะยังคงแสดงบัญชีนี้ตามเดิม\n` +

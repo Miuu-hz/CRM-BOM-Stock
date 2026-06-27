@@ -1,4 +1,5 @@
 import { forwardRef } from 'react'
+import { Printer, Download, Mail, User, Phone, Landmark, Hash, XCircle, Check, AlertTriangle } from 'lucide-react'
 import { useBill, BillType, BILL_CONFIGS } from './BillContext'
 import './UnifiedBillTemplate.css'
 
@@ -104,8 +105,9 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
     
     if (error || !data) {
       return (
-        <div className="bill-error">
-          <p>❌ {error || 'ไม่พบข้อมูล'}</p>
+        <div className="bill-error flex items-center justify-center gap-2">
+          <XCircle className="w-5 h-5 text-danger" />
+          <p>{error || 'ไม่พบข้อมูล'}</p>
         </div>
       )
     }
@@ -114,14 +116,14 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
       <div className="unified-bill-container">
         {showPrintButton && (
           <div className="bill-toolbar no-print">
-            <button onClick={handlePrint} className="phopy-btn-primary">
-              🖨️ พิมพ์เอกสาร
+            <button onClick={handlePrint} className="phopy-btn-primary flex items-center gap-2">
+              <Printer className="w-4 h-4" /> พิมพ์เอกสาร
             </button>
-            <button className="phopy-btn-secondary">
-              💾 บันทึก PDF
+            <button className="phopy-btn-secondary flex items-center gap-2">
+              <Download className="w-4 h-4" /> บันทึก PDF
             </button>
-            <button className="phopy-btn-secondary">
-              📧 ส่งอีเมล
+            <button className="phopy-btn-secondary flex items-center gap-2">
+              <Mail className="w-4 h-4" /> ส่งอีเมล
             </button>
           </div>
         )}
@@ -189,13 +191,13 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               {/* Contact Info */}
               <div className="bill-contact-grid">
                 {data.buyer.contactName && (
-                  <p>👤 {data.buyer.contactName}</p>
+                  <p className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> {data.buyer.contactName}</p>
                 )}
                 {data.buyer.tel && (
-                  <p>📞 {data.buyer.tel}</p>
+                  <p className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> {data.buyer.tel}</p>
                 )}
                 {data.buyer.email && (
-                  <p>✉️ {data.buyer.email}</p>
+                  <p className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {data.buyer.email}</p>
                 )}
               </div>
             </div>
@@ -249,16 +251,22 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                 </div>
                 <div className="wo-summary-card">
                   <p className="wo-summary-label">ผลิตแล้ว</p>
-                  <p className="wo-summary-value" style={{ color: '#16a34a' }}>{data.woCompletedQty ?? 0}</p>
+                  <p className="wo-summary-value text-success">{data.woCompletedQty ?? 0}</p>
                   <p className="wo-summary-unit">หน่วย</p>
                 </div>
                 <div className="wo-summary-card">
                   <p className="wo-summary-label">ระดับความสำคัญ</p>
-                  <span className="wo-priority" data-priority={data.priority || 'NORMAL'}>
-                    {data.priority === 'URGENT' ? '🔴 เร่งด่วนมาก'
-                     : data.priority === 'HIGH' ? '🟠 เร่งด่วน'
-                     : data.priority === 'NORMAL' ? '🔵 ปกติ'
-                     : '⚪ ไม่เร่งด่วน'}
+                  <span className="wo-priority flex items-center gap-1.5" data-priority={data.priority || 'NORMAL'}>
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                      data.priority === 'URGENT' ? 'bg-danger'
+                      : data.priority === 'HIGH' ? 'bg-warning'
+                      : data.priority === 'NORMAL' ? 'bg-info'
+                      : 'bg-[var(--fg-4)]'
+                    }`} />
+                    {data.priority === 'URGENT' ? 'เร่งด่วนมาก'
+                     : data.priority === 'HIGH' ? 'เร่งด่วน'
+                     : data.priority === 'NORMAL' ? 'ปกติ'
+                     : 'ไม่เร่งด่วน'}
                   </span>
                 </div>
               </div>
@@ -311,11 +319,11 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                         <td className="wo-col-unit">{item.unit}</td>
                         <td className="wo-col-stock">
                           {item.stockStatus === 'ok' && (
-                            <span className="wo-stock-ok">✓ {item.stockQty} {item.stockUnit}</span>
+                            <span className="wo-stock-ok flex items-center gap-1"><Check className="w-3.5 h-3.5" /> {item.stockQty} {item.stockUnit}</span>
                           )}
                           {item.stockStatus === 'short' && (
-                            <span className="wo-stock-short">
-                              ⚠ {item.stockQty} {item.stockUnit}<br/>
+                            <span className="wo-stock-short flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5" /> {item.stockQty} {item.stockUnit}<br/>
                               <small>ขาด {((item.quantity) - (item.stockQty ?? 0)).toFixed(2)}</small>
                             </span>
                           )}
@@ -404,9 +412,9 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   {config.fields.showBankInfo && data.bankName && (
                     <div className="bill-bank-info">
                       <p className="bill-bank-label">ชำระเงินผ่านธนาคาร:</p>
-                      <p>🏦 {data.bankName}</p>
-                      <p>👤 ชื่อบัญชี: {data.bankAccountName}</p>
-                      <p>🔢 เลขที่บัญชี: {data.bankAccountNumber}</p>
+                      <p className="flex items-center gap-1.5"><Landmark className="w-3.5 h-3.5" /> {data.bankName}</p>
+                      <p className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> ชื่อบัญชี: {data.bankAccountName}</p>
+                      <p className="flex items-center gap-1.5"><Hash className="w-3.5 h-3.5" /> เลขที่บัญชี: {data.bankAccountNumber}</p>
                     </div>
                   )}
                   {data.paymentMethod && (

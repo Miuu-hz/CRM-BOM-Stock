@@ -35,7 +35,7 @@
   gap: 12px;
   color: var(--fg-3, #6B6658);
 }
-.bill-error { color: #DC2626; }
+.bill-error { color: var(--danger); }
 
 /* ═══════════════════════════════════
    PAPER BASE
@@ -174,14 +174,14 @@
   font-weight: 600;
   display: inline-block;
 }
-.bill-status-badge[data-status="DRAFT"]       { background: #fef3c7; color: #92400e; }
-.bill-status-badge[data-status="CONFIRMED"]   { background: #d1fae5; color: #065f46; }
-.bill-status-badge[data-status="COMPLETED"]   { background: #dbeafe; color: #1e40af; }
-.bill-status-badge[data-status="CANCELLED"]   { background: #fee2e2; color: #991b1b; }
+.bill-status-badge[data-status="DRAFT"]       { background: var(--warning-soft); color: var(--warning); }
+.bill-status-badge[data-status="CONFIRMED"]   { background: var(--success-soft); color: var(--success); }
+.bill-status-badge[data-status="COMPLETED"]   { background: var(--info-soft); color: var(--info); }
+.bill-status-badge[data-status="CANCELLED"]   { background: var(--danger-soft); color: var(--danger); }
 /* WO statuses */
-.bill-status-badge[data-status="PLANNED"]     { background: #dbeafe; color: #1e40af; }
-.bill-status-badge[data-status="IN_PROGRESS"] { background: #fef3c7; color: #92400e; }
-.bill-status-badge[data-status="ON_HOLD"]     { background: #fff3e0; color: #c2410c; }
+.bill-status-badge[data-status="PLANNED"]     { background: var(--info-soft); color: var(--info); }
+.bill-status-badge[data-status="IN_PROGRESS"] { background: var(--warning-soft); color: var(--warning); }
+.bill-status-badge[data-status="ON_HOLD"]     { background: var(--warning-soft); color: var(--warning); }
 
 /* ═══════════════════════════════════
    INFO GRID
@@ -661,10 +661,10 @@
   font-weight: 700;
   letter-spacing: 0.3px;
 }
-.wo-priority[data-priority="URGENT"] { background: #fee2e2; color: #991b1b; }
-.wo-priority[data-priority="HIGH"]   { background: #fef3c7; color: #92400e; }
-.wo-priority[data-priority="NORMAL"] { background: #dbeafe; color: #1e40af; }
-.wo-priority[data-priority="LOW"]    { background: #f3f4f6; color: #4b5563; }
+.wo-priority[data-priority="URGENT"] { background: var(--danger-soft); color: var(--danger); }
+.wo-priority[data-priority="HIGH"]   { background: var(--warning-soft); color: var(--warning); }
+.wo-priority[data-priority="NORMAL"] { background: var(--info-soft); color: var(--info); }
+.wo-priority[data-priority="LOW"]    { background: var(--surface-2); color: var(--fg-3); }
 
 /* ── Production summary cards ── */
 .wo-summary-grid {
@@ -721,7 +721,7 @@
 
 .wo-progress-bar {
   height: 10px;
-  background: #e5e7eb;
+  background: var(--surface-2);
   border-radius: 5px;
   overflow: hidden;
 }
@@ -733,7 +733,7 @@
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.wo-progress-fill[data-complete="true"] { background: #16a34a; }
+.wo-progress-fill[data-complete="true"] { background: var(--success); }
 
 /* ── Materials required table ── */
 .wo-materials-section { margin-bottom: 20px; }

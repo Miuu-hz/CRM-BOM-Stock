@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  RefreshCw,
-  Loader2,
-  DollarSign,
-} from 'lucide-react'
+import {TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, DollarSign, AlertTriangle, Check} from 'lucide-react'
 import bomService, { BOM } from '../../services/bom'
 import materialsService, { Material } from '../../services/materials'
 
@@ -405,10 +398,10 @@ function CostSimulation() {
               </div>
               <p className="text-[var(--fg-4)] mt-4 text-sm">
                 {totalChange > 0
-                  ? `⚠️ Material price increases will raise production costs by ${totalChangePercent.toFixed(
+                  ? `<AlertTriangle className="w-4 h-4" /> Material price increases will raise production costs by ${totalChangePercent.toFixed(
                       1
                     )}%`
-                  : `✅ Material price decreases will reduce production costs by ${Math.abs(
+                  : `<Check className="w-4 h-4" /> Material price decreases will reduce production costs by ${Math.abs(
                       totalChangePercent
                     ).toFixed(1)}%`}
               </p>

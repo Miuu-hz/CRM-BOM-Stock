@@ -31,13 +31,13 @@ function SalesChart() {
           </h2>
         </div>
         <div className="flex gap-2">
-          <button className="px-3 py-1 text-xs rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30">
+          <button className="px-3 py-1 text-xs rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30 min-h-[44px]">
             7 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] min-h-[44px]">
             30 Days
           </button>
-          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
+          <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] min-h-[44px]">
             90 Days
           </button>
         </div>
@@ -47,30 +47,30 @@ function SalesChart() {
         <AreaChart data={data}>
           <defs>
             <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3949E5" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#3949E5" stopOpacity={0} />
+              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#ECE6D8" opacity={0.5} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
           <XAxis
             dataKey="month"
-            stroke="#6B6658"
+            stroke="var(--fg-3)"
             style={{ fontSize: '12px' }}
           />
           <YAxis
-            stroke="#6B6658"
+            stroke="var(--fg-3)"
             style={{ fontSize: '12px' }}
             tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #ECE6D8',
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
-              boxShadow: '0 4px 12px -2px rgba(30, 27, 22, 0.08)',
+              boxShadow: 'var(--shadow-2)',
             }}
-            labelStyle={{ color: '#3949E5' }}
-            itemStyle={{ color: '#1E1B16' }}
+            labelStyle={{ color: 'var(--primary)' }}
+            itemStyle={{ color: 'var(--fg-1)' }}
             formatter={(value: number) => [
               `฿${(value / 1000000).toFixed(2)}M`,
               'Sales',
@@ -79,7 +79,7 @@ function SalesChart() {
           <Area
             type="monotone"
             dataKey="sales"
-            stroke="#3949E5"
+            stroke="var(--primary)"
             strokeWidth={2}
             fill="url(#salesGradient)"
           />

@@ -2,26 +2,27 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell,
-  Menu,
-  Search,
-  Settings,
-  User,
-  Users,
-  ShoppingCart,
-  Package,
-  Layers,
   Box,
-  Loader2,
-  X,
-  Store,
-  Truck,
   ClipboardList,
-  Wrench,
   FileCheck,
   FileText,
-  Receipt,
-  Sun,
+  Layers,
+  Loader2,
+  Menu,
   Moon,
+  Package,
+  Receipt,
+  Search,
+  Settings,
+  ShoppingCart,
+  Star,
+  Store,
+  Sun,
+  Truck,
+  User,
+  Users,
+  Wrench,
+  X,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import searchService from '../../services/search'
@@ -490,7 +491,7 @@ function Header({ onMenuClick }: HeaderProps) {
             <div className="hidden lg:block">
               <p className="text-sm font-semibold text-[var(--fg-1)]">{user?.name || 'User'}</p>
               <p className={`text-xs font-medium ${isMaster ? 'text-phopy-mango' : 'text-[var(--fg-3)]'}`}>
-                {isMaster ? '★ MASTER' : (user?.role || 'USER')}
+                {isMaster ? <><Star className="w-3 h-3 fill-current" /> MASTER</> : (user?.role || 'USER')}
               </p>
             </div>
           </motion.div>

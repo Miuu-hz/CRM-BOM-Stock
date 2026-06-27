@@ -1,25 +1,26 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Package,
-  Calculator,
-  ShoppingCart,
-  Wrench,
-  TrendingUp,
-  Settings,
-  LogOut,
-  BookOpen,
   BarChart3,
-  Landmark,
-  Percent,
-  Factory,
-  Store,
-  MonitorPlay,
-  Megaphone,
+  BookOpen,
+  Calculator,
   ClipboardCheck,
+  Factory,
+  FileText,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  Megaphone,
+  MonitorPlay,
+  Package,
+  Percent,
+  Settings,
+  ShoppingCart,
+  Star,
+  Store,
+  TrendingUp,
+  Users,
+  Wrench,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../utils/api'
@@ -145,7 +146,7 @@ function Sidebar({ mode }: SidebarProps) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-[var(--fg-1)] truncate">{user?.name || 'User'}</p>
               <p className={`text-xs font-semibold ${isMaster ? 'text-phopy-mango' : 'text-[var(--primary)]'}`}>
-                {isMaster ? '★ MASTER' : (user?.role || 'USER')}
+                {isMaster ? <><Star className="w-3 h-3 fill-current" /> MASTER</> : (user?.role || 'USER')}
               </p>
             </div>
           </div>

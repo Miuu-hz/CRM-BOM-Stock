@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { BillProvider, BillType, useBill } from './BillContext'
 import UnifiedBillTemplate from './UnifiedBillTemplate'
-import { FileText, ShoppingCart, Package, Wrench, Truck, Receipt } from 'lucide-react'
+import { FileText, ShoppingCart, Package, Wrench, Truck, Receipt, Printer, X, Eye } from 'lucide-react'
 
 interface BillViewerProps {
   type: BillType
@@ -59,12 +59,12 @@ function BillViewerContent({ onClose }: { onClose?: () => void }) {
               <option value="THERMAL">Thermal (80mm)</option>
             </select>
             
-            <button onClick={handlePrint} className="phopy-btn-primary">
-              🖨️ พิมพ์
+            <button onClick={handlePrint} className="phopy-btn-primary flex items-center gap-2">
+              <Printer className="w-4 h-4" /> พิมพ์
             </button>
             {onClose && (
-              <button onClick={onClose} className="phopy-btn-secondary">
-                ✕ ปิด
+              <button onClick={onClose} className="phopy-btn-secondary flex items-center gap-2">
+                <X className="w-4 h-4" /> ปิด
               </button>
             )}
           </div>
@@ -124,9 +124,9 @@ export function BillDemo() {
       {/* Preview Button */}
       <button
         onClick={() => setShowViewer(true)}
-        className="phopy-btn-primary w-full py-4 text-lg"
+        className="phopy-btn-primary w-full py-4 text-lg flex items-center justify-center gap-2"
       >
-        👁️ ดูตัวอย่าง {billTypeOptions.find(t => t.type === selectedType)?.label}
+        <Eye className="w-5 h-5" /> ดูตัวอย่าง {billTypeOptions.find(t => t.type === selectedType)?.label}
       </button>
       
       {/* Bill Viewer Modal */}
@@ -167,7 +167,7 @@ export function QuickPrintButton({ type, documentId, label, className = '' }: Qu
         className={`phopy-btn-secondary flex items-center gap-2 ${className}`}
         style={{ borderColor: config.color, color: config.color }}
       >
-        🖨️ {label || config.label}
+        <Printer className="w-4 h-4" /> {label || config.label}
       </button>
       
       {showViewer && (

@@ -92,7 +92,7 @@ export function SearchableDropdown({
   const dropdownContent = (
     <div
       data-searchable-dropdown-portal
-      className="fixed z-[100] bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
+      className="fixed z-50 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl max-h-80 flex flex-col"
       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
     >
       {/* Search Input */}
@@ -125,7 +125,7 @@ export function SearchableDropdown({
                 e.preventDefault()
                 handleSelect(option.id)
               }}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--primary-soft)] transition-colors ${
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--primary-soft)] transition-colors min-h-[44px] flex items-center ${
                 value === option.id
                   ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                   : 'text-[var(--fg-2)]'
@@ -157,7 +157,7 @@ export function SearchableDropdown({
           {value && !disabled && (
             <div
               onClick={handleClear}
-              className="p-0.5 hover:bg-[var(--bg)] rounded cursor-pointer"
+              className="p-0.5 hover:bg-[var(--bg)] rounded cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
               role="button"
             >
               <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />

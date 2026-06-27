@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Plus,
-  Search,
-  Eye,
-  Trash2,
-  X,
-  Loader2,
+  AlertTriangle,
+  ArrowRight,
+  Check,
   CheckCircle,
   Clock,
-  Play,
-  Pause,
+  Eye,
   FileText,
-  ArrowRight,
-  AlertTriangle,
-  ShoppingCart,
+  Loader2,
   PackageCheck,
+  Pause,
+  Play,
+  Plus,
+  Search,
+  ShoppingCart,
+  Trash2,
+  X,
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
 import api from '../services/api'
@@ -627,7 +628,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                             {mat.materialId && (() => {
                               if (stockChecking) return <Loader2 key="spin" className="w-3 h-3 animate-spin text-[var(--fg-4)] shrink-0" />
                               if (!ss || ss.type === 'unknown') return <span key="unk" className="text-xs text-[var(--fg-4)] shrink-0 w-16 text-right">?</span>
-                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium">✓ {ss.stockQty} {ss.unit}</span>
+                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium"><Check className="w-3 h-3 inline" /> {ss.stockQty} {ss.unit}</span>
                               if (ss.type === 'short') return <span key="sh" className="text-xs text-danger shrink-0 w-16 text-right font-semibold">-{ss.shortage} {ss.unit}</span>
                               return <span key="mm" className="text-xs text-warning shrink-0 w-16 text-right">{ss.stockQty} {ss.stockUnit}</span>
                             })()}

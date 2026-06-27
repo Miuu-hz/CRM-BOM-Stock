@@ -217,17 +217,36 @@ export default function UnitChainEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 z-[60] flex items-center justify-center p-4">
+    <>
+      <style>{`
+        .uce-theme {
+          --uce-bg: #0d0d1a;
+          --uce-grid: color-mix(in oklab, var(--primary) 18%, transparent);
+          --uce-node: rgba(18, 18, 42, 0.95);
+          --uce-accent: #8b5cf6;
+          --uce-accent-soft: #c4b5fd;
+          --uce-accent-btn: #9333ea;
+          --uce-accent-btn-hover: #a855f7;
+          --uce-tag: #1a1a2e;
+          --uce-blue: #3b82f6;
+          --uce-blue-soft: #93c5fd;
+          --uce-blue-dark: #1e3a8a;
+          --uce-muted: #4b5563;
+          --uce-input-bg: rgba(55, 65, 81, 0.5);
+          --uce-placeholder: #6b7280;
+        }
+      `}</style>
+      <div className="fixed inset-0 bg-[var(--fg-1)]/70 z-50 flex items-center justify-center p-4 uce-theme">
       <div className="phopy-card w-full max-w-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
         {/* Header */}
         <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Network className="w-4 h-4 text-purple-400" />
+            <Network className="w-4 h-4 text-[var(--uce-accent)]" />
             <h3 className="text-sm font-semibold text-[var(--fg-1)]">Unit Chain Editor</h3>
             <span className="text-xs text-[var(--fg-4)] hidden sm:block">ลากโหนดได้ · คลิก → เชื่อม · Esc ยกเลิก</span>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 hover:bg-[var(--bg)] rounded-lg">
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-[var(--bg)] rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X className="w-4 h-4 text-[var(--fg-3)]" />
           </button>
         </div>
@@ -235,12 +254,11 @@ export default function UnitChainEditor({
         {/* Canvas */}
         <div
           ref={canvasRef}
-          className="relative overflow-hidden flex-shrink-0 select-none"
+          className="relative overflow-hidden flex-shrink-0 select-none bg-[var(--uce-bg)]"
           style={{
             height: CANVAS_H,
             cursor: dragging ? 'grabbing' : connectFrom ? 'crosshair' : 'default',
-            background: '#0d0d1a',
-            backgroundImage: 'radial-gradient(rgba(99,102,241,0.18) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(var(--uce-grid) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
           }}
           onMouseMove={handleCanvasMouseMove}
@@ -251,7 +269,7 @@ export default function UnitChainEditor({
           <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
             <defs>
               <marker id={markerId} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill="#8b5cf6" />
+                <path d="M0,0 L0,6 L8,3 z" fill="var(--uce-accent)" />
               </marker>
             </defs>
             {conversions.map(conv => {
@@ -260,9 +278,9 @@ export default function UnitChainEditor({
               if (!path) return null
               return (
                 <g key={conv.id}>
-                  <path d={path} stroke="#8b5cf6" strokeWidth="2" fill="none" markerEnd={`url(#${markerId})`} strokeOpacity="0.8" />
-                  <rect x={mid.x - 26} y={mid.y - 10} width={52} height={20} rx={10} fill="#1a1a2e" stroke="#8b5cf6" strokeWidth="1" strokeOpacity="0.5" />
-                  <text x={mid.x} y={mid.y + 4} textAnchor="middle" fill="#c4b5fd" fontSize="11" fontFamily="monospace">
+                  <path d={path} stroke="var(--uce-accent)" strokeWidth="2" fill="none" markerEnd={`url(#${markerId})`} strokeOpacity="0.8" />
+                  <rect x={mid.x - 26} y={mid.y - 10} width={52} height={20} rx={10} fill="var(--uce-tag)" stroke="var(--uce-accent)" strokeWidth="1" strokeOpacity="0.5" />
+                  <text x={mid.x} y={mid.y + 4} textAnchor="middle" fill="var(--uce-accent-soft)" fontSize="11" fontFamily="monospace">
                     ×{conv.conversion_factor}
                   </text>
                 </g>
@@ -270,7 +288,7 @@ export default function UnitChainEditor({
             })}
             {connectFrom && mousePos && nodePositions[connectFrom] && (() => {
               const fp = nodePositions[connectFrom]
-              return <line x1={fp.x + NODE_W} y1={fp.y + NODE_H / 2} x2={mousePos.x} y2={mousePos.y} stroke="#6366f1" strokeWidth="2" strokeDasharray="6,3" strokeOpacity="0.8" />
+              return <line x1={fp.x + NODE_W} y1={fp.y + NODE_H / 2} x2={mousePos.x} y2={mousePos.y} stroke="var(--primary)" strokeWidth="2" strokeDasharray="6,3" strokeOpacity="0.8" />
             })()}
           </svg>
 
@@ -284,11 +302,11 @@ export default function UnitChainEditor({
               <div
                 key={unit}
                 className={`absolute rounded-xl border transition-shadow ${
-                  isSource ? 'border-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.5)]'
-                  : isBase ? 'border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.35)]'
+                  isSource ? 'border-[var(--uce-blue)] shadow-[0_0_12px_color-mix(in_oklab,var(--uce-blue)_50%,transparent)]'
+                  : isBase ? 'border-[var(--uce-accent)] shadow-[0_0_10px_color-mix(in_oklab,var(--uce-accent)_35%,transparent)]'
                   : isDisplay ? 'border-phopy-indigo/70'
                   : 'border-[var(--border)]/60 hover:border-phopy-indigo/40'
-                } bg-[#12122a]/95`}
+                } bg-[var(--uce-node)]`}
                 style={{
                   left: pos.x, top: pos.y,
                   width: NODE_W, height: NODE_H,
@@ -300,14 +318,14 @@ export default function UnitChainEditor({
                 onClick={() => connectFrom && handleNodeClick(unit)}
               >
                 <div className="flex items-center h-full px-2 gap-1.5">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isBase ? 'bg-purple-400' : isDisplay ? 'bg-phopy-indigo' : 'bg-gray-600'}`} />
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isBase ? 'bg-[var(--uce-accent-soft)]' : isDisplay ? 'bg-phopy-indigo' : 'bg-[var(--uce-muted)]'}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-[var(--fg-2)] truncate leading-tight">{ul(unit)}</p>
                     <p className="text-[10px] text-[var(--fg-4)] font-mono truncate leading-tight">{unit}</p>
                   </div>
                   <button
                     type="button"
-                    className={`p-1 rounded transition-colors flex-shrink-0 ${isSource ? 'bg-blue-500/30 text-blue-300' : 'hover:bg-purple-500/20 text-purple-400/70 hover:text-purple-300'}`}
+                    className={`p-1 rounded transition-colors flex-shrink-0 ${isSource ? 'bg-[var(--uce-blue)]/30 text-[var(--uce-blue-soft)]' : 'hover:bg-[var(--uce-accent)]/20 text-[var(--uce-accent)]/70 hover:text-[var(--uce-accent-soft)]'}`}
                     title="เชื่อมต่อ"
                     onClick={(e) => {
                       e.stopPropagation()
@@ -337,7 +355,7 @@ export default function UnitChainEditor({
           )}
 
           {connectFrom && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-blue-900/70 border border-blue-500/40 rounded-full text-xs text-blue-300 pointer-events-none whitespace-nowrap">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-[var(--uce-blue-dark)]/70 border border-[var(--uce-blue)]/40 rounded-full text-xs text-[var(--uce-blue-soft)] pointer-events-none whitespace-nowrap">
               เชื่อมจาก "{ul(connectFrom)}" — คลิกโหนดปลายทาง หรือ Esc เพื่อยกเลิก
             </div>
           )}
@@ -348,7 +366,7 @@ export default function UnitChainEditor({
           <div className="px-4 py-2 border-t border-[var(--border)]/40 flex-shrink-0 overflow-x-auto">
             <div className="flex flex-wrap gap-1.5">
               {conversions.map(conv => (
-                <div key={conv.id} className="flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-xs text-purple-300 whitespace-nowrap">
+                <div key={conv.id} className="flex items-center gap-1 px-2 py-0.5 bg-[var(--uce-accent)]/10 border border-[var(--uce-accent)]/20 rounded-full text-xs text-[var(--uce-accent-soft)] whitespace-nowrap">
                   <span className="font-mono">{ul(conv.from_unit)} →×{conv.conversion_factor}→ {ul(conv.to_unit)}</span>
                   <button type="button" onClick={() => onDelete(conv.id)} className="text-purple-400/50 hover:text-danger transition-colors ml-0.5">
                     <X className="w-2.5 h-2.5" />
@@ -366,7 +384,7 @@ export default function UnitChainEditor({
               <select
                 value={newUnitValue}
                 onChange={e => setNewUnitValue(e.target.value)}
-                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-[var(--uce-input-bg)] border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-[var(--uce-accent)]/50"
                 autoFocus
               >
                 <option value="">เลือกหน่วย</option>
@@ -374,10 +392,10 @@ export default function UnitChainEditor({
                   <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                 ))}
               </select>
-              <button type="button" onClick={handleAddNode} disabled={!newUnitValue} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium">
+              <button type="button" onClick={handleAddNode} disabled={!newUnitValue} className="px-3 py-1.5 bg-[var(--uce-accent-btn)] hover:bg-[var(--uce-accent-btn-hover)] disabled:opacity-40 text-white rounded-lg text-xs font-medium min-h-[44px]">
                 เพิ่ม
               </button>
-              <button type="button" onClick={() => { setAddingUnit(false); setNewUnitValue('') }} className="px-3 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs">
+              <button type="button" onClick={() => { setAddingUnit(false); setNewUnitValue('') }} className="px-3 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs min-h-[44px]">
                 ยกเลิก
               </button>
             </>
@@ -385,13 +403,13 @@ export default function UnitChainEditor({
             <button
               type="button"
               onClick={() => setAddingUnit(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 text-purple-300 rounded-lg text-xs hover:bg-purple-500/20 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--uce-accent)]/10 border border-[var(--uce-accent)]/30 text-[var(--uce-accent-soft)] rounded-lg text-xs hover:bg-[var(--uce-accent)]/20 transition-colors min-h-[44px]"
             >
               <Plus className="w-3.5 h-3.5" />
               เพิ่มหน่วย
             </button>
           )}
-          <button type="button" onClick={onClose} className="px-4 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs hover:text-[var(--fg-2)] ml-auto">
+          <button type="button" onClick={onClose} className="px-4 py-1.5 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs hover:text-[var(--fg-2)] ml-auto min-h-[44px]">
             ปิด
           </button>
         </div>
@@ -399,11 +417,11 @@ export default function UnitChainEditor({
 
       {/* Factor input dialog */}
       {pendingEdge && (
-        <div className="fixed inset-0 bg-[var(--fg-1)]/40 z-[70] flex items-center justify-center">
+        <div className="fixed inset-0 bg-[var(--fg-1)]/40 z-50 flex items-center justify-center">
           <div className="phopy-card p-5 w-80">
             <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-1">ตั้งค่าการแปลงหน่วย</h4>
             <p className="text-xs text-[var(--fg-3)] mb-3">
-              <span className="font-mono text-purple-300">{ul(pendingEdge.from)}</span>
+              <span className="font-mono text-[var(--uce-accent-soft)]">{ul(pendingEdge.from)}</span>
               <span className="mx-1 text-[var(--fg-4)]">→</span>
               <span className="font-mono text-[var(--primary)]">{ul(pendingEdge.to)}</span>
             </p>
@@ -422,14 +440,14 @@ export default function UnitChainEditor({
               onKeyDown={e => { if (e.key === 'Enter') handleConfirmEdge(); if (e.key === 'Escape') setPendingEdge(null) }}
             />
             <div className="flex gap-2">
-              <button type="button" onClick={() => setPendingEdge(null)} className="flex-1 py-2 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs">
+              <button type="button" onClick={() => setPendingEdge(null)} className="flex-1 py-2 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs min-h-[44px]">
                 ยกเลิก
               </button>
               <button
                 type="button"
                 onClick={handleConfirmEdge}
                 disabled={edgeAdding || !factorInput || Number(factorInput) <= 0}
-                className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium"
+                className="flex-1 py-2 bg-[var(--uce-accent-btn)] hover:bg-[var(--uce-accent-btn-hover)] disabled:opacity-40 text-white rounded-lg text-xs font-medium min-h-[44px]"
               >
                 {edgeAdding ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
@@ -438,5 +456,6 @@ export default function UnitChainEditor({
         </div>
       )}
     </div>
+    </>
   )
 }

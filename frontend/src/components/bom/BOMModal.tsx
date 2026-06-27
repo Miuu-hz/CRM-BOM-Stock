@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, AlertTriangle } from 'lucide-react'
+import {X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, AlertTriangle, Check, Wrench} from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
 import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
@@ -548,7 +548,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                         type="button"
                         onClick={() => setIsSemiFinished(!isSemiFinished)}
                         className={`flex items-center gap-2 w-full p-2.5 rounded-lg border transition-all ${isSemiFinished
-                            ? 'bg-purple-500/20 border-purple-500 text-purple-500'
+                            ? 'bg-[var(--primary)]/20 border-[var(--primary)] text-[var(--primary)]'
                             : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                           }`}
                       >
@@ -581,7 +581,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                         <button
                           type="button"
                           onClick={() => handleAddItem('CHILD_BOM')}
-                          className="text-sm text-purple-500 hover:text-purple-500/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20"
+                          className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/20"
                           disabled={availableChildBOMs.length === 0}
                         >
                           <GitBranch className="w-4 h-4" />
@@ -602,17 +602,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                             key={row.id}
                             className={`grid grid-cols-12 gap-3 items-start p-3 rounded-lg border ${isMaterial
                                 ? 'bg-[var(--surface-2)] border-[var(--border)]'
-                                : 'bg-purple-500/5 border-purple-500/30'
+                                : 'bg-[var(--primary)]/5 border-[var(--primary)]/30'
                               }`}
                           >
                             {/* Type Indicator */}
                             <div className="col-span-1">
-                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${isMaterial ? 'bg-phopy-indigo/10' : 'bg-purple-500/20'
+                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${isMaterial ? 'bg-phopy-indigo/10' : 'bg-[var(--primary)]/20'
                                 }`}>
                                 {isMaterial ? (
                                   <Box className="w-4 h-4 text-[var(--primary)]" />
                                 ) : (
-                                  <GitBranch className="w-4 h-4 text-purple-500" />
+                                  <GitBranch className="w-4 h-4 text-[var(--primary)]" />
                                 )}
                               </div>
                             </div>
@@ -833,7 +833,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           {categoryChangeModal && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-[var(--fg-1)]/70 flex items-center justify-center z-[60] p-4"
+              className="fixed inset-0 bg-[var(--fg-1)]/70 flex items-center justify-center z-50 p-4"
               onClick={() => setCategoryChangeModal(null)}
             >
               <motion.div
@@ -864,16 +864,16 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       disabled={changingCategory}
                       className="p-4 rounded-lg border border-phopy-indigo/30 bg-phopy-indigo/10 hover:bg-[var(--primary-soft)] text-left transition-all group"
                     >
-                      <div className="text-[var(--primary)] font-semibold text-sm mb-1">✅ สินค้าสำเร็จรูป</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Check className="w-4 h-4" /> สินค้าสำเร็จรูป</div>
                       <div className="text-xs text-[var(--fg-3)]">Finished Good</div>
                       <div className="text-xs text-[var(--fg-4)] mt-2">สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง</div>
                     </button>
                     <button
                       onClick={() => handleConfirmCategoryChange('wip')}
                       disabled={changingCategory}
-                      className="p-4 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-left transition-all"
+                      className="p-4 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 text-left transition-all"
                     >
-                      <div className="text-purple-500 font-semibold text-sm mb-1">🔧 กึ่งสำเร็จรูป</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Wrench className="w-4 h-4" /> กึ่งสำเร็จรูป</div>
                       <div className="text-xs text-[var(--fg-3)]">Semi-Finished Good</div>
                       <div className="text-xs text-[var(--fg-4)] mt-2">ผ่านการผลิตขั้นต้น ใช้เป็น Child BOM ต่อได้</div>
                     </button>
@@ -1024,7 +1024,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-[60] p-4"
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4"
           onClick={onClose}
         >
           <motion.div

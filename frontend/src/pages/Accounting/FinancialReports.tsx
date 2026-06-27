@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  BarChart3,
-  PieChart,
-  TrendingUp,
-  Scale,
-  Calculator,
-  Download,
-  Calendar,
-  FileText,
-  DollarSign,
-  ArrowUpRight,
+  AlertTriangle,
   ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  Calculator,
+  Calendar,
+  DollarSign,
+  Download,
+  FileText,
+  PieChart,
+  Scale,
+  TrendingUp,
 } from 'lucide-react'
 import { reportsApi, TrialBalanceReport, BalanceSheetReport, ProfitLossReport } from '../../services/accounting'
 import toast from 'react-hot-toast'
@@ -322,7 +323,7 @@ const FinancialReports = () => {
             
             {!balanceSheet.balanced && (
               <div className="mt-6 p-4 bg-[var(--danger-soft)] border border-danger/50 rounded-lg text-danger text-center">
-                ⚠️ งบดุลไม่สมดุล! กรุณาตรวจสอบรายการ
+                <AlertTriangle className="w-4 h-4 inline" /> งบดุลไม่สมดุล! กรุณาตรวจสอบรายการ
               </div>
             )}
           </div>

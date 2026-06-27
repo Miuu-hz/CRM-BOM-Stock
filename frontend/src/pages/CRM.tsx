@@ -1,40 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Users,
-  Search,
-  Plus,
-  Phone,
-  Mail,
-  MapPin,
-  Building2,
-  X,
-  ShoppingCart,
-  Heart,
-  Lightbulb,
-  FileText,
-  Clock,
-  AlertTriangle,
-  MessageSquare,
-  UserCheck,
-  Truck,
-  Upload,
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  Trash2,
-  TrendingUp,
-  CreditCard,
-  AlertCircle,
-  Pencil,
-  LayoutList,
-  LayoutGrid,
-  Star,
-  Gift,
-  ArrowLeftRight,
-  History,
-  RefreshCw,
+  Users, Search, Plus, Phone, Mail, MapPin, Building2, X, ShoppingCart, Heart, Lightbulb, FileText, Clock,
+  AlertTriangle, MessageSquare, UserCheck, Truck, Upload, ChevronLeft, ChevronRight, CheckCircle2, XCircle,
+  Trash2, TrendingUp, CreditCard, AlertCircle, Pencil, LayoutList, LayoutGrid, Star, Gift, ArrowLeftRight,
+  History, RefreshCw, Crown, Target, User,
 } from 'lucide-react'
 import api from '../utils/api'
 import SupplierTab from '../components/crm/SupplierTab'
@@ -1744,7 +1714,7 @@ function ActivityLogTab({
 }
 
 // ── Donut chart for favourites ────────────────────────────────────────────────
-const DONUT_COLORS = ['#06b6d4','#a855f7','#10b981','#f59e0b','#3b82f6','#6b7280']
+const DONUT_COLORS = ['var(--info)','var(--primary)','var(--success)','var(--warning)','var(--link)','var(--fg-4)']  // ponytail: token palette for distinct chart segments
 
 function DonutChart({ slices }: { slices: { label: string; value: number; color: string }[] }) {
   const size = 180
@@ -1780,9 +1750,9 @@ function DonutChart({ slices }: { slices: { label: string; value: number; color:
           <title>{p.label} {p.pct}%</title>
         </path>
       ))}
-      <circle cx={cx} cy={cy} r={r - 2} fill="#0f172a" />
-      <text x={cx} y={cy - 6} textAnchor="middle" fill="#e2e8f0" fontSize="20" fontWeight="bold">{paths[0]?.pct}%</text>
-      <text x={cx} y={cy + 12} textAnchor="middle" fill="#94a3b8" fontSize="9">{paths[0]?.label.substring(0, 10)}</text>
+      <circle cx={cx} cy={cy} r={r - 2} fill="var(--surface)" />
+      <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--fg-1)" fontSize="20" fontWeight="bold">{paths[0]?.pct}%</text>
+      <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--fg-3)" fontSize="9">{paths[0]?.label.substring(0, 10)}</text>
     </svg>
   )
 }
@@ -1885,13 +1855,13 @@ function StatCard({
 // Helper function สำหรับ segment badge
 function getSegmentInfo(segment: CustomerSegment) {
   const segmentMap = {
-    VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: '👑', textColor: 'text-warning' },
-    PREMIUM: { label: 'Premium', color: 'from-purple-500 to-pink-500', icon: '⭐', textColor: 'text-purple-400' },
-    GROWING: { label: 'เติบโต', color: 'from-green-500 to-success', icon: '📈', textColor: 'text-success' },
-    AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: '⚠️', textColor: 'text-danger' },
-    NEW: { label: 'ใหม่', color: 'from-blue-500 to-cyan-500', icon: '🎯', textColor: 'text-blue-400' },
-    SEASONAL: { label: 'ตามฤดู', color: 'from-indigo-500 to-violet-500', icon: '🔄', textColor: 'text-indigo-400' },
-    REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: '👤', textColor: 'text-[var(--fg-3)]' },
+    VIP: { label: 'VIP', color: 'from-yellow-500 to-amber-500', icon: Crown, textColor: 'text-warning' },
+    PREMIUM: { label: 'Premium', color: 'from-purple-500 to-pink-500', icon: Star, textColor: 'text-purple-400' },
+    GROWING: { label: 'เติบโต', color: 'from-green-500 to-success', icon: TrendingUp, textColor: 'text-success' },
+    AT_RISK: { label: 'เสี่ยง', color: 'from-red-500 to-orange-500', icon: AlertTriangle, textColor: 'text-danger' },
+    NEW: { label: 'ใหม่', color: 'from-blue-500 to-cyan-500', icon: Target, textColor: 'text-blue-400' },
+    SEASONAL: { label: 'ตามฤดู', color: 'from-indigo-500 to-violet-500', icon: RefreshCw, textColor: 'text-indigo-400' },
+    REGULAR: { label: 'ปกติ', color: 'from-gray-500 to-slate-500', icon: User, textColor: 'text-[var(--fg-3)]' },
   }
   return segmentMap[segment] || segmentMap.REGULAR
 }
@@ -1919,7 +1889,7 @@ function CustomerCard({
       transition={{ delay: index * 0.05 }}
       whileHover={{ scale: 1.02 }}
       className={`phopy-card p-6  cursor-pointer ${
-        isAtRisk ? 'ring-2 ring-red-500/30' : ''
+        isAtRisk ? 'ring-2 ring-danger/30' : ''
       }`}
     >
       <div className="flex items-start justify-between mb-4">
@@ -1934,7 +1904,7 @@ function CustomerCard({
                 className={`px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gradient-to-r ${segmentInfo.color} text-white flex items-center gap-1`}
                 title={segmentInfo.label}
               >
-                <span>{segmentInfo.icon}</span>
+                <segmentInfo.icon className="w-3 h-3" />
                 <span>{segmentInfo.label}</span>
               </span>
             </div>
@@ -1943,7 +1913,7 @@ function CustomerCard({
         </div>
         {isAtRisk && (
           <div className="ml-2" title={`ไม่ได้สั่งมา ${daysSinceLastOrder} วัน`}>
-            <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
+            <AlertTriangle className="w-5 h-5 text-danger animate-pulse" />
           </div>
         )}
         {onEdit && (
@@ -2192,8 +2162,8 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
           </div>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
-            <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 font-semibold">
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">ยกเลิก</button>
+            <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-success text-white rounded-lg hover:bg-success/90 disabled:opacity-50 font-semibold min-h-[44px]">
               {saving ? 'กำลังบันทึก...' : 'เพิ่มแต้ม'}
             </button>
           </div>
@@ -2229,8 +2199,8 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
           </div>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)]">ยกเลิก</button>
-            <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 font-semibold">
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">ยกเลิก</button>
+            <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-warning text-white rounded-lg hover:bg-warning/90 disabled:opacity-50 font-semibold min-h-[44px]">
               {saving ? 'กำลังบันทึก...' : 'แลกแต้ม'}
             </button>
           </div>

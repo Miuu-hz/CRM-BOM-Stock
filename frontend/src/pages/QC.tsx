@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  ClipboardCheck, Plus, X, CheckCircle, XCircle, Clock,
-  Trash2, RefreshCw, ChevronRight, Edit2, AlertTriangle,
-  ListChecks, Activity, Gauge,
-} from 'lucide-react'
+import {ClipboardCheck, Plus, X, CheckCircle, XCircle, Clock, Trash2, RefreshCw, ChevronRight, Edit2, AlertTriangle, ListChecks, Activity, Gauge, Check} from 'lucide-react'
 import api from '../utils/api'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
@@ -587,7 +583,7 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
     try {
       const res = await api.post(`/qc/inspections/${inspection.id}/complete`, { results, notes })
       onCompleted({ ...inspection, results, notes, status: res.data.data.status, completed_at: new Date().toISOString() })
-      toast.success(`ผลการตรวจ: ${res.data.data.status === 'PASS' ? '✅ ผ่าน' : '❌ ไม่ผ่าน'}`)
+      toast.success(`ผลการตรวจ: ${res.data.data.status === 'PASS' ? '<Check className="w-4 h-4" /> ผ่าน' : '<X className="w-4 h-4" /> ไม่ผ่าน'}`)
     } catch { toast.error('บันทึกผลไม่สำเร็จ') }
     finally { setSaving(false) }
   }
@@ -623,9 +619,9 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
 
         {/* Progress bar */}
         <div className="px-5 py-3 bg-[var(--surface-2)] border-b border-[var(--border)] flex items-center gap-4 text-sm">
-          <span className="text-success font-medium">✓ {passCount}</span>
-          <span className="text-danger font-medium">✗ {failCount}</span>
-          <span className="text-[var(--fg-4)]">◌ {pendCount} รอตรวจ</span>
+          <span className="text-success font-medium"><Check className="w-4 h-4" /> {passCount}</span>
+          <span className="text-danger font-medium"><X className="w-4 h-4" /> {failCount}</span>
+          <span className="text-[var(--fg-4)] flex items-center gap-1"><Clock className="w-3 h-3" /> {pendCount} รอตรวจ</span>
           <div className="flex-1 h-2 bg-[var(--surface)] rounded-full overflow-hidden">
             <div className="h-full bg-success rounded-full transition-all" style={{ width: `${results.length ? (passCount / results.length) * 100 : 0}%` }} />
           </div>
@@ -658,7 +654,7 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
                               : 'bg-[var(--surface)] text-[var(--fg-2)] border-[var(--border-strong)]'
                             : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--fg-3)]'
                         } disabled:cursor-default`}>
-                        {v === 'PASS' ? '✓ ผ่าน' : v === 'FAIL' ? '✗ ไม่ผ่าน' : 'N/A'}
+                        {v === 'PASS' ? '<Check className="w-4 h-4" /> ผ่าน' : v === 'FAIL' ? '<X className="w-4 h-4" /> ไม่ผ่าน' : 'N/A'}
                       </button>
                     ))}
                     {r.type === 'measurement' && (

@@ -7,6 +7,7 @@ import App from './App'
 import './index.css'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { registerSW } from './registerSW'
+import { MotionConfig } from 'framer-motion'
 
 registerSW()
 
@@ -24,27 +25,29 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <App />
+          <MotionConfig reducedMotion="user">
+            <App />
+          </MotionConfig>
           <Toaster
           position="top-right"
           toastOptions={{
             duration: 3000,
             style: {
-              background: '#FFFFFF',
-              color: '#1E1B16',
-              border: '1px solid #ECE6D8',
-              boxShadow: '0 12px 32px -8px rgba(30, 27, 22, 0.16)',
+              background: 'var(--surface)',
+              color: 'var(--fg-1)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-3)',
             },
             success: {
               iconTheme: {
-                primary: '#16A34A',
-                secondary: '#FFFFFF',
+                primary: 'var(--success)',
+                secondary: 'var(--surface)',
               },
             },
             error: {
               iconTheme: {
-                primary: '#DC2626',
-                secondary: '#FFFFFF',
+                primary: 'var(--danger)',
+                secondary: 'var(--surface)',
               },
             },
           }}

@@ -1,35 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Store,
-  Plus,
-  Receipt,
-  CreditCard,
-  Banknote,
-  QrCode,
-  Trash2,
-  Minus,
-  X,
-  ChefHat,
-  Clock,
-  Search,
-  Edit2,
-  Save,
-  Package,
-  MoreVertical,
-  RotateCcw,
-  Check,
-  Settings,
-  Tag,
-  ChevronDown,
-  ChevronUp,
-  UserPlus,
-  Star,
-  UserX,
-  Printer,
-  AlertTriangle,
-  Scale,
-} from 'lucide-react'
+import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils} from 'lucide-react'
 import toast from 'react-hot-toast'
 import posService from '../services/pos.service'
 import posBillService from '../services/pos-bill.service'
@@ -385,11 +356,11 @@ export default function Cashier() {
         const earned = res.data?.points_earned || 0
         const redeemed = res.data?.points_redeemed || 0
         if (earned > 0 && redeemed > 0) {
-          toast.success(`ชำระเงินสำเร็จ! แลก ${redeemed.toLocaleString()} แต้ม + สะสม +${earned.toLocaleString()} แต้ม`, { icon: '⭐' })
+          toast.success(`ชำระเงินสำเร็จ! แลก ${redeemed.toLocaleString()} แต้ม + สะสม +${earned.toLocaleString()} แต้ม`, { icon: '<Star className="w-4 h-4" />' })
         } else if (earned > 0) {
-          toast.success(`ชำระเงินสำเร็จ! สะสมแต้ม +${earned.toLocaleString()} แต้ม`, { icon: '⭐' })
+          toast.success(`ชำระเงินสำเร็จ! สะสมแต้ม +${earned.toLocaleString()} แต้ม`, { icon: '<Star className="w-4 h-4" />' })
         } else {
-          toast.success(`ชำระเงินสำเร็จ!`, { icon: '💰' })
+          toast.success(`ชำระเงินสำเร็จ!`, { icon: '<Banknote className="w-4 h-4" />' })
         }
         // Auto-print thermal receipt after payment
         const receiptData = buildReceiptData(currentBill, method, cashReceived)
@@ -426,7 +397,7 @@ export default function Cashier() {
     setSendingToKitchen(true)
     try {
       const result = await kdsService.sendToKitchen(currentBill.id)
-      toast.success(`ส่งครัวแล้ว ${result.item_count} รายการ (รอบที่ ${result.round})`, { icon: '🍳' })
+      toast.success(`ส่งครัวแล้ว ${result.item_count} รายการ (รอบที่ ${result.round})`, { icon: '<ChefHat className="w-4 h-4" />' })
       const billRes = await posBillService.getBill(currentBill.id)
       if (billRes.success) setCurrentBill(billRes.data)
     } catch {
@@ -652,12 +623,12 @@ export default function Cashier() {
                     >
                       <div
                         className="aspect-video rounded-lg mb-3 flex items-center justify-center overflow-hidden"
-                        style={{ backgroundColor: `${menu.category_color || '#3949E5'}20` }}
+                        style={{ backgroundColor: menu.category_color ? `color-mix(in srgb, ${menu.category_color}, transparent 80%)` : 'var(--primary-soft)' }}
                       >
                         {menu.image_url ? (
                           <img src={menu.image_url} alt={menu.product_name} className="w-full h-full object-cover" />
                         ) : (
-                          <span className="text-4xl">🍽️</span>
+                          <span className="text-4xl"><Utensils className="w-12 h-12" /></span>
                         )}
                       </div>
                       <h3 className="font-semibold text-[var(--fg-1)] group-hover:text-[var(--primary)] transition-colors truncate">
@@ -1072,7 +1043,7 @@ export default function Cashier() {
 
       {/* Pay Action Issues Modal */}
       {payActionIssues && payActionIssues.length > 0 && (
-        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -1399,8 +1370,8 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
 // ==================== Category Manager Modal ====================
 
 const PRESET_COLORS = [
-  '#3949E5', '#9333EA', '#16A34A', '#F5A524', '#DC2626',
-  '#3949E5', '#9333EA', '#0EA5E9', '#F5A524', '#9333EA',
+  'var(--primary)', 'var(--success)', 'var(--warning)', 'var(--danger)', 'var(--info)',
+  'var(--fg-4)', 'var(--fg-3)', 'var(--fg-2)', 'var(--fg-1)', 'var(--link)',
 ]
 
 function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {

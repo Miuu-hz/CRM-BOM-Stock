@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react'
-import { MessageSquare, Save, RefreshCw, AlertCircle, CheckCircle, Link, Copy, UserCheck, Unlink, Users } from 'lucide-react'
+import {
+  AlertCircle,
+  Check,
+  CheckCircle,
+  Copy,
+  Link,
+  MessageSquare,
+  RefreshCw,
+  Save,
+  Unlink,
+  UserCheck,
+  Users,
+} from 'lucide-react'
 import { getLineConfig, updateLineConfig, testLineMessage, generateLinkToken, getLinkStatus, unlinkLine, getLinkedUsers, unlinkUserLine, LineConfig } from '../../services/lineBot'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -346,7 +358,7 @@ export default function LineSettings() {
                             className="flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:text-[var(--fg-1)] hover:border-phopy-indigo transition-all whitespace-nowrap"
                         >
                             <Copy className="w-3.5 h-3.5" />
-                            {tokenCopied ? 'คัดลอกแล้ว ✓' : 'คัดลอก'}
+                            {tokenCopied ? <>คัดลอกแล้ว <Check className="w-3.5 h-3.5 inline" /></> : 'คัดลอก'}
                         </button>
                     </div>
                 )}

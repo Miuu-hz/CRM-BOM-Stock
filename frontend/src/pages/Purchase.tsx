@@ -1,27 +1,34 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShoppingCart,
-  FileText,
-  Package,
-  Receipt,
-  CreditCard,
-  RotateCcw,
-  Plus,
-  Search,
   AlertCircle,
-  DollarSign,
-  TrendingUp,
-  X,
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
   Check,
   CheckCircle2,
-  Trash2,
   ChevronRight,
-  ArrowRight,
-  Printer,
+  Clock,
+  CreditCard,
+  DollarSign,
+  FileText,
+  Hash,
+  Landmark,
   LayoutGrid,
   LayoutList,
+  Package,
   Pencil,
+  Plus,
+  Printer,
+  Receipt,
+  RotateCcw,
+  Search,
+  ShoppingCart,
+  Star,
+  Trash2,
+  TrendingUp,
+  X,
+  Zap,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -300,7 +307,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+        <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-center">
               <p className="text-xs text-[var(--fg-4)] mb-2">ไม่พบสินค้า "{query}"</p>
@@ -377,7 +384,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบผู้ขาย</p>
           ) : (
@@ -429,7 +436,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
           ) : (
@@ -500,7 +507,7 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
         <p className="text-xs text-[var(--fg-4)] py-2">— เลือก PO ก่อน —</p>
       )}
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">
               {values.length > 0 ? 'เพิ่มทุก GR แล้ว' : 'ไม่พบใบรับสินค้า'}
@@ -558,7 +565,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
         )}
       </div>
       {open && (
-        <div className="absolute z-[70] left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+        <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบใบขอซื้อ</p>
           ) : (
@@ -621,7 +628,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
     setSaving(false)
   }
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
@@ -728,7 +735,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   const inp = 'w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo'
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg shadow-2xl">
@@ -2076,7 +2083,7 @@ const Purchase = () => {
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <div>
-                    {req.priority === 'URGENT' && <span className="text-xs text-danger font-semibold">⚡ ด่วนมาก</span>}
+                    {req.priority === 'URGENT' && <span className="text-xs text-danger font-semibold"><Zap className="w-4 h-4" /> ด่วนมาก</span>}
                     {req.priority === 'HIGH' && <span className="text-xs text-warning font-semibold">↑ สำคัญ</span>}
                   </div>
                   <p className="font-bold text-[var(--fg-1)] text-sm">{formatCurrency(req.total_amount)}</p>
@@ -2374,7 +2381,7 @@ const Purchase = () => {
                   </button>
                   <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
                     className="p-1.5 text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded transition-colors text-xs leading-none">
-                    🧾
+                    <Receipt className="w-4 h-4 inline" />
                   </button>
                   {receipt.status === 'DRAFT' && (<>
                     <button onClick={() => handleConfirmReceipt(receipt.id)} title="ยืนยัน"
@@ -2417,7 +2424,7 @@ const Purchase = () => {
                   </button>
                   <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded-lg transition-colors text-xs leading-none">
-                    🧾
+                    <Receipt className="w-4 h-4 inline" />
                   </button>
                   {receipt.status === 'DRAFT' && (<>
                     <button onClick={() => handleConfirmReceipt(receipt.id)}
@@ -2745,10 +2752,10 @@ const Purchase = () => {
         <Field label="ระดับความสำคัญ">
           <select value={requestForm.priority} onChange={e => setRequestForm(p => ({ ...p, priority: e.target.value }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')}>
-            <option value="LOW">🟢 ต่ำ — ไม่เร่งด่วน</option>
-            <option value="NORMAL">🔵 ปกติ</option>
-            <option value="HIGH">🟡 สูง — เร่งด่วน</option>
-            <option value="URGENT">🔴 ด่วนมาก — หยุดสายการผลิต</option>
+            <option value="LOW"><span className="inline-block w-2.5 h-2.5 rounded-full bg-success mr-1" />ต่ำ — ไม่เร่งด่วน</option>
+            <option value="NORMAL"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info mr-1" />ปกติ</option>
+            <option value="HIGH"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warning mr-1" />สูง — เร่งด่วน</option>
+            <option value="URGENT"><span className="inline-block w-2.5 h-2.5 rounded-full bg-danger mr-1" />ด่วนมาก — หยุดสายการผลิต</option>
           </select>
         </Field>
         <div>
@@ -3254,8 +3261,8 @@ const Purchase = () => {
                   <div className="grid grid-cols-3 gap-2">
                     {([
                       { label: 'รับจริง (ครั้งนี้)', key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
-                      { label: 'รับเข้าสต็อก ✓', key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
-                      { label: 'ปฏิเสธ / เสียหาย ✗', key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
+                      { label: 'รับเข้าสต็อก <Check className="w-4 h-4" />', key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
+                      { label: 'ปฏิเสธ / เสียหาย <X className="w-4 h-4" />', key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
@@ -3379,7 +3386,7 @@ const Purchase = () => {
           </>)}
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-xs font-mono text-[var(--primary)] bg-phopy-indigo/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
-            <span className="text-[var(--fg-4)] text-xs">PO ★</span>
+            <span className="text-[var(--fg-4)] text-xs">PO <Star className="w-4 h-4 fill-current" /></span>
           </div>
           {selectedGRs.length > 0 && (<>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
@@ -3617,10 +3624,10 @@ const Purchase = () => {
             <Field label="วิธีการจ่าย">
               <select value={paymentForm.payment_method}
                 onChange={e => setPaymentForm(p => ({ ...p, payment_method: e.target.value }))} className={inputCls()}>
-                <option value="CASH">💵 เงินสด</option>
-                <option value="TRANSFER">🏦 โอนธนาคาร</option>
-                <option value="CHEQUE">📄 เช็ค</option>
-                <option value="CREDIT_CARD">💳 บัตรเครดิต</option>
+                <option value="CASH"><Banknote className="w-4 h-4" /> เงินสด</option>
+                <option value="TRANSFER"><Landmark className="w-4 h-4" /> โอนธนาคาร</option>
+                <option value="CHEQUE"><FileText className="w-4 h-4" /> เช็ค</option>
+                <option value="CREDIT_CARD"><CreditCard className="w-4 h-4" /> บัตรเครดิต</option>
               </select>
             </Field>
           </div>
@@ -3747,11 +3754,11 @@ const Purchase = () => {
           <select value={returnForm.reason}
             onChange={e => setReturnForm(p => ({ ...p, reason: e.target.value }))} className={inputCls()}>
             <option value="">-- เลือกสาเหตุหลัก --</option>
-            <option value="DEFECTIVE">🔴 สินค้าเสียหาย/บกพร่อง</option>
-            <option value="WRONG_ITEM">📦 ส่งผิดรายการ</option>
-            <option value="WRONG_QUANTITY">🔢 ส่งผิดจำนวน</option>
-            <option value="QUALITY_ISSUE">⚠️ คุณภาพไม่ผ่านมาตรฐาน</option>
-            <option value="EXPIRED">⏰ สินค้าหมดอายุ</option>
+            <option value="DEFECTIVE"><span className="inline-block w-2.5 h-2.5 rounded-full bg-danger mr-1" />สินค้าเสียหาย/บกพร่อง</option>
+            <option value="WRONG_ITEM"><Package className="w-4 h-4" /> ส่งผิดรายการ</option>
+            <option value="WRONG_QUANTITY"><Hash className="w-4 h-4" /> ส่งผิดจำนวน</option>
+            <option value="QUALITY_ISSUE"><AlertTriangle className="w-4 h-4" /> คุณภาพไม่ผ่านมาตรฐาน</option>
+            <option value="EXPIRED"><Clock className="w-4 h-4" /> สินค้าหมดอายุ</option>
             <option value="OTHER">อื่นๆ</option>
           </select>
         </Field>
@@ -3952,7 +3959,7 @@ const Purchase = () => {
         {convertPRId && ConvertToPOModal()}
       </AnimatePresence>
 
-      {/* Quick add supplier — sits above other modals (z-[80]) */}
+      {/* Quick add supplier — sits above other modals (z-50) */}
       {showQuickAddSupplier && (
         <QuickAddSupplierModal
           onClose={() => { setShowQuickAddSupplier(false); setQuickAddSupplierCallback(null) }}

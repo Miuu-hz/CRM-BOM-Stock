@@ -17,7 +17,7 @@ function Layout({ children }: LayoutProps) {
     <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-phopy-indigo focus:text-white focus:font-semibold focus:rounded-md"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-phopy-indigo focus:text-white focus:font-semibold focus:rounded-md"
       >
         ข้ามไปเนื้อหาหลัก
       </a>
