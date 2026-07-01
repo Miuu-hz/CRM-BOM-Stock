@@ -18,7 +18,7 @@ import {
   PieChart,
   Settings,
 } from 'lucide-react'
-import api from '../utils/api'
+import api from '../services/api'
 
 // Types
 interface TaxDashboard {

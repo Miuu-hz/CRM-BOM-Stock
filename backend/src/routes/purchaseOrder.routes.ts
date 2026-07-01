@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 
 const router = Router()
 
@@ -13,8 +14,7 @@ function generateId() {
 }
 
 function generatePONumber(tenantId: string) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as any).count
-  return `PO-${String(count + 1).padStart(5, '0')}`
+  return formatDocumentNumber('PO', tenantId, 'PO', undefined, 5)
 }
 
 // GET all purchase orders
@@ -137,7 +137,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     transaction()
 
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id)
+    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...po, items: poItems } })
@@ -180,8 +180,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             // Update stock item quantity if exists
             const stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
             if (stockItem) {
-              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
-                .run(Math.floor(item.quantity), now, stockItem.id)
+              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                .run(Math.floor(item.quantity), now, stockItem.id, tenantId)
 
               // Record movement
               db.prepare(`
@@ -191,8 +191,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             }
           }
           // Update received qty
-          db.prepare('UPDATE purchase_order_items SET received_qty = ? WHERE id = ?')
-            .run(item.quantity, item.id)
+          db.prepare('UPDATE purchase_order_items SET received_qty = ? WHERE id = ? AND tenant_id = ?')
+            .run(item.quantity, item.id, tenantId)
         }
       })
 
@@ -202,7 +202,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         .run(status, now, req.params.id, tenantId)
     }
 
-    const updatedPO = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id)
+    const updatedPO = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updatedPO })
   } catch (error) {
     console.error('Update PO status error:', error)
@@ -257,7 +257,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     transaction()
 
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id)
+    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id)
     res.json({ success: true, data: { ...po, items: poItems } })
   } catch (error) {
@@ -279,7 +279,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Can only delete draft purchase orders' })
     }
 
-    db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(req.params.id)
+    db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     db.prepare('DELETE FROM purchase_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     res.json({ success: true, message: 'Purchase order deleted' })
   } catch (error) {

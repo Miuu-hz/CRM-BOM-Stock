@@ -19,6 +19,33 @@ const STATUS_TH: Record<string, string> = {
   CANCELLED: 'ยกเลิก', ISSUED: 'ออกแล้ว', PAID: 'จ่ายแล้ว', UNPAID: 'ค้างชำระ',
 }
 
+// ── XSS helpers ───────────────────────────────────────────────
+function escapeHtml(s: unknown): unknown {
+  if (typeof s !== 'string') return s
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+function deepEscape(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(deepEscape)
+  if (obj !== null && typeof obj === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(obj)) out[k] = deepEscape((obj as Record<string, unknown>)[k])
+    return out
+  }
+  return escapeHtml(obj)
+}
+function safeImageUrl(url: unknown): string {
+  if (typeof url !== 'string') return ''
+  const lower = url.trim().toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return url
+  if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(lower)) return url
+  return ''
+}
+
 // ── CSS base ──────────────────────────────────────────────────
 const CSS_A4 = `:root {
     --primary: #3949E5;
@@ -691,19 +718,21 @@ function templatePOS_Thermal(d: any): string {
 export function printDocument(type: DocType, data: any, format: PrintFormat = 'a4') {
   let html = ''
   const css = format === 'thermal' ? CSS_THERMAL : CSS_A4
+  const safeData: any = data ? deepEscape(data) : {}
+  safeData._companyLogo = safeImageUrl(data?._companyLogo)
 
   if (type === 'pr') {
-    html = templatePR_A4(data)                         // PR: A4 only
+    html = templatePR_A4(safeData)                         // PR: A4 only
   } else if (type === 'po') {
-    html = templatePO_A4(data)                         // PO: A4 only
+    html = templatePO_A4(safeData)                         // PO: A4 only
   } else if (type === 'gr') {
-    html = format === 'thermal' ? templateGR_Thermal(data) : templateGR_A4(data)
+    html = format === 'thermal' ? templateGR_Thermal(safeData) : templateGR_A4(safeData)
   } else if (type === 'pi') {
-    html = templatePI_A4(data)                         // PI: A4 only
+    html = templatePI_A4(safeData)                         // PI: A4 only
   } else if (type === 'payment') {
-    html = templatePayment_A4(data)                    // Payment: A4 only
+    html = templatePayment_A4(safeData)                    // Payment: A4 only
   } else if (type === 'return') {
-    html = templateReturn_A4(data)                     // Return: A4 only
+    html = templateReturn_A4(safeData)                     // Return: A4 only
   }
 
   if (!html) return
@@ -714,6 +743,8 @@ export function printDocument(type: DocType, data: any, format: PrintFormat = 'a
 // POS entry point — separate function keeps concerns clear
 // ─────────────────────────────────────────────────────────────
 export function printPOSReceipt(bill: any, format: PrintFormat = 'thermal') {
-  const html = format === 'a4' ? templatePOS_A4(bill) : templatePOS_Thermal(bill)
+  const safeBill: any = bill ? deepEscape(bill) : {}
+  safeBill._companyLogo = safeImageUrl(bill?._companyLogo)
+  const html = format === 'a4' ? templatePOS_A4(safeBill) : templatePOS_Thermal(safeBill)
   openPrint(format === 'a4' ? CSS_A4 : CSS_THERMAL, html, format)
 }

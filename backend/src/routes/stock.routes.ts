@@ -2,11 +2,13 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { isValidImageFile, isAllowedImageExt, isAllowedImageMimetype, getSafeImageExtension } from '../utils/upload'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
+import { formatDocumentNumber } from '../utils/id'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -15,7 +17,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
   filename: (req, _file, cb) => {
-    const ext = path.extname(_file.originalname).toLowerCase() || '.jpg'
+    const ext = getSafeImageExtension(_file.originalname) || '.jpg'
     cb(null, `${req.params.id}-${Date.now()}${ext}`)
   },
 })
@@ -23,7 +25,8 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true)
+    const ext = path.extname(file.originalname).toLowerCase()
+    if (isAllowedImageExt(ext) && isAllowedImageMimetype(file.mimetype)) cb(null, true)
     else cb(new Error('Only image files allowed'))
   },
 })
@@ -315,7 +318,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
 
-    db.prepare('DELETE FROM stock_items WHERE id = ?').run(req.params.id)
+    db.prepare('DELETE FROM stock_items WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     
     res.json({ success: true, message: 'Stock item deleted' })
   } catch (error) {
@@ -356,100 +359,121 @@ router.post('/movement', async (req: Request, res: Response) => {
       convertedQuantity = conversion.converted
     }
 
-    let newQuantity = item.quantity
-    let newSealedQty = item.sealed_qty ?? 0
     const now = new Date().toISOString()
 
-    if (type === 'IN') {
-      newQuantity += convertedQuantity
-    } else if (type === 'OUT') {
-      // auto-unpack ถ้า quantity ไม่พอ แต่มี sealed_qty
-      if (item.quantity < convertedQuantity) {
-        const unpack = autoUnpackIfNeeded(item, convertedQuantity, tenantId)
-        if (!unpack) {
-          return res.status(400).json({ success: false, message: 'Insufficient stock' })
+    // ponytail: read-modify-write stock + movement + journal must be atomic.
+    let updatedItem: any
+    const recordMovement = db.transaction(() => {
+      const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+      if (!currentItem) {
+        throw new Error('STOCK_ITEM_NOT_FOUND')
+      }
+
+      let newQuantity = currentItem.quantity
+      let newSealedQty = currentItem.sealed_qty ?? 0
+
+      if (type === 'IN') {
+        newQuantity += convertedQuantity
+      } else if (type === 'OUT') {
+        // auto-unpack ถ้า quantity ไม่พอ แต่มี sealed_qty
+        if (currentItem.quantity < convertedQuantity) {
+          const unpack = autoUnpackIfNeeded(currentItem, convertedQuantity, tenantId)
+          if (!unpack) {
+            throw new Error('INSUFFICIENT_STOCK')
+          }
+          // บันทึก unpack movement
+          if (unpack.unpackedPacks > 0) {
+            db.prepare(`
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)
+            `).run(generateId(), tenantId, stockItemId,
+              unpack.unpackedPacks,
+              reference || 'AUTO',
+              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${currentItem.display_unit} → ${unpack.unpackedPacks * unpack.packFactor} ${baseUnit}`,
+              now, createdBy)
+            db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+              .run(unpack.sealed_qty, now, stockItemId, tenantId)
+            newSealedQty = unpack.sealed_qty
+            newQuantity = unpack.quantity
+          }
         }
-        // บันทึก unpack movement
-        if (unpack.unpackedPacks > 0) {
-          db.prepare(`
-            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-            VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)
-          `).run(generateId(), tenantId, stockItemId,
-            unpack.unpackedPacks,
-            reference || 'AUTO',
-            `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit} → ${unpack.unpackedPacks * unpack.packFactor} ${baseUnit}`,
-            now, createdBy)
-          db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
-            .run(unpack.sealed_qty, now, stockItemId)
-          newSealedQty = unpack.sealed_qty
-          newQuantity = unpack.quantity
+        if (newQuantity < convertedQuantity) {
+          throw new Error('INSUFFICIENT_STOCK')
+        }
+        newQuantity -= convertedQuantity
+      } else if (type === 'ADJUST') {
+        newQuantity = convertedQuantity
+      }
+
+      if (type === 'IN' && unitCost !== undefined && unitCost !== null) {
+        db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(newQuantity, Number(unitCost), now, stockItemId, tenantId)
+      } else {
+        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(newQuantity, now, stockItemId, tenantId)
+      }
+
+      const movementId = generateId()
+      db.prepare(`
+        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
+
+      // Auto-journal for ADJUST stock movements
+      if (type === 'ADJUST') {
+        const oldQty = currentItem.quantity || 0
+        const diffQty = newQuantity - oldQty
+        const itemUnitCost = Number(currentItem.unit_cost || 0)
+        const diffValue = diffQty * itemUnitCost
+        if (Math.abs(diffValue) > 0.01) {
+          try {
+            const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
+            const yr = new Date().getFullYear()
+            const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+            const entryId = generateId()
+
+            if (diffValue > 0) {
+              // Adjust up: Dr Inventory / Cr Other Income
+              const incomeAccId = getOrCreateAccount(tenantId, '4203', 'รายได้อื่น', 'REVENUE', 'OTHER_REVENUE', 'CREDIT')
+              db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+                .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
+              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+                .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
+              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+                .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
+            } else {
+              // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
+              const adjExpAccId = getOrCreateAccount(tenantId, '5901', 'ค่าใช้จ่ายปรับปรุงสต็อก', 'EXPENSE', 'OTHER_EXPENSE', 'DEBIT')
+              const absValue = Math.abs(diffValue)
+              db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+                .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${currentItem.name}`, absValue, absValue, createdBy, now, now)
+              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+                .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${currentItem.name}`, absValue)
+              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+                .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${currentItem.name}`, absValue)
+            }
+          } catch (journalErr) {
+            console.error('⚠️ Stock adjust journal error:', journalErr)
+          }
         }
       }
-      if (newQuantity < convertedQuantity) {
+
+      updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
+    })
+
+    try {
+      recordMovement()
+    } catch (err: any) {
+      if (err.message === 'STOCK_ITEM_NOT_FOUND') {
+        return res.status(404).json({ success: false, message: 'Stock item not found' })
+      }
+      if (err.message === 'INSUFFICIENT_STOCK') {
         return res.status(400).json({ success: false, message: 'Insufficient stock' })
       }
-      newQuantity -= convertedQuantity
-    } else if (type === 'ADJUST') {
-      newQuantity = convertedQuantity
+      throw err
     }
 
-    if (type === 'IN' && unitCost !== undefined && unitCost !== null) {
-      db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-        .run(newQuantity, Number(unitCost), now, stockItemId)
-    } else {
-      db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now, stockItemId)
-    }
-
-    const movementId = generateId()
-    db.prepare(`
-      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
-
-    // Auto-journal for ADJUST stock movements
-    if (type === 'ADJUST') {
-      const oldQty = item.quantity || 0
-      const diffQty = newQuantity - oldQty
-      const unitCost = Number(item.unit_cost || 0)
-      const diffValue = diffQty * unitCost
-      if (Math.abs(diffValue) > 0.01) {
-        try {
-          const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
-          const yr = new Date().getFullYear()
-          const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
-          const jvNumber = `JV-${yr}-${String(jvCount + 1).padStart(5, '0')}`
-          const entryId = generateId()
-
-          if (diffValue > 0) {
-            // Adjust up: Dr Inventory / Cr Other Income
-            const incomeAccId = getOrCreateAccount(tenantId, '4203', 'รายได้อื่น', 'REVENUE', 'OTHER_REVENUE', 'CREDIT')
-            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${item.name}`, diffValue, diffValue, createdBy, now, now)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-              .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-              .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
-          } else {
-            // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
-            const adjExpAccId = getOrCreateAccount(tenantId, '5901', 'ค่าใช้จ่ายปรับปรุงสต็อก', 'EXPENSE', 'OTHER_EXPENSE', 'DEBIT')
-            const absValue = Math.abs(diffValue)
-            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${item.name}`, absValue, absValue, createdBy, now, now)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-              .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${item.name}`, absValue)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-              .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${item.name}`, absValue)
-          }
-        } catch (journalErr) {
-          console.error('⚠️ Stock adjust journal error:', journalErr)
-        }
-      }
-    }
-
-    const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
-    
     res.json({
       success: true,
       data: enrichStockItem(updatedItem, tenantId),
@@ -493,6 +517,13 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
     const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) return res.status(404).json({ success: false, message: 'Stock item not found' })
 
+    // Reject files whose content does not match an allowed image type.
+    const fullPath = path.join(uploadDir, file.filename)
+    if (!isValidImageFile(fullPath)) {
+      try { fs.unlinkSync(fullPath) } catch { /* ignore */ }
+      return res.status(400).json({ success: false, message: 'Invalid image file' })
+    }
+
     if (existing.image_url) {
       const baseDir = path.resolve(__dirname, '..', '..', 'uploads')
       const oldPath = path.resolve(baseDir, existing.image_url.replace(/^\//, ''))
@@ -502,8 +533,8 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
     const imageUrl = `/uploads/stock-images/${file.filename}`
     const now = new Date().toISOString()
 
-    db.prepare('UPDATE stock_items SET image_url = ?, updated_at = ? WHERE id = ?')
-      .run(imageUrl, now, req.params.id)
+    db.prepare('UPDATE stock_items SET image_url = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(imageUrl, now, req.params.id, tenantId)
 
     // Sync image to pos_menu_configs
     db.prepare('UPDATE pos_menu_configs SET image_url = ?, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
@@ -530,7 +561,7 @@ router.delete('/:id/image', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
-    db.prepare('UPDATE stock_items SET image_url = NULL, updated_at = ? WHERE id = ?').run(now, req.params.id)
+    db.prepare('UPDATE stock_items SET image_url = NULL, updated_at = ? WHERE id = ? AND tenant_id = ?').run(now, req.params.id, tenantId)
     db.prepare('UPDATE pos_menu_configs SET image_url = NULL, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
       .run(now, req.params.id, tenantId)
 

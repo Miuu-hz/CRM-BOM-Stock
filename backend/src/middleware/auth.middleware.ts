@@ -1,12 +1,38 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { getDb } from '../db/sqlite'
+import { can } from '../services/rbac.service'
+import { Role, Department } from '../config/roles'
+
+interface UserJwtPayload {
+  userId: string
+  email: string
+  role: Role
+  department?: Department
+  tenantId: string
+}
+
+interface AgentJwtPayload {
+  agentId?: string
+  email?: string
+  role: string
+  tenantId: string
+}
 
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
 }
 const HOURS_LIMIT = 24
+
+// ponytail: starter allowlist for tables that can be time-box edited.
+const EDITABLE_TABLES = new Set([
+  'orders', 'customers', 'products', 'materials', 'stock_items', 'stock_movements',
+  'boms', 'bom_items', 'purchase_orders', 'purchase_requests', 'pos_running_bills',
+  'pos_bill_items', 'journal_entries', 'journal_entry_lines', 'accounts', 'account_balances',
+  'work_orders', 'suppliers', 'shops', 'marketing_imports', 'tax_invoices', 'invoice_payments',
+  'pos_clearing_transfers', 'pos_kds_tickets'
+])
 
 // Extend Express Request type to include user
 declare global {
@@ -15,9 +41,11 @@ declare global {
       user?: {
         userId: string
         email: string
-        role: string
+        role: Role
+        department?: Department
         tenantId: string
       }
+      validated?: unknown
     }
   }
 }
@@ -36,12 +64,13 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     // Note: legacy AI_API_KEYS global bypass removed for security.
     // Agent auth now uses authenticateAgent middleware with per-tenant JWT.
 
-    const decoded = jwt.verify(token, JWT_SECRET) as any
+    const decoded = jwt.verify(token, JWT_SECRET) as UserJwtPayload
 
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
       role: decoded.role,
+      department: decoded.department,
       tenantId: decoded.tenantId
     }
 
@@ -68,15 +97,15 @@ export const requireRole = (...roles: string[]) => {
   }
 }
 
-// Check if user is master
+// Check if user is admin (legacy requireMaster)
 export const requireMaster = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user) {
     res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
     return
   }
 
-  if (req.user.role !== 'MASTER') {
-    res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้น' })
+  if (req.user.role !== 'ADMIN') {
+    res.status(403).json({ success: false, message: 'เฉพาะ Admin เท่านั้น' })
     return
   }
 
@@ -84,7 +113,10 @@ export const requireMaster = (req: Request, res: Response, next: NextFunction): 
 }
 
 // Agent authentication (per-tenant JWT, separate from user JWT)
-const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET || JWT_SECRET
+const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET
+if (!AGENT_JWT_SECRET) {
+  throw new Error('FATAL: AGENT_JWT_SECRET environment variable is not set.')
+}
 
 export const authenticateAgent = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -94,7 +126,7 @@ export const authenticateAgent = (req: Request, res: Response, next: NextFunctio
       return
     }
     const token = authHeader.split(' ')[1]
-    const decoded = jwt.verify(token, AGENT_JWT_SECRET) as any
+    const decoded = jwt.verify(token, AGENT_JWT_SECRET) as AgentJwtPayload
     if (decoded.role !== 'AI_AGENT') {
       res.status(403).json({ success: false, message: 'Not an agent token' })
       return
@@ -102,12 +134,29 @@ export const authenticateAgent = (req: Request, res: Response, next: NextFunctio
     req.user = {
       userId: decoded.agentId || 'ai-agent',
       email: decoded.email || 'ai@system',
-      role: 'AI_AGENT',
+      role: 'AI_AGENT' as Role,
       tenantId: decoded.tenantId,
     }
     next()
   } catch (error) {
     res.status(401).json({ success: false, message: 'Invalid agent token' })
+  }
+}
+
+// Permission-based middleware using RBAC service
+export const requirePermission = (resource: string, action: string) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
+      return
+    }
+
+    if (!can(req.user.role, req.user.department, resource, action)) {
+      res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
+      return
+    }
+
+    next()
   }
 }
 
@@ -119,8 +168,8 @@ export const canEditRecord = (tableName: string) => {
       return
     }
 
-    // Master can always edit
-    if (req.user.role === 'MASTER') {
+    // Admin can always edit
+    if (req.user.role === 'ADMIN') {
       next()
       return
     }
@@ -128,6 +177,11 @@ export const canEditRecord = (tableName: string) => {
     const { id } = req.params
     if (!id) {
       next()
+      return
+    }
+
+    if (!EDITABLE_TABLES.has(tableName)) {
+      res.status(400).json({ success: false, message: 'Invalid table name' })
       return
     }
 
@@ -161,74 +215,12 @@ export const canEditRecord = (tableName: string) => {
 }
 
 // Helper function to check edit permission (for use in controllers)
-export const checkEditPermission = (user: any, createdAt: string): boolean => {
-  if (user.role === 'MASTER') return true
+export const checkEditPermission = (user: { role: Role }, createdAt: string): boolean => {
+  if (user.role === 'ADMIN') return true
 
   const recordTime = new Date(createdAt).getTime()
   const now = Date.now()
   const diffHours = (now - recordTime) / (1000 * 60 * 60)
 
   return diffHours <= HOURS_LIMIT
-}
-
-// Reject any column name that is not a plain SQL identifier (letters, digits, underscore).
-// This prevents SQL injection via key names passed from request bodies.
-function assertSafeColumnName(name: string): void {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-    throw new Error(`Unsafe column name rejected: "${name}"`)
-  }
-}
-
-// Add tenant_id filter to query helpers
-export const withTenant = (tableName: string, allowedColumns: string[]) => {
-  // Validate the allowlist itself once at call-time so misconfiguration is caught early.
-  allowedColumns.forEach(assertSafeColumnName)
-
-  function pickAllowed(data: Record<string, unknown>): Record<string, unknown> {
-    const safe: Record<string, unknown> = {}
-    for (const key of Object.keys(data)) {
-      if (allowedColumns.includes(key)) {
-        safe[key] = data[key]
-      }
-    }
-    return safe
-  }
-
-  return {
-    getAll: (tenantId: string) => {
-      const db = getDb()
-      return db.prepare(`SELECT * FROM ${tableName} WHERE tenant_id = ? ORDER BY created_at DESC`).all(tenantId)
-    },
-    getById: (id: string, tenantId: string) => {
-      const db = getDb()
-      return db.prepare(`SELECT * FROM ${tableName} WHERE id = ? AND tenant_id = ?`).get(id, tenantId)
-    },
-    create: (data: Record<string, unknown>, tenantId: string) => {
-      const db = getDb()
-      const filtered = pickAllowed(data)
-      if (Object.keys(filtered).length === 0) {
-        throw new Error('No allowed columns provided for insert')
-      }
-      const columns = Object.keys(filtered).concat(['tenant_id', 'created_at', 'updated_at'])
-      const placeholders = columns.map(() => '?').join(', ')
-      const values = Object.values(filtered).concat([tenantId, new Date().toISOString(), new Date().toISOString()])
-
-      return db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
-    },
-    update: (id: string, data: Record<string, unknown>, tenantId: string) => {
-      const db = getDb()
-      const filtered = pickAllowed(data)
-      if (Object.keys(filtered).length === 0) {
-        throw new Error('No allowed columns provided for update')
-      }
-      const setClause = Object.keys(filtered).map(k => `${k} = ?`).join(', ')
-      const values = Object.values(filtered).concat([new Date().toISOString(), id, tenantId])
-
-      return db.prepare(`UPDATE ${tableName} SET ${setClause}, updated_at = ? WHERE id = ? AND tenant_id = ?`).run(...values)
-    },
-    delete: (id: string, tenantId: string) => {
-      const db = getDb()
-      return db.prepare(`DELETE FROM ${tableName} WHERE id = ? AND tenant_id = ?`).run(id, tenantId)
-    }
-  }
 }

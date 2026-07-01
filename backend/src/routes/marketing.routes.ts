@@ -3,10 +3,12 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { authenticate } from '../middleware/auth.middleware'
+import { sanitizeFilename } from '../utils/upload'
 import { parseMarketingCSV } from '../services/csvParser.service'
 import * as marketingRepo from '../repositories/marketing.repository'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 
 function genId() { return randomUUID().replace(/-/g, '').substring(0, 25) }
 
@@ -33,6 +35,37 @@ interface MulterRequest extends Request {
   file?: any
 }
 
+// Allowed marketing import file types
+const MARKETING_EXTS = ['.csv', '.xlsx', '.xls']
+const MARKETING_MIMES = new Set([
+  'text/csv',
+  'text/plain',
+  'application/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/octet-stream',
+])
+
+// ponytail: naive magic-byte check for spreadsheet uploads.
+// Upgrade path: use a proper file-type library if more formats are needed.
+function isValidMarketingFile(filePath: string, ext: string): boolean {
+  if (!MARKETING_EXTS.includes(ext)) return false
+  try {
+    const fd = fs.openSync(filePath, 'r')
+    const buffer = Buffer.alloc(8)
+    const bytesRead = fs.readSync(fd, buffer, 0, 8, 0)
+    fs.closeSync(fd)
+    if (bytesRead < 4) return false
+    const hex = buffer.toString('hex', 0, bytesRead).toLowerCase()
+    if (ext === '.csv') return true
+    if (ext === '.xlsx') return hex.startsWith('504b0304') // ZIP
+    if (ext === '.xls') return hex.startsWith('d0cf11e0a1b11ae1')
+    return false
+  } catch {
+    return false
+  }
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req: any, file: any, cb: any) => {
@@ -44,8 +77,9 @@ const storage = multer.diskStorage({
   },
   filename: (req: any, file: any, cb: any) => {
     // Use short filename to avoid ENAMETOOLONG error with Thai characters
-    const ext = path.extname(file.originalname)
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`
+    const ext = path.extname(file.originalname).toLowerCase()
+    const safeExt = MARKETING_EXTS.includes(ext) ? ext : '.csv'
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`
     cb(null, uniqueName)
   },
 })
@@ -53,9 +87,8 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req: any, file: any, cb: any) => {
-    const allowedTypes = ['.csv', '.xlsx', '.xls']
     const ext = path.extname(file.originalname).toLowerCase()
-    if (allowedTypes.includes(ext)) {
+    if (MARKETING_EXTS.includes(ext) && MARKETING_MIMES.has(file.mimetype)) {
       cb(null, true)
     } else {
       cb(new Error('Only CSV and Excel files are allowed'))
@@ -257,13 +290,21 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
       })
     }
 
+    // Validate file extension and magic bytes before parsing.
+    const ext = path.extname(req.file.originalname).toLowerCase()
+    if (!isValidMarketingFile(req.file.path, ext)) {
+      try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+      return res.status(400).json({ success: false, message: 'Invalid file format' })
+    }
+
     // Parse CSV file with date range
     const parsedData = await parseMarketingCSV(req.file.path, platform, startDate, endDate)
 
     // Create file record
+    const safeOriginalName = sanitizeFilename(req.file.originalname)
     const fileRecord: any = marketingRepo.createFile({
       shopId,
-      fileName: req.file.originalname,
+      fileName: safeOriginalName,
       filePath: req.file.path,
       platform: platform.toUpperCase(),
       userName: parsedData.metadata.userName,
@@ -559,7 +600,7 @@ router.post('/ad-spends', (req: Request, res: Response) => {
     const now = new Date().toISOString()
     db.prepare(`INSERT INTO ad_spends (id, tenant_id, date, platform, channel, amount, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, date, platform, channel || null, Number(amount), notes || null, now, now)
-    const row = db.prepare('SELECT * FROM ad_spends WHERE id = ?').get(id)
+    const row = db.prepare('SELECT * FROM ad_spends WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: row })
   } catch (err) {
     console.error('Create ad-spend error:', err)
@@ -573,7 +614,7 @@ router.delete('/ad-spends/:id', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const existing = db.prepare('SELECT id FROM ad_spends WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     if (!existing) return res.status(404).json({ success: false, message: 'Not found' })
-    db.prepare('DELETE FROM ad_spends WHERE id = ?').run(req.params.id)
+    db.prepare('DELETE FROM ad_spends WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     res.json({ success: true })
   } catch (err) {
     console.error('Delete ad-spend error:', err)
@@ -701,9 +742,7 @@ db.prepare(`CREATE TABLE IF NOT EXISTS platform_pending_je (
 
 // Helper: generate JV number
 function genJVNumber(tenantId: string): string {
-  const yr = new Date().getFullYear()
-  const c = (db.prepare(`SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?`).get(tenantId, yr.toString()) as any).c
-  return `JV-${yr}-${String(c + 1).padStart(5, '0')}`
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5)
 }
 
 // POST /marketing/platform/preview
@@ -714,13 +753,20 @@ router.post('/platform/preview', upload.single('file'), async (req: MulterReques
     const { platform, importDate, shopId } = req.body
     if (!platform || !importDate) return res.status(400).json({ success: false, message: 'platform and importDate are required' })
 
+    // Validate file extension and magic bytes before parsing.
+    const ext = path.extname(req.file.originalname).toLowerCase()
+    if (!isValidMarketingFile(req.file.path, ext)) {
+      try { fs.unlinkSync(req.file.path) } catch { /* ignore */ }
+      return res.status(400).json({ success: false, message: 'Invalid file format' })
+    }
+
     // Detect if file has metadata header (Shopee full format) or direct data
     const { parseSimplifiedCSV } = await import('../services/csvParser.service.js')
     const parsed = await parseSimplifiedCSV(req.file.path, importDate, importDate)
 
     const importId = genId()
     const now = new Date().toISOString()
-    const filename = req.file.originalname
+    const filename = sanitizeFilename(req.file.originalname)
 
     const items: any[] = []
     let matched = 0
@@ -854,51 +900,58 @@ router.post('/platform/confirm/:importId', (req: Request, res: Response) => {
     let skipped = 0
     let insufficient = 0
 
-    for (const item of items) {
-      if (!item.stock_item_id) {
-        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
-        skipped++
-        continue
+    // ponytail: platform import confirmation is a stock event; keep the whole
+    // deduction + status update atomic so concurrent confirmations cannot
+    // over-deduct the same stock rows.
+    const confirmTransaction = db.transaction(() => {
+      for (const item of items) {
+        if (!item.stock_item_id) {
+          db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ? AND tenant_id = ?').run('SKIPPED', item.id, tenantId)
+          skipped++
+          continue
+        }
+
+        const si = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.stock_item_id, tenantId) as any
+        if (!si) {
+          db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ? AND tenant_id = ?').run('SKIPPED', item.id, tenantId)
+          skipped++
+          continue
+        }
+
+        const qty = item.items_sold || 0
+        if (qty > 0) {
+          const prevStock = si.quantity || 0
+          const newQty = Math.max(0, prevStock - qty)
+          db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(newQty, now, item.stock_item_id, tenantId)
+
+          const movId = genId()
+          db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+            VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)`
+          ).run(movId, tenantId, item.stock_item_id, qty, imp.id, `Platform sale: ${imp.platform} import ${imp.id}`, now, req.user!.email)
+
+          const deductStatus = prevStock > 0 ? 'DEDUCTED' : 'INSUFFICIENT'
+          if (deductStatus === 'DEDUCTED') deducted++
+          else insufficient++
+          db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ? AND tenant_id = ?').run(deductStatus, item.id, tenantId)
+        } else {
+          db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ? AND tenant_id = ?').run('SKIPPED', item.id, tenantId)
+          skipped++
+        }
       }
 
-      const si = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.stock_item_id, tenantId) as any
-      if (!si) {
-        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
-        skipped++
-        continue
+      // Create pending JE for total ad cost
+      if (imp.total_ad_cost > 0) {
+        const jeId = genId()
+        const desc = `ค่าโฆษณา ${imp.platform} วันที่ ${imp.import_date} (Import: ${imp.filename})`
+        db.prepare(`INSERT INTO platform_pending_je (id, tenant_id, import_id, platform, description, amount, import_date, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`
+        ).run(jeId, tenantId, imp.id, imp.platform, desc, imp.total_ad_cost, imp.import_date, now)
       }
 
-      const qty = item.items_sold || 0
-      if (qty > 0) {
-        const prevStock = si.quantity || 0
-        const newQty = Math.max(0, prevStock - qty)
-        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, item.stock_item_id)
+      db.prepare('UPDATE platform_imports SET status = ? WHERE id = ? AND tenant_id = ?').run('CONFIRMED', imp.id, tenantId)
+    })
 
-        const movId = genId()
-        db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-          VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)`
-        ).run(movId, tenantId, item.stock_item_id, qty, imp.id, `Platform sale: ${imp.platform} import ${imp.id}`, now, req.user!.email)
-
-        const deductStatus = prevStock > 0 ? 'DEDUCTED' : 'INSUFFICIENT'
-        if (deductStatus === 'DEDUCTED') deducted++
-        else insufficient++
-        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run(deductStatus, item.id)
-      } else {
-        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
-        skipped++
-      }
-    }
-
-    // Create pending JE for total ad cost
-    if (imp.total_ad_cost > 0) {
-      const jeId = genId()
-      const desc = `ค่าโฆษณา ${imp.platform} วันที่ ${imp.import_date} (Import: ${imp.filename})`
-      db.prepare(`INSERT INTO platform_pending_je (id, tenant_id, import_id, platform, description, amount, import_date, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`
-      ).run(jeId, tenantId, imp.id, imp.platform, desc, imp.total_ad_cost, imp.import_date, now)
-    }
-
-    db.prepare('UPDATE platform_imports SET status = ? WHERE id = ?').run('CONFIRMED', imp.id)
+    confirmTransaction()
 
     res.json({ success: true, data: { deducted, skipped, insufficient, totalAdCost: imp.total_ad_cost } })
   } catch (err) {
@@ -936,7 +989,7 @@ router.post('/platform/sku-mapping', (req: Request, res: Response) => {
     for (const ai of affectedImports) {
       const matchedCount = (db.prepare('SELECT COUNT(*) as c FROM platform_import_items WHERE import_id = ? AND stock_item_id IS NOT NULL').get(ai.import_id) as any).c
       const unmatchedCount = (db.prepare('SELECT COUNT(*) as c FROM platform_import_items WHERE import_id = ? AND stock_item_id IS NULL').get(ai.import_id) as any).c
-      db.prepare('UPDATE platform_imports SET matched_rows = ?, unmatched_rows = ? WHERE id = ?').run(matchedCount, unmatchedCount, ai.import_id)
+      db.prepare('UPDATE platform_imports SET matched_rows = ?, unmatched_rows = ? WHERE id = ? AND tenant_id = ?').run(matchedCount, unmatchedCount, ai.import_id, tenantId)
     }
 
     res.json({ success: true, data: { platformSku, platform, stockItemId, stockItemName: si.name } })
@@ -999,8 +1052,8 @@ router.post('/platform/approve-je/:id', (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, 2, ?, 0, ?)`
     ).run(genId(), tenantId, entryId, crAccountId, pje.description, pje.amount)
 
-    db.prepare('UPDATE platform_pending_je SET status = ?, journal_entry_id = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
-      .run('APPROVED', entryId, notes || null, req.user!.email, now, pje.id)
+    db.prepare('UPDATE platform_pending_je SET status = ?, journal_entry_id = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ? AND tenant_id = ?')
+      .run('APPROVED', entryId, notes || null, req.user!.email, now, pje.id, tenantId)
 
     res.json({ success: true, data: { journalEntryId: entryId, entryNumber: jvNumber } })
   } catch (err) {
@@ -1020,8 +1073,8 @@ router.post('/platform/reject-je/:id', (req: Request, res: Response) => {
     if (pje.status !== 'PENDING') return res.status(400).json({ success: false, message: 'JE already processed' })
 
     const now = new Date().toISOString()
-    db.prepare('UPDATE platform_pending_je SET status = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
-      .run('REJECTED', notes || null, req.user!.email, now, pje.id)
+    db.prepare('UPDATE platform_pending_je SET status = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ? AND tenant_id = ?')
+      .run('REJECTED', notes || null, req.user!.email, now, pje.id, tenantId)
 
     res.json({ success: true })
   } catch (err) {

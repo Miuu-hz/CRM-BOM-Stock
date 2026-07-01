@@ -23,7 +23,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import api from '../../utils/api'
+import api from '../../services/api'
 
 export type SidebarMode = 'full' | 'rail'
 

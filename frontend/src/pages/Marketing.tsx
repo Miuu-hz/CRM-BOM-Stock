@@ -15,7 +15,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts'
-import api from '../utils/api'
+import api from '../services/api'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'

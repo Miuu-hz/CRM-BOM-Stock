@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../services/unitConversion.service'
 import { ACC, ACC_META } from '../config/accountCodes'
 
@@ -14,17 +15,25 @@ function generateId() {
 }
 
 function generateNumber(prefix: string, tenantId: string, table: string) {
-  const count = (db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE tenant_id = ?`).get(tenantId) as any).count
   const year = new Date().getFullYear()
-  return `${prefix}-${year}-${String(count + 1).padStart(5, '0')}`
+  const docTypeMap: Record<string, string> = {
+    purchase_requests: 'PURCHASE_REQUEST',
+    purchase_orders: 'PO',
+    goods_receipts: 'GOODS_RECEIPT',
+    purchase_invoices: 'PURCHASE_INVOICE',
+    supplier_payments: 'SUPPLIER_PAYMENT',
+    purchase_returns: 'PURCHASE_RETURN',
+  }
+  const docType = docTypeMap[table]
+  if (!docType) {
+    throw new Error('Invalid table for number generation')
+  }
+  return formatDocumentNumber(prefix, tenantId, docType, year, 5)
 }
 
 function generateEntryNumber(tenantId: string, date: string): string {
   const year = new Date(date).getFullYear()
-  const count = (db.prepare(
-    "SELECT COUNT(*) as count FROM journal_entries WHERE strftime('%Y', date) = ? AND tenant_id = ?"
-  ).get(year.toString(), tenantId) as any).count
-  return `JV-${year}-${String(count + 1).padStart(5, '0')}`
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
 }
 
 function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
@@ -96,8 +105,8 @@ router.delete('/requests/:id', (req: Request, res: Response) => {
     if (!pr) return res.status(404).json({ success: false, message: 'Purchase request not found' })
     if (pr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT requests can be deleted' })
     db.transaction(() => {
-      db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(req.params.id)
-      db.prepare('DELETE FROM purchase_requests WHERE id = ?').run(req.params.id)
+      db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM purchase_requests WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })()
     res.json({ success: true, message: 'Purchase request deleted' })
   } catch (error) {
@@ -145,7 +154,7 @@ router.post('/requests', async (req: Request, res: Response) => {
 
     transaction()
 
-    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(id)
+    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const requestItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...request, items: requestItems } })
@@ -203,7 +212,7 @@ router.put('/requests/:id', async (req: Request, res: Response) => {
 
     transaction()
 
-    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(req.params.id)
+    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     const requestItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(req.params.id)
     res.json({ success: true, data: { ...request, items: requestItems } })
   } catch (error) {
@@ -241,7 +250,7 @@ router.put('/requests/:id/status', async (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ?
     `).run(status, updates.approved_by || null, updates.approved_date || null, now, req.params.id, tenantId)
 
-    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(req.params.id)
+    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: request })
   } catch (error) {
     console.error('Update PR status error:', error)
@@ -302,13 +311,13 @@ router.post('/requests/:id/convert-to-po', async (req: Request, res: Response) =
       }
 
       // Update PR status
-      db.prepare("UPDATE purchase_requests SET status = 'CONVERTED', updated_at = ? WHERE id = ?")
-        .run(now, req.params.id)
+      db.prepare("UPDATE purchase_requests SET status = 'CONVERTED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
     })
 
     transaction()
 
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(poId)
+    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId)
     const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(poId)
 
     res.status(201).json({ 
@@ -483,7 +492,7 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
 
     transaction()
 
-    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ?').get(id)
+    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const receiptItems = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...receipt, items: receiptItems } })
@@ -501,8 +510,8 @@ router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
     if (!gr) return res.status(404).json({ success: false, message: 'Not found' })
     if (gr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะ GR ที่ยังเป็นร่างเท่านั้น' })
     db.transaction(() => {
-      db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ?').run(req.params.id)
-      db.prepare('DELETE FROM goods_receipts WHERE id = ?').run(req.params.id)
+      db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM goods_receipts WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })()
     res.json({ success: true })
   } catch (error) {
@@ -529,8 +538,8 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
 
     const transaction = db.transaction(() => {
       // Update GR status
-      db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
-        .run(now, req.params.id)
+      db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
 
       // Update stock and PO received qty
       for (const item of items) {
@@ -578,12 +587,12 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
 
           if (stockItem) {
             if (addToSealed) {
-              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-                .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id, tenantId)
             } else {
               // Update quantity + unit_cost (latest purchase price)
-              db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-                .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+              db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id, tenantId)
             }
           } else {
             // Create new stock item (BOM material not yet in stock)
@@ -609,8 +618,8 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
           }
 
           // Update PO item received qty (in PO unit)
-          db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
-            .run(item.accepted_qty, item.purchase_order_item_id)
+          db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ? AND tenant_id = ?')
+            .run(item.accepted_qty, item.purchase_order_item_id, tenantId)
         }
       }
 
@@ -619,17 +628,17 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
       const allReceived = poItems.every((item: any) => item.received_qty >= item.quantity)
       
       if (allReceived) {
-        db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', received_date = ?, updated_at = ? WHERE id = ?")
-          .run(now, now, gr.purchase_order_id)
+        db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', received_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(now, now, gr.purchase_order_id, tenantId)
       } else {
-        db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ?")
-          .run(now, gr.purchase_order_id)
+        db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(now, gr.purchase_order_id, tenantId)
       }
     })
 
     transaction()
 
-    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ?').get(req.params.id)
+    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: receipt, message: 'Goods receipt confirmed and stock updated' })
   } catch (error: any) {
     console.error('Confirm goods receipt error:', error)
@@ -817,7 +826,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
 
     transaction()
 
-    const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ?').get(id)
+    const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...invoice, items: invoiceItems } })
@@ -925,8 +934,8 @@ router.post('/payments', async (req: Request, res: Response) => {
 
         db.prepare(`
           UPDATE purchase_invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
-          WHERE id = ?
-        `).run(newPaid, newBalance, paymentStatus, now, purchaseInvoiceId)
+          WHERE id = ? AND tenant_id = ?
+        `).run(newPaid, newBalance, paymentStatus, now, purchaseInvoiceId, tenantId)
       }
 
       // === POST JOURNAL ENTRY ===
@@ -954,7 +963,7 @@ router.post('/payments', async (req: Request, res: Response) => {
 
     transaction()
 
-    const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ?').get(id)
+    const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: payment, message: 'Payment recorded successfully' })
   } catch (error) {
     console.error('Create supplier payment error:', error)
@@ -1072,7 +1081,7 @@ router.post('/returns', async (req: Request, res: Response) => {
 
     transaction()
 
-    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id)
+    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const retItems = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...ret, items: retItems } })
@@ -1095,8 +1104,8 @@ router.put('/returns/:id/status', async (req: Request, res: Response) => {
     if (!ret) return res.status(404).json({ success: false, message: 'Not found' })
     if (ret.status === 'CONFIRMED') return res.status(400).json({ success: false, message: 'Already confirmed' })
 
-    db.prepare('UPDATE purchase_returns SET status = ?, updated_at = ? WHERE id = ?')
-      .run(status, new Date().toISOString(), req.params.id)
+    db.prepare('UPDATE purchase_returns SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(status, new Date().toISOString(), req.params.id, tenantId)
 
     res.json({ success: true, data: { id: req.params.id, status } })
   } catch (error) {
@@ -1126,8 +1135,8 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
 
     const transaction = db.transaction(() => {
       // Update return status
-      db.prepare("UPDATE purchase_returns SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
-        .run(now, req.params.id)
+      db.prepare("UPDATE purchase_returns SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
 
       // Deduct stock
       for (const item of items) {
@@ -1135,8 +1144,8 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
           const stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           
           if (stockItem) {
-            db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
-              .run(Math.floor(item.quantity), now, stockItem.id)
+            db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+              .run(Math.floor(item.quantity), now, stockItem.id, tenantId)
 
             // Record stock movement
             db.prepare(`
@@ -1151,7 +1160,7 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
 
     transaction()
 
-    const updated = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(req.params.id)
+    const updated = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: 'Purchase return confirmed and stock deducted' })
   } catch (error) {
     console.error('Confirm purchase return error:', error)

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { randomUUID } from 'crypto'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
+import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
 
 const router = Router()
@@ -27,8 +28,7 @@ router.post('/', (req: Request, res: Response) => {
     if (!parsed.success) return void res.status(400).json({ success: false, message: parsed.error.issues[0].message })
 
     const { reason, items } = parsed.data
-    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
-    const prNumber = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+    const prNumber = formatDocumentNumber('PR', tenantId, 'PURCHASE_REQUEST', new Date().getFullYear(), 5)
     const prId = randomUUID()
 
     db.prepare(`
@@ -168,8 +168,7 @@ router.post('/from-image', async (req: Request, res: Response) => {
     }
 
     // สร้าง PR
-    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
-    const prNumber = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+    const prNumber = formatDocumentNumber('PR', tenantId, 'PURCHASE_REQUEST', new Date().getFullYear(), 5)
     const prId = randomUUID()
     const now = new Date().toISOString()
 
@@ -297,7 +296,7 @@ router.patch('/:id/items', (req: Request, res: Response) => {
                 quantity    = COALESCE(?, quantity),
                 unit        = COALESCE(?, unit),
                 unit_price  = COALESCE(?, unit_price)
-            WHERE id = ? AND (pr_id = ? OR purchase_request_id = ?)
+            WHERE id = ? AND (pr_id = ? OR purchase_request_id = ?) AND tenant_id = ?
         `)
 
         const updateMany = db.transaction((items: typeof parsed.data.items) => {
@@ -305,7 +304,7 @@ router.patch('/:id/items', (req: Request, res: Response) => {
                 updateItem.run(
                     it.item_name ?? null, it.material_id ?? null,
                     it.quantity ?? null, it.unit ?? null, it.unit_price ?? null,
-                    it.id, pr.id, pr.id
+                    it.id, pr.id, pr.id, tenantId
                 )
             }
         })
@@ -314,8 +313,8 @@ router.patch('/:id/items', (req: Request, res: Response) => {
 
         // เปลี่ยน status เป็น PENDING เพื่อรออนุมัติ
         db.prepare(
-            "UPDATE purchase_requests SET status = 'PENDING', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).run(pr.id)
+            "UPDATE purchase_requests SET status = 'PENDING', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?"
+        ).run(pr.id, tenantId)
 
         res.json({ success: true })
     } catch (e) {
@@ -347,8 +346,8 @@ router.post('/:id/approve', requireRole('MASTER', 'MANAGER'), async (req: Reques
             UPDATE purchase_requests
             SET status = 'APPROVED', approved_by = ?, approved_at = CURRENT_TIMESTAMP,
                 notes = COALESCE(?, notes), updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `).run(userId, parsed.data.notes ?? null, pr.id)
+            WHERE id = ? AND tenant_id = ?
+        `).run(userId, parsed.data.notes ?? null, pr.id, tenantId)
 
         // Push LINE notification
         await lineBotService.notifyPRStatus(tenantId, {
@@ -390,8 +389,8 @@ router.post('/:id/reject', requireRole('MASTER', 'MANAGER'), async (req: Request
             UPDATE purchase_requests
             SET status = 'REJECTED', approved_by = ?, approved_at = CURRENT_TIMESTAMP,
                 rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `).run(userId, parsed.data.reason, pr.id)
+            WHERE id = ? AND tenant_id = ?
+        `).run(userId, parsed.data.reason, pr.id, tenantId)
 
         await lineBotService.notifyPRStatus(tenantId, {
             id:                   pr.id,

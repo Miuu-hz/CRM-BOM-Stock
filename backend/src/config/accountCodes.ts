@@ -45,8 +45,18 @@ export const ACC = {
   DEPRECIATION:      '5201',
 } as const
 
+import type { AccountType, NormalBalance } from '../types'
+
+export interface AccountMeta {
+  name: string
+  type: AccountType
+  category: string
+  normalBalance: NormalBalance
+  taxRelated?: number
+}
+
 // Account metadata for getOrCreateAccount calls
-export const ACC_META: Record<string, { name: string; type: string; category: string; normalBalance: string; taxRelated?: number }> = {
+export const ACC_META: Record<string, AccountMeta> = {
   [ACC.CASH]:             { name: 'เงินสด', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
   [ACC.BANK]:             { name: 'เงินฝากธนาคาร', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
   [ACC.AR]:               { name: 'ลูกหนี้การค้า', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },

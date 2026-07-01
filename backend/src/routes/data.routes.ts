@@ -159,7 +159,7 @@ router.patch('/products/:id/category', (req: Request, res: Response) => {
     if (result.changes === 0) {
       return res.status(404).json({ success: false, message: 'Product not found' })
     }
-    const updated = db.prepare('SELECT id, sku as code, name, category, unit, unit_cost FROM stock_items WHERE id = ?').get(req.params.id)
+    const updated = db.prepare('SELECT id, sku as code, name, category, unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated })
   } catch (error) {
     console.error('Update product category error:', error)

@@ -117,7 +117,7 @@ router.post('/', async (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', now, now)
 
-    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id)
+    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: supplier })
   } catch (error: any) {
     console.error('Create supplier error:', error)
@@ -148,7 +148,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ?
     `).run(name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, now, req.params.id, tenantId)
 
-    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id)
+    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: supplier })
   } catch (error) {
     console.error('Update supplier error:', error)

@@ -3,43 +3,18 @@ import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
 import { authenticate } from '../middleware/auth.middleware'
+import { generateId, formatDocumentNumber } from '../utils/id'
 
 const router = Router()
 
 router.use(authenticate)
-
-// Helper: Generate ID (24-char hex)
-const generateId = () => {
-  const chars = '0123456789abcdef'
-  let id = ''
-  for (let i = 0; i < 24; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return id
-}
 
 // Helper: Get current timestamp
 const now = () => new Date().toISOString()
 
 // Helper: Generate bill number (POS-2024-00001)
 const generateBillNumber = (tenantId: string) => {
-  const year = new Date().getFullYear()
-  const prefix = `POS-${year}-`
-  
-  const stmt = db.prepare(`
-    SELECT bill_number FROM pos_running_bills 
-    WHERE tenant_id = ? AND bill_number LIKE ?
-    ORDER BY bill_number DESC LIMIT 1
-  `)
-  const last = stmt.get(tenantId, `${prefix}%`) as { bill_number: string } | undefined
-  
-  let seq = 1
-  if (last) {
-    const match = last.bill_number.match(/-(\d+)$/)
-    if (match) seq = parseInt(match[1]) + 1
-  }
-  
-  return `${prefix}${String(seq).padStart(5, '0')}`
+  return formatDocumentNumber('POS', tenantId, 'POS_BILL', new Date().getFullYear(), 5)
 }
 
 // ==================== BILLS ====================
@@ -151,7 +126,7 @@ router.get('/bills/:id', (req, res) => {
 router.post('/bills', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
-    const userId = (req as any).user!.id || 'system'
+    const userId = (req as any).user!.userId
     const { display_name, customer_name, customer_phone, customer_id, notes } = req.body
 
     // If customer_id provided, pull name/phone from CRM
@@ -269,9 +244,13 @@ router.delete('/bills/:id', (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
-    // Check if bill has items
-    const checkStmt = db.prepare('SELECT COUNT(*) as count FROM pos_bill_items WHERE bill_id = ?')
-    const check = checkStmt.get(id) as { count: number }
+    // Check if bill has items (scoped to tenant)
+    const checkStmt = db.prepare(`
+      SELECT COUNT(*) as count FROM pos_bill_items bi
+      JOIN pos_running_bills b ON bi.bill_id = b.id
+      WHERE bi.bill_id = ? AND b.tenant_id = ?
+    `)
+    const check = checkStmt.get(id, tenantId) as { count: number }
     
     if (check.count > 0) {
       return res.status(400).json({ 
@@ -304,7 +283,7 @@ router.delete('/bills/:id', (req, res) => {
 router.post('/bills/:id/items', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
-    const userId = (req as any).user!.id || 'system'
+    const userId = (req as any).user!.userId
     const { id } = req.params
     const { pos_menu_id, quantity, special_instructions } = req.body
     
@@ -357,12 +336,17 @@ router.post('/bills/:id/items', (req, res) => {
 // Update bill item (quantity, instructions)
 router.put('/bills/:billId/items/:itemId', (req, res) => {
   try {
+    const tenantId = (req as any).user!.tenantId
     const { billId, itemId } = req.params
     const { quantity, special_instructions } = req.body
     
-    // Get current item
-    const itemStmt = db.prepare('SELECT * FROM pos_bill_items WHERE id = ? AND bill_id = ?')
-    const item = itemStmt.get(itemId, billId)
+    // Get current item scoped to tenant
+    const itemStmt = db.prepare(`
+      SELECT bi.* FROM pos_bill_items bi
+      JOIN pos_running_bills b ON bi.bill_id = b.id
+      WHERE bi.id = ? AND bi.bill_id = ? AND b.tenant_id = ?
+    `)
+    const item = itemStmt.get(itemId, billId, tenantId)
     
     if (!item) {
       return res.status(404).json({ success: false, message: 'Item not found' })
@@ -375,10 +359,12 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     const stmt = db.prepare(`
       UPDATE pos_bill_items 
       SET quantity = ?, total_price = ?, special_instructions = ?
-      WHERE id = ? AND bill_id = ?
+      WHERE id = ? AND bill_id = ? AND EXISTS (
+        SELECT 1 FROM pos_running_bills b WHERE b.id = ? AND b.tenant_id = ?
+      )
     `)
     
-    stmt.run(newQty, newTotal, special_instructions || null, itemId, billId)
+    stmt.run(newQty, newTotal, special_instructions || null, itemId, billId, billId, tenantId)
     
     // Recalculate bill totals
     recalculateBillTotals(billId)
@@ -393,10 +379,16 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
 // Delete bill item
 router.delete('/bills/:billId/items/:itemId', (req, res) => {
   try {
+    const tenantId = (req as any).user!.tenantId
     const { billId, itemId } = req.params
     
-    const stmt = db.prepare('DELETE FROM pos_bill_items WHERE id = ? AND bill_id = ?')
-    const result = stmt.run(itemId, billId)
+    const stmt = db.prepare(`
+      DELETE FROM pos_bill_items 
+      WHERE id = ? AND bill_id = ? AND EXISTS (
+        SELECT 1 FROM pos_running_bills b WHERE b.id = ? AND b.tenant_id = ?
+      )
+    `)
+    const result = stmt.run(itemId, billId, billId, tenantId)
     
     if (result.changes === 0) {
       return res.status(404).json({ success: false, message: 'Item not found' })
@@ -418,7 +410,7 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
 router.post('/bills/:id/pay', async (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
-    const userId = (req as any).user!.id || 'system'
+    const userId = (req as any).user!.userId
     const { id } = req.params
     const { payment_method, received_amount, reference, earn_rate, redeem_points } = req.body
 
@@ -488,9 +480,9 @@ router.post('/bills/:id/pay', async (req, res) => {
     const updateBill = db.prepare(`
       UPDATE pos_running_bills 
       SET status = 'PAID', closed_at = ?, closed_by = ?
-      WHERE id = ?
+      WHERE id = ? AND tenant_id = ?
     `)
-    updateBill.run(now(), userId, id)
+    updateBill.run(now(), userId, id, tenantId)
     
     // 4. Record accounting entry
     const payment = { payment_method, amount: totalAmount }
@@ -503,7 +495,7 @@ router.post('/bills/:id/pay', async (req, res) => {
     let pointsRedeemed = 0
     if ((refreshedBill as any).customer_id) {
       const customerId = (refreshedBill as any).customer_id
-      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ?').get(customerId) as any
+      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
       if (customer) {
         // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
         const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
@@ -514,8 +506,8 @@ router.post('/bills/:id/pay', async (req, res) => {
         const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
 
         db.prepare(`
-          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ?
-        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId)
+          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?
+        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId, tenantId)
 
         if (pointsRedeemed > 0) {
           db.prepare(`
@@ -566,7 +558,7 @@ router.post('/bills/:id/pay', async (req, res) => {
 router.post('/bills/:id/cancel', async (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
-    const userId = (req as any).user!.id || 'system'
+    const userId = (req as any).user!.userId
     const { id } = req.params
     const { reason } = req.body
     
@@ -598,9 +590,9 @@ router.post('/bills/:id/cancel', async (req, res) => {
     const updateBill = db.prepare(`
       UPDATE pos_running_bills 
       SET status = 'CANCELLED', closed_at = ?, closed_by = ?, notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
-      WHERE id = ?
+      WHERE id = ? AND tenant_id = ?
     `)
-    updateBill.run(now(), userId, (bill as any).notes, reason || 'No reason', id)
+    updateBill.run(now(), userId, (bill as any).notes, reason || 'No reason', id, tenantId)
     
     res.json({ 
       success: true, 

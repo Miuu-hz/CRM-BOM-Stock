@@ -1,17 +1,11 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
+import { generateId, formatDocumentNumber } from '../utils/id'
+import { authenticate } from '../middleware/auth.middleware'
 
 const router = Router()
 
-// Helper: Generate ID (24-char hex)
-const generateId = () => {
-  const chars = '0123456789abcdef'
-  let id = ''
-  for (let i = 0; i < 24; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return id
-}
+router.use(authenticate)
 
 const now = () => new Date().toISOString()
 
@@ -20,7 +14,7 @@ const now = () => new Date().toISOString()
 // Get current clearing balance summary
 router.get('/clearing/balance', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     
     // Get total pending in clearing
     const pendingStmt = db.prepare(`
@@ -82,7 +76,7 @@ router.get('/clearing/balance', (req, res) => {
 // Get pending bills for transfer (optionally filtered by date)
 router.get('/clearing/pending-bills', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { date } = req.query as { date?: string }
 
     let query = `
@@ -120,8 +114,8 @@ router.get('/clearing/pending-bills', (req, res) => {
 // Create transfer (End of Day close)
 router.post('/clearing/transfer', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
-    const userId = (req as any).user?.id || 'system'
+    const tenantId = (req as any).user!.tenantId
+    const userId = (req as any).user!.userId
     const { 
       transfer_date, 
       cash_amount, 
@@ -185,7 +179,7 @@ router.post('/clearing/transfer', (req, res) => {
         VALUES (?, ?, ?, ?, ?)
       `)
       for (const billId of bill_ids) {
-        const bill = db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ?').get(billId) as any
+        const bill = db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(billId, tenantId) as any
         linkStmt.run(generateId(), tenantId, transferId, billId, bill?.total_amount || 0)
       }
     }
@@ -214,7 +208,7 @@ router.post('/clearing/transfer', (req, res) => {
 // Get transfer details
 router.get('/clearing/transfers/:id', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
     // Get transfer
@@ -256,7 +250,7 @@ router.get('/clearing/transfers/:id', (req, res) => {
 // Get all transfers
 router.get('/clearing/transfers', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { date_from, date_to, limit = 50 } = req.query
     
     let query = `
@@ -331,18 +325,7 @@ function createTransferJournalEntries(
 
   // Get next entry number
   const year = new Date().getFullYear()
-  const prefix = `JV-${year}-`
-  const last = db.prepare(`
-    SELECT entry_number FROM journal_entries
-    WHERE tenant_id = ? AND entry_number LIKE ?
-    ORDER BY entry_number DESC LIMIT 1
-  `).get(tenantId, `${prefix}%`) as { entry_number: string } | undefined
-  let seq = 1
-  if (last) {
-    const match = last.entry_number.match(/-(\d+)$/)
-    if (match) seq = parseInt(match[1]) + 1
-  }
-  const entryNumber = `${prefix}${String(seq).padStart(6, '0')}`
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 6)
 
   const entryId = generateId()
   db.prepare(`

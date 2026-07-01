@@ -1,14 +1,12 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
+import { generateId } from '../utils/id'
+import { authenticate } from '../middleware/auth.middleware'
 
 const router = Router()
 
-const generateId = () => {
-  const chars = '0123456789abcdef'
-  let id = ''
-  for (let i = 0; i < 24; i++) id += chars[Math.floor(Math.random() * chars.length)]
-  return id
-}
+router.use(authenticate)
+
 const now = () => new Date().toISOString()
 
 // ==================== KDS Ticket-based API ====================
@@ -16,7 +14,7 @@ const now = () => new Date().toISOString()
 // POST /send — สร้าง ticket จาก item ที่ยังไม่ได้ส่งครัว
 router.post('/send', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { bill_id } = req.body
 
     if (!bill_id) return res.status(400).json({ success: false, message: 'bill_id required' })
@@ -72,7 +70,7 @@ router.post('/send', (req, res) => {
 // GET /tickets — ดึง tickets ที่ active (PENDING + IN_PROGRESS) พร้อม items
 router.get('/tickets', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
 
     const tickets = db.prepare(
       `SELECT * FROM pos_kds_tickets
@@ -97,7 +95,7 @@ router.get('/tickets', (req, res) => {
 // PATCH /tickets/:id/status — อัปเดตสถานะ ticket
 router.patch('/tickets/:id/status', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { status } = req.body
 
@@ -111,8 +109,8 @@ router.patch('/tickets/:id/status', (req, res) => {
 
     if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' })
 
-    db.prepare(`UPDATE pos_kds_tickets SET status = ?, updated_at = ? WHERE id = ?`)
-      .run(status, now(), id)
+    db.prepare(`UPDATE pos_kds_tickets SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`)
+      .run(status, now(), id, tenantId)
 
     res.json({ success: true, message: `Ticket updated to ${status}` })
   } catch (error) {
@@ -125,7 +123,7 @@ router.patch('/tickets/:id/status', (req, res) => {
 
 router.get('/orders', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const stmt = db.prepare(`
       SELECT bi.id, bi.bill_id, b.bill_number, b.display_name as bill_name, b.opened_at,
              bi.pos_menu_id, pmc.image_url, bi.product_name, bi.quantity,
@@ -152,7 +150,7 @@ router.get('/orders', (req, res) => {
 
 router.patch('/items/:id/status', (req, res) => {
   try {
-    const tenantId = (req as any).user?.tenantId || 'default'
+    const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const { status } = req.body
     if (!['PENDING', 'PREPARING', 'READY', 'SERVED'].includes(status)) {

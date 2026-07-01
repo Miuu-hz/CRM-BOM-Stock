@@ -13,6 +13,12 @@ const generateId = () => {
 
 const now = () => new Date().toISOString()
 
+class StockDeductionError extends Error {
+  constructor(message: string, public issues: any[]) {
+    super(message)
+  }
+}
+
 export interface StockCheckResult {
   menuId: string
   menuName: string
@@ -163,9 +169,7 @@ class POSStockService {
     tenantId: string,
     userId: string
   ): Promise<{ success: boolean; deductions: any[]; errors: string[]; issues?: any[] }> {
-    const errors: string[] = []
     const deductions: any[] = []
-    const issues: any[] = []
 
     try {
       // Check tenant setting: pos_bom_deduct (default ON)
@@ -196,166 +200,170 @@ class POSStockService {
       `)
       const items = itemsStmt.all(billId, tenantId) as any[]
 
-      // Process each item
-      for (const item of items) {
-        // Get ingredients - ใช้ BOM ถ้ามี bom_id ไม่งันใช้ pos_menu_ingredients
-        let ingredients: any[] = []
+      const issues: any[] = []
 
-        if (item.bom_id) {
-          // ดึงวัตถุดิบจาก BOM items
-          const ingStmt = db.prepare(`
-            SELECT
-              bi.id,
-              bi.material_id as stock_item_id,
-              bi.quantity as quantity_used,
-              bi.unit as ingredient_unit,
-              si.base_unit as stock_base_unit,
-              si.unit as stock_unit
-            FROM bom_items bi
-            JOIN stock_items si ON bi.material_id = si.id
-            WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-          `)
-          ingredients = ingStmt.all(item.bom_id, tenantId) as any[]
-        } else {
-          // ใช้ pos_menu_ingredients (แบบเก่า)
-          const ingStmt = db.prepare(`
-            SELECT 
-              pmi.*,
-              si.base_unit as stock_base_unit,
-              si.unit as stock_unit
-            FROM pos_menu_ingredients pmi
-            JOIN stock_items si ON pmi.stock_item_id = si.id
-            WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
-          `)
-          ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
-        }
+      // ponytail: run all stock checks + updates in one transaction so concurrent
+      // payments cannot over-deduct the same stock row.
+      const deductTransaction = db.transaction(() => {
+        for (const item of items) {
+          // Get ingredients - ใช้ BOM ถ้ามี bom_id ไม่งันใช้ pos_menu_ingredients
+          let ingredients: any[] = []
 
-        // ถ้าไม่มี ingredient เลย ให้ตัด stock จาก product_id โดยตรง
-    // ใช้ sale_unit จาก pos_menu_configs ถ้ามี เพื่อ convert เป็นหน่วยฐาน
-        const saleUnit = item.sale_unit || null
-        if (ingredients.length === 0 && item.product_id) {
-          ingredients = [{ stock_item_id: item.product_id, quantity_used: 1, unit_id: saleUnit }]
-        }
+          if (item.bom_id) {
+            const ingStmt = db.prepare(`
+              SELECT
+                bi.id,
+                bi.material_id as stock_item_id,
+                bi.quantity as quantity_used,
+                bi.unit as ingredient_unit,
+                si.base_unit as stock_base_unit,
+                si.unit as stock_unit
+              FROM bom_items bi
+              JOIN stock_items si ON bi.material_id = si.id
+              WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
+            `)
+            ingredients = ingStmt.all(item.bom_id, tenantId) as any[]
+          } else {
+            const ingStmt = db.prepare(`
+              SELECT 
+                pmi.*,
+                si.base_unit as stock_base_unit,
+                si.unit as stock_unit
+              FROM pos_menu_ingredients pmi
+              JOIN stock_items si ON pmi.stock_item_id = si.id
+              WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
+            `)
+            ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
+          }
 
-        for (const ing of ingredients) {
-          const stockBaseUnit = ing.stock_base_unit || ing.stock_unit || 'pcs'
-          const ingredientUnit = ing.ingredient_unit || ing.unit_id || stockBaseUnit
-          
-          // Convert to base unit
-          let deductQtyInBase = Number(ing.quantity_used) * item.quantity
-          if (ingredientUnit && ingredientUnit !== stockBaseUnit) {
-            const conversion = convertQuantityBidirectional(
-              Number(ing.quantity_used) * item.quantity,
-              ingredientUnit,
-              stockBaseUnit,
+          const saleUnit = item.sale_unit || null
+          if (ingredients.length === 0 && item.product_id) {
+            ingredients = [{ stock_item_id: item.product_id, quantity_used: 1, unit_id: saleUnit }]
+          }
+
+          for (const ing of ingredients) {
+            const stockBaseUnit = ing.stock_base_unit || ing.stock_unit || 'pcs'
+            const ingredientUnit = ing.ingredient_unit || ing.unit_id || stockBaseUnit
+
+            let deductQtyInBase = Number(ing.quantity_used) * item.quantity
+            if (ingredientUnit && ingredientUnit !== stockBaseUnit) {
+              const conversion = convertQuantityBidirectional(
+                Number(ing.quantity_used) * item.quantity,
+                ingredientUnit,
+                stockBaseUnit,
+                tenantId,
+                ing.stock_item_id
+              )
+              if (conversion) {
+                deductQtyInBase = conversion.converted
+              }
+            }
+
+            const stockStmt = db.prepare('SELECT id, quantity, sealed_qty, name, base_unit, unit, display_unit FROM stock_items WHERE id = ?')
+            let stock = stockStmt.get(ing.stock_item_id) as any
+
+            if (stock && stock.quantity < deductQtyInBase && (stock.sealed_qty ?? 0) > 0) {
+              const unpackResult = autoUnpackIfNeeded(stock, deductQtyInBase, tenantId)
+              if (unpackResult && unpackResult.unpackedPacks > 0) {
+                const unpackUpdate = db.prepare(`
+                  UPDATE stock_items 
+                  SET quantity = quantity + ?, sealed_qty = sealed_qty - ?, updated_at = ?
+                  WHERE id = ? AND tenant_id = ?
+                `)
+                unpackUpdate.run(unpackResult.packFactor * unpackResult.unpackedPacks, unpackResult.unpackedPacks, now(), ing.stock_item_id, tenantId)
+                stock = stockStmt.get(ing.stock_item_id) as any
+              }
+            }
+
+            if (!stock || stock.quantity < deductQtyInBase) {
+              const issue = {
+                type: 'INSUFFICIENT_STOCK',
+                itemName: item.product_name || 'Unknown',
+                stockItemId: stock?.id || ing.stock_item_id,
+                stockItemName: stock?.name || 'Unknown',
+                need: deductQtyInBase,
+                have: stock?.quantity || 0,
+                unit: stockBaseUnit,
+                action: 'RESTOCK',
+                link: stock?.id ? `/stock/${stock.id}/edit` : null,
+                message: `${stock?.name || 'Unknown'} ไม่พอ (ต้องการ ${deductQtyInBase} ${stockBaseUnit} มี ${stock?.quantity || 0} ${stock?.base_unit || stock?.unit || stockBaseUnit})`
+              }
+              issues.push(issue)
+              continue
+            }
+
+            const updateStock = db.prepare(`
+              UPDATE stock_items 
+              SET quantity = quantity - ?, updated_at = ?
+              WHERE id = ? AND tenant_id = ?
+            `)
+            updateStock.run(deductQtyInBase, now(), ing.stock_item_id, tenantId)
+
+            const movementId = generateId()
+            const movementStmt = db.prepare(`
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_by, created_at)
+              VALUES (?, ?, ?, 'SALE', ?, ?, ?, ?, ?, ?, ?)
+            `)
+            movementStmt.run(
+              movementId,
               tenantId,
-              ing.stock_item_id
+              ing.stock_item_id,
+              deductQtyInBase,
+              ingredientUnit,
+              Number(ing.quantity_used) * item.quantity,
+              bill.bill_number,
+              `POS Sale - ${item.product_name}`,
+              userId,
+              now()
             )
-            if (conversion) {
-              deductQtyInBase = conversion.converted
-            }
+
+            const deductId = generateId()
+            const deductStmt = db.prepare(`
+              INSERT INTO pos_stock_deductions (id, tenant_id, bill_item_id, stock_item_id, quantity_deducted, unit_id, deducted_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `)
+            deductStmt.run(
+              deductId,
+              tenantId,
+              item.id,
+              ing.stock_item_id,
+              deductQtyInBase,
+              ing.unit_id || null,
+              now()
+            )
+
+            deductions.push({
+              deductionId: deductId,
+              stockItemId: ing.stock_item_id,
+              stockItemName: stock.name,
+              quantityDeducted: deductQtyInBase,
+              remainingStock: stock.quantity - deductQtyInBase
+            })
           }
-
-          // Check if enough stock
-          const stockStmt = db.prepare('SELECT id, quantity, sealed_qty, name, base_unit, unit, display_unit FROM stock_items WHERE id = ?')
-          let stock = stockStmt.get(ing.stock_item_id) as any
-
-          // Auto-unpack if needed
-          if (stock && stock.quantity < deductQtyInBase && (stock.sealed_qty ?? 0) > 0) {
-            const unpackResult = autoUnpackIfNeeded(stock, deductQtyInBase, tenantId)
-            if (unpackResult && unpackResult.unpackedPacks > 0) {
-              // Update stock in DB: reduce sealed, add unpacked to loose quantity
-              const unpackUpdate = db.prepare(`
-                UPDATE stock_items 
-                SET quantity = quantity + ?, sealed_qty = sealed_qty - ?, updated_at = ?
-                WHERE id = ? AND tenant_id = ?
-              `)
-              unpackUpdate.run(unpackResult.packFactor * unpackResult.unpackedPacks, unpackResult.unpackedPacks, now(), ing.stock_item_id, tenantId)
-              // Refresh stock object
-              stock = stockStmt.get(ing.stock_item_id) as any
-            }
-          }
-
-          const displayUnitLabel = stock?.display_unit || stock?.unit || stockBaseUnit
-
-          if (!stock || stock.quantity < deductQtyInBase) {
-            const issue = {
-              type: 'INSUFFICIENT_STOCK',
-              itemName: item.product_name || 'Unknown',
-              stockItemId: stock?.id || ing.stock_item_id,
-              stockItemName: stock?.name || 'Unknown',
-              need: deductQtyInBase,
-              have: stock?.quantity || 0,
-              unit: stockBaseUnit,
-              action: 'RESTOCK',
-              link: stock?.id ? `/stock/${stock.id}/edit` : null,
-              message: `${stock?.name || 'Unknown'} ไม่พอ (ต้องการ ${deductQtyInBase} ${stockBaseUnit} มี ${stock?.quantity || 0} ${stock?.base_unit || stock?.unit || stockBaseUnit})`
-            }
-            issues.push(issue)
-            errors.push(issue.message)
-            continue
-          }
-
-          // 1. Update stock quantity
-          const updateStock = db.prepare(`
-            UPDATE stock_items 
-            SET quantity = quantity - ?, updated_at = ?
-            WHERE id = ? AND tenant_id = ?
-          `)
-          updateStock.run(deductQtyInBase, now(), ing.stock_item_id, tenantId)
-
-          // 2. Record stock movement
-          const movementId = generateId()
-          const movementStmt = db.prepare(`
-            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_by, created_at)
-            VALUES (?, ?, ?, 'SALE', ?, ?, ?, ?, ?, ?, ?)
-          `)
-          movementStmt.run(
-            movementId,
-            tenantId,
-            ing.stock_item_id,
-            deductQtyInBase,
-            ingredientUnit,
-            Number(ing.quantity_used) * item.quantity,
-            bill.bill_number,
-            `POS Sale - ${item.product_name}`,
-            userId,
-            now()
-          )
-
-          // 3. Record deduction
-          const deductId = generateId()
-          const deductStmt = db.prepare(`
-            INSERT INTO pos_stock_deductions (id, tenant_id, bill_item_id, stock_item_id, quantity_deducted, unit_id, deducted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `)
-          deductStmt.run(
-            deductId,
-            tenantId,
-            item.id,
-            ing.stock_item_id,
-            deductQtyInBase,
-            ing.unit_id || null,
-            now()
-          )
-
-          deductions.push({
-            deductionId: deductId,
-            stockItemId: ing.stock_item_id,
-            stockItemName: stock.name,
-            quantityDeducted: deductQtyInBase,
-            remainingStock: stock.quantity - deductQtyInBase
-          })
         }
-      }
+
+        if (issues.length > 0) {
+          throw new StockDeductionError('Insufficient stock for one or more items', issues)
+        }
+      })
+
+      deductTransaction()
 
       return {
-        success: errors.length === 0,
+        success: issues.length === 0,
         deductions,
-        errors,
+        errors: issues.map((i: any) => i.message),
         issues
       }
     } catch (error: any) {
+      if (error instanceof StockDeductionError) {
+        return {
+          success: false,
+          deductions,
+          errors: error.issues.map((i: any) => i.message),
+          issues: error.issues
+        }
+      }
       return {
         success: false,
         deductions,
@@ -374,9 +382,6 @@ class POSStockService {
     userId: string,
     reason?: string
   ): Promise<{ success: boolean; returns: any[]; errors: string[] }> {
-    const errors: string[] = []
-    const returns: any[] = []
-
     try {
       // Get bill info
       const billStmt = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?')
@@ -395,9 +400,11 @@ class POSStockService {
       `)
       const deductions = deductionsStmt.all(billId) as any[]
 
-      for (const deduction of deductions) {
-        try {
-          // 1. Return stock
+      const returns: any[] = []
+
+      // ponytail: return all stock atomically; partial failures roll back.
+      const returnTransaction = db.transaction(() => {
+        for (const deduction of deductions) {
           const returnStock = db.prepare(`
             UPDATE stock_items 
             SET quantity = quantity + ?, updated_at = ?
@@ -405,7 +412,6 @@ class POSStockService {
           `)
           returnStock.run(deduction.quantity_deducted, now(), deduction.stock_item_id, tenantId)
 
-          // 2. Record return movement
           const movementId = generateId()
           const movementStmt = db.prepare(`
             INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_by, created_at)
@@ -422,7 +428,6 @@ class POSStockService {
             now()
           )
 
-          // 3. Mark deduction as returned
           const markReturned = db.prepare(`
             UPDATE pos_stock_deductions 
             SET returned = 1, returned_at = ? 
@@ -435,20 +440,20 @@ class POSStockService {
             stockItemId: deduction.stock_item_id,
             quantityReturned: deduction.quantity_deducted
           })
-        } catch (error: any) {
-          errors.push(`Failed to return stock for item ${deduction.id}: ${error.message}`)
         }
-      }
+      })
+
+      returnTransaction()
 
       return {
-        success: errors.length === 0,
+        success: true,
         returns,
-        errors
+        errors: []
       }
     } catch (error: any) {
       return {
         success: false,
-        returns,
+        returns: [],
         errors: [error.message || 'Unknown error occurred']
       }
     }

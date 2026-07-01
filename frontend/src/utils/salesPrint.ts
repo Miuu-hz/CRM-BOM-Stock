@@ -24,6 +24,33 @@ const METHOD_TH: Record<string, string> = {
   CASH: 'เงินสด', TRANSFER: 'โอนเงิน', CHEQUE: 'เช็ค', CREDIT_CARD: 'บัตรเครดิต', OTHER: 'อื่นๆ',
 }
 
+// ── XSS helpers ───────────────────────────────────────────────
+function escapeHtml(s: unknown): unknown {
+  if (typeof s !== 'string') return s
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+function deepEscape(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(deepEscape)
+  if (obj !== null && typeof obj === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(obj)) out[k] = deepEscape((obj as Record<string, unknown>)[k])
+    return out
+  }
+  return escapeHtml(obj)
+}
+function safeImageUrl(url: unknown): string {
+  if (typeof url !== 'string') return ''
+  const lower = url.trim().toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return url
+  if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(lower)) return url
+  return ''
+}
+
 // ── CSS A4 ────────────────────────────────────────────────────
 const CSS_A4 = `:root {
     --primary: #3949E5;
@@ -613,18 +640,20 @@ function templateCN_A4(d: any): string {
 export function printSalesDoc(type: SalesDocType, data: any, format: SalesPrintFormat = 'a4') {
   let html = ''
   const css = format === 'thermal' ? CSS_THERMAL : CSS_A4
+  const safeData: any = data ? deepEscape(data) : {}
+  safeData._companyLogo = safeImageUrl(data?._companyLogo)
 
   switch (type) {
     case 'qt':
-      html = format === 'thermal' ? templateQT_Thermal(data) : templateQT_A4(data); break
+      html = format === 'thermal' ? templateQT_Thermal(safeData) : templateQT_A4(safeData); break
     case 'so':
-      html = templateSO_A4(data); break
+      html = templateSO_A4(safeData); break
     case 'inv':
-      html = format === 'thermal' ? templateINV_Thermal(data) : templateINV_A4(data); break
+      html = format === 'thermal' ? templateINV_Thermal(safeData) : templateINV_A4(safeData); break
     case 'rc':
-      html = format === 'thermal' ? templateRC_Thermal(data) : templateRC_A4(data); break
+      html = format === 'thermal' ? templateRC_Thermal(safeData) : templateRC_A4(safeData); break
     case 'cn':
-      html = templateCN_A4(data); break
+      html = templateCN_A4(safeData); break
   }
   if (!html) return
   openPrint(css, html, format)

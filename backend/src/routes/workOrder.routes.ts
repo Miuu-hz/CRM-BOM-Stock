@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
 
@@ -15,8 +16,7 @@ function generateId() {
 }
 
 function generateWONumber(tenantId: string) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any).count
-  return `WO-${String(count + 1).padStart(5, '0')}`
+  return formatDocumentNumber('WO', tenantId, 'WORK_ORDER', undefined, 5)
 }
 
 // GET all work orders
@@ -128,7 +128,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     transaction()
 
-    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id)
+    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const woMaterials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(id)
 
     // Notify via LINE Bot independently
@@ -161,37 +161,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // When starting production (IN_PROGRESS) - deduct materials from stock
     if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
-      // Check stock availability first (scoped to tenant) with unit conversion
-      for (const m of materials) {
-        if (m.material_id) {
-          const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
-          let requiredStockQty = m.required_qty
-          let conversionInfo = ''
-
-          if (stock && m.unit && m.unit !== stock.unit) {
-            const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
-            if (!converted) {
-              return res.status(400).json({
-                success: false,
-                message: `ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`,
-              })
-            }
-            requiredStockQty = converted.converted
-            conversionInfo = ` (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit})`
-          }
-
-          const totalAvailable = (stock?.quantity ?? 0) + ((stock?.sealed_qty ?? 0) > 0
-            ? autoUnpackIfNeeded(stock, requiredStockQty, tenantId)?.quantity ?? 0 : 0)
-          if (!stock || (stock.quantity < requiredStockQty && !autoUnpackIfNeeded(stock, requiredStockQty, tenantId))) {
-            return res.status(400).json({
-              success: false,
-              message: `Insufficient stock for ${m.material_name}. Need ${requiredStockQty}${conversionInfo}, have ${stock?.quantity || 0} ${stock?.unit || ''}`,
-            })
-          }
-        }
-      }
-
-      // Deduct stock
+      // Check stock availability and deduct atomically inside one transaction
       const deductStock = db.transaction(() => {
         db.prepare("UPDATE work_orders SET status = ?, start_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
           .run(status, now, now, req.params.id, tenantId)
@@ -199,49 +169,58 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         for (const m of materials) {
           if (m.material_id) {
             const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
-            if (stock) {
-              let deductQty = m.required_qty
-              let movementNotes = `Material issued for work order`
+            if (!stock) continue
 
-              if (m.unit && m.unit !== stock.unit) {
-                const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
-                if (converted) {
-                  deductQty = converted.converted
-                  movementNotes = `Material issued for work order (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
-                }
+            let deductQty = m.required_qty
+            let movementNotes = `Material issued for work order`
+
+            if (m.unit && m.unit !== stock.unit) {
+              const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, tenantId, m.material_id)
+              if (!converted) {
+                throw new Error(`ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`)
               }
-
-              // auto-unpack ถ้า quantity ไม่พอ
-              const needed = Math.floor(deductQty)
-              if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
-                const unpack = autoUnpackIfNeeded(stock, needed, tenantId)
-                if (unpack && unpack.unpackedPacks > 0) {
-                  db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
-                    .run(unpack.sealed_qty, unpack.quantity, now, stock.id)
-                  db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                    VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'system')`)
-                    .run(generateId(), tenantId, stock.id, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
-                      `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now)
-                  stock.quantity = unpack.quantity
-                }
-              }
-
-              db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
-                .run(needed, now, stock.id)
-
-              db.prepare(`
-                INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, stock.id, needed, `WO: ${wo.wo_number}`, movementNotes, now)
-
-              db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
-                .run(m.required_qty, m.id)
+              deductQty = converted.converted
+              movementNotes = `Material issued for work order (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
             }
+
+            // auto-unpack ถ้า quantity ไม่พอ
+            const needed = Math.floor(deductQty)
+            if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
+              const unpack = autoUnpackIfNeeded(stock, needed, tenantId)
+              if (unpack && unpack.unpackedPacks > 0) {
+                db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                  .run(unpack.sealed_qty, unpack.quantity, now, stock.id, tenantId)
+                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'system')`)
+                  .run(generateId(), tenantId, stock.id, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
+                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now)
+                stock.quantity = unpack.quantity
+              }
+            }
+
+            if (stock.quantity < needed) {
+              throw new Error(`Insufficient stock for ${m.material_name}. Need ${needed} ${stock.unit}, have ${stock.quantity}`)
+            }
+
+            db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+              .run(needed, now, stock.id, tenantId)
+
+            db.prepare(`
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')
+            `).run(generateId(), tenantId, stock.id, needed, `WO: ${wo.wo_number}`, movementNotes, now)
+
+            db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
+              .run(m.required_qty, m.id)
           }
         }
       })
 
-      deductStock()
+      try {
+        deductStock()
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message })
+      }
     } else if (status === 'COMPLETED') {
       const completeTransaction = db.transaction(() => {
         db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -249,12 +228,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
         // Add finished product to stock
         if (wo.bom_id) {
-          const bom = db.prepare('SELECT product_id FROM boms WHERE id = ?').get(wo.bom_id) as any
+          const bom = db.prepare('SELECT product_id FROM boms WHERE id = ? AND tenant_id = ?').get(wo.bom_id, tenantId) as any
           if (bom?.product_id) {
             const finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
             if (finishedStock) {
-              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
-                .run(wo.quantity, now, finishedStock.id)
+              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                .run(wo.quantity, now, finishedStock.id, tenantId)
               db.prepare(`
                 INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                 VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'system')
@@ -269,7 +248,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         .run(status, now, req.params.id, tenantId)
     }
 
-    const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+    const updated = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
 
     // Notify via LINE Bot independently
     if (updated && status !== wo.status) {
@@ -303,7 +282,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ? AND status IN ('DRAFT', 'PLANNED')
     `).run(productName, quantity, priority, dueDate || null, assignedTo, notes, now, req.params.id, tenantId)
 
-    const updatedWo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+    const updatedWo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updatedWo })
   } catch (error) {
     console.error('Update work order error:', error)

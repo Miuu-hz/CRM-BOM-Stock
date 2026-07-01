@@ -1,16 +1,13 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
-import { randomUUID } from 'crypto'
+import { generateId } from '../utils/id'
+import type { Account, AccountBalanceTuple, ChartOfAccountRow } from '../types'
 
 const router = Router()
 
 // Authentication required for all routes
 router.use(authenticate)
-
-function generateId() {
-  return randomUUID().replace(/-/g, '').substring(0, 25)
-}
 
 // ============================================
 // CHART OF ACCOUNTS - ผังบัญชี
@@ -129,7 +126,7 @@ const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '5401', name: 'ดอกเบี้ยจ่าย', type: 'EXPENSE', category: 'INTEREST', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
   { code: '5402', name: 'ขาดทุนจากการขายสินทรัพย์', type: 'EXPENSE', category: 'LOSS', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
   { code: '5403', name: 'ค่าใช้จ่ายอื่น', type: 'EXPENSE', category: 'OTHER', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
-]
+] as const satisfies ChartOfAccountRow[]
 
 // Initialize default chart of accounts for tenant
 router.post('/init', async (req: Request, res: Response) => {
@@ -137,8 +134,8 @@ router.post('/init', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     // Check if accounts already exist
-    const existingCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE tenant_id = ?').get(tenantId) as any).count
-    
+    const existingCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE tenant_id = ?').get(tenantId) as { count: number }).count
+
     if (existingCount > 0) {
       return res.status(400).json({
         success: false,
@@ -147,7 +144,7 @@ router.post('/init', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
-    const createdAccounts: any[] = []
+    const createdAccounts: Array<ChartOfAccountRow & { id: string }> = []
 
     // Create accounts in order (parents first)
     const insertAccount = db.prepare(`
@@ -166,7 +163,7 @@ router.post('/init', async (req: Request, res: Response) => {
         
         insertAccount.run(
           id, tenantId, acc.code, acc.name, acc.type, acc.category, null, acc.level,
-          acc.normal_balance, acc.tax_related ? 1 : 0, now, now
+          acc.normal_balance, (acc as any).tax_related ? 1 : 0, now, now
         )
         
         createdAccounts.push({ id, ...acc })
@@ -176,8 +173,8 @@ router.post('/init', async (req: Request, res: Response) => {
       const updateParent = db.prepare('UPDATE accounts SET parent_id = ? WHERE id = ?')
       
       for (const acc of DEFAULT_CHART_OF_ACCOUNTS) {
-        if (acc.parent_code && codeToId[acc.parent_code]) {
-          updateParent.run(codeToId[acc.parent_code], codeToId[acc.code])
+        if ((acc as any).parent_code && codeToId[(acc as any).parent_code]) {
+          updateParent.run(codeToId[(acc as any).parent_code], codeToId[acc.code])
         }
       }
     })
@@ -192,9 +189,9 @@ router.post('/init', async (req: Request, res: Response) => {
         accounts: createdAccounts
       }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Init chart of accounts error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to initialize chart of accounts' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to initialize chart of accounts' })
   }
 })
 
@@ -213,11 +210,11 @@ router.get('/', async (req: Request, res: Response) => {
       LEFT JOIN accounts p ON a.parent_id = p.id
       WHERE a.tenant_id = ?
     `
-    const params: any[] = [tenantId]
-    
+    const params: Array<string | number> = [tenantId]
+
     if (type) {
       query += ' AND a.type = ?'
-      params.push(type)
+      params.push(type as string)
     }
     
     if (active === 'true') {
@@ -226,15 +223,16 @@ router.get('/', async (req: Request, res: Response) => {
     
     query += ' ORDER BY a.code'
     
-    const accounts = db.prepare(query).all(...params) as any[]
-    
+    const accounts = db.prepare(query).all(...params) as Account[]
+
     // Build tree structure
-    const buildTree = (parentId: string | null = null, level: number = 0): any[] => {
+    type AccountTreeNode = Account & { children: AccountTreeNode[] }
+    const buildTree = (parentId: string | null = null): AccountTreeNode[] => {
       return accounts
         .filter(a => a.parent_id === parentId)
         .map(a => ({
           ...a,
-          children: buildTree(a.id, level + 1)
+          children: buildTree(a.id)
         }))
     }
     
@@ -263,21 +261,21 @@ router.get('/:id', async (req: Request, res: Response) => {
       FROM accounts a
       LEFT JOIN accounts p ON a.parent_id = p.id
       WHERE a.id = ? AND a.tenant_id = ?
-    `).get(req.params.id, tenantId) as any
-    
+    `).get(req.params.id, tenantId) as Account | undefined
+
     if (!account) {
       return res.status(404).json({ success: false, message: 'Account not found' })
     }
-    
+
     // Get balance info
     const balanceInfo = db.prepare(`
-      SELECT 
+      SELECT
         COALESCE(SUM(debit), 0) as total_debit,
         COALESCE(SUM(credit), 0) as total_credit
       FROM journal_lines jl
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id = ? AND je.is_posted = 1
-    `).get(req.params.id) as any
+    `).get(req.params.id) as AccountBalanceTuple
     
     const balance = account.normal_balance === 'DEBIT' 
       ? Number(balanceInfo.total_debit) - Number(balanceInfo.total_credit)
@@ -332,7 +330,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Calculate level
     let level = 0
     if (parentId) {
-      const parent = db.prepare('SELECT level FROM accounts WHERE id = ? AND tenant_id = ?').get(parentId, tenantId) as any
+      const parent = db.prepare('SELECT level FROM accounts WHERE id = ? AND tenant_id = ?').get(parentId, tenantId) as { level: number } | undefined
       if (parent) {
         level = parent.level + 1
       }
@@ -353,9 +351,9 @@ router.post('/', async (req: Request, res: Response) => {
       message: 'Account created successfully',
       data: { id, code, name, type }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Create account error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to create account' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to create account' })
   }
 })
 
@@ -383,9 +381,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     `).run(name, nameEn, isActive !== undefined ? (isActive ? 1 : 0) : undefined, description, now, req.params.id, tenantId)
     
     res.json({ success: true, message: 'Account updated successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Update account error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to update account' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to update account' })
   }
 })
 
@@ -394,17 +392,17 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const account = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as Account | undefined
     if (!account) {
       return res.status(404).json({ success: false, message: 'Account not found' })
     }
-    
+
     if (account.is_system) {
       return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีระบบได้' })
     }
     
     // Check for transactions
-    const txCount = (db.prepare('SELECT COUNT(*) as count FROM journal_lines WHERE account_id = ?').get(req.params.id) as any).count
+    const txCount = (db.prepare('SELECT COUNT(*) as count FROM journal_lines WHERE account_id = ?').get(req.params.id) as { count: number }).count
     if (txCount > 0) {
       return res.status(400).json({
         success: false,
@@ -414,7 +412,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Check for children
-    const childCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE parent_id = ?').get(req.params.id) as any).count
+    const childCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE parent_id = ?').get(req.params.id) as { count: number }).count
     if (childCount > 0) {
       return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีที่มีบัญชีย่อย กรุณาลบบัญชีย่อยก่อน' })
     }
@@ -422,9 +420,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
     db.prepare('DELETE FROM accounts WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     
     res.json({ success: true, message: 'Account deleted successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Delete account error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to delete account' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to delete account' })
   }
 })
 

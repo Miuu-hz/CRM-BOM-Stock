@@ -75,7 +75,7 @@ router.post('/', (req: Request, res: Response) => {
       reason || null, priority || 0, 'PENDING', notes || null, createdBy, now, now
     )
     
-    const recommendation = db.prepare('SELECT * FROM customer_recommendations WHERE id = ?').get(id)
+    const recommendation = db.prepare('SELECT * FROM customer_recommendations WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     
     res.status(201).json({ success: true, data: recommendation })
   } catch (error) {
@@ -109,7 +109,7 @@ router.put('/:id', (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ?
     `).run(status || recommendation.status, notes || recommendation.notes, offeredAt, offeredBy, now, id, tenantId)
     
-    const updated = db.prepare('SELECT * FROM customer_recommendations WHERE id = ?').get(id)
+    const updated = db.prepare('SELECT * FROM customer_recommendations WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     
     res.json({ success: true, data: updated })
   } catch (error) {
@@ -132,7 +132,7 @@ router.delete('/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'ไม่พบรายการแนะนำ' })
     }
     
-    db.prepare('DELETE FROM customer_recommendations WHERE id = ?').run(id)
+    db.prepare('DELETE FROM customer_recommendations WHERE id = ? AND tenant_id = ?').run(id, tenantId)
     
     res.json({ success: true, message: 'ลบรายการแนะนำสำเร็จ' })
   } catch (error) {

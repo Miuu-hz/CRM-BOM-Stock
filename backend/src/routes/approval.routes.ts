@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 
 const router = Router()
 
@@ -12,9 +13,15 @@ function generateId() {
 }
 
 function generateNumber(prefix: string, tenantId: string, table: string) {
-  const count = (db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE tenant_id = ?`).get(tenantId) as any).count
-  const year = new Date().getFullYear()
-  return `${prefix}-${year}-${String(count + 1).padStart(5, '0')}`
+  const docTypeMap: Record<string, string> = {
+    approval_requests: 'APPROVAL_REQUEST',
+    stock_adjustments: 'STOCK_ADJUSTMENT',
+  }
+  const docType = docTypeMap[table]
+  if (!docType) {
+    throw new Error('Invalid table for number generation')
+  }
+  return formatDocumentNumber(prefix, tenantId, docType, new Date().getFullYear(), 5)
 }
 
 // ============================================
@@ -363,13 +370,13 @@ router.post('/requests', async (req: Request, res: Response) => {
 
       // Update reference record status
       if (referenceType === 'work_orders') {
-        db.prepare("UPDATE work_orders SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+        db.prepare("UPDATE work_orders SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       } else if (referenceType === 'supplier_payments') {
-        db.prepare("UPDATE supplier_payments SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+        db.prepare("UPDATE supplier_payments SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       } else if (referenceType === 'receipts') {
-        db.prepare("UPDATE receipts SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+        db.prepare("UPDATE receipts SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       } else if (referenceType === 'stock_adjustments') {
-        db.prepare("UPDATE stock_adjustments SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+        db.prepare("UPDATE stock_adjustments SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       }
     })
 
@@ -426,8 +433,8 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
             approver_1_id = ?, approver_1_name = ?, approver_1_decision = ?, approver_1_comment = ?, approver_1_at = ?,
             ${decision === 'REJECTED' ? "status = 'REJECTED'," : ''}
             updated_at = ?
-          WHERE id = ?
-        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, now, req.params.id)
+          WHERE id = ? AND tenant_id = ?
+        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, now, req.params.id, tenantId)
 
         // Log
         db.prepare(`
@@ -444,8 +451,8 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
             approver_2_id = ?, approver_2_name = ?, approver_2_decision = ?, approver_2_comment = ?, approver_2_at = ?,
             status = ?,
             updated_at = ?
-          WHERE id = ?
-        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id)
+          WHERE id = ? AND tenant_id = ?
+        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id, tenantId)
 
         // Log
         db.prepare(`
@@ -481,22 +488,22 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   db.prepare(`
     UPDATE approval_requests SET 
       final_executor_id = ?, final_executor_name = ?, executed_at = ?, status = 'EXECUTED'
-    WHERE id = ?
-  `).run(executorId, executorName, now, request.id)
+    WHERE id = ? AND tenant_id = ?
+  `).run(executorId, executorName, now, request.id, request.tenant_id)
 
   // Execute based on reference type
   if (request.reference_type === 'work_orders') {
     // Work order approved - can proceed to production
-    db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ?")
-      .run(now, request.reference_id)
+    db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'supplier_payments') {
     // Payment approved - mark as ready to pay
-    db.prepare("UPDATE supplier_payments SET status = 'APPROVED', updated_at = ? WHERE id = ?")
-      .run(now, request.reference_id)
+    db.prepare("UPDATE supplier_payments SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'receipts') {
     // Receipt approved - mark as confirmed
-    db.prepare("UPDATE receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
-      .run(now, request.reference_id)
+    db.prepare("UPDATE receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'stock_adjustments') {
     // Stock adjustment approved - execute the adjustment
     const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any
@@ -505,8 +512,8 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
       const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(adj.stock_item_id, request.tenant_id) as any
       if (stockItem) {
         const newQty = adj.quantity_after
-        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?')
-          .run(newQty, now, adj.stock_item_id)
+        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(newQty, now, adj.stock_item_id, request.tenant_id)
 
         // Record movement
         db.prepare(`
@@ -518,8 +525,8 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
           `Manual adjustment approved: ${adj.reason}`, now, executorId)
       }
 
-      db.prepare("UPDATE stock_adjustments SET status = 'EXECUTED', updated_at = ? WHERE id = ?")
-        .run(now, request.reference_id)
+      db.prepare("UPDATE stock_adjustments SET status = 'EXECUTED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, request.reference_id, request.tenant_id)
     }
   }
 
@@ -535,13 +542,13 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
 // Helper function to revert reference status when rejected
 function revertReferenceStatus(request: any) {
   if (request.reference_type === 'work_orders') {
-    db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+    db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'supplier_payments') {
-    db.prepare("UPDATE supplier_payments SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+    db.prepare("UPDATE supplier_payments SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'receipts') {
-    db.prepare("UPDATE receipts SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+    db.prepare("UPDATE receipts SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'stock_adjustments') {
-    db.prepare("UPDATE stock_adjustments SET status = 'REJECTED' WHERE id = ?").run(request.reference_id)
+    db.prepare("UPDATE stock_adjustments SET status = 'REJECTED' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   }
 }
 

@@ -9,7 +9,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import api from '../utils/api'
+import api from '../services/api'
 
 // ---- Types ----
 type Period = 'day' | 'week' | 'month' | 'year'

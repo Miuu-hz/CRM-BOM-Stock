@@ -6,7 +6,7 @@ import {
   Trash2, TrendingUp, CreditCard, AlertCircle, Pencil, LayoutList, LayoutGrid, Star, Gift, ArrowLeftRight,
   History, RefreshCw, Crown, Target, User,
 } from 'lucide-react'
-import api from '../utils/api'
+import api from '../services/api'
 import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'

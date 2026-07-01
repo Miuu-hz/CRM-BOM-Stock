@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { formatDocumentNumber } from '../utils/id'
 
 const router = Router()
 
@@ -12,11 +13,10 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
-function generateOrderNumber() {
+function generateOrderNumber(tenantId: string) {
   const now = new Date()
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '')
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
-  return `ORD-${dateStr}-${random}`
+  return formatDocumentNumber('ORD', tenantId, 'ORDER', dateStr, 4)
 }
 
 // Get all orders
@@ -87,7 +87,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const id = generateId()
-    const orderNumber = generateOrderNumber()
+    const orderNumber = generateOrderNumber(tenantId)
     const now = new Date().toISOString()
 
     // Calculate totals
@@ -118,7 +118,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     insertOrder()
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(id)
 
     res.status(201).json({ success: true, data: { ...order, items: orderItems } })
@@ -156,11 +156,11 @@ router.put('/:id', async (req: Request, res: Response) => {
           status = COALESCE(?, status),
           notes = COALESCE(?, notes),
           updated_at = ?
-        WHERE id = ?
-      `).run(customerId, orderDate, deliveryDate || null, status, notes, now, req.params.id)
+        WHERE id = ? AND tenant_id = ?
+      `).run(customerId, orderDate, deliveryDate || null, status, notes, now, req.params.id, tenantId)
 
       if (items) {
-        db.prepare('DELETE FROM order_items WHERE order_id = ?').run(req.params.id)
+        db.prepare('DELETE FROM order_items WHERE order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         const insertItem = db.prepare(`
           INSERT INTO order_items (id, tenant_id, order_id, product_id, quantity, unit_price, total_price)
           VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -172,14 +172,14 @@ router.put('/:id', async (req: Request, res: Response) => {
           insertItem.run(generateId(), tenantId, req.params.id, item.productId, 
             item.quantity, item.unitPrice, total)
         }
-        db.prepare('UPDATE orders SET subtotal = ?, total_amount = ? WHERE id = ?')
-          .run(subtotal, subtotal, req.params.id)
+        db.prepare('UPDATE orders SET subtotal = ?, total_amount = ? WHERE id = ? AND tenant_id = ?')
+          .run(subtotal, subtotal, req.params.id, tenantId)
       }
     })
 
     updateOrder()
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id)
 
     res.json({ success: true, data: { ...order, items: orderItems } })
@@ -205,8 +205,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Order not found' })
     }
 
-    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(req.params.id)
-    db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+    db.prepare('DELETE FROM order_items WHERE order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    db.prepare('DELETE FROM orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
 
     res.json({ success: true, message: 'Order deleted' })
   } catch (error) {

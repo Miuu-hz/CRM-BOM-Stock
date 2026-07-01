@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react'
-import api from '../utils/api'
+import api from '../services/api'
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000  // 30 minutes idle → logout
 const WARN_BEFORE_MS  = 60 * 1000        // show warning 1 minute before logout

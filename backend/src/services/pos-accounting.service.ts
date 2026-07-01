@@ -1,16 +1,54 @@
 import db from '../db/sqlite'
-
-// Helper: Generate ID (24-char hex)
-const generateId = () => {
-  const chars = '0123456789abcdef'
-  let id = ''
-  for (let i = 0; i < 24; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return id
-}
+import { generateId, formatDocumentNumber } from '../utils/id'
+import { getOrCreateAccount } from './accounting.service'
+import type { POSBill, POSPayment } from '../types'
 
 const now = () => new Date().toISOString()
+
+interface POSBillItem {
+  bill_item_id: string
+  pos_menu_id: string
+  product_name: string
+  quantity: number
+  bom_id?: string | null
+}
+
+interface BomCostItem {
+  quantity: number
+  unit_cost: number
+}
+
+interface PosMenuIngredient {
+  quantity_used: number
+  unit_cost: number
+}
+
+interface CogsItem {
+  menuId: string
+  menuName: string
+  quantity: number
+  unitCost: number
+  totalCost: number
+}
+
+interface AccountBalanceEntry {
+  accountCode: string
+  debit: number
+  credit: number
+}
+
+interface DailySalesSummary {
+  date: string
+  summary: {
+    bill_count: number
+    total_subtotal: number
+    total_service_charge: number
+    total_tax: number
+    total_revenue: number
+    avg_bill_value: number
+  }
+  paymentBreakdown: unknown[]
+}
 
 class POSAccountingService {
   /**
@@ -18,22 +56,7 @@ class POSAccountingService {
    */
   private generateEntryNumber(tenantId: string): string {
     const year = new Date().getFullYear()
-    const prefix = `JV-${year}-`
-    
-    const stmt = db.prepare(`
-      SELECT entry_number FROM journal_entries 
-      WHERE tenant_id = ? AND entry_number LIKE ?
-      ORDER BY entry_number DESC LIMIT 1
-    `)
-    const last = stmt.get(tenantId, `${prefix}%`) as { entry_number: string } | undefined
-    
-    let seq = 1
-    if (last) {
-      const match = last.entry_number.match(/-(\d+)$/)
-      if (match) seq = parseInt(match[1]) + 1
-    }
-    
-    return `${prefix}${String(seq).padStart(6, '0')}`
+    return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 6)
   }
 
   /**
@@ -41,11 +64,11 @@ class POSAccountingService {
    */
   private async calculateCOGS(billId: string, tenantId: string): Promise<{
     totalCost: number
-    items: { menuId: string; menuName: string; quantity: number; unitCost: number; totalCost: number }[]
+    items: CogsItem[]
   }> {
     // Get bill items with their BOM info
     const itemsStmt = db.prepare(`
-      SELECT 
+      SELECT
         bi.id as bill_item_id,
         bi.pos_menu_id,
         bi.product_name,
@@ -55,10 +78,10 @@ class POSAccountingService {
       JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
       WHERE bi.bill_id = ? AND bi.tenant_id = ?
     `)
-    const items = itemsStmt.all(billId, tenantId) as any[]
+    const items = itemsStmt.all(billId, tenantId) as POSBillItem[]
 
     let totalCost = 0
-    const costItems = []
+    const costItems: CogsItem[] = []
 
     for (const item of items) {
       let itemCost = 0
@@ -66,14 +89,14 @@ class POSAccountingService {
       if (item.bom_id) {
         // Calculate cost from BOM items
         const bomItemsStmt = db.prepare(`
-          SELECT 
+          SELECT
             bi.quantity,
             si.unit_cost
           FROM bom_items bi
           JOIN stock_items si ON bi.material_id = si.id
           WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
         `)
-        const bomItems = bomItemsStmt.all(item.bom_id, tenantId) as any[]
+        const bomItems = bomItemsStmt.all(item.bom_id, tenantId) as BomCostItem[]
 
         for (const bomItem of bomItems) {
           itemCost += (bomItem.quantity * bomItem.unit_cost)
@@ -81,14 +104,14 @@ class POSAccountingService {
       } else {
         // Fallback: use pos_menu_ingredients
         const ingStmt = db.prepare(`
-          SELECT 
+          SELECT
             pmi.quantity_used,
             si.unit_cost
           FROM pos_menu_ingredients pmi
           JOIN stock_items si ON pmi.stock_item_id = si.id
           WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
         `)
-        const ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
+        const ingredients = ingStmt.all(item.pos_menu_id, tenantId) as PosMenuIngredient[]
 
         for (const ing of ingredients) {
           itemCost += (ing.quantity_used * ing.unit_cost)
@@ -114,21 +137,8 @@ class POSAccountingService {
    * Record sale transaction (Journal Entry + VAT + COGS)
    */
   async recordSale(
-    bill: {
-      id: string
-      bill_number: string
-      display_name: string
-      customer_name?: string
-      subtotal: number
-      service_charge_amount: number
-      tax_rate?: number
-      tax_amount: number
-      total_amount: number
-    },
-    payment: {
-      payment_method: string
-      amount: number
-    },
+    bill: POSBill,
+    payment: POSPayment,
     tenantId: string,
     userId: string
   ): Promise<{ success: boolean; journalEntryId?: string; cogsEntryId?: string; errors: string[] }> {
@@ -167,30 +177,12 @@ class POSAccountingService {
         now()
       )
 
-      // Helper to get or create account
-      const getAccountId = (code: string, name: string, type: string, category: string) => {
-        const stmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-        let account = stmt.get(code, tenantId) as any
-        
-        if (!account) {
-          // Create default account if not exists
-          const newId = generateId()
-          const createStmt = db.prepare(`
-            INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
-          `)
-          createStmt.run(newId, tenantId, code, name, type, category, type === 'ASSET' ? 'DEBIT' : 'CREDIT')
-          return newId
-        }
-        return account.id
-      }
-
       // Insert journal lines
       // Line 1: Debit Cash/Bank
       const line1Id = generateId()
       const cashAccountCode = payment.payment_method === 'CASH' ? '1101' : '1102'
       const cashAccountName = payment.payment_method === 'CASH' ? 'เงินสด' : 'เงินฝากธนาคาร'
-      const cashAccountId = getAccountId(cashAccountCode, cashAccountName, 'ASSET', 'CURRENT_ASSET')
+      const cashAccountId = getOrCreateAccount(tenantId, cashAccountCode, cashAccountName, 'ASSET', 'CURRENT_ASSET')
 
       const lineStmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
@@ -208,7 +200,7 @@ class POSAccountingService {
 
       // Line 2: Credit Sales Revenue
       const line2Id = generateId()
-      const revenueAccountId = getAccountId('4100', 'รายได้จากการขาย', 'REVENUE', 'OPERATING_REVENUE')
+      const revenueAccountId = getOrCreateAccount(tenantId, '4100', 'รายได้จากการขาย', 'REVENUE', 'OPERATING_REVENUE')
       const line2Stmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
         VALUES (?, ?, ?, ?, 2, ?, 0, ?)
@@ -226,7 +218,7 @@ class POSAccountingService {
       // Line 3: Credit VAT Output (if > 0)
       if (bill.tax_amount > 0) {
         const line3Id = generateId()
-        const vatAccountId = getAccountId('2150', 'ภาษีขาย', 'LIABILITY', 'CURRENT_LIABILITY')
+        const vatAccountId = getOrCreateAccount(tenantId, '2150', 'ภาษีขาย', 'LIABILITY', 'CURRENT_LIABILITY')
         const line3Stmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 3, ?, 0, ?)
@@ -271,7 +263,7 @@ class POSAccountingService {
 
         // COGS Line 1: Debit COGS
         const cogsLine1Id = generateId()
-        const cogsAccountId = getAccountId('5100', 'ต้นทุนขาย', 'EXPENSE', 'OPERATING_EXPENSE')
+        const cogsAccountId = getOrCreateAccount(tenantId, '5100', 'ต้นทุนขาย', 'EXPENSE', 'OPERATING_EXPENSE')
         const cogsLineStmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 1, ?, ?, 0)
@@ -288,7 +280,7 @@ class POSAccountingService {
 
         // COGS Line 2: Credit Inventory
         const cogsLine2Id = generateId()
-        const inventoryAccountId = getAccountId('1160', 'สินค้าคงคลัง', 'ASSET', 'CURRENT_ASSET')
+        const inventoryAccountId = getOrCreateAccount(tenantId, '1160', 'สินค้าคงคลัง', 'ASSET', 'CURRENT_ASSET')
         const cogsLine2Stmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 2, ?, 0, ?)
@@ -349,10 +341,10 @@ class POSAccountingService {
         cogsEntryId,
         errors: []
       }
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        errors: [error.message || 'Failed to record sale transaction']
+        errors: [(error as Error).message || 'Failed to record sale transaction']
       }
     }
   }
@@ -361,12 +353,7 @@ class POSAccountingService {
    * Record cancelled sale (reverse journal entry)
    */
   async recordCancelledSale(
-    bill: {
-      id: string
-      bill_number: string
-      display_name: string
-      total_amount: number
-    },
+    bill: Pick<POSBill, 'id' | 'bill_number' | 'display_name' | 'total_amount'>,
     tenantId: string,
     userId: string,
     reason?: string
@@ -400,27 +387,10 @@ class POSAccountingService {
         now()
       )
 
-      // Helper to get or create account
-      const getAccountId = (code: string, name: string, type: string, category: string) => {
-        const stmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-        let account = stmt.get(code, tenantId) as any
-        
-        if (!account) {
-          const newId = generateId()
-          const createStmt = db.prepare(`
-            INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
-          `)
-          createStmt.run(newId, tenantId, code, name, type, category, type === 'ASSET' ? 'DEBIT' : 'CREDIT')
-          return newId
-        }
-        return account.id
-      }
-
       // Reverse entries (opposite of sale)
       // Line 1: Credit Cash/Bank (reverse of debit)
       const line1Id = generateId()
-      const cashAccountId = getAccountId('1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
+      const cashAccountId = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
       const lineStmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
         VALUES (?, ?, ?, ?, 1, ?, 0, ?)
@@ -437,7 +407,7 @@ class POSAccountingService {
 
       // Line 2: Debit Sales Returns
       const line2Id = generateId()
-      const salesReturnAccountId = getAccountId('4200', 'รายได้คืน', 'REVENUE', 'OPERATING_REVENUE')
+      const salesReturnAccountId = getOrCreateAccount(tenantId, '4200', 'รายได้คืน', 'REVENUE', 'OPERATING_REVENUE')
       const line2Stmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
         VALUES (?, ?, ?, ?, 2, ?, ?, 0)
@@ -457,10 +427,10 @@ class POSAccountingService {
         journalEntryId: entryId,
         errors: []
       }
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        errors: [error.message || 'Failed to record cancellation']
+        errors: [(error as Error).message || 'Failed to record cancellation']
       }
     }
   }
@@ -471,7 +441,7 @@ class POSAccountingService {
   private async updateAccountBalances(
     tenantId: string,
     date: string,
-    entries: { accountCode: string; debit: number; credit: number }[]
+    entries: AccountBalanceEntry[]
   ): Promise<void> {
     const year = parseInt(date.split('-')[0])
     const month = parseInt(date.split('-')[1])
@@ -481,7 +451,7 @@ class POSAccountingService {
 
       // Get account ID
       const accountStmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-      const account = accountStmt.get(entry.accountCode, tenantId) as any
+      const account = accountStmt.get(entry.accountCode, tenantId) as { id: string } | undefined
 
       if (!account) {
         console.warn(`Account ${entry.accountCode} not found for tenant ${tenantId}`)
@@ -520,11 +490,11 @@ class POSAccountingService {
   /**
    * Get daily sales summary
    */
-  async getDailySalesSummary(tenantId: string, date?: string): Promise<any> {
+  async getDailySalesSummary(tenantId: string, date?: string): Promise<DailySalesSummary> {
     const targetDate = date || now().split('T')[0]
 
     const stmt = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(*) as bill_count,
         SUM(subtotal) as total_subtotal,
         SUM(service_charge_amount) as total_service_charge,
@@ -532,12 +502,12 @@ class POSAccountingService {
         SUM(total_amount) as total_revenue,
         AVG(total_amount) as avg_bill_value
       FROM pos_running_bills
-      WHERE tenant_id = ? 
+      WHERE tenant_id = ?
         AND status = 'PAID'
         AND DATE(closed_at) = ?
     `)
 
-    const summary = stmt.get(tenantId, targetDate) as any
+    const summary = stmt.get(tenantId, targetDate) as DailySalesSummary['summary']
 
     // Get payment method breakdown
     const paymentStmt = db.prepare(`

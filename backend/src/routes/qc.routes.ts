@@ -59,7 +59,7 @@ router.post('/checklists', (req: Request, res: Response) => {
   const id = genId()
   db.prepare('INSERT INTO qc_checklists (id, tenant_id, name, description, check_items) VALUES (?, ?, ?, ?, ?)')
     .run(id, req.user!.tenantId, name.trim(), description || '', JSON.stringify(check_items || []))
-  const row = db.prepare('SELECT * FROM qc_checklists WHERE id = ?').get(id) as any
+  const row = db.prepare('SELECT * FROM qc_checklists WHERE id = ? AND tenant_id = ?').get(id, req.user!.tenantId) as any
   res.json({ success: true, data: { ...row, check_items: JSON.parse(row.check_items) } })
 })
 
@@ -96,7 +96,7 @@ router.post('/inspections', (req: Request, res: Response) => {
   const id = genId()
   db.prepare('INSERT INTO qc_inspections (id, tenant_id, checklist_id, checklist_name, work_order_ref, batch_number, product_name, inspector_name, results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, req.user!.tenantId, checklist_id, checklist.name, work_order_ref || '', batch_number || '', product_name || '', inspector_name || '', JSON.stringify(results))
-  const row = db.prepare('SELECT * FROM qc_inspections WHERE id = ?').get(id) as any
+  const row = db.prepare('SELECT * FROM qc_inspections WHERE id = ? AND tenant_id = ?').get(id, req.user!.tenantId) as any
   res.json({ success: true, data: { ...row, results: JSON.parse(row.results) } })
 })
 

@@ -64,7 +64,7 @@ router.post('/', (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, customerId, type, note, createdBy, tenantId, now)
     
-    const activity = db.prepare('SELECT * FROM activity_logs WHERE id = ?').get(id)
+    const activity = db.prepare('SELECT * FROM activity_logs WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     
     res.status(201).json({ success: true, data: activity })
   } catch (error) {
@@ -85,7 +85,7 @@ router.delete('/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'ไม่พบกิจกรรม' })
     }
     
-    db.prepare('DELETE FROM activity_logs WHERE id = ?').run(id)
+    db.prepare('DELETE FROM activity_logs WHERE id = ? AND tenant_id = ?').run(id, tenantId)
     
     res.json({ success: true, message: 'ลบกิจกรรมสำเร็จ' })
   } catch (error) {

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET
@@ -168,27 +169,8 @@ router.post('/login', loginIpLimiter, async (req, res) => {
 
 // @route   POST /api/auth/register
 // @desc    Register new user (for master to create child)
-router.post('/create-child', async (req, res) => {
+router.post('/create-child', authenticate, requireRole('MASTER'), async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
-    }
-
-    const token = authHeader.split(' ')[1]
-    let decoded: any
-    
-    try {
-      decoded = jwt.verify(token, JWT_SECRET)
-    } catch {
-      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
-    }
-
-    // Check if master
-    if (decoded.role !== 'MASTER') {
-      return res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้นที่สร้างผู้ใช้งานได้' })
-    }
-
     const { email, password, name, role = 'USER' } = req.body
 
     if (!email || !password || !name) {
@@ -210,7 +192,7 @@ router.post('/create-child', async (req, res) => {
     const result = db.prepare(`
       INSERT INTO users (id, email, password, name, role, tenant_id, parent_id, status, created_at, updated_at)
       VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
-    `).run(email, hashedPassword, name, role, decoded.tenantId, decoded.userId)
+    `).run(email, hashedPassword, name, role, req.user!.tenantId, req.user!.userId)
 
     res.json({ success: true, data: { id: result.lastInsertRowid } })
 
@@ -222,36 +204,22 @@ router.post('/create-child', async (req, res) => {
 
 // @route   GET /api/auth/children
 // @desc    Get all child users for master
-router.get('/children', async (req, res) => {
+router.get('/children', authenticate, (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
-    }
-
-    const token = authHeader.split(' ')[1]
-    let decoded: any
-    
-    try {
-      decoded = jwt.verify(token, JWT_SECRET)
-    } catch {
-      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
-    }
-
     const db = getDb()
     let children: any[] = []
 
-    if (decoded.role === 'MASTER') {
+    if (req.user!.role === 'MASTER') {
       // Get all users in same tenant or with this master as parent
       children = db.prepare(`
         SELECT id, email, name, role, status, created_at, last_login_at
         FROM users 
         WHERE tenant_id = ? OR parent_id = ?
         ORDER BY created_at DESC
-      `).all(decoded.tenantId, decoded.userId)
+      `).all(req.user!.tenantId, req.user!.userId)
     } else {
       // Regular users can see themselves only
-      const user = db.prepare('SELECT id, email, name, role, status, created_at, last_login_at FROM users WHERE id = ?').get(decoded.userId)
+      const user = db.prepare('SELECT id, email, name, role, status, created_at, last_login_at FROM users WHERE id = ?').get(req.user!.userId)
       if (user) children = [user]
     }
 
@@ -265,32 +233,13 @@ router.get('/children', async (req, res) => {
 
 // @route   DELETE /api/auth/children/:id
 // @desc    Delete child user
-router.delete('/children/:id', async (req, res) => {
+router.delete('/children/:id', authenticate, requireRole('MASTER'), async (req, res) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
-    }
-
-    const token = authHeader.split(' ')[1]
-    let decoded: any
-    
-    try {
-      decoded = jwt.verify(token, JWT_SECRET)
-    } catch {
-      return res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
-    }
-
-    // Only master can delete
-    if (decoded.role !== 'MASTER') {
-      return res.status(403).json({ success: false, message: 'เฉพาะ Master เท่านั้น' })
-    }
-
     const { id } = req.params
     const db = getDb()
 
     // Verify the user belongs to this master/tenant
-    const child = db.prepare('SELECT * FROM users WHERE id = ? AND (parent_id = ? OR tenant_id = ?)').get(id, decoded.userId, decoded.tenantId)
+    const child = db.prepare('SELECT * FROM users WHERE id = ? AND (parent_id = ? OR tenant_id = ?)').get(id, req.user!.userId, req.user!.tenantId)
     if (!child) {
       return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
     }

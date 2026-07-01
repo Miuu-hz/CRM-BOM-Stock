@@ -1,0 +1,1621 @@
+=== src__routes__accounts.routes.ts ===
+140:    const existingCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE tenant_id = ?').get(tenantId) as any).count
+153:    const insertAccount = db.prepare(`
+167:        insertAccount.run(
+176:      const updateParent = db.prepare('UPDATE accounts SET parent_id = ? WHERE id = ?')
+180:          updateParent.run(codeToId[acc.parent_code], codeToId[acc.code])
+202:router.get('/', async (req: Request, res: Response) => {
+229:    const accounts = db.prepare(query).all(...params) as any[]
+257:router.get('/:id', async (req: Request, res: Response) => {
+261:    const account = db.prepare(`
+266:    `).get(req.params.id, tenantId) as any
+273:    const balanceInfo = db.prepare(`
+280:    `).get(req.params.id) as any
+327:    const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+335:      const parent = db.prepare('SELECT level FROM accounts WHERE id = ? AND tenant_id = ?').get(parentId, tenantId) as any
+344:    db.prepare(`
+348:    `).run(id, tenantId, code, name, nameEn || null, type, category, parentId || null, level,
+368:    const existing = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+375:    db.prepare(`
+383:    `).run(name, nameEn, isActive !== undefined ? (isActive ? 1 : 0) : undefined, description, now, req.params.id, tenantId)
+397:    const account = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+407:    const txCount = (db.prepare('SELECT COUNT(*) as count FROM journal_lines WHERE account_id = ?').get(req.params.id) as any).count
+417:    const childCount = (db.prepare('SELECT COUNT(*) as count FROM accounts WHERE parent_id = ?').get(req.params.id) as any).count
+422:    db.prepare('DELETE FROM accounts WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+=== src__routes__activity.routes.ts ===
+12:router.get('/customer/:customerId', (req: Request, res: Response) => {
+18:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+23:    const activities = db.prepare(`
+27:    `).all(customerId, tenantId)
+54:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+62:    db.prepare(`
+65:    `).run(id, customerId, type, note, createdBy, tenantId, now)
+67:    const activity = db.prepare('SELECT * FROM activity_logs WHERE id = ?').get(id)
+83:    const activity = db.prepare('SELECT id FROM activity_logs WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+88:    db.prepare('DELETE FROM activity_logs WHERE id = ?').run(id)
+=== src__routes__approval.routes.ts ===
+15:  const count = (db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE tenant_id = ?`).get(tenantId) as any).count
+25:router.get('/settings', async (req: Request, res: Response) => {
+29:    const settings = db.prepare(`
+33:    `).all(tenantId)
+56:    db.prepare(`
+63:    `).run(id, tenantId, role, moduleType, approvalRequired ? 1 : 0, autoApproveThreshold || 0, 
+66:    const setting = db.prepare('SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?')
+67:      .get(tenantId, role, moduleType)
+81:    db.prepare('DELETE FROM approval_settings WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+94:router.get('/permissions', async (req: Request, res: Response) => {
+98:    const permissions = db.prepare(`
+104:    `).all(tenantId)
+126:    db.prepare(`
+135:    `).run(id, tenantId, userId, moduleType, canApprove ? 1 : 0, canApproveUnlimited ? 1 : 0, 
+138:    const permission = db.prepare('SELECT * FROM user_approval_permissions WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+151:    db.prepare('DELETE FROM user_approval_permissions WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+164:router.get('/check-required', async (req: Request, res: Response) => {
+174:    const setting = db.prepare(`
+177:    `).get(tenantId, req.user!.role, moduleType) as any
+205:    const userPerm = db.prepare(`
+208:    `).get(tenantId, req.user!.userId, moduleType) as any
+236:router.get('/pending', async (req: Request, res: Response) => {
+242:    const userPerms = db.prepare(`
+245:    `).all(tenantId, userId) as any[]
+255:    const requests = db.prepare(`
+269:    `).all(tenantId, ...moduleTypes)
+279:router.get('/my-requests', async (req: Request, res: Response) => {
+284:    const requests = db.prepare(`
+288:    `).all(tenantId, userId)
+298:router.get('/requests/:id', async (req: Request, res: Response) => {
+302:    const request = db.prepare(`
+304:    `).get(req.params.id, tenantId)
+310:    const logs = db.prepare(`
+314:    `).all(req.params.id)
+334:    const existing = db.prepare(`
+337:    `).get(tenantId, referenceType, referenceId)
+349:      db.prepare(`
+353:      `).run(id, tenantId, requestNumber, moduleType, referenceType, referenceId,
+357:      db.prepare(`
+361:      `).run(generateId(), tenantId, id, req.user!.userId, req.user!.email, req.user!.role,
+366:        db.prepare("UPDATE work_orders SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+368:        db.prepare("UPDATE supplier_payments SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+370:        db.prepare("UPDATE receipts SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+372:        db.prepare("UPDATE stock_adjustments SET status = 'PENDING_APPROVAL' WHERE id = ?").run(referenceId)
+378:    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+396:    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?')
+397:      .get(req.params.id, tenantId) as any
+408:    const userPerm = db.prepare(`
+411:    `).get(tenantId, req.user!.userId, request.module_type) as any
+424:        db.prepare(`
+430:        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, now, req.params.id)
+433:        db.prepare(`
+437:        `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email, 
+442:        db.prepare(`
+448:        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id)
+451:        db.prepare(`
+455:        `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email,
+470:    const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+481:  db.prepare(`
+485:  `).run(executorId, executorName, now, request.id)
+490:    db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ?")
+491:      .run(now, request.reference_id)
+494:    db.prepare("UPDATE supplier_payments SET status = 'APPROVED', updated_at = ? WHERE id = ?")
+495:      .run(now, request.reference_id)
+498:    db.prepare("UPDATE receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
+499:      .run(now, request.reference_id)
+502:    const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any
+505:      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(adj.stock_item_id, request.tenant_id) as any
+508:        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?')
+509:          .run(newQty, now, adj.stock_item_id)
+512:        db.prepare(`
+515:        `).run(generateId(), request.tenant_id, adj.stock_item_id, 
+521:      db.prepare("UPDATE stock_adjustments SET status = 'EXECUTED', updated_at = ? WHERE id = ?")
+522:        .run(now, request.reference_id)
+527:  db.prepare(`
+531:  `).run(generateId(), request.tenant_id, request.id, executorId, executorName,
+538:    db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+540:    db.prepare("UPDATE supplier_payments SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+542:    db.prepare("UPDATE receipts SET status = 'DRAFT' WHERE id = ?").run(request.reference_id)
+544:    db.prepare("UPDATE stock_adjustments SET status = 'REJECTED' WHERE id = ?").run(request.reference_id)
+553:router.get('/stock-adjustments', async (req: Request, res: Response) => {
+557:    const adjustments = db.prepare(`
+564:    `).all(tenantId)
+583:    const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+608:    db.prepare(`
+613:    `).run(id, tenantId, adjNumber, stockItemId, adjustmentType, qtyBefore, qtyAfter,
+616:    const adjustment = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+=== src__routes__auth.routes.ts ===
+51:  const rec  = loginAttempts.get(key)
+66:  const rec  = loginAttempts.get(key) ?? { count: 0, lockedUntil: 0 }
+125:      const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count ?? MAX_ATTEMPTS)
+132:    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any
+142:      const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count ?? MAX_ATTEMPTS)
+201:    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+210:    const result = db.prepare(`
+213:    `).run(email, hashedPassword, name, role, decoded.tenantId, decoded.userId)
+225:router.get('/children', async (req, res) => {
+246:      children = db.prepare(`
+251:      `).all(decoded.tenantId, decoded.userId)
+254:      const user = db.prepare('SELECT id, email, name, role, status, created_at, last_login_at FROM users WHERE id = ?').get(decoded.userId)
+293:    const child = db.prepare('SELECT * FROM users WHERE id = ? AND (parent_id = ? OR tenant_id = ?)').get(id, decoded.userId, decoded.tenantId)
+298:    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+=== src__routes__backup.routes.ts ===
+18:router.get('/', (req: Request, res: Response): void => {
+43:router.get('/download/:id', (req: Request, res: Response): void => {
+=== src__routes__bom.routes.ts ===
+52:  const items = db.prepare(`
+62:  `).all(bomId, tenantId) as any[]
+98:  const bom = db.prepare(`
+103:  `).get(bomId, tenantId) as any
+108:  const items = db.prepare(`
+125:  `).all(bomId, tenantId) as any[]
+157:      const children = db.prepare(`
+161:      `).all(bomId) as any[]
+188:  return db.prepare(query).all(tenantId, ...excludeIds) as any[]
+196:router.get('/stats', async (req: Request, res: Response) => {
+200:    const totalBOMs = (db.prepare('SELECT COUNT(*) as count FROM boms WHERE tenant_id = ?').get(tenantId) as any).count
+201:    const activeBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId) as any).count
+202:    const semiFinishedBOMs = (db.prepare("SELECT COUNT(*) as count FROM boms WHERE tenant_id = ? AND is_semi_finished = 1").get(tenantId) as any).count
+203:    const totalMaterials = (db.prepare("SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ? AND category IN ('raw', 'material')").get(tenantId) as any).count
+206:    const topLevelBOMs = db.prepare(`
+210:    `).all(tenantId) as any[]
+235:router.get('/', async (req: Request, res: Response) => {
+239:    const boms = db.prepare(`
+249:    `).all(tenantId) as any[]
+272:router.get('/tree/:id', async (req: Request, res: Response) => {
+295:router.get('/available-children/:id?', async (req: Request, res: Response) => {
+313:router.get('/:id', async (req: Request, res: Response) => {
+317:    const bom = db.prepare(`
+326:    `).get(req.params.id, tenantId) as any
+336:    const items = db.prepare(`
+352:    `).all(req.params.id, tenantId) as any[]
+395:    const product = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, tenantId) as any
+404:    const existingBOM = db.prepare('SELECT * FROM boms WHERE product_id = ? AND version = ? AND tenant_id = ?').get(productId, version, tenantId) as any
+415:      const parentBOM = db.prepare('SELECT level FROM boms WHERE id = ? AND tenant_id = ?').get(parentId, tenantId) as any
+426:      db.prepare(`
+429:      `).run(id, tenantId, productId, parentId, version, status, level, isSemiFinished ? 1 : 0, now, now)
+433:        const insertItem = db.prepare(`
+443:            const childBOM = db.prepare('SELECT id, level FROM boms WHERE id = ? AND tenant_id = ?').get(item.childBomId, tenantId) as any
+451:            insertItem.run(generateId(), tenantId, id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.unit || null, item.notes || '', i)
+454:            const material = db.prepare('SELECT id, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId) as any
+459:            insertItem.run(generateId(), tenantId, id, 'MATERIAL', item.materialId, null, item.quantity, itemUnit, item.notes || '', i)
+467:    const newBom = db.prepare(`
+472:    `).get(id) as any
+496:    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+508:      db.prepare(`
+515:      `).run(version, status, isSemiFinished !== undefined ? (isSemiFinished ? 1 : 0) : undefined, now, req.params.id, tenantId)
+519:        db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+521:        const insertItem = db.prepare(`
+531:            const childBOM = db.prepare('SELECT id FROM boms WHERE id = ? AND tenant_id = ?').get(item.childBomId, tenantId) as any
+539:            insertItem.run(generateId(), tenantId, req.params.id, 'CHILD_BOM', null, item.childBomId, item.quantity, item.unit || null, item.notes || '', i)
+542:            const material = db.prepare('SELECT id, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId) as any
+547:            insertItem.run(generateId(), tenantId, req.params.id, 'MATERIAL', item.materialId, null, item.quantity, itemUnit, item.notes || '', i)
+555:    const updatedBom = db.prepare(`
+560:    `).get(req.params.id) as any
+583:    const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+592:    const usedAsChild = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE child_bom_id = ?').get(req.params.id) as any
+601:      db.prepare('DELETE FROM bom_items WHERE bom_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+602:      db.prepare('DELETE FROM boms WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+618:router.get('/explode/:id', async (req: Request, res: Response) => {
+624:    const bom = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(bomId, tenantId) as any
+634:      const items = db.prepare(`
+639:      `).all(currentBomId, tenantId) as any[]
+=== src__routes__calculator.routes.ts ===
+190:router.get('/platform-configs', (req: Request, res: Response) => {
+213:router.get('/saved-boms', (req: Request, res: Response) => {
+216:    const presets = db.prepare(
+218:    ).all(tenantId) as any[]
+221:      const materials = db.prepare(
+224:      ).all(p.id) as any[]
+249:router.get('/saved-boms/:id', (req: Request, res: Response) => {
+254:    const preset = db.prepare(
+256:    ).get(id, tenantId) as any
+262:    const materials = db.prepare(
+265:    ).all(id) as any[]
+311:    const insertPreset = db.prepare(
+315:    insertPreset.run(presetId, tenantId, name, description || '', operatingCost || 0, scrapValue || 0, costResult.totalCost, now, now)
+317:    const insertMaterial = db.prepare(
+324:      insertMaterial.run(generateId(), presetId, m.name, m.quantity, m.unitPrice || 0, m.unit || 'pcs', i)
+358:    const existing = db.prepare(
+360:    ).get(id, tenantId) as any
+380:    db.prepare(
+384:    ).run(name, description || '', operatingCost || 0, scrapValue || 0, costResult.totalCost, now, id, tenantId)
+387:    db.prepare(`DELETE FROM calculator_preset_materials WHERE preset_id = ?`).run(id)
+389:    const insertMaterial = db.prepare(
+396:      insertMaterial.run(generateId(), id, m.name, m.quantity, m.unitPrice || 0, m.unit || 'pcs', i)
+428:    const existing = db.prepare(
+430:    ).get(id, tenantId) as any
+437:    db.prepare(`DELETE FROM calculator_preset_materials WHERE preset_id = ?`).run(id)
+438:    db.prepare(`DELETE FROM calculator_presets WHERE id = ? AND tenant_id = ?`).run(id, tenantId)
+=== src__routes__customer.routes.ts ===
+12:router.get('/', (req: Request, res: Response) => {
+17:    const customers = db.prepare(`
+28:    `).all(tenantId)
+39:router.get('/search', (req: Request, res: Response) => {
+49:    const customers = db.prepare(`
+57:    `).all(tenantId, term, term, term, term, parseInt(limit as string)) as any[]
+67:router.get('/:id', (req: Request, res: Response) => {
+72:    const customer = db.prepare(`
+82:    `).get(id, tenantId) as any
+107:    const existing = db.prepare('SELECT id FROM customers WHERE tenant_id = ? AND code = ?')
+108:      .get(tenantId, code)
+117:    db.prepare(`
+120:    `).run(id, tenantId, code, name, type, contactName, email || '', phone, city || '', creditLimit, now, now)
+141:    const existing = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?')
+142:      .get(id, tenantId)
+150:    db.prepare(`
+161:    `).run(name, contactName, email, phone, city, creditLimit, status, now, id, tenantId)
+177:    const existing = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?')
+178:      .get(id, tenantId)
+185:    const hasOrders = db.prepare('SELECT COUNT(*) as count FROM orders WHERE customer_id = ?').get(id) as any
+194:    db.prepare('DELETE FROM customers WHERE id = ? AND tenant_id = ?').run(id, tenantId)
+204:router.get('/:id/insights', (req: Request, res: Response) => {
+209:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+213:    const orderStats = db.prepare(`
+220:    `).get(id) as any
+223:    const soStats = db.prepare(`
+228:    `).get(id, tenantId) as any
+230:    const invStats = db.prepare(`
+236:    `).get(id, tenantId) as any
+238:    const qtStats = db.prepare(`
+241:    `).get(id, tenantId) as any
+244:    const recentOrders = db.prepare(`
+249:    `).all(id) as any[]
+252:      order.items = db.prepare(`
+261:      `).all(order.id) || []
+265:    const favouriteProducts = db.prepare(`
+289:    `).all(id, id, tenantId) || []
+292:    const autoRecommendations = db.prepare(`
+304:    `).all(tenantId, id) || []
+307:    const quotations = db.prepare(`
+313:    `).all(id, tenantId) as any[]
+317:        qt.items = db.prepare(`
+324:        `).all(qt.id) || []
+362:router.get('/:id/orders', (req: Request, res: Response) => {
+370:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+373:    const { total } = db.prepare(`
+379:    `).get(id, id, tenantId) as any
+381:    const orders = db.prepare(`
+394:    `).all(id, id, tenantId, limit, offset) as any[]
+398:        order.items = db.prepare(`
+404:        `).all(order.id) || []
+406:        order.items = db.prepare(`
+413:        `).all(order.id) || []
+429:router.get('/summary/stats', (req: Request, res: Response) => {
+434:    const customerStats = db.prepare(`
+440:    `).get(tenantId) as any
+443:    const orderStats = db.prepare(`
+450:    `).get(tenantId) as any
+452:    const soStats = db.prepare(`
+458:    `).get(tenantId) as any
+482:db.prepare(`
+496:`).run()
+499:router.get('/:id/loyalty', (req: Request, res: Response) => {
+503:    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+504:      .get(id, tenantId) as any
+506:    const transactions = db.prepare(`
+508:    `).all(id, tenantId)
+524:    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+525:      .get(id, tenantId) as any
+528:    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+530:    db.prepare(`
+533:    `).run(txId, tenantId, id, pts, balanceAfter, reference_type, reference_id || null, note || null, (req.user as any)?.email || null, new Date().toISOString())
+549:    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+550:      .get(id, tenantId) as any
+554:    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+556:    db.prepare(`
+559:    `).run(txId, tenantId, id, -pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
+575:    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+576:      .get(id, tenantId) as any
+579:    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+581:    db.prepare(`
+584:    `).run(txId, tenantId, id, pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
+=== src__routes__customerRecommendations.routes.ts ===
+12:router.get('/customer/:customerId', (req: Request, res: Response) => {
+18:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+23:    const recommendations = db.prepare(`
+27:    `).all(customerId, tenantId)
+51:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+57:    const existing = db.prepare(`
+60:    `).get(customerId, productId, tenantId)
+69:    db.prepare(`
+73:    `).run(
+78:    const recommendation = db.prepare('SELECT * FROM customer_recommendations WHERE id = ?').get(id)
+94:    const recommendation = db.prepare(`
+96:    `).get(id, tenantId)
+106:    db.prepare(`
+110:    `).run(status || recommendation.status, notes || recommendation.notes, offeredAt, offeredBy, now, id, tenantId)
+112:    const updated = db.prepare('SELECT * FROM customer_recommendations WHERE id = ?').get(id)
+127:    const recommendation = db.prepare(`
+129:    `).get(id, tenantId)
+135:    db.prepare('DELETE FROM customer_recommendations WHERE id = ?').run(id)
+145:router.get('/products/search', (req: Request, res: Response) => {
+156:    const products = db.prepare(`
+164:    `).all(tenantId, searchTerm, searchTerm)
+=== src__routes__dashboard.routes.ts ===
+11:router.get('/stats', async (req: Request, res: Response) => {
+16:    const customerStats = db.prepare(`
+21:    `).get(tenantId) as any
+24:    const activeOrders = (db.prepare(`
+28:    `).get(tenantId) as any).count
+31:    const stockItems = (db.prepare(`
+33:    `).get(tenantId) as any).count
+38:    const monthlyRevenue = db.prepare(`
+45:    `).get(tenantId, String(currentMonth + 1).padStart(2, '0'), String(currentYear)) as any
+63:router.get('/activities', async (req: Request, res: Response) => {
+68:    const activities = db.prepare(`
+76:    `).all(tenantId) as any[]
+96:router.get('/charts', async (req: Request, res: Response) => {
+108:      const row = db.prepare(`
+115:      `).get(tenantId, mm, yyyy) as any
+128:router.get('/low-stock', async (req: Request, res: Response) => {
+131:    const items = db.prepare(`
+137:    `).all(tenantId)
+147:router.get('/revenue', async (req: Request, res: Response) => {
+200:    const curRev  = (db.prepare(revenueQuery).get(tenantId, cur.start, cur.end) as any).revenue
+201:    const prevRev = (db.prepare(revenueQuery).get(tenantId, prev.start, prev.end) as any).revenue
+202:    const curCost  = (db.prepare(costQuery).get(tenantId, cur.start, cur.end) as any).cost
+203:    const prevCost = (db.prepare(costQuery).get(tenantId, prev.start, prev.end) as any).cost
+228:router.get('/cashflow-forecast', async (req: Request, res: Response) => {
+239:    const arRows = db.prepare(`
+248:    `).all(tenantId) as any[]
+251:    const apRows = db.prepare(`
+258:    `).all(tenantId) as any[]
+298:router.get('/funnel', async (req: Request, res: Response) => {
+302:    const qt = db.prepare(`
+305:    `).get(tenantId) as any
+307:    const so = db.prepare(`
+310:    `).get(tenantId) as any
+312:    const inv = db.prepare(`
+315:    `).get(tenantId) as any
+317:    const pending = db.prepare(`
+320:    `).get(tenantId) as any
+338:router.get('/top-customers', async (req: Request, res: Response) => {
+355:    const rows = db.prepare(`
+362:    `).all(tenantId)
+=== src__routes__data.routes.ts ===
+19:router.get('/products', (req: Request, res: Response) => {
+26:    const rows = db.prepare(`
+57:    `).all(tenantId) as any[]
+90:router.get('/materials', (req: Request, res: Response) => {
+96:    const rows = db.prepare(`
+114:    `).all(tenantId) as any[]
+157:    const result = db.prepare('UPDATE stock_items SET category = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+158:      .run(category, now, req.params.id, tenantId)
+162:    const updated = db.prepare('SELECT id, sku as code, name, category, unit, unit_cost FROM stock_items WHERE id = ?').get(req.params.id)
+174:router.get('/boms', (req: Request, res: Response) => {
+178:    const boms = db.prepare(`
+184:    `).all(tenantId) as any[]
+188:      const bomMaterials = db.prepare(`
+193:      `).all(bom.id) as any[]
+225:router.get('/boms/:productId', (req: Request, res: Response) => {
+230:    const bom = db.prepare(`
+235:    `).get(productId, tenantId) as any
+244:    const bomMaterials = db.prepare(`
+249:    `).all(bom.id) as any[]
+=== src__routes__import.routes.ts ===
+96:    const existingCount = (db.prepare('SELECT COUNT(*) as count FROM customers WHERE tenant_id = ?').get(tenantId) as any).count
+98:    const insertCustomer = db.prepare(`
+119:        const existing = db.prepare('SELECT id FROM customers WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+126:        insertCustomer.run(
+197:      (db.prepare('SELECT sku FROM stock_items WHERE tenant_id = ?').all(tenantId) as any[])
+201:    const existingCount = (db.prepare('SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ?').get(tenantId) as any).count
+203:    const insertStock = db.prepare(`
+239:          insertStock.run(
+=== src__routes__journal.routes.ts ===
+19:  const count = (db.prepare('SELECT COUNT(*) as count FROM journal_entries WHERE strftime(\'%Y\', date) = ?').get(year.toString()) as any).count
+28:router.get('/', async (req: Request, res: Response) => {
+63:    const entries = db.prepare(query).all(...params) as any[]
+68:      const entryIdsWithAccount = db.prepare(`
+72:      `).all(accountId as string).map((r: any) => r.journal_entry_id)
+88:router.get('/:id', async (req: Request, res: Response) => {
+92:    const entry = db.prepare(`
+94:    `).get(req.params.id, tenantId) as any
+100:    const lines = db.prepare(`
+110:    `).all(req.params.id) as any[]
+159:      db.prepare(`
+164:      `).run(id, tenantId, entryNumber, date, referenceType || null, referenceId || null,
+168:      const insertLine = db.prepare(`
+178:        const account = db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(line.accountId, tenantId)
+188:        insertLine.run(
+214:    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+227:      db.prepare(`
+234:      `).run(date, description, notes, now, req.params.id)
+247:        db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ?').run(req.params.id)
+250:        const insertLine = db.prepare(`
+263:          insertLine.run(
+270:        db.prepare(`
+272:        `).run(totalDebit, totalCredit, req.params.id)
+291:    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+302:    db.prepare(`
+306:    `).run(now, userName, now, req.params.id)
+326:    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+337:    db.prepare(`
+341:    `).run(now, req.params.id)
+355:    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+365:      db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ?').run(req.params.id)
+366:      db.prepare('DELETE FROM journal_entries WHERE id = ?').run(req.params.id)
+389:    const po = db.prepare(`
+394:    `).get(purchaseOrderId, tenantId) as any
+401:    const items = db.prepare(`
+406:    `).all(purchaseOrderId) as any[]
+409:    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.RAW_MATERIAL, tenantId) as any // สต็อกวัตถุดิบ
+410:    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INPUT_VAT, tenantId) as any // ภาษีซื้อ
+411:    const payableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AP, tenantId) as any // เจ้าหนี้การค้า
+465:    const order = db.prepare(`
+470:    `).get(orderId) as any
+477:    const receivableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AR, tenantId) as any // ลูกหนี้การค้า
+478:    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.OUTPUT_VAT, tenantId) as any // ภาษีขาย
+479:    const revenueAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.REVENUE_PRODUCT, tenantId) as any // รายได้ขายสินค้า
+480:    const cogsAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.COGS_PRODUCT, tenantId) as any // ต้นทุนสินค้าขาย
+481:    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INVENTORY, tenantId) as any // สต็อกสินค้า
+=== src__routes__kds.routes.ts ===
+18:    const bill = db.prepare(
+20:    ).get(bill_id, tenantId) as any
+24:    const unsentItems = db.prepare(
+26:    ).all(bill_id) as any[]
+32:    const roundRow = db.prepare(
+34:    ).get(bill_id) as any
+41:      db.prepare(
+44:      ).run(ticketId, tenantId, bill_id, bill.bill_number, bill.display_name, round, sendTime, sendTime)
+47:        db.prepare(
+50:        ).run(generateId(), ticketId, item.id, item.product_name, item.quantity, item.special_instructions || null)
+54:      db.prepare(`UPDATE pos_bill_items SET sent_to_kds = 1 WHERE id IN (${ids})`).run(...unsentItems.map(i => i.id))
+67:router.get('/tickets', (req, res) => {
+71:    const tickets = db.prepare(
+75:    ).all(tenantId) as any[]
+78:      const items = db.prepare(
+80:      ).all(ticket.id)
+102:    const ticket = db.prepare(
+104:    ).get(id, tenantId)
+108:    db.prepare(`UPDATE pos_kds_tickets SET status = ?, updated_at = ? WHERE id = ?`)
+109:      .run(status, now(), id)
+120:router.get('/orders', (req, res) => {
+123:    const stmt = db.prepare(`
+133:    const items = stmt.all(tenantId)
+139:      billsMap.get(item.bill_id).items.push({ id: item.id, pos_menu_id: item.pos_menu_id, product_name: item.product_name, image_url: item.image_url, quantity: item.quantity, special_instructions: item.special_instructions, status: item.status, added_at: item.added_at })
+155:    const item = db.prepare(`SELECT bi.id FROM pos_bill_items bi JOIN pos_running_bills b ON bi.bill_id = b.id WHERE bi.id = ? AND b.tenant_id = ?`).get(id, tenantId)
+157:    db.prepare(`UPDATE pos_bill_items SET status = ? WHERE id = ?`).run(status, id)
+=== src__routes__line-bot.routes.ts ===
+33:        Promise.all(events.map(event => lineBotService.handleEvent(tenantId, event)))
+46:router.get('/config', authenticate, (req: Request, res: Response) => {
+51:        const config = db.prepare('SELECT id, channel_name, channel_secret, channel_access_token, is_active FROM line_channels WHERE tenant_id = ?').get(tenantId);
+85:        const existing = db.prepare('SELECT id FROM line_channels WHERE tenant_id = ?').get(tenantId);
+91:                db.prepare('UPDATE line_channels SET channel_name=?, channel_secret=?, channel_access_token=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?')
+92:                    .run(name, channel_secret, channel_access_token, isActiveInt, tenantId);
+94:                db.prepare('UPDATE line_channels SET channel_name=?, channel_secret=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?')
+95:                    .run(name, channel_secret, isActiveInt, tenantId);
+97:                db.prepare('UPDATE line_channels SET channel_name=?, channel_access_token=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?')
+98:                    .run(name, channel_access_token, isActiveInt, tenantId);
+100:                db.prepare('UPDATE line_channels SET channel_name=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?')
+101:                    .run(name, isActiveInt, tenantId);
+108:            db.prepare('INSERT INTO line_channels (id, tenant_id, channel_name, channel_secret, channel_access_token, is_active) VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?)')
+109:                .run(tenantId, name, channel_secret, channel_access_token, isActiveInt);
+153:router.get('/link-status', authenticate, (req: Request, res: Response) => {
+157:        const mapping = db.prepare(
+159:        ).get(tenantId, userId) as any;
+167:router.get('/linked-users', authenticate, requireMaster, (req: Request, res: Response) => {
+171:        const rows = db.prepare(`
+178:        `).all(tenantId) as any[];
+191:        db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').run(tenantId, userId);
+204:        db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').run(tenantId, userId);
+216:router.get('/groups', authenticate, (req: Request, res: Response) => {
+220:        const groups = db.prepare(
+222:        ).all(tenantId);
+236:        db.prepare(
+238:        ).run(is_active ? 1 : 0, tenantId, groupId);
+=== src__routes__llmProvider.routes.ts ===
+44:  const rows = db.prepare(`
+50:  `).all(tenantId) as any[]
+65:  const rows = db.prepare(`
+70:  `).all(tenantId, `%${keyword}%`) as any[]
+80:  const rows = db.prepare(`
+85:  `).all(tenantId) as any[]
+96:    const rows = db.prepare(`
+99:    `).all() as any[]
+115:  const product = db.prepare(`
+117:  `).get(tenantId, `%${keyword}%`) as any
+121:  const bom = db.prepare(`
+125:  `).get(product.id, tenantId) as any
+129:  const items = db.prepare(`
+133:  `).all(bom.id) as any[]
+170:router.get('/status', async (_req: Request, res: Response) => {
+=== src__routes__marketing.routes.ts ===
+14:db.prepare(`CREATE TABLE IF NOT EXISTS ad_spends (
+24:)`).run()
+73:router.get('/shops', (req: Request, res: Response) => {
+99:router.get('/shops/:id', (req: Request, res: Response) => {
+339:router.get('/files', (req: Request, res: Response) => {
+365:router.get('/metrics', (req: Request, res: Response) => {
+409:router.get('/analytics/summary', (req: Request, res: Response) => {
+532:router.get('/ad-spends', (req: Request, res: Response) => {
+542:    const rows = db.prepare(sql).all(...params)
+560:    db.prepare(`INSERT INTO ad_spends (id, tenant_id, date, platform, channel, amount, notes, created_at, updated_at)
+561:      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, date, platform, channel || null, Number(amount), notes || null, now, now)
+562:    const row = db.prepare('SELECT * FROM ad_spends WHERE id = ?').get(id)
+574:    const existing = db.prepare('SELECT id FROM ad_spends WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+576:    db.prepare('DELETE FROM ad_spends WHERE id = ?').run(req.params.id)
+585:router.get('/profit-report', (req: Request, res: Response) => {
+607:    const invRows = db.prepare(invSql).all(...invParams) as any[]
+618:    const mmRows = db.prepare(mmSql).all(...mmParams) as any[]
+629:    const asRows = db.prepare(asSql).all(...asParams) as any[]
+663:db.prepare(`CREATE TABLE IF NOT EXISTS platform_imports (
+670:)`).run()
+672:db.prepare(`CREATE TABLE IF NOT EXISTS platform_import_items (
+681:)`).run()
+683:db.prepare(`CREATE TABLE IF NOT EXISTS sku_mappings (
+689:)`).run()
+691:db.prepare(`CREATE TABLE IF NOT EXISTS platform_pending_je (
+700:)`).run()
+705:  const c = (db.prepare(`SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?`).get(tenantId, yr.toString()) as any).c
+742:      const mapping = db.prepare('SELECT * FROM sku_mappings WHERE tenant_id = ? AND platform_sku = ? AND platform = ?').get(tenantId, sku, platform) as any
+744:        const si = db.prepare('SELECT id, name, quantity FROM stock_items WHERE id = ? AND tenant_id = ?').get(mapping.stock_item_id, tenantId) as any
+755:        const si = db.prepare('SELECT id, name, quantity FROM stock_items WHERE sku = ? AND tenant_id = ?').get(sku, tenantId) as any
+792:    db.prepare(`INSERT INTO platform_imports (id, tenant_id, platform, shop_id, filename, import_date, total_rows, matched_rows, unmatched_rows, total_items_sold, total_ad_cost, total_revenue, status, created_by, created_at)
+794:    ).run(importId, tenantId, platform, shopId || null, filename, importDate, items.length, matched, unmatched, totalItemsSold, totalAdCost, totalRevenue, req.user!.email, now)
+798:      db.prepare(`INSERT INTO platform_import_items (id, import_id, tenant_id, sku, product_name, ad_status, impressions, clicks, orders, items_sold, direct_items_sold, revenue, direct_revenue, ad_cost, roas, stock_item_id, stock_item_name, current_stock, deduct_status)
+800:      ).run(genId(), importId, tenantId, item.sku, item.productName, item.adStatus, item.impressions, item.clicks, item.orders, item.itemsSold, item.directItemsSold, item.revenue, item.directRevenue, item.adCost, item.roas, item.stockItemId, item.stockItemName, item.currentStock)
+818:router.get('/platform/imports', (req: Request, res: Response) => {
+821:    const rows = db.prepare('SELECT * FROM platform_imports WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId)
+829:router.get('/platform/imports/:importId', (req: Request, res: Response) => {
+832:    const imp = db.prepare('SELECT * FROM platform_imports WHERE id = ? AND tenant_id = ?').get(req.params.importId, tenantId) as any
+834:    const items = db.prepare('SELECT * FROM platform_import_items WHERE import_id = ? AND tenant_id = ?').all(req.params.importId, tenantId)
+847:    const imp = db.prepare('SELECT * FROM platform_imports WHERE id = ? AND tenant_id = ?').get(req.params.importId, tenantId) as any
+851:    const items = db.prepare('SELECT * FROM platform_import_items WHERE import_id = ? AND tenant_id = ?').all(req.params.importId, tenantId) as any[]
+859:        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
+864:      const si = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.stock_item_id, tenantId) as any
+866:        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
+875:        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, item.stock_item_id)
+878:        db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+880:        ).run(movId, tenantId, item.stock_item_id, qty, imp.id, `Platform sale: ${imp.platform} import ${imp.id}`, now, req.user!.email)
+885:        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run(deductStatus, item.id)
+887:        db.prepare('UPDATE platform_import_items SET deduct_status = ? WHERE id = ?').run('SKIPPED', item.id)
+896:      db.prepare(`INSERT INTO platform_pending_je (id, tenant_id, import_id, platform, description, amount, import_date, status, created_at)
+898:      ).run(jeId, tenantId, imp.id, imp.platform, desc, imp.total_ad_cost, imp.import_date, now)
+901:    db.prepare('UPDATE platform_imports SET status = ? WHERE id = ?').run('CONFIRMED', imp.id)
+917:    const si = db.prepare('SELECT id, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+921:    db.prepare(`INSERT OR REPLACE INTO sku_mappings (id, tenant_id, platform_sku, platform, stock_item_id, stock_item_name, created_at)
+923:    ).run(genId(), tenantId, platformSku, platform, stockItemId, si.name, now)
+926:    db.prepare(`UPDATE platform_import_items SET stock_item_id = ?, stock_item_name = ?
+928:    ).run(stockItemId, si.name, tenantId, platformSku)
+931:    const affectedImports = db.prepare(`
+934:    `).all(tenantId, platformSku) as any[]
+937:      const matchedCount = (db.prepare('SELECT COUNT(*) as c FROM platform_import_items WHERE import_id = ? AND stock_item_id IS NOT NULL').get(ai.import_id) as any).c
+938:      const unmatchedCount = (db.prepare('SELECT COUNT(*) as c FROM platform_import_items WHERE import_id = ? AND stock_item_id IS NULL').get(ai.import_id) as any).c
+939:      db.prepare('UPDATE platform_imports SET matched_rows = ?, unmatched_rows = ? WHERE id = ?').run(matchedCount, unmatchedCount, ai.import_id)
+950:router.get('/platform/sku-mappings', (req: Request, res: Response) => {
+953:    const rows = db.prepare('SELECT * FROM sku_mappings WHERE tenant_id = ? ORDER BY created_at DESC').all(tenantId)
+961:router.get('/platform/pending-je', (req: Request, res: Response) => {
+964:    const rows = db.prepare(`SELECT * FROM platform_pending_je WHERE tenant_id = ? AND status = 'PENDING' ORDER BY created_at DESC`).all(tenantId)
+978:    const pje = db.prepare('SELECT * FROM platform_pending_je WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+988:    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+990:    ).run(entryId, tenantId, jvNumber, dateStr, pje.id, pje.description, pje.amount, pje.amount, req.user!.email, now, now)
+993:    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+995:    ).run(genId(), tenantId, entryId, drAccountId, pje.description, pje.amount)
+998:    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+1000:    ).run(genId(), tenantId, entryId, crAccountId, pje.description, pje.amount)
+1002:    db.prepare('UPDATE platform_pending_je SET status = ?, journal_entry_id = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
+1003:      .run('APPROVED', entryId, notes || null, req.user!.email, now, pje.id)
+1018:    const pje = db.prepare('SELECT * FROM platform_pending_je WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+1023:    db.prepare('UPDATE platform_pending_je SET status = ?, notes = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
+1024:      .run('REJECTED', notes || null, req.user!.email, now, pje.id)
+=== src__routes__materials.routes.ts ===
+32:router.get('/categories', (req: Request, res: Response) => {
+35:    const categories = db.prepare(`
+40:    `).all(tenantId) as any[]
+68:    db.prepare(`
+71:    `).run(id, tenantId, code, name, defaultUnit, description || '', now, now)
+73:    const category = db.prepare('SELECT * FROM material_categories WHERE id = ?').get(id)
+97:    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+102:    db.prepare(`
+106:    `).run(name, defaultUnit, description || '', new Date().toISOString(), id, tenantId)
+108:    const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description FROM material_categories WHERE id = ?').get(id)
+122:    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+127:    const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
+135:    db.prepare('DELETE FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').run(id, tenantId)
+144:router.get('/stats', (req: Request, res: Response) => {
+148:    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
+151:    const stockItems = db.prepare(`
+156:    `).all(tenantId) as any[]
+163:    const materials = db.prepare('SELECT id, unit_cost FROM materials WHERE tenant_id = ?').all(tenantId) as any[]
+192:router.get('/unit-conversions/standards', (_req: Request, res: Response) => {
+197:router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
+226:router.get('/unit-conversions/all', (req: Request, res: Response) => {
+238:router.get('/unit-conversions', (req: Request, res: Response) => {
+416:router.get('/', (req: Request, res: Response) => {
+420:    const materials = db.prepare(`
+428:    `).all(tenantId) as any[]
+450:      const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(material.id) as any
+482:router.get('/:id', (req: Request, res: Response) => {
+486:    const material = db.prepare(`
+491:    `).get(req.params.id, tenantId) as any
+502:      material.movements = db.prepare(`
+507:      `).all(material.stock_id)
+511:    material.bomItems = db.prepare(`
+517:    `).all(req.params.id)
+544:    const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+556:    const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+565:    const existingStock = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(`STK-${code}`, tenantId)
+577:    db.prepare(`
+580:    `).run(id, tenantId, categoryId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
+585:    db.prepare(`
+588:    `).run(
+603:    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id)
+622:    const existing = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+633:      const duplicate = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+645:      const category = db.prepare('SELECT default_unit FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
+657:    db.prepare(`
+668:    `).run(code, name, categoryId, newUnit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
+672:      db.prepare(`
+679:      `).run(minStock, maxStock, newUnit, now, req.params.id, tenantId)
+682:    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id)
+700:    const existing = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+710:    const bomCount = db.prepare('SELECT COUNT(*) as count FROM bom_items WHERE material_id = ?').get(req.params.id) as any
+719:    db.prepare('DELETE FROM stock_items WHERE material_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+722:    db.prepare('DELETE FROM materials WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+747:    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+756:    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+762:      db.prepare(`
+765:      `).run(
+777:      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockId)
+809:    db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ?').run(newQuantity, status, now, stockItem.id)
+813:    db.prepare(`
+816:    `).run(movementId, stockItem.id, type, quantity, notes || '', now, 'system')
+=== src__routes__mcpSettings.routes.ts ===
+21:    const row = db.prepare(
+23:    ).get(tenantId) as { mcp_api_key: string | null } | undefined
+26:  const row = db.prepare(
+28:  ).get(userId) as { mcp_api_key: string | null } | undefined
+34:    db.prepare(
+36:    ).run(key, tenantId)
+38:    db.prepare(
+40:    ).run(key, new Date().toISOString(), userId)
+45:router.get('/', authenticate, (req: Request, res: Response) => {
+83:    const { c } = db.prepare(
+85:    ).get(tenantId) as { c: number }
+=== src__routes__order.routes.ts ===
+23:router.get('/', async (req: Request, res: Response) => {
+27:    const orders = db.prepare(`
+33:    `).all(tenantId)
+43:router.get('/:id', async (req: Request, res: Response) => {
+47:    const order = db.prepare(`
+52:    `).get(req.params.id, tenantId) as any
+59:    const items = db.prepare(`
+64:    `).all(req.params.id)
+84:    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+100:      db.prepare(`
+104:      `).run(id, tenantId, customerId, orderNumber, orderDate || now, deliveryDate || null, 
+108:        const insertItem = db.prepare(`
+113:          insertItem.run(generateId(), tenantId, id, item.productId, item.quantity, 
+121:    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
+122:    const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(id)
+138:    const existing = db.prepare(`
+142:    `).get(req.params.id, tenantId)
+151:      db.prepare(`
+160:      `).run(customerId, orderDate, deliveryDate || null, status, notes, now, req.params.id)
+163:        db.prepare('DELETE FROM order_items WHERE order_id = ?').run(req.params.id)
+164:        const insertItem = db.prepare(`
+172:          insertItem.run(generateId(), tenantId, req.params.id, item.productId, 
+175:        db.prepare('UPDATE orders SET subtotal = ?, total_amount = ? WHERE id = ?')
+176:          .run(subtotal, subtotal, req.params.id)
+182:    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+183:    const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id)
+198:    const existing = db.prepare(`
+202:    `).get(req.params.id, tenantId)
+208:    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(req.params.id)
+209:    db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+=== src__routes__pos-bill.routes.ts ===
+20:  const stmt = db.prepare(`
+25:  const last = stmt.get(tenantId, `${prefix}%`) as { bill_number: string } | undefined
+39:router.get('/bills', (req, res) => {
+62:    const stmt = db.prepare(query)
+63:    const bills = stmt.all(...params)
+73:router.get('/bills/open', (req, res) => {
+77:    const stmt = db.prepare(`
+89:    const bills = stmt.all(tenantId) as any[]
+95:    const refreshedBills = stmt.all(tenantId)
+104:router.get('/bills/:id', (req, res) => {
+110:    const billStmt = db.prepare(`
+116:    const bill = billStmt.get(id, tenantId)
+123:    const itemsStmt = db.prepare(`
+132:    const items = itemsStmt.all(id)
+152:      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+163:    db.prepare(`
+168:    `).run(
+196:    const stmt = db.prepare(`
+202:    const result = stmt.run(
+229:      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+235:    const result = db.prepare(`
+239:    `).run(customer_id || null, customerName, customerPhone, id, tenantId)
+247:      ? db.prepare('SELECT id, name, phone, loyalty_points, total_spent FROM customers WHERE id = ?').get(customer_id) as any
+264:    const checkStmt = db.prepare('SELECT COUNT(*) as count FROM pos_bill_items WHERE bill_id = ?')
+265:    const check = checkStmt.get(id) as { count: number }
+274:    const stmt = db.prepare(`
+279:    const result = stmt.run(id, tenantId)
+307:    const menuStmt = db.prepare(`
+313:    const menu = menuStmt.get(pos_menu_id, tenantId)
+322:    const stmt = db.prepare(`
+329:    stmt.run(
+355:    const itemStmt = db.prepare('SELECT * FROM pos_bill_items WHERE id = ? AND bill_id = ?')
+356:    const item = itemStmt.get(itemId, billId)
+366:    const stmt = db.prepare(`
+372:    stmt.run(newQty, newTotal, special_instructions || null, itemId, billId)
+389:    const stmt = db.prepare('DELETE FROM pos_bill_items WHERE id = ? AND bill_id = ?')
+390:    const result = stmt.run(itemId, billId)
+421:    const billStmt = db.prepare(`
+428:    const bill = billStmt.get(id, tenantId)
+440:    const refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+468:    const paymentStmt = db.prepare(`
+472:    paymentStmt.run(
+479:    const updateBill = db.prepare(`
+484:    updateBill.run(now(), userId, id)
+497:      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ?').get(customerId) as any
+507:        db.prepare(`
+509:        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId)
+512:          db.prepare(`
+515:          `).run(
+523:        db.prepare(`
+526:        `).run(
+565:    const billStmt = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?')
+566:    const bill = billStmt.get(id, tenantId)
+589:    const updateBill = db.prepare(`
+594:    updateBill.run(now(), userId, (bill as any).notes, reason || 'No reason', id)
+613:router.get('/menu-configs/:id/stock', async (req, res) => {
+629:router.get('/stock/low-stock', async (req, res) => {
+641:router.get('/menu-configs/:id/stock-level', async (req, res) => {
+654:router.get('/reports/daily-sales', async (req, res) => {
+669:router.get('/search/gs1/:barcode', (req, res) => {
+675:    const stockItem = db.prepare(`
+678:    `).get(barcode, tenantId) as any
+688:    const product = db.prepare(`
+691:    `).get(stockItem.sku, tenantId) as any
+701:    const menuConfig = db.prepare(`
+715:    `).get(product.id, tenantId) as any
+755:  const itemsStmt = db.prepare('SELECT * FROM pos_bill_items WHERE bill_id = ?')
+756:  const items = itemsStmt.all(billId)
+761:  const billRow = db.prepare('SELECT tenant_id FROM pos_running_bills WHERE id = ?').get(billId) as any
+771:    const settings = db.prepare(`
+775:    `).get(tenantId) as any
+790:  const updateStmt = db.prepare(`
+796:  updateStmt.run(subtotal, serviceChargeAmount, serviceRate, taxAmount, vatRate, totalAmount, billId)
+=== src__routes__pos-clearing.routes.ts ===
+12:router.get('/clearing/balance', (req, res) => {
+17:    const pendingStmt = db.prepare(`
+28:    const pending = pendingStmt.get(tenantId, tenantId)
+31:    const transferredStmt = db.prepare(`
+38:    const transferred = transferredStmt.get(tenantId)
+41:    const recentStmt = db.prepare(`
+51:    const recentTransfers = recentStmt.all(tenantId)
+74:router.get('/clearing/pending-bills', (req, res) => {
+101:    const bills = db.prepare(query).all(...params)
+137:      const checkStmt = db.prepare(`
+143:      const validBills = checkStmt.all(...bill_ids, tenantId) as any[]
+160:    db.prepare(`
+166:    `).run(
+174:      const linkStmt = db.prepare(`
+179:        const bill = db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ?').get(billId) as any
+180:        linkStmt.run(generateId(), tenantId, transferId, billId, bill?.total_amount || 0)
+206:router.get('/clearing/transfers/:id', (req, res) => {
+212:    const transferStmt = db.prepare(`
+218:    const transfer = transferStmt.get(id, tenantId)
+225:    const billsStmt = db.prepare(`
+235:    const bills = billsStmt.all(id)
+248:router.get('/clearing/transfers', (req, res) => {
+278:    const stmt = db.prepare(query)
+279:    const transfers = stmt.all(...params)
+301:    const stmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
+302:    let account = stmt.get(code, tenantId) as any
+306:      const createStmt = db.prepare(`
+310:      createStmt.run(newId, tenantId, code, name, type, category, type === 'ASSET' ? 'DEBIT' : 'CREDIT')
+326:  const last = db.prepare(`
+330:  `).get(tenantId, `${prefix}%`) as { entry_number: string } | undefined
+339:  db.prepare(`
+344:  `).run(
+352:    db.prepare(`
+355:    `).run(generateId(), tenantId, entryId, accountId, lineNo, desc, debit, credit)
+388:    const account = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(accountCode, tenantId) as any
+390:    const existing = db.prepare(`
+392:    `).get(account.id, yr, month)
+394:      db.prepare(`
+399:      `).run(debit, credit, debit, credit, account.id, yr, month)
+401:      db.prepare(`
+404:      `).run(generateId(), tenantId, account.id, yr, month, debit, credit, debit - credit)
+=== src__routes__pos-menu.routes.ts ===
+26:router.get('/categories', (req, res) => {
+30:    const stmt = db.prepare(`
+36:    const categories = stmt.all(tenantId)
+55:    const stmt = db.prepare(`
+60:    stmt.run(id, tenantId, name, color || '#00f0ff', icon || null, sort_order || 0)
+80:    const stmt = db.prepare(`
+86:    stmt.run(name, color, icon, sort_order, is_active, now(), id, tenantId)
+102:    const stmt = db.prepare(`
+108:    stmt.run(now(), id, tenantId)
+120:router.get('/menu-configs', (req, res) => {
+156:    const stmt = db.prepare(query)
+157:    const menus = stmt.all(...params)
+167:router.get('/menu-configs/:id', (req, res) => {
+173:    const menuStmt = db.prepare(`
+188:    const menu = menuStmt.get(id, tenantId)
+199:      const ingStmt = db.prepare(`
+212:      ingredients = ingStmt.all(menu.bom_id, tenantId)
+215:      const ingStmt = db.prepare(`
+225:      ingredients = ingStmt.all(id, tenantId)
+264:    const checkStmt = db.prepare(`
+268:    const existing = checkStmt.get(product_id, tenantId)
+279:    const stmt = db.prepare(`
+287:    stmt.run(
+332:    db.prepare(`UPDATE pos_menu_configs SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`)
+333:      .run(...values)
+349:    const stmt = db.prepare(`
+355:    stmt.run(is_available ? 1 : 0, now(), id, tenantId)
+374:    const stmt = db.prepare(`
+379:    stmt.run(id, tenantId)
+405:    const stmt = db.prepare(`
+411:    stmt.run(
+434:    const stmt = db.prepare(`
+440:    stmt.run(quantity_used, unit_id || null, is_optional ? 1 : 0, ingId, tenantId)
+455:    const stmt = db.prepare(`
+460:    stmt.run(ingId, tenantId)
+472:router.get('/available-products', (req, res) => {
+497:    const stmt = db.prepare(query)
+498:    const products = stmt.all(...params)
+510:router.get('/menu-configs/:id/stock', (req, res) => {
+518:    const menuStmt = db.prepare('SELECT bom_id FROM pos_menu_configs WHERE id = ? AND tenant_id = ?')
+519:    const menu = menuStmt.get(id, tenantId) as any
+525:      const stmt = db.prepare(`
+539:      ingredients = stmt.all(menu.bom_id, tenantId)
+542:      const stmt = db.prepare(`
+556:      ingredients = stmt.all(id, tenantId)
+=== src__routes__purchase-request.routes.ts ===
+30:    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
+34:    db.prepare(`
+38:    `).run(prId, tenantId, prNumber, userId, email, reason || null)
+40:    const insertItem = db.prepare(`
+48:        insertItem.run(
+103:        ? db.prepare(`SELECT * FROM llm_providers WHERE id = ? AND tenant_id = ? AND is_active = 1`).get(providerId, tenantId)
+104:        : db.prepare(`SELECT * FROM llm_providers WHERE tenant_id = ? AND is_active = 1 AND is_default = 1 LIMIT 1`).get(tenantId)
+105:          ?? db.prepare(`SELECT * FROM llm_providers WHERE tenant_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1`).get(tenantId)
+171:    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as any).c
+176:    db.prepare(`
+180:    `).run(prId, tenantId, prNumber, userId, email, notes || 'สร้างจากรูปภาพ', now, now)
+182:    const insertItem = db.prepare(`
+193:        insertItem.run(
+219:router.get('/', (req: Request, res: Response) => {
+226:            ? db.prepare(
+228:              ).all(tenantId, status)
+229:            : db.prepare(
+231:              ).all(tenantId)
+241:router.get('/:id', (req: Request, res: Response) => {
+246:        const pr = db.prepare(
+248:        ).get(req.params.id, tenantId) as any
+251:        const items = db.prepare(
+253:        ).all(pr.id, pr.id)
+279:        const pr = db.prepare(
+281:        ).get(req.params.id, tenantId) as any
+293:        const updateItem = db.prepare(`
+305:                updateItem.run(
+316:        db.prepare(
+318:        ).run(pr.id)
+335:        const pr = db.prepare(
+337:        ).get(req.params.id, tenantId) as any
+346:        db.prepare(`
+351:        `).run(userId, parsed.data.notes ?? null, pr.id)
+379:        const pr = db.prepare(
+381:        ).get(req.params.id, tenantId) as any
+389:        db.prepare(`
+394:        `).run(userId, parsed.data.reason, pr.id)
+=== src__routes__purchase.routes.ts ===
+17:  const count = (db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE tenant_id = ?`).get(tenantId) as any).count
+24:  const count = (db.prepare(
+26:  ).get(year.toString(), tenantId) as any).count
+31:  const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
+35:  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, created_at, updated_at)
+36:    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, code, name, type, category, normalBalance, now, now)
+45:router.get('/requests', async (req: Request, res: Response) => {
+49:    const requests = db.prepare(`
+55:    `).all(tenantId)
+65:router.get('/requests/:id', async (req: Request, res: Response) => {
+69:    const request = db.prepare(`
+71:    `).get(req.params.id, tenantId)
+77:    const items = db.prepare(`
+82:    `).all(req.params.id)
+95:    const pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+99:      db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(req.params.id)
+100:      db.prepare('DELETE FROM purchase_requests WHERE id = ?').run(req.params.id)
+126:      db.prepare(`
+130:      `).run(id, tenantId, prNumber, req.user!.userId, req.user!.email, department || '', 
+134:        const insertItem = db.prepare(`
+140:          insertItem.run(generateId(), tenantId, id, item.materialId || null, item.description,
+148:    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(id)
+149:    const requestItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(id)
+165:    const existing = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+177:      db.prepare(`
+183:      `).run(department ?? null, requiredDate ?? null, priority ?? null, notes ?? null, totalAmount, now, req.params.id, tenantId)
+186:        db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ?').run(req.params.id)
+187:        const insertItem = db.prepare(`
+195:          insertItem.run(
+206:    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(req.params.id)
+207:    const requestItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(req.params.id)
+226:    const existing = db.prepare('SELECT id FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+239:    db.prepare(`
+242:    `).run(status, updates.approved_by || null, updates.approved_date || null, now, req.params.id, tenantId)
+244:    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ?').get(req.params.id)
+259:    const pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+268:    const prItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(req.params.id) as any[]
+285:      db.prepare(`
+289:      `).run(poId, tenantId, poNumber, supplierId, now, expectedDate || null,
+293:      const insertItem = db.prepare(`
+300:        insertItem.run(generateId(), tenantId, poId, item.material_id, item.description,
+305:      db.prepare("UPDATE purchase_requests SET status = 'CONVERTED', updated_at = ? WHERE id = ?")
+306:        .run(now, req.params.id)
+311:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(poId)
+312:    const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(poId)
+330:router.get('/goods-receipts', async (req: Request, res: Response) => {
+334:    const receipts = db.prepare(`
+343:    `).all(tenantId)
+353:router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Response) => {
+357:    const items = db.prepare(`
+372:    `).all(req.params.poId, tenantId)
+382:router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
+386:    const receipt = db.prepare(`
+393:    `).get(req.params.id, tenantId)
+399:    const items = db.prepare(`
+411:    `).all(req.params.id)
+433:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
+444:    const existingDraft = db.prepare(
+446:    ).get(purchaseOrderId, tenantId) as any
+460:      db.prepare(`
+464:      `).run(id, tenantId, grNumber, purchaseOrderId, po.supplier_id, receiptDate || now,
+469:        const insertItem = db.prepare(`
+475:          insertItem.run(
+486:    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ?').get(id)
+487:    const receiptItems = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(id)
+500:    const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+504:      db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ?').run(req.params.id)
+505:      db.prepare('DELETE FROM goods_receipts WHERE id = ?').run(req.params.id)
+518:    const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+527:    const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(req.params.id) as any[]
+532:      db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
+533:        .run(now, req.params.id)
+541:            poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+544:            poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+550:          let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+552:            stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+570:              const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
+581:              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+582:                .run(Math.floor(item.accepted_qty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+585:              db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+586:                .run(Math.floor(stockQty), unitPrice || stockItem.unit_cost, now, stockItem.id)
+590:            const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
+593:              db.prepare(`
+596:              `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
+604:            db.prepare(`
+607:            `).run(generateId(), tenantId, stockItem.id, Math.floor(stockQty), `GR: ${gr.gr_number}`,
+612:          db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
+613:            .run(item.accepted_qty, item.purchase_order_item_id)
+618:      const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(gr.purchase_order_id) as any[]
+622:        db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', received_date = ?, updated_at = ? WHERE id = ?")
+623:          .run(now, now, gr.purchase_order_id)
+625:        db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ?")
+626:          .run(now, gr.purchase_order_id)
+632:    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ?').get(req.params.id)
+650:router.get('/invoices', async (req: Request, res: Response) => {
+654:    const invoices = db.prepare(`
+663:    `).all(tenantId)
+673:router.get('/invoices/:id', async (req: Request, res: Response) => {
+677:    const invoice = db.prepare(`
+685:    `).get(req.params.id, tenantId)
+691:    const items = db.prepare(`
+696:    `).all(req.params.id)
+698:    const payments = db.prepare(`
+700:    `).all(req.params.id)
+725:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
+729:    const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(po.supplier_id, tenantId) as any
+750:      ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(drAccountId, tenantId) as any)?.id ?? null
+760:      db.prepare(`
+765:      `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
+770:        const insertItem = db.prepare(`
+777:          insertItem.run(generateId(), tenantId, id, item.poItemId, item.materialId,
+785:      db.prepare(`
+789:      `).run(journalId, tenantId, journalNumber, (invoiceDate || now).substring(0, 10),
+793:      const insertLine = db.prepare(`
+799:        ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
+801:      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, subtotal, 0)
+803:        insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
+805:      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
+809:        db.prepare(`
+812:        `).run(generateId(), tenantId, 'PURCHASE_INVOICE', id, piNumber, (invoiceDate || now).substring(0, 10),
+820:    const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ?').get(id)
+821:    const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
+835:router.get('/payments', async (req: Request, res: Response) => {
+839:    const payments = db.prepare(`
+847:    `).all(tenantId)
+857:router.get('/payments/:id', async (req: Request, res: Response) => {
+860:    const payment = db.prepare(`
+867:    `).get(req.params.id, tenantId)
+888:      invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(purchaseInvoiceId, tenantId)
+912:      db.prepare(`
+916:      `).run(id, tenantId, paymentNumber, supplierId, purchaseInvoiceId || null, paymentDate || now,
+926:        db.prepare(`
+929:        `).run(newPaid, newBalance, paymentStatus, now, purchaseInvoiceId)
+935:      db.prepare(`
+939:      `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
+943:      const insertLine = db.prepare(`
+948:      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${paymentNumber}`, amount, 0)
+949:      insertLine.run(generateId(), tenantId, journalId, cashAccId, lineNo++, `จ่ายเงิน - ${paymentNumber}`, 0, netAmount)
+951:        insertLine.run(generateId(), tenantId, journalId, whtAccId, lineNo++, `ภาษีหัก ณ ที่จ่าย - ${paymentNumber}`, 0, wht)
+957:    const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ?').get(id)
+970:router.get('/returns', async (req: Request, res: Response) => {
+974:    const returns = db.prepare(`
+982:    `).all(tenantId)
+992:router.get('/returns/:id', async (req: Request, res: Response) => {
+996:    const ret = db.prepare(`
+1003:    `).get(req.params.id, tenantId)
+1009:    const items = db.prepare(`
+1014:    `).all(req.params.id)
+1033:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
+1052:      db.prepare(`
+1056:      `).run(id, tenantId, prNumber, purchaseOrderId, goodsReceiptId || null, po.supplier_id,
+1060:        const insertItem = db.prepare(`
+1067:          insertItem.run(generateId(), tenantId, id, item.grItemId || null, item.materialId,
+1075:    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id)
+1076:    const retItems = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id)
+1094:    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+1098:    db.prepare('UPDATE purchase_returns SET status = ?, updated_at = ? WHERE id = ?')
+1099:      .run(status, new Date().toISOString(), req.params.id)
+1112:    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+1124:    const items = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(req.params.id) as any[]
+1129:      db.prepare("UPDATE purchase_returns SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
+1130:        .run(now, req.params.id)
+1135:          const stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+1138:            db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
+1139:              .run(Math.floor(item.quantity), now, stockItem.id)
+1142:            db.prepare(`
+1145:            `).run(generateId(), tenantId, stockItem.id, Math.floor(item.quantity), `PRT: ${ret.pr_number}`, 
+1154:    const updated = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(req.params.id)
+1166:router.get('/summary', async (req: Request, res: Response) => {
+1171:    const prStats = db.prepare(`
+1180:    `).get(tenantId) as any
+1183:    const poStats = db.prepare(`
+1193:    `).get(tenantId) as any
+1196:    const grStats = db.prepare(`
+1200:    `).get(tenantId) as any
+1203:    const invStats = db.prepare(`
+1213:    `).get(tenantId) as any
+1216:    const paymentStats = db.prepare(`
+1223:    `).get(tenantId) as any
+1226:    const returnStats = db.prepare(`
+1230:    `).get(tenantId) as any
+=== src__routes__purchaseOrder.routes.ts ===
+16:  const count = (db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as any).count
+21:router.get('/', async (req: Request, res: Response) => {
+25:    const orders = db.prepare(`
+32:    `).all(tenantId)
+42:router.get('/stats', async (req: Request, res: Response) => {
+46:    const total = db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as any
+47:    const draft = db.prepare("SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ? AND status = 'DRAFT'").get(tenantId) as any
+48:    const pending = db.prepare("SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ? AND status IN ('SUBMITTED', 'APPROVED')").get(tenantId) as any
+49:    const received = db.prepare("SELECT COUNT(*) as count FROM purchase_orders WHERE tenant_id = ? AND status = 'RECEIVED'").get(tenantId) as any
+50:    const totalValue = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_orders WHERE tenant_id = ? AND status != 'CANCELLED'").get(tenantId) as any
+69:router.get('/:id', async (req: Request, res: Response) => {
+73:    const po = db.prepare(`
+78:    `).get(req.params.id, tenantId)
+84:    const items = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id)
+111:    const insertPO = db.prepare(`
+117:    const insertItem = db.prepare(`
+124:      insertPO.run(id, tenantId, poNumber, supplierId, now, expectedDate || null,
+129:          insertItem.run(
+140:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id)
+141:    const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(id)
+161:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+172:      const items = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id) as any[]
+175:        db.prepare("UPDATE purchase_orders SET status = ?, received_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+176:          .run(status, now, now, req.params.id, tenantId)
+181:            const stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+183:              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
+184:                .run(Math.floor(item.quantity), now, stockItem.id)
+187:              db.prepare(`
+190:              `).run(generateId(), tenantId, stockItem.id, Math.floor(item.quantity), `PO: ${req.params.id}`, `Received from PO`, now)
+194:          db.prepare('UPDATE purchase_order_items SET received_qty = ? WHERE id = ?')
+195:            .run(item.quantity, item.id)
+201:      db.prepare("UPDATE purchase_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+202:        .run(status, now, req.params.id, tenantId)
+205:    const updatedPO = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id)
+221:    const existing = db.prepare('SELECT id FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+235:      db.prepare(`
+239:      `).run(supplierId, expectedDate || null, subtotal, tax, taxAmount, totalAmount, notes, now, req.params.id, tenantId)
+242:        db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(req.params.id)
+243:        const insertItem = db.prepare(`
+249:          insertItem.run(
+260:    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id)
+261:    const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id)
+274:    const po = db.prepare('SELECT status FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+282:    db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(req.params.id)
+283:    db.prepare('DELETE FROM purchase_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+=== src__routes__qc.routes.ts ===
+40:router.get('/stats', (req: Request, res: Response) => {
+42:  const total     = (db.prepare('SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ?').get(tid) as any).c
+43:  const passed    = (db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND status = 'PASS'").get(tid) as any).c
+44:  const failed    = (db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND status = 'FAIL'").get(tid) as any).c
+45:  const pending   = (db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND status = 'PENDING'").get(tid) as any).c
+46:  const templates = (db.prepare('SELECT COUNT(*) as c FROM qc_checklists WHERE tenant_id = ? AND is_active = 1').get(tid) as any).c
+51:router.get('/checklists', (req: Request, res: Response) => {
+52:  const rows = db.prepare('SELECT * FROM qc_checklists WHERE tenant_id = ? AND is_active = 1 ORDER BY created_at DESC').all(req.user!.tenantId)
+60:  db.prepare('INSERT INTO qc_checklists (id, tenant_id, name, description, check_items) VALUES (?, ?, ?, ?, ?)')
+61:    .run(id, req.user!.tenantId, name.trim(), description || '', JSON.stringify(check_items || []))
+62:  const row = db.prepare('SELECT * FROM qc_checklists WHERE id = ?').get(id) as any
+68:  db.prepare("UPDATE qc_checklists SET name = ?, description = ?, check_items = ?, updated_at = datetime('now') WHERE id = ? AND tenant_id = ?")
+69:    .run(name, description || '', JSON.stringify(check_items || []), req.params.id, req.user!.tenantId)
+74:  db.prepare('UPDATE qc_checklists SET is_active = 0 WHERE id = ? AND tenant_id = ?').run(req.params.id, req.user!.tenantId)
+79:router.get('/inspections', (req: Request, res: Response) => {
+80:  const rows = db.prepare('SELECT * FROM qc_inspections WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 200').all(req.user!.tenantId)
+87:  const checklist = db.prepare('SELECT * FROM qc_checklists WHERE id = ? AND tenant_id = ?').get(checklist_id, req.user!.tenantId) as any
+97:  db.prepare('INSERT INTO qc_inspections (id, tenant_id, checklist_id, checklist_name, work_order_ref, batch_number, product_name, inspector_name, results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+98:    .run(id, req.user!.tenantId, checklist_id, checklist.name, work_order_ref || '', batch_number || '', product_name || '', inspector_name || '', JSON.stringify(results))
+99:  const row = db.prepare('SELECT * FROM qc_inspections WHERE id = ?').get(id) as any
+105:  db.prepare('UPDATE qc_inspections SET results = ?, notes = ? WHERE id = ? AND tenant_id = ?')
+106:    .run(JSON.stringify(results), notes || '', req.params.id, req.user!.tenantId)
+116:  db.prepare("UPDATE qc_inspections SET results = ?, notes = ?, status = ?, completed_at = datetime('now') WHERE id = ? AND tenant_id = ?")
+117:    .run(JSON.stringify(results), notes || '', status, req.params.id, req.user!.tenantId)
+122:  db.prepare('DELETE FROM qc_inspections WHERE id = ? AND tenant_id = ?').run(req.params.id, req.user!.tenantId)
+=== src__routes__reports.routes.ts ===
+14:router.get('/trial-balance', async (req: Request, res: Response) => {
+20:    const accounts = db.prepare(`
+25:    `).all(tenantId) as any[]
+42:      const openingBalance = db.prepare(openingQuery).get(...params) as any
+62:      const activity = db.prepare(activityQuery).get(...activityParams) as any
+129:router.get('/balance-sheet', async (req: Request, res: Response) => {
+136:    const accounts = db.prepare(`
+150:    `).all(date, tenantId) as any[]
+202:router.get('/profit-loss', async (req: Request, res: Response) => {
+212:    const accounts = db.prepare(`
+228:    `).all(startDate, endDate, tenantId) as any[]
+287:router.get('/cash-flow', async (req: Request, res: Response) => {
+297:    const cashAccounts = db.prepare(`
+300:    `).all(tenantId) as any[]
+311:    const transactions = db.prepare(`
+327:    `).all(...cashAccountIds, startDate, endDate) as any[]
+330:    const openingBalance = db.prepare(`
+337:    `).all(...cashAccountIds, startDate) as any
+388:router.get('/ledger/:accountId', async (req: Request, res: Response) => {
+393:    const account = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.accountId, tenantId) as any
+415:    const openingBalance = db.prepare(openingQuery).get(...openingParams) as any
+445:    const transactions = db.prepare(transactionsQuery).all(...transactionsParams) as any[]
+474:router.get('/vat', async (req: Request, res: Response) => {
+498:    const entries = db.prepare(query).all(...params) as any[]
+=== src__routes__sales.routes.ts ===
+36:db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
+44:)`).run()
+47:  const count = (db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE tenant_id = ?`).get(tenantId) as any).count
+55:  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
+58:  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
+59:    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
+67:  const existing = db.prepare('SELECT id, debit_amount, credit_amount FROM account_balances WHERE tenant_id = ? AND account_id = ? AND fiscal_year = ? AND period = ?').get(tenantId, accountId, yr, mo) as any
+71:    db.prepare('UPDATE account_balances SET debit_amount = ?, credit_amount = ?, ending_balance = ? WHERE id = ?')
+72:      .run(newDebit, newCredit, newDebit - newCredit, existing.id)
+74:    db.prepare(`INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
+75:      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`).run(generateId(), tenantId, accountId, yr, mo, debit, credit, debit - credit)
+88:    const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
+115:        const invoice = db.prepare('SELECT sales_order_id FROM invoices WHERE id = ?').get(referenceId) as any
+117:          const soItems = db.prepare(`
+122:          `).all(invoice.sales_order_id) as any[]
+142:      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+144:        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, grandTotal, grandTotal, now, now)
+147:      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+148:        .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+150:        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+151:          .run(generateId(), tenantId, entryId, cogsId, lineNum++, `ต้นทุนขาย - ${sourceNumber || ''}`, totalCOGS)
+152:        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+153:          .run(generateId(), tenantId, entryId, invId, lineNum++, `ลดสต็อก - ${sourceNumber || ''}`, totalCOGS)
+155:      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+156:        .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue)
+158:        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+159:          .run(generateId(), tenantId, entryId, vatId, lineNum++, 'ภาษีขาย', taxAmount)
+173:      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+175:        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
+178:      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+179:        .run(generateId(), tenantId, entryId, cashAccId, lineNum++, description, totalAmount)
+180:      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+181:        .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+194:    const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
+202:      const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(stockItemId) as any
+213:      db.prepare('UPDATE stock_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ? AND tenant_id = ?')
+214:        .run(deductQty, new Date().toISOString(), stockItemId, tenantId)
+215:      db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+216:        VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')`).run(
+229:router.get('/quotations', async (req: Request, res: Response) => {
+233:    const quotations = db.prepare(`
+240:    `).all(tenantId)
+250:router.get('/quotations/:id', async (req: Request, res: Response) => {
+254:    const quotation = db.prepare(`
+259:    `).get(req.params.id, tenantId)
+265:    const items = db.prepare(`
+270:    `).all(req.params.id)
+308:      db.prepare(`
+312:      `).run(id, tenantId, quotationNumber, customerId, now, expiryDate || null,
+316:        const insertItem = db.prepare(`
+322:          insertItem.run(generateId(), tenantId, id,
+331:    const quotation = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id)
+332:    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(id)
+348:    const existing = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+367:      db.prepare(`
+373:      `).run(customerId || null, expiryDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes ?? null, now, req.params.id, tenantId)
+376:        db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)
+377:        const ins = db.prepare(`
+383:          ins.run(generateId(), tenantId, req.params.id,
+391:    const quotation = db.prepare('SELECT * FROM quotations WHERE id = ?').get(req.params.id)
+392:    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(req.params.id)
+411:    const existing = db.prepare('SELECT id FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+417:    db.prepare("UPDATE quotations SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+418:      .run(status, now, req.params.id, tenantId)
+420:    const quotation = db.prepare('SELECT * FROM quotations WHERE id = ?').get(req.params.id)
+433:router.get('/sales-orders', async (req: Request, res: Response) => {
+437:    const salesOrders = db.prepare(`
+447:    `).all(tenantId)
+457:router.get('/sales-orders/:id', async (req: Request, res: Response) => {
+461:    const salesOrder = db.prepare(`
+468:    `).get(req.params.id, tenantId)
+474:    const items = db.prepare(`
+482:    `).all(req.params.id)
+520:      db.prepare(`
+524:      `).run(id, tenantId, soNumber, quotationId || null, customerId, now, deliveryDate || null,
+528:        const insertItem = db.prepare(`
+534:          insertItem.run(generateId(), tenantId, id,
+543:        db.prepare("UPDATE quotations SET status = 'ACCEPTED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+544:          .run(now, quotationId, tenantId)
+550:    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(id)
+551:    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(id)
+567:    const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+586:      db.prepare(`
+592:      `).run(customerId || null, deliveryDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes ?? null, now, req.params.id, tenantId)
+595:        db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
+596:        const ins = db.prepare(`
+602:          ins.run(generateId(), tenantId, req.params.id,
+610:    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id)
+611:    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(req.params.id)
+630:    const existing = db.prepare('SELECT id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+637:      const soItems = db.prepare(`
+642:      `).all(req.params.id) as any[]
+662:    db.prepare("UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+663:      .run(status, now, req.params.id, tenantId)
+665:    const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id) as any
+684:router.get('/delivery-orders', async (req: Request, res: Response) => {
+688:    const deliveryOrders = db.prepare(`
+696:    `).all(tenantId)
+706:router.get('/delivery-orders/:id', async (req: Request, res: Response) => {
+710:    const deliveryOrder = db.prepare(`
+717:    `).get(req.params.id, tenantId)
+723:    const items = db.prepare(`
+729:    `).all(req.params.id)
+749:    const salesOrder = db.prepare('SELECT customer_id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(salesOrderId, tenantId) as any
+759:      db.prepare(`
+763:      `).run(id, tenantId, doNumber, salesOrderId, salesOrder.customer_id, deliveryDate || now, 
+767:        const insertItem = db.prepare(`
+772:          insertItem.run(generateId(), tenantId, id, item.salesOrderItemId, item.productId, item.quantity, item.notes || '')
+778:        db.prepare("UPDATE sales_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ?")
+779:          .run(now, salesOrderId)
+785:    const deliveryOrder = db.prepare('SELECT * FROM delivery_orders WHERE id = ?').get(id)
+786:    const deliveryOrderItems = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ?').all(id)
+806:    const deliveryOrder = db.prepare('SELECT * FROM delivery_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+815:      const items = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ?').all(req.params.id) as any[]
+818:        db.prepare("UPDATE delivery_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+819:          .run(status, now, req.params.id, tenantId)
+823:          db.prepare('UPDATE sales_order_items SET delivered_qty = delivered_qty + ? WHERE id = ?')
+824:            .run(item.quantity, item.sales_order_item_id)
+827:          const stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId) as any
+829:            const soItem = db.prepare('SELECT unit FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
+849:                db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
+850:                  .run(unpack.sealed_qty, unpack.quantity, now, stockItem.id)
+851:                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+853:                  .run(generateId(), tenantId, stockItem.id, unpack.unpackedPacks, `DO: ${deliveryOrder.do_number}`,
+859:            db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
+860:              .run(needed, now, stockItem.id)
+863:            db.prepare(`
+866:            `).run(generateId(), tenantId, stockItem.id, needed, `DO: ${deliveryOrder.do_number}`,
+872:        const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(deliveryOrder.sales_order_id) as any[]
+875:          db.prepare("UPDATE sales_orders SET status = 'DELIVERED', updated_at = ? WHERE id = ?")
+876:            .run(now, deliveryOrder.sales_order_id)
+882:      db.prepare("UPDATE delivery_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+883:        .run(status, now, req.params.id, tenantId)
+886:    const updatedDO = db.prepare('SELECT * FROM delivery_orders WHERE id = ?').get(req.params.id)
+899:router.get('/backorders', async (req: Request, res: Response) => {
+903:    const backorders = db.prepare(`
+912:    `).all(tenantId)
+936:      db.prepare(`
+939:      `).run(id, tenantId, boNumber, salesOrderId, originalDoId || null, customerId, notes || '', now, now)
+941:      const insertItem = db.prepare(`
+948:        insertItem.run(generateId(), tenantId, id, item.salesOrderItemId, item.productId,
+955:    const backorder = db.prepare('SELECT * FROM backorders WHERE id = ?').get(id)
+956:    const backorderItems = db.prepare('SELECT * FROM backorder_items WHERE backorder_id = ?').all(id)
+966:router.get('/backorders/pending-items/:salesOrderId', async (req: Request, res: Response) => {
+971:    const items = db.prepare(`
+977:    `).all(salesOrderId)
+991:router.get('/invoices', async (req: Request, res: Response) => {
+995:    const invoices = db.prepare(`
+1003:    `).all(tenantId)
+1013:router.get('/invoices/:id', async (req: Request, res: Response) => {
+1017:    const invoice = db.prepare(`
+1024:    `).get(req.params.id, tenantId)
+1030:    const items = db.prepare(`
+1035:    `).all(req.params.id)
+1037:    const receipts = db.prepare(`
+1039:    `).all(req.params.id)
+1041:    const withholdingTax = db.prepare(`
+1043:    `).all(req.params.id)
+1045:    const attachments = db.prepare(`
+1047:    `).all(req.params.id)
+1067:    const salesOrder = db.prepare(`
+1072:    `).get(salesOrderId, tenantId) as any
+1083:    const salesOrderItems = db.prepare(`
+1085:    `).all(salesOrderId) as any[]
+1088:      db.prepare(`
+1092:      `).run(id, tenantId, invoiceNumber, salesOrderId, salesOrder.customer_id, now, dueDate || null,
+1097:      const insertItem = db.prepare(`
+1102:        insertItem.run(generateId(), tenantId, id, item.id,
+1109:        db.prepare(`
+1112:        `).run(generateId(), tenantId, 'INVOICE', id, invoiceNumber, now.substring(0, 10),
+1120:    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id) as any
+1121:    const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)
+1147:    const existing = db.prepare('SELECT id FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+1153:    db.prepare("UPDATE invoices SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+1154:      .run(status, now, req.params.id, tenantId)
+1156:    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id)
+1174:    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+1183:    db.prepare(`
+1186:    `).run(id, tenantId, req.params.id, taxType, taxRate, taxBase, taxAmount, description || '', now)
+1189:    const whtTotal = (db.prepare('SELECT COALESCE(SUM(tax_amount), 0) as total FROM withholding_tax WHERE invoice_id = ?').get(req.params.id) as any).total
+1208:router.get('/invoices/:id/withholding-tax', async (req: Request, res: Response) => {
+1212:    const wht = db.prepare(`
+1214:    `).all(req.params.id, tenantId)
+1228:router.get('/credit-notes', async (req: Request, res: Response) => {
+1232:    const creditNotes = db.prepare(`
+1240:    `).all(tenantId)
+1250:router.get('/credit-notes/:id', async (req: Request, res: Response) => {
+1254:    const creditNote = db.prepare(`
+1261:    `).get(req.params.id, tenantId)
+1267:    const items = db.prepare(`
+1272:    `).all(req.params.id)
+1305:      db.prepare(`
+1309:      `).run(id, tenantId, cnNumber, invoiceId, customerId, now, reason,
+1313:        const insertItem = db.prepare(`
+1319:          insertItem.run(generateId(), tenantId, id, item.invoiceItemId, item.productId,
+1325:      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any
+1328:        db.prepare('UPDATE invoices SET balance_amount = ?, updated_at = ? WHERE id = ?')
+1329:          .run(newBalance, now, invoiceId)
+1335:    const creditNote = db.prepare('SELECT * FROM credit_notes WHERE id = ?').get(id)
+1336:    const creditNoteItems = db.prepare('SELECT * FROM credit_note_items WHERE credit_note_id = ?').all(id)
+=== src__routes__search.routes.ts ===
+11:router.get('/', (req: Request, res: Response) => {
+39:    const customers = db.prepare(`
+49:    `).all(tenantId, searchTerm, searchTerm, searchTerm, searchTerm) as any[]
+52:    const orders = db.prepare(`
+61:    `).all(tenantId, searchTerm, searchTerm) as any[]
+64:    const products = db.prepare(`
+73:    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
+76:    const materials = db.prepare(`
+84:    `).all(tenantId, searchTerm, searchTerm) as any[]
+87:    const boms = db.prepare(`
+97:    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
+109:    const stock = db.prepare(`
+118:    `).all(...stockParams) as any[]
+121:    const suppliers = db.prepare(`
+134:    `).all(tenantId, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm) as any[]
+137:    const purchaseOrders = db.prepare(`
+146:    `).all(tenantId, searchTerm, searchTerm) as any[]
+149:    const workOrders = db.prepare(`
+158:    `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]
+161:    const salesOrders = db.prepare(`
+170:    `).all(tenantId, searchTerm, searchTerm) as any[]
+173:    const quotations = db.prepare(`
+182:    `).all(tenantId, searchTerm, searchTerm) as any[]
+185:    const invoices = db.prepare(`
+194:    `).all(tenantId, searchTerm, searchTerm) as any[]
+=== src__routes__settings.routes.ts ===
+9:router.get('/company', (req, res) => {
+12:    const row = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any
+30:    const existing = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any || {}
+46:    db.prepare(`
+65:    `).run(
+70:    const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)
+=== src__routes__stock.routes.ts ===
+41:  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
+44:  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
+45:    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
+72:router.get('/stats', async (req: Request, res: Response) => {
+76:    const totalItems = (db.prepare('SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ?').get(tenantId) as any).count
+77:    const stockItems = db.prepare('SELECT * FROM stock_items WHERE tenant_id = ?').all(tenantId) as any[]
+90:        const material = db.prepare('SELECT unit_cost FROM materials WHERE id = ?').get(item.material_id) as any
+113:router.get('/', async (req: Request, res: Response) => {
+117:    const stockItems = db.prepare(`
+125:    `).all(tenantId) as any[]
+128:      item.movements = db.prepare(`
+133:      `).all(item.id)
+148:router.get('/:id', async (req: Request, res: Response) => {
+152:    const stock = db.prepare(`
+159:    `).get(req.params.id, tenantId) as any
+168:    stock.movements = db.prepare(`
+172:    `).all(stock.id)
+203:    db.prepare(`
+206:    `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, normUnit, effectiveBaseUnit, effectiveSaleUnit, effectiveDisplayUnit, unitCost ? Number(unitCost) : 0, unitPrice ? Number(unitPrice) : 0, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
+208:    const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id)
+226:    let currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+229:      currentItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+237:    db.prepare(`
+254:    `).run(name, gs1Barcode, category, unit ? normalizeUnit(unit) : undefined, baseUnit ? normalizeUnit(baseUnit) : undefined, saleUnit ? normalizeUnit(saleUnit) : undefined, displayUnit ? normalizeUnit(displayUnit) : undefined, unitCost !== undefined ? Number(unitCost) : undefined, unitPrice !== undefined ? Number(unitPrice) : undefined, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
+259:      db.prepare(`
+262:      `).run(movId, tenantId, req.params.id, `ราคาเปลี่ยนจาก ฿${currentItem.unit_cost || 0} → ฿${unitCost}`, now, req.user!.email)
+266:    const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(req.params.id) as any
+272:      db.prepare('UPDATE pos_menu_configs SET pos_price = ?, cost_price = ?, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
+273:        .run(posPrice, costPrice, now, req.params.id, tenantId)
+280:        const existingPOS = db.prepare('SELECT id FROM pos_menu_configs WHERE product_id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+283:          db.prepare(`
+286:          `).run(posId, tenantId, req.params.id, posPrice, costPrice, stockItem?.image_url || null, now, now)
+288:          db.prepare('UPDATE pos_menu_configs SET is_pos_enabled = 1, is_available = 1, pos_price = ?, cost_price = ?, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
+289:            .run(posPrice, costPrice, now, req.params.id, tenantId)
+293:        db.prepare('UPDATE pos_menu_configs SET is_pos_enabled = 0, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
+294:          .run(now, req.params.id, tenantId)
+313:    const existing = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+318:    db.prepare('DELETE FROM stock_items WHERE id = ?').run(req.params.id)
+338:    const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+374:          db.prepare(`
+377:          `).run(generateId(), tenantId, stockItemId,
+382:          db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
+383:            .run(unpack.sealed_qty, now, stockItemId)
+397:      db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ?')
+398:        .run(newQuantity, Number(unitCost), now, stockItemId)
+400:      db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now, stockItemId)
+404:    db.prepare(`
+407:    `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
+419:          const jvCount = (db.prepare("SELECT COUNT(*) as c FROM journal_entries WHERE tenant_id = ? AND strftime('%Y', date) = ?").get(tenantId, yr.toString()) as any).c
+426:            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+428:              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${item.name}`, diffValue, diffValue, createdBy, now, now)
+429:            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+430:              .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
+431:            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+432:              .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${item.name}`, diffValue)
+437:            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+439:              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${item.name}`, absValue, absValue, createdBy, now, now)
+440:            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+441:              .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${item.name}`, absValue)
+442:            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+443:              .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${item.name}`, absValue)
+451:    const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
+464:router.get('/:id/movements', async (req: Request, res: Response) => {
+467:    const movements = db.prepare(`
+471:    `).all(req.params.id, tenantId)
+493:    const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+505:    db.prepare('UPDATE stock_items SET image_url = ?, updated_at = ? WHERE id = ?')
+506:      .run(imageUrl, now, req.params.id)
+509:    db.prepare('UPDATE pos_menu_configs SET image_url = ?, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
+510:      .run(imageUrl, now, req.params.id, tenantId)
+523:    const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+533:    db.prepare('UPDATE stock_items SET image_url = NULL, updated_at = ? WHERE id = ?').run(now, req.params.id)
+534:    db.prepare('UPDATE pos_menu_configs SET image_url = NULL, updated_at = ? WHERE product_id = ? AND tenant_id = ?')
+535:      .run(now, req.params.id, tenantId)
+=== src__routes__supplier.routes.ts ===
+16:router.get('/', async (req: Request, res: Response) => {
+19:    const suppliers = db.prepare(`
+26:    `).all(tenantId)
+36:router.get('/stats', async (req: Request, res: Response) => {
+40:    const totalSuppliers = db.prepare('SELECT COUNT(*) as count FROM suppliers WHERE tenant_id = ?').get(tenantId) as any
+41:    const activeSuppliers = db.prepare("SELECT COUNT(*) as count FROM suppliers WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId) as any
+42:    const totalPOs = db.prepare(`
+46:    `).get(tenantId) as any
+47:    const totalSpent = db.prepare(`
+52:    `).get(tenantId) as any
+70:router.get('/:id', async (req: Request, res: Response) => {
+73:    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+78:    const purchaseOrders = db.prepare(`
+80:    `).all(req.params.id)
+104:    const existing = db.prepare('SELECT id FROM suppliers WHERE tenant_id = ? AND code = ?').get(tenantId, code)
+115:    db.prepare(`
+118:    `).run(id, tenantId, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', now, now)
+120:    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id)
+136:    const existing = db.prepare('SELECT id FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+141:    db.prepare(`
+149:    `).run(name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, now, req.params.id, tenantId)
+151:    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id)
+160:router.get('/:id/insights', async (req: Request, res: Response) => {
+166:    const supplier = db.prepare('SELECT id FROM suppliers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+172:    const poStats = db.prepare(`
+188:    `).get(id) as any
+191:    const recentOrders = db.prepare(`
+199:    `).all(id) as any[]
+203:      order.items = db.prepare(`
+213:      `).all(order.id) || []
+217:    const topMaterials = db.prepare(`
+231:    `).all(id) || []
+234:    const spendingTrend = db.prepare(`
+245:    `).all(id) || []
+277:    const existing = db.prepare('SELECT id FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+282:    const poCount = db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE supplier_id = ?').get(req.params.id) as any
+287:    db.prepare('DELETE FROM suppliers WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+=== src__routes__tax.routes.ts ===
+51:  let period = db.prepare(
+53:  ).get(tenantId, year, month) as { id: string } | undefined
+58:    db.prepare(
+61:    ).run(id, tenantId, year, month, start, end, vatDueDate(year, month), whtDueDate(year, month))
+69:  const row = db.prepare(
+71:  ).get(tenantId, sourceType, sourceId) as { id: string } | undefined
+76:  const rows = db.prepare(
+82:  ).all(tenantId) as any[]
+88:    db.prepare(
+93:    ).run(
+103:  const rows = db.prepare(
+108:  ).all(tenantId) as any[]
+115:    db.prepare(
+120:    ).run(
+130:  const tableExists = db.prepare(
+132:  ).get() as { name: string } | undefined
+135:  const rows = db.prepare(
+141:  ).all(tenantId) as any[]
+151:    db.prepare(
+157:    ).run(
+174:  const cit = db.prepare(
+183:  ).get(tenantId, tenantId, startDate, endDate) as any
+206:router.get('/dashboard', async (req: Request, res: Response) => {
+215:      const currentPeriod = db.prepare(
+217:      ).get(tenantId) as { id: string } | undefined
+234:    const period = db.prepare(
+236:    ).get(tenantId, currentPeriodId) as { start_date: string; end_date: string } | undefined
+238:    const vatSummary = db.prepare(
+244:    ).get(tenantId, currentPeriodId) as any
+246:    const whtSummary = db.prepare(
+249:    ).get(tenantId, currentPeriodId) as any
+282:router.get('/periods', async (req: Request, res: Response) => {
+287:    const periods = db.prepare(
+296:    ).all(tenantId)
+305:router.get('/transactions', async (req: Request, res: Response) => {
+331:    const transactions = db.prepare(query).all(...params)
+=== src__routes__workOrder.routes.ts ===
+18:  const count = (db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any).count
+23:router.get('/', async (req: Request, res: Response) => {
+27:    const orders = db.prepare(`
+35:    `).all(tenantId)
+45:router.get('/stats', async (req: Request, res: Response) => {
+49:    const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any
+50:    const inProgress = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'IN_PROGRESS'").get(tenantId) as any
+51:    const planned = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'PLANNED'").get(tenantId) as any
+52:    const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'COMPLETED'").get(tenantId) as any
+53:    const completedQty = db.prepare("SELECT COALESCE(SUM(completed_qty), 0) as total FROM work_orders WHERE tenant_id = ? AND status = 'COMPLETED'").get(tenantId) as any
+72:router.get('/:id', async (req: Request, res: Response) => {
+76:    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+81:    const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id)
+106:      db.prepare(`
+110:      `).run(id, tenantId, woNumber, bomId || null, productName || '', quantity, priority || 'NORMAL',
+114:        const insertMaterial = db.prepare(`
+121:            const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(m.materialId) as any
+124:          insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty, unit)
+131:    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id)
+132:    const woMaterials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(id)
+154:    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+160:    const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id) as any[]
+167:          const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
+196:        db.prepare("UPDATE work_orders SET status = ?, start_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+197:          .run(status, now, now, req.params.id, tenantId)
+201:            const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
+219:                  db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ?')
+220:                    .run(unpack.sealed_qty, unpack.quantity, now, stock.id)
+221:                  db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+223:                    .run(generateId(), tenantId, stock.id, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
+229:              db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ?')
+230:                .run(needed, now, stock.id)
+232:              db.prepare(`
+235:              `).run(generateId(), tenantId, stock.id, needed, `WO: ${wo.wo_number}`, movementNotes, now)
+237:              db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
+238:                .run(m.required_qty, m.id)
+247:        db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
+248:          .run(status, now, now, req.params.id, tenantId)
+252:          const bom = db.prepare('SELECT product_id FROM boms WHERE id = ?').get(wo.bom_id) as any
+254:            const finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
+256:              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
+257:                .run(wo.quantity, now, finishedStock.id)
+258:              db.prepare(`
+261:              `).run(generateId(), tenantId, finishedStock.id, wo.quantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+268:      db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+269:        .run(status, now, req.params.id, tenantId)
+272:    const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+294:    const existing = db.prepare('SELECT id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+299:    db.prepare(`
+304:    `).run(productName, quantity, priority, dueDate || null, assignedTo, notes, now, req.params.id, tenantId)
+306:    const updatedWo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+319:    const wo = db.prepare('SELECT status FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+327:    db.prepare('DELETE FROM work_order_materials WHERE work_order_id = ?').run(req.params.id)
+328:    db.prepare('DELETE FROM work_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)

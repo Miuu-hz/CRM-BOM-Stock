@@ -1,23 +1,25 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
-import { randomUUID } from 'crypto'
+import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC } from '../config/accountCodes'
+import type { JournalEntry, JournalLineWithAccount } from '../types'
 
 const router = Router()
 
 router.use(authenticate)
 
-function generateId() {
-  return randomUUID().replace(/-/g, '').substring(0, 25)
+interface JournalLineInput {
+  accountId: string
+  description?: string
+  debit?: number
+  credit?: number
 }
 
 // Generate entry number: JV-YYYY-XXXXX
-function generateEntryNumber(date: string): string {
-  const d = new Date(date)
-  const year = d.getFullYear()
-  const count = (db.prepare('SELECT COUNT(*) as count FROM journal_entries WHERE strftime(\'%Y\', date) = ?').get(year.toString()) as any).count
-  return `JV-${year}-${String(count + 1).padStart(5, '0')}`
+function generateEntryNumber(tenantId: string, date: string): string {
+  const year = new Date(date).getFullYear()
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
 }
 
 // ============================================
@@ -36,16 +38,16 @@ router.get('/', async (req: Request, res: Response) => {
       FROM journal_entries je
       WHERE je.tenant_id = ?
     `
-    const params: any[] = [tenantId]
-    
+    const params: Array<string | number> = [tenantId]
+
     if (startDate) {
       query += ' AND je.date >= ?'
-      params.push(startDate)
+      params.push(startDate as string)
     }
     
     if (endDate) {
       query += ' AND je.date <= ?'
-      params.push(endDate)
+      params.push(endDate as string)
     }
     
     if (isPosted !== undefined) {
@@ -55,21 +57,21 @@ router.get('/', async (req: Request, res: Response) => {
     
     if (referenceType) {
       query += ' AND je.reference_type = ?'
-      params.push(referenceType)
+      params.push(referenceType as string)
     }
     
     query += ' ORDER BY je.date DESC, je.created_at DESC'
     
-    const entries = db.prepare(query).all(...params) as any[]
-    
+    const entries = db.prepare(query).all(...params) as JournalEntry[]
+
     // If accountId specified, filter entries that have lines with that account
     let filteredEntries = entries
     if (accountId) {
       const entryIdsWithAccount = db.prepare(`
-        SELECT DISTINCT journal_entry_id 
-        FROM journal_lines 
+        SELECT DISTINCT journal_entry_id
+        FROM journal_lines
         WHERE account_id = ?
-      `).all(accountId as string).map((r: any) => r.journal_entry_id)
+      `).all(accountId as string).map((r: { journal_entry_id: string }) => r.journal_entry_id)
       
       filteredEntries = entries.filter(e => entryIdsWithAccount.includes(e.id))
     }
@@ -91,15 +93,15 @@ router.get('/:id', async (req: Request, res: Response) => {
     
     const entry = db.prepare(`
       SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?
-    `).get(req.params.id, tenantId) as any
-    
+    `).get(req.params.id, tenantId) as JournalEntry | undefined
+
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
     
     const lines = db.prepare(`
-      SELECT jl.*, 
-             a.code as account_code, 
+      SELECT jl.*,
+             a.code as account_code,
              a.name as account_name,
              a.type as account_type,
              a.normal_balance as account_normal_balance
@@ -107,7 +109,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       JOIN accounts a ON jl.account_id = a.id
       WHERE jl.journal_entry_id = ?
       ORDER BY jl.line_number
-    `).all(req.params.id) as any[]
+    `).all(req.params.id) as JournalLineWithAccount[]
     
     res.json({
       success: true,
@@ -140,8 +142,9 @@ router.post('/', async (req: Request, res: Response) => {
     }
     
     // Validate lines balance
-    const totalDebit = lines.reduce((sum: number, line: any) => sum + (Number(line.debit) || 0), 0)
-    const totalCredit = lines.reduce((sum: number, line: any) => sum + (Number(line.credit) || 0), 0)
+    const typedLines = lines as JournalLineInput[]
+    const totalDebit = typedLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0)
+    const totalCredit = typedLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0)
     
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       return res.status(400).json({
@@ -151,7 +154,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
     
     const id = generateId()
-    const entryNumber = generateEntryNumber(date)
+    const entryNumber = generateEntryNumber(tenantId, date)
     const now = new Date().toISOString()
     
     const insertTransaction = db.transaction(() => {
@@ -171,9 +174,9 @@ router.post('/', async (req: Request, res: Response) => {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        
+      for (let i = 0; i < typedLines.length; i++) {
+        const line = typedLines[i]
+
         // Validate account exists
         const account = db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(line.accountId, tenantId)
         if (!account) {
@@ -199,9 +202,9 @@ router.post('/', async (req: Request, res: Response) => {
       message: 'Journal entry created successfully',
       data: { id, entryNumber }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Create journal entry error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to create journal entry' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to create journal entry' })
   }
 })
 
@@ -211,7 +214,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { date, description, notes, lines } = req.body
     
-    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as JournalEntry | undefined
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
@@ -230,21 +233,22 @@ router.put('/:id', async (req: Request, res: Response) => {
             description = COALESCE(?, description),
             notes = COALESCE(?, notes),
             updated_at = ?
-        WHERE id = ?
-      `).run(date, description, notes, now, req.params.id)
+        WHERE id = ? AND tenant_id = ?
+      `).run(date, description, notes, now, req.params.id, tenantId)
       
       // Update lines if provided
       if (lines) {
         // Validate balance
-        const totalDebit = lines.reduce((sum: number, line: any) => sum + (Number(line.debit) || 0), 0)
-        const totalCredit = lines.reduce((sum: number, line: any) => sum + (Number(line.credit) || 0), 0)
+        const typedLines = lines as JournalLineInput[]
+        const totalDebit = typedLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0)
+        const totalCredit = typedLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0)
         
         if (Math.abs(totalDebit - totalCredit) > 0.01) {
           throw new Error(`Journal entry is not balanced. Debit: ${totalDebit}, Credit: ${totalCredit}`)
         }
         
         // Delete old lines
-        db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ?').run(req.params.id)
+        db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         
         // Insert new lines
         const insertLine = db.prepare(`
@@ -253,13 +257,13 @@ router.put('/:id', async (req: Request, res: Response) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
         
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i]
-          
+        for (let i = 0; i < typedLines.length; i++) {
+          const line = typedLines[i]
+
           if ((!line.debit || line.debit === 0) && (!line.credit || line.credit === 0)) {
             continue
           }
-          
+
           insertLine.run(
             generateId(), tenantId, req.params.id, line.accountId, i + 1,
             line.description || null, line.debit || 0, line.credit || 0
@@ -268,17 +272,17 @@ router.put('/:id', async (req: Request, res: Response) => {
         
         // Update totals
         db.prepare(`
-          UPDATE journal_entries SET total_debit = ?, total_credit = ? WHERE id = ?
-        `).run(totalDebit, totalCredit, req.params.id)
+          UPDATE journal_entries SET total_debit = ?, total_credit = ? WHERE id = ? AND tenant_id = ?
+        `).run(totalDebit, totalCredit, req.params.id, tenantId)
       }
     })
     
     updateTransaction()
     
     res.json({ success: true, message: 'Journal entry updated successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Update journal entry error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to update journal entry' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to update journal entry' })
   }
 })
 
@@ -288,7 +292,7 @@ router.post('/:id/post', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const userName = req.user!.email
     
-    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as JournalEntry | undefined
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
@@ -302,13 +306,13 @@ router.post('/:id/post', async (req: Request, res: Response) => {
     db.prepare(`
       UPDATE journal_entries 
       SET is_posted = 1, posted_at = ?, posted_by = ?, updated_at = ?
-      WHERE id = ?
-    `).run(now, userName, now, req.params.id)
+      WHERE id = ? AND tenant_id = ?
+    `).run(now, userName, now, req.params.id, tenantId)
     
     res.json({ success: true, message: 'Journal entry posted successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Post journal entry error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to post journal entry' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to post journal entry' })
   }
 })
 
@@ -323,7 +327,7 @@ router.post('/:id/unpost', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Only admin can unpost journal entries' })
     }
     
-    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as JournalEntry | undefined
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
@@ -337,13 +341,13 @@ router.post('/:id/unpost', async (req: Request, res: Response) => {
     db.prepare(`
       UPDATE journal_entries 
       SET is_posted = 0, posted_at = NULL, posted_by = NULL, updated_at = ?
-      WHERE id = ?
-    `).run(now, req.params.id)
+      WHERE id = ? AND tenant_id = ?
+    `).run(now, req.params.id, tenantId)
     
     res.json({ success: true, message: 'Journal entry unposted successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unpost journal entry error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to unpost journal entry' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to unpost journal entry' })
   }
 })
 
@@ -352,7 +356,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as JournalEntry | undefined
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
@@ -362,16 +366,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
     
     const deleteTransaction = db.transaction(() => {
-      db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ?').run(req.params.id)
-      db.prepare('DELETE FROM journal_entries WHERE id = ?').run(req.params.id)
+      db.prepare('DELETE FROM journal_lines WHERE journal_entry_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM journal_entries WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })
     
     deleteTransaction()
     
     res.json({ success: true, message: 'Journal entry deleted successfully' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Delete journal entry error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to delete journal entry' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to delete journal entry' })
   }
 })
 
@@ -391,8 +395,8 @@ router.post('/auto/purchase-order', async (req: Request, res: Response) => {
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
       WHERE po.id = ? AND po.tenant_id = ?
-    `).get(purchaseOrderId, tenantId) as any
-    
+    `).get(purchaseOrderId, tenantId) as (Record<string, unknown> & { supplier_name: string }) | undefined
+
     if (!po) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
@@ -403,12 +407,12 @@ router.post('/auto/purchase-order', async (req: Request, res: Response) => {
       FROM purchase_order_items poi
       JOIN materials m ON poi.material_id = m.id
       WHERE poi.purchase_order_id = ?
-    `).all(purchaseOrderId) as any[]
-    
+    `).all(purchaseOrderId) as Record<string, unknown>[]
+
     // Find accounts
-    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.RAW_MATERIAL, tenantId) as any // สต็อกวัตถุดิบ
-    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INPUT_VAT, tenantId) as any // ภาษีซื้อ
-    const payableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AP, tenantId) as any // เจ้าหนี้การค้า
+    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.RAW_MATERIAL, tenantId) as { id: string } | undefined // สต็อกวัตถุดิบ
+    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INPUT_VAT, tenantId) as { id: string } | undefined // ภาษีซื้อ
+    const payableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AP, tenantId) as { id: string } | undefined // เจ้าหนี้การค้า
     
     if (!inventoryAccount || !vatAccount || !payableAccount) {
       return res.status(400).json({ 
@@ -449,9 +453,9 @@ router.post('/auto/purchase-order', async (req: Request, res: Response) => {
         totalCredit: po.total_amount
       }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Generate PO journal error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to generate journal' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to generate journal' })
   }
 })
 
@@ -467,18 +471,18 @@ router.post('/auto/sales', async (req: Request, res: Response) => {
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE o.id = ?
-    `).get(orderId) as any
-    
+    `).get(orderId) as (Record<string, unknown> & { customer_name: string }) | undefined
+
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' })
     }
     
     // Find accounts
-    const receivableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AR, tenantId) as any // ลูกหนี้การค้า
-    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.OUTPUT_VAT, tenantId) as any // ภาษีขาย
-    const revenueAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.REVENUE_PRODUCT, tenantId) as any // รายได้ขายสินค้า
-    const cogsAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.COGS_PRODUCT, tenantId) as any // ต้นทุนสินค้าขาย
-    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INVENTORY, tenantId) as any // สต็อกสินค้า
+    const receivableAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.AR, tenantId) as { id: string } | undefined // ลูกหนี้การค้า
+    const vatAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.OUTPUT_VAT, tenantId) as { id: string } | undefined // ภาษีขาย
+    const revenueAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.REVENUE_PRODUCT, tenantId) as { id: string } | undefined // รายได้ขายสินค้า
+    const cogsAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.COGS_PRODUCT, tenantId) as { id: string } | undefined // ต้นทุนสินค้าขาย
+    const inventoryAccount = db.prepare(`SELECT id FROM accounts WHERE code = ? AND tenant_id = ?`).get(ACC.INVENTORY, tenantId) as { id: string } | undefined // สต็อกสินค้า
     
     if (!receivableAccount || !vatAccount || !revenueAccount) {
       return res.status(400).json({ 
@@ -489,15 +493,15 @@ router.post('/auto/sales', async (req: Request, res: Response) => {
     
     // Calculate amounts (simplified - assuming 7% VAT)
     const taxRate = 0.07
-    const subtotal = order.total_amount / (1 + taxRate)
-    const taxAmount = order.total_amount - subtotal
+    const subtotal = (order as any).total_amount / (1 + taxRate)
+    const taxAmount = (order as any).total_amount - subtotal
     
     // Revenue entry
     const revenueLines = [
       {
         accountId: receivableAccount.id,
         description: `ลูกหนี้การค้า - ${order.customer_name} - Order ${order.order_number}`,
-        debit: order.total_amount,
+        debit: (order as any).total_amount,
         credit: 0
       },
       {
@@ -521,13 +525,13 @@ router.post('/auto/sales', async (req: Request, res: Response) => {
         referenceType: 'SALES_ORDER',
         referenceId: orderId,
         lines: revenueLines,
-        totalDebit: order.total_amount,
-        totalCredit: order.total_amount
+        totalDebit: (order as any).total_amount,
+        totalCredit: (order as any).total_amount
       }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Generate sales journal error:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to generate journal' })
+    res.status(500).json({ success: false, message: (error as Error).message || 'Failed to generate journal' })
   }
 })
 

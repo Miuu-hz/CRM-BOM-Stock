@@ -70,7 +70,7 @@ router.post('/categories', (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, code, name, defaultUnit, description || '', now, now)
     
-    const category = db.prepare('SELECT * FROM material_categories WHERE id = ?').get(id)
+    const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.json({ success: true, data: category })
   } catch (error) {
     console.error('Create category error:', error)
@@ -600,7 +600,7 @@ router.post('/', (req: Request, res: Response) => {
       now
     )
 
-    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id)
+    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(id, tenantId)
 
     res.json({
       success: true,
@@ -679,7 +679,7 @@ router.put('/:id', (req: Request, res: Response) => {
       `).run(minStock, maxStock, newUnit, now, req.params.id, tenantId)
     }
 
-    const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id)
+    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
 
     res.json({
       success: true,
@@ -774,55 +774,72 @@ router.post('/:id/stock', (req: Request, res: Response) => {
         now,
         now
       )
-      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockId)
+      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockId, tenantId)
     }
 
-    // Calculate new quantity
-    let newQuantity = stockItem.quantity
-    if (type === 'IN') {
-      newQuantity += quantity
-    } else if (type === 'OUT') {
-      newQuantity -= quantity
-      if (newQuantity < 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Insufficient stock',
-        })
+    // ponytail: read-modify-write material stock in one transaction.
+    const adjustTransaction = db.transaction(() => {
+      const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItem.id, tenantId) as any
+      if (!currentItem) {
+        throw new Error('STOCK_ITEM_NOT_FOUND')
       }
-    } else if (type === 'ADJUST') {
-      newQuantity = quantity
+
+      let newQuantity = currentItem.quantity
+      if (type === 'IN') {
+        newQuantity += quantity
+      } else if (type === 'OUT') {
+        newQuantity -= quantity
+        if (newQuantity < 0) {
+          throw new Error('INSUFFICIENT_STOCK')
+        }
+      } else if (type === 'ADJUST') {
+        newQuantity = quantity
+      }
+
+      let status = 'ADEQUATE'
+      if (newQuantity <= material.min_stock * 0.3) {
+        status = 'CRITICAL'
+      } else if (newQuantity <= material.min_stock) {
+        status = 'LOW'
+      } else if (newQuantity >= material.max_stock) {
+        status = 'OVERSTOCK'
+      }
+
+      const now = new Date().toISOString()
+
+      db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(newQuantity, status, now, currentItem.id, tenantId)
+
+      const movementId = generateId()
+      db.prepare(`
+        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, notes, created_at, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(movementId, tenantId, currentItem.id, type, quantity, notes || '', now, 'system')
+
+      return { newQuantity, status, previousQuantity: currentItem.quantity }
+    })
+
+    let result: { newQuantity: number; status: string; previousQuantity: number }
+    try {
+      result = adjustTransaction()
+    } catch (err: any) {
+      if (err.message === 'INSUFFICIENT_STOCK') {
+        return res.status(400).json({ success: false, message: 'Insufficient stock' })
+      }
+      if (err.message === 'STOCK_ITEM_NOT_FOUND') {
+        return res.status(404).json({ success: false, message: 'Stock item not found' })
+      }
+      throw err
     }
-
-    // Determine status
-    let status = 'ADEQUATE'
-    if (newQuantity <= material.min_stock * 0.3) {
-      status = 'CRITICAL'
-    } else if (newQuantity <= material.min_stock) {
-      status = 'LOW'
-    } else if (newQuantity >= material.max_stock) {
-      status = 'OVERSTOCK'
-    }
-
-    const now = new Date().toISOString()
-
-    // Update stock item
-    db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ?').run(newQuantity, status, now, stockItem.id)
-
-    // Record movement
-    const movementId = generateId()
-    db.prepare(`
-      INSERT INTO stock_movements (id, stock_item_id, type, quantity, notes, created_at, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(movementId, stockItem.id, type, quantity, notes || '', now, 'system')
 
     res.json({
       success: true,
       message: 'Stock adjusted successfully',
       data: {
         material,
-        stockItem: { ...stockItem, quantity: newQuantity, status },
-        previousQuantity: stockItem.quantity,
-        newQuantity,
+        stockItem: { ...stockItem, quantity: result.newQuantity, status: result.status },
+        previousQuantity: result.previousQuantity,
+        newQuantity: result.newQuantity,
       },
     })
   } catch (error) {
