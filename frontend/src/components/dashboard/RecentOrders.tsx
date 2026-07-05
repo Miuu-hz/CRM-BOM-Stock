@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { ShoppingCart, ArrowRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 interface Order {
   id: string
@@ -51,17 +52,18 @@ const orders: Order[] = [
 ]
 
 function RecentOrders() {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <ShoppingCart className="w-6 h-6 text-[var(--primary)]" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
-            Recent Orders
+            {t('dashboard.recentOrders.title')}
           </h2>
         </div>
         <button className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors flex items-center gap-1 group">
-          View All
+          {t('dashboard.recentOrders.viewAll')}
           <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
@@ -70,12 +72,12 @@ function RecentOrders() {
         <table className="phopy-table">
           <thead>
             <tr>
-              <th>Order ID</th>
-              <th>Customer</th>
-              <th>Product</th>
-              <th>Quantity</th>
-              <th>Amount</th>
-              <th>Status</th>
+              <th>{t('dashboard.recentOrders.orderId')}</th>
+              <th>{t('dashboard.recentOrders.customer')}</th>
+              <th>{t('dashboard.recentOrders.product')}</th>
+              <th>{t('dashboard.recentOrders.quantity')}</th>
+              <th>{t('dashboard.recentOrders.amount')}</th>
+              <th>{t('dashboard.recentOrders.statusHeader')}</th>
             </tr>
           </thead>
           <tbody>
@@ -118,19 +120,23 @@ function RecentOrders() {
 }
 
 function StatusBadge({ status }: { status: Order['status'] }) {
+  const { t } = useTranslation()
   const statusConfig = {
     pending: {
-      label: 'Pending',
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     processing: {
-      label: 'Processing',
       className: 'bg-[var(--primary-soft)] text-[var(--primary)] border-phopy-indigo/30',
     },
     completed: {
-      label: 'Completed',
       className: 'bg-[var(--success-soft)] text-success border-success/30',
     },
+  }
+
+  const labels: Record<Order['status'], string> = {
+    pending: t('dashboard.recentOrders.status.pending'),
+    processing: t('dashboard.recentOrders.status.processing'),
+    completed: t('dashboard.recentOrders.status.completed'),
   }
 
   const config = statusConfig[status]
@@ -138,7 +144,7 @@ function StatusBadge({ status }: { status: Order['status'] }) {
   return (
     <span className={`status-badge ${config.className}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-      {config.label}
+      {labels[status]}
     </span>
   )
 }

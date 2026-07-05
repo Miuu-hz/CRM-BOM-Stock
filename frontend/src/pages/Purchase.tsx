@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertCircle,
@@ -846,6 +847,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 }
 
 const Purchase = () => {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const { units: availableUnits } = useUnits()
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
@@ -1069,7 +1071,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase/requests')
       if (data.success) setRequests(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบขอซื้อได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadRequests')) }
     finally { setLoading(false) }
   }
 
@@ -1078,7 +1080,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase-orders')
       if (data.success) setOrders(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบสั่งซื้อได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadOrders')) }
     finally { setLoading(false) }
   }
 
@@ -1087,7 +1089,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase/goods-receipts')
       if (data.success) setReceipts(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบรับสินค้าได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadReceipts')) }
     finally { setLoading(false) }
   }
 
@@ -1096,7 +1098,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase/invoices')
       if (data.success) setInvoices(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลใบแจ้งหนี้ได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadInvoices')) }
     finally { setLoading(false) }
   }
 
@@ -1105,7 +1107,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase/payments')
       if (data.success) setPayments(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการจ่ายเงินได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadPayments')) }
     finally { setLoading(false) }
   }
 
@@ -1114,7 +1116,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get('/purchase/returns')
       if (data.success) setReturns(data.data)
-    } catch (error: any) { handleApiError(error, 'ไม่สามารถดึงข้อมูลการคืนสินค้าได้') }
+    } catch (error: any) { handleApiError(error, t('purchase.error.loadReturns')) }
     finally { setLoading(false) }
   }
 
@@ -1128,14 +1130,14 @@ const Purchase = () => {
       }))
       const { data } = await api.post('/purchase/requests', { ...requestForm, items })
       if (data.success) {
-        toast.success('สร้างใบขอซื้อสำเร็จ')
+        toast.success(t('purchase.toast.requestCreated'))
         closeModal()
         fetchRequests()
       } else {
-        toast.error(data.message || 'ไม่สามารถสร้างใบขอซื้อได้')
+        toast.error(data.message || t('purchase.toast.requestCreateFailed'))
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'เกิดข้อผิดพลาดในการสร้างใบขอซื้อ')
+      toast.error(error.response?.data?.message || t('purchase.toast.requestCreateError'))
     } finally { setFormLoading(false) }
   }
 
@@ -1160,33 +1162,33 @@ const Purchase = () => {
         items,
       })
       if (data.success) {
-        toast.success('บันทึกการแก้ไขใบขอซื้อสำเร็จ')
+        toast.success(t('purchase.toast.requestUpdated'))
         closeModal()
         fetchRequests()
-      } else { toast.error(data.message || 'ไม่สามารถบันทึกการแก้ไขได้') }
+      } else { toast.error(data.message || t('purchase.toast.requestUpdateFailed')) }
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'เกิดข้อผิดพลาด')
+      toast.error(error?.response?.data?.message || t('purchase.error.generic'))
     } finally { setFormLoading(false) }
   }
 
   const handleDeleteRequest = async (id: string) => {
-    if (!confirm('ต้องการลบใบขอซื้อนี้?')) return
+    if (!confirm(t('purchase.confirm.deleteRequest'))) return
     try {
       await api.delete(`/purchase/requests/${id}`)
-      toast.success('ลบใบขอซื้อสำเร็จ')
+      toast.success(t('purchase.toast.requestDeleted'))
       fetchRequests()
-    } catch (error) { toast.error('ไม่สามารถลบใบขอซื้อได้') }
+    } catch (error) { toast.error(t('purchase.toast.requestDeleteFailed')) }
   }
 
   const handleSubmitRequestDirect = async (id: string, toStatus: 'PENDING' | 'APPROVED') => {
     try {
       const { data } = await api.put(`/purchase/requests/${id}/status`, { status: toStatus })
       if (data.success) {
-        toast.success(toStatus === 'PENDING' ? 'ส่งอนุมัติสำเร็จ' : 'อนุมัติสำเร็จ')
+        toast.success(toStatus === 'PENDING' ? t('purchase.toast.submitted') : t('purchase.toast.approved'))
         fetchRequests()
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'เกิดข้อผิดพลาด')
+      toast.error(error.response?.data?.message || t('purchase.error.generic'))
     }
   }
 
@@ -1197,20 +1199,20 @@ const Purchase = () => {
   }
 
   const handleDoConvert = async () => {
-    if (!convertForm.supplier_id) { toast.error('กรุณาเลือกผู้ขาย'); return }
+    if (!convertForm.supplier_id) { toast.error(t('purchase.validation.selectSupplier')); return }
     setConverting(true)
     try {
       const { data } = await api.post(`/purchase/requests/${convertPRId}/convert-to-po`, {
         supplierId: convertForm.supplier_id
       })
       if (data.success) {
-        toast.success('แปลงเป็นใบสั่งซื้อสำเร็จ')
+        toast.success(t('purchase.toast.convertedToOrder'))
         setConvertPRId(null)
         fetchRequests()
         fetchOrders()
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'ไม่สามารถแปลงใบขอซื้อได้')
+      toast.error(error.response?.data?.message || t('purchase.toast.convertFailed'))
     } finally { setConverting(false) }
   }
 
@@ -1240,7 +1242,7 @@ const Purchase = () => {
         items: mappedItems.length > 0 ? mappedItems : p.items,
       }))
       toast.success(`โหลดรายการจาก ${pr.pr_number} แล้ว (${mappedItems.length} รายการ)`)
-    } catch { toast.error('ไม่สามารถโหลดใบขอซื้อได้') }
+    } catch { toast.error(t('purchase.toast.loadRequestFailed')) }
   }
 
   const handleCreateOrder = async () => {
@@ -1270,11 +1272,11 @@ const Purchase = () => {
         totalAmount,
       })
       if (data.success) {
-        toast.success('สร้างใบสั่งซื้อสำเร็จ')
+        toast.success(t('purchase.toast.orderCreated'))
         closeModal()
         fetchOrders()
-      } else { toast.error(data.message || 'ไม่สามารถสร้างใบสั่งซื้อได้') }
-    } catch (error) { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.orderCreateFailed')) }
+    } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1305,11 +1307,11 @@ const Purchase = () => {
         totalAmount,
       })
       if (data.success) {
-        toast.success('บันทึกการแก้ไขใบสั่งซื้อสำเร็จ')
+        toast.success(t('purchase.toast.orderUpdated'))
         closeModal()
         fetchOrders()
-      } else { toast.error(data.message || 'ไม่สามารถบันทึกการแก้ไขได้') }
-    } catch { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.requestUpdateFailed')) }
+    } catch { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1318,35 +1320,35 @@ const Purchase = () => {
       const { data } = await api.put(`/purchase-orders/${id}/status`, { status })
       if (data.success) {
         const labels: Record<string, string> = {
-          SUBMITTED: 'ส่งอนุมัติแล้ว', APPROVED: 'อนุมัติแล้ว', CANCELLED: 'ยกเลิกแล้ว'
+          SUBMITTED: t('purchase.status.submitted'), APPROVED: t('purchase.status.approved'), CANCELLED: t('purchase.status.cancelled')
         }
-        toast.success(labels[status] || 'อัพเดทสถานะแล้ว')
+        toast.success(labels[status] || t('purchase.toast.statusUpdated'))
         fetchOrders()
-      } else { toast.error(data.message || 'ไม่สามารถอัพเดทสถานะได้') }
-    } catch { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
+    } catch { toast.error(t('purchase.error.generic')) }
   }
 
   const handleDeleteOrder = async (id: string) => {
-    if (!confirm('ต้องการลบใบสั่งซื้อนี้?')) return
+    if (!confirm(t('purchase.confirm.deleteOrder'))) return
     try {
       await api.delete(`/purchase-orders/${id}`)
-      toast.success('ลบใบสั่งซื้อสำเร็จ')
+      toast.success(t('purchase.toast.orderDeleted'))
       fetchOrders()
-    } catch (error) { toast.error('ไม่สามารถลบใบสั่งซื้อได้') }
+    } catch (error) { toast.error(t('purchase.toast.orderDeleteFailed')) }
   }
 
   const handleCreateReceipt = async () => {
     if (!receiptForm.purchase_order_id) {
-      toast.error('กรุณาเลือกใบสั่งซื้อ (PO)')
+      toast.error(t('purchase.validation.selectPO'))
       return
     }
     if (!receiptForm.items.length) {
-      toast.error('กรุณาเพิ่มรายการสินค้าที่ต้องรับ')
+      toast.error(t('purchase.validation.addReceiptItems'))
       return
     }
     const invalidItem = receiptForm.items.find(i => !i.purchase_order_item_id)
     if (invalidItem) {
-      toast.error('พบรายการที่ไม่มี PO Item ID — กรุณาโหลดรายการใหม่หรือตรวจสอบข้อมูล')
+      toast.error(t('purchase.error.missingPOItemId'))
       return
     }
     setFormLoading(true)
@@ -1372,15 +1374,15 @@ const Purchase = () => {
       }
       const { data } = await api.post('/purchase/goods-receipts', payload)
       if (data.success) {
-        toast.success('สร้างใบรับสินค้าสำเร็จ')
+        toast.success(t('purchase.toast.receiptCreated'))
         closeModal()
         fetchReceipts()
       } else {
-        toast.error(data.message || 'ไม่สามารถสร้างใบรับสินค้าได้')
+        toast.error(data.message || t('purchase.toast.receiptCreateFailed'))
       }
     } catch (error: any) {
       console.error('Create GR error:', error)
-      const msg = error.response?.data?.message || error.message || 'เกิดข้อผิดพลาด'
+      const msg = error.response?.data?.message || error.message || t('purchase.error.generic')
       toast.error(msg)
     } finally {
       setFormLoading(false)
@@ -1391,20 +1393,20 @@ const Purchase = () => {
     try {
       const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`)
       if (data.success) {
-        toast.success('ยืนยันรับสินค้าสำเร็จ — อัพเดทสต็อกแล้ว')
+        toast.success(t('purchase.toast.receiptConfirmed'))
         fetchReceipts()
         fetchOrders()
-      } else { toast.error(data.message || 'ไม่สามารถยืนยันการรับสินค้าได้') }
-    } catch (error: any) { toast.error(error.response?.data?.message || 'ไม่สามารถยืนยันการรับสินค้าได้') }
+      } else { toast.error(data.message || t('purchase.toast.receiptConfirmFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.receiptConfirmFailed')) }
   }
 
   const handleDeleteReceipt = async (id: string) => {
-    if (!confirm('ลบใบรับสินค้าร่างนี้?')) return
+    if (!confirm(t('purchase.confirm.deleteReceipt'))) return
     try {
       await api.delete(`/purchase/goods-receipts/${id}`)
-      toast.success('ลบใบรับสินค้าแล้ว')
+      toast.success(t('purchase.toast.receiptDeleted'))
       fetchReceipts()
-    } catch { toast.error('ไม่สามารถลบได้') }
+    } catch { toast.error(t('purchase.toast.receiptDeleteFailed')) }
   }
 
   const handleCreateInvoice = async () => {
@@ -1421,11 +1423,11 @@ const Purchase = () => {
         drAccountId: invoiceForm.dr_account_id || undefined,
       })
       if (data.success) {
-        toast.success('สร้างใบแจ้งหนี้สำเร็จ')
+        toast.success(t('purchase.toast.invoiceCreated'))
         closeModal()
         fetchInvoices()
-      } else { toast.error(data.message || 'ไม่สามารถสร้างใบแจ้งหนี้ได้') }
-    } catch (error) { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.invoiceCreateFailed')) }
+    } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1443,12 +1445,12 @@ const Purchase = () => {
         notes: paymentForm.notes,
       })
       if (data.success) {
-        toast.success('บันทึกการจ่ายเงินสำเร็จ')
+        toast.success(t('purchase.toast.paymentRecorded'))
         closeModal()
         fetchPayments()
         fetchInvoices()
-      } else { toast.error(data.message || 'ไม่สามารถบันทึกการจ่ายเงินได้') }
-    } catch (error) { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.paymentRecordFailed')) }
+    } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1464,11 +1466,11 @@ const Purchase = () => {
       const totalAmount = subtotal + taxAmount
       const { data } = await api.post('/purchase/returns', { ...returnForm, items, subtotal, taxAmount, totalAmount })
       if (data.success) {
-        toast.success('สร้างใบคืนสินค้าสำเร็จ')
+        toast.success(t('purchase.toast.returnCreated'))
         closeModal()
         fetchReturns()
-      } else { toast.error(data.message || 'ไม่สามารถสร้างใบคืนสินค้าได้') }
-    } catch (error) { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.returnCreateFailed')) }
+    } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1476,21 +1478,21 @@ const Purchase = () => {
     try {
       const { data } = await api.put(`/purchase/returns/${id}/status`, { status })
       if (data.success) {
-        const labels: Record<string, string> = { SUBMITTED: 'ส่งอนุมัติแล้ว', APPROVED: 'อนุมัติแล้ว', CANCELLED: 'ยกเลิกแล้ว' }
-        toast.success(labels[status] || 'อัพเดทสถานะแล้ว')
+        const labels: Record<string, string> = { SUBMITTED: t('purchase.status.submitted'), APPROVED: t('purchase.status.approved'), CANCELLED: t('purchase.status.cancelled') }
+        toast.success(labels[status] || t('purchase.toast.statusUpdated'))
         fetchReturns()
-      } else { toast.error(data.message || 'ไม่สามารถอัพเดทสถานะได้') }
-    } catch { toast.error('เกิดข้อผิดพลาด') }
+      } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
+    } catch { toast.error(t('purchase.error.generic')) }
   }
 
   const handleConfirmReturn = async (id: string) => {
     try {
       const { data } = await api.put(`/purchase/returns/${id}/confirm`)
       if (data.success) {
-        toast.success('ยืนยันคืนสินค้า — ตัดสต็อกแล้ว')
+        toast.success(t('purchase.toast.returnConfirmed'))
         fetchReturns()
-      } else { toast.error(data.message || 'ไม่สามารถยืนยันการคืนสินค้าได้') }
-    } catch (error: any) { toast.error(error.response?.data?.message || 'ไม่สามารถยืนยันการคืนสินค้าได้') }
+      } else { toast.error(data.message || t('purchase.toast.returnConfirmFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.returnConfirmFailed')) }
   }
 
   // Modal handlers
@@ -1605,7 +1607,7 @@ const Purchase = () => {
       const { data } = await api.get(endpointMap[type])
       const doc = data?.data || data
       printDocument(type, { ...doc, _company: user?.name || 'บริษัท' }, format)
-    } catch { toast.error('ไม่สามารถโหลดข้อมูลเพื่อพิมพ์ได้') }
+    } catch { toast.error(t('purchase.error.loadPrintData')) }
   }
 
   // Fetch full detail (with items) then open modal — avoids empty form on edit/view
@@ -1717,7 +1719,7 @@ const Purchase = () => {
           }))
         }))
       }
-    } catch (error) { toast.error('ไม่สามารถโหลดรายการที่ค้างรับได้') }
+    } catch (error) { toast.error(t('purchase.error.loadPendingReceipts')) }
   }
 
   // Helpers
@@ -1730,19 +1732,19 @@ const Purchase = () => {
 
   const StatusBadge = ({ status }: { status: string }) => {
     const cfg: Record<string, { bg: string; text: string; label: string }> = {
-      DRAFT:     { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-3)]',   label: 'ร่าง' },
-      PENDING:   { bg: 'bg-yellow-500/15', text: 'text-warning', label: 'รออนุมัติ' },
-      SUBMITTED: { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: 'ส่งอนุมัติ' },
-      APPROVED:  { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: 'อนุมัติแล้ว' },
-      REJECTED:  { bg: 'bg-[var(--danger-soft)]',    text: 'text-danger',    label: 'ปฏิเสธ' },
-      CONFIRMED: { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   label: 'ยืนยัน' },
-      PARTIAL:   { bg: 'bg-orange-500/15', text: 'text-warning', label: 'บางส่วน' },
-      RECEIVED:  { bg: 'bg-green-600/15',  text: 'text-success',  label: 'รับครบ' },
-      UNPAID:    { bg: 'bg-[var(--danger-soft)]',    text: 'text-danger',    label: 'ค้างจ่าย' },
-      PAID:      { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: 'จ่ายแล้ว' },
-      OVERDUE:   { bg: 'bg-red-600/15',    text: 'text-danger',    label: 'เกินกำหนด' },
-      CANCELLED: { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-4)]',   label: 'ยกเลิก' },
-      ISSUED:    { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: 'ออกแล้ว' },
+      DRAFT:     { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-3)]',   label: t('purchase.status.draft') },
+      PENDING:   { bg: 'bg-yellow-500/15', text: 'text-warning', label: t('purchase.status.pendingApproval') },
+      SUBMITTED: { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: t('purchase.actions.submit') },
+      APPROVED:  { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: t('purchase.status.approved') },
+      REJECTED:  { bg: 'bg-[var(--danger-soft)]',    text: 'text-danger',    label: t('purchase.actions.reject') },
+      CONFIRMED: { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   label: t('purchase.actions.confirm') },
+      PARTIAL:   { bg: 'bg-orange-500/15', text: 'text-warning', label: t('purchase.status.partial') },
+      RECEIVED:  { bg: 'bg-green-600/15',  text: 'text-success',  label: t('purchase.status.fullyReceived') },
+      UNPAID:    { bg: 'bg-[var(--danger-soft)]',    text: 'text-danger',    label: t('purchase.status.unpaid') },
+      PAID:      { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: t('purchase.status.paid') },
+      OVERDUE:   { bg: 'bg-red-600/15',    text: 'text-danger',    label: t('purchase.status.overdue') },
+      CANCELLED: { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-4)]',   label: t('purchase.actions.cancel') },
+      ISSUED:    { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: t('purchase.status.issued') },
     }
     const c = cfg[status] || { bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]', label: status }
     return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>
@@ -1912,7 +1914,7 @@ const Purchase = () => {
               {[
                 { label: 'ฉบับร่าง', value: summary?.purchaseOrders.draft || 0, color: 'text-[var(--fg-3)]' },
                 { label: 'รอดำเนินการ', value: summary?.purchaseOrders.pending || 0, color: 'text-warning' },
-                { label: 'รับบางส่วน', value: summary?.purchaseOrders.partial || 0, color: 'text-warning' },
+                { label: t('purchase.status.partialReceived'), value: summary?.purchaseOrders.partial || 0, color: 'text-warning' },
                 { label: 'รับครบแล้ว', value: summary?.purchaseOrders.received || 0, color: 'text-success' },
               ].map(item => (
                 <div key={item.label} className="flex justify-between items-center p-3 bg-[var(--bg)] rounded-lg">
@@ -1928,7 +1930,7 @@ const Purchase = () => {
             </h3>
             <div className="space-y-2">
               {[
-                { label: 'ค้างจ่าย', value: summary?.invoices.unpaid || 0, color: 'text-danger' },
+                { label: t('purchase.status.unpaid'), value: summary?.invoices.unpaid || 0, color: 'text-danger' },
                 { label: 'จ่ายบางส่วน', value: summary?.invoices.partial || 0, color: 'text-warning' },
                 { label: 'จ่ายครบแล้ว', value: summary?.invoices.paid || 0, color: 'text-success' },
               ].map(item => (

@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'POWERUSER' | 'USER' | 'MASTER'
+export type Role = 'MASTER' | 'ADMIN' | 'MANAGER' | 'POWERUSER' | 'USER'
 
 export type Department =
   | 'IT'
@@ -27,17 +27,25 @@ export type Resource =
   | 'users'
   | 'settings'
 
-// ponytail: minimal permission matrix for common ERP resources.
 export const resourceActions: Record<Resource, Action[]> = {
-  customers: ['read', 'write', 'approve', 'delete', 'admin'],
-  suppliers: ['read', 'write', 'approve', 'delete', 'admin'],
-  orders: ['read', 'write', 'approve', 'delete', 'admin'],
-  purchase: ['read', 'write', 'approve', 'delete', 'admin'],
-  stock: ['read', 'write', 'approve', 'delete', 'admin'],
+  customers:  ['read', 'write', 'approve', 'delete', 'admin'],
+  suppliers:  ['read', 'write', 'approve', 'delete', 'admin'],
+  orders:     ['read', 'write', 'approve', 'delete', 'admin'],
+  purchase:   ['read', 'write', 'approve', 'delete', 'admin'],
+  stock:      ['read', 'write', 'approve', 'delete', 'admin'],
   accounting: ['read', 'write', 'approve', 'delete', 'admin'],
-  marketing: ['read', 'write', 'approve', 'delete', 'admin'],
+  marketing:  ['read', 'write', 'approve', 'delete', 'admin'],
   production: ['read', 'write', 'approve', 'delete', 'admin'],
-  qc: ['read', 'write', 'approve', 'delete', 'admin'],
-  users: ['read', 'write', 'approve', 'delete', 'admin'],
-  settings: ['read', 'write', 'approve', 'delete', 'admin'],
+  qc:         ['read', 'write', 'approve', 'delete', 'admin'],
+  users:      ['read', 'write', 'approve', 'delete', 'admin'],
+  settings:   ['read', 'write', 'approve', 'delete', 'admin'],
+}
+
+// Role hierarchy: MASTER > ADMIN > MANAGER > POWERUSER > USER
+export const ROLE_HIERARCHY: Record<Role, number> = {
+  MASTER:    5,
+  ADMIN:     4,
+  MANAGER:   3,
+  POWERUSER: 2,
+  USER:      1,
 }

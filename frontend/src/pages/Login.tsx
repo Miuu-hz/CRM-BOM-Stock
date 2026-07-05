@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 
 function Login() {
+  const { t } = useTranslation()
   const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -14,13 +16,13 @@ function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    
+
     const result = await login(email, password)
-    
+
     if (!result.success) {
-      setError(result.message || 'เข้าสู่ระบบไม่สำเร็จ')
+      setError(result.message || t('login.error'))
     }
-    
+
     setLoading(false)
   }
 
@@ -45,9 +47,9 @@ function Login() {
             <span className="text-white font-extrabold text-2xl">P</span>
           </div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)]">
-            Phopy
+            {t('app.name')}
           </h1>
-          <p className="text-[var(--fg-3)] mt-2">ERP · BB Pillow + POS</p>
+          <p className="text-[var(--fg-3)] mt-2">{t('app.tagline')}</p>
         </div>
 
         {/* Error Message */}
@@ -62,7 +64,7 @@ function Login() {
           {/* Email Input */}
           <div>
             <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-              Email / Username
+              {t('login.emailLabel')}
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
@@ -70,7 +72,7 @@ function Login() {
                 type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com หรือ BB-pillow"
+                placeholder={t('login.emailPlaceholder')}
                 className="phopy-input pl-10 w-full"
                 required
               />
@@ -80,7 +82,7 @@ function Login() {
           {/* Password Input */}
           <div>
             <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-              Password
+              {t('login.passwordLabel')}
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
@@ -102,13 +104,13 @@ function Login() {
                 type="checkbox"
                 className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--primary)] focus:ring-phopy-indigo focus:ring-2"
               />
-              <span className="text-sm text-[var(--fg-3)]">Remember me</span>
+              <span className="text-sm text-[var(--fg-3)]">{t('login.rememberMe')}</span>
             </label>
             <button
               type="button"
               className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors"
             >
-              Forgot Password?
+              {t('login.forgotPassword')}
             </button>
           </div>
 
@@ -124,7 +126,7 @@ function Login() {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <>
-                <span>Sign In</span>
+                <span>{t('login.submit')}</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </>
             )}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Upload, ImageIcon, Trash2, Eye, Pencil, AlertTriangle, Check} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -258,6 +259,7 @@ const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Sales = () => {
+  const { t } = useTranslation()
   const { tenant } = useAuth()
   const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'orders' | 'delivery-orders' | 'invoices' | 'credit-notes' | 'backorders' | 'templates' | 'pos-daily'>('overview')
   const [summary, setSummary] = useState<SalesSummary | null>(null)
@@ -345,7 +347,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/quotations')
       if (data.success) setQuotations(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบเสนอราคาได้')
+      handleApiError(error, t('sales.error.loadQuotations'))
     } finally { setLoading(false) }
   }
 
@@ -355,7 +357,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/sales-orders')
       if (data.success) setSalesOrders(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลคำสั่งขายได้')
+      handleApiError(error, t('sales.error.loadOrders'))
     } finally { setLoading(false) }
   }
 
@@ -365,7 +367,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/invoices')
       if (data.success) setInvoices(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบแจ้งหนี้ได้')
+      handleApiError(error, t('sales.error.loadInvoices'))
     } finally { setLoading(false) }
   }
 
@@ -375,7 +377,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/credit-notes')
       if (data.success) setCreditNotes(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบลดหนี้ได้')
+      handleApiError(error, t('sales.error.loadCreditNotes'))
     } finally { setLoading(false) }
   }
 
@@ -385,7 +387,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/backorders')
       if (data.success) setBackorders(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบค้างส่งได้')
+      handleApiError(error, t('sales.error.loadBackorders'))
     } finally { setLoading(false) }
   }
 
@@ -395,7 +397,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/delivery-orders')
       if (data.success) setDeliveryOrders(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลใบส่งของได้')
+      handleApiError(error, t('sales.error.loadDeliveries'))
     } finally { setLoading(false) }
   }
 
@@ -405,7 +407,7 @@ const Sales = () => {
       const { data } = await api.get('/sales/quotation-templates')
       if (data.success) setTemplates(data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลเทมเพลตได้')
+      handleApiError(error, t('sales.error.loadTemplates'))
     } finally { setLoading(false) }
   }
 
@@ -418,7 +420,7 @@ const Sales = () => {
       if (currentRes.data.success) setPosCurrentShift(currentRes.data.data)
       if (listRes.data.success) setPosShifts(listRes.data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลกะได้')
+      handleApiError(error, t('sales.error.loadShifts'))
     }
   }
 
@@ -432,44 +434,44 @@ const Sales = () => {
       if (summaryRes.data.success) setPosDailySales(summaryRes.data.data)
       if (pendingRes.data.success) setPosPendingBills(pendingRes.data.data)
     } catch (error: any) {
-      handleApiError(error, 'ไม่สามารถดึงข้อมูลยอดขายประจำวันได้')
+      handleApiError(error, t('sales.error.loadPosDaily'))
     } finally { setLoading(false) }
   }
 
   // Action handlers
   const handleCreateQuotation  = () => setShowCreateQT(true)
   const handleCreateSalesOrder = () => setShowCreateSO(true)
-  const handleCreateInvoice    = () => toast('สร้างใบแจ้งหนี้: เลือก SO ก่อนจากหน้าคำสั่งขาย')
+  const handleCreateInvoice    = () => toast(t('sales.toast.selectSOFirst'))
   const handleCreateInvoiceFromSO = async (so: SalesOrder) => {
     try {
       await salesService.createInvoice(so.id)
-      toast.success('สร้างใบแจ้งหนี้สำเร็จ')
+      toast.success(t('sales.toast.invoiceCreated'))
       fetchInvoices()
       setActiveTab('invoices')
-    } catch { toast.error('สร้างใบแจ้งหนี้ไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.invoiceCreateFailed')) }
   }
   const handleCreateCreditNote = () => setShowCreateCN(true)
-  const handleCreateBackorder  = () => toast('ใบค้างส่งสร้างอัตโนมัติจากการส่งของบางส่วน')
-  const handleCreateTemplate   = () => toast('ฟีเจอร์สร้างเทมเพลตกำลังพัฒนา...')
+  const handleCreateBackorder  = () => toast(t('sales.info.backorderAutoCreated'))
+  const handleCreateTemplate   = () => toast(t('sales.info.templateFeature'))
   const handleViewDetail = (item: any, type: string) => {
-    if (type === 'ใบเสนอราคา') setDetailQT(item)
-    else if (type === 'คำสั่งขาย') setDetailSO(item)
-    else if (type === 'ใบแจ้งหนี้') setDetailInv(item)
-    else if (type === 'ใบลดหนี้') setDetailCN(item)
-    else if (type === 'ใบค้างส่ง') setDetailBO(item)
+    if (type === t('sales.docType.quotation')) setDetailQT(item)
+    else if (type === t('sales.docType.salesOrder')) setDetailSO(item)
+    else if (type === t('sales.docType.invoice')) setDetailInv(item)
+    else if (type === t('sales.docType.creditNote')) setDetailCN(item)
+    else if (type === t('sales.docType.backorder')) setDetailBO(item)
     else toast(`ดูรายละเอียด ${type} — กำลังพัฒนา`)
   }
   const handleEditQT = async (q: Quotation) => {
     try {
       const r = await salesService.getQuotation(q.id)
       setEditQTData(r.data)
-    } catch { toast.error('โหลดข้อมูลไม่สำเร็จ') }
+    } catch { toast.error(t('sales.error.loadFailed')) }
   }
   const handleEditSO = async (so: SalesOrder) => {
     try {
       const r = await salesService.getSalesOrder(so.id)
       setEditSOData(r.data)
-    } catch { toast.error('โหลดข้อมูลไม่สำเร็จ') }
+    } catch { toast.error(t('sales.error.loadFailed')) }
   }
   const handleRecordPayment    = (invoice: Invoice) => setDetailInv(invoice)
   const handleConvertQtToSO    = (quotation: Quotation) => setConvertQT(quotation)
@@ -478,41 +480,41 @@ const Sales = () => {
   const handleUpdateQTStatus = async (id: string, status: string) => {
     try {
       await salesService.updateQuotationStatus(id, status)
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       fetchQuotations()
-    } catch { toast.error('อัปเดตสถานะไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.statusUpdateFailed')) }
   }
   const handleUpdateSOStatus = async (id: string, status: string) => {
     try {
       await salesService.updateSOStatus(id, status)
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       fetchSalesOrders()
-    } catch (err: any) { toast.error(err?.response?.data?.message || 'อัปเดตสถานะไม่สำเร็จ') }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
   }
 
   // Delete handlers
   const handleDeleteQuotation = async (id: string) => {
-    if (!confirm('ต้องการลบใบเสนอราคานี้?')) return
+    if (!confirm(t('sales.confirm.deleteQuotation'))) return
     try {
       await api.delete(`/sales/quotations/${id}`)
-      toast.success('ลบใบเสนอราคาสำเร็จ')
+      toast.success(t('sales.toast.quotationDeleted'))
       fetchQuotations()
-    } catch { toast.error('ไม่สามารถลบใบเสนอราคาได้') }
+    } catch { toast.error(t('sales.toast.quotationDeleteFailed')) }
   }
   const handleDeleteTemplate = async (id: string) => {
-    if (!confirm('ต้องการลบเทมเพลตนี้?')) return
+    if (!confirm(t('sales.confirm.deleteTemplate'))) return
     try {
       await api.delete(`/sales/quotation-templates/${id}`)
-      toast.success('ลบเทมเพลตสำเร็จ')
+      toast.success(t('sales.toast.templateDeleted'))
       fetchTemplates()
-    } catch { toast.error('ไม่สามารถลบเทมเพลตได้') }
+    } catch { toast.error(t('sales.toast.templateDeleteFailed')) }
   }
   const handleUpdateDOStatus = async (id: string, status: string) => {
     try {
       await api.put(`/sales/delivery-orders/${id}/status`, { status })
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       fetchDeliveryOrders()
-    } catch { toast.error('อัปเดตสถานะไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.statusUpdateFailed')) }
   }
 
   // Formatters
@@ -599,10 +601,10 @@ const Sales = () => {
       {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'ยอดขายรวม',   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-[var(--primary)]', bg: 'bg-phopy-indigo/10',  border: 'border-phopy-indigo-50' },
-          { label: 'คำสั่งขาย',   value: `${summary?.salesOrders.total || 0} รายการ`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
-          { label: 'รับเงินวันนี้', value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-success/10',    border: 'border-success-soft' },
-          { label: 'ยอดค้างรับ',   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-warning',    bg: 'bg-orange-500/10',     border: 'border-orange-500/20' },
+          { label: t('sales.stats.totalSales'),   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-[var(--primary)]', bg: 'bg-phopy-indigo/10',  border: 'border-phopy-indigo-50' },
+          { label: t('sales.docType.salesOrder'),   value: `${summary?.salesOrders.total || 0} รายการ`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
+          { label: t('sales.stats.collectedToday'), value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-success/10',    border: 'border-success-soft' },
+          { label: t('sales.stats.receivable'),   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-warning',    bg: 'bg-orange-500/10',     border: 'border-orange-500/20' },
         ].map((card, i) => (
           <motion.div key={card.label}
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
@@ -629,11 +631,11 @@ const Sales = () => {
           </h3>
           <div className="space-y-2">
             {[
-              { label: 'ใบเสนอราคา (ร่าง/ส่งแล้ว)', count: summary?.salesOrders.draft || 0,          color: 'text-warning', tab: 'quotations' as const },
-              { label: 'คำสั่งขายกำลังดำเนินการ',     count: summary?.salesOrders.processing || 0,    color: 'text-blue-400',   tab: 'orders' as const },
-              { label: 'ใบแจ้งหนี้ค้างชำระ',          count: summary?.invoices.unpaid || 0,           color: 'text-danger',    tab: 'invoices' as const },
-              { label: 'ส่งบางส่วน (Partial)',         count: summary?.salesOrders.partial || 0,       color: 'text-warning', tab: 'orders' as const },
-              { label: 'รายการค้างส่ง',                count: summary?.backorders.pending || 0,        color: 'text-warning', tab: 'backorders' as const },
+              { label: t('sales.stats.draftSentQuotations'), count: summary?.salesOrders.draft || 0,          color: 'text-warning', tab: 'quotations' as const },
+              { label: t('sales.stats.processingOrders'),     count: summary?.salesOrders.processing || 0,    color: 'text-blue-400',   tab: 'orders' as const },
+              { label: t('sales.stats.unpaidInvoices'),          count: summary?.invoices.unpaid || 0,           color: 'text-danger',    tab: 'invoices' as const },
+              { label: t('sales.stats.partialDelivery'),         count: summary?.salesOrders.partial || 0,       color: 'text-warning', tab: 'orders' as const },
+              { label: t('sales.stats.backorders'),                count: summary?.backorders.pending || 0,        color: 'text-warning', tab: 'backorders' as const },
             ].map(item => (
               <button key={item.label} onClick={() => setActiveTab(item.tab)}
                 className={`w-full flex items-center justify-between p-3 rounded-lg hover:bg-[var(--bg)]/60 transition-colors ${item.count > 0 ? 'border border-yellow-500/20 bg-yellow-500/5' : 'bg-[var(--bg)]/30'}`}>
@@ -655,10 +657,10 @@ const Sales = () => {
           </h3>
           <div className="flex items-center gap-1 flex-wrap">
             {[
-              { label: 'ใบเสนอราคา', sub: `${summary?.salesOrders.total || 0} รายการ`, icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
-              { label: 'คำสั่งขาย',  sub: `${summary?.salesOrders.total || 0} รายการ`, icon: ShoppingCart, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', tab: 'orders' as const },
-              { label: 'ใบแจ้งหนี้', sub: `${summary?.invoices.total || 0} รายการ`,    icon: Receipt,    color: 'text-warning', bg: 'bg-[var(--warning-soft)]', border: 'border-warning/30', tab: 'invoices' as const },
-              { label: 'รับชำระ',    sub: `${summary?.invoices.paid || 0} ชำระแล้ว`,   icon: DollarSign, color: 'text-success',  bg: 'bg-[var(--success-soft)]',  border: 'border-green-500/30',  tab: 'invoices' as const },
+              { label: t('sales.docType.quotation'), sub: `${summary?.salesOrders.total || 0} รายการ`, icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
+              { label: t('sales.docType.salesOrder'),  sub: `${summary?.salesOrders.total || 0} รายการ`, icon: ShoppingCart, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', tab: 'orders' as const },
+              { label: t('sales.docType.invoice'), sub: `${summary?.invoices.total || 0} รายการ`,    icon: Receipt,    color: 'text-warning', bg: 'bg-[var(--warning-soft)]', border: 'border-warning/30', tab: 'invoices' as const },
+              { label: t('sales.actions.collect'),    sub: `${summary?.invoices.paid || 0} ชำระแล้ว`,   icon: DollarSign, color: 'text-success',  bg: 'bg-[var(--success-soft)]',  border: 'border-green-500/30',  tab: 'invoices' as const },
             ].map((step, i) => (
               <div key={step.label} className="flex items-center gap-1 flex-1 min-w-[100px]">
                 <button onClick={() => setActiveTab(step.tab)}
@@ -675,9 +677,9 @@ const Sales = () => {
           {/* Invoice payment breakdown */}
           <div className="mt-4 grid grid-cols-3 gap-3">
             {[
-              { label: 'ค้างชำระ',    value: summary?.invoices.unpaid || 0,   color: 'text-danger' },
-              { label: 'ชำระบางส่วน', value: summary?.invoices.partial || 0,  color: 'text-warning' },
-              { label: 'ชำระครบแล้ว', value: summary?.invoices.paid || 0,     color: 'text-success' },
+              { label: t('sales.status.unpaid'),    value: summary?.invoices.unpaid || 0,   color: 'text-danger' },
+              { label: t('sales.status.partialPaid'), value: summary?.invoices.partial || 0,  color: 'text-warning' },
+              { label: t('sales.status.fullyPaid'), value: summary?.invoices.paid || 0,     color: 'text-success' },
             ].map(item => (
               <div key={item.label} className="bg-[var(--bg)] rounded-lg p-3 text-center">
                 <p className="text-xs text-[var(--fg-4)] mb-1">{item.label}</p>
@@ -745,8 +747,8 @@ const Sales = () => {
     const filtered = filterItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date')
     const items = paginate(filtered)
     const qtNextStatus: Record<string, { status: string; label: string; color: string }> = {
-      DRAFT: { status: 'SENT', label: 'ส่งใบเสนอราคา', color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
-      SENT:  { status: 'ACCEPTED', label: 'อนุมัติ', color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
+      DRAFT: { status: 'SENT', label: t('sales.actions.sendQuotation'), color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
+      SENT:  { status: 'ACCEPTED', label: t('sales.status.approved'), color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
     }
     return (
       <div className="space-y-3">
@@ -802,7 +804,7 @@ const Sales = () => {
                     <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
+                        <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
                           className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                         {['DRAFT', 'SENT'].includes(q.status) && (
                           <button onClick={() => handleEditQT(q)}
@@ -860,7 +862,7 @@ const Sales = () => {
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(q, 'ใบเสนอราคา')}
+                    <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
@@ -895,12 +897,12 @@ const Sales = () => {
 
   // ── Sales Orders ───────────────────────────────────────────────────────────
   const SO_DELIVERY_STEPS = [
-    { status: 'DRAFT',      label: 'ฉบับร่าง',        color: 'text-[var(--fg-3)]' },
-    { status: 'CONFIRMED',  label: 'ยืนยันแล้ว',       color: 'text-blue-400' },
-    { status: 'PROCESSING', label: 'กำลังเตรียม',      color: 'text-warning' },
-    { status: 'READY',      label: 'พร้อมส่ง',          color: 'text-purple-400' },
-    { status: 'DELIVERED',  label: 'ส่งแล้ว',           color: 'text-success' },
-    { status: 'COMPLETED',  label: 'เสร็จสิ้น',         color: 'text-success' },
+    { status: 'DRAFT',      label: t('sales.status.draft'),        color: 'text-[var(--fg-3)]' },
+    { status: 'CONFIRMED',  label: t('sales.status.confirmed2'),       color: 'text-blue-400' },
+    { status: 'PROCESSING', label: t('sales.status.preparing'),      color: 'text-warning' },
+    { status: 'READY',      label: t('sales.status.readyToShip'),          color: 'text-purple-400' },
+    { status: 'DELIVERED',  label: t('sales.status.sent'),           color: 'text-success' },
+    { status: 'COMPLETED',  label: t('sales.status.completed'),         color: 'text-success' },
   ]
 
   const OrdersContent = () => {
@@ -909,11 +911,11 @@ const Sales = () => {
       .filter(o => !filterStatus || o.status === filterStatus)
     const items = paginate(filtered)
     const soNextStatus: Record<string, { status: string; label: string; color: string }> = {
-      DRAFT:      { status: 'CONFIRMED',  label: 'ยืนยัน',       color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
-      CONFIRMED:  { status: 'PROCESSING', label: 'เตรียมสินค้า', color: 'text-warning bg-[var(--warning-soft)] hover:bg-[var(--warning-soft)]' },
-      PROCESSING: { status: 'READY',      label: 'พร้อมส่ง',     color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
-      READY:      { status: 'DELIVERED',  label: 'ส่งของแล้ว',  color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
-      DELIVERED:  { status: 'COMPLETED',  label: 'เสร็จสิ้น',   color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
+      DRAFT:      { status: 'CONFIRMED',  label: t('sales.status.confirmed'),       color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
+      CONFIRMED:  { status: 'PROCESSING', label: t('sales.status.prepareGoods'), color: 'text-warning bg-[var(--warning-soft)] hover:bg-[var(--warning-soft)]' },
+      PROCESSING: { status: 'READY',      label: t('sales.status.readyToShip'),     color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
+      READY:      { status: 'DELIVERED',  label: t('sales.status.delivered'),  color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
+      DELIVERED:  { status: 'COMPLETED',  label: t('sales.status.completed'),   color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
     }
 
     return (
@@ -1018,7 +1020,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
+                          <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {order.status === 'DRAFT' && (
                             <button onClick={() => handleEditSO(order)}
@@ -1101,7 +1103,7 @@ const Sales = () => {
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(order, 'คำสั่งขาย')}
+                    <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
@@ -1212,7 +1214,7 @@ const Sales = () => {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(inv, 'ใบแจ้งหนี้')}
+                          <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {isUnpaid && (
                             <button onClick={() => handleRecordPayment(inv)}
@@ -1270,7 +1272,7 @@ const Sales = () => {
                     </span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(inv, 'ใบแจ้งหนี้')}
+                    <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
@@ -1339,7 +1341,7 @@ const Sales = () => {
                     <td className="px-4 py-3 text-center"><StatusBadge status={cn.status} /></td>
                     <td className="px-4 py-3 text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleViewDetail(cn, 'ใบลดหนี้')}
+                      <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
                         className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                     </td>
                   </tr>
@@ -1371,7 +1373,7 @@ const Sales = () => {
                   <span className="col-span-2 text-[var(--fg-3)]">เหตุผล: {cn.reason}</span>
                 </div>
                 <div className="pt-3 border-t border-[var(--border)]/50">
-                  <button onClick={() => handleViewDetail(cn, 'ใบลดหนี้')}
+                  <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
                     className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     ดูรายละเอียด
                   </button>
@@ -1428,7 +1430,7 @@ const Sales = () => {
                     <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{bo.original_do || '-'}</td>
                     <td className="px-4 py-3 text-center"><StatusBadge status={bo.status} /></td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleViewDetail(bo, 'ใบค้างส่ง')}
+                      <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
                         className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                     </td>
                   </tr>
@@ -1458,7 +1460,7 @@ const Sales = () => {
                   <p className="text-xs text-[var(--fg-3)] mb-3">ใบส่งของต้นฉบับ: <span className="text-[var(--fg-2)]">{bo.original_do}</span></p>
                 )}
                 <div className="pt-3 border-t border-[var(--border)]/50">
-                  <button onClick={() => handleViewDetail(bo, 'ใบค้างส่ง')}
+                  <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
                     className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     ดูรายละเอียด
                   </button>
@@ -1476,15 +1478,15 @@ const Sales = () => {
     const filtered = filterItems(deliveryOrders, ['do_number', 'customer_name'], 'delivery_date')
     const items = paginate(filtered)
     const doNextStatus: Record<string, { status: string; label: string; color: string }> = {
-      DRAFT: { status: 'READY',    label: 'พร้อมส่ง',   color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
-      READY: { status: 'SHIPPED',  label: 'ส่งแล้ว',    color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
+      DRAFT: { status: 'READY',    label: t('sales.status.readyToShip'),   color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
+      READY: { status: 'SHIPPED',  label: t('sales.status.sent'),    color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
     }
     return (
       <div className="space-y-3">
         <ListToolbar placeholder="ค้นหาใบส่งของ..." action={
           <>
             <PageSizeSelect />
-            <button onClick={() => toast('สร้างใบส่งของจากคำสั่งขาย')}
+            <button onClick={() => toast(t('sales.actions.createDeliveryFromSO'))}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> สร้างใบส่งของ
             </button>
@@ -1523,7 +1525,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-center"><StatusBadge status={do_.status} /></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
+                          <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
                           {next && (
                             <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
@@ -1562,7 +1564,7 @@ const Sales = () => {
                     <span className="text-right">{do_.driver_name || '-'}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(do_, 'ใบส่งของ')}
+                    <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       ดูรายละเอียด
                     </button>
@@ -1608,17 +1610,17 @@ const Sales = () => {
               )}
             </div>
             <h3 className="text-base font-semibold text-[var(--fg-1)] mb-1">{template.name}</h3>
-            <p className="text-sm text-[var(--fg-3)] mb-3">{template.description || 'ไม่มีคำอธิบาย'}</p>
+            <p className="text-sm text-[var(--fg-3)] mb-3">{template.description || t('sales.empty.noDescription')}</p>
             <div className="flex justify-between text-xs text-[var(--fg-4)] mb-4">
               <span>{template.item_count} รายการ</span>
               <span>หมดอายุ {template.expiration_days} วัน</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => toast('แก้ไขเทมเพลต: กำลังพัฒนา')}
+              <button onClick={() => toast(t('sales.info.editTemplateComing'))}
                 className="flex-1 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm transition-colors">
                 แก้ไข
               </button>
-              <button onClick={() => toast('ใช้เทมเพลต: ' + template.name)}
+              <button onClick={() => toast(t('sales.info.useTemplate') + template.name)}
                 className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
                 ใช้เทมเพลต
               </button>
@@ -1633,15 +1635,15 @@ const Sales = () => {
   const pendingDeliveryOrders = deliveryOrders.filter(d => d.status === 'DRAFT' || d.status === 'READY').length
 
   const tabs = [
-    { id: 'overview',        label: 'ภาพรวม',       icon: TrendingUp,     badge: 0 },
-    { id: 'quotations',      label: 'ใบเสนอราคา',   icon: FileText,       badge: pendingQuotations },
-    { id: 'orders',          label: 'คำสั่งขาย',    icon: ShoppingCart,   badge: pendingOrders },
-    { id: 'delivery-orders', label: 'ใบส่งของ',    icon: Package,        badge: pendingDeliveryOrders },
-    { id: 'invoices',        label: 'ใบแจ้งหนี้',   icon: Receipt,        badge: pendingInvoices },
-    { id: 'credit-notes',    label: 'ใบลดหนี้',     icon: RotateCcw,      badge: 0 },
-    { id: 'backorders',      label: 'ค้างส่ง',       icon: Package,        badge: pendingBackorders },
-    { id: 'templates',       label: 'เทมเพลต',       icon: LayoutTemplate, badge: 0 },
-    { id: 'pos-daily',       label: 'POS กะขาย',    icon: Store,          badge: 0 },
+    { id: 'overview',        label: t('sales.tabs.overview2'),       icon: TrendingUp,     badge: 0 },
+    { id: 'quotations',      label: t('sales.docType.quotation'),   icon: FileText,       badge: pendingQuotations },
+    { id: 'orders',          label: t('sales.docType.salesOrder'),    icon: ShoppingCart,   badge: pendingOrders },
+    { id: 'delivery-orders', label: t('sales.docType.deliveryOrder'),    icon: Package,        badge: pendingDeliveryOrders },
+    { id: 'invoices',        label: t('sales.docType.invoice'),   icon: Receipt,        badge: pendingInvoices },
+    { id: 'credit-notes',    label: t('sales.docType.creditNote'),     icon: RotateCcw,      badge: 0 },
+    { id: 'backorders',      label: t('sales.tabs.backorders2'),       icon: Package,        badge: pendingBackorders },
+    { id: 'templates',       label: t('sales.tabs.templates2'),       icon: LayoutTemplate, badge: 0 },
+    { id: 'pos-daily',       label: t('sales.tabs.posShifts'),    icon: Store,          badge: 0 },
   ]
 
   // ── POS components (fully functional — keep intact) ────────────────────────
@@ -1705,7 +1707,7 @@ const Sales = () => {
           fetchPOSShifts()
           onClose()
         }
-      } catch (e: any) { toast.error(e.response?.data?.message || 'ไม่สามารถเปิดกะได้') }
+      } catch (e: any) { toast.error(e.response?.data?.message || t('sales.error.openShiftFailed')) }
       finally { setSaving(false) }
     }
     return (
@@ -1751,11 +1753,11 @@ const Sales = () => {
           closing_cash_counted: parseFloat(closingCash) || 0, notes
         })
         if (data.success) {
-          toast.success('ปิดกะสำเร็จ')
+          toast.success(t('sales.toast.shiftClosed'))
           fetchPOSShifts()
           onClose()
         }
-      } catch (e: any) { toast.error(e.response?.data?.message || 'ไม่สามารถปิดกะได้') }
+      } catch (e: any) { toast.error(e.response?.data?.message || t('sales.error.closeShiftFailed')) }
       finally { setSaving(false) }
     }
     return (
@@ -1809,7 +1811,7 @@ const Sales = () => {
               : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
             }`}>
               <span>ผลต่าง</span>
-              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? '<Check className="w-4 h-4" /> ตรง' : diff > 0 ? '(เกิน)' : '(ขาด)'}</span>
+              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? '<Check className="w-4 h-4" /> ตรง' : diff > 0 ? t('sales.pos.over') : t('sales.pos.short')}</span>
             </div>
             <Field label="หมายเหตุ (optional)">
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
@@ -1834,7 +1836,7 @@ const Sales = () => {
     const [reason, setReason] = useState('')
     const [saving, setSaving] = useState(false)
     const handleVoid = async () => {
-      if (!reason.trim()) { toast.error('กรุณาระบุสาเหตุการยกเลิก'); return }
+      if (!reason.trim()) { toast.error(t('sales.validation.cancelReason')); return }
       try {
         setSaving(true)
         const res = await posService.voidBill(bill.id, reason)
@@ -1845,7 +1847,7 @@ const Sales = () => {
           onClose()
         }
       } catch (err: any) {
-        toast.error(err.response?.data?.message || 'ยกเลิกบิลไม่สำเร็จ')
+        toast.error(err.response?.data?.message || t('sales.toast.cancelBillFailed'))
       } finally { setSaving(false) }
     }
     return (
@@ -1864,7 +1866,7 @@ const Sales = () => {
             <div className="bg-[var(--danger-soft)] border border-danger/20 rounded-xl p-4">
               <p className="text-sm font-medium text-[var(--fg-1)]">{bill.bill_number}</p>
               <p className="text-xs text-[var(--fg-3)] mt-0.5">
-                {bill.display_name} · {fmt(bill.total_amount)} · {bill.payment_method === 'CASH' ? 'เงินสด' : 'QR/โอน'}
+                {bill.display_name} · {fmt(bill.total_amount)} · {bill.payment_method === 'CASH' ? t('sales.paymentMethod.cash') : t('sales.paymentMethod.qrTransfer')}
               </p>
             </div>
             <div className="bg-[var(--warning-soft)] border border-yellow-500/20 rounded-lg px-3 py-2 text-xs text-warning">
@@ -1978,9 +1980,9 @@ const Sales = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {[
-                    { label: 'เปิดกะ',  value: fmt(s.opening_cash) },
-                    { label: 'นับได้',  value: fmt(s.closing_cash_counted || 0) },
-                    { label: 'ผลต่าง', value: fmt(s.cash_difference || 0), color: (s.cash_difference || 0) >= 0 ? 'text-success' : 'text-danger' },
+                    { label: t('sales.actions.openShift'),  value: fmt(s.opening_cash) },
+                    { label: t('sales.pos.counted'),  value: fmt(s.closing_cash_counted || 0) },
+                    { label: t('sales.pos.difference'), value: fmt(s.cash_difference || 0), color: (s.cash_difference || 0) >= 0 ? 'text-success' : 'text-danger' },
                   ].map(item => (
                     <div key={item.label} className="text-xs text-center">
                       <p className="text-[var(--fg-4)]">{item.label}</p>

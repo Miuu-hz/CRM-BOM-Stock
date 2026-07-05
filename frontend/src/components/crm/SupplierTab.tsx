@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {Truck, Plus, Search, Edit2, Trash2, X, Star, Loader2, Phone, Mail, MapPin, ShoppingCart, TrendingUp, Package, ChevronDown, ChevronUp, Pencil, User} from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
+import { useTranslation } from 'react-i18next'
 
 export default function SupplierTab() {
+  const { t } = useTranslation()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [stats, setStats] = useState<SupplierStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,12 +34,12 @@ export default function SupplierTab() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return
+    if (!confirm(t('crm.suppliers.confirmDelete', { defaultValue: 'Are you sure you want to delete this supplier?' }))) return
     try {
       await supplierService.delete(id)
       loadData()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete supplier')
+      alert(err.response?.data?.message || t('crm.suppliers.deleteFailed'))
     }
   }
 
@@ -60,10 +62,10 @@ export default function SupplierTab() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard label="Total Suppliers" value={(stats?.totalSuppliers ?? 0).toString()} color="text-[var(--primary)]" />
-        <StatCard label="Active" value={(stats?.activeSuppliers ?? 0).toString()} color="text-success" />
-        <StatCard label="Purchase Orders" value={(stats?.totalPOs ?? 0).toString()} color="text-warning" />
-        <StatCard label="Total Spent" value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-[var(--primary)]" />
+        <StatCard label={t('crm.suppliers.stats.totalSuppliers')} value={(stats?.totalSuppliers ?? 0).toString()} color="text-[var(--primary)]" />
+        <StatCard label={t('crm.suppliers.stats.active')} value={(stats?.activeSuppliers ?? 0).toString()} color="text-success" />
+        <StatCard label={t('crm.suppliers.stats.purchaseOrders')} value={(stats?.totalPOs ?? 0).toString()} color="text-warning" />
+        <StatCard label={t('crm.suppliers.stats.totalSpent')} value={`฿${(stats?.totalSpent ?? 0).toLocaleString()}`} color="text-[var(--primary)]" />
       </div>
 
       {/* Toolbar */}
@@ -73,24 +75,24 @@ export default function SupplierTab() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
             <input
               type="text"
-              placeholder="Search suppliers..."
+              placeholder={t('crm.suppliers.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="phopy-input pl-10 w-full"
             />
           </div>
           <div className="flex gap-2 flex-wrap">
-            {['all', 'RAW_MATERIAL', 'PACKAGING', 'SERVICE'].map((t) => (
+            {['all', 'RAW_MATERIAL', 'PACKAGING', 'SERVICE'].map((type) => (
               <button
-                key={t}
-                onClick={() => setSelectedType(t)}
+                key={type}
+                onClick={() => setSelectedType(type)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
-                  selectedType === t
+                  selectedType === type
                     ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]'
                 }`}
               >
-                {t === 'all' ? 'All' : t === 'RAW_MATERIAL' ? 'Raw Material' : t === 'PACKAGING' ? 'Packaging' : 'Service'}
+                {type === 'all' ? t('crm.suppliers.type.all') : type === 'RAW_MATERIAL' ? t('crm.suppliers.supplierType.rawMaterial') : type === 'PACKAGING' ? t('crm.suppliers.supplierType.packaging') : t('crm.suppliers.supplierType.service')}
               </button>
             ))}
           </div>
@@ -100,8 +102,7 @@ export default function SupplierTab() {
             onClick={() => { setEditingSupplier(null); setShowModal(true) }}
             className="phopy-btn-primary flex items-center gap-2"
           >
-            <Plus className="w-5 h-5" /> Add Supplier
-          </motion.button>
+            <Plus className="w-5 h-5" /> {t('crm.suppliers.addSupplier')}</motion.button>
         </div>
       </div>
 
@@ -111,20 +112,20 @@ export default function SupplierTab() {
           <table className="phopy-table">
             <thead>
               <tr>
-                <th>Supplier</th>
-                <th>Type</th>
-                <th>Contact</th>
-                <th>Payment Terms</th>
-                <th>Rating</th>
-                <th>Orders</th>
-                <th>Total Spent</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th>{t('crm.suppliers.table.supplier')}</th>
+                <th>{t('crm.suppliers.table.type')}</th>
+                <th>{t('crm.suppliers.table.contact')}</th>
+                <th>{t('crm.suppliers.table.paymentTerms')}</th>
+                <th>{t('crm.suppliers.table.rating')}</th>
+                <th>{t('crm.suppliers.table.orders')}</th>
+                <th>{t('crm.suppliers.stats.totalSpent')}</th>
+                <th>{t('crm.suppliers.table.status')}</th>
+                <th>{t('crm.suppliers.table.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">No suppliers found</td></tr>
+                <tr><td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">{t('crm.suppliers.noSuppliers')}</td></tr>
               ) : (
                 (filtered || []).map((supplier, i) => (
                   <motion.tr
@@ -152,7 +153,7 @@ export default function SupplierTab() {
                         supplier.type === 'PACKAGING' ? 'text-warning bg-[var(--warning-soft)] border-warning/30' :
                         'text-purple-400 bg-[var(--primary)]/20 border-purple-500/30'
                       }`}>
-                        {supplier.type === 'RAW_MATERIAL' ? 'Raw Material' : supplier.type === 'PACKAGING' ? 'Packaging' : 'Service'}
+                        {t(`crm.suppliers.supplierType.${supplier.type.toLowerCase()}`)}
                       </span>
                     </td>
                     <td>
@@ -177,7 +178,7 @@ export default function SupplierTab() {
                         supplier.status === 'BLOCKED' ? 'bg-[var(--danger-soft)] text-danger border-danger/30' :
                         'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]'
                       }`}>
-                        {supplier.status}
+                        {t(`crm.suppliers.status.${supplier.status.toLowerCase()}`, { defaultValue: supplier.status })}
                       </span>
                     </td>
                     <td>
@@ -225,7 +226,7 @@ export default function SupplierTab() {
                 setDetailSupplier(null)
                 loadData()
               } catch (err: any) {
-                alert(err.response?.data?.message || 'ไม่สามารถลบผู้จัดจำหน่ายได้')
+                alert(err.response?.data?.message || t('crm.suppliers.deleteFailed'))
               }
             }}
           />
@@ -236,6 +237,7 @@ export default function SupplierTab() {
 }
 
 function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-4">
       <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
@@ -247,6 +249,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 function SupplierModal({ open, supplier, onClose, onSave }: {
   open: boolean; supplier: Supplier | null; onClose: () => void; onSave: () => void
 }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({
     code: '', name: '', type: 'RAW_MATERIAL', contactName: '', email: '', phone: '',
     address: '', city: '', taxId: '', paymentTerms: 'NET30', notes: '',
@@ -279,7 +282,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
       onSave()
       onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to save')
+      alert(err.response?.data?.message || t('crm.suppliers.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -295,7 +298,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
             className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
               <h2 className="text-xl font-bold text-[var(--fg-1)]">
-                {supplier ? 'Edit Supplier' : 'New Supplier'}
+                {supplier ? t('crm.suppliers.modal.editSupplier') : t('crm.suppliers.modal.newSupplier')}
               </h2>
               <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
                 <X className="w-5 h-5 text-[var(--fg-3)]" />
@@ -305,33 +308,33 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Code *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.code')}</label>
                   <input type="text" value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
                     className="phopy-input w-full" required disabled={!!supplier}
-                    placeholder="SUP-001" />
+                    placeholder={t('crm.suppliers.modal.codePlaceholder')} />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Name *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.name')}</label>
                   <input type="text" value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="phopy-input w-full" required placeholder="Company Name" />
+                    className="phopy-input w-full" required placeholder={t('crm.suppliers.modal.namePlaceholder')} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Type</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.table.type')}</label>
                   <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}
                     className="phopy-input w-full">
-                    <option value="RAW_MATERIAL">Raw Material</option>
-                    <option value="PACKAGING">Packaging</option>
-                    <option value="SERVICE">Service</option>
+                    <option value="RAW_MATERIAL">{t('crm.suppliers.supplierType.rawMaterial')}</option>
+                    <option value="PACKAGING">{t('crm.suppliers.supplierType.packaging')}</option>
+                    <option value="SERVICE">{t('crm.suppliers.supplierType.service')}</option>
                     <option value="OTHER">Other</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Payment Terms</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.table.paymentTerms')}</label>
                   <select value={form.paymentTerms} onChange={(e) => setForm({ ...form, paymentTerms: e.target.value })}
                     className="phopy-input w-full">
                     <option value="COD">COD</option>
@@ -350,7 +353,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
                     className="phopy-input w-full" required />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Phone</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.phone')}</label>
                   <input type="text" value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     className="phopy-input w-full" />
@@ -358,7 +361,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-2">Email</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.email')}</label>
                 <input type="email" value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className="phopy-input w-full" />
@@ -366,13 +369,13 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">City</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.city')}</label>
                   <input type="text" value={form.city}
                     onChange={(e) => setForm({ ...form, city: e.target.value })}
                     className="phopy-input w-full" />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Tax ID</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.taxId')}</label>
                   <input type="text" value={form.taxId}
                     onChange={(e) => setForm({ ...form, taxId: e.target.value })}
                     className="phopy-input w-full" />
@@ -380,7 +383,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-2">Notes</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.suppliers.modal.notes')}</label>
                 <textarea value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   className="phopy-input w-full" rows={3} />
@@ -388,10 +391,10 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={onClose}
-                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)]">Cancel</button>
+                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)]">{t('crm.suppliers.modal.cancel')}</button>
                 <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {supplier ? 'Update' : 'Create'} Supplier
+                  {supplier ? t('crm.suppliers.modal.updateSupplier') : t('crm.suppliers.modal.createSupplier')}
                 </button>
               </div>
             </form>
@@ -410,6 +413,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('overview')
   const [insights, setInsights] = useState<any>(null)
   const [loadingInsights, setLoadingInsights] = useState(true)
@@ -429,7 +433,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
     OTHER: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]',
   }
   const typeLabel: Record<string, string> = {
-    RAW_MATERIAL: 'Raw Material', PACKAGING: 'Packaging', SERVICE: 'Service', OTHER: 'Other',
+    RAW_MATERIAL: 'crm.suppliers.supplierType.rawMaterial', PACKAGING: 'crm.suppliers.supplierType.packaging', SERVICE: 'crm.suppliers.supplierType.service', OTHER: 'crm.suppliers.supplierType.other',
   }
   const statusColor: Record<string, string> = {
     ACTIVE: 'bg-[var(--success-soft)] text-success border-success/30',
@@ -471,10 +475,10 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
             <p className="text-xs text-[var(--fg-4)] mt-1 font-mono">{supplier.code}</p>
             <div className="flex gap-1.5 mt-3 flex-wrap justify-center">
               <span className={`text-xs px-2 py-0.5 rounded-full border ${typeColor[supplier.type] ?? 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]'}`}>
-                {typeLabel[supplier.type] ?? supplier.type}
+                {t(typeLabel[supplier.type] ?? supplier.type)}
               </span>
               <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor[supplier.status] ?? ''}`}>
-                {supplier.status}
+                {t(`crm.suppliers.status.${supplier.status.toLowerCase()}`, { defaultValue: supplier.status })}
               </span>
             </div>
 
@@ -514,7 +518,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
 
           {/* Contact Info */}
           <div className="p-4 border-b border-[var(--border)] space-y-2.5">
-            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">ผู้ติดต่อ</p>
+            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">{t('crm.suppliers.detail.contact')}</p>
             {supplier.contact_name && (
               <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
                 <span className="text-[var(--fg-4)] text-xs"><User className="w-4 h-4" /></span> {supplier.contact_name}
@@ -540,14 +544,14 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
 
           {/* Terms + Tax */}
           <div className="p-4 border-b border-[var(--border)] space-y-2">
-            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">เงื่อนไข</p>
+            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">{t('crm.suppliers.detail.terms')}</p>
             <div className="flex justify-between text-xs">
-              <span className="text-[var(--fg-4)]">Payment Terms</span>
+              <span className="text-[var(--fg-4)]">{t('crm.suppliers.table.paymentTerms')}</span>
               <span className="text-warning font-medium">{supplier.payment_terms || '-'}</span>
             </div>
             {supplier.tax_id && (
               <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-4)]">Tax ID</span>
+                <span className="text-[var(--fg-4)]">{t('crm.suppliers.modal.taxId')}</span>
                 <span className="text-[var(--fg-2)] font-mono">{supplier.tax_id}</span>
               </div>
             )}
@@ -560,24 +564,24 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
 
           {/* Stats */}
           <div className="p-4 space-y-2">
-            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">สถิติ</p>
+            <p className="text-xs text-[var(--fg-4)] uppercase tracking-widest mb-1">{t('crm.suppliers.detail.stats')}</p>
             <div className="flex justify-between text-xs">
-              <span className="text-[var(--fg-4)]">คำสั่งซื้อ</span>
+              <span className="text-[var(--fg-4)]">{t('crm.suppliers.detail.tabs.orders')}</span>
               <span className="text-[var(--primary)] font-bold">{supplier.total_orders || 0}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-[var(--fg-4)]">ยอดซื้อรวม</span>
+              <span className="text-[var(--fg-4)]">{t('crm.suppliers.detail.totalSpent')}</span>
               <span className="text-success font-bold">฿{(supplier.total_spent || 0).toLocaleString()}</span>
             </div>
             {stats?.avgOrderValue != null && (
               <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-4)]">เฉลี่ย/ออเดอร์</span>
+                <span className="text-[var(--fg-4)]">{t('crm.suppliers.detail.avgPerOrder')}</span>
                 <span className="text-[var(--fg-2)]">฿{Math.round(stats.avgOrderValue).toLocaleString()}</span>
               </div>
             )}
             {stats?.daysSinceLastOrder != null && (
               <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-4)]">ล่าสุด</span>
+                <span className="text-[var(--fg-4)]">{t('crm.suppliers.detail.latest')}</span>
                 <span className="text-[var(--fg-3)]">{stats.daysSinceLastOrder} วันที่แล้ว</span>
               </div>
             )}
@@ -649,7 +653,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     {/* Notes */}
                     {supplier.notes && (
                       <div className="phopy-card p-4">
-                        <p className="text-xs text-[var(--fg-4)] mb-2">หมายเหตุ</p>
+                        <p className="text-xs text-[var(--fg-4)] mb-2">{t('crm.suppliers.detail.notes')}</p>
                         <p className="text-sm text-[var(--fg-2)]">{supplier.notes}</p>
                       </div>
                     )}
@@ -662,7 +666,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     {!insights?.recentOrders?.length ? (
                       <div className="text-center py-12 text-[var(--fg-4)]">
                         <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                        <p>ยังไม่มีคำสั่งซื้อ</p>
+                        <p>{t('crm.suppliers.detail.noOrders')}</p>
                       </div>
                     ) : (
                       insights.recentOrders.map((order: any) => (
@@ -693,10 +697,10 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-[var(--border)]">
-                                    <th className="px-4 py-2 text-left text-[var(--fg-4)] font-medium">วัตถุดิบ</th>
-                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">จำนวน</th>
-                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">ราคา/หน่วย</th>
-                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">รวม</th>
+                                    <th className="px-4 py-2 text-left text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.material')}</th>
+                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.quantity')}</th>
+                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.unitPrice')}</th>
+                                    <th className="px-4 py-2 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.total')}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -724,7 +728,7 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                     {!insights?.topMaterials?.length ? (
                       <div className="text-center py-12 text-[var(--fg-4)]">
                         <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                        <p>ยังไม่มีข้อมูลวัตถุดิบ</p>
+                        <p>{t('crm.suppliers.detail.noMaterials')}</p>
                       </div>
                     ) : (
                       <>
@@ -736,10 +740,10 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="border-b border-[var(--border)]">
-                                <th className="px-4 py-3 text-left text-[var(--fg-4)] font-medium">วัตถุดิบ</th>
-                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">จำนวนรวม</th>
-                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">ราคาเฉลี่ย</th>
-                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">ยอดรวม</th>
+                                <th className="px-4 py-3 text-left text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.material')}</th>
+                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.totalQuantity')}</th>
+                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.avgPrice')}</th>
+                                <th className="px-4 py-3 text-right text-[var(--fg-4)] font-medium">{t('crm.suppliers.detail.totalSpentShort')}</th>
                               </tr>
                             </thead>
                             <tbody>

@@ -25,18 +25,22 @@ import {
   X,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import searchService from '../../services/search'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 interface HeaderProps {
   onMenuClick: () => void
 }
 
 function Header({ onMenuClick }: HeaderProps) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { user, isMaster } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const { language, toggleLanguage } = useLanguage()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -59,7 +63,7 @@ function Header({ onMenuClick }: HeaderProps) {
           setShowResults(true)
         } catch (error) {
           console.error('Search error:', error)
-          setSearchError('เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่อีกครั้ง')
+          setSearchError(t('header.searchError'))
           setSearchResults(null)
           setShowResults(true)
         } finally {
@@ -72,7 +76,7 @@ function Header({ onMenuClick }: HeaderProps) {
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [searchQuery])
+  }, [searchQuery, t])
 
   // Close on click outside
   useEffect(() => {
@@ -193,6 +197,21 @@ function Header({ onMenuClick }: HeaderProps) {
       (searchResults.invoices || []).length
     : 0
 
+  const sectionConfig = [
+    { key: 'customers', items: searchResults?.customers, icon: Users, color: 'text-[var(--primary)]' },
+    { key: 'orders', items: searchResults?.orders, icon: ShoppingCart, color: 'text-success' },
+    { key: 'products', items: searchResults?.products, icon: Package, color: 'text-phopy-mango' },
+    { key: 'materials', items: searchResults?.materials, icon: Layers, color: 'text-warning' },
+    { key: 'billOfMaterials', items: searchResults?.boms, icon: Box, color: 'text-info' },
+    { key: 'stockItems', items: searchResults?.stock, icon: Package, color: 'text-phopy-mango' },
+    { key: 'suppliers', items: searchResults?.suppliers, icon: Truck, color: 'text-[var(--primary)]' },
+    { key: 'purchaseOrders', items: searchResults?.purchase_orders, icon: ClipboardList, color: 'text-warning' },
+    { key: 'workOrders', items: searchResults?.work_orders, icon: Wrench, color: 'text-[var(--primary)]' },
+    { key: 'salesOrders', items: searchResults?.sales_orders, icon: FileCheck, color: 'text-success' },
+    { key: 'quotations', items: searchResults?.quotations, icon: FileText, color: 'text-[var(--primary)]' },
+    { key: 'invoices', items: searchResults?.invoices, icon: Receipt, color: 'text-danger' },
+  ]
+
   return (
     <header className="phopy-header border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
       <div className="flex items-center justify-between h-full">
@@ -203,7 +222,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileTap={{ scale: 0.95 }}
             onClick={onMenuClick}
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-            aria-label="เปิด/ปิดเมนู"
+            aria-label={t('header.openMenu')}
           >
             <Menu className="w-6 h-6 text-[var(--fg-2)]" />
           </motion.button>
@@ -214,8 +233,8 @@ function Header({ onMenuClick }: HeaderProps) {
             <input
               ref={inputRef}
               type="search"
-              placeholder="ค้นหา orders, ลูกค้า, สินค้า... (Ctrl+K)"
-              aria-label="ค้นหาในระบบ"
+              placeholder={t('header.searchPlaceholder')}
+              aria-label={t('header.searchLabel')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
@@ -227,7 +246,7 @@ function Header({ onMenuClick }: HeaderProps) {
               <button
                 onClick={clearSearch}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-[var(--surface-2)] rounded cursor-pointer"
-                aria-label="ล้างการค้นหา"
+                aria-label={t('header.clearSearch')}
               >
                 <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
               </button>
@@ -251,147 +270,28 @@ function Header({ onMenuClick }: HeaderProps) {
                   {!searchError && !hasResults && !isSearching && searchQuery.length >= 2 && (
                     <div className="p-6 text-center text-[var(--fg-3)]">
                       <Search className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p>ไม่พบผลลัพธ์สำหรับ &quot;{searchQuery}&quot;</p>
-                      <p className="text-sm mt-1">ลองใช้คำค้นหาอื่น</p>
+                      <p>{t('header.noResultsFor', { query: searchQuery })}</p>
+                      <p className="text-sm mt-1">{t('header.tryDifferentKeyword')}</p>
                     </div>
                   )}
 
                   {hasResults && (
                     <div className="p-2">
                       <p className="px-3 py-2 text-xs text-[var(--fg-4)] uppercase tracking-wider">
-                        Found {totalResults} results
+                        {t('header.foundResults', { count: totalResults })}
                       </p>
 
-                      {/* Customers */}
-                      {(searchResults.customers || []).length > 0 && (
-                        <ResultSection
-                          title="Customers"
-                          icon={Users}
-                          items={searchResults.customers}
-                          onItemClick={handleResultClick}
-                          color="text-[var(--primary)]"
-                        />
-                      )}
-
-                      {/* Orders */}
-                      {(searchResults.orders || []).length > 0 && (
-                        <ResultSection
-                          title="Orders"
-                          icon={ShoppingCart}
-                          items={searchResults.orders}
-                          onItemClick={handleResultClick}
-                          color="text-success"
-                        />
-                      )}
-
-                      {/* Products */}
-                      {(searchResults.products || []).length > 0 && (
-                        <ResultSection
-                          title="Products"
-                          icon={Package}
-                          items={searchResults.products}
-                          onItemClick={handleResultClick}
-                          color="text-phopy-mango"
-                        />
-                      )}
-
-                      {/* Materials */}
-                      {(searchResults.materials || []).length > 0 && (
-                        <ResultSection
-                          title="Materials"
-                          icon={Layers}
-                          items={searchResults.materials}
-                          onItemClick={handleResultClick}
-                          color="text-warning"
-                        />
-                      )}
-
-                      {/* BOMs */}
-                      {(searchResults.boms || []).length > 0 && (
-                        <ResultSection
-                          title="Bill of Materials"
-                          icon={Box}
-                          items={searchResults.boms}
-                          onItemClick={handleResultClick}
-                          color="text-info"
-                        />
-                      )}
-
-                      {/* Stock */}
-                      {(searchResults.stock || []).length > 0 && (
-                        <ResultSection
-                          title="Stock Items"
-                          icon={Package}
-                          items={searchResults.stock}
-                          onItemClick={handleResultClick}
-                          color="text-phopy-mango"
-                        />
-                      )}
-
-                      {/* Suppliers */}
-                      {(searchResults.suppliers || []).length > 0 && (
-                        <ResultSection
-                          title="Suppliers"
-                          icon={Truck}
-                          items={searchResults.suppliers}
-                          onItemClick={handleResultClick}
-                          color="text-[var(--primary)]"
-                        />
-                      )}
-
-                      {/* Purchase Orders */}
-                      {(searchResults.purchase_orders || []).length > 0 && (
-                        <ResultSection
-                          title="Purchase Orders"
-                          icon={ClipboardList}
-                          items={searchResults.purchase_orders}
-                          onItemClick={handleResultClick}
-                          color="text-warning"
-                        />
-                      )}
-
-                      {/* Work Orders */}
-                      {(searchResults.work_orders || []).length > 0 && (
-                        <ResultSection
-                          title="Work Orders"
-                          icon={Wrench}
-                          items={searchResults.work_orders}
-                          onItemClick={handleResultClick}
-                          color="text-[var(--primary)]"
-                        />
-                      )}
-
-                      {/* Sales Orders */}
-                      {(searchResults.sales_orders || []).length > 0 && (
-                        <ResultSection
-                          title="Sales Orders"
-                          icon={FileCheck}
-                          items={searchResults.sales_orders}
-                          onItemClick={handleResultClick}
-                          color="text-success"
-                        />
-                      )}
-
-                      {/* Quotations */}
-                      {(searchResults.quotations || []).length > 0 && (
-                        <ResultSection
-                          title="Quotations"
-                          icon={FileText}
-                          items={searchResults.quotations}
-                          onItemClick={handleResultClick}
-                          color="text-[var(--primary)]"
-                        />
-                      )}
-
-                      {/* Invoices */}
-                      {(searchResults.invoices || []).length > 0 && (
-                        <ResultSection
-                          title="Invoices"
-                          icon={Receipt}
-                          items={searchResults.invoices}
-                          onItemClick={handleResultClick}
-                          color="text-danger"
-                        />
+                      {sectionConfig.map(({ key, items, icon, color }) =>
+                        items && items.length > 0 ? (
+                          <ResultSection
+                            key={key}
+                            title={t(`header.${key}`)}
+                            icon={icon}
+                            items={items}
+                            onItemClick={handleResultClick}
+                            color={color}
+                          />
+                        ) : null
                       )}
                     </div>
                   )}
@@ -411,7 +311,7 @@ function Header({ onMenuClick }: HeaderProps) {
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowNotifications(v => !v)}
               className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-              aria-label="แจ้งเตือน"
+              aria-label={t('header.notifications')}
               aria-expanded={showNotifications}
             >
               <Bell className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -426,12 +326,12 @@ function Header({ onMenuClick }: HeaderProps) {
                   className="absolute right-0 top-full mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-3 z-50 overflow-hidden"
                 >
                   <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
-                    <span className="text-sm font-semibold text-[var(--fg-1)]">การแจ้งเตือน</span>
-                    <span className="text-xs text-[var(--fg-4)]">ทั้งหมด</span>
+                    <span className="text-sm font-semibold text-[var(--fg-1)]">{t('header.notifications')}</span>
+                    <span className="text-xs text-[var(--fg-4)]">{t('header.allNotifications')}</span>
                   </div>
                   <div className="py-10 flex flex-col items-center justify-center gap-2">
                     <Bell className="w-8 h-8 text-[var(--fg-4)]" />
-                    <p className="text-sm text-[var(--fg-3)]">ยังไม่มีการแจ้งเตือน</p>
+                    <p className="text-sm text-[var(--fg-3)]">{t('header.noNotifications')}</p>
                   </div>
                 </motion.div>
               )}
@@ -444,7 +344,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/cashier')}
             className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-            aria-label="ระบบขายหน้าร้าน"
+            aria-label={t('header.cashier')}
           >
             <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
           </motion.button>
@@ -455,7 +355,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileTap={{ scale: 0.95 }}
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-            aria-label={theme === 'light' ? 'เปลี่ยนเป็นธีมมืด' : 'เปลี่ยนเป็นธีมสว่าง'}
+            aria-label={theme === 'light' ? t('header.darkTheme') : t('header.lightTheme')}
           >
             {theme === 'light' ? (
               <Moon className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -464,13 +364,24 @@ function Header({ onMenuClick }: HeaderProps) {
             )}
           </motion.button>
 
+          {/* Language Toggle */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleLanguage}
+            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer text-sm font-semibold text-[var(--fg-3)] group-hover:text-[var(--primary)]"
+            aria-label={language === 'th' ? 'Switch to English' : 'Switch to Thai'}
+          >
+            {language === 'th' ? 'TH' : 'EN'}
+          </motion.button>
+
           {/* Settings */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/settings')}
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-            aria-label="การตั้งค่า"
+            aria-label={t('header.settings')}
           >
             <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
           </motion.button>
@@ -482,8 +393,8 @@ function Header({ onMenuClick }: HeaderProps) {
             onClick={() => navigate('/settings')}
           >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
-              isMaster 
-                ? 'bg-gradient-to-br from-phopy-mango to-phopy-mango-600' 
+              isMaster
+                ? 'bg-gradient-to-br from-phopy-mango to-phopy-mango-600'
                 : 'bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700'
             }`}>
               <User className="w-5 h-5 text-white" />

@@ -11,6 +11,7 @@ import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
 import { useModalClose } from '../hooks/useModalClose'
+import { useTranslation } from 'react-i18next'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -123,6 +124,7 @@ interface OrderPage {
 }
 
 function CRM() {
+  const { t } = useTranslation()
   const [mainTab, setMainTab] = useState<'customers' | 'suppliers'>('customers')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
@@ -178,7 +180,7 @@ function CRM() {
       loadData()
     } catch (err) {
       console.error('Delete customer failed', err)
-      alert('ไม่สามารถลบลูกค้าได้')
+      alert(t('crm.deleteFailed'))
     }
   }
 
@@ -322,10 +324,10 @@ function CRM() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
-            <span className="text-[var(--fg-1)]">CRM</span>
+            <span className="text-[var(--fg-1)]">{t('crm.title')}</span>
           </h1>
           <p className="text-[var(--fg-3)]">
-            {mainTab === 'customers' ? 'จัดการลูกค้าและโอกาสเพิ่มยอดขาย' : 'จัดการผู้ขายและซัพพลายเออร์'}
+            {mainTab === 'customers' ? t('crm.subtitleCustomers') : t('crm.subtitleSuppliers')}
           </p>
         </div>
         {mainTab === 'customers' && (
@@ -337,8 +339,7 @@ function CRM() {
               className="phopy-btn-secondary flex items-center gap-2"
             >
               <Upload className="w-5 h-5" />
-              Import
-            </motion.button>
+              {t('crm.import')}</motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -346,8 +347,7 @@ function CRM() {
               className="phopy-btn-primary flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              Add Customer
-            </motion.button>
+              {t('crm.addCustomer')}</motion.button>
           </div>
         )}
       </div>
@@ -363,8 +363,7 @@ function CRM() {
           }`}
         >
           <Users className="w-5 h-5" />
-          Customers (ลูกค้า)
-        </button>
+          {t('crm.tabs.customers')}</button>
         <button
           onClick={() => setMainTab('suppliers')}
           className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
@@ -374,8 +373,7 @@ function CRM() {
           }`}
         >
           <Truck className="w-5 h-5" />
-          Suppliers (ผู้ขาย)
-        </button>
+          {t('crm.tabs.suppliers')}</button>
       </div>
 
       {/* Suppliers Tab Content */}
@@ -388,17 +386,17 @@ function CRM() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard
-          label="ลูกค้าทั้งหมด"
+          label={t('crm.stats.totalCustomers')}
           value={summary?.totalCustomers?.toLocaleString('th-TH') ?? '-'}
           icon={Users}
         />
         <StatCard
-          label="ลูกค้าที่ใช้งานอยู่"
+          label={t('crm.stats.activeCustomers')}
           value={summary?.activeCustomers?.toLocaleString('th-TH') ?? '-'}
           icon={Building2}
         />
         <StatCard
-          label="ยอดซื้อรวม"
+          label={t('crm.stats.totalRevenue')}
           value={
             summary?.totalRevenue
               ? `฿${(summary?.totalRevenue ?? 0).toLocaleString('th-TH', {
@@ -409,7 +407,7 @@ function CRM() {
           icon={Users}
         />
         <StatCard
-          label="ยอดสั่งซื้อเฉลี่ย/ออเดอร์"
+          label={t('crm.stats.avgOrderValue')}
           value={
             summary
               ? `฿${summary.avgOrderValue?.toLocaleString('th-TH', {
@@ -429,7 +427,7 @@ function CRM() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
             <input
               type="text"
-              placeholder="Search customers..."
+              placeholder={t('crm.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="phopy-input pl-10 w-full"
@@ -438,24 +436,24 @@ function CRM() {
 
           {/* Type Filter */}
           <div className="flex gap-2 flex-wrap">
-            {(['all', 'HOTEL', 'WHOLESALE', 'RETAIL'] as const).map((t) => (
+            {(['all', 'HOTEL', 'WHOLESALE', 'RETAIL'] as const).map((type) => (
               <button
-                key={t}
-                onClick={() => setSelectedType(t)}
+                key={type}
+                onClick={() => setSelectedType(type)}
                 className={`px-3 py-2 rounded-lg text-sm transition-all ${
-                  selectedType === t
+                  selectedType === type
                     ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
                 }`}
               >
-                {t === 'all' ? 'All' : t === 'HOTEL' ? 'Hotels' : t === 'WHOLESALE' ? 'Wholesale' : 'Retail'}
+                {type === 'all' ? t('crm.customerType.all') : type === 'HOTEL' ? t('crm.customerType.hotel') : type === 'WHOLESALE' ? t('crm.customerType.wholesale') : t('crm.customerType.retail')}
               </button>
             ))}
           </div>
 
           {/* Per-page selector */}
           <div className="flex items-center gap-1 text-sm text-[var(--fg-3)]">
-            <span className="whitespace-nowrap">แสดง</span>
+            <span className="whitespace-nowrap">{t('crm.show')}</span>
             {[25, 50, 100].map((n) => (
               <button
                 key={n}
@@ -491,14 +489,14 @@ function CRM() {
 
       {/* Result count */}
       <div className="flex items-center justify-between text-sm text-[var(--fg-4)] px-1">
-        <span>พบ <span className="text-[var(--fg-2)] font-medium">{filteredCustomers.length}</span> รายการ</span>
+        <span>{t('crm.resultsFound', { count: filteredCustomers.length })}</span>
         {totalCustomerPages > 1 && (
-          <span>หน้า {customerPageNum} / {totalCustomerPages}</span>
+          <span>{t('crm.pageOf', { current: customerPageNum, total: totalCustomerPages })}</span>
         )}
       </div>
 
       {/* Customers — List View */}
-      {loading && <p className="text-[var(--fg-3)] text-center py-8">กำลังโหลดข้อมูลลูกค้า...</p>}
+      {loading && <p className="text-[var(--fg-3)] text-center py-8">{t('crm.loading')}</p>}
 
       {!loading && viewMode === 'list' && (
         <div className="phopy-card overflow-hidden">
@@ -506,17 +504,17 @@ function CRM() {
           <table className="phopy-table">
             <thead>
               <tr>
-                <th>ลูกค้า</th>
-                <th>ประเภท</th>
-                <th>ผู้ติดต่อ</th>
-                <th>ออเดอร์</th>
-                <th>ยอดซื้อรวม</th>
-                <th>สถานะ</th>
+                <th>{t('crm.table.customer')}</th>
+                <th>{t('crm.table.type')}</th>
+                <th>{t('crm.table.contact')}</th>
+                <th>{t('crm.table.orders')}</th>
+                <th>{t('crm.table.totalRevenue')}</th>
+                <th>{t('crm.table.status')}</th>
               </tr>
             </thead>
             <tbody>
               {pagedCustomers.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-[var(--fg-4)]">ไม่พบข้อมูลลูกค้า</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-[var(--fg-4)]">{t('crm.noCustomers')}</td></tr>
               ) : pagedCustomers.map((customer, index) => (
                   <motion.tr
                     key={customer.id}
@@ -543,7 +541,7 @@ function CRM() {
                         customer.type === 'WHOLESALE' ? 'text-purple-400 bg-purple-500/20 border-purple-500/30' :
                         'text-warning bg-[var(--warning-soft)] border-warning/30'
                       }`}>
-                        {customer.type}
+                        {t(`crm.customerType.${customer.type.toLowerCase()}`)}
                       </span>
                     </td>
                     <td>
@@ -558,7 +556,7 @@ function CRM() {
                       <span className={`status-badge text-xs ${
                         customer.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/30' :
                         'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]'
-                      }`}>{customer.status}</span>
+                      }`}>{t(`crm.status.${customer.status.toLowerCase()}`, { defaultValue: customer.status })}</span>
                     </td>
                   </motion.tr>
               ))}
@@ -680,6 +678,7 @@ function CRM() {
 function CustomerModal({ open, customer, onClose, onSave }: {
   open: boolean; customer: Customer | null; onClose: () => void; onSave: () => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [form, setForm] = useState({
     code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
@@ -712,7 +711,7 @@ function CustomerModal({ open, customer, onClose, onSave }: {
       onSave()
       onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to save customer')
+      alert(err.response?.data?.message || t('crm.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -728,7 +727,7 @@ function CustomerModal({ open, customer, onClose, onSave }: {
             className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
               <h2 className="text-xl font-bold text-[var(--fg-1)]">
-                {customer ? 'Edit Customer' : 'New Customer'}
+                {customer ? t('crm.modal.editCustomer') : t('crm.modal.newCustomer')}
               </h2>
               <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
                 <X className="w-5 h-5 text-[var(--fg-3)]" />
@@ -738,72 +737,72 @@ function CustomerModal({ open, customer, onClose, onSave }: {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Code *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.code')}</label>
                   <input type="text" value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
                     className="phopy-input w-full" required disabled={!!customer}
-                    placeholder="CUS-001" />
+                    placeholder={t('crm.modal.codePlaceholder')} />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Name *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.name')}</label>
                   <input type="text" value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="phopy-input w-full" required placeholder="Customer Name" />
+                    className="phopy-input w-full" required placeholder={t('crm.modal.namePlaceholder')} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Type</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.type')}</label>
                   <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}
                     className="phopy-input w-full">
-                    <option value="RETAIL">Retail</option>
-                    <option value="HOTEL">Hotel</option>
-                    <option value="WHOLESALE">Wholesale</option>
+                    <option value="RETAIL">{t('crm.customerType.retail')}</option>
+                    <option value="HOTEL">{t('crm.customerType.hotel')}</option>
+                    <option value="WHOLESALE">{t('crm.customerType.wholesale')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Status</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.status')}</label>
                   <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
                     className="phopy-input w-full">
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
+                    <option value="ACTIVE">{t('crm.status.active')}</option>
+                    <option value="INACTIVE">{t('crm.status.inactive')}</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Contact Name *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.contactName')}</label>
                   <input type="text" value={form.contactName}
                     onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-                    className="phopy-input w-full" required placeholder="Contact Person" />
+                    className="phopy-input w-full" required placeholder={t('crm.modal.contactPlaceholder')} />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Phone *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.phone')}</label>
                   <input type="text" value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="phopy-input w-full" required placeholder="081-234-5678" />
+                    className="phopy-input w-full" required placeholder={t('crm.modal.phonePlaceholder')} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">Email</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.email')}</label>
                   <input type="email" value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className="phopy-input w-full" placeholder="email@example.com" />
+                    className="phopy-input w-full" placeholder={t('crm.modal.emailPlaceholder')} />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">City</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.city')}</label>
                   <input type="text" value={form.city}
                     onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    className="phopy-input w-full" placeholder="Bangkok" />
+                    className="phopy-input w-full" placeholder={t('crm.modal.cityPlaceholder')} />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-2">Credit Limit (฿)</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.creditLimit')}</label>
                 <input type="number" value={form.creditLimit}
                   onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
                   className="phopy-input w-full" min="0" placeholder="0" />
@@ -811,13 +810,11 @@ function CustomerModal({ open, customer, onClose, onSave }: {
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={onClose}
-                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:bg-[var(--bg)]">
-                  Cancel
-                </button>
+                  className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:bg-[var(--bg)]">{t('crm.modal.cancel')}</button>
                 <button type="submit" disabled={saving}
                   className="phopy-btn-primary flex items-center gap-2">
                   {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {customer ? 'Update' : 'Create'} Customer
+                  {customer ? t('crm.modal.updateCustomer') : t('crm.modal.createCustomer')}
                 </button>
               </div>
             </form>
@@ -863,6 +860,7 @@ function CustomerDetailModal({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   // State for recommendations
   const [recommendations, setRecommendations] = useState<any[]>([])
@@ -940,7 +938,7 @@ function CustomerDetailModal({
   }
 
   const handleDeleteRec = async (id: string) => {
-    if (!confirm('ลบรายการแนะนำนี้?')) return
+    if (!confirm(t('crm.recommendationsTab.confirmDelete', { defaultValue: 'ลบรายการแนะนำนี้?' }))) return
     try {
       await customerRecommendationsApi.delete(id)
       await fetchRecommendations()
@@ -990,7 +988,7 @@ function CustomerDetailModal({
             <p className="text-xs text-[var(--fg-4)] mt-0.5">{customer.code}</p>
             <div className="flex items-center justify-center gap-1.5 mt-2 flex-wrap">
               <span className="text-xs px-2 py-0.5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] border border-phopy-indigo-50">{customer.type}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/20' : 'bg-[var(--danger-soft)] text-danger border-danger/20'}`}>{customer.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด'}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.status === 'ACTIVE' ? 'bg-[var(--success-soft)] text-success border-success/20' : 'bg-[var(--danger-soft)] text-danger border-danger/20'}`}>{customer.status === 'ACTIVE' ? t('crm.status.active') : t('crm.status.inactive')}</span>
             </div>
             {/* Action buttons */}
             <div className="flex items-center gap-2 mt-3 justify-center">
@@ -1028,7 +1026,7 @@ function CustomerDetailModal({
 
           {/* Contact */}
           <div className="p-4 space-y-2.5 border-b border-[var(--border)]/50">
-            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">ข้อมูลติดต่อ</p>
+            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">{t('crm.detail.contactInfo')}</p>
             {customer.contactName && (
               <div className="flex items-center gap-2">
                 <Users className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
@@ -1057,10 +1055,10 @@ function CustomerDetailModal({
 
           {/* Stats */}
           <div className="p-4 space-y-4 flex-1">
-            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">สถิติการซื้อ</p>
+            <p className="text-[10px] text-[var(--fg-4)] uppercase tracking-widest font-semibold">{t('crm.detail.purchaseStats')}</p>
 
             <div>
-              <p className="text-xs text-[var(--fg-3)] mb-0.5">ยอดซื้อรวม</p>
+              <p className="text-xs text-[var(--fg-3)] mb-0.5">{t('crm.table.totalRevenue')}</p>
               <p className="text-xl font-bold text-success">฿{totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
             </div>
 
@@ -1075,7 +1073,7 @@ function CustomerDetailModal({
               {customer.creditUsed !== undefined && customer.creditLimit > 0 && (
                 <div className="mt-1.5">
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-[var(--fg-4)]">ใช้ไป</span>
+                    <span className="text-[var(--fg-4)]">{t('crm.detail.used')}</span>
                     <span className={customer.creditUsed > customer.creditLimit * 0.9 ? 'text-danger' : customer.creditUsed > customer.creditLimit * 0.7 ? 'text-warning' : 'text-success'}>
                       {((customer.creditUsed / customer.creditLimit) * 100).toFixed(0)}%
                     </span>
@@ -1090,11 +1088,11 @@ function CustomerDetailModal({
 
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
-                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ออเดอร์</p>
+                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.table.orders')}</p>
                 <p className="text-lg font-bold text-[var(--primary)]">{totalOrders}</p>
               </div>
               <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
-                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ล่าสุด</p>
+                <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.detail.latest')}</p>
                 <p className="text-xs font-semibold text-white">{lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</p>
               </div>
             </div>
@@ -1102,11 +1100,11 @@ function CustomerDetailModal({
             {insights && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-green-500/5 border border-green-500/10 rounded-lg p-2.5">
-                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ชำระแล้ว</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.detail.paid')}</p>
                   <p className="text-xs font-bold text-success">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </div>
                 <div className="bg-orange-500/5 border border-orange-500/10 rounded-lg p-2.5">
-                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">ค้างชำระ</p>
+                  <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.detail.outstanding')}</p>
                   <p className="text-xs font-bold text-warning">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
@@ -1118,8 +1116,8 @@ function CustomerDetailModal({
               className={`w-full bg-yellow-500/5 border rounded-lg p-3 text-left transition-all hover:bg-[var(--warning-soft)] ${activeTab === 'loyalty' ? 'border-yellow-500/50' : 'border-yellow-500/20'}`}
             >
               <div className="flex items-center justify-between mb-0.5">
-                <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-warning" />แต้มสะสม</p>
-                <span className="text-[10px] text-warning/60">คลิกดูรายละเอียด →</span>
+                <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-warning" />{t('crm.detail.tabs.loyalty')}</p>
+                <span className="text-[10px] text-warning/60">{t('crm.detail.clickForDetails')}</span>
               </div>
               <p className="text-xl font-bold text-warning">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
               <p className="text-[10px] text-[var(--fg-4)]">แต้ม</p>
@@ -1153,7 +1151,7 @@ function CustomerDetailModal({
           <div className="flex-1 overflow-y-auto p-5">
           {insightsLoading && (
             <div className="text-center py-12">
-              <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูลลูกค้า...</p>
+              <p className="text-[var(--fg-3)]">{t('crm.loading')}</p>
             </div>
           )}
 
@@ -1164,21 +1162,21 @@ function CustomerDetailModal({
                   {/* Summary bar */}
                   <div className="grid grid-cols-3 gap-3">
                     <div className="phopy-card p-3 text-center border border-phopy-indigo/10">
-                      <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ทั้งหมด</p>
+                      <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.detail.allOrders')}</p>
                       <p className="text-2xl font-bold text-[var(--primary)]">
                         {((insights.stats.totalOrders ?? 0) + (insights.stats.totalSO ?? 0)).toLocaleString()}
                       </p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">SO {insights.stats.totalSO ?? 0} · เก่า {insights.stats.totalOrders ?? 0}</p>
                     </div>
                     <div className="phopy-card p-3 text-center border border-success/10">
-                      <p className="text-xs text-[var(--fg-3)] mb-1">ยอดซื้อรวม</p>
+                      <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.table.totalRevenue')}</p>
                       <p className="text-2xl font-bold text-success">
                         ฿{((insights.stats.totalRevenue ?? 0) + (insights.stats.totalPaid ?? 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                       </p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">ชำระแล้ว ฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                     </div>
                     <div className="phopy-card p-3 text-center border border-[var(--border-strong)]">
-                      <p className="text-xs text-[var(--fg-3)] mb-1">ออเดอร์ล่าสุด</p>
+                      <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.detail.lastOrder')}</p>
                       <p className="text-sm font-bold text-white">
                         {lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
                       </p>
@@ -1199,7 +1197,7 @@ function CustomerDetailModal({
                       <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <FileText className="w-4 h-4 text-blue-400" />
-                          <span className="text-xs text-[var(--fg-3)]">ใบเสนอราคา (QT)</span>
+                          <span className="text-xs text-[var(--fg-3)]">{t('crm.detail.quotation')}</span>
                         </div>
                         <p className="text-lg font-bold text-blue-400">{insights.stats.totalQT ?? 0} ใบ</p>
                         <p className="text-xs text-[var(--fg-4)]">฿{(insights.stats.totalQTAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
@@ -1207,7 +1205,7 @@ function CustomerDetailModal({
                       <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <ShoppingCart className="w-4 h-4 text-purple-400" />
-                          <span className="text-xs text-[var(--fg-3)]">คำสั่งขาย (SO)</span>
+                          <span className="text-xs text-[var(--fg-3)]">{t('crm.detail.salesOrder')}</span>
                         </div>
                         <p className="text-lg font-bold text-purple-400">{insights.stats.totalSO ?? 0} ใบ</p>
                         <p className="text-xs text-[var(--fg-4)]">฿{(insights.stats.totalSOAmount ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
@@ -1215,7 +1213,7 @@ function CustomerDetailModal({
                       <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <CreditCard className="w-4 h-4 text-success" />
-                          <span className="text-xs text-[var(--fg-3)]">ชำระแล้ว</span>
+                          <span className="text-xs text-[var(--fg-3)]">{t('crm.detail.paid')}</span>
                         </div>
                         <p className="text-lg font-bold text-success">฿{(insights.stats.totalPaid ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                         <p className="text-xs text-[var(--fg-4)]">{insights.stats.totalInvoices ?? 0} ใบแจ้งหนี้</p>
@@ -1223,7 +1221,7 @@ function CustomerDetailModal({
                       <div className="phopy-card p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <AlertCircle className="w-4 h-4 text-warning" />
-                          <span className="text-xs text-[var(--fg-3)]">ค้างชำระ</span>
+                          <span className="text-xs text-[var(--fg-3)]">{t('crm.detail.outstanding')}</span>
                         </div>
                         <p className="text-lg font-bold text-warning">฿{(insights.stats.totalOutstanding ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</p>
                       </div>
@@ -1232,7 +1230,7 @@ function CustomerDetailModal({
                 </>
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-[var(--fg-4)]">ยังไม่มีข้อมูล</p>
+                  <p className="text-[var(--fg-4)]">{t('common.noData')}</p>
                 </div>
               )}
             </div>
@@ -1248,7 +1246,7 @@ function CustomerDetailModal({
                   {orderPage && <span className="text-sm text-[var(--fg-3)] font-normal">({orderPage.pagination.total} รายการ)</span>}
                 </h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--fg-3)]">แสดง</span>
+                  <span className="text-xs text-[var(--fg-3)]">{t('crm.show')}</span>
                   {[25, 50, 100].map(l => (
                     <button key={l} onClick={() => onOrderLimitChange(l)}
                       className={`px-2 py-1 text-xs rounded ${orderLimit === l ? 'bg-phopy-indigo text-white' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:bg-[var(--surface-2)]'}`}>
@@ -1259,7 +1257,7 @@ function CustomerDetailModal({
               </div>
 
               {orderPageLoading ? (
-                <p className="text-center text-[var(--fg-3)] py-8">กำลังโหลด...</p>
+                <p className="text-center text-[var(--fg-3)] py-8">{t('common.loading')}</p>
               ) : orderPage && orderPage.data.length > 0 ? (
                 <>
                   <div className="space-y-3">
@@ -1295,9 +1293,7 @@ function CustomerDetailModal({
                   {/* Pagination */}
                   {orderPage.pagination.totalPages > 1 && (
                     <div className="flex items-center justify-between pt-2">
-                      <span className="text-xs text-[var(--fg-3)]">
-                        หน้า {orderPage.pagination.page} / {orderPage.pagination.totalPages}
-                      </span>
+                      <span className="text-xs text-[var(--fg-3)]">{t('crm.ordersTab.pageOf', { current: orderPage.pagination.page, total: orderPage.pagination.totalPages })}</span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => onOrderPageChange(orderPageNum - 1)} disabled={orderPageNum <= 1}
                           className="p-1 rounded hover:bg-[var(--surface-2)] disabled:opacity-30">
@@ -1322,7 +1318,7 @@ function CustomerDetailModal({
                   )}
                 </>
               ) : (
-                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีประวัติการสั่งซื้อ</p>
+                <p className="text-center text-[var(--fg-4)] py-8">{t('crm.ordersTab.noOrders')}</p>
               )}
             </div>
           )}
@@ -1348,7 +1344,7 @@ function CustomerDetailModal({
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)]" />
                     <input type="text" value={searchQuery} onChange={(e) => handleSearchProducts(e.target.value)}
                       placeholder="ค้นหาสินค้า (2+ ตัวอักษร)..." className="phopy-input w-full pl-10" />
-                    {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-3)]">ค้นหา...</span>}
+                    {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-3)]">{t('crm.recommendationsTab.searching')}</span>}
                   </div>
                   {searchResults.length > 0 && (
                     <div className="max-h-48 overflow-y-auto space-y-1">
@@ -1367,13 +1363,13 @@ function CustomerDetailModal({
                     </div>
                   )}
                   {searchQuery.length >= 2 && !searching && searchResults.length === 0 && (
-                    <p className="text-center text-[var(--fg-4)] text-sm py-2">ไม่พบสินค้า</p>
+                    <p className="text-center text-[var(--fg-4)] text-sm py-2">{t('crm.recommendationsTab.noProducts')}</p>
                   )}
                 </div>
               )}
 
               {recommendationsLoading ? (
-                <p className="text-center text-[var(--fg-3)] py-8">กำลังโหลด...</p>
+                <p className="text-center text-[var(--fg-3)] py-8">{t('common.loading')}</p>
               ) : recommendations.length > 0 ? (
                 <div className="space-y-2">
                   {recommendations.map((rec) => (
@@ -1387,14 +1383,14 @@ function CustomerDetailModal({
                           rec.status === 'ACCEPTED' ? 'bg-[var(--success-soft)] text-success' :
                           'bg-[var(--danger-soft)] text-danger'
                         }`}>
-                          {rec.status === 'PENDING' ? 'รอเสนอ' : rec.status === 'OFFERED' ? 'เสนอแล้ว' : rec.status === 'ACCEPTED' ? 'สนใจ' : 'ไม่สนใจ'}
+                          {t(`crm.recommendationsTab.status.${rec.status.toLowerCase()}`)}
                         </span>
                       </div>
                       {/* Action buttons */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {rec.status === 'PENDING' && (
                           <button onClick={() => handleUpdateRec(rec.id, 'OFFERED')}
-                            className="px-2 py-1 text-xs rounded bg-[var(--info-soft)] text-blue-400 hover:bg-blue-500/30">เสนอแล้ว</button>
+                            className="px-2 py-1 text-xs rounded bg-[var(--info-soft)] text-blue-400 hover:bg-blue-500/30">{t('crm.recommendationsTab.status.offered')}</button>
                         )}
                         {rec.status === 'OFFERED' && (
                           <>
@@ -1417,7 +1413,7 @@ function CustomerDetailModal({
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีรายการ กด "เพิ่ม" เพื่อเพิ่มสินค้าแนะนำ</p>
+                <p className="text-center text-[var(--fg-4)] py-8">{t('crm.recommendationsTab.empty')}</p>
               )}
             </div>
           )}
@@ -1436,8 +1432,8 @@ function CustomerDetailModal({
                       EXPIRED: 'bg-[var(--warning-soft)] text-warning', CONVERTED: 'bg-purple-500/20 text-purple-400',
                     }
                     const statusTH: Record<string, string> = {
-                      DRAFT: 'ร่าง', SENT: 'ส่งแล้ว', ACCEPTED: 'อนุมัติ', REJECTED: 'ปฏิเสธ',
-                      EXPIRED: 'หมดอายุ', CONVERTED: 'แปลงเป็น SO',
+                      DRAFT: 'crm.proposalsTab.status.draft', SENT: 'crm.proposalsTab.status.sent', ACCEPTED: 'crm.proposalsTab.status.accepted', REJECTED: 'crm.proposalsTab.status.rejected',
+                      EXPIRED: 'crm.proposalsTab.status.expired', CONVERTED: 'crm.proposalsTab.status.converted',
                     }
                     return (
                       <details key={qt.id} className="phopy-card group">
@@ -1445,7 +1441,7 @@ function CustomerDetailModal({
                           <div className="flex items-center gap-3">
                             <span className="font-semibold text-[var(--primary)]">{qt.quotation_number}</span>
                             <span className={`text-xs px-2 py-0.5 rounded ${statusColor[qt.status] || statusColor.DRAFT}`}>
-                              {statusTH[qt.status] || qt.status}
+                              {t(statusTH[qt.status] || qt.status)}
                             </span>
                           </div>
                           <div className="flex items-center gap-3">
@@ -1463,7 +1459,7 @@ function CustomerDetailModal({
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-[var(--fg-4)]">ไม่มีรายการสินค้า</p>}
+                          ) : <p className="text-xs text-[var(--fg-4)]">{t('crm.proposalsTab.noItems')}</p>}
                           {qt.notes && <p className="text-xs text-[var(--fg-4)] mt-2 italic">{qt.notes}</p>}
                         </div>
                       </details>
@@ -1471,7 +1467,7 @@ function CustomerDetailModal({
                   })}
                 </div>
               ) : (
-                <p className="text-center text-[var(--fg-4)] py-8">ยังไม่มีใบเสนอราคาสำหรับลูกค้านี้</p>
+                <p className="text-center text-[var(--fg-4)] py-8">{t('crm.proposalsTab.noQuotations')}</p>
               )}
             </div>
           )}
@@ -1503,6 +1499,7 @@ function ActivityLogTab({
   activities: ActivityLog[];
   onAddActivity: (type: string, note: string) => Promise<void>;
 }) {
+  const { t } = useTranslation()
   const [showAddForm, setShowAddForm] = useState(false)
   const [activityType, setActivityType] = useState<'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'>('NOTE')
   const [note, setNote] = useState('')
@@ -1524,10 +1521,10 @@ function ActivityLogTab({
   }
 
   const typeConfig = {
-    CALL:    { label: 'โทรติดตาม',     icon: Phone,        dot: 'bg-blue-500',   border: 'border-l-blue-500',   badge: 'bg-blue-500/10 text-blue-400',   iconColor: 'text-blue-400'   },
-    EMAIL:   { label: 'ส่งอีเมล',      icon: Mail,         dot: 'bg-green-500',  border: 'border-l-green-500',  badge: 'bg-[var(--success-soft)] text-success', iconColor: 'text-success'  },
-    MEETING: { label: 'พบลูกค้า',      icon: UserCheck,    dot: 'bg-purple-500', border: 'border-l-purple-500', badge: 'bg-purple-500/10 text-purple-400',iconColor: 'text-purple-400' },
-    NOTE:    { label: 'บันทึกเพิ่มเติม',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-[var(--fg-3)]',   iconColor: 'text-[var(--fg-3)]'   },
+    CALL:    { label: 'crm.activityTab.types.call',     icon: Phone,        dot: 'bg-blue-500',   border: 'border-l-blue-500',   badge: 'bg-blue-500/10 text-blue-400',   iconColor: 'text-blue-400'   },
+    EMAIL:   { label: 'crm.activityTab.types.email',      icon: Mail,         dot: 'bg-green-500',  border: 'border-l-green-500',  badge: 'bg-[var(--success-soft)] text-success', iconColor: 'text-success'  },
+    MEETING: { label: 'crm.activityTab.types.meeting',      icon: UserCheck,    dot: 'bg-purple-500', border: 'border-l-purple-500', badge: 'bg-purple-500/10 text-purple-400',iconColor: 'text-purple-400' },
+    NOTE:    { label: 'crm.activityTab.types.note',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-[var(--fg-3)]',   iconColor: 'text-[var(--fg-3)]'   },
   } as const
 
   const timeAgo = (dateStr: string) => {
@@ -1574,7 +1571,7 @@ function ActivityLogTab({
       {/* Add Activity Form */}
       {showAddForm && (
         <div className="phopy-card p-4 space-y-3 border-2 border-phopy-indigo/30">
-          <h4 className="font-semibold text-white text-sm">เพิ่มบันทึกการติดตาม</h4>
+          <h4 className="font-semibold text-white text-sm">{t('crm.activityTab.formTitle')}</h4>
           <div className="flex gap-2 flex-wrap">
             {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as const).map((type) => {
               const cfg = typeConfig[type]
@@ -1697,13 +1694,13 @@ function ActivityLogTab({
             <Clock className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
             {filter !== 'ALL' ? (
               <>
-                <p className="text-[var(--fg-4)]">ไม่มีบันทึกประเภท "{typeConfig[filter as keyof typeof typeConfig]?.label}"</p>
-                <button onClick={() => setFilter('ALL')} className="text-xs text-[var(--primary)] mt-2 hover:underline">ดูทั้งหมด</button>
+                <p className="text-[var(--fg-4)]">{t('crm.activityTab.noRecordsType', { type: t(typeConfig[filter as keyof typeof typeConfig]?.label || '') })}</p>
+                <button onClick={() => setFilter('ALL')} className="text-xs text-[var(--primary)] mt-2 hover:underline">{t('crm.activityTab.viewAll')}</button>
               </>
             ) : (
               <>
-                <p className="text-[var(--fg-4)]">ยังไม่มีบันทึกการติดตาม</p>
-                <p className="text-xs text-[var(--fg-4)] mt-1">คลิก "เพิ่มบันทึก" เพื่อเริ่มบันทึกการติดตามลูกค้า</p>
+                <p className="text-[var(--fg-4)]">{t('crm.activityTab.noRecords')}</p>
+                <p className="text-xs text-[var(--fg-4)] mt-1">{t('crm.activityTab.startRecording')}</p>
               </>
             )}
           </div>
@@ -1758,12 +1755,13 @@ function DonutChart({ slices }: { slices: { label: string; value: number; color:
 }
 
 function FavouritesDonutTab({ products }: { products: any[] }) {
+  const { t } = useTranslation()
   if (!products || products.length === 0) {
     return (
       <div className="text-center py-16">
         <Heart className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
-        <p className="text-[var(--fg-4)]">ยังไม่มีข้อมูลสินค้าที่ซื้อบ่อย</p>
-        <p className="text-xs text-[var(--fg-4)] mt-1">ข้อมูลจะปรากฏเมื่อมีประวัติการสั่งซื้อ</p>
+        <p className="text-[var(--fg-4)]">{t('crm.favouritesTab.emptyTitle')}</p>
+        <p className="text-xs text-[var(--fg-4)] mt-1">{t('crm.favouritesTab.emptySubtitle')}</p>
       </div>
     )
   }
@@ -1787,7 +1785,7 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
     <div className="space-y-4">
       <h3 className="text-base font-semibold text-[var(--fg-1)] flex items-center gap-2">
         <Heart className="w-4 h-4 text-[var(--primary)]" />สินค้าที่ซื้อบ่อย
-        <span className="text-xs text-[var(--fg-4)] font-normal">รวม {totalQty.toLocaleString()} ชิ้น</span>
+        <span className="text-xs text-[var(--fg-4)] font-normal">{t('crm.favouritesTab.totalItems', { count: totalQty })}</span>
       </h3>
 
       <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -1879,6 +1877,7 @@ function CustomerCard({
   daysSinceLastOrder?: number
   onEdit?: (e: React.MouseEvent) => void
 }) {
+  const { t } = useTranslation()
   const segmentInfo = getSegmentInfo(segment)
   const isAtRisk = daysSinceLastOrder && daysSinceLastOrder > 60
 
@@ -1902,10 +1901,10 @@ function CustomerCard({
               <h3 className="text-lg font-bold text-[var(--fg-1)]">{customer.name}</h3>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gradient-to-r ${segmentInfo.color} text-white flex items-center gap-1`}
-                title={segmentInfo.label}
+                title={t(`crm.segments.${segment.toLowerCase()}`, { defaultValue: segmentInfo.label })}
               >
                 <segmentInfo.icon className="w-3 h-3" />
-                <span>{segmentInfo.label}</span>
+                <span>{t(`crm.segments.${segment.toLowerCase()}`, { defaultValue: segmentInfo.label })}</span>
               </span>
             </div>
             <p className="text-sm text-[var(--fg-3)]">{customer.code}</p>
@@ -1920,7 +1919,7 @@ function CustomerCard({
           <button
             onClick={onEdit}
             className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg transition-colors ml-2"
-            title="Edit Customer"
+            title={t('crm.editCustomer')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1932,7 +1931,7 @@ function CustomerCard({
       <div className="space-y-3 mb-4">
         <div className="flex items-center gap-2 text-sm">
           <Users className="w-4 h-4 text-[var(--primary)]" />
-          <span className="text-[var(--fg-3)]">Contact:</span>
+          <span className="text-[var(--fg-3)]">{t('crm.contact')}:</span>
           <span className="text-[var(--fg-2)]">{customer.contactName}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
@@ -1951,13 +1950,13 @@ function CustomerCard({
 
       <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--border)]">
         <div>
-          <p className="text-xs text-[var(--fg-3)] mb-1">Orders</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.customerCard.orders')}</p>
           <p className="text-sm font-semibold text-[var(--primary)]">
             {(customer.totalOrders ?? 0).toLocaleString('th-TH')}
           </p>
         </div>
         <div>
-          <p className="text-xs text-[var(--fg-3)] mb-1">Revenue</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.customerCard.revenue')}</p>
           <p className="text-sm font-semibold text-success">
             ฿
             {(customer.totalRevenue ?? 0).toLocaleString('th-TH', {
@@ -1966,7 +1965,7 @@ function CustomerCard({
           </p>
         </div>
         <div>
-          <p className="text-xs text-[var(--fg-3)] mb-1">Credit</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.customerCard.credit')}</p>
           <p className="text-sm font-semibold text-purple-500">
             ฿
             {(customer.creditLimit ?? 0).toLocaleString('th-TH', {
@@ -1992,6 +1991,7 @@ interface LoyaltyTransaction {
 }
 
 function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initialPoints: number }) {
+  const { t } = useTranslation()
   const [points, setPoints] = useState(initialPoints)
   const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -2031,33 +2031,33 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
 
   const handleEarn = async () => {
     const pts = parseInt(inputPoints)
-    if (!pts || pts <= 0) { setError('กรอกจำนวนแต้มที่ถูกต้อง'); return }
+    if (!pts || pts <= 0) { setError(t('crm.loyaltyTab.errors.invalidPoints')); return }
     setSaving(true); setError('')
     try {
       await api.post(`/customers/${customerId}/loyalty/earn`, { points: pts, note })
       await fetchLoyalty()
       setMode(null); setInputPoints(''); setInputAmount(''); setNote('')
     } catch (e: any) {
-      setError(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+      setError(e.response?.data?.message || t('common.error'))
     } finally { setSaving(false) }
   }
 
   const handleRedeem = async () => {
     const pts = parseInt(inputPoints)
-    if (!pts || pts <= 0) { setError('กรอกจำนวนแต้มที่ถูกต้อง'); return }
-    if (pts < loyaltyCfg.minRedeemPoints) { setError(`แต้มขั้นต่ำในการแลก ${loyaltyCfg.minRedeemPoints} แต้ม`); return }
-    if (pts > points) { setError('แต้มไม่เพียงพอ'); return }
+    if (!pts || pts <= 0) { setError(t('crm.loyaltyTab.errors.invalidPoints')); return }
+    if (pts < loyaltyCfg.minRedeemPoints) { setError(t('crm.loyaltyTab.errors.minRedeem', { min: loyaltyCfg.minRedeemPoints })); return }
+    if (pts > points) { setError(t('crm.loyaltyTab.errors.insufficient')); return }
     setSaving(true); setError('')
     try {
       await api.post(`/customers/${customerId}/loyalty/redeem`, { points: pts, note })
       await fetchLoyalty()
       setMode(null); setInputPoints(''); setNote('')
     } catch (e: any) {
-      setError(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+      setError(e.response?.data?.message || t('common.error'))
     } finally { setSaving(false) }
   }
 
-  const typeLabel = { EARN: 'รับแต้ม', REDEEM: 'แลกแต้ม', ADJUST: 'ปรับแต้ม' }
+  const typeLabel = { EARN: 'crm.loyaltyTab.transactionTypes.earn', REDEEM: 'crm.loyaltyTab.transactionTypes.redeem', ADJUST: 'crm.loyaltyTab.transactionTypes.adjust' }
   const typeBadge = {
     EARN:   'bg-[var(--success-soft)] text-success border border-success/20',
     REDEEM: 'bg-yellow-500/15 text-warning border border-yellow-500/20',
@@ -2081,7 +2081,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
       <div className="bg-gradient-to-br from-yellow-500/10 to-amber-500/5 border border-yellow-500/20 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-xs text-[var(--fg-3)] mb-1">แต้มสะสมคงเหลือ</p>
+            <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.loyaltyTab.balance')}</p>
             <p className="text-4xl font-bold text-warning">{points.toLocaleString()}</p>
             <p className="text-xs text-[var(--fg-4)] mt-0.5">แต้ม</p>
           </div>
@@ -2094,18 +2094,18 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         <div className="grid grid-cols-2 gap-2 text-xs border-t border-yellow-500/10 pt-3">
           <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
             <Gift className="w-3.5 h-3.5 text-success" />
-            ซื้อ ฿{loyaltyCfg.earnRate.toLocaleString()} = 1 แต้ม
+            {t('crm.loyaltyTab.earnRate', { amount: loyaltyCfg.earnRate.toLocaleString() })}
           </div>
           <div className="flex items-center gap-1.5 text-[var(--fg-3)]">
             <ArrowLeftRight className="w-3.5 h-3.5 text-warning" />
-            {loyaltyCfg.redeemRate} แต้ม = ลด ฿1
+            {t('crm.loyaltyTab.redeemRate', { points: loyaltyCfg.redeemRate })}
           </div>
         </div>
 
         {/* Redeem value */}
         {points > 0 && (
           <div className="mt-2 text-xs text-warning/70">
-            มูลค่าแต้มปัจจุบัน ≈ ฿{(points / loyaltyCfg.redeemRate).toLocaleString('th-TH', { maximumFractionDigits: 2 })}
+            {t('crm.loyaltyTab.currentValue', { amount: (points / loyaltyCfg.redeemRate).toLocaleString('th-TH', { maximumFractionDigits: 2 }) })}
           </div>
         )}
 
@@ -2139,7 +2139,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
           </h4>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ยอดซื้อ (บาท) — คำนวณแต้มอัตโนมัติ</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('crm.loyaltyTab.amountLabel')}</label>
               <input
                 type="number" min="0" value={inputAmount}
                 onChange={e => { setInputAmount(e.target.value); setInputPoints(String(calcPointsFromAmount(parseFloat(e.target.value) || 0))) }}
@@ -2147,7 +2147,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
               />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนแต้ม</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('crm.loyaltyTab.pointsLabel')}</label>
               <input
                 type="number" min="1" value={inputPoints}
                 onChange={e => { setInputPoints(e.target.value); setInputAmount('') }}
@@ -2156,13 +2156,13 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             </div>
           </div>
           <div>
-            <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">{t('common.notes')}</label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
               className="phopy-input w-full" placeholder="เช่น ซื้อสินค้า SO-2026-00001" />
           </div>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">{t('common.cancel')}</button>
             <button onClick={handleEarn} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-success text-white rounded-lg hover:bg-success/90 disabled:opacity-50 font-semibold min-h-[44px]">
               {saving ? 'กำลังบันทึก...' : 'เพิ่มแต้ม'}
             </button>
@@ -2182,7 +2182,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
               <input
                 type="number" min="1" max={points} value={inputPoints}
                 onChange={e => setInputPoints(e.target.value)}
-                className="phopy-input w-full" placeholder={`สูงสุด ${points}`}
+                className="phopy-input w-full" placeholder={t('crm.loyaltyTab.maxPlaceholder', { max: points })}
               />
             </div>
             <div className="flex flex-col justify-end">
@@ -2193,13 +2193,13 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
             </div>
           </div>
           <div>
-            <label className="block text-xs text-[var(--fg-3)] mb-1">หมายเหตุ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">{t('common.notes')}</label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)}
               className="phopy-input w-full" placeholder="เช่น แลกส่วนลดสำหรับ SO-2026-00002" />
           </div>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">ยกเลิก</button>
+            <button onClick={() => { setMode(null); setError('') }} className="px-3 py-1.5 text-sm bg-[var(--surface)] text-[var(--fg-3)] rounded-lg hover:bg-[var(--surface-2)] min-h-[44px]">{t('common.cancel')}</button>
             <button onClick={handleRedeem} disabled={saving || !inputPoints} className="px-4 py-1.5 text-sm bg-warning text-white rounded-lg hover:bg-warning/90 disabled:opacity-50 font-semibold min-h-[44px]">
               {saving ? 'กำลังบันทึก...' : 'แลกแต้ม'}
             </button>
@@ -2216,11 +2216,11 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         </h4>
 
         {loading ? (
-          <p className="text-center text-[var(--fg-3)] py-6 text-sm">กำลังโหลด...</p>
+          <p className="text-center text-[var(--fg-3)] py-6 text-sm">{t('common.loading')}</p>
         ) : transactions.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-10 h-10 text-gray-700 mx-auto mb-2" />
-            <p className="text-[var(--fg-4)] text-sm">ยังไม่มีประวัติการใช้แต้ม</p>
+            <p className="text-[var(--fg-4)] text-sm">{t('crm.loyaltyTab.noHistory')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -2235,7 +2235,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeBadge[tx.type]}`}>
-                      {typeLabel[tx.type]}
+                      {t(typeLabel[tx.type])}
                     </span>
                     <span className={`text-sm font-bold ${tx.points > 0 ? 'text-success' : 'text-danger'}`}>
                       {tx.points > 0 ? '+' : ''}{tx.points.toLocaleString()} แต้ม
@@ -2247,7 +2247,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
                       {new Date(tx.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       {tx.created_by && ` · ${tx.created_by}`}
                     </span>
-                    <span className="text-[10px] text-[var(--fg-4)]">คงเหลือ {tx.balance_after.toLocaleString()} แต้ม</span>
+                    <span className="text-[10px] text-[var(--fg-4)]">{t('crm.loyaltyTab.balanceAfter', { balance: tx.balance_after.toLocaleString() })}</span>
                   </div>
                 </div>
               </div>

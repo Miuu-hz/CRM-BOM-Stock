@@ -27,6 +27,7 @@ import {
   Info,
   Brain,
   Database,
+  UserCog,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
@@ -34,6 +35,8 @@ import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
 import LLMSettings from './settings/LLMSettings'
 import BackupSettings from './settings/BackupSettings'
+import PermissionSettings from './settings/PermissionSettings'
+import AdminUserManagement from './settings/AdminUserManagement'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -47,8 +50,9 @@ interface ChildUser {
 }
 
 export default function SettingsPage() {
-  const { isMaster, children, loadChildren, deleteChildUser } = useAuth()
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup'>('general')
+  const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -95,7 +99,7 @@ export default function SettingsPage() {
           icon={Settings}
           label="ทั่วไป"
         />
-        {isMaster && (
+        {(isAdmin || isMaster) && (
           <TabButton
             active={activeTab === 'users'}
             onClick={() => setActiveTab('users')}
@@ -110,48 +114,60 @@ export default function SettingsPage() {
           icon={Shield}
           label="ความปลอดภัย"
         />
-        <TabButton
-          active={activeTab === 'pos'}
-          onClick={() => setActiveTab('pos')}
-          icon={Store}
-          label="POS Menu"
-        />
-        <TabButton
-          active={activeTab === 'line'}
-          onClick={() => setActiveTab('line')}
-          icon={MessageSquare}
-          label="LINE Bot"
-        />
-        <TabButton
-          active={activeTab === 'billing'}
-          onClick={() => setActiveTab('billing')}
-          icon={Receipt}
-          label="การชำระเงิน"
-        />
-        <TabButton
-          active={activeTab === 'loyalty'}
-          onClick={() => setActiveTab('loyalty')}
-          icon={Star}
-          label="สะสมแต้ม"
-        />
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'pos'}
+            onClick={() => setActiveTab('pos')}
+            icon={Store}
+            label="POS Menu"
+          />
+        )}
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'line'}
+            onClick={() => setActiveTab('line')}
+            icon={MessageSquare}
+            label="LINE Bot"
+          />
+        )}
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'billing'}
+            onClick={() => setActiveTab('billing')}
+            icon={Receipt}
+            label="การชำระเงิน"
+          />
+        )}
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'loyalty'}
+            onClick={() => setActiveTab('loyalty')}
+            icon={Star}
+            label="สะสมแต้ม"
+          />
+        )}
         <TabButton
           active={activeTab === 'units'}
           onClick={() => setActiveTab('units')}
           icon={ArrowLeftRight}
           label="แปลงหน่วย"
         />
-        <TabButton
-          active={activeTab === 'material-categories'}
-          onClick={() => setActiveTab('material-categories')}
-          icon={Tag}
-          label="หมวดหมู่วัตถุดิบ"
-        />
-        <TabButton
-          active={activeTab === 'llm'}
-          onClick={() => setActiveTab('llm')}
-          icon={Brain}
-          label="AI / LLM"
-        />
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'material-categories'}
+            onClick={() => setActiveTab('material-categories')}
+            icon={Tag}
+            label="หมวดหมู่วัตถุดิบ"
+          />
+        )}
+        {isMaster && (
+          <TabButton
+            active={activeTab === 'llm'}
+            onClick={() => setActiveTab('llm')}
+            icon={Brain}
+            label="AI / LLM"
+          />
+        )}
         {isMaster && (
           <TabButton
             active={activeTab === 'backup'}
@@ -160,12 +176,21 @@ export default function SettingsPage() {
             label="Auto Backup"
           />
         )}
+        {(isAdmin || isMaster) && (
+          <TabButton
+            active={activeTab === 'permissions'}
+            onClick={() => setActiveTab('permissions')}
+            icon={UserCog}
+            label="จัดการสิทธิ์"
+          />
+        )}
       </div>
 
       {/* Content */}
       <div className="space-y-6">
         {activeTab === 'general' && <GeneralSettings />}
 
+        {activeTab === 'users' && isAdmin && !isMaster && <AdminUserManagement />}
         {activeTab === 'users' && isMaster && (
           <UserManagement
             children={localChildren}
@@ -178,21 +203,23 @@ export default function SettingsPage() {
 
         {activeTab === 'security' && <SecuritySettings />}
 
-        {activeTab === 'pos' && <POSMenuSettings />}
+        {activeTab === 'pos' && (isAdmin || isMaster) && <POSMenuSettings />}
 
-        {activeTab === 'line' && <LineSettings />}
+        {activeTab === 'line' && (isAdmin || isMaster) && <LineSettings />}
 
-        {activeTab === 'billing' && <BillingSettings />}
+        {activeTab === 'billing' && (isAdmin || isMaster) && <BillingSettings />}
 
-        {activeTab === 'loyalty' && <LoyaltySettings />}
+        {activeTab === 'loyalty' && (isAdmin || isMaster) && <LoyaltySettings />}
 
         {activeTab === 'units' && <UnitConversions />}
 
-        {activeTab === 'material-categories' && <MaterialCategories />}
+        {activeTab === 'material-categories' && (isAdmin || isMaster) && <MaterialCategories />}
 
-        {activeTab === 'llm' && <LLMSettings />}
+        {activeTab === 'llm' && isMaster && <LLMSettings />}
 
         {activeTab === 'backup' && isMaster && <BackupSettings />}
+
+        {activeTab === 'permissions' && (isAdmin || isMaster) && <PermissionSettings />}
       </div>
 
       {/* Add User Modal */}
@@ -357,7 +384,7 @@ function BillingSettings() {
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, vatRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.vatRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                   >
                     {r}%
                   </button>
@@ -399,7 +426,7 @@ function BillingSettings() {
                     key={r}
                     type="button"
                     onClick={() => setCfg({ ...cfg, serviceRate: r })}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.serviceRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                   >
                     {r}%
                   </button>
@@ -543,7 +570,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, earnRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                 >
                   {r} บาท
                 </button>
@@ -577,7 +604,7 @@ function LoyaltySettings() {
                   key={r}
                   type="button"
                   onClick={() => setCfg({ ...cfg, redeemRate: r })}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-warning' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-gray-500'}`}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-warning' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                 >
                   {r} แต้ม
                 </button>

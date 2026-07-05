@@ -1,0 +1,49 @@
+{
+  "name": "Phopy ERP",
+  "short_name": "Phopy",
+  "description": "ERP · POS · KDS System",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f6f2",
+  "theme_color": "#3949E5",
+  "orientation": "any",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Kitchen Display",
+      "short_name": "KDS",
+      "description": "เปิดหน้าจอครัว",
+      "url": "/kds",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Cashier",
+      "short_name": "POS",
+      "description": "เปิดหน้าจอแคชเชียร์",
+      "url": "/cashier",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    }
+  ]
+}

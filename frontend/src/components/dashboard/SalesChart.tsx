@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { TrendingUp } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   AreaChart,
   Area,
@@ -21,24 +22,25 @@ const data = [
 ]
 
 function SalesChart() {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <TrendingUp className="w-6 h-6 text-success" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
-            Sales Overview
+            {t('dashboard.salesChart.title')}
           </h2>
         </div>
         <div className="flex gap-2">
           <button className="px-3 py-1 text-xs rounded-lg bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30 min-h-[44px]">
-            7 Days
+            {t('dashboard.salesChart.7days')}
           </button>
           <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] min-h-[44px]">
-            30 Days
+            {t('dashboard.salesChart.30days')}
           </button>
           <button className="px-3 py-1 text-xs rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] min-h-[44px]">
-            90 Days
+            {t('dashboard.salesChart.90days')}
           </button>
         </div>
       </div>
@@ -73,12 +75,13 @@ function SalesChart() {
             itemStyle={{ color: 'var(--fg-1)' }}
             formatter={(value: number) => [
               `฿${(value / 1000000).toFixed(2)}M`,
-              'Sales',
+              t('dashboard.salesChart.sales'),
             ]}
           />
           <Area
             type="monotone"
             dataKey="sales"
+            name={t('dashboard.salesChart.sales')}
             stroke="var(--primary)"
             strokeWidth={2}
             fill="url(#salesGradient)"
@@ -88,15 +91,15 @@ function SalesChart() {
 
       <div className="mt-4 grid grid-cols-3 gap-4">
         <div className="text-center">
-          <p className="text-xs text-[var(--fg-3)] mb-1">Total Sales</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('dashboard.salesChart.totalSales')}</p>
           <p className="text-lg font-bold text-[var(--primary)]">฿22.7M</p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-[var(--fg-3)] mb-1">Avg. Order Value</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('dashboard.salesChart.avgOrderValue')}</p>
           <p className="text-lg font-bold text-success">฿62,500</p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-[var(--fg-3)] mb-1">Total Orders</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('dashboard.salesChart.totalOrders')}</p>
           <p className="text-lg font-bold text-[var(--primary)]">366</p>
         </div>
       </div>

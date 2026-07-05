@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { AlertTriangle, Package } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 interface StockAlert {
   id: string
@@ -60,12 +61,13 @@ const alerts: StockAlert[] = [
 ]
 
 function StockAlerts() {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center gap-3 mb-6">
         <AlertTriangle className="w-6 h-6 text-warning" />
         <h2 className="text-xl font-bold text-[var(--fg-1)]">
-          Stock Alerts
+          {t('dashboard.stockAlerts.title')}
         </h2>
       </div>
 
@@ -112,7 +114,7 @@ function StockAlerts() {
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-[var(--fg-3)]">Current Stock</span>
+                    <span className="text-[var(--fg-3)]">{t('dashboard.stockAlerts.currentStock')}</span>
                     <span
                       className={`font-semibold ${
                         alert.level === 'critical'
@@ -126,7 +128,7 @@ function StockAlerts() {
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-[var(--fg-3)]">Minimum Required</span>
+                    <span className="text-[var(--fg-3)]">{t('dashboard.stockAlerts.minimumRequired')}</span>
                     <span className="text-[var(--fg-2)] font-semibold">
                       {alert.minimum} {alert.unit}
                     </span>
@@ -160,19 +162,23 @@ function StockAlerts() {
 }
 
 function LevelBadge({ level }: { level: StockAlert['level'] }) {
+  const { t } = useTranslation()
   const config = {
     critical: {
-      label: 'Critical',
       className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
     },
     warning: {
-      label: 'Warning',
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     low: {
-      label: 'Low',
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
+  }
+
+  const labels = {
+    critical: t('dashboard.stockAlerts.level.critical'),
+    warning: t('dashboard.stockAlerts.level.warning'),
+    low: t('dashboard.stockAlerts.level.low'),
   }
 
   const selected = config[level]
@@ -180,7 +186,7 @@ function LevelBadge({ level }: { level: StockAlert['level'] }) {
   return (
     <span className={`status-badge ${selected.className}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-      {selected.label}
+      {labels[level]}
     </span>
   )
 }

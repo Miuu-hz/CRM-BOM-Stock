@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, TrendingDown, RefreshCw, DollarSign, BarChart2,
   ArrowDownCircle, ArrowUpCircle, Package, Truck, Users, AlertTriangle,
@@ -47,25 +48,11 @@ const daysLeft = (dateStr: string) => {
   return diff
 }
 
-const dueDateBadge = (dateStr: string) => {
-  const d = daysLeft(dateStr)
-  if (d === null) return <span className="text-[var(--fg-4)] text-xs">ไม่ระบุ</span>
-  if (d < 0)  return <span className="text-xs text-danger font-bold">เกิน {Math.abs(d)} วัน</span>
-  if (d === 0) return <span className="text-xs text-warning font-bold">วันนี้</span>
-  return <span className="text-xs text-[var(--fg-3)]">อีก {d} วัน</span>
-}
-
-const PERIOD_LABELS: Record<Period, string> = { day: 'วันนี้', week: 'สัปดาห์นี้', month: 'เดือนนี้', year: 'ปีนี้' }
-const CF_TABS: { key: CFTab; label: string }[] = [
-  { key: 'overdue', label: 'เกินกำหนด' },
-  { key: 'today',   label: 'วันนี้' },
-  { key: 'week',    label: '7 วัน' },
-  { key: 'month',   label: '30 วัน' },
-]
+const PERIOD_KEYS: Record<Period, string> = { day: 'dashboard.today', week: 'dashboard.7days', month: 'dashboard.30days', year: 'dashboard.year' }
 
 // ---- Sub-components ----
-function ChangeChip({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-xs text-[var(--fg-4)]">ไม่มีข้อมูลก่อนหน้า</span>
+function ChangeChip({ pct, t }: { pct: number | null; t: (key: string) => string }) {
+  if (pct === null) return <span className="text-xs text-[var(--fg-4)]">{t('dashboard.noPrevData')}</span>
   const up = pct >= 0
   return (
     <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'}`}>
@@ -79,34 +66,41 @@ function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`bg-[var(--border)]/30 rounded animate-pulse ${className}`} />
 }
 
-function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
-  title: string; icon: any; items: CFItem[]; tab: CFTab; setTab: (t: CFTab) => void; total: number; color: string
+function CFPanel({ titleKey, icon: Icon, items, tab, setTab, total, color, t }: {
+  titleKey: string; icon: any; items: CFItem[]; tab: CFTab; setTab: (t: CFTab) => void; total: number; color: string; t: (key: string, options?: any) => string
 }) {
+  const tabs: { key: CFTab; labelKey: string }[] = [
+    { key: 'overdue', labelKey: 'dashboard.overdue' },
+    { key: 'today', labelKey: 'dashboard.today' },
+    { key: 'week', labelKey: 'dashboard.7days' },
+    { key: 'month', labelKey: 'dashboard.30days' },
+  ]
+
   return (
     <div className="phopy-card p-5 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${color}`} />
-          <h3 className="font-bold text-[var(--fg-1)]">{title}</h3>
+          <h3 className="font-bold text-[var(--fg-1)]">{t(titleKey)}</h3>
         </div>
         <span className={`text-sm font-bold ${color}`}>{fmt(total)}</span>
       </div>
       {/* Tabs */}
       <div className="flex gap-1 mb-3" role="tablist">
-        {CF_TABS.map(t => (
+        {tabs.map(tabItem => (
           <button
-            key={t.key}
+            key={tabItem.key}
             role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setTab(t.key)}
+            aria-selected={tab === tabItem.key}
+            onClick={() => setTab(tabItem.key)}
             className={`flex-1 py-1.5 text-xs rounded transition-all cursor-pointer min-h-[44px] font-medium ${
-              tab === t.key
+              tab === tabItem.key
                 ? `bg-[var(--surface)] border border-[var(--border-strong)] shadow-1 ${color} font-semibold`
                 : 'text-[var(--fg-4)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
             }`}
           >
-            {t.label}
-            {t.key === 'overdue' && items.length > 0 && (
+            {t(tabItem.labelKey)}
+            {tabItem.key === 'overdue' && items.length > 0 && (
               <span className="ml-1 bg-[var(--danger)] text-white rounded-full px-1 text-[10px]">{items.length}</span>
             )}
           </button>
@@ -115,7 +109,7 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
       {/* List */}
       <div className="flex-1 overflow-y-auto max-h-52 phopy-scrollbar space-y-2">
         {items.length === 0 ? (
-          <p className="text-[var(--fg-4)] text-xs text-center py-6">ไม่มีรายการ</p>
+          <p className="text-[var(--fg-4)] text-xs text-center py-6">{t('dashboard.noItems')}</p>
         ) : items.map(item => (
           <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
             <div className="flex-1 min-w-0">
@@ -124,7 +118,7 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
             </div>
             <div className="text-right flex-shrink-0">
               <p className={`text-sm font-bold ${color}`}>{fmt(item.amount)}</p>
-              {item.due_date && dueDateBadge(item.due_date)}
+              {item.due_date && <DueDateBadge dateStr={item.due_date} t={t} />}
             </div>
           </div>
         ))}
@@ -133,8 +127,17 @@ function CFPanel({ title, icon: Icon, items, tab, setTab, total, color }: {
   )
 }
 
+function DueDateBadge({ dateStr, t }: { dateStr: string; t: (key: string, options?: any) => string }) {
+  const d = daysLeft(dateStr)
+  if (d === null) return <span className="text-[var(--fg-4)] text-xs">{t('dashboard.dueUnknown')}</span>
+  if (d < 0) return <span className="text-xs text-danger font-bold">{t('dashboard.overdueDays', { days: Math.abs(d) })}</span>
+  if (d === 0) return <span className="text-xs text-warning font-bold">{t('dashboard.today')}</span>
+  return <span className="text-xs text-[var(--fg-3)]">{t('dashboard.inDays', { days: d })}</span>
+}
+
 // ---- Main Dashboard ----
 export default function Dashboard() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [period, setPeriod] = useState<Period>('month')
   const [arTab, setArTab] = useState<CFTab>('week')
@@ -179,7 +182,7 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { loadAll(); loadRevenue(period) }, [])
-  useEffect(() => { loadRevenue(period) }, [period])
+  useEffect(() => { loadRevenue(period) }, [period, loadRevenue])
 
   const cf = cashflow
   const arItems = cf?.ar[arTab] ?? []
@@ -188,32 +191,41 @@ export default function Dashboard() {
   const container = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.06 } } }
   const item = { hidden: { y: 12, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', damping: 20 } } }
 
+  const periodLabel = t(PERIOD_KEYS[period])
+
+  const funnelRows = funnel ? [
+    { labelKey: 'dashboard.quotation', data: funnel.quotations, icon: FileText, color: 'bg-purple-500', textColor: 'text-purple-400' },
+    { labelKey: 'dashboard.salesOrder', data: funnel.salesOrders, icon: ShoppingBag, color: 'bg-phopy-indigo', textColor: 'text-[var(--primary)]' },
+    { labelKey: 'dashboard.invoice', data: funnel.invoices, icon: Receipt, color: 'bg-yellow-500', textColor: 'text-warning' },
+    { labelKey: 'dashboard.pendingDelivery', data: funnel.pendingDelivery, icon: Truck, color: 'bg-orange-500', textColor: 'text-warning' },
+  ] : []
+
   return (
     <motion.div variants={container} initial="hidden" animate="visible" className="space-y-5">
 
       {/* Header */}
       <motion.div variants={item} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--fg-1)]">Executive Dashboard</h1>
-          <p className="text-[var(--fg-4)] text-xs mt-1">อัปเดต {lastUpdated.toLocaleTimeString('th-TH')}</p>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('dashboard.title')}</h1>
+          <p className="text-[var(--fg-4)] text-xs mt-1">{t('dashboard.updated', { time: lastUpdated.toLocaleTimeString('th-TH') })}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Period Toggle */}
-          <div className="flex bg-[var(--surface-2)] border border-[var(--border)] rounded-lg overflow-hidden" role="group" aria-label="เลือกช่วงเวลา">
-            {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
+          <div className="flex bg-[var(--surface-2)] border border-[var(--border)] rounded-lg overflow-hidden" role="group" aria-label={t('dashboard.periodGroup')}>
+            {(Object.keys(PERIOD_KEYS) as Period[]).map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
                 aria-pressed={period === p}
                 className={`px-3 py-1.5 text-xs transition-all cursor-pointer min-h-[44px] ${period === p ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-semibold' : 'font-medium text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'}`}
               >
-                {PERIOD_LABELS[p]}
+                {t(PERIOD_KEYS[p])}
               </button>
             ))}
           </div>
           <button
             onClick={() => { loadAll(); loadRevenue(period) }}
-            aria-label="รีเฟรชข้อมูล"
+            aria-label={t('dashboard.refresh')}
             className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
           >
             <RefreshCw className={`w-4 h-4 ${loading || revLoading ? 'animate-spin' : ''}`} />
@@ -228,14 +240,14 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
               <DollarSign className="w-4 h-4 text-[var(--primary)]" />
-              รายได้ ({PERIOD_LABELS[period]})
+              {t('dashboard.revenue', { period: periodLabel })}
             </div>
-            {!revLoading && revenue && <ChangeChip pct={revenue.revenueChangePercent} />}
+            {!revLoading && revenue && <ChangeChip pct={revenue.revenueChangePercent} t={t} />}
           </div>
           {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
             <>
               <p className="text-3xl font-bold text-[var(--primary)] mt-1">{fmt(revenue.current.revenue)}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">ก่อนหน้า: {fmt(revenue.previous.revenue)}</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.previous', { amount: fmt(revenue.previous.revenue) })}</p>
             </>
           )}
         </div>
@@ -245,16 +257,16 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
               <TrendingUp className="w-4 h-4 text-success" />
-              กำไรขั้นต้น ({PERIOD_LABELS[period]})
+              {t('dashboard.grossProfit', { period: periodLabel })}
             </div>
-            {!revLoading && revenue && <ChangeChip pct={revenue.grossChangePercent} />}
+            {!revLoading && revenue && <ChangeChip pct={revenue.grossChangePercent} t={t} />}
           </div>
           {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
             <>
               <p className={`text-3xl font-bold mt-1 ${revenue.current.grossProfit >= 0 ? 'text-success' : 'text-danger'}`}>
                 {fmt(revenue.current.grossProfit)}
               </p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">Margin {revenue.grossMargin.toFixed(1)}% · ต้นทุน {fmt(revenue.current.cost)}</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.marginCost', { margin: revenue.grossMargin.toFixed(1), cost: fmt(revenue.current.cost) })}</p>
             </>
           )}
         </div>
@@ -264,15 +276,15 @@ export default function Dashboard() {
       <motion.div variants={item}>
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-[var(--primary)]" />
-          <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">พยากรณ์กระแสเงินสด</h2>
+          <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">{t('dashboard.cashflowForecast')}</h2>
           {cf && (
             <div className="ml-auto flex items-center gap-3 text-xs">
-              <span className="text-[var(--fg-3)]">สุทธิ 7 วัน:
+              <span className="text-[var(--fg-3)]">{t('dashboard.net7Days')}:
                 <span className={`ml-1 font-bold ${cf.netCashflow.week >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                   {cf.netCashflow.week >= 0 ? '+' : ''}{fmt(cf.netCashflow.week)}
                 </span>
               </span>
-              <span className="text-[var(--fg-3)]">30 วัน:
+              <span className="text-[var(--fg-3)]">{t('dashboard.net30Days')}:
                 <span className={`ml-1 font-bold ${cf.netCashflow.month >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                   {cf.netCashflow.month >= 0 ? '+' : ''}{fmt(cf.netCashflow.month)}
                 </span>
@@ -289,22 +301,24 @@ export default function Dashboard() {
           ) : (
             <>
               <CFPanel
-                title="เงินจะเข้า (ลูกหนี้)"
+                titleKey="dashboard.cashIn"
                 icon={ArrowDownCircle}
                 items={arItems}
                 tab={arTab}
                 setTab={setArTab}
                 total={cf?.ar.total ?? 0}
                 color="text-success"
+                t={t}
               />
               <CFPanel
-                title="เงินจะออก (เจ้าหนี้)"
+                titleKey="dashboard.cashOut"
                 icon={ArrowUpCircle}
                 items={apItems}
                 tab={apTab}
                 setTab={setApTab}
                 total={cf?.ap.total ?? 0}
                 color="text-danger"
+                t={t}
               />
             </>
           )}
@@ -317,21 +331,16 @@ export default function Dashboard() {
         <div className="phopy-card p-5">
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">Sales Pipeline</h3>
+            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.salesPipeline')}</h3>
           </div>
           {loading || !funnel ? (
             <div className="space-y-3">{Array(4).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
           ) : (
             <div className="space-y-3">
-              {[
-                { label: 'ใบเสนอราคา (QT)', data: funnel.quotations, icon: FileText, color: 'bg-purple-500', textColor: 'text-purple-400' },
-                { label: 'คำสั่งขาย (SO)', data: funnel.salesOrders, icon: ShoppingBag, color: 'bg-phopy-indigo', textColor: 'text-[var(--primary)]' },
-                { label: 'ใบแจ้งหนี้ (INV)', data: funnel.invoices, icon: Receipt, color: 'bg-yellow-500', textColor: 'text-warning' },
-                { label: 'รอจัดส่ง', data: funnel.pendingDelivery, icon: Truck, color: 'bg-orange-500', textColor: 'text-warning' },
-              ].map(({ label, data, color, textColor }) => (
-                <div key={label} className="flex items-center gap-3">
+              {funnelRows.map(({ labelKey, data, color, textColor }) => (
+                <div key={labelKey} className="flex items-center gap-3">
                   <div className="w-32 flex-shrink-0">
-                    <p className="text-xs text-[var(--fg-3)]">{label}</p>
+                    <p className="text-xs text-[var(--fg-3)]">{t(labelKey)}</p>
                     <p className={`text-sm font-bold ${textColor}`}>{fmt(data.value)}</p>
                   </div>
                   <div className="flex-1 h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
@@ -352,12 +361,12 @@ export default function Dashboard() {
         <div className="phopy-card p-5">
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">Top 5 ลูกค้า</h3>
-            <span className="text-xs text-[var(--fg-4)] ml-auto">{PERIOD_LABELS[period]}</span>
+            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.top5Customers')}</h3>
+            <span className="text-xs text-[var(--fg-4)] ml-auto">{periodLabel}</span>
           </div>
           {revLoading || topCustomers.length === 0 ? (
             topCustomers.length === 0 && !revLoading
-              ? <p className="text-[var(--fg-4)] text-sm text-center py-8">ยังไม่มีข้อมูล Invoice ใน{PERIOD_LABELS[period]}</p>
+              ? <p className="text-[var(--fg-4)] text-sm text-center py-8">{t('dashboard.noInvoiceData', { period: periodLabel })}</p>
               : <div className="space-y-2">{Array(5).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
           ) : (
             <ResponsiveContainer width="100%" height={180}>
@@ -365,7 +374,7 @@ export default function Dashboard() {
                 <XAxis type="number" tick={{ fill: 'var(--fg-3)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
                 <YAxis type="category" dataKey="name" tick={{ fill: 'var(--fg-2)', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
                 <Tooltip
-                  formatter={(v: number) => [fmt(v), 'รายได้']}
+                  formatter={(v: number) => [fmt(v), t('dashboard.revenueTooltip')]}
                   cursor={{ fill: 'rgba(57,73,229,0.08)' }}
                   contentStyle={{
                     background: 'var(--surface)',
@@ -392,17 +401,17 @@ export default function Dashboard() {
         <button
           onClick={() => navigate('/sales')}
           className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
-          aria-label="ดูรายการรอจัดส่งทั้งหมด"
+          aria-label={t('dashboard.pendingDeliveryTitle')}
         >
           <div className="flex items-center gap-2 mb-2">
             <Truck className="w-4 h-4 text-warning" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">รอจัดส่ง</h3>
+            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.pendingDeliveryTitle')}</h3>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
           </div>
           {loading || !funnel ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-warning">{funnel.pendingDelivery.count} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">มูลค่ารอส่ง {fmt(funnel.pendingDelivery.value)}</p>
+              <p className="text-2xl font-bold text-warning">{funnel.pendingDelivery.count} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.pendingValue', { amount: fmt(funnel.pendingDelivery.value) })}</p>
             </>
           )}
         </button>
@@ -411,18 +420,18 @@ export default function Dashboard() {
         <button
           onClick={() => navigate('/stock')}
           className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
-          aria-label="ดูรายการสต๊อกวิกฤตทั้งหมด"
+          aria-label={t('dashboard.criticalStock')}
         >
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-warning" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">สต๊อกวิกฤต</h3>
+            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.criticalStock')}</h3>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
           </div>
           {loading ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-warning">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
+              <p className="text-2xl font-bold text-warning">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
               {lowStock.slice(0, 2).map(s => (
-                <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · เหลือ {s.quantity} {s.unit}</p>
+                <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · {t('dashboard.remaining', { quantity: s.quantity, unit: s.unit })}</p>
               ))}
             </>
           )}
@@ -432,17 +441,17 @@ export default function Dashboard() {
         <button
           onClick={() => navigate('/sales')}
           className="phopy-card p-4 border border-danger/20 text-left cursor-pointer hover:border-danger/50 transition-colors group"
-          aria-label="ดู Invoice เกินกำหนดทั้งหมด"
+          aria-label={t('dashboard.overdueInvoices')}
         >
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-danger" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">Invoice เกินกำหนด</h3>
+            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.overdueInvoices')}</h3>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-danger transition-colors" />
           </div>
           {loading || !cf ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-danger">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">รายการ</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">ค้างรับ {fmt(cf.ar.overdue.reduce((s,i) => s + i.amount, 0))}</p>
+              <p className="text-2xl font-bold text-danger">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.receivable', { amount: fmt(cf.ar.overdue.reduce((s,i) => s + i.amount, 0)) })}</p>
               {cf.ar.overdue.slice(0, 2).map(i => (
                 <p key={i.id} className="text-xs text-danger/70 truncate">{i.party_name} · {fmt(i.amount)}</p>
               ))}

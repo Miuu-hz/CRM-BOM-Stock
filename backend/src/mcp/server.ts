@@ -17,7 +17,18 @@ function resolveTenant(key: string): TenantContext | null {
   const userRow = db.prepare(
     `SELECT id, tenant_id FROM users WHERE mcp_api_key = ? AND status = 'active' LIMIT 1`
   ).get(key) as { id: string; tenant_id: string } | undefined
-  if (userRow) return { tenantId: userRow.tenant_id, userId: userRow.id }
+  if (userRow) {
+    // Quota check: count active MCP users in this tenant vs limit
+    const cs = db.prepare(
+      `SELECT mcp_user_limit FROM company_settings WHERE tenant_id = ?`
+    ).get(userRow.tenant_id) as { mcp_user_limit: number } | undefined
+    const limit = cs?.mcp_user_limit ?? 1
+    const used = (db.prepare(
+      `SELECT COUNT(*) as c FROM users WHERE tenant_id = ? AND mcp_api_key IS NOT NULL AND mcp_api_key != ''`
+    ).get(userRow.tenant_id) as any)?.c ?? 0
+    if (used > limit) return null  // over quota — reject
+    return { tenantId: userRow.tenant_id, userId: userRow.id }
+  }
 
   // Master account key (stored in company_settings)
   const csRow = db.prepare(

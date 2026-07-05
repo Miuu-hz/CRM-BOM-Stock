@@ -1,5 +1,6 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+﻿import { Routes, Route, Navigate } from 'react-router-dom'
 import { Clock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import Layout from './components/layout/Layout'
@@ -14,21 +15,24 @@ import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
 import Settings from './pages/Settings'
-import { ChartOfAccounts, JournalEntries, FinancialReports } from './pages/Accounting'
+import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
 import KDS from './pages/KDS'
 import POSClearing from './pages/Accounting/POSClearing'
+import { UserManagement } from './pages/Users'
+import MasterPanel from './pages/MasterPanel'
 
 function AppContent() {
-  const { user, isReady, showTimeoutWarning, extendSession, logout } = useAuth()
+  const { t } = useTranslation()
+  const { user, isMaster, isReady, showTimeoutWarning, extendSession, logout } = useAuth()
 
   if (!isReady) {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-phopy-indigo/30 border-t-phopy-indigo rounded-full animate-spin" />
-          <p className="text-[var(--fg-3)]">Loading...</p>
+          <p className="text-[var(--fg-3)]">{t('loading')}</p>
         </div>
       </div>
     )
@@ -68,6 +72,12 @@ function AppContent() {
 
         {/* POS Clearing Route */}
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />
+        <Route path="/accounting/phopy-board" element={<PhopyBoard />} />
+
+        <Route path="/users" element={<UserManagement />} />
+
+        {/* Master Panel */}
+        {isMaster && <Route path="/master" element={<MasterPanel />} />}
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -80,20 +90,20 @@ function AppContent() {
           <div className="flex justify-center mb-4">
             <Clock className="w-10 h-10 text-[var(--warning)]" />
           </div>
-          <h2 className="text-xl font-bold text-[var(--fg-1)] mb-2">Session กำลังหมดอายุ</h2>
-          <p className="text-[var(--fg-3)] mb-6 text-sm">ไม่มีการใช้งานนานกว่า 30 นาที<br/>ระบบจะ logout อัตโนมัติใน 1 นาที</p>
+          <h2 className="text-xl font-bold text-[var(--fg-1)] mb-2">{t('session.expiringTitle')}</h2>
+          <p className="text-[var(--fg-3)] mb-6 text-sm" dangerouslySetInnerHTML={{ __html: t('session.expiringMessage') }} />
           <div className="flex gap-3">
             <button
               onClick={extendSession}
               className="flex-1 phopy-btn-primary py-2 text-sm"
             >
-              ใช้งานต่อ
+              {t('session.extend')}
             </button>
             <button
               onClick={logout}
               className="flex-1 py-2 text-sm border border-[var(--border-strong)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:border-[var(--border-strong)] transition-colors"
             >
-              Logout
+              {t('session.logout')}
             </button>
           </div>
         </div>

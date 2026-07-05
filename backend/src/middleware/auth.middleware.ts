@@ -34,7 +34,6 @@ const EDITABLE_TABLES = new Set([
   'pos_clearing_transfers', 'pos_kds_tickets'
 ])
 
-// Extend Express Request type to include user
 declare global {
   namespace Express {
     interface Request {
@@ -43,6 +42,8 @@ declare global {
         email: string
         role: Role
         department?: Department
+        departments: Department[]
+        customPermissions?: Record<string, boolean>
         tenantId: string
       }
       validated?: unknown
@@ -60,18 +61,30 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     }
 
     const token = authHeader.split(' ')[1]
-
-    // Note: legacy AI_API_KEYS global bypass removed for security.
-    // Agent auth now uses authenticateAgent middleware with per-tenant JWT.
-
     const decoded = jwt.verify(token, JWT_SECRET) as UserJwtPayload
+
+    // Load fresh departments + custom_permissions from DB (always current, no stale JWT)
+    const db = getDb()
+    const userRecord = db.prepare(
+      'SELECT departments, custom_permissions FROM users WHERE id = ?'
+    ).get(decoded.userId) as { departments: string | null; custom_permissions: string | null } | undefined
+
+    const departments: Department[] = userRecord?.departments
+      ? JSON.parse(userRecord.departments)
+      : (decoded.department ? [decoded.department] : [])
+
+    const customPermissions: Record<string, boolean> | undefined = userRecord?.custom_permissions
+      ? JSON.parse(userRecord.custom_permissions)
+      : undefined
 
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
       role: decoded.role,
       department: decoded.department,
-      tenantId: decoded.tenantId
+      departments,
+      customPermissions,
+      tenantId: decoded.tenantId,
     }
 
     next()
@@ -80,7 +93,6 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
   }
 }
 
-// Check if user has required role
 export const requireRole = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
@@ -97,22 +109,20 @@ export const requireRole = (...roles: string[]) => {
   }
 }
 
-// Check if user is admin (legacy requireMaster)
 export const requireMaster = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user) {
     res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
     return
   }
 
-  if (req.user.role !== 'ADMIN') {
-    res.status(403).json({ success: false, message: 'เฉพาะ Admin เท่านั้น' })
+  if (req.user.role !== 'MASTER') {
+    res.status(403).json({ success: false, message: 'เฉพาะ Master Account เท่านั้น' })
     return
   }
 
   next()
 }
 
-// Agent authentication (per-tenant JWT, separate from user JWT)
 const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET
 if (!AGENT_JWT_SECRET) {
   throw new Error('FATAL: AGENT_JWT_SECRET environment variable is not set.')
@@ -135,6 +145,7 @@ export const authenticateAgent = (req: Request, res: Response, next: NextFunctio
       userId: decoded.agentId || 'ai-agent',
       email: decoded.email || 'ai@system',
       role: 'AI_AGENT' as Role,
+      departments: [],
       tenantId: decoded.tenantId,
     }
     next()
@@ -143,7 +154,6 @@ export const authenticateAgent = (req: Request, res: Response, next: NextFunctio
   }
 }
 
-// Permission-based middleware using RBAC service
 export const requirePermission = (resource: string, action: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
@@ -151,7 +161,7 @@ export const requirePermission = (resource: string, action: string) => {
       return
     }
 
-    if (!can(req.user.role, req.user.department, resource, action)) {
+    if (!can(req.user.role, req.user.departments, resource, action, req.user.customPermissions)) {
       res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
       return
     }
@@ -160,7 +170,6 @@ export const requirePermission = (resource: string, action: string) => {
   }
 }
 
-// Check if record is within 24h for editing
 export const canEditRecord = (tableName: string) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
@@ -168,8 +177,7 @@ export const canEditRecord = (tableName: string) => {
       return
     }
 
-    // Admin can always edit
-    if (req.user.role === 'ADMIN') {
+    if (req.user.role === 'ADMIN' || req.user.role === 'MASTER') {
       next()
       return
     }
@@ -199,8 +207,8 @@ export const canEditRecord = (tableName: string) => {
       const diffHours = (now - createdAt) / (1000 * 60 * 60)
 
       if (diffHours > HOURS_LIMIT) {
-        res.status(403).json({ 
-          success: false, 
+        res.status(403).json({
+          success: false,
           message: `เกิน ${HOURS_LIMIT} ชั่วโมงแล้ว ไม่สามารถแก้ไขได้`
         })
         return
@@ -214,9 +222,8 @@ export const canEditRecord = (tableName: string) => {
   }
 }
 
-// Helper function to check edit permission (for use in controllers)
 export const checkEditPermission = (user: { role: Role }, createdAt: string): boolean => {
-  if (user.role === 'ADMIN') return true
+  if (user.role === 'ADMIN' || user.role === 'MASTER') return true
 
   const recordTime = new Date(createdAt).getTime()
   const now = Date.now()

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { Activity } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   BarChart,
   Bar,
@@ -20,19 +21,20 @@ const data = [
 ]
 
 function ProductionChart() {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Activity className="w-6 h-6 text-[var(--primary)]" />
           <h2 className="text-xl font-bold text-[var(--fg-1)]">
-            Production Status
+            {t('dashboard.productionChart.title')}
           </h2>
         </div>
         <div className="text-right">
-          <p className="text-xs text-[var(--fg-3)]">This Week</p>
+          <p className="text-xs text-[var(--fg-3)]">{t('dashboard.productionChart.thisWeek')}</p>
           <p className="text-sm font-semibold text-success">
-            940 / 1000 Units
+            {t('dashboard.productionChart.units', { current: 940, target: 1000 })}
           </p>
         </div>
       </div>
@@ -65,18 +67,18 @@ function ProductionChart() {
               paddingTop: '20px',
             }}
           />
-          <Bar dataKey="produced" fill="var(--success)" radius={[8, 8, 0, 0]} />
-          <Bar dataKey="target" fill="var(--primary)" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="produced" name={t('dashboard.productionChart.produced')} fill="var(--success)" radius={[8, 8, 0, 0]} />
+          <Bar dataKey="target" name={t('dashboard.productionChart.target')} fill="var(--primary)" radius={[8, 8, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
 
       <div className="mt-4 flex items-center justify-between p-3 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)]">
         <div>
-          <p className="text-xs text-[var(--fg-3)] mb-1">Production Rate</p>
-          <p className="text-sm font-semibold text-[var(--fg-2)]">94% of Target</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('dashboard.productionChart.productionRate')}</p>
+          <p className="text-sm font-semibold text-[var(--fg-2)]">{t('dashboard.productionChart.ofTarget', { pct: 94 })}</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-[var(--fg-3)] mb-1">Efficiency</p>
+          <p className="text-xs text-[var(--fg-3)] mb-1">{t('dashboard.productionChart.efficiency')}</p>
           <p className="text-sm font-semibold text-success">+4.2%</p>
         </div>
       </div>

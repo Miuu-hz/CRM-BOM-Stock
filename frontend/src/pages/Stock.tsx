@@ -2105,15 +2105,15 @@ function StatusBadge({ status }: { status: string }) {
     },
     overstock: {
       label: 'Overstock',
-      className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+      className: 'bg-[var(--primary-soft)] text-[var(--primary)] border-[var(--primary)]/30',
     },
     out: {
       label: 'Out of Stock',
-      className: 'bg-red-600/30 text-red-300 border-red-600/50',
+      className: 'bg-[var(--danger)] text-white border-transparent',
     },
     sealed: {
       label: 'ยังไม่แกะ',
-      className: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+      className: 'bg-[var(--warning-soft)] text-[var(--warning)] border-[var(--warning)]/40',
     },
   }
 

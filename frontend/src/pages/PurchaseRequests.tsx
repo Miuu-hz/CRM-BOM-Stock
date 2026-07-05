@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PRItem {
@@ -36,12 +37,6 @@ interface PR {
 }
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
-const STATUS_LABEL: Record<string, string> = {
-    DRAFT:    'ฉบับร่าง',
-    PENDING:  'รออนุมัติ',
-    APPROVED: 'อนุมัติแล้ว',
-    REJECTED: 'ปฏิเสธ',
-}
 
 const STATUS_COLOR: Record<string, string> = {
     DRAFT:    'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
@@ -59,8 +54,19 @@ const STATUS_ICON: Record<string, JSX.Element> = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PurchaseRequests() {
+    const { t } = useTranslation()
     const { user, isMaster } = useAuth()
     const canApprove = isMaster || user?.role === 'MANAGER'
+
+    const statusLabelOf = (status: string) => {
+        const labels: Record<string, string> = {
+            DRAFT: t('purchaseRequests.status.draft'),
+            PENDING: t('purchaseRequests.status.pending'),
+            APPROVED: t('purchaseRequests.status.approved'),
+            REJECTED: t('purchaseRequests.status.rejected'),
+        }
+        return labels[status] || status
+    }
 
     const [list, setList]           = useState<PR[]>([])
     const [loading, setLoading]     = useState(true)
@@ -84,7 +90,7 @@ export default function PurchaseRequests() {
             const res = await api.get(`/purchase-requests${params}`)
             setList(res.data.data ?? [])
         } catch {
-            toast.error('โหลดข้อมูลไม่สำเร็จ')
+            toast.error(t('purchaseRequests.toast.loadFailed'))
         } finally {
             setLoading(false)
         }
@@ -104,7 +110,7 @@ export default function PurchaseRequests() {
             setSelected(full)
             setItems((full.items ?? []).map(it => ({ ...it })))
         } catch {
-            toast.error('โหลดรายละเอียดไม่สำเร็จ')
+            toast.error(t('purchaseRequests.toast.loadDetailFailed'))
         } finally {
             setDetailLoading(false)
         }
@@ -122,11 +128,11 @@ export default function PurchaseRequests() {
         setSubmitting(true)
         try {
             await api.patch(`/purchase-requests/${selected.id}/items`, { items })
-            toast.success('ส่งรออนุมัติเรียบร้อย')
+            toast.success(t('purchaseRequests.toast.submitSuccess'))
             closeDetail()
             fetchList()
         } catch (err: any) {
-            toast.error(err?.response?.data?.message ?? 'บันทึกไม่สำเร็จ')
+            toast.error(err?.response?.data?.message ?? t('purchaseRequests.toast.saveFailed'))
         } finally {
             setSubmitting(false)
         }
@@ -138,11 +144,11 @@ export default function PurchaseRequests() {
         setSubmitting(true)
         try {
             await api.post(`/purchase-requests/${selected.id}/approve`, {})
-            toast.success('อนุมัติ PR เรียบร้อย')
+            toast.success(t('purchaseRequests.toast.approveSuccess'))
             closeDetail()
             fetchList()
         } catch (err: any) {
-            toast.error(err?.response?.data?.message ?? 'อนุมัติไม่สำเร็จ')
+            toast.error(err?.response?.data?.message ?? t('purchaseRequests.toast.approveFailed'))
         } finally {
             setSubmitting(false)
         }
@@ -154,11 +160,11 @@ export default function PurchaseRequests() {
         setSubmitting(true)
         try {
             await api.post(`/purchase-requests/${selected.id}/reject`, { reason: rejectReason })
-            toast.success('ปฏิเสธ PR เรียบร้อย')
+            toast.success(t('purchaseRequests.toast.rejectSuccess'))
             closeDetail()
             fetchList()
         } catch (err: any) {
-            toast.error(err?.response?.data?.message ?? 'ปฏิเสธไม่สำเร็จ')
+            toast.error(err?.response?.data?.message ?? t('purchaseRequests.toast.rejectFailed'))
         } finally {
             setSubmitting(false)
         }
@@ -179,29 +185,29 @@ export default function PurchaseRequests() {
                 <div className="flex items-center gap-3">
                     <ShoppingCart className="w-7 h-7 text-[var(--primary)]" />
                     <div>
-                        <h1 className="text-2xl font-bold text-[var(--fg-1)]">ใบขอซื้อ (PR)</h1>
-                        <p className="text-[var(--fg-3)] text-sm">จัดการใบขอซื้อจาก LINE และเว็บ</p>
+                        <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('purchaseRequests.title')}</h1>
+                        <p className="text-[var(--fg-3)] text-sm">{t('purchaseRequests.subtitle')}</p>
                     </div>
                 </div>
                 <button onClick={fetchList} className="phopy-btn-secondary flex items-center gap-2 text-sm">
                     <RefreshCw className="w-4 h-4" />
-                    รีเฟรช
+                    {t('purchaseRequests.refresh')}
                 </button>
             </div>
 
             {/* Tabs */}
             <div className="flex gap-1 bg-[var(--surface-2)] rounded-lg p-1 w-fit">
-                {TABS.map(t => (
+                {TABS.map(tabKey => (
                     <button
-                        key={t}
-                        onClick={() => setTab(t)}
+                        key={tabKey}
+                        onClick={() => setTab(tabKey)}
                         className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                            tab === t
+                            tab === tabKey
                                 ? 'bg-phopy-indigo text-black'
                                 : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                         }`}
                     >
-                        {t === 'ALL' ? 'ทั้งหมด' : STATUS_LABEL[t]}
+                        {tabKey === 'ALL' ? t('purchaseRequests.tabs.all') : statusLabelOf(tabKey)}
                     </button>
                 ))}
             </div>
@@ -214,7 +220,7 @@ export default function PurchaseRequests() {
             ) : list.length === 0 ? (
                 <div className="phopy-card p-12 text-center text-[var(--fg-4)]">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>ไม่มีใบขอซื้อ</p>
+                    <p>{t('purchaseRequests.empty.title')}</p>
                 </div>
             ) : (
                 <div className="grid gap-3">
@@ -235,7 +241,7 @@ export default function PurchaseRequests() {
                                         <span className="font-semibold text-[var(--fg-1)]">{pr.pr_number}</span>
                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs ${STATUS_COLOR[pr.status]}`}>
                                             {STATUS_ICON[pr.status]}
-                                            {STATUS_LABEL[pr.status]}
+                                            {statusLabelOf(pr.status)}
                                         </span>
                                         {pr.source === 'LINE' && (
                                             <span className="px-1.5 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success border border-green-500/30">LINE</span>
@@ -279,7 +285,7 @@ export default function PurchaseRequests() {
                                 <div className="flex items-center gap-3">
                                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs ${STATUS_COLOR[selected.status]}`}>
                                         {STATUS_ICON[selected.status]}
-                                        {STATUS_LABEL[selected.status]}
+                                        {statusLabelOf(selected.status)}
                                     </span>
                                     <button onClick={closeDetail} className="text-[var(--fg-4)] hover:text-[var(--fg-2)] transition-colors">
                                         <X className="w-5 h-5" />
@@ -299,16 +305,16 @@ export default function PurchaseRequests() {
                                         <div className="grid grid-cols-2 gap-3 text-sm">
                                             {selected.requester_name && (
                                                 <div className="bg-[var(--surface-2)] rounded-lg p-3 border border-[var(--border)]">
-                                                    <p className="text-[var(--fg-4)] text-xs mb-1">ผู้ขอ</p>
+                                                    <p className="text-[var(--fg-4)] text-xs mb-1">{t('purchaseRequests.detail.requester')}</p>
                                                     <p className="text-[var(--fg-2)]">{selected.requester_name}</p>
                                                 </div>
                                             )}
                                             <div className="bg-[var(--surface-2)] rounded-lg p-3 border border-[var(--border)]">
-                                                <p className="text-[var(--fg-4)] text-xs mb-1">วันที่สร้าง</p>
+                                                <p className="text-[var(--fg-4)] text-xs mb-1">{t('purchaseRequests.detail.createdAt')}</p>
                                                 <p className="text-[var(--fg-2)]">{new Date(selected.created_at).toLocaleDateString('th-TH')}</p>
                                             </div>
                                             <div className="bg-[var(--surface-2)] rounded-lg p-3 border border-[var(--border)]">
-                                                <p className="text-[var(--fg-4)] text-xs mb-1">แหล่งที่มา</p>
+                                                <p className="text-[var(--fg-4)] text-xs mb-1">{t('purchaseRequests.detail.source')}</p>
                                                 <p className="text-[var(--fg-2)]">{selected.source}</p>
                                             </div>
                                         </div>
@@ -317,7 +323,7 @@ export default function PurchaseRequests() {
                                         {selected.status === 'REJECTED' && selected.rejection_reason && (
                                             <div className="p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-sm text-danger flex gap-2">
                                                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                                <p>เหตุผลที่ปฏิเสธ: {selected.rejection_reason}</p>
+                                                <p>{t('purchaseRequests.detail.rejectionReason')} {selected.rejection_reason}</p>
                                             </div>
                                         )}
 
@@ -325,19 +331,19 @@ export default function PurchaseRequests() {
                                         <div>
                                             <div className="flex items-center gap-2 mb-3">
                                                 <Edit3 className="w-4 h-4 text-[var(--primary)]" />
-                                                <h3 className="font-medium text-[var(--fg-2)]">รายการสินค้า</h3>
+                                                <h3 className="font-medium text-[var(--fg-2)]">{t('purchaseRequests.detail.itemsTitle')}</h3>
                                                 {['DRAFT', 'PENDING'].includes(selected.status) && (
-                                                    <span className="text-xs text-[var(--fg-4)]">— กรอกจำนวนและราคา</span>
+                                                    <span className="text-xs text-[var(--fg-4)]">{t('purchaseRequests.detail.itemsHint')}</span>
                                                 )}
                                             </div>
 
                                             <div className="space-y-2">
                                                 {/* Column headers */}
                                                 <div className="grid grid-cols-12 gap-1 text-xs text-[var(--fg-4)] px-1">
-                                                    <span className="col-span-4">รายการ</span>
-                                                    <span className="col-span-2 text-center">จำนวน</span>
-                                                    <span className="col-span-2 text-center">หน่วย</span>
-                                                    <span className="col-span-3 text-center">ราคา/หน่วย</span>
+                                                    <span className="col-span-4">{t('purchaseRequests.detail.item')}</span>
+                                                    <span className="col-span-2 text-center">{t('purchaseRequests.detail.quantity')}</span>
+                                                    <span className="col-span-2 text-center">{t('purchaseRequests.detail.unit')}</span>
+                                                    <span className="col-span-3 text-center">ราคา/{t('purchaseRequests.detail.unit')}</span>
                                                     <span className="col-span-1 text-right">รวม</span>
                                                 </div>
 
@@ -374,7 +380,7 @@ export default function PurchaseRequests() {
                                                                     <input
                                                                         className="phopy-input w-full text-sm py-1 px-2 text-center"
                                                                         value={it.unit ?? ''}
-                                                                        placeholder="ชิ้น"
+                                                                        placeholder="{t('purchaseRequests.detail.unitPlaceholder')}"
                                                                         onChange={e => updateItem(idx, 'unit', e.target.value)}
                                                                     />
                                                                 ) : (
@@ -406,7 +412,7 @@ export default function PurchaseRequests() {
                                                 {totalAmount > 0 && (
                                                     <div className="flex justify-end pt-2 border-t border-[var(--border)]">
                                                         <p className="text-sm text-[var(--fg-2)]">
-                                                            รวมทั้งหมด: <span className="font-bold text-[var(--primary)] text-base ml-2">{totalAmount.toLocaleString()} บาท</span>
+                                                            {t('purchaseRequests.detail.totalAmount')} <span className="font-bold text-[var(--primary)] text-base ml-2">{totalAmount.toLocaleString()}{t('purchaseRequests.detail.currencySuffix')}</span>
                                                         </p>
                                                     </div>
                                                 )}
@@ -416,11 +422,11 @@ export default function PurchaseRequests() {
                                         {/* Reject form */}
                                         {showRejectForm && (
                                             <div className="space-y-2">
-                                                <label className="text-sm text-[var(--fg-3)]">เหตุผลที่ปฏิเสธ *</label>
+                                                <label className="text-sm text-[var(--fg-3)]">{t('purchaseRequests.rejectForm.title')}</label>
                                                 <textarea
                                                     rows={3}
                                                     className="phopy-input w-full text-sm"
-                                                    placeholder="ระบุเหตุผล..."
+                                                    placeholder="{t('purchaseRequests.rejectForm.placeholder')}"
                                                     value={rejectReason}
                                                     onChange={e => setRejectReason(e.target.value)}
                                                 />
@@ -431,13 +437,13 @@ export default function PurchaseRequests() {
                                                         className="flex-1 flex items-center justify-center gap-2 py-2 bg-[var(--danger-soft)] border border-danger/40 text-danger rounded-lg text-sm hover:bg-[var(--danger-soft)] transition-all disabled:opacity-50"
                                                     >
                                                         {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                                                        ยืนยันปฏิเสธ
+                                                        {t('purchaseRequests.rejectForm.confirm')}
                                                     </button>
                                                     <button
                                                         onClick={() => setShowRejectForm(false)}
                                                         className="px-4 py-2 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-sm hover:text-[var(--fg-2)] transition-all"
                                                     >
-                                                        ยกเลิก
+                                                        {t('purchaseRequests.rejectForm.cancel')}
                                                     </button>
                                                 </div>
                                             </div>
@@ -457,7 +463,7 @@ export default function PurchaseRequests() {
                                             className="w-full phopy-btn-primary flex items-center justify-center gap-2"
                                         >
                                             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                            บันทึก & ส่งรออนุมัติ
+                                            {t('purchaseRequests.actions.saveSubmit')}
                                         </button>
                                     )}
 
@@ -470,7 +476,7 @@ export default function PurchaseRequests() {
                                                 className="w-full flex items-center justify-center gap-2 py-2 border border-[var(--border)] text-[var(--fg-2)] rounded-lg text-sm hover:text-[var(--fg-1)] hover:border-phopy-indigo/50 transition-all disabled:opacity-50"
                                             >
                                                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
-                                                อัพเดทรายการ
+                                                อัพเดท{t('purchaseRequests.detail.item')}
                                             </button>
                                             {canApprove && !showRejectForm && (
                                                 <div className="grid grid-cols-2 gap-2">
