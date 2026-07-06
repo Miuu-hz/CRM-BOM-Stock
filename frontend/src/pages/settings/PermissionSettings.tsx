@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react'
-import {
-  UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield,
-} from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield, Search, Check } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -49,18 +47,101 @@ const PRESETS: { label: string; departments: string[]; customPermissions: Record
   { label: 'CEO / เจ้าของ',   departments: ['CEO'],                         customPermissions: {} },
 ]
 
-function RoleBadge({ role }: { role: string }) {
-  const map: Record<string, string> = {
-    ADMIN:     'bg-[var(--primary-soft)] text-[var(--primary)]',
-    MASTER:    'bg-[var(--warning-soft)] text-[var(--warning)]',
-    MANAGER:   'bg-[var(--success-soft)] text-[var(--success)]',
-    POWERUSER: 'bg-[var(--surface-2)] text-[var(--fg-2)]',
-    USER:      'bg-[var(--surface-2)] text-[var(--fg-3)]',
-  }
+const ROLE_COLOR: Record<string, string> = {
+  ADMIN:     'bg-[var(--primary-soft)] text-[var(--primary)]',
+  MASTER:    'bg-[var(--warning-soft)] text-[var(--warning)]',
+  MANAGER:   'bg-[var(--success-soft)] text-[var(--success)]',
+  POWERUSER: 'bg-[var(--surface-2)] text-[var(--fg-2)]',
+  USER:      'bg-[var(--surface-2)] text-[var(--fg-3)]',
+}
+
+function UserDropdown({
+  users, selected, onSelect,
+}: { users: TenantUser[]; selected: TenantUser | null; onSelect: (u: TenantUser) => void }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = users.filter(u =>
+    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    u.email.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${map[role] ?? map.USER}`}>
-      {role}
-    </span>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => { setOpen(v => !v); setSearch('') }}
+        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--primary)]/50 transition-colors cursor-pointer text-left"
+      >
+        {selected ? (
+          <>
+            <div className="w-8 h-8 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-sm font-semibold shrink-0">
+              {selected.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-[var(--fg-1)] text-sm">{selected.name}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${ROLE_COLOR[selected.role] ?? ROLE_COLOR.USER}`}>
+                  {selected.role}
+                </span>
+              </div>
+              <div className="text-xs text-[var(--fg-4)] truncate">{selected.email}</div>
+            </div>
+          </>
+        ) : (
+          <span className="text-[var(--fg-4)] text-sm flex-1">เลือกพนักงาน…</span>
+        )}
+        <ChevronDown size={16} className={`text-[var(--fg-3)] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl overflow-hidden">
+          <div className="p-2 border-b border-[var(--border)]">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)]" />
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="ค้นหาชื่อหรืออีเมล…"
+                className="w-full pl-8 pr-3 py-1.5 text-sm bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] transition-colors"
+              />
+            </div>
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-[var(--fg-4)]">ไม่พบผู้ใช้</p>
+            ) : filtered.map(u => (
+              <button
+                key={u.id}
+                onClick={() => { onSelect(u); setOpen(false) }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors cursor-pointer text-left ${selected?.id === u.id ? 'bg-[var(--primary-soft)]' : ''}`}
+              >
+                <div className="w-7 h-7 rounded-full bg-[var(--primary-soft)] flex items-center justify-center text-xs font-bold text-[var(--primary)] shrink-0">
+                  {u.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium text-[var(--fg-1)]">{u.name}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${ROLE_COLOR[u.role] ?? ROLE_COLOR.USER}`}>{u.role}</span>
+                  </div>
+                  <div className="text-xs text-[var(--fg-4)] truncate">{u.email}</div>
+                </div>
+                {selected?.id === u.id && <Check size={14} className="text-[var(--primary)] shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -80,7 +161,6 @@ export default function PermissionSettings() {
       const res = await api.get('/users')
       const list: TenantUser[] = (res.data.data ?? []).filter((u: TenantUser) => u.role !== 'MASTER')
       setUsers(list)
-      if (list.length > 0 && !selected) pick(list[0])
     } catch {
       toast.error('โหลดรายชื่อผู้ใช้ไม่สำเร็จ')
     } finally {
@@ -134,7 +214,7 @@ export default function PermissionSettings() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-[var(--primary-soft)] flex items-center justify-center">
           <UserCog className="w-5 h-5 text-[var(--primary)]" />
@@ -150,75 +230,17 @@ export default function PermissionSettings() {
           <RefreshCw className="w-6 h-6 text-[var(--primary)] animate-spin" />
         </div>
       ) : (
-        <div className="flex gap-4 min-h-[500px]">
-          {/* User list */}
-          <div className="w-56 flex-shrink-0 space-y-1">
-            <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide px-2 mb-2">
-              ผู้ใช้ ({users.length})
-            </p>
-            {users.length === 0 && (
-              <p className="text-sm text-[var(--fg-4)] px-2">ยังไม่มีผู้ใช้</p>
-            )}
-            {users.map(u => (
-              <button
-                key={u.id}
-                onClick={() => pick(u)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg transition-all ${
-                  selected?.id === u.id
-                    ? 'bg-[var(--primary-soft)] border border-[var(--primary)]'
-                    : 'hover:bg-[var(--surface-2)] border border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-7 h-7 rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
-                    <span className="text-[var(--primary)] text-xs font-bold">
-                      {u.name?.charAt(0).toUpperCase() ?? 'U'}
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium text-[var(--fg-1)] truncate">{u.name}</span>
-                </div>
-                <div className="flex items-center gap-1 flex-wrap pl-9">
-                  <RoleBadge role={u.role} />
-                  {(u.departments ?? []).slice(0, 2).map(d => (
-                    <span key={d} className="text-[10px] text-[var(--fg-4)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">
-                      {d}
-                    </span>
-                  ))}
-                  {(u.departments?.length ?? 0) > 2 && (
-                    <span className="text-[10px] text-[var(--fg-4)]">+{u.departments.length - 2}</span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
+        <>
+          <UserDropdown users={users} selected={selected} onSelect={pick} />
 
-          {/* Editor */}
           {selected ? (
-            <div className="flex-1 bg-[var(--surface)] rounded-xl border border-[var(--border)] p-5 space-y-5 overflow-y-auto">
-              <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
-                <div>
-                  <h3 className="font-semibold text-[var(--fg-1)]">{selected.name}</h3>
-                  <p className="text-sm text-[var(--fg-3)]">{selected.email}</p>
-                </div>
-                <button
-                  onClick={save}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  บันทึก
-                </button>
-              </div>
-
+            <div className="space-y-5">
               <div>
                 <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">Quick Presets</p>
                 <div className="flex flex-wrap gap-2">
                   {PRESETS.map(p => (
-                    <button
-                      key={p.label}
-                      onClick={() => applyPreset(p)}
-                      className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all"
-                    >
+                    <button key={p.label} onClick={() => applyPreset(p)}
+                      className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all cursor-pointer">
                       {p.label}
                     </button>
                   ))}
@@ -227,24 +249,12 @@ export default function PermissionSettings() {
 
               <div>
                 <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">บทบาท (Role)</p>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {ROLE_OPTIONS.map(r => (
-                    <label
-                      key={r.value}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        draftRole === r.value
-                          ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                          : 'border-[var(--border)] hover:border-[var(--primary)]'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        value={r.value}
-                        checked={draftRole === r.value}
-                        onChange={() => setDraftRole(r.value)}
-                        className="mt-0.5 accent-[var(--primary)]"
-                      />
+                    <label key={r.value}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftRole === r.value ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}>
+                      <input type="radio" name="role" value={r.value} checked={draftRole === r.value}
+                        onChange={() => setDraftRole(r.value)} className="mt-0.5 accent-[var(--primary)]" />
                       <div>
                         <p className="text-sm font-medium text-[var(--fg-1)]">{r.label}</p>
                         <p className="text-xs text-[var(--fg-3)]">{r.desc}</p>
@@ -258,20 +268,10 @@ export default function PermissionSettings() {
                 <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">แผนก / สิทธิ์เข้าถึง</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {DEPT_OPTIONS.map(d => (
-                    <label
-                      key={d.value}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        draftDepts.includes(d.value)
-                          ? 'border-[var(--success)] bg-[var(--success-soft)]'
-                          : 'border-[var(--border)] hover:border-[var(--success)]'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={draftDepts.includes(d.value)}
-                        onChange={() => toggleDept(d.value)}
-                        className="mt-0.5 accent-[var(--primary)]"
-                      />
+                    <label key={d.value}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftDepts.includes(d.value) ? 'border-[var(--success)] bg-[var(--success-soft)]' : 'border-[var(--border)] hover:border-[var(--success)]'}`}>
+                      <input type="checkbox" checked={draftDepts.includes(d.value)}
+                        onChange={() => toggleDept(d.value)} className="mt-0.5 accent-[var(--primary)]" />
                       <div>
                         <p className="text-sm font-medium text-[var(--fg-1)]">{d.label}</p>
                         <p className="text-xs text-[var(--fg-3)]">{d.desc}</p>
@@ -282,10 +282,8 @@ export default function PermissionSettings() {
               </div>
 
               <div>
-                <button
-                  onClick={() => setShowCustom(v => !v)}
-                  className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors"
-                >
+                <button onClick={() => setShowCustom(v => !v)}
+                  className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors cursor-pointer">
                   {showCustom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                   <Shield className="w-3.5 h-3.5" />
                   Custom Overrides (ขั้นสูง)
@@ -294,12 +292,8 @@ export default function PermissionSettings() {
                   <div className="mt-3 space-y-2 pl-4 border-l border-[var(--border)]">
                     {CUSTOM_PERMS.map(cp => (
                       <label key={cp.key} className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!draftCustom[cp.key]}
-                          onChange={() => toggleCustom(cp.key)}
-                          className="accent-[var(--primary)]"
-                        />
+                        <input type="checkbox" checked={!!draftCustom[cp.key]}
+                          onChange={() => toggleCustom(cp.key)} className="accent-[var(--primary)]" />
                         <span className="text-sm text-[var(--fg-1)]">{cp.label}</span>
                         <span className="text-xs text-[var(--fg-4)]">({cp.key})</span>
                       </label>
@@ -307,13 +301,22 @@ export default function PermissionSettings() {
                   </div>
                 )}
               </div>
+
+              <div className="flex justify-end pt-2 border-t border-[var(--border)]">
+                <button onClick={save} disabled={saving}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer">
+                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  บันทึก
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-[var(--fg-3)]">
-              <p>เลือกผู้ใช้เพื่อจัดการสิทธิ์</p>
+            <div className="flex flex-col items-center justify-center py-16 text-[var(--fg-4)] gap-2">
+              <UserCog className="w-10 h-10 opacity-30" />
+              <p className="text-sm">เลือกพนักงานด้านบนเพื่อจัดการสิทธิ์</p>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   )
