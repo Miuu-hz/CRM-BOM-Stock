@@ -45,7 +45,8 @@
     "actions": "Actions",
     "notes": "Notes",
     "items_count": "{{count}} items",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "sessionExpired": "Session expired. Please login again."
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -315,7 +316,7 @@
   },
   "purchase": {
     "title": "Purchase",
-    "subtitle": "Purchase requests, orders, goods receipt, invoices and payments",
+    "subtitle": "Manage purchase requests, orders, goods receipts and payments",
     "tabs": {
       "overview": "Overview",
       "requests": "Purchase Requests",
@@ -347,6 +348,68 @@
     "convertToOrder": "Convert to Purchase Order",
     "printOrder": "Print PO A4",
     "pendingItems": "Pending items",
+    "common": {
+      "status": "Status",
+      "actions": "Actions",
+      "total": "Total",
+      "notes": "Notes",
+      "cancel": "Cancel",
+      "save": "Save",
+      "close": "Close",
+      "view": "View",
+      "edit": "Edit",
+      "delete": "Delete",
+      "search": "Search",
+      "noData": "No data yet",
+      "loading": "Loading...",
+      "supplier": "Supplier",
+      "quantity": "Qty",
+      "unit": "Unit",
+      "selectUnit": "Select unit",
+      "unitPrice": "Unit Price",
+      "lineTotal": "Line Total",
+      "grandTotal": "Grand Total",
+      "balance": "Balance",
+      "itemCount": "{{count}} items",
+      "countItems": "{{count}} items",
+      "noItemsYet": "No items yet — click add item above",
+      "journalEntry": "Journal: {{number}}",
+      "reference": "Reference:",
+      "companyFallback": "Company",
+      "unitFallback": "unit"
+    },
+    "overview": {
+      "totalOrderAmount": "Total Order Amount",
+      "orderCount": "{{count}} orders",
+      "pendingRequests": "Pending Requests",
+      "fromTotalRequests": "from {{count}} total",
+      "paidAmount": "Paid Amount",
+      "paymentCount": "{{count}} items",
+      "outstandingAmount": "Outstanding Amount",
+      "unpaidInvoiceCount": "{{count}} unpaid invoices",
+      "pendingActionsTitle": "Pending Actions",
+      "pendingRequestsLabel": "Purchase requests pending approval",
+      "pendingOrdersLabel": "Orders waiting for receipt",
+      "unpaidInvoicesLabel": "Unpaid invoices",
+      "workflowTitle": "Procurement Workflow",
+      "orderStatusTitle": "Order Status",
+      "paymentStatusTitle": "Payment Status"
+    },
+    "workflow": {
+      "request": "PR",
+      "order": "PO",
+      "receipt": "GR",
+      "invoice": "Invoice",
+      "payment": "Payment"
+    },
+    "view": {
+      "card": "Card view",
+      "list": "List view"
+    },
+    "pagination": {
+      "perPage": "{{count}} / page",
+      "showing": "Showing {{start}}–{{end}} of {{total}} items"
+    },
     "status": {
       "fullyReceived": "Fully received",
       "partialReceived": "Partially received",
@@ -359,6 +422,8 @@
       "submitted": "Submitted",
       "cancelled": "Cancelled",
       "partial": "Partial",
+      "pending": "Pending",
+      "partialPaid": "Partial paid",
       "unpaid": "Unpaid",
       "paid": "Paid",
       "overdue": "Overdue",
@@ -403,17 +468,47 @@
       "returnCreated": "Return created",
       "returnCreateFailed": "Failed to create return",
       "returnConfirmed": "Return confirmed — stock adjusted",
-      "returnConfirmFailed": "Failed to confirm return"
+      "returnConfirmFailed": "Failed to confirm return",
+      "stockItemAdded": "Added \"{{name}}\" to stock",
+      "requestItemsLoaded": "Loaded items from {{prNumber}} ({{count}} items)"
     },
     "search": {
       "material": "Search code / material name...",
       "supplier": "Search supplier...",
       "order": "Search PO number / supplier...",
-      "request": "Search PR number / requester..."
+      "request": "Search PR number / requester...",
+      "requestsPlaceholder": "Search purchase requests...",
+      "ordersPlaceholder": "Search purchase orders...",
+      "receiptsPlaceholder": "Search goods receipts...",
+      "invoicesPlaceholder": "Search invoices...",
+      "paymentsPlaceholder": "Search payments...",
+      "returnsPlaceholder": "Search returns...",
+      "poPlaceholder": "Search PO number / supplier...",
+      "prPlaceholder": "Search PR number / requester...",
+      "grPlaceholder": "+ Add Goods Receipt (GR)...",
+      "materialPlaceholder": "Search code / material name...",
+      "supplierPlaceholder": "Search supplier...",
+      "noMaterialFound": "No material found for \"{{query}}\"",
+      "createMaterial": "Create new stock item",
+      "newMaterial": "New item",
+      "noSupplierFound": "No suppliers found",
+      "supplierCount": "{{count}} suppliers",
+      "noOrderFound": "No purchase orders found",
+      "noRequestFound": "No purchase requests found",
+      "selectPOFirst": "— Select PO first —",
+      "allGRsAdded": "All GRs added",
+      "noReceiptFound": "No goods receipts found",
+      "grCountHint": "{{count}} items (click to add)"
     },
     "empty": {
       "order": "No purchase orders found",
-      "receipt": "No goods receipts found"
+      "receipt": "No goods receipts found",
+      "requests": "No purchase requests found",
+      "orders": "No purchase orders found",
+      "receipts": "No goods receipts found",
+      "invoices": "No invoices found",
+      "payments": "No payments found",
+      "returns": "No returns found"
     },
     "buttons": {
       "addGR": "+ Add Goods Receipt (GR)..."
@@ -447,7 +542,334 @@
       "submit": "Submit",
       "reject": "Reject",
       "confirm": "Confirm",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "createRequest": "Create Purchase Request",
+      "createOrder": "Create Purchase Order",
+      "createReceipt": "Record Goods Receipt",
+      "createInvoice": "Create Invoice",
+      "createPayment": "Record Payment",
+      "createReturn": "Create Return",
+      "viewDetails": "View details",
+      "convertToOrder": "Convert to Purchase Order",
+      "printOrderA4": "Print PO A4",
+      "printA4": "Print A4",
+      "printThermal": "Print 80mm slip",
+      "receiveGoods": "Receive goods",
+      "pay": "Pay",
+      "addNew": "Add new",
+      "addSupplier": "Add new supplier",
+      "addItem": "Add item",
+      "submitForApproval": "Submit for approval",
+      "approve": "Approve",
+      "confirmReturn": "Confirm return"
+    },
+    "requests": {
+      "headers": {
+        "number": "Number",
+        "requester": "Requester",
+        "department": "Department",
+        "requestDate": "Request Date"
+      },
+      "card": {
+        "requestedOn": "Requested {{date}}",
+        "requiredBy": "Required {{date}}"
+      }
+    },
+    "orders": {
+      "headers": {
+        "poNumber": "PO Number",
+        "orderDate": "Order Date",
+        "expectedDate": "Expected"
+      },
+      "card": {
+        "orderedOn": "Ordered {{date}}",
+        "expectedBy": "Expected {{date}}",
+        "grConfirmed": "GR ×{{count}}",
+        "grDraft": "GR draft ×{{count}}",
+        "invCount": "INV ×{{count}}"
+      }
+    },
+    "receipts": {
+      "headers": {
+        "grNumber": "GR Number",
+        "poReference": "PO Ref",
+        "receiptDate": "Receipt Date"
+      },
+      "card": {
+        "receivedOn": "Received {{date}}"
+      }
+    },
+    "invoices": {
+      "headers": {
+        "piNumber": "PI Number",
+        "poReference": "PO Ref",
+        "dueDate": "Due Date",
+        "balance": "Balance"
+      },
+      "card": {
+        "issuedOn": "Issued {{date}}",
+        "dueOn": "Due {{date}}",
+        "totalAmount": "Total {{amount}}",
+        "balanceAmount": "Bal {{amount}}"
+      }
+    },
+    "payments": {
+      "headers": {
+        "number": "Number",
+        "method": "Method",
+        "date": "Date",
+        "journal": "JV",
+        "amount": "Amount"
+      }
+    },
+    "returns": {
+      "headers": {
+        "number": "Number",
+        "poReference": "PO Ref",
+        "reason": "Reason",
+        "amount": "Amount"
+      }
+    },
+    "paymentMethod": {
+      "cash": "Cash",
+      "transfer": "Bank Transfer",
+      "cheque": "Cheque",
+      "creditCard": "Credit Card"
+    },
+    "returnReason": {
+      "defective": "Defective/Damaged",
+      "wrongItem": "Wrong item",
+      "wrongQuantity": "Wrong quantity",
+      "qualityIssue": "Quality issue",
+      "expired": "Expired",
+      "other": "Other"
+    },
+    "convertToPO": {
+      "title": "Convert to Purchase Order",
+      "subtitle": "Select supplier to create PO from this purchase request",
+      "selectSupplier": "-- Select supplier --",
+      "expectedDelivery": "Expected delivery"
+    },
+    "requestModal": {
+      "titleCreate": "Create Purchase Request",
+      "titleEdit": "Edit Purchase Request",
+      "titleView": "Purchase Request Details",
+      "createdBy": "Created by: {{name}}",
+      "department": "Department",
+      "departmentPlaceholder": "e.g. Production, Warehouse",
+      "requiredDate": "Required date",
+      "priority": "Priority",
+      "preferredSupplier": "Preferred supplier (optional)",
+      "supplierPlaceholder": "Search supplier...",
+      "notes": "Notes / Reason for request",
+      "notesPlaceholder": "e.g. raw material out of stock, prepare for customer order...",
+      "itemsTitle": "Items / Materials",
+      "estimatedUnitPrice": "Est. unit price",
+      "totalEstimate": "Total estimate"
+    },
+    "orderModal": {
+      "titleCreate": "Create Purchase Order (PO)",
+      "titleEdit": "Edit Purchase Order (Draft)",
+      "titleView": "Purchase Order Details",
+      "saveEdit": "Save changes",
+      "prReference": "Reference PR (optional — select to auto-load items)",
+      "prLoaded": "Items loaded from purchase request — you can edit as needed",
+      "supplierPlaceholder": "Search supplier code / name...",
+      "expectedDelivery": "Expected delivery",
+      "paymentTerms": "Payment terms",
+      "paymentTermsCod": "COD — immediate payment",
+      "paymentTermsNet15": "NET 15 days",
+      "paymentTermsNet30": "NET 30 days",
+      "paymentTermsNet45": "NET 45 days",
+      "paymentTermsNet60": "NET 60 days",
+      "itemsTitle": "Items",
+      "itemDescriptionPlaceholder": "Description",
+      "subtotal": "Subtotal",
+      "discount": "Discount (THB)",
+      "tax": "Tax (%)"
+    },
+    "receiptModal": {
+      "title": "Record Goods Receipt (GR)",
+      "footerSummary": "{{count}} items · total received {{qty}} units",
+      "footerSelectPO": "Select PO to load items",
+      "confirmReceipt": "Confirm receipt",
+      "selectPO": "Select Purchase Order (PO)",
+      "noEligiblePO": "No eligible orders (must be Submitted/Approved/Partial)",
+      "poValue": "PO value",
+      "poDeliveryDate": "Delivery date",
+      "partialReceived": "Partially received",
+      "waitingForReceipt": "Waiting for receipt",
+      "receiptDate": "Receipt date",
+      "receivedBy": "Received by",
+      "receivedByPlaceholder": "Employee name",
+      "doNo": "Delivery note no. (DO)",
+      "doNoPlaceholder": "e.g. DO-2026-001",
+      "itemsTitle": "Items to receive",
+      "unitPriceLabel": "Unit price:",
+      "receivedSoFar": "Received {{already}}/{{ordered}} {{unit}}",
+      "pendingQty": "Pending {{pending}} {{unit}}",
+      "receivedQty": "Received (this time)",
+      "acceptedQty": "Accepted to stock",
+      "rejectedQty": "Rejected / damaged",
+      "overReceiveWarning": "Over receiving by {{qty}} {{unit}}",
+      "imbalanceWarning": "Received ≠ accepted + rejected (unbalanced)",
+      "lotLabel": "Lot / Batch No.",
+      "lotPlaceholder": "e.g. LOT-2026-001",
+      "location": "Storage location",
+      "locationPlaceholder": "e.g. Warehouse A, Shelf 3",
+      "rejectionNotesPlaceholder": "Rejection reason / damage details...",
+      "lineValue": "Line value",
+      "totalReceivedValue": "Total received value",
+      "loadingItems": "Loading items from PO...",
+      "selectPOHint": "Select a purchase order above to load items"
+    },
+    "invoiceModal": {
+      "titleView": "Invoice Details",
+      "titleCreate": "Create Supplier Invoice",
+      "po": "Purchase Order (PO)",
+      "noEligiblePO": "No eligible orders (must be Submitted/Approved/Received)",
+      "grReference": "Reference GR (multi-select)",
+      "supplierInvoiceNumber": "Supplier tax invoice number",
+      "supplierInvoicePlaceholder": "e.g. TAX-INV-2026-0001 (from supplier)",
+      "invoiceDate": "Invoice date",
+      "dueDate": "Due date",
+      "poValue": "PO value",
+      "invoiceValue": "Invoice value",
+      "grSelected": "{{confirmed}} GR confirmed ({{selected}} selected)",
+      "goodsValue": "Goods value (from PO)",
+      "vat": "VAT (%)",
+      "drAccount": "DR account (debit)",
+      "defaultDrAccount": "1107 Raw Material Stock (default)",
+      "drAccountHint": "Change if purchasing office supplies / non-stock expenses",
+      "taxId": "Tax ID: {{id}}"
+    },
+    "paymentModal": {
+      "title": "Record Payment",
+      "confirmPayment": "Confirm payment",
+      "supplierPlaceholder": "Search supplier...",
+      "selectInvoice": "Invoice to pay",
+      "invoicePlaceholder": "-- Select invoice --",
+      "invoiceOption": "{{piNumber}} — balance {{amount}}",
+      "paidAmount": "Paid",
+      "paymentDate": "Payment date",
+      "paymentMethod": "Payment method",
+      "amountPaid": "Amount paid (THB)",
+      "whtRate": "WHT rate",
+      "whtNone": "No WHT",
+      "wht1": "1% — general services",
+      "wht3": "3% — rental/services",
+      "wht5": "5% — royalties",
+      "withholdingTax": "Withholding tax (auto-calculated)",
+      "netPay": "Actual transfer/payment",
+      "reference": "Reference (slip / cheque no.)",
+      "referencePlaceholder": "e.g. 20250316001"
+    },
+    "returnModal": {
+      "title": "Create Return (PR-Return)",
+      "createReturn": "Create return",
+      "po": "Purchase Order (PO)",
+      "selectPO": "-- Select PO --",
+      "gr": "Goods Receipt (GR)",
+      "selectGR": "-- Select GR --",
+      "returnDate": "Return date",
+      "returnReason": "Return reason",
+      "selectReason": "-- Select reason --",
+      "itemsTitle": "Items to return",
+      "returnQty": "Return qty",
+      "itemNote": "Item note",
+      "itemNotePlaceholder": "Additional reason",
+      "beforeTax": "Before tax",
+      "tax": "Tax (%)",
+      "totalReturn": "Total return value",
+      "notesPlaceholder": "Additional return details..."
+    },
+    "journal": {
+      "title": "Journal (auto-recorded)",
+      "debit": "Dr.",
+      "credit": "Cr.",
+      "rawStockAccount": "1107 Raw Material Stock",
+      "inputVatAccount": "1110 Input VAT",
+      "accountsPayable": "2101 Accounts Payable",
+      "goodsValue": "Goods value",
+      "vat": "VAT",
+      "total": "Total",
+      "bankDeposit": "1100 Bank Deposit",
+      "withholdingTaxPayable": "2180 WHT Payable",
+      "reducePayable": "Reduce payable",
+      "actualTransfer": "Actual transfer",
+      "whtRemitted": "WHT remitted",
+      "inventory": "1400 Inventory",
+      "inputVat": "1760 Input VAT",
+      "reduceDebt": "Reduce debt",
+      "returnedGoodsValue": "Returned goods value",
+      "vatReversed": "VAT reversed"
+    },
+    "accountType": {
+      "asset": "Asset",
+      "expense": "Expense"
+    },
+    "chain": {
+      "pr": "PR",
+      "po": "PO",
+      "gr": "GR"
+    },
+    "paymentStatus": {
+      "paid": "Paid",
+      "partial": "Paid {{paid}} / balance {{balance}}",
+      "unpaid": "Unpaid (balance {{balance}})"
+    },
+    "poStatus": {
+      "received": "Fully received",
+      "partial": "Partial",
+      "pending": "Pending approval/receipt"
+    },
+    "grStatus": {
+      "confirmed": "Confirmed",
+      "draft": "Draft"
+    },
+    "prStatus": {
+      "approved": "Approved",
+      "pending": "Pending",
+      "draft": "Draft"
+    },
+    "quickAddSupplier": {
+      "title": "Add New Supplier (Quick Add)",
+      "validation": "Please enter company and contact name",
+      "code": "Supplier code",
+      "companyName": "Company name",
+      "companyPlaceholder": "Company / shop name",
+      "contactName": "Contact name",
+      "contactPlaceholder": "Full name",
+      "phone": "Phone",
+      "phonePlaceholder": "0xx-xxx-xxxx",
+      "email": "Email",
+      "emailPlaceholder": "email@example.com",
+      "hint": "Edit more details in CRM → Suppliers"
+    },
+    "quickAddStock": {
+      "title": "Add New Stock Item",
+      "subtitle": "Item will be saved to stock and selectable in PO",
+      "validation": "Please enter SKU and product name",
+      "error": "An error occurred, please try again",
+      "sku": "SKU",
+      "skuPlaceholder": "e.g. MAT-001",
+      "name": "Product name",
+      "namePlaceholder": "Raw material / product name",
+      "category": "Category",
+      "categoryRaw": "Raw Material",
+      "categoryWip": "Work In Process",
+      "categoryFinished": "Finished Goods",
+      "categoryMaterial": "Materials / Other",
+      "unitCost": "Unit cost (฿)",
+      "costLabel": "cost",
+      "unitPrice": "Unit price (฿)",
+      "saleLabel": "sale",
+      "minStock": "Min Stock",
+      "maxStock": "Max Stock",
+      "initialQty": "Initial quantity",
+      "location": "Location",
+      "locationPlaceholder": "e.g. Main Warehouse, A-12",
+      "save": "Save to Stock"
     }
   },
   "sales": {
@@ -516,7 +938,24 @@
       "shiftClosed": "Shift closed",
       "cancelBillFailed": "Failed to cancel bill",
       "customerAdded": "Customer added",
-      "customerAddFailed": "Failed to add customer"
+      "customerAddFailed": "Failed to add customer",
+      "quotationUpdated": "Quotation updated",
+      "quotationCreated": "Quotation created",
+      "quotationSaveFailed": "Failed to save quotation",
+      "orderUpdated": "Sales order updated",
+      "orderCreated": "Sales order created",
+      "orderSaveFailed": "Failed to save sales order",
+      "paymentRecorded": "Payment recorded",
+      "paymentRecordFailed": "Failed to record payment",
+      "creditNoteCreated": "Credit note created",
+      "creditNoteCreateFailed": "Failed to create credit note",
+      "creditNoteIssued": "Credit note issued",
+      "creditNoteIssueFailed": "Failed to issue credit note",
+      "uploadSuccess": "Upload successful",
+      "uploadFailed": "Upload failed",
+      "deleteSuccess": "File deleted",
+      "deleteFailed": "Failed to delete file",
+      "shiftOpened": "Shift opened: {{number}}"
     },
     "error": {
       "loadQuotations": "Failed to load quotations",
@@ -561,7 +1000,23 @@
       "sendQuotation": "Send Quotation",
       "edit": "Edit",
       "openShift": "Open Shift",
-      "createDeliveryFromSO": "Create Delivery from SO"
+      "createDeliveryFromSO": "Create Delivery from SO",
+      "createInvoiceShort": "INV",
+      "collectPayment": "Collect",
+      "convertToSOFull": "Convert to Sales Order",
+      "printA4": "Print A4",
+      "printThermal": "Print 80mm slip",
+      "printSOA4": "Print SO A4",
+      "printInvoiceA4": "Print invoice A4",
+      "printCreditNoteA4": "Print credit note A4",
+      "addCustomer": "Add customer",
+      "voidBill": "Void bill",
+      "closeShift": "Close shift",
+      "fulfillBackorder": "Fulfill backorder",
+      "issueCreditNote": "Issue credit note",
+      "convertToOrder": "Convert to Sales Order",
+      "convertToSO": "Convert to SO",
+      "createInvoice": "Create Invoice"
     },
     "search": {
       "quotation": "Search quotations...",
@@ -573,7 +1028,72 @@
     },
     "view": {
       "list": "List view",
-      "card": "Card view"
+      "card": "Card view",
+      "listTitle": "List view",
+      "cardTitle": "Card view",
+      "comingSoon": "{{type}} — coming soon"
+    },
+    "common": {
+      "number": "No.",
+      "customer": "Customer",
+      "date": "Date",
+      "expiryDate": "Expiry",
+      "orderDate": "Order date",
+      "deliveryDate": "Delivery date",
+      "dueDate": "Due date",
+      "status": "Status",
+      "payment": "Payment",
+      "deliveryStatus": "Delivery status",
+      "total": "Total",
+      "balance": "Balance",
+      "amount": "Amount",
+      "reason": "Reason",
+      "originalDO": "Original DO",
+      "items": "Items",
+      "itemCount": "{{count}} items",
+      "qty": "Qty",
+      "unit": "Unit",
+      "unitPrice": "Unit price",
+      "discount": "Discount",
+      "subtotal": "Subtotal",
+      "tax": "VAT",
+      "grandTotal": "Grand total",
+      "actions": "Actions",
+      "view": "View",
+      "edit": "Edit",
+      "cancel": "Cancel",
+      "save": "Save",
+      "close": "Close",
+      "all": "All",
+      "clear": "Clear",
+      "to": "to",
+      "noData": "No data found",
+      "loading": "Loading...",
+      "bills": "bills",
+      "billCount": "{{count}} bills",
+      "product": "Product",
+      "customerName": "Customer name",
+      "customerCode": "Customer code",
+      "type": "Type",
+      "phone": "Phone",
+      "email": "Email",
+      "notes": "Notes",
+      "default": "Default",
+      "description": "Description",
+      "itemNumber": "Item {{number}}",
+      "lineTotal": "Total",
+      "itemFallback": "Item {{number}}",
+      "selectUnit": "Select unit",
+      "uploading": "Uploading...",
+      "saveEdit": "Save changes",
+      "comingSoon": "Coming soon",
+      "customerRequired": "Customer *",
+      "itemNumberPrefix": "Item",
+      "notesPlaceholder": "Notes...",
+      "orderDateLabel": "Order date",
+      "showingCount": "Showing {{count}} items",
+      "success": "Success",
+      "template": "Template"
     },
     "pos": {
       "cashInDrawerStart": "Cash in drawer (starting)",
@@ -584,15 +1104,50 @@
       "noteOptional": "Note (optional)",
       "notePlaceholder": "e.g. reason for cash difference...",
       "counted": "Counted",
-      "difference": "Difference"
+      "difference": "Difference",
+      "openShiftSuccess": "Shift opened: {{shiftNumber}}",
+      "openingCashLabel": "Cash in drawer (starting)",
+      "countedCashLabel": "Actual cash counted",
+      "notesLabel": "Notes (optional)",
+      "notesPlaceholder": "e.g. reason for cash difference...",
+      "voidBillSuccess": "Voided bill {{billNumber}}",
+      "openSince": "Open since {{time}}",
+      "billsInShift": "Bills in shift",
+      "startShift": "Start shift",
+      "openShiftHint": "Enter starting cash to open shift",
+      "cash": "Cash",
+      "qrTransfer": "QR/Transfer",
+      "openingCash": "Opening cash",
+      "cashSales": "Cash sales",
+      "expectedCash": "Expected cash",
+      "confirmCloseShift": "Confirm close shift",
+      "voidJournalHint": "Voiding bill will create a reversing journal entry",
+      "confirmVoidBill": "Confirm void bill",
+      "shiftTitle": "POS Shift",
+      "shiftSubtitle": "Open/close shifts and check totals",
+      "noOpenShift": "No open shift",
+      "openShiftHint2": "Open a shift to start selling",
+      "shiftOpen": "Open",
+      "totalSales": "Total sales",
+      "shiftHistory": "Shift history",
+      "confirmReceivePayment": "Record payment"
     },
     "validation": {
       "cancelReason": "Please specify cancellation reason",
-      "customerInfo": "Please enter name, customer code and phone"
+      "customerInfo": "Please enter name, customer code and phone",
+      "selectCustomer": "Please select a customer",
+      "addItem": "Please add at least one item",
+      "selectInvoice": "Please select an invoice",
+      "creditReason": "Please enter credit note reason",
+      "amountRequired": "Please enter amount",
+      "fileTooLarge": "File too large (max 10MB)"
     },
     "paymentMethod": {
       "cash": "Cash",
-      "qrTransfer": "QR/Transfer"
+      "qrTransfer": "QR/Transfer",
+      "transfer": "Bank transfer",
+      "cheque": "Cheque",
+      "creditCard": "Credit card"
     },
     "labels": {
       "cancelReason": "Cancellation reason *"
@@ -605,7 +1160,162 @@
     },
     "confirm": {
       "deleteQuotation": "Delete this quotation?",
-      "deleteTemplate": "Delete this template?"
+      "deleteTemplate": "Delete this template?",
+      "deleteImage": "Delete this image?"
+    },
+    "journal": {
+      "title": "Journal Preview (auto-recorded)",
+      "debit": "Dr.",
+      "credit": "Cr.",
+      "cashAccount": "1100 Cash",
+      "bankAccount": "1101 Bank deposit",
+      "arAccount": "1110 Accounts receivable"
+    },
+    "pagination": {
+      "showing": "Showing {{start}}–{{end}} of {{total}} items",
+      "perPage": "{{count}} / page"
+    },
+    "overview": {
+      "itemCount": "{{count}} items",
+      "pendingActionsTitle": "Pending actions",
+      "workflowTitle": "Sales workflow"
+    },
+    "orders": {
+      "pendingDelivery": "Pending delivery {{qty}}"
+    },
+    "deliveryOrders": {
+      "deliveryDateHeader": "Delivery date"
+    },
+    "templates": {
+      "title": "Quotation templates",
+      "create": "Create template",
+      "use": "Use template",
+      "expiresIn": "Expires in",
+      "expiresInDays": "{{days}} days",
+      "expirationDays": "Expires in {{days}} days"
+    },
+    "createBackorder": "Create backorder",
+    "quickAddCustomer": {
+      "title": "Add new customer",
+      "nameLabel": "Name *",
+      "namePlaceholder": "Customer name",
+      "codeLabel": "Code *",
+      "phoneLabel": "Phone *",
+      "typeLabel": "Type",
+      "emailLabel": "Email"
+    },
+    "customerType": {
+      "individual": "Individual",
+      "company": "Company",
+      "government": "Government"
+    },
+    "customerSearch": {
+      "placeholder": "Search customer...",
+      "noResults": "No customers found"
+    },
+    "productSearch": {
+      "placeholder": "Search product..."
+    },
+    "itemEditor": {
+      "addItem": "Add item",
+      "discountPercent": "Discount (%)"
+    },
+    "totals": {
+      "discountLabel": "Discount (฿)",
+      "vatLabel": "VAT ({{rate}}%)",
+      "discountAmount": "Discount (฿)"
+    },
+    "quotationModal": {
+      "titleCreate": "Create quotation",
+      "titleEdit": "Edit quotation {{number}}",
+      "customerLabel": "Customer *",
+      "expiryDateLabel": "Expiry date",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "Notes..."
+    },
+    "orderModal": {
+      "titleCreate": "Create sales order",
+      "titleEdit": "Edit sales order {{number}}",
+      "titleConvert": "Convert {{quotation}} → SO",
+      "customerLabel": "Customer *",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "Notes..."
+    },
+    "soActions": {
+      "confirmSO": "Confirm sales order",
+      "startProcessing": "Start processing",
+      "createInvoice": "Create invoice"
+    },
+    "soDetail": {
+      "orderDate": "Order date",
+      "stockInsufficient": "Insufficient stock (have {{qty}} pcs)"
+    },
+    "invoiceDetail": {
+      "issuedDate": "Issued date",
+      "totalAmount": "Total amount",
+      "balanceAmount": "Balance",
+      "summary": "Summary",
+      "beforeTax": "Before tax",
+      "paidAmount": "Paid",
+      "netAfterWht": "Net after WHT",
+      "paymentHistory": "Payment history",
+      "noPayments": "No payments",
+      "attachments": "Attachments",
+      "addImage": "Add image",
+      "noAttachments": "No attachments",
+      "withholdingTax": "WHT {{type}} {{rate}}%"
+    },
+    "paymentModal": {
+      "title": "Record payment",
+      "amountLabel": "Amount",
+      "methodLabel": "Method",
+      "dateLabel": "Date",
+      "refLabel": "Reference",
+      "refPlaceholder": "e.g. slip / cheque no.",
+      "notePlaceholder": "Notes...",
+      "maxAmountPlaceholder": "Max {{amount}}",
+      "debitLabel": "Receive",
+      "creditLabel": "Reduce AR"
+    },
+    "creditNoteModal": {
+      "title": "Create credit note",
+      "invoiceLabel": "Reference invoice",
+      "selectInvoice": "-- Select invoice --",
+      "dateLabel": "Credit date",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Enter credit note reason..."
+    },
+    "creditNoteStatus": {
+      "draft": "Draft",
+      "issued": "Issued",
+      "applied": "Applied",
+      "cancelled": "Cancelled"
+    },
+    "creditNoteDetail": {
+      "invoiceRef": "Invoice reference",
+      "issuedDate": "Issued date",
+      "amount": "Credit amount"
+    },
+    "backorderStatus": {
+      "pending": "Pending",
+      "fulfilled": "Fulfilled",
+      "cancelled": "Cancelled"
+    },
+    "backorderDetail": {
+      "itemsTitle": "Backorder items",
+      "ordered": "Ordered",
+      "delivered": "Delivered",
+      "remaining": "Remaining",
+      "noItems": "No backorder items"
+    },
+    "paymentAccount": {
+      "bank": "1101 Bank deposits",
+      "cash": "1100 Cash",
+      "receivable": "1110 Accounts receivable"
+    },
+    "statusBadge": {
+      "outOfStock": "Out of stock (have {{count}} pcs)",
+      "pendingDelivery": "Pending {{count}}"
     }
   },
   "crm": {

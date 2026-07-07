@@ -182,31 +182,32 @@ interface POSDailySales {
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  DRAFT:      { label: 'ฉบับร่าง',        bg: 'bg-gray-500/15',    text: 'text-[var(--fg-2)]' },
-  SENT:       { label: 'ส่งแล้ว',          bg: 'bg-blue-500/15',    text: 'text-blue-300' },
-  ACCEPTED:   { label: 'อนุมัติ',          bg: 'bg-[var(--success-soft)]',   text: 'text-green-300' },
-  REJECTED:   { label: 'ปฏิเสธ',           bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
-  EXPIRED:    { label: 'หมดอายุ',          bg: 'bg-gray-500/15',    text: 'text-[var(--fg-3)]' },
-  CANCELLED:  { label: 'ยกเลิก',           bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
-  CONFIRMED:  { label: 'ยืนยัน',           bg: 'bg-cyan-500/15',    text: 'text-cyan-300' },
-  PROCESSING: { label: 'กำลังดำเนินการ',   bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
-  READY:      { label: 'พร้อมส่ง',         bg: 'bg-purple-500/15',  text: 'text-purple-300' },
-  DELIVERED:  { label: 'ส่งแล้ว',          bg: 'bg-indigo-500/15',  text: 'text-indigo-300' },
-  COMPLETED:  { label: 'เสร็จสิ้น',        bg: 'bg-green-600/15',   text: 'text-green-300' },
-  PARTIAL:    { label: 'ส่งบางส่วน',       bg: 'bg-orange-500/15',  text: 'text-orange-300' },
-  ISSUED:     { label: 'ออกใบแล้ว',        bg: 'bg-blue-500/15',    text: 'text-blue-300' },
-  PAID:       { label: 'ชำระแล้ว',         bg: 'bg-[var(--success-soft)]',   text: 'text-green-300' },
-  UNPAID:     { label: 'ค้างชำระ',         bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
-  OVERDUE:    { label: 'เกินกำหนด',        bg: 'bg-red-600/15',     text: 'text-danger' },
-  PENDING:    { label: 'รอดำเนินการ',      bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
+const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string }> = {
+  DRAFT:      { labelKey: 'sales.status.draft',        bg: 'bg-gray-500/15',    text: 'text-[var(--fg-2)]' },
+  SENT:       { labelKey: 'sales.status.sent',         bg: 'bg-blue-500/15',    text: 'text-blue-300' },
+  ACCEPTED:   { labelKey: 'sales.status.approved',     bg: 'bg-[var(--success-soft)]',   text: 'text-green-300' },
+  REJECTED:   { labelKey: 'sales.status.rejected',     bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
+  EXPIRED:    { labelKey: 'sales.status.expired',      bg: 'bg-gray-500/15',    text: 'text-[var(--fg-3)]' },
+  CANCELLED:  { labelKey: 'sales.status.cancelled',    bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
+  CONFIRMED:  { labelKey: 'sales.status.confirmed',    bg: 'bg-cyan-500/15',    text: 'text-cyan-300' },
+  PROCESSING: { labelKey: 'sales.status.processing',   bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
+  READY:      { labelKey: 'sales.status.readyToShip',  bg: 'bg-purple-500/15',  text: 'text-purple-300' },
+  DELIVERED:  { labelKey: 'sales.status.delivered',    bg: 'bg-indigo-500/15',  text: 'text-indigo-300' },
+  COMPLETED:  { labelKey: 'sales.status.completed',    bg: 'bg-green-600/15',   text: 'text-green-300' },
+  PARTIAL:    { labelKey: 'sales.status.partialShipped', bg: 'bg-orange-500/15',  text: 'text-orange-300' },
+  ISSUED:     { labelKey: 'sales.status.invoiced',     bg: 'bg-blue-500/15',    text: 'text-blue-300' },
+  PAID:       { labelKey: 'sales.status.paid',         bg: 'bg-[var(--success-soft)]',   text: 'text-green-300' },
+  UNPAID:     { labelKey: 'sales.status.unpaid',       bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
+  OVERDUE:    { labelKey: 'sales.status.overdue',      bg: 'bg-red-600/15',     text: 'text-danger' },
+  PENDING:    { labelKey: 'sales.status.pending',      bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
 }
 
 const StatusBadge = ({ status }: { status: string }) => {
-  const cfg = STATUS_CONFIG[status] || { label: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
+  const { t } = useTranslation()
+  const cfg = STATUS_CONFIG[status] || { labelKey: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
-      {cfg.label}
+      {t(cfg.labelKey as any)}
     </span>
   )
 }
@@ -243,19 +244,22 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 )
 
 // ── Reusable Journal Preview (outside main component) ────────────────────────
-const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => (
+const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => {
+  const { t } = useTranslation()
+  return (
   <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-1">
-    <p className="text-xs text-warning font-medium mb-2">สมุดรายวัน (ระบบบันทึกอัตโนมัติ)</p>
+    <p className="text-xs text-warning font-medium mb-2">{t('sales.journal.title')}</p>
     {entries.map((e, i) => (
       <div key={i} className={`flex items-center gap-2 text-xs ${e.dr ? '' : 'pl-6'}`}>
-        <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-danger'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
+        <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-danger'}`}>{e.dr ? t('sales.journal.debit') : t('sales.journal.credit')}</span>
         <span className="text-[var(--fg-2)] flex-1">{e.account}</span>
         <span className="text-[var(--fg-3)]">{e.label}</span>
         {e.amount !== undefined && <span className="text-[var(--fg-1)] font-medium">฿{(e.amount).toLocaleString('th-TH')}</span>}
       </div>
     ))}
   </div>
-)
+  )
+}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Sales = () => {
@@ -459,7 +463,7 @@ const Sales = () => {
     else if (type === t('sales.docType.invoice')) setDetailInv(item)
     else if (type === t('sales.docType.creditNote')) setDetailCN(item)
     else if (type === t('sales.docType.backorder')) setDetailBO(item)
-    else toast(`ดูรายละเอียด ${type} — กำลังพัฒนา`)
+    else toast(`{t('sales.viewDetails')} ${type} — {t('sales.common.comingSoon')}`)
   }
   const handleEditQT = async (q: Quotation) => {
     try {
@@ -561,7 +565,7 @@ const Sales = () => {
     return (
       <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/40">
         <p className="text-xs text-[var(--fg-4)]">
-          แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
+          {t('sales.pagination.showing', { start: Math.min((currentPage - 1) * pageSize + 1, total), end: Math.min(currentPage * pageSize, total), total })}
         </p>
         <div className="flex items-center gap-1">
           <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -583,9 +587,9 @@ const Sales = () => {
   const PageSizeSelect = () => (
     <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
       className="px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo">
-      <option value={25}>25 / หน้า</option>
-      <option value={50}>50 / หน้า</option>
-      <option value={100}>100 / หน้า</option>
+      <option value={25}>{t('sales.pagination.perPage', { count: 25 })}</option>
+      <option value={50}>{t('sales.pagination.perPage', { count: 50 })}</option>
+      <option value={100}>{t('sales.pagination.perPage', { count: 100 })}</option>
     </select>
   )
 
@@ -602,7 +606,7 @@ const Sales = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: t('sales.stats.totalSales'),   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-[var(--primary)]', bg: 'bg-phopy-indigo/10',  border: 'border-phopy-indigo-50' },
-          { label: t('sales.docType.salesOrder'),   value: `${summary?.salesOrders.total || 0} รายการ`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
+          { label: t('sales.docType.salesOrder'),   value: `${t('sales.common.itemCount', { count: summary?.salesOrders.total || 0 })}`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
           { label: t('sales.stats.collectedToday'), value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-success/10',    border: 'border-success-soft' },
           { label: t('sales.stats.receivable'),   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-warning',    bg: 'bg-orange-500/10',     border: 'border-orange-500/20' },
         ].map((card, i) => (
@@ -627,7 +631,7 @@ const Sales = () => {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="lg:col-span-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-warning" /> รายการรอดำเนินการ
+            <Clock className="w-4 h-4 text-warning" /> {t('sales.overview.pendingActionsTitle')}
           </h3>
           <div className="space-y-2">
             {[
@@ -653,14 +657,14 @@ const Sales = () => {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
           className="lg:col-span-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-            <ArrowRight className="w-4 h-4 text-[var(--primary)]" /> กระบวนการขาย
+            <ArrowRight className="w-4 h-4 text-[var(--primary)]" /> {t('sales.overview.workflowTitle')}
           </h3>
           <div className="flex items-center gap-1 flex-wrap">
             {[
-              { label: t('sales.docType.quotation'), sub: `${summary?.salesOrders.total || 0} รายการ`, icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
-              { label: t('sales.docType.salesOrder'),  sub: `${summary?.salesOrders.total || 0} รายการ`, icon: ShoppingCart, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', tab: 'orders' as const },
-              { label: t('sales.docType.invoice'), sub: `${summary?.invoices.total || 0} รายการ`,    icon: Receipt,    color: 'text-warning', bg: 'bg-[var(--warning-soft)]', border: 'border-warning/30', tab: 'invoices' as const },
-              { label: t('sales.actions.collect'),    sub: `${summary?.invoices.paid || 0} ชำระแล้ว`,   icon: DollarSign, color: 'text-success',  bg: 'bg-[var(--success-soft)]',  border: 'border-green-500/30',  tab: 'invoices' as const },
+              { label: t('sales.docType.quotation'), sub: `{t('sales.common.itemCount', { count: summary?.salesOrders.total || 0 })}`, icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
+              { label: t('sales.docType.salesOrder'),  sub: `${summary?.salesOrders.total || 0} {t('sales.common.itemNumberPrefix')}`, icon: ShoppingCart, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', tab: 'orders' as const },
+              { label: t('sales.docType.invoice'), sub: `${t('sales.common.itemCount', { count: summary?.invoices.total || 0 })}`,    icon: Receipt,    color: 'text-warning', bg: 'bg-[var(--warning-soft)]', border: 'border-warning/30', tab: 'invoices' as const },
+              { label: t('sales.actions.collect'),    sub: `${summary?.invoices.paid || 0} {t('sales.invoiceDetail.paidAmount')}`,   icon: DollarSign, color: 'text-success',  bg: 'bg-[var(--success-soft)]',  border: 'border-green-500/30',  tab: 'invoices' as const },
             ].map((step, i) => (
               <div key={step.label} className="flex items-center gap-1 flex-1 min-w-[100px]">
                 <button onClick={() => setActiveTab(step.tab)}
@@ -708,12 +712,12 @@ const Sales = () => {
           <div className="flex items-center gap-1.5 text-sm">
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
               className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
-            <span className="text-[var(--fg-4)] text-xs">ถึง</span>
+            <span className="text-[var(--fg-4)] text-xs">{t('sales.common.to')}</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
               className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             {(dateFrom || dateTo) && (
               <button onClick={() => { setDateFrom(''); setDateTo('') }}
-                className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded">ล้าง</button>
+                className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded">{t('sales.common.clear')}</button>
             )}
           </div>
           {/* Limit */}
@@ -727,11 +731,11 @@ const Sales = () => {
           </div>
           {/* View mode toggle */}
           <div className="flex items-center gap-0.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg p-1">
-            <button onClick={() => setViewMode('list')} title="มุมมองรายการ"
+            <button onClick={() => setViewMode('list')} title={t('sales.view.list')}
               className={`p-1 rounded transition-colors ${viewMode === 'list' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               <LayoutList className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => setViewMode('card')} title="มุมมองการ์ด"
+            <button onClick={() => setViewMode('card')} title={t('sales.view.card')}
               className={`p-1 rounded transition-colors ${viewMode === 'card' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
@@ -752,33 +756,33 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาใบเสนอราคา..." action={
+        <ListToolbar placeholder={t('sales.searchQuotation')} action={
           <>
             <PageSizeSelect />
             <button onClick={() => setActiveTab('templates')}
               className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm">
-              <LayoutTemplate className="w-4 h-4" /> เทมเพลต
+              <LayoutTemplate className="w-4 h-4" /> {t('sales.common.template')}
             </button>
             <button onClick={handleCreateQuotation}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบเสนอราคา
+              <Plus className="w-4 h-4" /> {t('sales.createQuotation')}
             </button>
           </>
         } />
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบเสนอราคา</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyQuotation')}</p></div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">วันที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">หมดอายุ</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
-                  <th className="text-right px-4 py-2.5 font-medium">ยอดรวม</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{t('sales.common.date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.expiryDate')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -805,10 +809,10 @@ const Sales = () => {
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
                         <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
-                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                         {['DRAFT', 'SENT'].includes(q.status) && (
                           <button onClick={() => handleEditQT(q)}
-                            className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                            className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                             <Pencil className="w-3 h-3" />
                           </button>
                         )}
@@ -856,19 +860,19 @@ const Sales = () => {
                     <StatusBadge status={q.status} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
-                    <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(q.quotation_date)}</span></span>
-                    <span>หมดอายุ: <span className={isExpired ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(q.expiry_date)}</span></span>
-                    <span>{q.item_count} รายการ</span>
+                    <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(q.quotation_date)}</span></span>
+                    <span>{t('sales.common.expiryDate')} <span className={isExpired ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(q.expiry_date)}</span></span>
+                    <span>{t('sales.common.itemCount', { count: q.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      ดูรายละเอียด
+                      {t('sales.viewDetails')}
                     </button>
                     {['DRAFT', 'SENT'].includes(q.status) && (
                       <button onClick={() => handleEditQT(q)}
-                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
@@ -881,7 +885,7 @@ const Sales = () => {
                     {q.status === 'ACCEPTED' && (
                       <button onClick={() => handleConvertQtToSO(q)}
                         className="flex-1 py-1.5 text-xs font-medium text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] flex items-center justify-center gap-1">
-                        <ArrowRight className="w-3 h-3" /> แปลง SO
+                        <ArrowRight className="w-3 h-3" /> {t('sales.actions.convertToSO')}
                       </button>
                     )}
                   </div>
@@ -920,12 +924,12 @@ const Sales = () => {
 
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาคำสั่งขาย..." action={
+        <ListToolbar placeholder={t('sales.searchOrder')} action={
           <>
             <PageSizeSelect />
             <button onClick={handleCreateSalesOrder}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
-              <Plus className="w-4 h-4" /> สร้างคำสั่งขาย
+              <Plus className="w-4 h-4" /> {t('sales.createOrder')}
             </button>
           </>
         } />
@@ -934,7 +938,7 @@ const Sales = () => {
         <div className="flex flex-wrap gap-1.5">
           <button onClick={() => setFilterStatus('')}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterStatus ? 'bg-phopy-indigo text-white border-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-            ทั้งหมด
+            {t('sales.common.all')}
           </button>
           {SO_DELIVERY_STEPS.map(s => (
             <button key={s.status} onClick={() => setFilterStatus(s.status === filterStatus ? '' : s.status)}
@@ -945,19 +949,19 @@ const Sales = () => {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบคำสั่งขาย</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyOrder')}</p></div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">วันสั่ง</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">กำหนดส่ง</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะจัดส่ง</th>
-                  <th className="text-center px-4 py-2.5 font-medium hidden lg:table-cell">ชำระ</th>
-                  <th className="text-right px-4 py-2.5 font-medium">ยอดรวม</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{t('sales.common.orderDate')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.deliveryDate')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.deliveryStatus')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium hidden lg:table-cell">{t('sales.common.payment')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -984,7 +988,7 @@ const Sales = () => {
                                 <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">DO ×{doShipped.length}</span>
                               )}
                               {doDraft.length > 0 && (
-                                <span className="text-[10px] text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">DO ร่าง ×{doDraft.length}</span>
+                                <span className="text-[10px] text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">DO {t('sales.creditNoteStatus.draft')} ×{doDraft.length}</span>
                               )}
                             </>)
                           })()}
@@ -1011,7 +1015,7 @@ const Sales = () => {
                         </div>
                         <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}</p>
                         {(order.pending_qty ?? 0) > 0 && (
-                          <p className="text-xs text-center text-warning">ค้างส่ง {order.pending_qty}</p>
+                          <p className="text-xs text-center text-warning">{t('sales.statusBadge.pendingDelivery')} {order.pending_qty}</p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center hidden lg:table-cell">
@@ -1021,10 +1025,10 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                           {order.status === 'DRAFT' && (
                             <button onClick={() => handleEditSO(order)}
-                              className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                              className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                               <Pencil className="w-3 h-3" />
                             </button>
                           )}
@@ -1076,7 +1080,7 @@ const Sales = () => {
                               <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">DO ×{doShipped.length}</span>
                             )}
                             {doDraft.length > 0 && (
-                              <span className="text-[10px] text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">DO ร่าง ×{doDraft.length}</span>
+                              <span className="text-[10px] text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">DO {t('sales.creditNoteStatus.draft')} ×{doDraft.length}</span>
                             )}
                           </>)
                         })()}
@@ -1095,21 +1099,21 @@ const Sales = () => {
                       <div key={s.status} className={`h-1.5 rounded-full flex-1 ${idx <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
                     ))}
                   </div>
-                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · ค้างส่ง ${order.pending_qty}` : ''}</p>
+                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · {t('sales.statusBadge.pendingDelivery')} ${order.pending_qty}` : ''}</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
-                    <span>วันสั่ง: <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
-                    <span>กำหนดส่ง: <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
-                    <span>{order.item_count} รายการ</span>
+                    <span>{t('sales.common.orderDate')} <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
+                    <span>{t('sales.common.deliveryDate')} <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
+                    <span>{t('sales.common.itemCount', { count: order.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      ดูรายละเอียด
+                      {t('sales.viewDetails')}
                     </button>
                     {order.status === 'DRAFT' && (
                       <button onClick={() => handleEditSO(order)}
-                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title="แก้ไข">
+                        className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
@@ -1122,7 +1126,7 @@ const Sales = () => {
                     {['CONFIRMED','PROCESSING','READY','DELIVERED','COMPLETED'].includes(order.status) && (
                       <button onClick={() => handleCreateInvoiceFromSO(order)}
                         className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] flex items-center justify-center gap-1">
-                        <Receipt className="w-3 h-3" /> ออก INV
+                        <Receipt className="w-3 h-3" /> {t('sales.actions.createInvoiceShort')}
                       </button>
                     )}
                   </div>
@@ -1142,12 +1146,12 @@ const Sales = () => {
     const items = paginate(filtered)
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาใบแจ้งหนี้..." action={
+        <ListToolbar placeholder={t('sales.searchInvoice')} action={
           <>
             <PageSizeSelect />
             <button onClick={handleCreateInvoice}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบแจ้งหนี้
+              <Plus className="w-4 h-4" /> {t('sales.createInvoice')}
             </button>
           </>
         } />
@@ -1155,21 +1159,21 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
             <Receipt className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p>ไม่พบใบแจ้งหนี้</p>
+            <p>{t('sales.emptyInvoice')}</p>
           </div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">วันที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">ครบกำหนด</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
-                  <th className="text-right px-4 py-2.5 font-medium">ยอดรวม</th>
-                  <th className="text-right px-4 py-2.5 font-medium">คงค้าง</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.dueDate')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.balance')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1215,11 +1219,11 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                           {isUnpaid && (
                             <button onClick={() => handleRecordPayment(inv)}
                               className="px-2.5 py-1 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" /> รับเงิน
+                              <DollarSign className="w-3 h-3" /> {t('sales.actions.collectPayment')}
                             </button>
                           )}
                         </div>
@@ -1262,11 +1266,11 @@ const Sales = () => {
                     <StatusBadge status={inv.payment_status} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
-                    <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
-                    <span>ครบกำหนด: <span className={isOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date)}</span></span>
-                    <span>ยอดรวม: <span className="text-[var(--fg-1)] font-medium">{formatCurrency(inv.total_amount)}</span></span>
+                    <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
+                    <span>{t('sales.common.dueDate')} <span className={isOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date)}</span></span>
+                    <span>{t('sales.common.total')} <span className="text-[var(--fg-1)] font-medium">{formatCurrency(inv.total_amount)}</span></span>
                     <span className="text-right">
-                      คงค้าง: <span className={inv.balance_amount > 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
+                      {t('sales.common.balance')} <span className={inv.balance_amount > 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
                         {formatCurrency(inv.balance_amount)}
                       </span>
                     </span>
@@ -1274,12 +1278,12 @@ const Sales = () => {
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      ดูรายละเอียด
+                      {t('sales.viewDetails')}
                     </button>
                     {isUnpaid && (
                       <button onClick={() => handleRecordPayment(inv)}
                         className="flex-1 py-1.5 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] transition-colors flex items-center justify-center gap-1">
-                        <DollarSign className="w-3 h-3" /> รับเงิน
+                        <DollarSign className="w-3 h-3" /> {t('sales.actions.collectPayment')}
                       </button>
                     )}
                   </div>
@@ -1298,30 +1302,30 @@ const Sales = () => {
     const items = filterItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date')
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาใบลดหนี้..." action={
+        <ListToolbar placeholder={t('sales.searchCreditNote')} action={
           <button onClick={handleCreateCreditNote}
             className="flex items-center gap-1.5 px-4 py-2 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบลดหนี้
+            <Plus className="w-4 h-4" /> {t('sales.createCreditNote')}
           </button>
         } />
 
         {items.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
             <RotateCcw className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p>ไม่พบใบลดหนี้</p>
+            <p>{t('sales.emptyCreditNote')}</p>
           </div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">INV</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">วันที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">เหตุผล</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
-                  <th className="text-right px-4 py-2.5 font-medium">ยอด</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.reason')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.amount')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1342,14 +1346,14 @@ const Sales = () => {
                     <td className="px-4 py-3 text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
-                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
-              แสดง {items.length} รายการ
+              {t('sales.common.showingCount', { count: items.length })}
             </div>
           </div>
         ) : (
@@ -1368,14 +1372,14 @@ const Sales = () => {
                   <StatusBadge status={cn.status} />
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
-                  <span>วันที่: <span className="text-[var(--fg-2)]">{formatDate(cn.credit_date)}</span></span>
+                  <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(cn.credit_date)}</span></span>
                   <span className="text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</span>
-                  <span className="col-span-2 text-[var(--fg-3)]">เหตุผล: {cn.reason}</span>
+                  <span className="col-span-2 text-[var(--fg-3)]">{t('sales.common.reason')} {cn.reason}</span>
                 </div>
                 <div className="pt-3 border-t border-[var(--border)]/50">
                   <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
                     className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                    ดูรายละเอียด
+                    {t('sales.viewDetails')}
                   </button>
                 </div>
               </motion.div>
@@ -1391,28 +1395,28 @@ const Sales = () => {
     const items = filterItems(backorders, ['bo_number', 'customer_name'])
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาใบค้างส่ง..." action={
+        <ListToolbar placeholder={t('sales.search.backorder')} action={
           <button onClick={handleCreateBackorder}
             className="flex items-center gap-1.5 px-4 py-2 bg-orange-500/80 text-white font-semibold rounded-lg hover:bg-orange-500 text-sm">
-            <Plus className="w-4 h-4" /> สร้างใบค้างส่ง
+            <Plus className="w-4 h-4" /> {t('sales.createBackorder')}
           </button>
         } />
 
         {items.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
             <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p>ไม่พบใบค้างส่ง</p>
+            <p>{t('sales.emptyBackorder')}</p>
           </div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">ใบส่งของต้นฉบับ</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.originalDO')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1431,14 +1435,14 @@ const Sales = () => {
                     <td className="px-4 py-3 text-center"><StatusBadge status={bo.status} /></td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
-                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
-              แสดง {items.length} รายการ
+              {t('sales.common.showingCount', { count: items.length })}
             </div>
           </div>
         ) : (
@@ -1457,12 +1461,12 @@ const Sales = () => {
                   <StatusBadge status={bo.status} />
                 </div>
                 {bo.original_do && (
-                  <p className="text-xs text-[var(--fg-3)] mb-3">ใบส่งของต้นฉบับ: <span className="text-[var(--fg-2)]">{bo.original_do}</span></p>
+                  <p className="text-xs text-[var(--fg-3)] mb-3">{t('sales.common.originalDO')} <span className="text-[var(--fg-2)]">{bo.original_do}</span></p>
                 )}
                 <div className="pt-3 border-t border-[var(--border)]/50">
                   <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
                     className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                    ดูรายละเอียด
+                    {t('sales.viewDetails')}
                   </button>
                 </div>
               </motion.div>
@@ -1483,28 +1487,28 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder="ค้นหาใบส่งของ..." action={
+        <ListToolbar placeholder={t('sales.searchDelivery')} action={
           <>
             <PageSizeSelect />
             <button onClick={() => toast(t('sales.actions.createDeliveryFromSO'))}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบส่งของ
+              <Plus className="w-4 h-4" /> {t('sales.createDelivery')}
             </button>
           </>
         } />
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>ไม่พบใบส่งของ</p></div>
+          <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyDelivery')}</p></div>
         ) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">เลขที่</th>
-                  <th className="text-left px-4 py-2.5 font-medium">ลูกค้า</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">วันส่ง</th>
-                  <th className="text-center px-4 py-2.5 font-medium">สถานะ</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.deliveryDate')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1526,7 +1530,7 @@ const Sales = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">ดู</button>
+                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
                           {next && (
                             <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -1560,13 +1564,13 @@ const Sales = () => {
                     <StatusBadge status={do_.status} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
-                    <span>วันส่ง: <span className="text-[var(--fg-2)]">{formatDate(do_.delivery_date)}</span></span>
+                    <span>{t('sales.common.deliveryDate')} <span className="text-[var(--fg-2)]">{formatDate(do_.delivery_date)}</span></span>
                     <span className="text-right">{do_.driver_name || '-'}</span>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
                     <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      ดูรายละเอียด
+                      {t('sales.viewDetails')}
                     </button>
                     {next && (
                       <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
@@ -1589,10 +1593,10 @@ const Sales = () => {
   const TemplatesContent = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-base font-semibold text-[var(--fg-1)]">เทมเพลตใบเสนอราคา</h2>
+        <h2 className="text-base font-semibold text-[var(--fg-1)]">{t('sales.templates.title')}</h2>
         <button onClick={handleCreateTemplate}
           className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
-          <Plus className="w-4 h-4" /> สร้างเทมเพลต
+          <Plus className="w-4 h-4" /> {t('sales.templates.create')}
         </button>
       </div>
 
@@ -1606,23 +1610,23 @@ const Sales = () => {
                 <LayoutTemplate className="w-5 h-5 text-[var(--primary)]" />
               </div>
               {template.is_default === 1 && (
-                <span className="px-2 py-0.5 bg-[var(--success-soft)] text-success text-xs rounded-full">ค่าเริ่มต้น</span>
+                <span className="px-2 py-0.5 bg-[var(--success-soft)] text-success text-xs rounded-full">{t('sales.common.default')}</span>
               )}
             </div>
             <h3 className="text-base font-semibold text-[var(--fg-1)] mb-1">{template.name}</h3>
             <p className="text-sm text-[var(--fg-3)] mb-3">{template.description || t('sales.empty.noDescription')}</p>
             <div className="flex justify-between text-xs text-[var(--fg-4)] mb-4">
-              <span>{template.item_count} รายการ</span>
-              <span>หมดอายุ {template.expiration_days} วัน</span>
+              <span>{t('sales.common.itemCount', { count: template.item_count })}</span>
+              <span>{t('sales.templates.expirationDays', { days: template.expiration_days })}</span>
             </div>
             <div className="flex gap-2">
               <button onClick={() => toast(t('sales.info.editTemplateComing'))}
                 className="flex-1 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm transition-colors">
-                แก้ไข
+                {t('sales.common.edit')}
               </button>
               <button onClick={() => toast(t('sales.info.useTemplate') + template.name)}
                 className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
-                ใช้เทมเพลต
+                {t('sales.templates.use')}
               </button>
             </div>
           </motion.div>
@@ -1655,8 +1659,8 @@ const Sales = () => {
           className="w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30">
           <div className="flex items-center gap-2">
             <Receipt className="w-4 h-4 text-[var(--primary)]" />
-            <span className="text-sm font-medium text-[var(--fg-1)]">บิลในกะนี้</span>
-            <span className="text-xs text-[var(--fg-4)]">{bills.length} บิล</span>
+            <span className="text-sm font-medium text-[var(--fg-1)]">{t('sales.pos.billsInShift')}</span>
+            <span className="text-xs text-[var(--fg-4)]">{t('sales.common.billCount', { count: bills.length })}</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-[var(--primary)]">
@@ -1684,7 +1688,7 @@ const Sales = () => {
                   <span className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</span>
                   <button onClick={() => onVoid(bill)}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-danger border border-danger/30 hover:bg-[var(--danger-soft)]">
-                    <Ban className="w-3 h-3" /> ยกเลิก
+                    <Ban className="w-3 h-3" /> {t('sales.common.cancel')}
                   </button>
                 </div>
               </div>
@@ -1703,7 +1707,7 @@ const Sales = () => {
       try {
         const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: parseFloat(openingCash) || 0 })
         if (data.success) {
-          toast.success(`เปิดกะสำเร็จ: ${data.data.shift_number}`)
+          toast.success(`{t('sales.toast.shiftOpened')}: ${data.data.shift_number}`)
           fetchPOSShifts()
           onClose()
         }
@@ -1711,21 +1715,21 @@ const Sales = () => {
       finally { setSaving(false) }
     }
     return (
-      <ModalShell title="เปิดกะ" icon={ShoppingBag} onClose={onClose}
+      <ModalShell title={t('sales.actions.openShift')} icon={ShoppingBag} onClose={onClose}
         footer={
           <>
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
             <button onClick={handleOpen} disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              เริ่มกะ
+              {t('sales.pos.startShift')}
             </button>
           </>
         }>
         <div className="p-4 bg-blue-500/10 border border-info/30 rounded-lg">
-          <p className="text-sm text-blue-400">นับเงินในลิ้นชักก่อนเริ่มขาย แล้วกรอกยอดด้านล่าง</p>
+          <p className="text-sm text-blue-400">{t('sales.pos.openShiftHint')}</p>
         </div>
-        <Field label="เงินสดในลิ้นชัก (ยอดเริ่มต้น)">
+        <Field label={t('sales.pos.cashInDrawerStart')}>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
             <input type="number" value={openingCash}
@@ -1766,37 +1770,37 @@ const Sales = () => {
           className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
           <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
             <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-              <X className="w-5 h-5 text-danger" /> ปิดกะ — {shift.shift_number}
+              <X className="w-5 h-5 text-danger" /> {t('sales.actions.closeShift')} — {shift.shift_number}
             </h2>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
           </div>
           <div className="overflow-y-auto p-5 space-y-4">
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">ยอดรวม</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.total')}</p>
                 <p className="text-base font-bold text-[var(--primary)]">{fmt(live?.total_revenue || 0)}</p>
               </div>
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">เงินสด</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.cash')}</p>
                 <p className="text-base font-bold text-warning">{fmt(cashRevenue)}</p>
               </div>
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">QR/โอน</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.qrTransfer')}</p>
                 <p className="text-base font-bold text-blue-400">{fmt(live?.bank_revenue || 0)}</p>
               </div>
             </div>
             <div className="p-4 bg-[var(--bg)] rounded-lg space-y-1 text-sm">
               <div className="flex justify-between text-[var(--fg-3)]">
-                <span>เงินสดเปิดกะ</span><span>{fmt(shift.opening_cash)}</span>
+                <span>{t('sales.pos.openingCash')}</span><span>{fmt(shift.opening_cash)}</span>
               </div>
               <div className="flex justify-between text-[var(--fg-3)]">
-                <span>+ ขายเงินสด</span><span>{fmt(cashRevenue)}</span>
+                <span>{t('sales.pos.cashSales')}</span><span>{fmt(cashRevenue)}</span>
               </div>
               <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-2 mt-2">
-                <span>ยอดที่ควรมีในลิ้นชัก</span><span>{fmt(expectedCash)}</span>
+                <span>{t('sales.pos.expectedCash')}</span><span>{fmt(expectedCash)}</span>
               </div>
             </div>
-            <Field label="นับเงินสดจริงในลิ้นชัก">
+            <Field label={t('sales.pos.countCash')}>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
                 <input type="number" value={closingCash}
@@ -1810,21 +1814,21 @@ const Sales = () => {
               : diff > 0 ? 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
               : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
             }`}>
-              <span>ผลต่าง</span>
-              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? '<Check className="w-4 h-4" /> ตรง' : diff > 0 ? t('sales.pos.over') : t('sales.pos.short')}</span>
+              <span>{t('sales.pos.difference')}</span>
+              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? t('sales.pos.match') : diff > 0 ? t('sales.pos.over') : t('sales.pos.short')}</span>
             </div>
-            <Field label="หมายเหตุ (optional)">
+            <Field label={t('sales.pos.noteOptional')}>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none"
-                placeholder="เช่น สาเหตุที่เงินขาด/เกิน..." />
+                placeholder={t('sales.pos.notePlaceholder')} />
             </Field>
           </div>
           <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
             <button onClick={handleClose} disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              ยืนยันปิดกะ
+              {t('sales.pos.confirmCloseShift')}
             </button>
           </div>
         </motion.div>
@@ -1841,7 +1845,7 @@ const Sales = () => {
         setSaving(true)
         const res = await posService.voidBill(bill.id, reason)
         if (res.success) {
-          toast.success(`ยกเลิกบิล ${bill.bill_number} สำเร็จ`)
+          toast.success(`{t('sales.actions.voidBill')} ${bill.bill_number} {t('sales.common.success')}`)
           fetchPOSDailySales()
           fetchPOSShifts()
           onClose()
@@ -1856,7 +1860,7 @@ const Sales = () => {
           className="bg-[var(--surface)] border border-danger/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
           <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
             <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-              <Ban className="w-5 h-5 text-danger" /> ยกเลิกบิล
+              <Ban className="w-5 h-5 text-danger" /> {t('sales.actions.voidBill')}
             </h2>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
               <X className="w-4 h-4" />
@@ -1870,20 +1874,20 @@ const Sales = () => {
               </p>
             </div>
             <div className="bg-[var(--warning-soft)] border border-yellow-500/20 rounded-lg px-3 py-2 text-xs text-warning">
-              ระบบจะบันทึก: Dr. รายได้ขาย 4100 / Cr. POS-Clearing 1180 เพื่อล้างยอดอัตโนมัติ
+              {t('sales.pos.voidJournalHint')}
             </div>
-            <Field label="สาเหตุการยกเลิก *">
+            <Field label={t('sales.labels.cancelReason')}>
               <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-red-400 resize-none"
-                placeholder="เช่น ลูกค้าแจ้งยกเลิก, เก็บเงินผิด, ออเดอร์ผิด..." />
+                placeholder={t('sales.placeholders.cancelReason')} />
             </Field>
           </div>
           <div className="p-5 border-t border-[var(--border)] flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
+            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.close')}</button>
             <button onClick={handleVoid} disabled={saving || !reason.trim()}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 hover:bg-red-500 text-white font-semibold rounded-lg disabled:opacity-50">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Ban className="w-4 h-4" />}
-              ยืนยันยกเลิกบิล
+              {t('sales.pos.confirmVoidBill')}
             </button>
           </div>
         </motion.div>
@@ -1895,8 +1899,8 @@ const Sales = () => {
     <div className="space-y-5 max-w-2xl">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-semibold text-[var(--fg-1)]">กะการขาย</h2>
-          <p className="text-[var(--fg-3)] text-sm">เปิด/ปิดกะ ติดตามยอดขายและเงินสดในลิ้นชัก</p>
+          <h2 className="text-xl font-semibold text-[var(--fg-1)]">{t('sales.pos.shiftTitle')}</h2>
+          <p className="text-[var(--fg-3)] text-sm">{t('sales.pos.shiftSubtitle')}</p>
         </div>
         <button onClick={fetchPOSShifts} className="p-2 rounded-lg bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
           <RotateCcw className="w-4 h-4" />
@@ -1914,12 +1918,12 @@ const Sales = () => {
             <Store className="w-8 h-8 text-[var(--fg-4)]" />
           </div>
           <div>
-            <p className="text-[var(--fg-1)] font-medium">ยังไม่มีกะที่เปิดอยู่</p>
-            <p className="text-[var(--fg-4)] text-sm mt-1">กรอกเงินสดในลิ้นชักแล้วกดเปิดกะ เพื่อเริ่มรับออเดอร์</p>
+            <p className="text-[var(--fg-1)] font-medium">{t('sales.pos.noOpenShift')}</p>
+            <p className="text-[var(--fg-4)] text-sm mt-1">{t('sales.pos.openShiftHint2')}</p>
           </div>
           <button onClick={() => setShowOpenShift(true)}
             className="inline-flex items-center gap-2 px-6 py-3 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 text-lg">
-            <ShoppingBag className="w-5 h-5" /> เปิดกะ
+            <ShoppingBag className="w-5 h-5" /> {t('sales.actions.openShift')}
           </button>
         </motion.div>
       ) : (
@@ -1927,32 +1931,32 @@ const Sales = () => {
           className="bg-[var(--surface)] border border-success/40 rounded-xl overflow-hidden">
           <div className="px-5 py-3 bg-success/10 border-b border-success/30 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            <span className="text-success font-medium text-sm">กะกำลังเปิดอยู่</span>
-            <span className="ml-auto text-[var(--fg-3)] text-xs">{posCurrentShift.shift_number} · เปิดตั้งแต่ {fmtDT(posCurrentShift.opened_at)}</span>
+            <span className="text-success font-medium text-sm">{t('sales.pos.shiftOpen')}</span>
+            <span className="ml-auto text-[var(--fg-3)] text-xs">{posCurrentShift.shift_number} · {t('sales.pos.openSince')} {fmtDT(posCurrentShift.opened_at)}</span>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">ยอดขายรวม</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.totalSales')}</p>
                 <p className="text-xl font-bold text-[var(--primary)]">{fmt(posCurrentShift.live?.total_revenue || 0)}</p>
-                <p className="text-xs text-[var(--fg-4)]">{posCurrentShift.live?.bill_count || 0} บิล</p>
+                <p className="text-xs text-[var(--fg-4)]">{t('sales.common.billCount', { count: posCurrentShift.live?.bill_count || 0 })}</p>
               </div>
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">เงินสด</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.cash')}</p>
                 <p className="text-xl font-bold text-warning">{fmt(posCurrentShift.live?.cash_revenue || 0)}</p>
               </div>
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">QR/โอน</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.qrTransfer')}</p>
                 <p className="text-xl font-bold text-blue-400">{fmt(posCurrentShift.live?.bank_revenue || 0)}</p>
               </div>
             </div>
             <div className="flex items-center justify-between text-sm text-[var(--fg-3)] bg-[var(--bg)] rounded-lg px-4 py-2.5">
-              <span>เงินสดเปิดกะ</span>
+              <span>{t('sales.pos.openingCash')}</span>
               <span className="text-[var(--fg-1)] font-medium">{fmt(posCurrentShift.opening_cash)}</span>
             </div>
             <button onClick={() => setShowCloseShift(true)}
               className="w-full flex items-center justify-center gap-2 py-3 border-2 border-danger/50 text-danger font-semibold rounded-xl hover:bg-[var(--danger-soft)] transition-colors">
-              <X className="w-4 h-4" /> ปิดกะ
+              <X className="w-4 h-4" /> {t('sales.actions.closeShift')}
             </button>
           </div>
         </motion.div>
@@ -1961,7 +1965,7 @@ const Sales = () => {
       {posShifts.filter(s => s.status === 'CLOSED').length > 0 && (
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-[var(--border)]">
-            <h3 className="text-sm font-medium text-[var(--fg-3)]">ประวัติกะ</h3>
+            <h3 className="text-sm font-medium text-[var(--fg-3)]">{t('sales.pos.shiftHistory')}</h3>
           </div>
           <div className="divide-y divide-[var(--border)]">
             {posShifts.filter(s => s.status === 'CLOSED').slice(0, 10).map(s => (
@@ -1975,7 +1979,7 @@ const Sales = () => {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-[var(--primary)]">{fmt(s.total_revenue)}</p>
-                    <p className="text-xs text-[var(--fg-4)]">{s.bill_count} บิล</p>
+                    <p className="text-xs text-[var(--fg-4)]">{t('sales.common.billCount', { count: s.bill_count })}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-3">
@@ -2017,9 +2021,9 @@ const Sales = () => {
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] flex items-center gap-3">
             <TrendingUp className="w-8 h-8 text-[var(--primary)]" />
-            การขาย
+            {t('sales.title')}
           </h1>
-          <p className="text-[var(--fg-3)] mt-1 text-sm">จัดการใบเสนอราคา คำสั่งขาย ใบแจ้งหนี้ และการรับชำระเงิน</p>
+          <p className="text-[var(--fg-3)] mt-1 text-sm">{t('sales.subtitle')}</p>
         </div>
       </motion.div>
 
@@ -2156,6 +2160,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
   onClose: () => void
   onCreated: (c: Customer) => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
@@ -2174,7 +2179,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
 
   const handleSave = async () => {
     if (!name.trim() || !code.trim() || !phone.trim()) {
-      toast.error('กรุณากรอก ชื่อ, รหัสลูกค้า และเบอร์โทร')
+      toast.error(t('sales.validation.customerInfo'))
       return
     }
     setSaving(true)
@@ -2187,10 +2192,10 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
         phone: phone.trim(),
         email: email.trim() || undefined,
       })
-      toast.success('เพิ่มลูกค้าสำเร็จ')
+      toast.success(t('sales.toast.customerAdded'))
       onCreated(customer)
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'เพิ่มลูกค้าไม่สำเร็จ')
+      toast.error(err?.response?.data?.message || t('sales.toast.customerAddFailed'))
     } finally {
       setSaving(false)
     }
@@ -2203,7 +2208,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
         <div className="p-4 border-b border-[var(--border)] flex justify-between items-center">
           <h3 className="text-base font-bold text-[var(--fg-1)] flex items-center gap-2">
-            <Plus className="w-4 h-4 text-[var(--primary)]" /> เพิ่มลูกค้าใหม่ (ด่วน)
+            <Plus className="w-4 h-4 text-[var(--primary)]" /> {t('sales.quickAddCustomer.title')}
           </h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -2211,43 +2216,43 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
         </div>
         <div className="p-4 space-y-3">
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1 block">ชื่อลูกค้า *</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อบริษัท / บุคคล..."
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.quickAddCustomer.nameLabel')}</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={t('sales.quickAddCustomer.namePlaceholder')}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">รหัสลูกค้า *</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.quickAddCustomer.codeLabel')}</label>
               <input value={code} onChange={e => setCode(e.target.value)} placeholder="C-XXXX"
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">ประเภท</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.type')}</label>
               <select value={type} onChange={e => setType(e.target.value)}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
-                <option value="INDIVIDUAL">บุคคล</option>
-                <option value="COMPANY">บริษัท</option>
-                <option value="GOVERNMENT">รัฐบาล</option>
+                <option value="INDIVIDUAL">{t('sales.customerType.individual')}</option>
+                <option value="COMPANY">{t('sales.customerType.company')}</option>
+                <option value="GOVERNMENT">{t('sales.customerType.government')}</option>
               </select>
             </div>
           </div>
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1 block">เบอร์โทร *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.quickAddCustomer.phoneLabel')}</label>
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0812345678"
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1 block">อีเมล</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.email')}</label>
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com"
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
         </div>
         <div className="p-4 border-t border-[var(--border)] flex gap-2">
-          <button onClick={onClose} className="px-3 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
+          <button onClick={onClose} className="px-3 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg text-sm hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center justify-center gap-1">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            บันทึก
+            {t('sales.common.save')}
           </button>
         </div>
       </motion.div>
@@ -2260,6 +2265,7 @@ function CustomerSearch({ value, onChange }: {
   value: Customer | null
   onChange: (c: Customer | null) => void
 }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Customer[]>([])
   const [open, setOpen] = useState(false)
@@ -2301,7 +2307,7 @@ function CustomerSearch({ value, onChange }: {
           onChange={e => { setQuery(e.target.value); setSearched(false) }}
           onFocus={() => { if (results.length > 0) setOpen(true) }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="ค้นหาลูกค้า (ชื่อ / รหัส / เบอร์โทร)..."
+          placeholder={t('sales.customerSearch.placeholder')}
           className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder-gray-500 text-sm focus:outline-none focus:border-phopy-indigo"
         />
         {open && (results.length > 0 || searched) && (
@@ -2316,7 +2322,7 @@ function CustomerSearch({ value, onChange }: {
               </button>
             ))}
             {results.length === 0 && searched && (
-              <div className="px-4 py-3 text-sm text-[var(--fg-4)]">ไม่พบลูกค้า</div>
+              <div className="px-4 py-3 text-sm text-[var(--fg-4)]">{t('sales.customerSearch.noResults')}</div>
             )}
           </div>
         )}
@@ -2348,6 +2354,7 @@ function ProductSearch({ value, products, onSelect, onClear }: {
   onSelect: (p: Product) => void
   onClear: () => void
 }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
 
@@ -2378,7 +2385,7 @@ function ProductSearch({ value, products, onSelect, onClear }: {
         onChange={e => { setQuery(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="ค้นหาสินค้า (ชื่อ / รหัส)..."
+        placeholder={t('sales.productSearch.placeholder')}
         className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
       />
       {open && filtered.length > 0 && (
@@ -2405,6 +2412,7 @@ function UnitSelectForRow({ productId, value, onChange }: {
   value: string
   onChange: (unit: string) => void
 }) {
+  const { t } = useTranslation()
   const { units, loading } = useUnits(productId || null)
   return (
     <select
@@ -2412,9 +2420,9 @@ function UnitSelectForRow({ productId, value, onChange }: {
       onChange={e => onChange(e.target.value)}
       className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
     >
-      <option value="">เลือกหน่วย</option>
+      <option value="">{t('sales.common.selectUnit')}</option>
       {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-      {loading && <option disabled>กำลังโหลด...</option>}
+      {loading && <option disabled>{t('sales.common.loading')}</option>}
     </select>
   )
 }
@@ -2426,6 +2434,7 @@ function LineItemsEditor({
   onChange: (items: LineItem[]) => void
   products: Product[]
 }) {
+  const { t } = useTranslation()
   const add = () => onChange([...items, { productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
   const update = (i: number, patch: Partial<LineItem>) => {
@@ -2437,17 +2446,17 @@ function LineItemsEditor({
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
-        <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
+        <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
         <button type="button" onClick={add}
           className="flex items-center gap-1 text-xs text-[var(--primary)] hover:text-[var(--primary)]/80">
-          <Plus className="w-3.5 h-3.5" /> เพิ่มรายการ
+          <Plus className="w-3.5 h-3.5" /> {t('sales.itemEditor.addItem')}
         </button>
       </div>
       {items.map((item, i) => (
         <div key={i} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-5">
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">สินค้า</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.product')}</label>
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
@@ -2456,13 +2465,13 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">จำนวน</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.qty')}</label>
               <input type="number" value={item.quantity} min={0.01} step={0.01}
                 onChange={e => update(i, { quantity: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">หน่วย</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.unit')}</label>
               <UnitSelectForRow
                 productId={item.productId}
                 value={item.unit}
@@ -2470,13 +2479,13 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">ราคา/หน่วย</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.unitPrice')}</label>
               <input type="number" value={item.unitPrice} min={0} step={0.01}
                 onChange={e => update(i, { unitPrice: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs text-[var(--fg-4)] mb-1 block">ส่วนลด%</label>
+              <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.itemEditor.discountPercent')}</label>
               <input type="number" value={item.discountPercent} min={0} max={100}
                 onChange={e => update(i, { discountPercent: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
@@ -2490,7 +2499,7 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
             </div>
           </div>
           <div className="text-right text-xs text-[var(--fg-3)]">
-            รวม: <span className="text-[var(--fg-1)] font-medium">
+            {t('sales.common.lineTotal')} <span className="text-[var(--fg-1)] font-medium">
               ฿{(item.quantity * item.unitPrice * (1 - item.discountPercent / 100)).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
             </span>
           </div>
@@ -2506,6 +2515,7 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
   taxRate: number; setTaxRate: (v: number) => void
   discountAmount: number; setDiscountAmount: (v: number) => void
 }) {
+  const { t } = useTranslation()
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice * (1 - it.discountPercent / 100), 0)
   const afterDiscount = Math.max(0, subtotal - discountAmount)
   const tax = afterDiscount * (taxRate / 100)
@@ -2513,17 +2523,17 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
   return (
     <div className="bg-[var(--surface-2)] p-4 rounded-xl space-y-2 text-sm">
       <div className="flex justify-between text-[var(--fg-3)]">
-        <span>ยอดรวม</span><span>฿{subtotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+        <span>{t('sales.common.total')}</span><span>฿{subtotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
       </div>
       <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
-        <span className="shrink-0">ส่วนลด (฿)</span>
+        <span className="shrink-0">{t('sales.totals.discountAmount')}</span>
         <input type="number" value={discountAmount} min={0}
           onChange={e => setDiscountAmount(parseFloat(e.target.value) || 0)}
           onFocus={e => e.target.select()}
           className="w-28 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
       </div>
       <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
-        <span className="shrink-0">VAT (%)</span>
+        <span className="shrink-0">{t('sales.common.tax')} (%)</span>
         <div className="flex items-center gap-2">
           {[0, 7].map(r => (
             <button key={r} type="button" onClick={() => setTaxRate(r)}
@@ -2539,11 +2549,11 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
       </div>
       {taxRate > 0 && (
         <div className="flex justify-between text-warning">
-          <span>VAT ({taxRate}%)</span><span>+฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+          <span>{t('sales.common.tax')} ({taxRate}%)</span><span>+฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
         </div>
       )}
       <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-        <span className="text-[var(--fg-1)]">ยอดสุทธิ</span>
+        <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span>
         <span className="text-success">฿{total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
       </div>
     </div>
@@ -2554,6 +2564,7 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
 function CreateQuotationModal({ onClose, onSaved, editData }: {
   onClose: () => void; onSaved: () => void; editData?: any
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -2585,8 +2596,8 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   }, [])
 
   const handleSave = async () => {
-    if (!customer) { toast.error('กรุณาเลือกลูกค้า'); return }
-    if (items.every(it => !it.productName && !it.productId)) { toast.error('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return }
+    if (!customer) { toast.error(t('sales.validation.selectCustomer')); return }
+    if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
     setSaving(true)
     try {
       const payload = {
@@ -2606,14 +2617,14 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
       }
       if (isEdit) {
         await salesService.updateQuotation(editData.id, payload)
-        toast.success('บันทึกการแก้ไขใบเสนอราคาสำเร็จ')
+        toast.success(t('sales.toast.quotationUpdated'))
       } else {
         await salesService.createQuotation(payload)
-        toast.success('สร้างใบเสนอราคาสำเร็จ')
+        toast.success(t('sales.toast.quotationCreated'))
       }
       onSaved()
     } catch {
-      toast.error(isEdit ? 'แก้ไขใบเสนอราคาไม่สำเร็จ' : 'สร้างใบเสนอราคาไม่สำเร็จ')
+      toast.error(isEdit ? t('sales.toast.quotationSaveFailed') : t('sales.toast.quotationSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -2627,7 +2638,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <FileText className="w-5 h-5 text-[var(--primary)]" />
-            {isEdit ? `แก้ไขใบเสนอราคา ${editData.quotation_number}` : 'สร้างใบเสนอราคา (QT)'}
+            {isEdit ? t('sales.quotationModal.titleEdit', { number: editData.quotation_number }) : t('sales.quotationModal.titleCreate')}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -2638,10 +2649,10 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-sm text-[var(--fg-3)]">ลูกค้า *</label>
+                <label className="text-sm text-[var(--fg-3)]">{t('sales.common.customerRequired')}</label>
                 <button type="button" onClick={() => setShowQuickAddCust(true)}
                   className="flex items-center gap-1 text-xs text-[var(--primary)] hover:text-[var(--primary)]/80">
-                  <Plus className="w-3.5 h-3.5" /> เพิ่มลูกค้า
+                  <Plus className="w-3.5 h-3.5" /> {t('sales.actions.addCustomer')}
                 </button>
               </div>
               <CustomerSearch value={customer} onChange={setCustomer} />
@@ -2653,13 +2664,13 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
               )}
             </div>
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1.5">วันหมดอายุ</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.expiryDate')}</label>
               <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ</label>
-              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="หมายเหตุ..."
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.notes')}</label>
+              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('sales.common.notesPlaceholder')}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
@@ -2669,11 +2680,11 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : isEdit ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {isEdit ? 'บันทึกการแก้ไข' : 'สร้างใบเสนอราคา'}
+            {isEdit ? t('sales.common.saveEdit') : t('sales.createQuotation')}
           </button>
         </div>
       </motion.div>
@@ -2685,6 +2696,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
 function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, companyName }: {
   quotation: Quotation; onClose: () => void; onRefresh: () => void; onConvert: (q: Quotation) => void; companyName?: string
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -2704,11 +2716,11 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
     setUpdating(true)
     try {
       await salesService.updateQuotationStatus(quotation.id, status)
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
     } catch {
-      toast.error('อัปเดตสถานะไม่สำเร็จ')
+      toast.error(t('sales.toast.statusUpdateFailed'))
     } finally { setUpdating(false) }
   }
 
@@ -2738,11 +2750,11 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
             <>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">วันที่</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.date')}</p>
                   <p className="text-[var(--fg-1)]">{formatDate(detail?.quotation_date)}</p>
                 </div>
                 <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">วันหมดอายุ</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.expiryDate')}</p>
                   <p className={`font-medium ${detail?.expiry_date && new Date(detail.expiry_date) < new Date() ? 'text-danger' : 'text-[var(--fg-1)]'}`}>
                     {formatDate(detail?.expiry_date)}
                   </p>
@@ -2751,12 +2763,12 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
 
               {/* Items */}
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
+                <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
                 <div className="space-y-1">
                   {(detail?.items || []).map((it: any, i: number) => (
                     <div key={i} className="flex justify-between items-center py-2 px-3 bg-[var(--surface-2)] rounded-lg text-sm">
                       <div>
-                        <p className="text-[var(--fg-1)]">{it.product_name || it.productName || `รายการ ${i + 1}`}</p>
+                        <p className="text-[var(--fg-1)]">{it.product_name || it.productName || `{t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
                         <p className="text-xs text-[var(--fg-4)]">{it.quantity} × ฿{(it.unit_price || 0).toLocaleString()}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
                       </div>
                       <p className="text-[var(--fg-1)] font-medium">{formatCurrency(it.total_price)}</p>
@@ -2767,16 +2779,16 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
 
               {/* Totals */}
               <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดรวม</span><span>{formatCurrency(detail?.subtotal)}</span></div>
-                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>ส่วนลด</span><span>-{formatCurrency(detail?.discount_amount)}</span></div>}
-                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>VAT ({detail?.tax_rate}%)</span><span>+{formatCurrency(detail?.tax_amount)}</span></div>}
+                <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{formatCurrency(detail?.subtotal)}</span></div>
+                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{formatCurrency(detail?.discount_amount)}</span></div>}
+                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{formatCurrency(detail?.tax_amount)}</span></div>}
                 <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                  <span className="text-[var(--fg-1)]">ยอดสุทธิ</span><span className="text-success">{formatCurrency(detail?.total_amount)}</span>
+                  <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{formatCurrency(detail?.total_amount)}</span>
                 </div>
               </div>
 
               {detail?.notes && (
-                <div className="bg-[var(--bg)] rounded-lg p-3 text-sm text-[var(--fg-3)]">หมายเหตุ: {detail.notes}</div>
+                <div className="bg-[var(--bg)] rounded-lg p-3 text-sm text-[var(--fg-3)]">{t('sales.common.notes')} {detail.notes}</div>
               )}
             </>
           )}
@@ -2786,11 +2798,11 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
           {/* Print buttons */}
           {!loading && (
             <>
-              <button onClick={() => handlePrint('a4')} title="พิมพ์ A4"
+              <button onClick={() => handlePrint('a4')} title={t('sales.actions.printA4')}
                 className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
                 <Printer className="w-4 h-4" />
               </button>
-              <button onClick={() => handlePrint('thermal')} title="พิมพ์ Thermal"
+              <button onClick={() => handlePrint('thermal')} title={t('sales.actions.printThermal')}
                 className="px-2 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-xs">
                 <Printer className="w-3.5 h-3.5 inline" /> 80mm
               </button>
@@ -2799,25 +2811,25 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
           {quotation.status === 'DRAFT' && (
             <button onClick={() => updateStatus('SENT')} disabled={updating}
               className="flex-1 py-2 bg-[var(--info-soft)] border border-blue-500/50 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50">
-              ส่งใบเสนอราคา
+              {t('sales.actions.sendQuotation')}
             </button>
           )}
           {(quotation.status === 'SENT' || quotation.status === 'DRAFT') && (
             <button onClick={() => updateStatus('ACCEPTED')} disabled={updating}
               className="flex-1 py-2 bg-[var(--success-soft)] border border-success/50 text-success rounded-lg text-sm font-medium hover:bg-success/30 disabled:opacity-50">
-              อนุมัติ
+              {t('sales.status.approved')}
             </button>
           )}
           {quotation.status === 'ACCEPTED' && (
             <button onClick={() => onConvert(quotation)} disabled={updating}
               className="flex-1 py-2 bg-phopy-indigo text-white rounded-lg text-sm font-semibold hover:bg-phopy-indigo/80">
-              <ArrowRight className="w-4 h-4 inline mr-1" />แปลงเป็นคำสั่งขาย (SO)
+              <ArrowRight className="w-4 h-4 inline mr-1" />{t('sales.actions.convertToSOFull')}
             </button>
           )}
           {!['CANCELLED', 'EXPIRED'].includes(quotation.status) && (
             <button onClick={() => updateStatus('CANCELLED')} disabled={updating}
               className="py-2 px-3 text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] disabled:opacity-50">
-              ยกเลิก
+              {t('sales.common.cancel')}
             </button>
           )}
         </div>
@@ -2830,6 +2842,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
 function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   sourceQuotation?: Quotation; onClose: () => void; onSaved: () => void; editData?: any
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -2896,8 +2909,8 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   }, [])
 
   const handleSave = async () => {
-    if (!customer) { toast.error('กรุณาเลือกลูกค้า'); return }
-    if (items.every(it => !it.productName && !it.productId)) { toast.error('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ'); return }
+    if (!customer) { toast.error(t('sales.validation.selectCustomer')); return }
+    if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
     setSaving(true)
     try {
       const payload = {
@@ -2918,14 +2931,14 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
       }
       if (isEdit) {
         await salesService.updateSalesOrder(editData.id, payload)
-        toast.success('บันทึกการแก้ไขคำสั่งขายสำเร็จ')
+        toast.success(t('sales.toast.orderUpdated'))
       } else {
         await salesService.createSalesOrder(payload)
-        toast.success('สร้างคำสั่งขายสำเร็จ')
+        toast.success(t('sales.toast.orderCreated'))
       }
       onSaved()
     } catch {
-      toast.error(isEdit ? 'แก้ไขคำสั่งขายไม่สำเร็จ' : 'สร้างคำสั่งขายไม่สำเร็จ')
+      toast.error(isEdit ? t('sales.toast.orderSaveFailed') : t('sales.toast.orderSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -2939,7 +2952,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-purple-400" />
-            {isEdit ? `แก้ไขคำสั่งขาย ${editData.so_number}` : sourceQuotation ? `แปลง ${sourceQuotation.quotation_number} → SO` : 'สร้างคำสั่งขาย (SO)'}
+            {isEdit ? t('sales.orderModal.titleEdit', { number: editData.so_number }) : sourceQuotation ? t('sales.orderModal.titleConvert', { number: sourceQuotation.quotation_number }) : t('sales.orderModal.titleCreate')}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
@@ -2948,10 +2961,10 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-sm text-[var(--fg-3)]">ลูกค้า *</label>
+                <label className="text-sm text-[var(--fg-3)]">{t('sales.common.customerRequired')}</label>
                 <button type="button" onClick={() => setShowQuickAddCust(true)}
                   className="flex items-center gap-1 text-xs text-[var(--primary)] hover:text-[var(--primary)]/80">
-                  <Plus className="w-3.5 h-3.5" /> เพิ่มลูกค้า
+                  <Plus className="w-3.5 h-3.5" /> {t('sales.actions.addCustomer')}
                 </button>
               </div>
               <CustomerSearch value={customer} onChange={setCustomer} />
@@ -2963,13 +2976,13 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
               )}
             </div>
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1.5">กำหนดส่ง</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.deliveryDate')}</label>
               <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ</label>
-              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="หมายเหตุ..."
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.notes')}</label>
+              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('sales.common.notesPlaceholder')}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
@@ -2979,11 +2992,11 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-purple-500 text-[var(--fg-1)] font-semibold rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : isEdit ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {isEdit ? 'บันทึกการแก้ไข' : sourceQuotation ? 'แปลงเป็นคำสั่งขาย' : 'สร้างคำสั่งขาย'}
+            {isEdit ? t('sales.common.saveEdit') : sourceQuotation ? t('sales.actions.convertToOrder') : t('sales.createOrder')}
           </button>
         </div>
       </motion.div>
@@ -2995,6 +3008,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
 function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName }: {
   salesOrder: SalesOrder; onClose: () => void; onRefresh: () => void; onCreateInvoice: () => void; companyName?: string
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3015,11 +3029,11 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     setUpdating(true)
     try {
       await salesService.updateSOStatus(salesOrder.id, status)
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'อัปเดตสถานะไม่สำเร็จ')
+      toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
     } finally { setUpdating(false) }
   }
 
@@ -3027,9 +3041,9 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     setCreatingInv(true)
     try {
       await salesService.createInvoice(salesOrder.id)
-      toast.success('สร้างใบแจ้งหนี้สำเร็จ')
+      toast.success(t('sales.toast.invoiceCreated'))
       onCreateInvoice()
-    } catch { toast.error('สร้างใบแจ้งหนี้ไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.invoiceCreateFailed')) }
     finally { setCreatingInv(false) }
   }
 
@@ -3038,7 +3052,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
 
   const SO_FLOW = ['DRAFT', 'CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'COMPLETED']
   const nextStatus: Record<string, string> = { DRAFT: 'CONFIRMED', CONFIRMED: 'PROCESSING', PROCESSING: 'READY', READY: 'DELIVERED', DELIVERED: 'COMPLETED' }
-  const nextLabel: Record<string, string> = { DRAFT: 'ยืนยัน SO', CONFIRMED: 'เริ่มดำเนินการ', PROCESSING: 'พร้อมส่ง', READY: 'ส่งของแล้ว', DELIVERED: 'เสร็จสิ้น' }
+  const nextLabel: Record<string, string> = { DRAFT: t('sales.soActions.confirmSO'), CONFIRMED: t('sales.soActions.startProcessing'), PROCESSING: t('sales.status.readyToShip'), READY: t('sales.status.delivered'), DELIVERED: t('sales.status.completed') }
 
   return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -3068,7 +3082,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               return (
                 <div key={s} className="flex items-center gap-1 shrink-0">
                   <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${isCurrent ? 'bg-purple-500 text-[var(--fg-1)]' : isPast ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
-                    {STATUS_CONFIG[s]?.label || s}
+                    {t(STATUS_CONFIG[s]?.labelKey as any || s)}
                   </div>
                   {i < SO_FLOW.length - 1 && <ArrowRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
                 </div>
@@ -3082,24 +3096,24 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
             <>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">วันสั่งซื้อ</p><p className="text-[var(--fg-1)]">{fmtD(detail?.order_date)}</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.orderDateLabel')}</p><p className="text-[var(--fg-1)]">{fmtD(detail?.order_date)}</p>
                 </div>
                 <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">กำหนดส่ง</p><p className="text-[var(--fg-1)]">{fmtD(detail?.delivery_date)}</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.deliveryDate')}</p><p className="text-[var(--fg-1)]">{fmtD(detail?.delivery_date)}</p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า</p>
+                <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
                 {(detail?.items || []).map((it: any, i: number) => {
                   const insufficient = it.stock_item_id && (it.stock_qty ?? Infinity) < it.quantity
                   return (
                     <div key={i} className={`flex justify-between items-start py-2 px-3 rounded-lg text-sm ${insufficient ? 'bg-[var(--danger-soft)] border border-danger/30' : 'bg-[var(--surface-2)]'}`}>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[var(--fg-1)]">{it.product_name || `รายการ ${i + 1}`}</p>
+                        <p className="text-[var(--fg-1)]">{it.product_name || `{t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
                         <p className="text-xs text-[var(--fg-4)]">{it.quantity} × {fmt(it.unit_price)}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
                         {insufficient && (
-                          <p className="text-xs text-danger mt-0.5"><AlertTriangle className="w-4 h-4" /> สต็อกไม่พอ (มี {it.stock_qty ?? 0} ชิ้น)</p>
+                          <p className="text-xs text-danger mt-0.5"><AlertTriangle className="w-4 h-4" /> {t('sales.statusBadge.outOfStock', { count: it.stock_qty ?? 0 })}</p>
                         )}
                       </div>
                       <p className="text-[var(--fg-1)] font-medium ml-3">{fmt(it.total_price)}</p>
@@ -3109,11 +3123,11 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               </div>
 
               <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดรวม</span><span>{fmt(detail?.subtotal)}</span></div>
-                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>ส่วนลด</span><span>-{fmt(detail?.discount_amount)}</span></div>}
-                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>VAT ({detail?.tax_rate}%)</span><span>+{fmt(detail?.tax_amount)}</span></div>}
+                <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{fmt(detail?.subtotal)}</span></div>
+                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{fmt(detail?.discount_amount)}</span></div>}
+                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{fmt(detail?.tax_amount)}</span></div>}
                 <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                  <span className="text-[var(--fg-1)]">ยอดสุทธิ</span><span className="text-success">{fmt(detail?.total_amount)}</span>
+                  <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{fmt(detail?.total_amount)}</span>
                 </div>
               </div>
             </>
@@ -3122,7 +3136,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
 
         <div className="p-5 border-t border-[var(--border)] flex gap-2 shrink-0 flex-wrap">
           {!loading && (
-            <button onClick={handlePrint} title="พิมพ์ SO (A4)"
+            <button onClick={handlePrint} title={t('sales.actions.printSOA4')}
               className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
               <Printer className="w-4 h-4" />
             </button>
@@ -3137,13 +3151,13 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
             <button onClick={handleCreateInvoice} disabled={creatingInv}
               className="flex-1 py-2 bg-[var(--warning-soft)] border border-yellow-500/50 text-warning rounded-lg text-sm font-medium hover:bg-[var(--warning-soft)] disabled:opacity-50 flex items-center justify-center gap-1">
               {creatingInv ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Receipt className="w-3.5 h-3.5" />}
-              ออกใบแจ้งหนี้
+              {t('sales.actions.createInvoice')}
             </button>
           )}
           {!['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (
             <button onClick={() => updateStatus('CANCELLED')} disabled={updating}
               className="py-2 px-3 text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] disabled:opacity-50">
-              ยกเลิก
+              {t('sales.common.cancel')}
             </button>
           )}
         </div>
@@ -3156,6 +3170,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
 function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   invoice: Invoice; onClose: () => void; onRefresh: () => void; companyName?: string
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3197,7 +3212,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
   const handleRecordPayment = async () => {
     const amount = parseFloat(payAmount)
-    if (!amount || amount <= 0) { toast.error('กรุณากรอกจำนวนเงิน'); return }
+    if (!amount || amount <= 0) { toast.error(t('sales.validation.amountRequired')); return }
     setSaving(true)
     try {
       await salesService.recordPayment(invoice.id, {
@@ -3207,35 +3222,35 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
         paymentReference: payRef || undefined,
         notes: payNote || undefined,
       })
-      toast.success('บันทึกการรับเงินสำเร็จ')
+      toast.success(t('sales.toast.paymentRecorded'))
       onRefresh()
       onClose()
-    } catch { toast.error('บันทึกการรับเงินไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.paymentRecordFailed')) }
     finally { setSaving(false) }
   }
 
   const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 10 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 10MB'); return }
+    if (file.size > 10 * 1024 * 1024) { toast.error(t('sales.validation.fileTooLarge')); return }
     setUploading(true)
     try {
       const fd = new FormData()
       fd.append('image', file)
       await api.post(`/sales/invoices/${invoice.id}/attachments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-      toast.success('อัปโหลดสำเร็จ')
+      toast.success(t('sales.toast.uploadSuccess'))
       loadDetail()
-    } catch { toast.error('อัปโหลดไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.uploadFailed')) }
     finally { setUploading(false); e.target.value = '' }
   }
 
   const handleDeleteAttachment = async (attId: string) => {
-    if (!confirm('ลบรูปนี้?')) return
+    if (!confirm(t('sales.confirm.deleteImage'))) return
     try {
       await api.delete(`/sales/invoices/${invoice.id}/attachments/${attId}`)
-      toast.success('ลบสำเร็จ')
+      toast.success(t('sales.toast.deleteSuccess'))
       loadDetail()
-    } catch { toast.error('ลบไม่สำเร็จ') }
+    } catch { toast.error(t('sales.toast.deleteFailed')) }
   }
 
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
@@ -3277,38 +3292,38 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               {/* Info row */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">วันที่ออกใบ</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.invoiceDetail.issuedDate')}</p>
                   <p className="text-[var(--fg-1)] font-medium">{fmtD(detail?.invoice_date)}</p>
                 </div>
                 <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">ครบกำหนด</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.dueDate')}</p>
                   <p className={detail?.payment_status === 'OVERDUE' ? 'text-danger font-medium' : 'text-[var(--fg-1)] font-medium'}>{fmtD(detail?.due_date)}</p>
                 </div>
                 <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">ยอดรวมทั้งหมด</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.invoiceDetail.totalAmount')}</p>
                   <p className="text-[var(--fg-1)] font-bold">{fmt(detail?.total_amount)}</p>
                 </div>
                 <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">ยอดคงค้าง</p>
+                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.balance')}</p>
                   <p className={invoice.balance_amount > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{fmt(invoice.balance_amount)}</p>
                 </div>
               </div>
 
               {/* Items list */}
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">รายการสินค้า</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.common.items')}</p>
                 <div className="border border-[var(--border)] rounded-xl overflow-hidden">
                   <div className="grid grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-                    <span className="col-span-5">สินค้า</span>
-                    <span className="col-span-2 text-center">จำนวน</span>
-                    <span className="col-span-2 text-right">ราคา/หน่วย</span>
-                    <span className="col-span-1 text-right">ส่วนลด</span>
-                    <span className="col-span-2 text-right">รวม</span>
+                    <span className="col-span-5">{t('sales.common.product')}</span>
+                    <span className="col-span-2 text-center">{t('sales.common.qty')}</span>
+                    <span className="col-span-2 text-right">{t('sales.common.unitPrice')}</span>
+                    <span className="col-span-1 text-right">{t('sales.common.discount')}</span>
+                    <span className="col-span-2 text-right">{t('sales.common.lineTotal')}</span>
                   </div>
                   {(detail?.items || []).map((it: any, i: number) => (
                     <div key={i} className={`grid grid-cols-12 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
                       <div className="col-span-5">
-                        <p className="text-[var(--fg-1)] font-medium">{it.product_name || `รายการ ${i + 1}`}</p>
+                        <p className="text-[var(--fg-1)] font-medium">{it.product_name || `{t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
                         {it.product_code && <p className="text-xs text-[var(--fg-4)] font-mono">{it.product_code}</p>}
                       </div>
                       <p className="col-span-2 text-center text-[var(--fg-2)]">{it.quantity} {it.unit || ''}</p>
@@ -3324,36 +3339,36 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Totals */}
                 <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">สรุปยอด</p>
-                  <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดก่อนภาษี</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
-                  {detail?.vat_amount > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>VAT {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
-                  <div className="flex justify-between text-[var(--fg-2)] border-t border-[var(--border)]/50 pt-1.5"><span>ยอดรวม</span><span>{fmt(detail?.total_amount)}</span></div>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.summary')}</p>
+                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.invoiceDetail.beforeTax')}</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
+                  {detail?.vat_amount > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.tax')} {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
+                  <div className="flex justify-between text-[var(--fg-2)] border-t border-[var(--border)]/50 pt-1.5"><span>{t('sales.common.total')}</span><span>{fmt(detail?.total_amount)}</span></div>
                   {(detail?.withholdingTax || []).length > 0 && (
                     <>
                       {(detail.withholdingTax as any[]).map((w: any) => (
                         <div key={w.id} className="flex justify-between text-warning text-xs">
-                          <span>หัก ณ ที่จ่าย {w.tax_type} {w.tax_rate}%</span>
+                          <span>{t('sales.invoiceDetail.withholdingTax')} {w.tax_type} {w.tax_rate}%</span>
                           <span>-{fmt(w.tax_amount)}</span>
                         </div>
                       ))}
                       <div className="flex justify-between text-[var(--fg-2)] text-xs">
-                        <span>ยอดสุทธิ (หัก WHT)</span>
+                        <span>{t('sales.invoiceDetail.netAfterWht')}</span>
                         <span>{fmt((detail?.total_amount || 0) - (detail?.withholdingTax || []).reduce((s: number, w: any) => s + (w.tax_amount || 0), 0))}</span>
                       </div>
                     </>
                   )}
-                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-success"><span>ชำระแล้ว</span><span>-{fmt(detail?.paid_amount)}</span></div>}
+                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-success"><span>{t('sales.invoiceDetail.paidAmount')}</span><span>-{fmt(detail?.paid_amount)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                    <span className="text-[var(--fg-1)]">ยอดคงค้าง</span>
+                    <span className="text-[var(--fg-1)]">{t('sales.common.balance')}</span>
                     <span className={invoice.balance_amount > 0 ? 'text-danger' : 'text-success'}>{fmt(invoice.balance_amount)}</span>
                   </div>
                 </div>
 
                 {/* Payment receipts */}
                 <div>
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">ประวัติการรับเงิน</p>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.paymentHistory')}</p>
                   {(detail?.receipts || []).length === 0 ? (
-                    <div className="bg-[var(--surface-2)] rounded-xl p-4 text-center text-sm text-[var(--fg-4)]">ยังไม่มีการรับเงิน</div>
+                    <div className="bg-[var(--surface-2)] rounded-xl p-4 text-center text-sm text-[var(--fg-4)]">{t('sales.invoiceDetail.noPayments')}</div>
                   ) : (
                     <div className="space-y-2">
                       {detail.receipts.map((r: any) => (
@@ -3386,17 +3401,17 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               {/* Attachments */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">เอกสารแนบ / รูปภาพ</p>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('sales.invoiceDetail.attachments')}</p>
                   <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${uploading ? 'bg-[var(--bg)] text-[var(--fg-4)]' : 'bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-phopy-indigo/30'}`}>
                     {uploading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป (สูงสุด 10MB)'}
+                    {uploading ? t('sales.common.uploading') : t('sales.invoiceDetail.addImage')}
                     <input type="file" accept="image/*" className="hidden" onChange={handleUploadAttachment} disabled={uploading} />
                   </label>
                 </div>
                 {(detail?.attachments || []).length === 0 ? (
                   <div className="border-2 border-dashed border-[var(--border)]/50 rounded-xl p-6 text-center text-[var(--fg-4)] text-sm">
                     <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    ยังไม่มีเอกสารแนบ
+                    {t('sales.invoiceDetail.noAttachments')}
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
@@ -3427,54 +3442,54 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               {/* Record Payment Form */}
               {isUnpaid && showPayment && (
                 <div className="bg-[var(--bg)] border border-phopy-indigo/30 rounded-xl p-4 space-y-3">
-                  <p className="text-sm font-semibold text-[var(--primary)]">บันทึกการรับเงิน</p>
+                  <p className="text-sm font-semibold text-[var(--primary)]">{t('sales.paymentModal.title')}</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1 block">จำนวนเงิน (฿)</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.amountLabel')}</label>
                       <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
-                        placeholder={`สูงสุด ${fmt(invoice.balance_amount)}`}
+                        placeholder={t('sales.paymentModal.maxAmountPlaceholder', { amount: fmt(invoice.balance_amount) })}
                         onFocus={e => e.target.select()}
                         className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1 block">วิธีชำระ</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.methodLabel')}</label>
                       <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
                         className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
-                        <option value="CASH">เงินสด</option>
-                        <option value="TRANSFER">โอนเงิน</option>
-                        <option value="CHEQUE">เช็ค</option>
-                        <option value="CREDIT_CARD">บัตรเครดิต</option>
+                        <option value="CASH">{t('sales.pos.cash')}</option>
+                        <option value="TRANSFER">{t('sales.paymentMethod.transfer')}</option>
+                        <option value="CHEQUE">{t('sales.paymentMethod.cheque')}</option>
+                        <option value="CREDIT_CARD">{t('sales.paymentMethod.creditCard')}</option>
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1 block">วันที่รับเงิน</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.dateLabel')}</label>
                       <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
                         className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1 block">เลขอ้างอิง</label>
-                      <input type="text" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="เลขโอน / เช็ค..."
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.refLabel')}</label>
+                      <input type="text" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder={t('sales.paymentModal.refPlaceholder')}
                         className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs text-[var(--fg-4)] mb-1 block">หมายเหตุ</label>
+                    <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.notes')}</label>
                     <textarea value={payNote} onChange={e => setPayNote(e.target.value)} rows={2}
-                      placeholder="เช่น ชำระบางส่วน / โอนเข้าบัญชี xxx..."
+                      placeholder={t('sales.paymentModal.notePlaceholder')}
                       className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo resize-none" />
                   </div>
                   {/* Journal Preview */}
                   <JournalPreview entries={[
-                    { dr: true,  account: payMethod === 'CASH' ? '1100 เงินสด' : '1101 เงินฝากธนาคาร', label: 'เพิ่มสินทรัพย์', amount: parseFloat(payAmount) || 0 },
-                    { dr: false, account: '1110 ลูกหนี้การค้า', label: 'ลดลูกหนี้', amount: parseFloat(payAmount) || 0 },
+                    { dr: true,  account: payMethod === 'CASH' ? t('sales.paymentAccount.cash') : t('sales.paymentAccount.bank'), label: t('sales.paymentModal.debitLabel'), amount: parseFloat(payAmount) || 0 },
+                    { dr: false, account: t('sales.paymentAccount.receivable'), label: t('sales.paymentModal.creditLabel'), amount: parseFloat(payAmount) || 0 },
                   ]} />
 
                   <div className="flex gap-2">
-                    <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">ยกเลิก</button>
+                    <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
                     <button onClick={handleRecordPayment} disabled={saving}
                       className="flex-1 py-2 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-1">
                       {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                      ยืนยันรับเงิน
+                      {t('sales.pos.confirmReceivePayment')}
                     </button>
                   </div>
                 </div>
@@ -3486,11 +3501,11 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
         {/* Footer */}
         {!loading && (
           <div className="px-5 py-4 border-t border-[var(--border)] shrink-0 flex items-center gap-2">
-            <button onClick={() => handlePrintInv('a4')} title="พิมพ์ใบแจ้งหนี้ A4"
+            <button onClick={() => handlePrintInv('a4')} title={t('sales.actions.printInvoiceA4')}
               className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors flex items-center gap-1.5 text-sm">
               <Printer className="w-4 h-4" /> A4
             </button>
-            <button onClick={() => handlePrintInv('thermal')} title="พิมพ์ Thermal"
+            <button onClick={() => handlePrintInv('thermal')} title={t('sales.actions.printThermal')}
               className="px-3 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-sm flex items-center gap-1">
               <Printer className="w-3.5 h-3.5" /> 80mm
             </button>
@@ -3498,7 +3513,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
             {isUnpaid && !showPayment && (
               <button onClick={() => setShowPayment(true)}
                 className="px-5 py-2 bg-success text-white font-semibold rounded-lg hover:bg-success/80 text-sm flex items-center gap-2">
-                <DollarSign className="w-4 h-4" /> บันทึกการรับเงิน
+                <DollarSign className="w-4 h-4" /> {t('sales.paymentModal.title')}
               </button>
             )}
           </div>
@@ -3521,6 +3536,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
 // ─── Create Credit Note Modal ─────────────────────────────────────────────────
 function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceId, setInvoiceId] = useState('')
@@ -3536,15 +3552,15 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   }, [])
 
   const handleSave = async () => {
-    if (!invoiceId) { toast.error('กรุณาเลือกใบแจ้งหนี้'); return }
-    if (!reason.trim()) { toast.error('กรุณาระบุเหตุผลการลดหนี้'); return }
+    if (!invoiceId) { toast.error(t('sales.validation.selectInvoice')); return }
+    if (!reason.trim()) { toast.error(t('sales.validation.creditReason')); return }
     setSaving(true)
     try {
       await api.post('/sales/credit-notes', { invoiceId, reason, creditDate })
-      toast.success('สร้างใบลดหนี้สำเร็จ')
+      toast.success(t('sales.toast.creditNoteCreated'))
       onSaved()
     } catch {
-      toast.error('สร้างใบลดหนี้ไม่สำเร็จ')
+      toast.error(t('sales.toast.creditNoteCreateFailed'))
     } finally {
       setSaving(false)
     }
@@ -3557,7 +3573,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-            <RotateCcw className="w-5 h-5 text-warning" /> สร้างใบลดหนี้ (CN)
+            <RotateCcw className="w-5 h-5 text-warning" /> {t('sales.creditNoteModal.title')}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -3566,10 +3582,10 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
         <div className="overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">ใบแจ้งหนี้อ้างอิง *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.invoiceLabel')}</label>
             <select value={invoiceId} onChange={e => setInvoiceId(e.target.value)}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
-              <option value="">-- เลือกใบแจ้งหนี้ --</option>
+              <option value="">{t('sales.creditNoteModal.selectInvoice')}</option>
               {invoices.map((inv: any) => (
                 <option key={inv.id} value={inv.id}>
                   {inv.invoice_number} · {inv.customer_name} · ฿{Number(inv.total_amount).toLocaleString('th-TH')}
@@ -3579,25 +3595,25 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
           </div>
 
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">วันที่ออกใบลดหนี้</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.dateLabel')}</label>
             <input type="date" value={creditDate} onChange={e => setCreditDate(e.target.value)}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
 
           <div>
-            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">เหตุผลการลดหนี้ *</label>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.reasonLabel')}</label>
             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
-              placeholder="เช่น สินค้าชำรุด, ส่งคืนสินค้า, ราคาผิดพลาด..."
+              placeholder={t('sales.creditNoteModal.reasonPlaceholder')}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
 
         <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">ยกเลิก</button>
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-1">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            สร้างใบลดหนี้
+            {t('sales.createCreditNote')}
           </button>
         </div>
       </motion.div>
@@ -3612,6 +3628,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   onRefresh: () => void
   companyName?: string
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [saving, setSaving] = useState(false)
   const fmt = (v: number) => `฿${Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
@@ -3623,7 +3640,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   }
 
   const statusLabel: Record<string, string> = {
-    DRAFT: 'ร่าง', ISSUED: 'ออกแล้ว', APPLIED: 'นำไปใช้แล้ว', CANCELLED: 'ยกเลิก',
+    DRAFT: t('sales.creditNoteStatus.draft'), ISSUED: t('sales.creditNoteStatus.issued'), APPLIED: t('sales.creditNoteStatus.applied'), CANCELLED: t('sales.common.cancel'),
   }
   const statusColor: Record<string, string> = {
     DRAFT: 'text-[var(--fg-3)] bg-gray-400/10',
@@ -3636,11 +3653,11 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     setSaving(true)
     try {
       await api.put(`/sales/credit-notes/${creditNote.id}/status`, { status: 'ISSUED' })
-      toast.success('ยืนยันใบลดหนี้สำเร็จ')
+      toast.success(t('sales.toast.creditNoteIssued'))
       onRefresh()
       onClose()
     } catch {
-      toast.error('ไม่สามารถยืนยันใบลดหนี้ได้')
+      toast.error(t('sales.toast.creditNoteIssueFailed'))
     } finally {
       setSaving(false)
     }
@@ -3669,28 +3686,28 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
         <div className="overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-[var(--surface-2)] rounded-lg p-3">
-              <p className="text-xs text-[var(--fg-4)] mb-1">ใบแจ้งหนี้อ้างอิง</p>
+              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.creditNoteDetail.invoiceRef')}</p>
               <p className="text-[var(--fg-1)] font-mono font-medium">{creditNote.invoice_number}</p>
             </div>
             <div className="bg-[var(--surface-2)] rounded-lg p-3">
-              <p className="text-xs text-[var(--fg-4)] mb-1">วันที่ออก</p>
+              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.creditNoteDetail.issuedDate')}</p>
               <p className="text-[var(--fg-1)]">{fmtD(creditNote.credit_date)}</p>
             </div>
           </div>
 
           <div className="bg-[var(--surface-2)] rounded-lg p-3">
-            <p className="text-xs text-[var(--fg-4)] mb-1">เหตุผล</p>
+            <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.reason')}</p>
             <p className="text-[var(--fg-1)] text-sm">{creditNote.reason || '-'}</p>
           </div>
 
           <div className="bg-[var(--surface-2)] p-4 rounded-xl flex justify-between items-center">
-            <span className="text-[var(--fg-2)] text-sm font-semibold">ยอดลดหนี้</span>
+            <span className="text-[var(--fg-2)] text-sm font-semibold">{t('sales.creditNoteDetail.amount')}</span>
             <span className="text-warning font-bold text-lg">{fmt(creditNote.total_amount)}</span>
           </div>
         </div>
 
         <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-2">
-          <button onClick={handlePrint} title="พิมพ์ใบลดหนี้ A4"
+          <button onClick={handlePrint} title={t('sales.actions.printCreditNoteA4')}
             className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
             <Printer className="w-4 h-4" />
           </button>
@@ -3698,7 +3715,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
             <button onClick={handleIssue} disabled={saving}
               className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              ยืนยันใบลดหนี้
+              {t('sales.actions.issueCreditNote')}
             </button>
           )}
         </div>
@@ -3713,6 +3730,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   onClose: () => void
   onRefresh: () => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [saving, setSaving] = useState(false)
@@ -3724,7 +3742,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   }, [backorder.id])
 
   const statusLabel: Record<string, string> = {
-    PENDING: 'รอจัดส่ง', FULFILLED: 'จัดส่งแล้ว', CANCELLED: 'ยกเลิก',
+    PENDING: t('sales.backorderStatus.pending'), FULFILLED: t('sales.backorderStatus.fulfilled'), CANCELLED: t('sales.common.cancel'),
   }
   const statusColor: Record<string, string> = {
     PENDING: 'text-warning bg-[var(--warning-soft)]',
@@ -3736,11 +3754,11 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
     setSaving(true)
     try {
       await api.put(`/sales/backorders/${backorder.id}/status`, { status: 'FULFILLED' })
-      toast.success('อัปเดตสถานะสำเร็จ')
+      toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
     } catch {
-      toast.error('ไม่สามารถอัปเดตสถานะได้')
+      toast.error(t('sales.toast.statusUpdateFailed'))
     } finally {
       setSaving(false)
     }
@@ -3771,21 +3789,21 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
         <div className="overflow-y-auto p-5 space-y-4">
           {items.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-[var(--fg-2)]">รายการค้างส่ง</p>
+              <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.backorderDetail.itemsTitle')}</p>
               {items.map((item: any, i: number) => (
                 <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
                   <p className="text-[var(--fg-1)] font-medium">{item.product_name || item.productName}</p>
                   <div className="flex gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
-                    <span>สั่ง: <span className="text-[var(--fg-1)]">{item.ordered_qty ?? item.quantity}</span></span>
-                    <span>ส่งแล้ว: <span className="text-success">{item.delivered_qty ?? 0}</span></span>
-                    <span>ค้าง: <span className="text-warning">{item.remaining_qty ?? ((item.ordered_qty ?? item.quantity) - (item.delivered_qty ?? 0))}</span></span>
+                    <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? item.quantity}</span></span>
+                    <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.delivered_qty ?? 0}</span></span>
+                    <span>{t('sales.backorderDetail.remaining')} <span className="text-warning">{item.remaining_qty ?? ((item.ordered_qty ?? item.quantity) - (item.delivered_qty ?? 0))}</span></span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="text-center py-8 text-[var(--fg-4)] text-sm">
-              {detail === null ? 'กำลังโหลด...' : 'ไม่มีรายการ'}
+              {detail === null ? t('sales.common.loading') : t('sales.backorderDetail.noItems')}
             </div>
           )}
         </div>
@@ -3795,7 +3813,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
             <button onClick={handleFulfill} disabled={saving}
               className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
-              ยืนยันจัดส่งครบแล้ว
+              {t('sales.actions.fulfillBackorder')}
             </button>
           </div>
         )}

@@ -281,6 +281,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
   materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
   onAddNew?: (query: string) => void
 }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selected = materials.find(m => m.id === value)
@@ -297,7 +298,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
           onFocus={() => { setOpen(true); setQuery('') }}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           disabled={disabled}
-          placeholder="ค้นหา รหัส / ชื่อวัสดุ..."
+          placeholder={t('purchase.search.materialPlaceholder')}
           className={`w-full pl-8 pr-7 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
@@ -311,22 +312,22 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-center">
-              <p className="text-xs text-[var(--fg-4)] mb-2">ไม่พบสินค้า "{query}"</p>
+              <p className="text-xs text-[var(--fg-4)] mb-2">{t('purchase.search.noMaterialFound', { query })}</p>
               {onAddNew && (
                 <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
                   className="flex items-center gap-1.5 mx-auto px-3 py-1.5 text-xs bg-success/15 text-success border border-success/30 rounded-lg hover:bg-success/25 transition-colors">
-                  <Plus className="w-3 h-3" /> สร้างสินค้าใหม่เข้า Stock
+                  <Plus className="w-3 h-3" /> {t('purchase.search.createMaterial')}
                 </button>
               )}
             </div>
           ) : (
             <>
               <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)] flex items-center justify-between">
-                <span>{filtered.length} รายการ</span>
+                <span>{t('purchase.common.countItems', { count: filtered.length })}</span>
                 {onAddNew && (
                   <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
                     className="flex items-center gap-1 text-success hover:text-success/80 transition-colors">
-                    <Plus className="w-3 h-3" /> สินค้าใหม่
+                    <Plus className="w-3 h-3" /> {t('purchase.search.newMaterial')}
                   </button>
                 )}
               </div>
@@ -355,9 +356,10 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
   )
 }
 
-const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, placeholder = 'ค้นหาผู้ขาย...' }: {
+const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, placeholder }: {
   suppliers: Supplier[]; value: string; onChange: (id: string) => void; disabled?: boolean; placeholder?: string
 }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selected = suppliers.find(s => s.id === value)
@@ -374,7 +376,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
           onFocus={() => { setOpen(true); setQuery('') }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('purchase.search.supplierPlaceholder')}
           className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
@@ -387,10 +389,10 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
       {open && (
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบผู้ขาย</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{t('purchase.search.noSupplierFound')}</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} ราย</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{t('purchase.search.supplierCount', { count: filtered.length })}</div>
               {filtered.map(s => (
                 <button key={s.id} onMouseDown={() => { onChange(s.id); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === s.id ? 'bg-phopy-indigo/10' : ''}`}>
@@ -409,6 +411,7 @@ const SupplierSearchInput = ({ suppliers, value, onChange, disabled = false, pla
 const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage }: {
   orders: PurchaseOrder[]; value: string; onChange: (id: string) => void; disabled?: boolean; emptyMessage?: string
 }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selected = orders.find(o => o.id === value)
@@ -426,7 +429,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
           onFocus={() => { setOpen(true); setQuery('') }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
-          placeholder="ค้นหาเลขที่ใบสั่งซื้อ / ผู้ขาย..."
+          placeholder={t('purchase.search.poPlaceholder')}
           className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
@@ -439,16 +442,16 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
       {open && (
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{emptyMessage ?? 'ไม่พบใบสั่งซื้อ'}</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{emptyMessage ?? t('purchase.search.noOrderFound')}</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{t('purchase.common.countItems', { count: filtered.length })}</div>
               {filtered.map(o => (
                 <button key={o.id} onMouseDown={() => { onChange(o.id); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === o.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-28 shrink-0">{o.po_number}</span>
                   <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{o.supplier_name}</span>
-                  <span className="text-xs text-[var(--fg-4)] shrink-0">{o.status === 'RECEIVED' ? 'รับครบ' : o.status === 'PARTIAL' ? 'รับบางส่วน' : 'รออนุมัติ/รับ'}</span>
+                  <span className="text-xs text-[var(--fg-4)] shrink-0">{o.status === 'RECEIVED' ? t('purchase.poStatus.received') : o.status === 'PARTIAL' ? t('purchase.poStatus.partial') : t('purchase.poStatus.pending')}</span>
                 </button>
               ))}
             </>
@@ -462,6 +465,7 @@ const POSearchInput = ({ orders, value, onChange, disabled = false, emptyMessage
 const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
   receipts: GoodsReceipt[]; values: string[]; onChange: (ids: string[]) => void; disabled?: boolean
 }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selectedItems = values.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
@@ -499,30 +503,30 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
             onChange={e => setQuery(e.target.value)}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
-            placeholder="+ เพิ่มใบรับสินค้า GR..."
+            placeholder={t('purchase.search.grPlaceholder')}
             className="w-full pl-8 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo"
           />
         </div>
       )}
       {disabled && selectedItems.length === 0 && (
-        <p className="text-xs text-[var(--fg-4)] py-2">— เลือก PO ก่อน —</p>
+        <p className="text-xs text-[var(--fg-4)] py-2">{t('purchase.search.selectPOFirst')}</p>
       )}
       {open && (
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">
-              {values.length > 0 ? 'เพิ่มทุก GR แล้ว' : 'ไม่พบใบรับสินค้า'}
+              {values.length > 0 ? t('purchase.search.allGRsAdded') : t('purchase.search.noReceiptFound')}
             </p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ (คลิกเพื่อเพิ่ม)</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{t('purchase.search.grCountHint', { count: filtered.length })}</div>
               {filtered.map(r => (
                 <button key={r.id} onMouseDown={() => { onChange([...values, r.id]); setQuery(''); setOpen(false) }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors">
                   <span className="text-xs font-mono text-success w-32 shrink-0">{r.gr_number}</span>
                   <span className="text-xs text-[var(--fg-3)] flex-1 truncate">PO: {r.po_number}</span>
                   <span className={`text-xs shrink-0 ${r.status === 'CONFIRMED' ? 'text-success' : 'text-warning'}`}>
-                    {r.status === 'CONFIRMED' ? 'ยืนยันแล้ว' : 'ร่าง'}
+                    {r.status === 'CONFIRMED' ? t('purchase.grStatus.confirmed') : t('purchase.grStatus.draft')}
                   </span>
                 </button>
               ))}
@@ -537,6 +541,7 @@ const GRSearchInput = ({ receipts, values, onChange, disabled = false }: {
 const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
   requests: PurchaseRequest[]; value: string; onChange: (id: string, pr?: PurchaseRequest) => void; disabled?: boolean
 }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selected = requests.find(r => r.id === value)
@@ -555,7 +560,7 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
           onFocus={() => { setOpen(true); setQuery('') }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
-          placeholder="ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ..."
+          placeholder={t('purchase.search.prPlaceholder')}
           className={`w-full pl-8 pr-7 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
         {selected && !disabled && (
@@ -568,10 +573,10 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
       {open && (
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">ไม่พบใบขอซื้อ</p>
+            <p className="px-3 py-3 text-xs text-[var(--fg-4)] text-center">{t('purchase.search.noRequestFound')}</p>
           ) : (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{filtered.length} รายการ</div>
+              <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)]">{t('purchase.common.countItems', { count: filtered.length })}</div>
               {filtered.map(r => (
                 <button key={r.id} onMouseDown={() => { onChange(r.id, r); setOpen(false) }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === r.id ? 'bg-phopy-indigo/10' : ''}`}>
@@ -582,8 +587,8 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
                     r.status === 'PENDING' ? 'text-blue-400 bg-blue-500/10' :
                     'text-[var(--fg-4)] bg-gray-500/10'
                   }`}>{
-                    r.status === 'APPROVED' ? 'อนุมัติแล้ว' :
-                    r.status === 'PENDING' ? 'รออนุมัติ' : 'ร่าง'
+                    r.status === 'APPROVED' ? t('purchase.prStatus.approved') :
+                    r.status === 'PENDING' ? t('purchase.prStatus.pending') : t('purchase.prStatus.draft')
                   }</span>
                 </button>
               ))}
@@ -595,37 +600,41 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
   )
 }
 
-const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => (
+const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => {
+  const { t } = useTranslation()
+  return (
   <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-1">
-    <p className="text-xs text-warning font-medium mb-2">สมุดรายวัน (ระบบบันทึกอัตโนมัติ)</p>
+    <p className="text-xs text-warning font-medium mb-2">{t('purchase.journal.title')}</p>
     {entries.map((e, i) => (
       <div key={i} className={`flex items-center gap-2 text-xs ${e.dr ? '' : 'pl-6'}`}>
-        <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-danger'}`}>{e.dr ? 'Dr.' : 'Cr.'}</span>
+        <span className={`font-mono w-14 shrink-0 ${e.dr ? 'text-blue-400' : 'text-danger'}`}>{e.dr ? t('purchase.journal.debit') : t('purchase.journal.credit')}</span>
         <span className="text-[var(--fg-2)] flex-1">{e.account}</span>
         <span className="text-[var(--fg-3)]">{e.label}</span>
         {e.amount !== undefined && <span className="text-[var(--fg-1)] font-medium">{formatCurrency(e.amount)}</span>}
       </div>
     ))}
   </div>
-)
+  )
+}
 
 // Quick-add supplier mini-modal (module level — stable reference)
 const QuickAddSupplierModal = ({ onClose, onCreated }: {
   onClose: () => void
   onCreated: (supplier: { id: string; code: string; name: string }) => void
 }) => {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [form, setForm] = useState({ code: `SUP-${Date.now().toString().slice(-4)}`, name: '', contactName: '', phone: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const save = async () => {
-    if (!form.name.trim() || !form.contactName.trim()) { setErr('กรุณากรอกชื่อบริษัทและชื่อผู้ติดต่อ'); return }
+    if (!form.name.trim() || !form.contactName.trim()) { setErr(t('purchase.quickAddSupplier.validation')); return }
     setSaving(true); setErr('')
     try {
       const { data } = await api.post('/suppliers', { code: form.code, name: form.name, contactName: form.contactName, phone: form.phone, email: form.email })
       if (data.success) { onCreated(data.data); onClose() }
-      else setErr(data.message || 'เกิดข้อผิดพลาด')
-    } catch (e: any) { setErr(e.response?.data?.message || 'เกิดข้อผิดพลาด') }
+      else setErr(data.message || t('purchase.error.generic'))
+    } catch (e: any) { setErr(e.response?.data?.message || t('purchase.error.generic')) }
     setSaving(false)
   }
   return (
@@ -634,52 +643,52 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
-          <h3 className="text-[var(--fg-1)] font-semibold text-sm">เพิ่มผู้ขายใหม่ (Quick Add)</h3>
+          <h3 className="text-[var(--fg-1)] font-semibold text-sm">{t('purchase.quickAddSupplier.title')}</h3>
           <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 space-y-3">
           {err && <p className="text-xs text-danger bg-[var(--danger-soft)] rounded-lg px-3 py-2">{err}</p>}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">รหัสผู้ขาย</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddSupplier.code')}</label>
               <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value }))}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อบริษัท <span className="text-danger">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddSupplier.companyName')} <span className="text-danger">*</span></label>
               <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                placeholder="ชื่อบริษัท / ร้านค้า"
+                placeholder={t('purchase.quickAddSupplier.companyPlaceholder')}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
           <div>
-            <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อผู้ติดต่อ <span className="text-danger">*</span></label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddSupplier.contactName')} <span className="text-danger">*</span></label>
             <input value={form.contactName} onChange={e => setForm(p => ({ ...p, contactName: e.target.value }))}
-              placeholder="ชื่อ-นามสกุล"
+              placeholder={t('purchase.quickAddSupplier.contactPlaceholder')}
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">เบอร์โทร</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddSupplier.phone')}</label>
               <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                placeholder="0xx-xxx-xxxx"
+                placeholder={t('purchase.quickAddSupplier.phonePlaceholder')}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">อีเมล</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddSupplier.email')}</label>
               <input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                placeholder="email@example.com"
+                placeholder={t('purchase.quickAddSupplier.emailPlaceholder')}
                 className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
-          <p className="text-xs text-[var(--fg-4)]">สามารถแก้ไขข้อมูลเพิ่มเติมได้ที่เมนู CRM → Suppliers</p>
+          <p className="text-xs text-[var(--fg-4)]">{t('purchase.quickAddSupplier.hint')}</p>
         </div>
         <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">{t('purchase.common.cancel')}</button>
           <button onClick={save} disabled={saving}
             className="px-4 py-2 text-sm bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2">
             {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-            บันทึก
+            {t('purchase.common.save')}
           </button>
         </div>
       </motion.div>
@@ -692,6 +701,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   onCreated: (item: { id: string; code: string; name: string; unit: string }) => void
   prefill?: { name?: string; unitCost?: number }
 }) => {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [form, setForm] = useState({
     sku: `SKU-${Date.now().toString().slice(-5)}`,
@@ -710,7 +720,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   const [err, setErr] = useState('')
 
   const save = async () => {
-    if (!form.sku.trim() || !form.name.trim()) { setErr('กรุณากรอก SKU และชื่อสินค้า'); return }
+    if (!form.sku.trim() || !form.name.trim()) { setErr(t('purchase.quickAddStock.validation')); return }
     setSaving(true); setErr('')
     try {
       const created = await stockService.create({
@@ -728,7 +738,7 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
       onCreated({ id: created.id, code: created.sku, name: created.name, unit: created.unit })
       onClose()
     } catch (e: any) {
-      setErr(e.response?.data?.message || 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง')
+      setErr(e.response?.data?.message || t('purchase.quickAddStock.error'))
     }
     setSaving(false)
   }
@@ -744,9 +754,9 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           <div>
             <h3 className="text-[var(--fg-1)] font-semibold text-sm flex items-center gap-2">
               <Package className="w-4 h-4 text-success" />
-              เพิ่มสินค้าใหม่เข้า Stock
+              {t('purchase.quickAddStock.title')}
             </h3>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">สินค้าจะถูกบันทึกใน Stock ทันที และเลือกได้ใน PO</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('purchase.quickAddStock.subtitle')}</p>
           </div>
           <button onClick={onClose} className="text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
@@ -757,30 +767,30 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* SKU + ชื่อสินค้า */}
           <div className="grid grid-cols-5 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs text-[var(--fg-3)] mb-1">SKU <span className="text-danger">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.sku')} <span className="text-danger">*</span></label>
               <input value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))}
-                placeholder="เช่น MAT-001" className={inp} />
+                placeholder={t('purchase.quickAddStock.skuPlaceholder')} className={inp} />
             </div>
             <div className="col-span-3">
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อสินค้า <span className="text-danger">*</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.name')} <span className="text-danger">*</span></label>
               <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                placeholder="ชื่อวัตถุดิบ / สินค้า" className={inp} />
+                placeholder={t('purchase.quickAddStock.namePlaceholder')} className={inp} />
             </div>
           </div>
 
           {/* ประเภท + หน่วย */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ประเภท</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.category')}</label>
               <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className={inp}>
-                <option value="raw">วัตถุดิบ (Raw)</option>
-                <option value="wip">กึ่งสำเร็จรูป (WIP)</option>
-                <option value="finished">สินค้าสำเร็จรูป</option>
-                <option value="material">วัสดุ/อื่นๆ</option>
+                <option value="raw">{t('purchase.quickAddStock.categoryRaw')}</option>
+                <option value="wip">{t('purchase.quickAddStock.categoryWip')}</option>
+                <option value="finished">{t('purchase.quickAddStock.categoryFinished')}</option>
+                <option value="material">{t('purchase.quickAddStock.categoryMaterial')}</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วย</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.common.unit')}</label>
               <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} className={inp}>
                 {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
               </select>
@@ -790,13 +800,13 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* ราคาต้นทุน + ราคาขาย */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วย (฿) <span className="text-amber-400/70">ต้นทุน</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.unitCost')} <span className="text-amber-400/70">{t('purchase.quickAddStock.costLabel')}</span></label>
               <input type="number" min="0" step="0.01" value={form.unitCost}
                 onChange={e => setForm(p => ({ ...p, unitCost: parseFloat(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาขาย/หน่วย (฿) <span className="text-success/70">ขาย</span></label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.unitPrice')} <span className="text-success/70">{t('purchase.quickAddStock.saleLabel')}</span></label>
               <input type="number" min="0" step="0.01" value={form.unitPrice}
                 onChange={e => setForm(p => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} placeholder="0.00" />
@@ -806,19 +816,19 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
           {/* Min/Max + จำนวนเริ่มต้น */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">Min Stock</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.minStock')}</label>
               <input type="number" min="0" value={form.minStock}
                 onChange={e => setForm(p => ({ ...p, minStock: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">Max Stock</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.maxStock')}</label>
               <input type="number" min="0" value={form.maxStock}
                 onChange={e => setForm(p => ({ ...p, maxStock: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.initialQty')}</label>
               <input type="number" min="0" value={form.quantity}
                 onChange={e => setForm(p => ({ ...p, quantity: parseInt(e.target.value) || 0 }))}
                 onFocus={e => e.target.select()} className={inp} />
@@ -827,18 +837,18 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 
           {/* สถานที่เก็บ */}
           <div>
-            <label className="block text-xs text-[var(--fg-3)] mb-1">สถานที่เก็บ</label>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.location')}</label>
             <input value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))}
-              placeholder="เช่น คลังหลัก, A-12" className={inp} />
+              placeholder={t('purchase.quickAddStock.locationPlaceholder')} className={inp} />
           </div>
         </div>
 
         <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">ยกเลิก</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">{t('purchase.common.cancel')}</button>
           <button onClick={save} disabled={saving}
             className="px-5 py-2 text-sm bg-success text-white font-semibold rounded-lg hover:bg-success/80 disabled:opacity-50 flex items-center gap-2">
             {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-            บันทึกเข้า Stock
+            {t('purchase.quickAddStock.save')}
           </button>
         </div>
       </motion.div>
@@ -1026,7 +1036,7 @@ const Purchase = () => {
     setShowQuickAddStock(false)
     setQuickAddStockCallback(null)
     setQuickAddStockPrefill(undefined)
-    toast.success(`เพิ่ม "${item.name}" เข้า Stock แล้ว`)
+    toast.success(t('purchase.toast.stockItemAdded', { name: item.name }))
   }
 
   const fetchMaterials = async () => {
@@ -1238,10 +1248,10 @@ const Purchase = () => {
         ...p,
         linked_pr_id: prId,
         expected_date: pr.required_date?.split('T')[0] || p.expected_date,
-        notes: pr.notes ? `อ้างอิง: ${pr.pr_number}${p.notes ? '\n' + p.notes : ''}` : p.notes,
+        notes: pr.notes ? `${t('purchase.common.reference')} ${pr.pr_number}${p.notes ? '\n' + p.notes : ''}` : p.notes,
         items: mappedItems.length > 0 ? mappedItems : p.items,
       }))
-      toast.success(`โหลดรายการจาก ${pr.pr_number} แล้ว (${mappedItems.length} รายการ)`)
+      toast.success(t('purchase.toast.requestItemsLoaded', { prNumber: pr.pr_number, count: mappedItems.length }))
     } catch { toast.error(t('purchase.toast.loadRequestFailed')) }
   }
 
@@ -1606,7 +1616,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get(endpointMap[type])
       const doc = data?.data || data
-      printDocument(type, { ...doc, _company: user?.name || 'บริษัท' }, format)
+      printDocument(type, { ...doc, _company: user?.name || t('purchase.common.companyFallback') }, format)
     } catch { toast.error(t('purchase.error.loadPrintData')) }
   }
 
@@ -1705,7 +1715,7 @@ const Purchase = () => {
             material_id: item.material_id || '',
             description: item.description || item.material_name || '',
             material_name: item.material_name || '',
-            unit: normalizeUnit(item.unit) || 'หน่วย',
+            unit: normalizeUnit(item.unit) || t('purchase.common.unitFallback'),
             unit_price: item.unit_price || 0,
             ordered_qty: item.quantity || 0,
             already_received_qty: item.received_qty || 0,
@@ -1757,8 +1767,8 @@ const Purchase = () => {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-bold text-[var(--fg-1)]">แปลงเป็นใบสั่งซื้อ</h2>
-            <p className="text-sm text-[var(--fg-3)] mt-0.5">เลือกผู้ขายเพื่อสร้าง PO จากใบขอซื้อนี้</p>
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('purchase.convertToPO.title')}</h2>
+            <p className="text-sm text-[var(--fg-3)] mt-0.5">{t('purchase.convertToPO.subtitle')}</p>
           </div>
           <button onClick={() => setConvertPRId(null)} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
@@ -1767,33 +1777,33 @@ const Purchase = () => {
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
-              ผู้ขาย <span className="text-danger">*</span>
+              {t('purchase.common.supplier')} <span className="text-danger">*</span>
             </label>
             <select value={convertForm.supplier_id} onChange={e => setConvertForm(p => ({ ...p, supplier_id: e.target.value }))}
               className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
-              <option value="">-- เลือกผู้ขาย --</option>
+              <option value="">{t('purchase.convertToPO.selectSupplier')}</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">กำหนดส่งสินค้า</label>
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">{t('purchase.convertToPO.expectedDelivery')}</label>
             <input type="date" value={convertForm.expected_date} onChange={e => setConvertForm(p => ({ ...p, expected_date: e.target.value }))}
               className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">หมายเหตุ</label>
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">{t('purchase.common.notes')}</label>
             <textarea value={convertForm.notes} onChange={e => setConvertForm(p => ({ ...p, notes: e.target.value }))} rows={2}
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
         <div className="p-5 border-t border-[var(--border)] flex gap-3">
-          <button onClick={() => setConvertPRId(null)} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm transition-colors">ยกเลิก</button>
+          <button onClick={() => setConvertPRId(null)} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm transition-colors">{t('purchase.common.cancel')}</button>
           <button onClick={handleDoConvert} disabled={converting || !convertForm.supplier_id}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 transition-colors">
             {converting
               ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               : <ArrowRight className="w-4 h-4" />}
-            สร้างใบสั่งซื้อ
+            {t('purchase.actions.createOrder')}
           </button>
         </div>
       </motion.div>
@@ -1805,21 +1815,21 @@ const Purchase = () => {
     const pendingActions = [
       {
         icon: FileText,
-        label: 'ใบขอซื้อรออนุมัติ',
+        label: t('purchase.overview.pendingRequestsLabel'),
         count: summary?.purchaseRequests.pending || 0,
         color: 'text-warning',
         tab: 'requests' as const,
       },
       {
         icon: ShoppingCart,
-        label: 'ใบสั่งซื้อรอรับสินค้า',
+        label: t('purchase.overview.pendingOrdersLabel'),
         count: (summary?.purchaseOrders.pending || 0) + (summary?.purchaseOrders.partial || 0),
         color: 'text-blue-400',
         tab: 'orders' as const,
       },
       {
         icon: Receipt,
-        label: 'ใบแจ้งหนี้ค้างจ่าย',
+        label: t('purchase.overview.unpaidInvoicesLabel'),
         count: summary?.invoices.unpaid || 0,
         color: 'text-danger',
         tab: 'invoices' as const,
@@ -1832,27 +1842,27 @@ const Purchase = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="bg-gradient-to-br from-phopy-indigo/20 to-phopy-indigo-600/20 rounded-xl p-5 border border-phopy-indigo/30">
-            <p className="text-sm text-[var(--fg-3)]">ยอดสั่งซื้อรวม</p>
+            <p className="text-sm text-[var(--fg-3)]">{t('purchase.overview.totalOrderAmount')}</p>
             <p className="text-2xl font-bold text-[var(--primary)] mt-1">{formatCurrency(summary?.purchaseOrders.totalAmount || 0)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.purchaseOrders.total || 0} ใบสั่งซื้อ</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.overview.orderCount', { count: summary?.purchaseOrders.total || 0 })}</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl p-5 border border-purple-500/30">
-            <p className="text-sm text-[var(--fg-3)]">ใบขอซื้อรออนุมัติ</p>
+            <p className="text-sm text-[var(--fg-3)]">{t('purchase.overview.pendingRequests')}</p>
             <p className="text-2xl font-bold text-purple-500 mt-1">{summary?.purchaseRequests.pending || 0}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-1">จาก {summary?.purchaseRequests.total || 0} ใบทั้งหมด</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.overview.fromTotalRequests', { count: summary?.purchaseRequests.total || 0 })}</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="bg-gradient-to-br from-success/20 to-success/20 rounded-xl p-5 border border-success/30">
-            <p className="text-sm text-[var(--fg-3)]">จ่ายเงินแล้ว</p>
+            <p className="text-sm text-[var(--fg-3)]">{t('purchase.overview.paidAmount')}</p>
             <p className="text-2xl font-bold text-success mt-1">{formatCurrency(summary?.payments.totalPaid || 0)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.payments.total || 0} รายการ</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.overview.paymentCount', { count: summary?.payments.total || 0 })}</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="bg-gradient-to-br from-orange-500/20 to-red-500/20 rounded-xl p-5 border border-warning/30">
-            <p className="text-sm text-[var(--fg-3)]">ยอดค้างจ่าย</p>
+            <p className="text-sm text-[var(--fg-3)]">{t('purchase.overview.outstandingAmount')}</p>
             <p className="text-2xl font-bold text-warning mt-1">{formatCurrency(summary?.invoices.outstanding || 0)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-1">{summary?.invoices.unpaid || 0} ใบค้างจ่าย</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.overview.unpaidInvoiceCount', { count: summary?.invoices.unpaid || 0 })}</p>
           </motion.div>
         </div>
 
@@ -1861,7 +1871,7 @@ const Purchase = () => {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="bg-[var(--surface)] border border-warning/30 rounded-xl p-5">
             <h3 className="text-sm font-semibold text-warning mb-3 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" /> รายการรอดำเนินการ
+              <AlertCircle className="w-4 h-4" /> {t('purchase.overview.pendingActionsTitle')}
             </h3>
             <div className="space-y-2">
               {pendingActions.map(item => (
@@ -1884,14 +1894,14 @@ const Purchase = () => {
         {/* Workflow pipeline */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
           className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-[var(--fg-3)] mb-4">กระบวนการจัดซื้อ</h3>
+          <h3 className="text-sm font-semibold text-[var(--fg-3)] mb-4">{t('purchase.overview.workflowTitle')}</h3>
           <div className="flex items-center gap-2 flex-wrap">
             {[
-              { label: 'ใบขอซื้อ', count: summary?.purchaseRequests.total || 0, color: 'text-[var(--primary)]' },
-              { label: 'ใบสั่งซื้อ', count: summary?.purchaseOrders.total || 0, color: 'text-purple-500' },
-              { label: 'รับสินค้า', count: summary?.goodsReceipts.confirmed || 0, color: 'text-success' },
-              { label: 'ใบแจ้งหนี้', count: summary?.invoices.total || 0, color: 'text-blue-400' },
-              { label: 'จ่ายเงิน', count: summary?.payments.total || 0, color: 'text-success' },
+              { label: t('purchase.workflow.request'), count: summary?.purchaseRequests.total || 0, color: 'text-[var(--primary)]' },
+              { label: t('purchase.workflow.order'), count: summary?.purchaseOrders.total || 0, color: 'text-purple-500' },
+              { label: t('purchase.workflow.receipt'), count: summary?.goodsReceipts.confirmed || 0, color: 'text-success' },
+              { label: t('purchase.workflow.invoice'), count: summary?.invoices.total || 0, color: 'text-blue-400' },
+              { label: t('purchase.workflow.payment'), count: summary?.payments.total || 0, color: 'text-success' },
             ].map((step, i, arr) => (
               <div key={step.label} className="flex items-center gap-2">
                 <div className="text-center min-w-[60px]">
@@ -1908,14 +1918,14 @@ const Purchase = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-[var(--primary)]" /> สถานะใบสั่งซื้อ
+              <ShoppingCart className="w-4 h-4 text-[var(--primary)]" /> {t('purchase.overview.orderStatusTitle')}
             </h3>
             <div className="space-y-2">
               {[
-                { label: 'ฉบับร่าง', value: summary?.purchaseOrders.draft || 0, color: 'text-[var(--fg-3)]' },
-                { label: 'รอดำเนินการ', value: summary?.purchaseOrders.pending || 0, color: 'text-warning' },
+                { label: t('purchase.status.draft'), value: summary?.purchaseOrders.draft || 0, color: 'text-[var(--fg-3)]' },
+                { label: t('purchase.status.pending'), value: summary?.purchaseOrders.pending || 0, color: 'text-warning' },
                 { label: t('purchase.status.partialReceived'), value: summary?.purchaseOrders.partial || 0, color: 'text-warning' },
-                { label: 'รับครบแล้ว', value: summary?.purchaseOrders.received || 0, color: 'text-success' },
+                { label: t('purchase.status.fullyReceived'), value: summary?.purchaseOrders.received || 0, color: 'text-success' },
               ].map(item => (
                 <div key={item.label} className="flex justify-between items-center p-3 bg-[var(--bg)] rounded-lg">
                   <span className="text-sm text-[var(--fg-3)]">{item.label}</span>
@@ -1926,13 +1936,13 @@ const Purchase = () => {
           </div>
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
             <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-success" /> สถานะการจ่ายเงิน
+              <CreditCard className="w-4 h-4 text-success" /> {t('purchase.overview.paymentStatusTitle')}
             </h3>
             <div className="space-y-2">
               {[
                 { label: t('purchase.status.unpaid'), value: summary?.invoices.unpaid || 0, color: 'text-danger' },
-                { label: 'จ่ายบางส่วน', value: summary?.invoices.partial || 0, color: 'text-warning' },
-                { label: 'จ่ายครบแล้ว', value: summary?.invoices.paid || 0, color: 'text-success' },
+                { label: t('purchase.status.partialPaid'), value: summary?.invoices.partial || 0, color: 'text-warning' },
+                { label: t('purchase.status.paid'), value: summary?.invoices.paid || 0, color: 'text-success' },
               ].map(item => (
                 <div key={item.label} className="flex justify-between items-center p-3 bg-[var(--bg)] rounded-lg">
                   <span className="text-sm text-[var(--fg-3)]">{item.label}</span>
@@ -1963,19 +1973,19 @@ const Purchase = () => {
     <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg p-0.5 shrink-0">
       <button onClick={() => setViewMode('card')}
         className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-4)] hover:text-[var(--fg-1)]'}`}
-        title="มุมมองการ์ด"><LayoutGrid className="w-3.5 h-3.5" /></button>
+        title={t('purchase.view.card')}><LayoutGrid className="w-3.5 h-3.5" /></button>
       <button onClick={() => setViewMode('list')}
         className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-4)] hover:text-[var(--fg-1)]'}`}
-        title="มุมมองรายการ"><LayoutList className="w-3.5 h-3.5" /></button>
+        title={t('purchase.view.list')}><LayoutList className="w-3.5 h-3.5" /></button>
     </div>
   )
 
   const PageSizeSelect = () => (
     <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
       className="px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo">
-      <option value={25}>25 / หน้า</option>
-      <option value={50}>50 / หน้า</option>
-      <option value={100}>100 / หน้า</option>
+      <option value={25}>{t('purchase.pagination.perPage', { count: 25 })}</option>
+      <option value={50}>{t('purchase.pagination.perPage', { count: 50 })}</option>
+      <option value={100}>{t('purchase.pagination.perPage', { count: 100 })}</option>
     </select>
   )
 
@@ -1995,7 +2005,7 @@ const Purchase = () => {
     return (
       <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/40">
         <p className="text-xs text-[var(--fg-4)]">
-          แสดง {Math.min((currentPage - 1) * pageSize + 1, total)}–{Math.min(currentPage * pageSize, total)} จาก {total} รายการ
+          {t('purchase.pagination.showing', { start: Math.min((currentPage - 1) * pageSize + 1, total), end: Math.min(currentPage * pageSize, total), total })}
         </p>
         <div className="flex items-center gap-1">
           <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -2024,22 +2034,22 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบขอซื้อ..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.requestsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('request', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createRequest')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบขอซื้อ" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.requests')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขอ</span><span className="col-span-2">แผนก</span>
-              <span className="col-span-2">วันที่ขอ</span><span className="col-span-1">สถานะ</span>
-              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-1"></span>
+              <span className="col-span-2">{t('purchase.requests.headers.number')}</span><span className="col-span-3">{t('purchase.requests.headers.requester')}</span><span className="col-span-2">{t('purchase.requests.headers.department')}</span>
+              <span className="col-span-2">{t('purchase.requests.headers.requestDate')}</span><span className="col-span-1">{t('purchase.common.status')}</span>
+              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((req, i) => (
               <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
@@ -2055,7 +2065,7 @@ const Purchase = () => {
                 <div className="col-span-1 flex justify-end gap-1">
                   {req.status === 'DRAFT' && (
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
-                      className="p-1 text-warning bg-[var(--warning-soft)] rounded" title="แก้ไข">
+                      className="p-1 text-warning bg-[var(--warning-soft)] rounded" title={t('purchase.actions.edit')}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -2080,33 +2090,33 @@ const Purchase = () => {
                   <StatusBadge status={req.status} />
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
-                  <span>ขอ {formatDate(req.request_date)}</span>
-                  <span>ต้องการ {formatDate(req.required_date)}</span>
+                  <span>{t('purchase.requests.card.requestedOn', { date: formatDate(req.request_date) })}</span>
+                  <span>{t('purchase.requests.card.requiredBy', { date: formatDate(req.required_date) })}</span>
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <div>
-                    {req.priority === 'URGENT' && <span className="text-xs text-danger font-semibold"><Zap className="w-4 h-4" /> ด่วนมาก</span>}
-                    {req.priority === 'HIGH' && <span className="text-xs text-warning font-semibold">↑ สำคัญ</span>}
+                    {req.priority === 'URGENT' && <span className="text-xs text-danger font-semibold"><Zap className="w-4 h-4" /> {t('purchase.priority.urgent')}</span>}
+                    {req.priority === 'HIGH' && <span className="text-xs text-warning font-semibold">↑ {t('purchase.priority.high')}</span>}
                   </div>
                   <p className="font-bold text-[var(--fg-1)] text-sm">{formatCurrency(req.total_amount)}</p>
                 </div>
                 <div className="flex gap-2 mt-auto pt-3 mt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
-                  <button onClick={() => handlePrint('pr', req.id)} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('pr', req.id)} title={t('purchase.actions.printA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {req.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
                       className="flex-1 py-1.5 text-xs text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] transition-colors">
-                      แก้ไข
+                      {t('purchase.actions.edit')}
                     </button>
                     <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      ส่งอนุมัติ
+                      {t('purchase.actions.submitForApproval')}
                     </button>
                     <button onClick={() => handleDeleteRequest(req.id)}
                       className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
@@ -2116,13 +2126,13 @@ const Purchase = () => {
                   {req.status === 'PENDING' && (
                     <button onClick={() => handleSubmitRequestDirect(req.id, 'APPROVED')}
                       className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> อนุมัติ
+                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
                     </button>
                   )}
                   {req.status === 'APPROVED' && (
                     <button onClick={() => handleConvertRequestToOrder(req.id)}
                       className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      แปลง PO <ArrowRight className="w-3 h-3" />
+                      {t('purchase.actions.convertToOrder')} <ArrowRight className="w-3 h-3" />
                     </button>
                   )}
                 </div>
@@ -2144,22 +2154,22 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบสั่งซื้อ..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.ordersPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('order', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบสั่งซื้อ
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createOrder')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบสั่งซื้อ" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.orders')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่ PO</span><span className="col-span-2">ผู้ขาย</span><span className="col-span-1">วันสั่ง</span>
-              <span className="col-span-1">กำหนดรับ</span><span className="col-span-1">สถานะ</span>
-              <span className="col-span-1 text-right">ยอดรวม</span><span className="col-span-4"></span>
+              <span className="col-span-2">{t('purchase.orders.headers.poNumber')}</span><span className="col-span-2">{t('purchase.common.supplier')}</span><span className="col-span-1">{t('purchase.orders.headers.orderDate')}</span>
+              <span className="col-span-1">{t('purchase.orders.headers.expectedDate')}</span><span className="col-span-1">{t('purchase.common.status')}</span>
+              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-4"></span>
             </div>
             {paginated.map((order, i) => (
               <div key={order.id}
@@ -2172,18 +2182,18 @@ const Purchase = () => {
                 <div className="col-span-1"><StatusBadge status={order.status} /></div>
                 <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(order.total_amount)}</p>
                 <div className="col-span-4 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint('po', order.id)} title="พิมพ์ใบสั่งซื้อ A4"
+                  <button onClick={() => handlePrint('po', order.id)} title={t('purchase.actions.printOrderA4')}
                     className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {order.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
-                      className="p-1.5 text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] transition-colors" title="แก้ไข">
+                      className="p-1.5 text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] transition-colors" title={t('purchase.actions.edit')}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
                       className="px-2 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded hover:bg-[var(--info-soft)] font-medium transition-colors whitespace-nowrap">
-                      ส่งอนุมัติ
+                      {t('purchase.actions.submitForApproval')}
                     </button>
                     <button onClick={() => handleDeleteOrder(order.id)}
                       className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
@@ -2193,7 +2203,7 @@ const Purchase = () => {
                   {order.status === 'SUBMITTED' && (
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'APPROVED')}
                       className="px-2 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
-                      <Check className="w-3 h-3" /> อนุมัติ
+                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
                     </button>
                   )}
                   {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (
@@ -2203,7 +2213,7 @@ const Purchase = () => {
                       openModal('receipt', 'create')
                     }}
                       className="px-2 py-1.5 text-xs text-success bg-success/10 rounded hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
-                      รับสินค้า <Package className="w-3 h-3" />
+                      {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
                     </button>
                   )}
                   {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
@@ -2218,7 +2228,7 @@ const Purchase = () => {
                       openModal('invoice', 'create')
                     }}
                       className="px-2 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] font-medium transition-colors whitespace-nowrap">
-                      วางบิล
+                      {t('purchase.actions.createInvoice')}
                     </button>
                   )}
                 </div>
@@ -2238,8 +2248,8 @@ const Purchase = () => {
                   <StatusBadge status={order.status} />
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
-                  <span>สั่ง {formatDate(order.order_date)}</span>
-                  <span>กำหนดรับ {formatDate(order.expected_date)}</span>
+                  <span>{t('purchase.orders.card.orderedOn', { date: formatDate(order.order_date) })}</span>
+                  <span>{t('purchase.orders.card.expectedBy', { date: formatDate(order.expected_date) })}</span>
                 </div>
                 {/* Option A: Procurement chain badges */}
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -2255,19 +2265,19 @@ const Purchase = () => {
                     return (<>
                       {grConfirmed.length > 0 && (
                         <span className="text-xs text-success bg-success/10 px-1.5 py-0.5 rounded">
-                          GR ×{grConfirmed.length}
+                          {t('purchase.orders.card.grConfirmed', { count: grConfirmed.length })}
                         </span>
                       )}
                       {grDraft.length > 0 && (
                         <span className="text-xs text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                          <AlertCircle className="w-2.5 h-2.5" /> GR ร่าง ×{grDraft.length}
+                          <AlertCircle className="w-2.5 h-2.5" /> {t('purchase.orders.card.grDraft', { count: grDraft.length })}
                         </span>
                       )}
                     </>)
                   })()}
                   {(() => { const invCount = invoices.filter(i => i.purchase_order_id === order.id).length; return invCount > 0 ? (
                     <span className="text-xs text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">
-                      INV ×{invCount}
+                      {t('purchase.orders.card.invCount', { count: invCount })}
                     </span>
                   ) : null })()}
                 </div>
@@ -2275,22 +2285,22 @@ const Purchase = () => {
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('order', 'view', order.id, order)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
                   <button onClick={() => handlePrint('po', order.id)}
-                    title="พิมพ์ใบสั่งซื้อ A4"
+                    title={t('purchase.actions.printOrderA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {/* DRAFT → แก้ไข + ส่งอนุมัติ + ลบ */}
                   {order.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
-                      className="px-2.5 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] transition-colors" title="แก้ไข">
+                      className="px-2.5 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] transition-colors" title={t('purchase.actions.edit')}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      ส่งอนุมัติ
+                      {t('purchase.actions.submitForApproval')}
                     </button>
                     <button onClick={() => handleDeleteOrder(order.id)}
                       className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
@@ -2301,7 +2311,7 @@ const Purchase = () => {
                   {order.status === 'SUBMITTED' && (
                     <button onClick={() => handleUpdateOrderStatus(order.id, 'APPROVED')}
                       className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> อนุมัติ
+                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
                     </button>
                   )}
                   {/* APPROVED / PARTIAL → รับสินค้า */}
@@ -2312,7 +2322,7 @@ const Purchase = () => {
                       openModal('receipt', 'create')
                     }}
                       className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      รับสินค้า <Package className="w-3 h-3" />
+                      {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
                     </button>
                   )}
                   {/* RECEIVED → สร้างใบแจ้งหนี้ */}
@@ -2328,7 +2338,7 @@ const Purchase = () => {
                       openModal('invoice', 'create')
                     }}
                       className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      วางบิล
+                      {t('purchase.actions.createInvoice')}
                     </button>
                   )}
                 </div>
@@ -2350,22 +2360,22 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบรับสินค้า..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.receiptsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('receipt', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> บันทึกรับสินค้า
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createReceipt')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการรับสินค้า" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.receipts')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่ GR</span><span className="col-span-3">ผู้ขาย</span>
-              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-1">วันที่รับ</span>
-              <span className="col-span-1">สถานะ</span><span className="col-span-3"></span>
+              <span className="col-span-2">{t('purchase.receipts.headers.grNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-2">{t('purchase.receipts.headers.poReference')}</span><span className="col-span-1">{t('purchase.receipts.headers.receiptDate')}</span>
+              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-3"></span>
             </div>
             {paginated.map((receipt, i) => (
               <div key={receipt.id}
@@ -2377,20 +2387,20 @@ const Purchase = () => {
                 <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(receipt.receipt_date)}</p>
                 <div className="col-span-1"><StatusBadge status={receipt.status} /></div>
                 <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title={t('purchase.actions.printA4')}
                     className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title={t('purchase.actions.printThermal')}
                     className="p-1.5 text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded transition-colors text-xs leading-none">
                     <Receipt className="w-4 h-4 inline" />
                   </button>
                   {receipt.status === 'DRAFT' && (<>
-                    <button onClick={() => handleConfirmReceipt(receipt.id)} title="ยืนยัน"
+                    <button onClick={() => handleConfirmReceipt(receipt.id)} title={t('purchase.actions.confirm')}
                       className="p-1.5 text-success bg-success/10 rounded hover:bg-[var(--success-soft)] transition-colors">
                       <Check className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => handleDeleteReceipt(receipt.id)} title="ลบ"
+                    <button onClick={() => handleDeleteReceipt(receipt.id)} title={t('purchase.actions.delete')}
                       className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -2411,27 +2421,27 @@ const Purchase = () => {
                   </div>
                   <StatusBadge status={receipt.status} />
                 </div>
-                <p className="text-xs text-[var(--fg-4)] mt-2">รับวันที่ {formatDate(receipt.receipt_date)}</p>
+                <p className="text-xs text-[var(--fg-4)] mt-2">{t('purchase.receipts.card.receivedOn', { date: formatDate(receipt.receipt_date) })}</p>
                 {receipt.journal_entry_number && (
-                  <p className="text-xs text-[var(--primary)]/70 mt-1">สมุดรายวัน: {receipt.journal_entry_number}</p>
+                  <p className="text-xs text-[var(--primary)]/70 mt-1">{t('purchase.common.journalEntry', { number: receipt.journal_entry_number })}</p>
                 )}
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title={t('purchase.actions.printA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title="พิมพ์สลิป 80mm"
+                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title={t('purchase.actions.printThermal')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded-lg transition-colors text-xs leading-none">
                     <Receipt className="w-4 h-4 inline" />
                   </button>
                   {receipt.status === 'DRAFT' && (<>
                     <button onClick={() => handleConfirmReceipt(receipt.id)}
                       className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> ยืนยัน
+                      <Check className="w-3 h-3" /> {t('purchase.actions.confirm')}
                     </button>
                     <button onClick={() => handleDeleteReceipt(receipt.id)}
                       className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
@@ -2457,23 +2467,23 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบวางบิล..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.invoicesPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('invoice', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบวางบิล
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createInvoice')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการใบวางบิล" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่ PI</span><span className="col-span-3">ผู้ขาย</span>
-              <span className="col-span-2">อ้างอิง PO</span><span className="col-span-2">ครบกำหนด</span>
-              <span className="col-span-1">สถานะ</span>
-              <span className="col-span-1 text-right">ค้างชำระ</span><span className="col-span-1"></span>
+              <span className="col-span-2">{t('purchase.invoices.headers.piNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-2">{t('purchase.invoices.headers.poReference')}</span><span className="col-span-2">{t('purchase.invoices.headers.dueDate')}</span>
+              <span className="col-span-1">{t('purchase.common.status')}</span>
+              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((invoice, i) => (
               <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
@@ -2488,7 +2498,7 @@ const Purchase = () => {
                 <div className="col-span-1 flex justify-end gap-1">
                   {invoice.payment_status !== 'PAID' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
-                      className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title="จ่ายเงิน">
+                      className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title={t('purchase.actions.pay')}>
                       <DollarSign className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -2510,28 +2520,28 @@ const Purchase = () => {
                   <StatusBadge status={invoice.payment_status} />
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
-                  <span>ออก {formatDate(invoice.invoice_date)}</span>
-                  <span>ครบ {formatDate(invoice.due_date)}</span>
+                  <span>{t('purchase.invoices.card.issuedOn', { date: formatDate(invoice.invoice_date) })}</span>
+                  <span>{t('purchase.invoices.card.dueOn', { date: formatDate(invoice.due_date) })}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-[var(--fg-4)]">ยอดรวม {formatCurrency(invoice.total_amount)}</span>
+                  <span className="text-xs text-[var(--fg-4)]">{t('purchase.invoices.card.totalAmount', { amount: formatCurrency(invoice.total_amount) })}</span>
                   {invoice.balance_amount > 0 && (
-                    <span className="text-sm font-bold text-danger">ค้าง {formatCurrency(invoice.balance_amount)}</span>
+                    <span className="text-sm font-bold text-danger">{t('purchase.invoices.card.balanceAmount', { amount: formatCurrency(invoice.balance_amount) })}</span>
                   )}
                 </div>
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
-                  <button onClick={() => handlePrint('pi', invoice.id)} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('pi', invoice.id)} title={t('purchase.actions.printA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {invoice.payment_status !== 'PAID' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
                       className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <DollarSign className="w-3 h-3" /> จ่ายเงิน
+                      <DollarSign className="w-3 h-3" /> {t('purchase.actions.pay')}
                     </button>
                   )}
                 </div>
@@ -2550,27 +2560,27 @@ const Purchase = () => {
       p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-    const methodLabel: Record<string, string> = { CASH: 'เงินสด', TRANSFER: 'โอนเงิน', CHEQUE: 'เช็ค', CREDIT_CARD: 'บัตรเครดิต' }
+    const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard') }
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาการจ่ายเงิน..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.paymentsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('payment', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> บันทึกจ่ายเงิน
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createPayment')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการจ่ายเงิน" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.payments')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
-              <span className="col-span-2">วิธีชำระ</span><span className="col-span-2">วันที่</span>
-              <span className="col-span-2">JV</span>
-              <span className="col-span-1 text-right">ยอด</span>
+              <span className="col-span-2">{t('purchase.payments.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-2">{t('purchase.payments.headers.method')}</span><span className="col-span-2">{t('purchase.payments.headers.date')}</span>
+              <span className="col-span-2">{t('purchase.payments.headers.journal')}</span>
+              <span className="col-span-1 text-right">{t('purchase.payments.headers.amount')}</span>
             </div>
             {paginated.map((payment, i) => (
               <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
@@ -2594,21 +2604,21 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{payment.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">{methodLabel[payment.payment_method] || payment.payment_method}</p>
                   </div>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--success-soft)] text-success">จ่ายแล้ว</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--success-soft)] text-success">{t('purchase.status.paid')}</span>
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-xs text-[var(--fg-4)]">{formatDate(payment.payment_date)}</span>
                   <span className="font-bold text-success text-sm">{formatCurrency(payment.amount)}</span>
                 </div>
                 {payment.journal_entry_number && (
-                  <p className="text-xs text-[var(--primary)]/70 mt-1">สมุดรายวัน: {payment.journal_entry_number}</p>
+                  <p className="text-xs text-[var(--primary)]/70 mt-1">{t('purchase.common.journalEntry', { number: payment.journal_entry_number })}</p>
                 )}
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModal('payment', 'view', payment)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
-                  <button onClick={() => handlePrint('payment', payment.id)} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('payment', payment.id)} title={t('purchase.actions.printA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
@@ -2629,29 +2639,29 @@ const Purchase = () => {
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const reasonLabel: Record<string, string> = {
-      DEFECTIVE: 'สินค้าเสียหาย', WRONG_ITEM: 'ส่งผิดรายการ',
-      WRONG_QUANTITY: 'ส่งผิดจำนวน', QUALITY_ISSUE: 'คุณภาพไม่ตรง',
-      EXPIRED: 'หมดอายุ', OTHER: 'อื่นๆ'
+      DEFECTIVE: t('purchase.returnReason.defective'), WRONG_ITEM: t('purchase.returnReason.wrongItem'),
+      WRONG_QUANTITY: t('purchase.returnReason.wrongQuantity'), QUALITY_ISSUE: t('purchase.returnReason.qualityIssue'),
+      EXPIRED: t('purchase.returnReason.expired'), OTHER: t('purchase.returnReason.other')
     }
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <SearchBar placeholder="ค้นหาใบคืนสินค้า..." value={searchQuery} onChange={setSearchQuery} />
+          <SearchBar placeholder={t('purchase.search.returnsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
           <div className="flex items-center gap-2">
             <PageSizeSelect />
             <ViewToggle />
             <button onClick={() => openModal('return', 'create')}
               className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> สร้างใบคืนสินค้า
+              <Plus className="w-4 h-4" /> {t('purchase.actions.createReturn')}
             </button>
           </div>
         </div>
-        {filtered.length === 0 ? <EmptyState text="ไม่พบรายการคืนสินค้า" /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.returns')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">เลขที่</span><span className="col-span-3">ผู้ขาย</span>
-              <span className="col-span-2">PO อ้างอิง</span><span className="col-span-3">สาเหตุ</span>
-              <span className="col-span-1">สถานะ</span><span className="col-span-1 text-right">ยอด</span>
+              <span className="col-span-2">{t('purchase.returns.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-2">{t('purchase.returns.headers.poReference')}</span><span className="col-span-3">{t('purchase.returns.headers.reason')}</span>
+              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span>
             </div>
             {paginated.map((ret, i) => (
               <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
@@ -2681,28 +2691,28 @@ const Purchase = () => {
                 <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
                   <button onClick={() => openModalWithDetail('return', 'view', ret.id, ret)}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    ดูรายละเอียด
+                    {t('purchase.actions.viewDetails')}
                   </button>
-                  <button onClick={() => handlePrint('return', ret.id)} title="พิมพ์ A4"
+                  <button onClick={() => handlePrint('return', ret.id)} title={t('purchase.actions.printA4')}
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
                   {ret.status === 'DRAFT' && (
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'SUBMITTED')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      ส่งอนุมัติ
+                      {t('purchase.actions.submitForApproval')}
                     </button>
                   )}
                   {ret.status === 'SUBMITTED' && (
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'APPROVED')}
                       className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> อนุมัติ
+                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
                     </button>
                   )}
                   {ret.status === 'APPROVED' && (
                     <button onClick={() => handleConfirmReturn(ret.id)}
                       className="flex-1 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> ยืนยันคืนสินค้า
+                      <Check className="w-3 h-3" /> {t('purchase.actions.confirmReturn')}
                     </button>
                   )}
                 </div>
@@ -2718,19 +2728,19 @@ const Purchase = () => {
   // ─── 1. Request Modal ────────────────────────────────────────────────────────
   const RequestModal = () => (
     <ModalShell
-      title={modalMode === 'create' ? 'สร้างใบขอซื้อ' : modalMode === 'edit' ? 'แก้ไขใบขอซื้อ' : 'รายละเอียดใบขอซื้อ'}
+      title={modalMode === 'create' ? t('purchase.requestModal.titleCreate') : modalMode === 'edit' ? t('purchase.requestModal.titleEdit') : t('purchase.requestModal.titleView')}
       onClose={closeModal}
       footer={
         modalMode !== 'view' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={modalMode === 'create' ? handleCreateRequest : handleUpdateRequest} disabled={formLoading}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              {modalMode === 'create' ? 'สร้างใบขอซื้อ' : 'บันทึก'}
+              {modalMode === 'create' ? t('purchase.actions.createRequest') : t('purchase.common.save')}
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
       }
     >
       {/* Header info row */}
@@ -2738,35 +2748,35 @@ const Purchase = () => {
         <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
           <FileText className="w-4 h-4 text-[var(--primary)] shrink-0" />
           <span className="text-sm font-mono text-[var(--primary)] font-semibold">{modalData.pr_number}</span>
-          <span className="text-xs text-[var(--fg-3)] ml-auto">สร้างโดย: {modalData.requester_name}</span>
+          <span className="text-xs text-[var(--fg-3)] ml-auto">{t('purchase.requestModal.createdBy', { name: modalData.requester_name })}</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="แผนก">
+        <Field label={t('purchase.requestModal.department')}>
           <input type="text" value={requestForm.department} onChange={e => setRequestForm(p => ({ ...p, department: e.target.value }))}
-            disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')} placeholder="เช่น การผลิต, คลังสินค้า" />
+            disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')} placeholder={t('purchase.requestModal.departmentPlaceholder')} />
         </Field>
-        <Field label="ต้องการภายในวันที่" required>
+        <Field label={t('purchase.requestModal.requiredDate')} required>
           <input type="date" value={requestForm.required_date} onChange={e => setRequestForm(p => ({ ...p, required_date: e.target.value }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')} />
         </Field>
-        <Field label="ระดับความสำคัญ">
+        <Field label={t('purchase.requestModal.priority')}>
           <select value={requestForm.priority} onChange={e => setRequestForm(p => ({ ...p, priority: e.target.value }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')}>
-            <option value="LOW"><span className="inline-block w-2.5 h-2.5 rounded-full bg-success mr-1" />ต่ำ — ไม่เร่งด่วน</option>
-            <option value="NORMAL"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info mr-1" />ปกติ</option>
-            <option value="HIGH"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warning mr-1" />สูง — เร่งด่วน</option>
-            <option value="URGENT"><span className="inline-block w-2.5 h-2.5 rounded-full bg-danger mr-1" />ด่วนมาก — หยุดสายการผลิต</option>
+            <option value="LOW">{t('purchase.priority.low')}</option>
+            <option value="NORMAL">{t('purchase.priority.normal')}</option>
+            <option value="HIGH">{t('purchase.priority.high')}</option>
+            <option value="URGENT">{t('purchase.priority.urgent')}</option>
           </select>
         </Field>
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขายที่แนะนำ (optional)</label>
+            <label className="text-sm font-medium text-[var(--fg-2)]">{t('purchase.requestModal.preferredSupplier')}</label>
             {modalMode !== 'view' && (
               <button onClick={() => openQuickAddSupplier(id => setRequestForm(p => ({ ...p, preferred_supplier_id: id })))}
                 className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
-                <Plus className="w-3 h-3" /> เพิ่มใหม่
+                <Plus className="w-3 h-3" /> {t('purchase.actions.addNew')}
               </button>
             )}
           </div>
@@ -2774,27 +2784,27 @@ const Purchase = () => {
             value={requestForm.preferred_supplier_id}
             onChange={id => setRequestForm(p => ({ ...p, preferred_supplier_id: id }))}
             disabled={modalMode === 'view'}
-            placeholder="ค้นหาผู้ขาย..."
+            placeholder={t('purchase.requestModal.supplierPlaceholder')}
           />
         </div>
       </div>
 
-      <Field label="หมายเหตุ / เหตุผลที่ขอ">
+      <Field label={t('purchase.requestModal.notes')}>
         <textarea value={requestForm.notes} onChange={e => setRequestForm(p => ({ ...p, notes: e.target.value }))}
           disabled={modalMode === 'view'} rows={2} className={`${inputCls(modalMode === 'view')} resize-none`}
-          placeholder="เช่น วัตถุดิบหมด, เตรียมสำหรับออเดอร์ลูกค้า..." />
+          placeholder={t('purchase.requestModal.notesPlaceholder')} />
       </Field>
 
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า/วัตถุดิบ
-            <span className="ml-2 text-xs text-[var(--fg-4)]">({requestForm.items.length} รายการ)</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">{t('purchase.requestModal.itemsTitle')}
+            <span className="ml-2 text-xs text-[var(--fg-4)]">{t('purchase.common.itemCount', { count: requestForm.items.length })}</span>
           </span>
           {modalMode !== 'view' && (
             <button onClick={addRequestItem}
               className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-[var(--primary)] text-xs rounded-lg hover:bg-[var(--primary-soft)] transition-colors">
-              <Plus className="w-3 h-3" /> เพิ่มรายการ
+              <Plus className="w-3 h-3" /> {t('purchase.actions.addItem')}
             </button>
           )}
         </div>
@@ -2820,7 +2830,7 @@ const Purchase = () => {
                     { name: q }
                   ) : undefined}
                 />
-                <input type="text" placeholder="รายละเอียดเพิ่มเติม" value={item.description}
+                <input type="text" placeholder={t('purchase.requestModal.itemDescriptionPlaceholder')} value={item.description}
                   onChange={e => updateRequestItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
@@ -2828,28 +2838,28 @@ const Purchase = () => {
               {/* Row 2: qty + unit + price + total + delete */}
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.quantity')}</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateRequestItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
-                    <option value="">เลือกหน่วย</option>
+                    <option value="">{t('purchase.common.selectUnit')}</option>
                     {availableUnits.map(u => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย (ประมาณ)</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.requestModal.estimatedUnitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.estimated_unit_price}
@@ -2860,7 +2870,7 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-4 flex items-end justify-between">
                   <div>
-                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
+                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                     <span className="text-sm font-semibold text-[var(--primary)]">{formatCurrency(item.estimated_total_price)}</span>
                   </div>
                   {modalMode !== 'view' && (
@@ -2875,14 +2885,14 @@ const Purchase = () => {
           ))}
           {requestForm.items.length === 0 && (
             <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)] rounded-xl">
-              ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
+              {t('purchase.common.noItemsYet')}
             </div>
           )}
         </div>
         {requestForm.items.length > 0 && (
           <div className="flex justify-end mt-3 p-3 bg-phopy-indigo/5 rounded-xl">
             <div className="text-right">
-              <p className="text-xs text-[var(--fg-3)]">รวมประมาณการทั้งหมด</p>
+              <p className="text-xs text-[var(--fg-3)]">{t('purchase.requestModal.totalEstimate')}</p>
               <p className="text-lg font-bold text-[var(--primary)]">
                 {formatCurrency(requestForm.items.reduce((s, i) => s + i.estimated_total_price, 0))}
               </p>
@@ -2900,28 +2910,28 @@ const Purchase = () => {
     const grandTotal = afterDisc + taxAmount
     return (
     <ModalShell
-      title={modalMode === 'create' ? 'สร้างใบสั่งซื้อ (PO)' : modalMode === 'edit' ? 'แก้ไขใบสั่งซื้อ (Draft)' : 'รายละเอียดใบสั่งซื้อ'}
+      title={modalMode === 'create' ? t('purchase.orderModal.titleCreate') : modalMode === 'edit' ? t('purchase.orderModal.titleEdit') : t('purchase.orderModal.titleView')}
       onClose={closeModal}
       footer={
         modalMode === 'create' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={handleCreateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              สร้างใบสั่งซื้อ
+              {t('purchase.actions.createOrder')}
             </button>
           </div>
         ) : modalMode === 'edit' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={handleUpdateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              บันทึกการแก้ไข
+              {t('purchase.orderModal.saveEdit')}
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
       }
     >
       {/* PO header display when viewing */}
@@ -2937,7 +2947,7 @@ const Purchase = () => {
       {modalMode === 'create' && (
         <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl space-y-1.5">
           <label className="text-xs font-medium text-blue-400 flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5" /> อ้างอิงใบขอซื้อ (ไม่บังคับ — เลือกเพื่อโหลดรายการอัตโนมัติ)
+            <FileText className="w-3.5 h-3.5" /> {t('purchase.orderModal.prReference')}
           </label>
           <PRSearchInput
             requests={requests.filter(r => r.status !== 'REJECTED' && r.status !== 'CANCELLED')}
@@ -2947,7 +2957,7 @@ const Purchase = () => {
           {orderForm.linked_pr_id && (
             <p className="text-xs text-blue-300 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
-              โหลดรายการจากใบขอซื้อแล้ว — แก้ไขได้ตามต้องการ
+              {t('purchase.orderModal.prLoaded')}
             </p>
           )}
         </div>
@@ -2957,33 +2967,33 @@ const Purchase = () => {
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขาย <span className="text-danger">*</span></label>
+            <label className="text-sm font-medium text-[var(--fg-2)]">{t('purchase.common.supplier')} <span className="text-danger">*</span></label>
             {modalMode !== 'view' && (
               <button onClick={() => openQuickAddSupplier(id => setOrderForm(p => ({ ...p, supplier_id: id })))}
                 className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
-                <Plus className="w-3 h-3" /> เพิ่มผู้ขายใหม่
+                <Plus className="w-3 h-3" /> {t('purchase.actions.addSupplier')}
               </button>
             )}
           </div>
           <SupplierSearchInput suppliers={suppliers} value={orderForm.supplier_id}
             onChange={id => setOrderForm(p => ({ ...p, supplier_id: id }))}
             disabled={modalMode === 'view'}
-            placeholder="ค้นหา รหัส / ชื่อผู้ขาย..." />
+            placeholder={t('purchase.orderModal.supplierPlaceholder')} />
         </div>
-        <Field label="กำหนดส่งสินค้า">
+        <Field label={t('purchase.orderModal.expectedDelivery')}>
           <input type="date" value={orderForm.expected_date}
             onChange={e => setOrderForm(p => ({ ...p, expected_date: e.target.value }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')} />
         </Field>
-        <Field label="เงื่อนไขการชำระ">
+        <Field label={t('purchase.orderModal.paymentTerms')}>
           <select value={orderForm.payment_terms}
             onChange={e => setOrderForm(p => ({ ...p, payment_terms: parseInt(e.target.value) }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')}>
-            <option value={0}>COD — ชำระทันที</option>
-            <option value={15}>NET 15 วัน</option>
-            <option value={30}>NET 30 วัน</option>
-            <option value={45}>NET 45 วัน</option>
-            <option value={60}>NET 60 วัน</option>
+            <option value={0}>{t('purchase.orderModal.paymentTermsCod')}</option>
+            <option value={15}>{t('purchase.orderModal.paymentTermsNet15')}</option>
+            <option value={30}>{t('purchase.orderModal.paymentTermsNet30')}</option>
+            <option value={45}>{t('purchase.orderModal.paymentTermsNet45')}</option>
+            <option value={60}>{t('purchase.orderModal.paymentTermsNet60')}</option>
           </select>
         </Field>
       </div>
@@ -2991,13 +3001,13 @@ const Purchase = () => {
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการสินค้า
-            <span className="ml-2 text-xs text-[var(--fg-4)]">({orderForm.items.length} รายการ)</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">{t('purchase.orderModal.itemsTitle')}
+            <span className="ml-2 text-xs text-[var(--fg-4)]">{t('purchase.common.itemCount', { count: orderForm.items.length })}</span>
           </span>
           {modalMode !== 'view' && (
             <button onClick={addOrderItem}
               className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-[var(--primary)] text-xs rounded-lg hover:bg-[var(--primary-soft)]">
-              <Plus className="w-3 h-3" /> เพิ่มรายการ
+              <Plus className="w-3 h-3" /> {t('purchase.actions.addItem')}
             </button>
           )}
         </div>
@@ -3022,33 +3032,33 @@ const Purchase = () => {
                     { name: q }
                   ) : undefined}
                 />
-                <input type="text" placeholder="รายละเอียด" value={item.description}
+                <input type="text" placeholder={t('purchase.orderModal.itemDescriptionPlaceholder')} value={item.description}
                   onChange={e => updateOrderItem(index, 'description', e.target.value)}
                   disabled={modalMode === 'view'}
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.quantity')}</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateOrderItem(index, 'unit', e.target.value)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
                   >
-                    <option value="">เลือกหน่วย</option>
+                    <option value="">{t('purchase.common.selectUnit')}</option>
                     {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย (บาท)</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.orderModal.unitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
@@ -3059,7 +3069,7 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-5 flex items-end justify-between">
                   <div>
-                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
+                    <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                     <span className="text-sm font-semibold text-[var(--primary)]">{formatCurrency(item.total_price)}</span>
                   </div>
                   {modalMode !== 'view' && (
@@ -3074,7 +3084,7 @@ const Purchase = () => {
           ))}
           {orderForm.items.length === 0 && (
             <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)] rounded-xl">
-              ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
+              {t('purchase.common.noItemsYet')}
             </div>
           )}
         </div>
@@ -3084,10 +3094,10 @@ const Purchase = () => {
       {orderForm.items.length > 0 && (
         <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2 text-sm">
           <div className="flex justify-between text-[var(--fg-3)]">
-            <span>ก่อนหักส่วนลด</span><span>{formatCurrency(subtotal)}</span>
+            <span>{t('purchase.orderModal.subtotal')}</span><span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between gap-2 items-center">
-            <span className="text-[var(--fg-3)]">ส่วนลด (บาท)</span>
+            <span className="text-[var(--fg-3)]">{t('purchase.orderModal.discount')}</span>
             {modalMode !== 'view' ? (
               <div className="relative w-32">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
@@ -3098,7 +3108,7 @@ const Purchase = () => {
             ) : <span className="text-warning">-{formatCurrency(orderForm.discount)}</span>}
           </div>
           <div className="flex justify-between gap-2 items-center">
-            <span className="text-[var(--fg-3)]">ภาษี (%)</span>
+            <span className="text-[var(--fg-3)]">{t('purchase.orderModal.tax')}</span>
             {modalMode !== 'view' ? (
               <div className="relative w-32">
                 <input type="number" min="0" max="30" value={orderForm.tax_rate}
@@ -3108,13 +3118,13 @@ const Purchase = () => {
             ) : <span className="text-[var(--fg-2)]">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
           </div>
           <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2">
-            <span>รวมทั้งสิ้น</span>
+            <span>{t('purchase.common.grandTotal')}</span>
             <span className="text-lg text-[var(--primary)]">{formatCurrency(grandTotal)}</span>
           </div>
         </div>
       )}
 
-      <Field label="หมายเหตุ">
+      <Field label={t('purchase.common.notes')}>
         <textarea value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))}
           disabled={modalMode === 'view'} rows={2} className={`${inputCls(modalMode === 'view')} resize-none`} />
       </Field>
@@ -3130,35 +3140,35 @@ const Purchase = () => {
 
     return (
     <ModalShell
-      title="บันทึกรับสินค้า (GR)"
+      title={t('purchase.receiptModal.title')}
       onClose={closeModal}
       footer={
         <div className="flex justify-between items-center w-full">
           <span className="text-xs text-[var(--fg-4)]">
             {receiptForm.items.length > 0
-              ? `${receiptForm.items.length} รายการ · รวมรับ ${receiptForm.items.reduce((s, i) => s + i.accepted_qty, 0).toFixed(2)} หน่วย`
-              : 'เลือก PO เพื่อโหลดรายการ'}
+              ? t('purchase.receiptModal.footerSummary', { count: receiptForm.items.length, qty: receiptForm.items.reduce((s, i) => s + i.accepted_qty, 0).toFixed(2) })
+              : t('purchase.receiptModal.footerSelectPO')}
           </span>
           <div className="flex gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             {modalMode === 'view' && modalData?.status === 'DRAFT' ? (
               <button onClick={() => handleConfirmReceipt(modalData.id)}
                 disabled={formLoading}
                 className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
                 {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-                <Check className="w-4 h-4" /> ยืนยันรับสินค้า
+                <Check className="w-4 h-4" /> {t('purchase.receiptModal.confirmReceipt')}
               </button>
             ) : modalMode === 'create' ? (
               <button onClick={handleCreateReceipt}
                 disabled={formLoading || !receiptForm.purchase_order_id || receiptForm.items.length === 0}
                 className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
                 {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-                <Check className="w-4 h-4" /> ยืนยันรับสินค้า
+                <Check className="w-4 h-4" /> {t('purchase.receiptModal.confirmReceipt')}
               </button>
             ) : (
               <button onClick={closeModal}
                 className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 flex items-center gap-2 text-sm">
-                ปิด
+                {t('purchase.common.close')}
               </button>
             )}
           </div>
@@ -3167,12 +3177,12 @@ const Purchase = () => {
     >
       {/* ── Section 1: เลือก PO ── */}
       <div className="space-y-3">
-        <Field label="เลือกใบสั่งซื้อ (PO)" required>
+        <Field label={t('purchase.receiptModal.selectPO')} required>
           <POSearchInput
             orders={orders.filter(o => ['SUBMITTED', 'APPROVED', 'PARTIAL'].includes(o.status))}
             value={receiptForm.purchase_order_id}
             onChange={id => { setReceiptForm(p => ({ ...p, purchase_order_id: id, items: [] })); if (id) loadPendingItems(id) }}
-            emptyMessage="ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ: Submitted/Approved/รับบางส่วน)"
+            emptyMessage={t('purchase.receiptModal.noEligiblePO')}
           />
         </Field>
 
@@ -3180,21 +3190,21 @@ const Purchase = () => {
         {selectedPO && (
           <div className="grid grid-cols-4 gap-3 p-3 bg-success/5 border border-success-soft rounded-xl text-sm">
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.common.supplier')}</p>
               <p className="text-[var(--fg-1)] font-medium truncate">{selectedPO.supplier_name}</p>
             </div>
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">มูลค่า PO</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.receiptModal.poValue')}</p>
               <p className="text-[var(--primary)] font-semibold">{formatCurrency(selectedPO.total_amount)}</p>
             </div>
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">กำหนดส่ง</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.receiptModal.poDeliveryDate')}</p>
               <p className="text-[var(--fg-1)]">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString('th-TH') : '-'}</p>
             </div>
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">สถานะ</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.common.status')}</p>
               <p className={`text-xs font-medium ${selectedPO.status === 'PARTIAL' ? 'text-warning' : 'text-success'}`}>
-                {selectedPO.status === 'PARTIAL' ? 'รับบางส่วนแล้ว' : 'รอรับสินค้า'}
+                {selectedPO.status === 'PARTIAL' ? t('purchase.receiptModal.partialReceived') : t('purchase.receiptModal.waitingForReceipt')}
               </p>
             </div>
           </div>
@@ -3203,24 +3213,24 @@ const Purchase = () => {
 
       {/* ── Section 2: ข้อมูลการรับ ── */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="วันที่รับสินค้า">
+        <Field label={t('purchase.receiptModal.receiptDate')}>
           <input type="date" value={receiptForm.receipt_date}
             onChange={e => setReceiptForm(p => ({ ...p, receipt_date: e.target.value }))} className={inputCls()} />
         </Field>
-        <Field label="ผู้รับสินค้า">
+        <Field label={t('purchase.receiptModal.receivedBy')}>
           <input type="text" value={receiptForm.received_by}
             onChange={e => setReceiptForm(p => ({ ...p, received_by: e.target.value }))}
-            placeholder="ชื่อพนักงานที่รับ" className={inputCls()} />
+            placeholder={t('purchase.receiptModal.receivedByPlaceholder')} className={inputCls()} />
         </Field>
-        <Field label="เลขที่ใบส่งของ (DO No.)">
+        <Field label={t('purchase.receiptModal.doNo')}>
           <input type="text" value={receiptForm.delivery_note_no}
             onChange={e => setReceiptForm(p => ({ ...p, delivery_note_no: e.target.value }))}
-            placeholder="เช่น DO-2026-001" className={inputCls()} />
+            placeholder={t('purchase.receiptModal.doNoPlaceholder')} className={inputCls()} />
         </Field>
-        <Field label="หมายเหตุ">
+        <Field label={t('purchase.common.notes')}>
           <input type="text" value={receiptForm.notes}
             onChange={e => setReceiptForm(p => ({ ...p, notes: e.target.value }))}
-            placeholder="เช่น ส่งมาล่าช้า, สินค้าบุบบางส่วน" className={inputCls()} />
+            placeholder={t('purchase.receiptModal.notesPlaceholder')} className={inputCls()} />
         </Field>
       </div>
 
@@ -3228,8 +3238,8 @@ const Purchase = () => {
       {receiptForm.items.length > 0 ? (
         <div>
           <p className="text-sm font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
-            รายการสินค้าที่ต้องรับ
-            <span className="text-xs font-normal text-[var(--fg-4)]">({receiptForm.items.length} รายการ)</span>
+            {t('purchase.receiptModal.itemsTitle')}
+            <span className="text-xs font-normal text-[var(--fg-4)]">{t('purchase.common.itemCount', { count: receiptForm.items.length })}</span>
           </p>
           <div className="space-y-4">
             {receiptForm.items.map((item, index) => {
@@ -3242,29 +3252,29 @@ const Purchase = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-[var(--fg-1)] truncate">{item.description || item.material_name || item.material_id}</p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">
-                        ราคา/หน่วย: <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
+                        {t('purchase.receiptModal.unitPriceLabel')} <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
                         {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {item.unit}</span>}
                       </p>
                     </div>
                     {/* Progress bar: already received vs ordered */}
                     <div className="text-right shrink-0">
                       <p className="text-xs text-[var(--fg-4)] mb-1">
-                        รับแล้ว {item.already_received_qty}/{item.ordered_qty} {item.unit}
+                        {t('purchase.receiptModal.receivedSoFar', { already: item.already_received_qty, ordered: item.ordered_qty, unit: item.unit })}
                       </p>
                       <div className="w-32 h-1.5 bg-[var(--border)] rounded-full overflow-hidden">
                         <div className="h-full bg-success rounded-full transition-all"
                           style={{ width: `${Math.min(100 - pendingPct, 100)}%` }} />
                       </div>
-                      <p className="text-xs text-warning mt-0.5">คงค้าง {item.pending_qty} {item.unit}</p>
+                      <p className="text-xs text-warning mt-0.5">{t('purchase.receiptModal.pendingQty', { pending: item.pending_qty, unit: item.unit })}</p>
                     </div>
                   </div>
 
                   {/* ── Qty inputs ── */}
                   <div className="grid grid-cols-3 gap-2">
                     {([
-                      { label: 'รับจริง (ครั้งนี้)', key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
-                      { label: 'รับเข้าสต็อก <Check className="w-4 h-4" />', key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
-                      { label: 'ปฏิเสธ / เสียหาย <X className="w-4 h-4" />', key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
+                      { label: t('purchase.receiptModal.receivedQty'), key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
+                      { label: `${t('purchase.receiptModal.acceptedQty')} <Check className="w-4 h-4" />`, key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
+                      { label: `${t('purchase.receiptModal.rejectedQty')} <X className="w-4 h-4" />`, key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
@@ -3278,12 +3288,12 @@ const Purchase = () => {
                   {/* ── Warnings ── */}
                   {item.received_qty > item.pending_qty && item.pending_qty > 0 && (
                     <p className="text-xs text-warning flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> รับเกินยอดคงค้าง {(item.received_qty - item.pending_qty).toFixed(2)} {item.unit}
+                      <AlertCircle className="w-3 h-3" /> {t('purchase.receiptModal.overReceiveWarning', { qty: (item.received_qty - item.pending_qty).toFixed(2), unit: item.unit })}
                     </p>
                   )}
                   {(item.received_qty !== item.accepted_qty + item.rejected_qty) && item.received_qty > 0 && (
                     <p className="text-xs text-warning flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> รับจริง ≠ รับเข้าสต็อก + ปฏิเสธ (ยอดไม่สมดุล)
+                      <AlertCircle className="w-3 h-3" /> {t('purchase.receiptModal.imbalanceWarning')}
                     </p>
                   )}
 
@@ -3291,28 +3301,28 @@ const Purchase = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 flex items-center gap-1 block">
-                        <span className="text-warning">*</span> Lot / Batch No.
+                        <span className="text-warning">*</span> {t('purchase.receiptModal.lotLabel')}
                       </label>
-                      <input type="text" value={item.lot_number} placeholder="เช่น LOT-2026-001"
+                      <input type="text" value={item.lot_number} placeholder={t('purchase.receiptModal.lotPlaceholder')}
                         onChange={e => updateItem(index, 'lot_number', e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-warning/30 rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-yellow-400" />
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1 block">สถานที่จัดเก็บ</label>
-                      <input type="text" value={item.location} placeholder="เช่น คลัง A, ชั้น 3"
+                      <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('purchase.receiptModal.location')}</label>
+                      <input type="text" value={item.location} placeholder={t('purchase.receiptModal.locationPlaceholder')}
                         onChange={e => updateItem(index, 'location', e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   {item.rejected_qty > 0 && (
-                    <input type="text" value={item.notes} placeholder="สาเหตุที่ปฏิเสธ / รายละเอียดความเสียหาย..."
+                    <input type="text" value={item.notes} placeholder={t('purchase.receiptModal.rejectionNotesPlaceholder')}
                       onChange={e => updateItem(index, 'notes', e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-red-400" />
                   )}
 
                   {/* ── Line total ── */}
                   <div className="flex justify-end pt-1 border-t border-[var(--border)]/30">
-                    <span className="text-xs text-[var(--fg-4)] mr-2">มูลค่ารับเข้า</span>
+                    <span className="text-xs text-[var(--fg-4)] mr-2">{t('purchase.receiptModal.lineValue')}</span>
                     <span className="text-sm font-semibold text-[var(--primary)]">
                       {formatCurrency(item.accepted_qty * item.unit_price)}
                     </span>
@@ -3324,7 +3334,7 @@ const Purchase = () => {
 
           {/* Total summary */}
           <div className="mt-3 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-xl flex justify-between items-center">
-            <span className="text-sm text-[var(--fg-3)]">มูลค่ารับเข้าสต็อกรวม</span>
+            <span className="text-sm text-[var(--fg-3)]">{t('purchase.receiptModal.totalReceivedValue')}</span>
             <span className="text-lg font-bold text-[var(--primary)]">
               {formatCurrency(receiptForm.items.reduce((s, i) => s + i.accepted_qty * i.unit_price, 0))}
             </span>
@@ -3333,11 +3343,11 @@ const Purchase = () => {
       ) : receiptForm.purchase_order_id ? (
         <div className="text-center py-8 text-[var(--fg-4)] text-sm">
           <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          กำลังโหลดรายการจาก PO...
+          {t('purchase.receiptModal.loadingItems')}
         </div>
       ) : (
         <div className="text-center py-8 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)]/40 rounded-xl">
-          เลือกใบสั่งซื้อด้านบนเพื่อโหลดรายการสินค้าที่ต้องรับ
+          {t('purchase.receiptModal.selectPOHint')}
         </div>
       )}
     </ModalShell>
@@ -3361,19 +3371,19 @@ const Purchase = () => {
     const displayPO       = isView ? (selectedPO?.po_number || invoiceForm._po_number) : selectedPO?.po_number
     return (
     <ModalShell
-      title={modalMode === 'view' ? 'รายละเอียดใบแจ้งหนี้' : 'สร้างใบแจ้งหนี้ผู้ขาย'}
+      title={modalMode === 'view' ? t('purchase.invoiceModal.titleView') : t('purchase.invoiceModal.titleCreate')}
       onClose={closeModal}
       footer={
         modalMode !== 'view' ? (
           <div className="flex justify-end gap-3">
-            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={handleCreateInvoice} disabled={formLoading || !invoiceForm.purchase_order_id}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              สร้างใบแจ้งหนี้
+              {t('purchase.actions.createInvoice')}
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ปิด</button>
+        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
       }
     >
       {/* ── Procurement Chain (Option A: PO as master) ── */}
@@ -3382,13 +3392,13 @@ const Purchase = () => {
           {linkedPR && (<>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs font-mono text-[var(--fg-3)] bg-gray-500/15 px-2 py-1 rounded-lg">{linkedPR.pr_number}</span>
-              <span className="text-[var(--fg-4)] text-xs">PR</span>
+              <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.pr')}</span>
             </div>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
           </>)}
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-xs font-mono text-[var(--primary)] bg-phopy-indigo/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
-            <span className="text-[var(--fg-4)] text-xs">PO <Star className="w-4 h-4 fill-current" /></span>
+            <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.po')} <Star className="w-4 h-4 fill-current" /></span>
           </div>
           {selectedGRs.length > 0 && (<>
             <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
@@ -3396,13 +3406,13 @@ const Purchase = () => {
               {selectedGRs.map(gr => (
                 <span key={gr.id} className="text-xs font-mono text-success bg-success/15 px-2 py-1 rounded-lg">{gr.gr_number}</span>
               ))}
-              <span className="text-[var(--fg-4)] text-xs">GR</span>
+              <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.gr')}</span>
             </div>
           </>)}
           <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
           {isView
             ? <span className="text-xs font-mono text-warning bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{invoiceForm._pi_number}</span>
-            : <span className="text-xs font-mono text-warning bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">INV-????</span>
+            : <span className="text-xs font-mono text-warning bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{t('purchase.invoiceModal.invPlaceholder')}</span>
           }
         </div>
       )}
@@ -3411,15 +3421,15 @@ const Purchase = () => {
       <div className="space-y-3">
         {isView ? (
           <div className="p-3 bg-[var(--bg)] rounded-xl text-sm">
-            <p className="text-xs text-[var(--fg-4)] mb-0.5">ใบสั่งซื้อ (PO)</p>
+            <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.invoiceModal.po')}</p>
             <p className="text-[var(--primary)] font-mono font-semibold">{displayPO || '-'}</p>
           </div>
         ) : (
-        <Field label="ใบสั่งซื้อ (PO)" required>
+        <Field label={t('purchase.invoiceModal.po')} required>
           <POSearchInput
             orders={orders.filter(o => !['CANCELLED', 'DRAFT'].includes(o.status))}
             value={invoiceForm.purchase_order_id}
-            emptyMessage="ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ Submitted/Approved/Received)"
+            emptyMessage={t('purchase.invoiceModal.noEligiblePO')}
             onChange={id => {
               const po = orders.find(o => o.id === id)
               setInvoiceForm(p => ({
@@ -3435,7 +3445,7 @@ const Purchase = () => {
         )}
 
         {!isView && (
-        <Field label="อ้างอิงใบรับสินค้า (GR) — เลือกได้หลายใบ">
+        <Field label={t('purchase.invoiceModal.grReference')}>
           <GRSearchInput
             receipts={poGRs}
             values={invoiceForm.goods_receipt_ids}
@@ -3449,19 +3459,19 @@ const Purchase = () => {
         {(selectedPO || (isView && displaySupplier)) && (
           <div className="grid grid-cols-2 gap-3 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-xl text-sm">
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">ผู้ขาย</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('purchase.common.supplier')}</p>
               <p className="text-[var(--fg-1)] font-medium truncate">{displaySupplier}</p>
               {supplierDetail?.tax_id && (
-                <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">เลขผู้เสียภาษี: {supplierDetail.tax_id}</p>
+                <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">{t('purchase.invoiceModal.taxId', { id: supplierDetail.tax_id })}</p>
               )}
             </div>
             <div>
-              <p className="text-xs text-[var(--fg-4)] mb-0.5">{isView ? 'มูลค่าใบแจ้งหนี้' : 'มูลค่า PO'}</p>
+              <p className="text-xs text-[var(--fg-4)] mb-0.5">{isView ? t('purchase.invoiceModal.invoiceValue') : t('purchase.invoiceModal.poValue')}</p>
               <p className="text-[var(--primary)] font-semibold">{formatCurrency(isView ? invoiceForm._total_amount : (selectedPO?.total_amount ?? 0))}</p>
-              {!isView && <p className="text-xs text-success mt-0.5">GR ยืนยันแล้ว {poGRs.length} ใบ {selectedGRs.length > 0 ? `(เลือก ${selectedGRs.length} ใบ)` : ''}</p>}
+              {!isView && <p className="text-xs text-success mt-0.5">{t('purchase.invoiceModal.grSelected', { confirmed: poGRs.length, selected: selectedGRs.length })}</p>}
               {isView && invoiceForm._payment_status && (
                 <p className={`text-xs mt-0.5 ${invoiceForm._payment_status === 'PAID' ? 'text-success' : invoiceForm._payment_status === 'PARTIAL' ? 'text-warning' : 'text-danger'}`}>
-                  {invoiceForm._payment_status === 'PAID' ? 'ชำระครบแล้ว' : invoiceForm._payment_status === 'PARTIAL' ? `ชำระแล้ว ${formatCurrency(invoiceForm._paid_amount)} / ค้าง ${formatCurrency(invoiceForm._balance_amount)}` : `ยังไม่ชำระ (ค้าง ${formatCurrency(invoiceForm._balance_amount)})`}
+                  {invoiceForm._payment_status === 'PAID' ? t('purchase.paymentStatus.paid') : invoiceForm._payment_status === 'PARTIAL' ? t('purchase.paymentStatus.partial', { paid: formatCurrency(invoiceForm._paid_amount), balance: formatCurrency(invoiceForm._balance_amount) }) : t('purchase.paymentStatus.unpaid', { balance: formatCurrency(invoiceForm._balance_amount) })}
                 </p>
               )}
             </div>
@@ -3470,19 +3480,19 @@ const Purchase = () => {
       </div>
 
       {/* ── Section 2: Invoice details ── */}
-      <Field label="เลขที่ใบกำกับภาษีของผู้ขาย *">
+      <Field label={`${t('purchase.invoiceModal.supplierInvoiceNumber')} *`}>
         <input type="text" value={invoiceForm.supplier_invoice_number}
-          placeholder="เช่น TAX-INV-2026-0001 (เลขที่จากผู้ขาย)"
+          placeholder={t('purchase.invoiceModal.supplierInvoicePlaceholder')}
           onChange={e => setInvoiceForm(p => ({ ...p, supplier_invoice_number: e.target.value }))}
           className={inputCls()} />
       </Field>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="วันที่ในใบกำกับ">
+        <Field label={t('purchase.invoiceModal.invoiceDate')}>
           <input type="date" value={invoiceForm.invoice_date}
             onChange={e => setInvoiceForm(p => ({ ...p, invoice_date: e.target.value }))} className={inputCls()} />
         </Field>
-        <Field label="วันครบกำหนดชำระ">
+        <Field label={t('purchase.invoiceModal.dueDate')}>
           <input type="date" value={invoiceForm.due_date}
             onChange={e => setInvoiceForm(p => ({ ...p, due_date: e.target.value }))} className={inputCls()} />
         </Field>
@@ -3492,11 +3502,11 @@ const Purchase = () => {
       {selectedPO && (
         <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2.5 text-sm">
           <div className="flex justify-between text-[var(--fg-3)]">
-            <span>ราคาสินค้า (จาก PO)</span>
+            <span>{t('purchase.invoiceModal.goodsValue')}</span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-[var(--fg-3)]">VAT (%)</span>
+            <span className="text-[var(--fg-3)]">{t('purchase.invoiceModal.vat')}</span>
             <div className="flex items-center gap-2">
               <input type="number" min="0" max="30" value={invoiceForm.tax_rate}
                 onChange={e => setInvoiceForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
@@ -3505,27 +3515,27 @@ const Purchase = () => {
             </div>
           </div>
           <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)]/50 pt-2.5">
-            <span>รวมทั้งสิ้น</span>
+            <span>{t('purchase.common.grandTotal')}</span>
             <span className="text-xl text-[var(--primary)]">{formatCurrency(total)}</span>
           </div>
         </div>
       )}
 
-      <Field label="หมายเหตุ">
+      <Field label={t('purchase.common.notes')}>
         <textarea value={invoiceForm.notes} onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))}
-          rows={2} className={`${inputCls()} resize-none`} placeholder="หมายเหตุเพิ่มเติม..." />
+          rows={2} className={`${inputCls()} resize-none`} placeholder={t('purchase.common.notes')} />
       </Field>
 
       {/* DR Account override */}
-      <Field label="บัญชี DR (เดบิต)">
+      <Field label={t('purchase.invoiceModal.drAccount')}>
         <select value={invoiceForm.dr_account_id}
           onChange={e => setInvoiceForm(p => ({ ...p, dr_account_id: e.target.value }))}
           className={inputCls()}>
-          <option value="">1107 สต็อกวัตถุดิบ (ค่าเริ่มต้น)</option>
+          <option value="">{t('purchase.invoiceModal.defaultDrAccount')}</option>
           {['ASSET', 'EXPENSE'].map(type => {
             const group = drAccounts.filter(a => a.type === type)
             if (!group.length) return null
-            const label = type === 'ASSET' ? 'สินทรัพย์' : 'ค่าใช้จ่าย'
+            const label = type === 'ASSET' ? t('purchase.accountType.asset') : t('purchase.accountType.expense')
             return (
               <optgroup key={type} label={label}>
                 {group.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
@@ -3533,18 +3543,18 @@ const Purchase = () => {
             )
           })}
         </select>
-        <p className="text-xs text-[var(--fg-4)] mt-1">เปลี่ยนได้หากซื้อของสำนักงาน / ค่าใช้จ่าย ที่ไม่เข้า stock</p>
+        <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.invoiceModal.drAccountHint')}</p>
       </Field>
 
       {/* Journal preview */}
       {selectedPO && (() => {
         const selectedDrAcc = drAccounts.find(a => a.id === invoiceForm.dr_account_id)
-        const drLabel = selectedDrAcc ? `${selectedDrAcc.code} ${selectedDrAcc.name}` : '1107 สต็อกวัตถุดิบ'
+        const drLabel = selectedDrAcc ? `${selectedDrAcc.code} ${selectedDrAcc.name}` : t('purchase.journal.rawStockAccount')
         return (
           <JournalPreview entries={[
-            { dr: true,  account: drLabel,                  label: 'มูลค่าสินค้า', amount: subtotal },
-            { dr: true,  account: '1110 ภาษีซื้อ',         label: 'VAT',          amount: taxAmt },
-            { dr: false, account: '2101 เจ้าหนี้การค้า',   label: 'ยอดรวม',       amount: total },
+            { dr: true,  account: drLabel,                  label: t('purchase.journal.goodsValue'), amount: subtotal },
+            { dr: true,  account: t('purchase.journal.inputVatAccount'),         label: t('purchase.journal.vat'),          amount: taxAmt },
+            { dr: false, account: t('purchase.journal.accountsPayable'),   label: t('purchase.journal.total'),       amount: total },
           ]} />
         )
       })()}
@@ -3562,7 +3572,7 @@ const Purchase = () => {
         className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] w-full max-w-lg flex flex-col max-h-[90vh]">
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-success" /> บันทึกการจ่ายเงิน
+            <CreditCard className="w-5 h-5 text-success" /> {t('purchase.paymentModal.title')}
           </h2>
           <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
@@ -3571,19 +3581,19 @@ const Purchase = () => {
           {/* Supplier */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-[var(--fg-2)]">ผู้ขาย <span className="text-danger">*</span></label>
+              <label className="text-sm font-medium text-[var(--fg-2)]">{t('purchase.common.supplier')} <span className="text-danger">*</span></label>
               <button onClick={() => openQuickAddSupplier(id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0 })))}
                 className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
-                <Plus className="w-3 h-3" /> เพิ่มผู้ขายใหม่
+                <Plus className="w-3 h-3" /> {t('purchase.actions.addSupplier')}
               </button>
             </div>
             <SupplierSearchInput suppliers={suppliers} value={paymentForm.supplier_id}
               onChange={id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0 }))}
-              placeholder="ค้นหาผู้ขาย..." />
+              placeholder={t('purchase.paymentModal.supplierPlaceholder')} />
           </div>
 
           {/* Invoice selector — filtered by supplier */}
-          <Field label="ใบแจ้งหนี้ที่ต้องการชำระ">
+          <Field label={t('purchase.paymentModal.selectInvoice')}>
             <select value={paymentForm.purchase_invoice_id}
               onChange={e => {
                 const id  = e.target.value
@@ -3591,11 +3601,11 @@ const Purchase = () => {
                 setPaymentForm(p => ({ ...p, purchase_invoice_id: id, amount: inv?.balance_amount || 0 }))
               }}
               className={inputCls()}>
-              <option value="">-- เลือกใบแจ้งหนี้ --</option>
+              <option value="">{t('purchase.paymentModal.invoicePlaceholder')}</option>
               {invoices
                 .filter(i => i.payment_status !== 'PAID' && (!paymentForm.supplier_id || i.supplier_id === paymentForm.supplier_id))
                 .map(i => (
-                  <option key={i.id} value={i.id}>{i.pi_number} — ค้าง {formatCurrency(i.balance_amount)}</option>
+                  <option key={i.id} value={i.id}>{t('purchase.paymentModal.invoiceOption', { piNumber: i.pi_number, amount: formatCurrency(i.balance_amount) })}</option>
                 ))}
             </select>
           </Field>
@@ -3604,32 +3614,32 @@ const Purchase = () => {
           {selectedInv && (
             <div className="p-3 bg-red-500/5 border border-danger/20 rounded-xl grid grid-cols-3 gap-3 text-sm">
               <div>
-                <p className="text-xs text-[var(--fg-4)]">ยอดรวม</p>
+                <p className="text-xs text-[var(--fg-4)]">{t('purchase.common.total')}</p>
                 <p className="text-[var(--fg-1)] font-medium">{formatCurrency(selectedInv.total_amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-[var(--fg-4)]">ชำระแล้ว</p>
+                <p className="text-xs text-[var(--fg-4)]">{t('purchase.paymentModal.paidAmount')}</p>
                 <p className="text-success font-medium">{formatCurrency(selectedInv.paid_amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-[var(--fg-4)]">คงค้าง</p>
+                <p className="text-xs text-[var(--fg-4)]">{t('purchase.common.balance')}</p>
                 <p className="text-danger font-bold">{formatCurrency(selectedInv.balance_amount)}</p>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="วันที่จ่าย">
+            <Field label={t('purchase.paymentModal.paymentDate')}>
               <input type="date" value={paymentForm.payment_date}
                 onChange={e => setPaymentForm(p => ({ ...p, payment_date: e.target.value }))} className={inputCls()} />
             </Field>
-            <Field label="วิธีการจ่าย">
+            <Field label={t('purchase.paymentModal.paymentMethod')}>
               <select value={paymentForm.payment_method}
                 onChange={e => setPaymentForm(p => ({ ...p, payment_method: e.target.value }))} className={inputCls()}>
-                <option value="CASH"><Banknote className="w-4 h-4" /> เงินสด</option>
-                <option value="TRANSFER"><Landmark className="w-4 h-4" /> โอนธนาคาร</option>
-                <option value="CHEQUE"><FileText className="w-4 h-4" /> เช็ค</option>
-                <option value="CREDIT_CARD"><CreditCard className="w-4 h-4" /> บัตรเครดิต</option>
+                <option value="CASH">{t('purchase.paymentMethod.cash')}</option>
+                <option value="TRANSFER">{t('purchase.paymentMethod.transfer')}</option>
+                <option value="CHEQUE">{t('purchase.paymentMethod.cheque')}</option>
+                <option value="CREDIT_CARD">{t('purchase.paymentMethod.creditCard')}</option>
               </select>
             </Field>
           </div>
@@ -3638,7 +3648,7 @@ const Purchase = () => {
           <div className="p-4 bg-[var(--bg)] rounded-xl space-y-3">
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <label className="text-xs text-[var(--fg-3)] mb-1 block">จำนวนเงินที่จ่าย (บาท)</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">{t('purchase.paymentModal.amountPaid')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.amount}
@@ -3649,18 +3659,18 @@ const Purchase = () => {
             </div>
             <div className="flex items-center gap-3">
               <div className="w-40">
-                <label className="text-xs text-[var(--fg-3)] mb-1 block">อัตรา WHT</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">{t('purchase.paymentModal.whtRate')}</label>
                 <select
                   onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: p.amount * (parseFloat(e.target.value) / 100) }))}
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
-                  <option value="0">ไม่หัก WHT</option>
-                  <option value="1">1% — บริการทั่วไป</option>
-                  <option value="3">3% — ค่าเช่า/บริการ</option>
-                  <option value="5">5% — ค่าสิทธิ์</option>
+                  <option value="0">{t('purchase.paymentModal.whtNone')}</option>
+                  <option value="1">{t('purchase.paymentModal.wht1')}</option>
+                  <option value="3">{t('purchase.paymentModal.wht3')}</option>
+                  <option value="5">{t('purchase.paymentModal.wht5')}</option>
                 </select>
               </div>
               <div className="flex-1">
-                <label className="text-xs text-[var(--fg-3)] mb-1 block">หัก ณ ที่จ่าย (คำนวณอัตโนมัติ)</label>
+                <label className="text-xs text-[var(--fg-3)] mb-1 block">{t('purchase.paymentModal.withholdingTax')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
                   <input type="number" min="0" step="0.01" value={paymentForm.withholding_tax}
@@ -3670,33 +3680,33 @@ const Purchase = () => {
               </div>
             </div>
             <div className={`flex justify-between items-center p-3 rounded-xl font-semibold ${netPay > 0 ? 'bg-success/10 border border-success/30' : 'bg-[var(--bg)]'}`}>
-              <span className="text-sm text-[var(--fg-2)]">ยอดที่โอน/จ่ายจริง</span>
+              <span className="text-sm text-[var(--fg-2)]">{t('purchase.paymentModal.netPay')}</span>
               <span className="text-xl text-success">{formatCurrency(netPay)}</span>
             </div>
           </div>
 
-          <Field label="เลขที่อ้างอิง (สลิป / เลขเช็ค)">
-            <input type="text" value={paymentForm.payment_reference} placeholder="เช่น 20250316001"
+          <Field label={t('purchase.paymentModal.reference')}>
+            <input type="text" value={paymentForm.payment_reference} placeholder={t('purchase.paymentModal.referencePlaceholder')}
               onChange={e => setPaymentForm(p => ({ ...p, payment_reference: e.target.value }))} className={inputCls()} />
           </Field>
 
           {/* Journal preview */}
           {paymentForm.amount > 0 && (
             <JournalPreview entries={[
-              { dr: true,  account: '2100 เจ้าหนี้การค้า',   label: 'ลดยอดเจ้าหนี้', amount: paymentForm.amount },
-              { dr: false, account: '1100 เงินฝากธนาคาร',    label: 'ยอดโอนจริง',    amount: netPay },
+              { dr: true,  account: t('purchase.journal.accountsPayable'),   label: t('purchase.journal.reducePayable'), amount: paymentForm.amount },
+              { dr: false, account: t('purchase.journal.bankDeposit'),    label: t('purchase.journal.actualTransfer'),    amount: netPay },
               ...(paymentForm.withholding_tax > 0 ? [
-                { dr: false as const, account: '2180 ภาษีหัก ณ ที่จ่าย', label: 'WHT ที่นำส่งสรรพากร', amount: paymentForm.withholding_tax }
+                { dr: false as const, account: t('purchase.journal.withholdingTaxPayable'), label: t('purchase.journal.whtRemitted'), amount: paymentForm.withholding_tax }
               ] : [])
             ]} />
           )}
         </div>
         <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
-          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
           <button onClick={handleCreatePayment} disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount}
             className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
             {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-            <Check className="w-4 h-4" /> ยืนยันจ่ายเงิน
+            <Check className="w-4 h-4" /> {t('purchase.paymentModal.confirmPayment')}
           </button>
         </div>
       </motion.div>
@@ -3711,35 +3721,35 @@ const Purchase = () => {
     const total    = subtotal + taxAmt
     return (
     <ModalShell
-      title="สร้างใบคืนสินค้า (PR-Return)"
+      title={t('purchase.returnModal.title')}
       onClose={closeModal}
       footer={
         <div className="flex justify-end gap-3">
-          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
           <button onClick={handleCreateReturn}
             disabled={formLoading || !returnForm.reason || returnForm.items.length === 0}
             className="px-6 py-2.5 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 disabled:opacity-50 flex items-center gap-2 text-sm">
             {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-            <RotateCcw className="w-4 h-4" /> สร้างใบคืน
+            <RotateCcw className="w-4 h-4" /> {t('purchase.returnModal.createReturn')}
           </button>
         </div>
       }
     >
       {/* References */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="ใบสั่งซื้อ (PO)">
+        <Field label={t('purchase.returnModal.po')}>
           <select value={returnForm.purchase_order_id}
             onChange={e => setReturnForm(p => ({ ...p, purchase_order_id: e.target.value }))} className={inputCls()}>
-            <option value="">-- เลือก PO --</option>
+            <option value="">{t('purchase.returnModal.selectPO')}</option>
             {orders.filter(o => o.status === 'RECEIVED' || o.status === 'PARTIAL').map(o => (
               <option key={o.id} value={o.id}>{o.po_number} — {o.supplier_name}</option>
             ))}
           </select>
         </Field>
-        <Field label="ใบรับสินค้า (GR)">
+        <Field label={t('purchase.returnModal.gr')}>
           <select value={returnForm.goods_receipt_id}
             onChange={e => setReturnForm(p => ({ ...p, goods_receipt_id: e.target.value }))} className={inputCls()}>
-            <option value="">-- เลือก GR --</option>
+            <option value="">{t('purchase.returnModal.selectGR')}</option>
             {receipts
               .filter(r => r.status === 'CONFIRMED' && (!returnForm.purchase_order_id || r.purchase_order_id === returnForm.purchase_order_id))
               .map(r => <option key={r.id} value={r.id}>{r.gr_number} ({r.po_number})</option>)}
@@ -3748,20 +3758,20 @@ const Purchase = () => {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="วันที่คืนสินค้า">
+        <Field label={t('purchase.returnModal.returnDate')}>
           <input type="date" value={returnForm.return_date}
             onChange={e => setReturnForm(p => ({ ...p, return_date: e.target.value }))} className={inputCls()} />
         </Field>
-        <Field label="สาเหตุการคืน" required>
+        <Field label={t('purchase.returnModal.returnReason')} required>
           <select value={returnForm.reason}
             onChange={e => setReturnForm(p => ({ ...p, reason: e.target.value }))} className={inputCls()}>
-            <option value="">-- เลือกสาเหตุหลัก --</option>
-            <option value="DEFECTIVE"><span className="inline-block w-2.5 h-2.5 rounded-full bg-danger mr-1" />สินค้าเสียหาย/บกพร่อง</option>
-            <option value="WRONG_ITEM"><Package className="w-4 h-4" /> ส่งผิดรายการ</option>
-            <option value="WRONG_QUANTITY"><Hash className="w-4 h-4" /> ส่งผิดจำนวน</option>
-            <option value="QUALITY_ISSUE"><AlertTriangle className="w-4 h-4" /> คุณภาพไม่ผ่านมาตรฐาน</option>
-            <option value="EXPIRED"><Clock className="w-4 h-4" /> สินค้าหมดอายุ</option>
-            <option value="OTHER">อื่นๆ</option>
+            <option value="">{t('purchase.returnModal.selectReason')}</option>
+            <option value="DEFECTIVE">{t('purchase.returnReason.defective')}</option>
+            <option value="WRONG_ITEM">{t('purchase.returnReason.wrongItem')}</option>
+            <option value="WRONG_QUANTITY">{t('purchase.returnReason.wrongQuantity')}</option>
+            <option value="QUALITY_ISSUE">{t('purchase.returnReason.qualityIssue')}</option>
+            <option value="EXPIRED">{t('purchase.returnReason.expired')}</option>
+            <option value="OTHER">{t('purchase.returnReason.other')}</option>
           </select>
         </Field>
       </div>
@@ -3769,10 +3779,10 @@ const Purchase = () => {
       {/* Items */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-[var(--fg-2)]">รายการที่คืน</span>
+          <span className="text-sm font-semibold text-[var(--fg-2)]">{t('purchase.returnModal.itemsTitle')}</span>
           <button onClick={addReturnItem}
             className="flex items-center gap-1 px-2.5 py-1 bg-[var(--danger-soft)] text-danger text-xs rounded-lg hover:bg-[var(--danger-soft)]">
-            <Plus className="w-3 h-3" /> เพิ่มรายการ
+            <Plus className="w-3 h-3" /> {t('purchase.actions.addItem')}
           </button>
         </div>
         <div className="space-y-3">
@@ -3785,26 +3795,26 @@ const Purchase = () => {
                 }} />
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">จำนวนคืน</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.returnModal.returnQty')}</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-red-400" />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <select
                     value={item.unit || ''}
                     onChange={e => updateReturnItem(index, 'unit', e.target.value)}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   >
-                    <option value="">เลือกหน่วย</option>
+                    <option value="">{t('purchase.common.selectUnit')}</option>
                     {availableUnits.map(u => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">ราคา/หน่วย</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="0.01" value={item.unit_price}
@@ -3813,13 +3823,13 @@ const Purchase = () => {
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">หมายเหตุ item</label>
-                  <input type="text" value={item.reason} placeholder="สาเหตุเพิ่มเติม"
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.returnModal.itemNote')}</label>
+                  <input type="text" value={item.reason} placeholder={t('purchase.returnModal.itemNotePlaceholder')}
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                 </div>
                 <div className="col-span-2 text-right">
-                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">รวม</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                   <span className="text-sm font-semibold text-danger">{formatCurrency(item.total_price)}</span>
                 </div>
                 <div className="col-span-1 flex items-end justify-center pb-0.5">
@@ -3833,7 +3843,7 @@ const Purchase = () => {
           ))}
           {returnForm.items.length === 0 && (
             <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-danger/30 rounded-xl">
-              ยังไม่มีรายการ — กดเพิ่มรายการด้านบน
+              {t('purchase.common.noItemsYet')}
             </div>
           )}
         </div>
@@ -3843,10 +3853,10 @@ const Purchase = () => {
       {returnForm.items.length > 0 && (
         <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2 text-sm">
           <div className="flex justify-between text-[var(--fg-3)]">
-            <span>ก่อนภาษี</span><span>{formatCurrency(subtotal)}</span>
+            <span>{t('purchase.returnModal.beforeTax')}</span><span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-[var(--fg-3)]">ภาษี (%)</span>
+            <span className="text-[var(--fg-3)]">{t('purchase.returnModal.tax')}</span>
             <div className="w-24">
               <input type="number" min="0" max="30" value={returnForm.tax_rate}
                 onChange={e => setReturnForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
@@ -3854,24 +3864,24 @@ const Purchase = () => {
             </div>
           </div>
           <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2">
-            <span>มูลค่าคืนทั้งสิ้น</span>
+            <span>{t('purchase.returnModal.totalReturn')}</span>
             <span className="text-lg text-danger">{formatCurrency(total)}</span>
           </div>
         </div>
       )}
 
-      <Field label="หมายเหตุ">
+      <Field label={t('purchase.common.notes')}>
         <textarea value={returnForm.notes} onChange={e => setReturnForm(p => ({ ...p, notes: e.target.value }))}
           rows={2} className={`${inputCls()} resize-none`}
-          placeholder="รายละเอียดเพิ่มเติมเกี่ยวกับการคืนสินค้า..." />
+          placeholder={t('purchase.returnModal.notesPlaceholder')} />
       </Field>
 
       {/* Journal preview */}
       {returnForm.items.length > 0 && (
         <JournalPreview entries={[
-          { dr: true,  account: '2100 เจ้าหนี้การค้า',  label: 'ลดยอดหนี้',       amount: total },
-          { dr: false, account: '1400 สินค้าคงคลัง',    label: 'มูลค่าสินค้าคืน', amount: subtotal },
-          { dr: false, account: '1760 ภาษีซื้อ',        label: 'VAT ที่ยกเลิก',   amount: taxAmt },
+          { dr: true,  account: t('purchase.journal.accountsPayable'),  label: t('purchase.journal.reduceDebt'),       amount: total },
+          { dr: false, account: t('purchase.journal.inventory'),    label: t('purchase.journal.returnedGoodsValue'), amount: subtotal },
+          { dr: false, account: t('purchase.journal.inputVat'),        label: t('purchase.journal.vatReversed'),   amount: taxAmt },
         ]} />
       )}
     </ModalShell>
@@ -3886,13 +3896,13 @@ const Purchase = () => {
   }
 
   const tabs = [
-    { id: 'overview',  label: 'ภาพรวม',    icon: TrendingUp, badge: 0 },
-    { id: 'requests',  label: 'ใบขอซื้อ',  icon: FileText,   badge: pendingCounts.requests },
-    { id: 'orders',    label: 'ใบสั่งซื้อ', icon: ShoppingCart, badge: pendingCounts.orders },
-    { id: 'receipts',  label: 'รับสินค้า',  icon: Package,    badge: 0 },
-    { id: 'invoices',  label: 'ใบวางบิล',   icon: Receipt,    badge: pendingCounts.invoices },
-    { id: 'payments',  label: 'จ่ายเงิน',   icon: CreditCard, badge: 0 },
-    { id: 'returns',   label: 'คืนสินค้า',  icon: RotateCcw,  badge: 0 },
+    { id: 'overview',  label: t('purchase.tabs.overview'),    icon: TrendingUp, badge: 0 },
+    { id: 'requests',  label: t('purchase.tabs.requests'),  icon: FileText,   badge: pendingCounts.requests },
+    { id: 'orders',    label: t('purchase.tabs.orders'), icon: ShoppingCart, badge: pendingCounts.orders },
+    { id: 'receipts',  label: t('purchase.tabs.receipts'),  icon: Package,    badge: 0 },
+    { id: 'invoices',  label: t('purchase.tabs.invoices'),   icon: Receipt,    badge: pendingCounts.invoices },
+    { id: 'payments',  label: t('purchase.tabs.payments'),   icon: CreditCard, badge: 0 },
+    { id: 'returns',   label: t('purchase.tabs.returns'),  icon: RotateCcw,  badge: 0 },
   ]
 
   return (
@@ -3902,13 +3912,13 @@ const Purchase = () => {
         className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] flex items-center gap-3">
-            <ShoppingCart className="w-8 h-8 text-[var(--primary)]" /> การจัดซื้อ
+            <ShoppingCart className="w-8 h-8 text-[var(--primary)]" /> {t('purchase.title')}
           </h1>
-          <p className="text-[var(--fg-3)] mt-1">จัดการใบขอซื้อ ใบสั่งซื้อ รับสินค้า และการจ่ายเงิน</p>
+          <p className="text-[var(--fg-3)] mt-1">{t('purchase.subtitle')}</p>
         </div>
         <button onClick={() => openModal('request', 'create')}
           className="flex items-center gap-2 px-5 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors">
-          <Plus className="w-4 h-4" /> สร้างใบขอซื้อ
+          <Plus className="w-4 h-4" /> {t('purchase.actions.createRequest')}
         </button>
       </motion.div>
 

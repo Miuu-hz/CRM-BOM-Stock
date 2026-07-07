@@ -150,7 +150,8 @@
     "actions": "จัดการ",
     "notes": "หมายเหตุ",
     "items_count": "{{count}} รายการ",
-    "loading": "กำลังโหลด..."
+    "loading": "กำลังโหลด...",
+    "sessionExpired": "Session expired. Please login again."
   },
   "purchaseOrders": {
     "title": "ใบสั่งซื้อ",
@@ -215,7 +216,7 @@
   },
   "purchase": {
     "title": "จัดซื้อ",
-    "subtitle": "ใบขอซื้อ ใบสั่งซื้อ รับสินค้า ใบแจ้งหนี้ และการจ่ายเงิน",
+    "subtitle": "จัดการใบขอซื้อ ใบสั่งซื้อ รับสินค้า และการจ่ายเงิน",
     "tabs": {
       "overview": "ภาพรวม",
       "requests": "ใบขอซื้อ",
@@ -247,6 +248,68 @@
     "convertToOrder": "แปลงเป็นใบสั่งซื้อ",
     "printOrder": "พิมพ์ใบสั่งซื้อ A4",
     "pendingItems": "รายการรอดำเนินการ",
+    "common": {
+      "status": "สถานะ",
+      "actions": "จัดการ",
+      "total": "รวม",
+      "notes": "หมายเหตุ",
+      "cancel": "ยกเลิก",
+      "save": "บันทึก",
+      "close": "ปิด",
+      "view": "ดู",
+      "edit": "แก้ไข",
+      "delete": "ลบ",
+      "search": "ค้นหา",
+      "noData": "ยังไม่มีข้อมูล",
+      "loading": "กำลังโหลด...",
+      "supplier": "ผู้ขาย",
+      "quantity": "จำนวน",
+      "unit": "หน่วย",
+      "selectUnit": "เลือกหน่วย",
+      "unitPrice": "ราคา/หน่วย",
+      "lineTotal": "รวม",
+      "grandTotal": "รวมทั้งสิ้น",
+      "balance": "คงค้าง",
+      "itemCount": "{{count}} รายการ",
+      "countItems": "{{count}} รายการ",
+      "noItemsYet": "ยังไม่มีรายการ — กดเพิ่มรายการด้านบน",
+      "journalEntry": "สมุดรายวัน: {{number}}",
+      "reference": "อ้างอิง:",
+      "companyFallback": "บริษัท",
+      "unitFallback": "หน่วย"
+    },
+    "overview": {
+      "totalOrderAmount": "ยอดสั่งซื้อรวม",
+      "orderCount": "{{count}} ใบสั่งซื้อ",
+      "pendingRequests": "ใบขอซื้อรออนุมัติ",
+      "fromTotalRequests": "จาก {{count}} ใบทั้งหมด",
+      "paidAmount": "จ่ายเงินแล้ว",
+      "paymentCount": "{{count}} รายการ",
+      "outstandingAmount": "ยอดค้างจ่าย",
+      "unpaidInvoiceCount": "{{count}} ใบค้างจ่าย",
+      "pendingActionsTitle": "รายการรอดำเนินการ",
+      "pendingRequestsLabel": "ใบขอซื้อรออนุมัติ",
+      "pendingOrdersLabel": "ใบสั่งซื้อรอรับสินค้า",
+      "unpaidInvoicesLabel": "ใบแจ้งหนี้ค้างจ่าย",
+      "workflowTitle": "กระบวนการจัดซื้อ",
+      "orderStatusTitle": "สถานะใบสั่งซื้อ",
+      "paymentStatusTitle": "สถานะการจ่ายเงิน"
+    },
+    "workflow": {
+      "request": "ใบขอซื้อ",
+      "order": "ใบสั่งซื้อ",
+      "receipt": "รับสินค้า",
+      "invoice": "ใบแจ้งหนี้",
+      "payment": "จ่ายเงิน"
+    },
+    "view": {
+      "card": "มุมมองการ์ด",
+      "list": "มุมมองรายการ"
+    },
+    "pagination": {
+      "perPage": "{{count}} / หน้า",
+      "showing": "แสดง {{start}}–{{end}} จาก {{total}} รายการ"
+    },
     "status": {
       "fullyReceived": "รับครบ",
       "partialReceived": "รับบางส่วน",
@@ -259,6 +322,8 @@
       "submitted": "ส่งอนุมัติแล้ว",
       "cancelled": "ยกเลิกแล้ว",
       "partial": "บางส่วน",
+      "pending": "รอดำเนินการ",
+      "partialPaid": "จ่ายบางส่วน",
       "unpaid": "ค้างจ่าย",
       "paid": "จ่ายแล้ว",
       "overdue": "เกินกำหนด",
@@ -303,17 +368,47 @@
       "returnCreated": "สร้างใบคืนสินค้าสำเร็จ",
       "returnCreateFailed": "ไม่สามารถสร้างใบคืนสินค้าได้",
       "returnConfirmed": "ยืนยันคืนสินค้า — ตัดสต็อกแล้ว",
-      "returnConfirmFailed": "ไม่สามารถยืนยันการคืนสินค้าได้"
+      "returnConfirmFailed": "ไม่สามารถยืนยันการคืนสินค้าได้",
+      "stockItemAdded": "เพิ่ม \"{{name}}\" เข้า Stock แล้ว",
+      "requestItemsLoaded": "โหลดรายการจาก {{prNumber}} แล้ว ({{count}} รายการ)"
     },
     "search": {
       "material": "ค้นหา รหัส / ชื่อวัสดุ...",
       "supplier": "ค้นหาผู้ขาย...",
       "order": "ค้นหาเลขที่ใบสั่งซื้อ / ผู้ขาย...",
-      "request": "ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ..."
+      "request": "ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ...",
+      "requestsPlaceholder": "ค้นหาใบขอซื้อ...",
+      "ordersPlaceholder": "ค้นหาใบสั่งซื้อ...",
+      "receiptsPlaceholder": "ค้นหาใบรับสินค้า...",
+      "invoicesPlaceholder": "ค้นหาใบแจ้งหนี้...",
+      "paymentsPlaceholder": "ค้นหาการจ่ายเงิน...",
+      "returnsPlaceholder": "ค้นหาใบคืนสินค้า...",
+      "poPlaceholder": "ค้นหาเลขที่ใบสั่งซื้อ / ผู้ขาย...",
+      "prPlaceholder": "ค้นหาเลขที่ใบขอซื้อ / ผู้ขอ...",
+      "grPlaceholder": "+ เพิ่มใบรับสินค้า GR...",
+      "materialPlaceholder": "ค้นหา รหัส / ชื่อวัสดุ...",
+      "supplierPlaceholder": "ค้นหาผู้ขาย...",
+      "noMaterialFound": "ไม่พบสินค้า \"{{query}}\"",
+      "createMaterial": "สร้างสินค้าใหม่เข้า Stock",
+      "newMaterial": "สินค้าใหม่",
+      "noSupplierFound": "ไม่พบผู้ขาย",
+      "supplierCount": "{{count}} ราย",
+      "noOrderFound": "ไม่พบใบสั่งซื้อ",
+      "noRequestFound": "ไม่พบใบขอซื้อ",
+      "selectPOFirst": "— เลือก PO ก่อน —",
+      "allGRsAdded": "เพิ่มทุก GR แล้ว",
+      "noReceiptFound": "ไม่พบใบรับสินค้า",
+      "grCountHint": "{{count}} รายการ (คลิกเพื่อเพิ่ม)"
     },
     "empty": {
       "order": "ไม่พบใบสั่งซื้อ",
-      "receipt": "ไม่พบใบรับสินค้า"
+      "receipt": "ไม่พบใบรับสินค้า",
+      "requests": "ไม่พบรายการใบขอซื้อ",
+      "orders": "ไม่พบรายการใบสั่งซื้อ",
+      "receipts": "ไม่พบรายการรับสินค้า",
+      "invoices": "ไม่พบรายการใบแจ้งหนี้",
+      "payments": "ไม่พบรายการจ่ายเงิน",
+      "returns": "ไม่พบรายการคืนสินค้า"
     },
     "buttons": {
       "addGR": "+ เพิ่มใบรับสินค้า GR..."
@@ -347,7 +442,334 @@
       "submit": "ส่งอนุมัติ",
       "reject": "ปฏิเสธ",
       "confirm": "ยืนยัน",
-      "cancel": "ยกเลิก"
+      "cancel": "ยกเลิก",
+      "createRequest": "สร้างใบขอซื้อ",
+      "createOrder": "สร้างใบสั่งซื้อ",
+      "createReceipt": "บันทึกรับสินค้า",
+      "createInvoice": "สร้างใบแจ้งหนี้",
+      "createPayment": "บันทึกจ่ายเงิน",
+      "createReturn": "สร้างใบคืนสินค้า",
+      "viewDetails": "ดูรายละเอียด",
+      "convertToOrder": "แปลงเป็นใบสั่งซื้อ",
+      "printOrderA4": "พิมพ์ใบสั่งซื้อ A4",
+      "printA4": "พิมพ์ A4",
+      "printThermal": "พิมพ์สลิป 80mm",
+      "receiveGoods": "รับสินค้า",
+      "pay": "จ่ายเงิน",
+      "addNew": "เพิ่มใหม่",
+      "addSupplier": "เพิ่มผู้ขายใหม่",
+      "addItem": "เพิ่มรายการ",
+      "submitForApproval": "ส่งอนุมัติ",
+      "approve": "อนุมัติ",
+      "confirmReturn": "ยืนยันคืนสินค้า"
+    },
+    "requests": {
+      "headers": {
+        "number": "เลขที่",
+        "requester": "ผู้ขอ",
+        "department": "แผนก",
+        "requestDate": "วันที่ขอ"
+      },
+      "card": {
+        "requestedOn": "ขอ {{date}}",
+        "requiredBy": "ต้องการ {{date}}"
+      }
+    },
+    "orders": {
+      "headers": {
+        "poNumber": "เลขที่ PO",
+        "orderDate": "วันสั่ง",
+        "expectedDate": "กำหนดรับ"
+      },
+      "card": {
+        "orderedOn": "สั่ง {{date}}",
+        "expectedBy": "กำหนดรับ {{date}}",
+        "grConfirmed": "GR ×{{count}}",
+        "grDraft": "GR ร่าง ×{{count}}",
+        "invCount": "INV ×{{count}}"
+      }
+    },
+    "receipts": {
+      "headers": {
+        "grNumber": "เลขที่ GR",
+        "poReference": "อ้างอิง PO",
+        "receiptDate": "วันที่รับ"
+      },
+      "card": {
+        "receivedOn": "รับวันที่ {{date}}"
+      }
+    },
+    "invoices": {
+      "headers": {
+        "piNumber": "เลขที่ PI",
+        "poReference": "อ้างอิง PO",
+        "dueDate": "ครบกำหนด",
+        "balance": "ค้างชำระ"
+      },
+      "card": {
+        "issuedOn": "ออก {{date}}",
+        "dueOn": "ครบ {{date}}",
+        "totalAmount": "ยอดรวม {{amount}}",
+        "balanceAmount": "ค้าง {{amount}}"
+      }
+    },
+    "payments": {
+      "headers": {
+        "number": "เลขที่",
+        "method": "วิธีชำระ",
+        "date": "วันที่",
+        "journal": "JV",
+        "amount": "ยอด"
+      }
+    },
+    "returns": {
+      "headers": {
+        "number": "เลขที่",
+        "poReference": "PO อ้างอิง",
+        "reason": "สาเหตุ",
+        "amount": "ยอด"
+      }
+    },
+    "paymentMethod": {
+      "cash": "เงินสด",
+      "transfer": "โอนเงิน",
+      "cheque": "เช็ค",
+      "creditCard": "บัตรเครดิต"
+    },
+    "returnReason": {
+      "defective": "สินค้าเสียหาย",
+      "wrongItem": "ส่งผิดรายการ",
+      "wrongQuantity": "ส่งผิดจำนวน",
+      "qualityIssue": "คุณภาพไม่ตรง",
+      "expired": "หมดอายุ",
+      "other": "อื่นๆ"
+    },
+    "convertToPO": {
+      "title": "แปลงเป็นใบสั่งซื้อ",
+      "subtitle": "เลือกผู้ขายเพื่อสร้าง PO จากใบขอซื้อนี้",
+      "selectSupplier": "-- เลือกผู้ขาย --",
+      "expectedDelivery": "กำหนดส่งสินค้า"
+    },
+    "requestModal": {
+      "titleCreate": "สร้างใบขอซื้อ",
+      "titleEdit": "แก้ไขใบขอซื้อ",
+      "titleView": "รายละเอียดใบขอซื้อ",
+      "createdBy": "สร้างโดย: {{name}}",
+      "department": "แผนก",
+      "departmentPlaceholder": "เช่น การผลิต, คลังสินค้า",
+      "requiredDate": "ต้องการภายในวันที่",
+      "priority": "ระดับความสำคัญ",
+      "preferredSupplier": "ผู้ขายที่แนะนำ (optional)",
+      "supplierPlaceholder": "ค้นหาผู้ขาย...",
+      "notes": "หมายเหตุ / เหตุผลที่ขอ",
+      "notesPlaceholder": "เช่น วัตถุดิบหมด, เตรียมสำหรับออเดอร์ลูกค้า...",
+      "itemsTitle": "รายการสินค้า/วัตถุดิบ",
+      "estimatedUnitPrice": "ราคา/หน่วย (ประมาณ)",
+      "totalEstimate": "รวมประมาณการทั้งหมด"
+    },
+    "orderModal": {
+      "titleCreate": "สร้างใบสั่งซื้อ (PO)",
+      "titleEdit": "แก้ไขใบสั่งซื้อ (Draft)",
+      "titleView": "รายละเอียดใบสั่งซื้อ",
+      "saveEdit": "บันทึกการแก้ไข",
+      "prReference": "อ้างอิงใบขอซื้อ (ไม่บังคับ — เลือกเพื่อโหลดรายการอัตโนมัติ)",
+      "prLoaded": "โหลดรายการจากใบขอซื้อแล้ว — แก้ไขได้ตามต้องการ",
+      "supplierPlaceholder": "ค้นหา รหัส / ชื่อผู้ขาย...",
+      "expectedDelivery": "กำหนดส่งสินค้า",
+      "paymentTerms": "เงื่อนไขการชำระ",
+      "paymentTermsCod": "COD — ชำระทันที",
+      "paymentTermsNet15": "NET 15 วัน",
+      "paymentTermsNet30": "NET 30 วัน",
+      "paymentTermsNet45": "NET 45 วัน",
+      "paymentTermsNet60": "NET 60 วัน",
+      "itemsTitle": "รายการสินค้า",
+      "itemDescriptionPlaceholder": "รายละเอียดเพิ่มเติม",
+      "subtotal": "ก่อนหักส่วนลด",
+      "discount": "ส่วนลด (บาท)",
+      "tax": "ภาษี (%)"
+    },
+    "receiptModal": {
+      "title": "บันทึกรับสินค้า (GR)",
+      "footerSummary": "{{count}} รายการ · รวมรับ {{qty}} หน่วย",
+      "footerSelectPO": "เลือก PO เพื่อโหลดรายการ",
+      "confirmReceipt": "ยืนยันรับสินค้า",
+      "selectPO": "เลือกใบสั่งซื้อ (PO)",
+      "noEligiblePO": "ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ: Submitted/Approved/รับบางส่วน)",
+      "poValue": "มูลค่า PO",
+      "poDeliveryDate": "กำหนดส่ง",
+      "partialReceived": "รับบางส่วนแล้ว",
+      "waitingForReceipt": "รอรับสินค้า",
+      "receiptDate": "วันที่รับสินค้า",
+      "receivedBy": "ผู้รับสินค้า",
+      "receivedByPlaceholder": "ชื่อพนักงานที่รับ",
+      "doNo": "เลขที่ใบส่งของ (DO No.)",
+      "doNoPlaceholder": "เช่น DO-2026-001",
+      "itemsTitle": "รายการสินค้าที่ต้องรับ",
+      "unitPriceLabel": "ราคา/หน่วย:",
+      "receivedSoFar": "รับแล้ว {{already}}/{{ordered}} {{unit}}",
+      "pendingQty": "คงค้าง {{pending}} {{unit}}",
+      "receivedQty": "รับจริง (ครั้งนี้)",
+      "acceptedQty": "รับเข้าสต็อก",
+      "rejectedQty": "ปฏิเสธ / เสียหาย",
+      "overReceiveWarning": "รับเกินยอดคงค้าง {{qty}} {{unit}}",
+      "imbalanceWarning": "รับจริง ≠ รับเข้าสต็อก + ปฏิเสธ (ยอดไม่สมดุล)",
+      "lotLabel": "Lot / Batch No.",
+      "lotPlaceholder": "เช่น LOT-2026-001",
+      "location": "สถานที่จัดเก็บ",
+      "locationPlaceholder": "เช่น คลัง A, ชั้น 3",
+      "rejectionNotesPlaceholder": "สาเหตุที่ปฏิเสธ / รายละเอียดความเสียหาย...",
+      "lineValue": "มูลค่ารับเข้า",
+      "totalReceivedValue": "มูลค่ารับเข้าสต็อกรวม",
+      "loadingItems": "กำลังโหลดรายการจาก PO...",
+      "selectPOHint": "เลือกใบสั่งซื้อด้านบนเพื่อโหลดรายการสินค้าที่ต้องรับ"
+    },
+    "invoiceModal": {
+      "titleView": "รายละเอียดใบแจ้งหนี้",
+      "titleCreate": "สร้างใบแจ้งหนี้ผู้ขาย",
+      "po": "ใบสั่งซื้อ (PO)",
+      "noEligiblePO": "ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ Submitted/Approved/Received)",
+      "grReference": "อ้างอิงใบรับสินค้า (GR) — เลือกได้หลายใบ",
+      "supplierInvoiceNumber": "เลขที่ใบกำกับภาษีของผู้ขาย",
+      "supplierInvoicePlaceholder": "เช่น TAX-INV-2026-0001 (เลขที่จากผู้ขาย)",
+      "invoiceDate": "วันที่ในใบกำกับ",
+      "dueDate": "วันครบกำหนดชำระ",
+      "poValue": "มูลค่า PO",
+      "invoiceValue": "มูลค่าใบแจ้งหนี้",
+      "grSelected": "GR ยืนยันแล้ว {{confirmed}} ใบ (เลือก {{selected}} ใบ)",
+      "goodsValue": "ราคาสินค้า (จาก PO)",
+      "vat": "VAT (%)",
+      "drAccount": "บัญชี DR (เดบิต)",
+      "defaultDrAccount": "1107 สต็อกวัตถุดิบ (ค่าเริ่มต้น)",
+      "drAccountHint": "เปลี่ยนได้หากซื้อของสำนักงาน / ค่าใช้จ่าย ที่ไม่เข้า stock",
+      "taxId": "เลขผู้เสียภาษี: {{id}}"
+    },
+    "paymentModal": {
+      "title": "บันทึกการจ่ายเงิน",
+      "confirmPayment": "ยืนยันจ่ายเงิน",
+      "supplierPlaceholder": "ค้นหาผู้ขาย...",
+      "selectInvoice": "ใบแจ้งหนี้ที่ต้องการชำระ",
+      "invoicePlaceholder": "-- เลือกใบแจ้งหนี้ --",
+      "invoiceOption": "{{piNumber}} — ค้าง {{amount}}",
+      "paidAmount": "ชำระแล้ว",
+      "paymentDate": "วันที่จ่าย",
+      "paymentMethod": "วิธีการจ่าย",
+      "amountPaid": "จำนวนเงินที่จ่าย (บาท)",
+      "whtRate": "อัตรา WHT",
+      "whtNone": "ไม่หัก WHT",
+      "wht1": "1% — บริการทั่วไป",
+      "wht3": "3% — ค่าเช่า/บริการ",
+      "wht5": "5% — ค่าสิทธิ์",
+      "withholdingTax": "หัก ณ ที่จ่าย (คำนวณอัตโนมัติ)",
+      "netPay": "ยอดที่โอน/จ่ายจริง",
+      "reference": "เลขที่อ้างอิง (สลิป / เลขเช็ค)",
+      "referencePlaceholder": "เช่น 20250316001"
+    },
+    "returnModal": {
+      "title": "สร้างใบคืนสินค้า (PR-Return)",
+      "createReturn": "สร้างใบคืน",
+      "po": "ใบสั่งซื้อ (PO)",
+      "selectPO": "-- เลือก PO --",
+      "gr": "ใบรับสินค้า (GR)",
+      "selectGR": "-- เลือก GR --",
+      "returnDate": "วันที่คืนสินค้า",
+      "returnReason": "สาเหตุการคืน",
+      "selectReason": "-- เลือกสาเหตุหลัก --",
+      "itemsTitle": "รายการที่คืน",
+      "returnQty": "จำนวนคืน",
+      "itemNote": "หมายเหตุ item",
+      "itemNotePlaceholder": "สาเหตุเพิ่มเติม",
+      "beforeTax": "ก่อนภาษี",
+      "tax": "ภาษี (%)",
+      "totalReturn": "มูลค่าคืนทั้งสิ้น",
+      "notesPlaceholder": "รายละเอียดเพิ่มเติมเกี่ยวกับการคืนสินค้า..."
+    },
+    "journal": {
+      "title": "สมุดรายวัน (ระบบบันทึกอัตโนมัติ)",
+      "debit": "Dr.",
+      "credit": "Cr.",
+      "rawStockAccount": "1107 สต็อกวัตถุดิบ",
+      "inputVatAccount": "1110 ภาษีซื้อ",
+      "accountsPayable": "2101 เจ้าหนี้การค้า",
+      "goodsValue": "มูลค่าสินค้า",
+      "vat": "VAT",
+      "total": "ยอดรวม",
+      "bankDeposit": "1100 เงินฝากธนาคาร",
+      "withholdingTaxPayable": "2180 ภาษีหัก ณ ที่จ่าย",
+      "reducePayable": "ลดยอดเจ้าหนี้",
+      "actualTransfer": "ยอดโอนจริง",
+      "whtRemitted": "WHT ที่นำส่งสรรพากร",
+      "inventory": "1400 สินค้าคงคลัง",
+      "inputVat": "1760 ภาษีซื้อ",
+      "reduceDebt": "ลดยอดหนี้",
+      "returnedGoodsValue": "มูลค่าสินค้าคืน",
+      "vatReversed": "VAT ที่ยกเลิก"
+    },
+    "accountType": {
+      "asset": "สินทรัพย์",
+      "expense": "ค่าใช้จ่าย"
+    },
+    "chain": {
+      "pr": "PR",
+      "po": "PO",
+      "gr": "GR"
+    },
+    "paymentStatus": {
+      "paid": "ชำระครบแล้ว",
+      "partial": "ชำระแล้ว {{paid}} / ค้าง {{balance}}",
+      "unpaid": "ยังไม่ชำระ (ค้าง {{balance}})"
+    },
+    "poStatus": {
+      "received": "รับครบ",
+      "partial": "รับบางส่วน",
+      "pending": "รออนุมัติ/รับ"
+    },
+    "grStatus": {
+      "confirmed": "ยืนยันแล้ว",
+      "draft": "ร่าง"
+    },
+    "prStatus": {
+      "approved": "อนุมัติแล้ว",
+      "pending": "รออนุมัติ",
+      "draft": "ร่าง"
+    },
+    "quickAddSupplier": {
+      "title": "เพิ่มผู้ขายใหม่ (Quick Add)",
+      "validation": "กรุณากรอกชื่อบริษัทและชื่อผู้ติดต่อ",
+      "code": "รหัสผู้ขาย",
+      "companyName": "ชื่อบริษัท",
+      "companyPlaceholder": "ชื่อบริษัท / ร้านค้า",
+      "contactName": "ชื่อผู้ติดต่อ",
+      "contactPlaceholder": "ชื่อ-นามสกุล",
+      "phone": "เบอร์โทร",
+      "phonePlaceholder": "0xx-xxx-xxxx",
+      "email": "อีเมล",
+      "emailPlaceholder": "email@example.com",
+      "hint": "สามารถแก้ไขข้อมูลเพิ่มเติมได้ที่เมนู CRM → Suppliers"
+    },
+    "quickAddStock": {
+      "title": "เพิ่มสินค้าใหม่เข้า Stock",
+      "subtitle": "สินค้าจะถูกบันทึกใน Stock ทันที และเลือกได้ใน PO",
+      "validation": "กรุณากรอก SKU และชื่อสินค้า",
+      "error": "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง",
+      "sku": "SKU",
+      "skuPlaceholder": "เช่น MAT-001",
+      "name": "ชื่อสินค้า",
+      "namePlaceholder": "ชื่อวัตถุดิบ / สินค้า",
+      "category": "ประเภท",
+      "categoryRaw": "วัตถุดิบ (Raw)",
+      "categoryWip": "กึ่งสำเร็จรูป (WIP)",
+      "categoryFinished": "สินค้าสำเร็จรูป",
+      "categoryMaterial": "วัสดุ/อื่นๆ",
+      "unitCost": "ราคาต้นทุน/หน่วย (฿)",
+      "costLabel": "ต้นทุน",
+      "unitPrice": "ราคาขาย/หน่วย (฿)",
+      "saleLabel": "ขาย",
+      "minStock": "Min Stock",
+      "maxStock": "Max Stock",
+      "initialQty": "จำนวนเริ่มต้น",
+      "location": "สถานที่เก็บ",
+      "locationPlaceholder": "เช่น คลังหลัก, A-12",
+      "save": "บันทึกเข้า Stock"
     }
   },
   "sales": {
@@ -416,7 +838,24 @@
       "shiftClosed": "ปิดกะสำเร็จ",
       "cancelBillFailed": "ยกเลิกบิลไม่สำเร็จ",
       "customerAdded": "เพิ่มลูกค้าสำเร็จ",
-      "customerAddFailed": "เพิ่มลูกค้าไม่สำเร็จ"
+      "customerAddFailed": "เพิ่มลูกค้าไม่สำเร็จ",
+      "quotationUpdated": "บันทึกการแก้ไขใบเสนอราคาสำเร็จ",
+      "quotationCreated": "สร้างใบเสนอราคาสำเร็จ",
+      "quotationSaveFailed": "บันทึกใบเสนอราคาไม่สำเร็จ",
+      "orderUpdated": "บันทึกการแก้ไขคำสั่งขายสำเร็จ",
+      "orderCreated": "สร้างคำสั่งขายสำเร็จ",
+      "orderSaveFailed": "บันทึกคำสั่งขายไม่สำเร็จ",
+      "paymentRecorded": "บันทึกการรับเงินสำเร็จ",
+      "paymentRecordFailed": "บันทึกการรับเงินไม่สำเร็จ",
+      "creditNoteCreated": "สร้างใบลดหนี้สำเร็จ",
+      "creditNoteCreateFailed": "สร้างใบลดหนี้ไม่สำเร็จ",
+      "creditNoteIssued": "ออกใบลดหนี้สำเร็จ",
+      "creditNoteIssueFailed": "ออกใบลดหนี้ไม่สำเร็จ",
+      "uploadSuccess": "อัปโหลดไฟล์สำเร็จ",
+      "uploadFailed": "อัปโหลดไฟล์ไม่สำเร็จ",
+      "deleteSuccess": "ลบไฟล์สำเร็จ",
+      "deleteFailed": "ลบไฟล์ไม่สำเร็จ",
+      "shiftOpened": "เปิดกะสำเร็จ: {{number}}"
     },
     "error": {
       "loadQuotations": "ไม่สามารถดึงข้อมูลใบเสนอราคาได้",
@@ -461,7 +900,23 @@
       "sendQuotation": "ส่งใบเสนอราคา",
       "edit": "แก้ไข",
       "openShift": "เปิดกะ",
-      "createDeliveryFromSO": "สร้างใบส่งของจากคำสั่งขาย"
+      "createDeliveryFromSO": "สร้างใบส่งของจากคำสั่งขาย",
+      "createInvoiceShort": "INV",
+      "collectPayment": "รับเงิน",
+      "convertToSOFull": "แปลงเป็นคำสั่งขาย",
+      "printA4": "พิมพ์ A4",
+      "printThermal": "พิมพ์สลิป 80mm",
+      "printSOA4": "พิมพ์ใบสั่งขาย A4",
+      "printInvoiceA4": "พิมพ์ใบแจ้งหนี้ A4",
+      "printCreditNoteA4": "พิมพ์ใบลดหนี้ A4",
+      "addCustomer": "เพิ่มลูกค้า",
+      "voidBill": "ยกเลิกบิล",
+      "closeShift": "ปิดกะ",
+      "fulfillBackorder": "จัดส่งครบแล้ว",
+      "issueCreditNote": "ออกใบลดหนี้",
+      "convertToOrder": "แปลงเป็นคำสั่งขาย",
+      "convertToSO": "แปลง SO",
+      "createInvoice": "ออกใบแจ้งหนี้"
     },
     "search": {
       "quotation": "ค้นหาใบเสนอราคา...",
@@ -473,7 +928,72 @@
     },
     "view": {
       "list": "มุมมองรายการ",
-      "card": "มุมมองการ์ด"
+      "card": "มุมมองการ์ด",
+      "listTitle": "มุมมองรายการ",
+      "cardTitle": "มุมมองการ์ด",
+      "comingSoon": "{{type}} — กำลังพัฒนา"
+    },
+    "common": {
+      "number": "เลขที่",
+      "customer": "ลูกค้า",
+      "date": "วันที่",
+      "expiryDate": "หมดอายุ",
+      "orderDate": "วันสั่ง",
+      "deliveryDate": "วันส่ง",
+      "dueDate": "ครบกำหนด",
+      "status": "สถานะ",
+      "payment": "ชำระ",
+      "deliveryStatus": "สถานะจัดส่ง",
+      "total": "ยอดรวม",
+      "balance": "คงค้าง",
+      "amount": "ยอด",
+      "reason": "เหตุผล",
+      "originalDO": "ใบส่งของต้นฉบับ",
+      "items": "รายการ",
+      "itemCount": "{{count}} รายการ",
+      "qty": "จำนวน",
+      "unit": "หน่วย",
+      "unitPrice": "ราคา/หน่วย",
+      "discount": "ส่วนลด",
+      "subtotal": "ยอดรวม",
+      "tax": "VAT",
+      "grandTotal": "ยอดสุทธิ",
+      "actions": "จัดการ",
+      "view": "ดู",
+      "edit": "แก้ไข",
+      "cancel": "ยกเลิก",
+      "save": "บันทึก",
+      "close": "ปิด",
+      "all": "ทั้งหมด",
+      "clear": "ล้าง",
+      "to": "ถึง",
+      "noData": "ไม่พบข้อมูล",
+      "loading": "กำลังโหลด...",
+      "bills": "บิล",
+      "billCount": "{{count}} บิล",
+      "product": "สินค้า",
+      "customerName": "ชื่อลูกค้า",
+      "customerCode": "รหัสลูกค้า",
+      "type": "ประเภท",
+      "phone": "เบอร์โทร",
+      "email": "อีเมล",
+      "notes": "หมายเหตุ",
+      "default": "ค่าเริ่มต้น",
+      "description": "คำอธิบาย",
+      "itemNumber": "รายการ {{number}}",
+      "lineTotal": "รวม",
+      "itemFallback": "รายการ {{number}}",
+      "selectUnit": "เลือกหน่วย",
+      "uploading": "กำลังอัปโหลด...",
+      "saveEdit": "บันทึกการแก้ไข",
+      "comingSoon": "กำลังพัฒนา",
+      "customerRequired": "ลูกค้า *",
+      "itemNumberPrefix": "รายการ",
+      "notesPlaceholder": "หมายเหตุ...",
+      "orderDateLabel": "วันสั่งซื้อ",
+      "showingCount": "แสดง {{count}} รายการ",
+      "success": "สำเร็จ",
+      "template": "เทมเพลต"
     },
     "pos": {
       "cashInDrawerStart": "เงินสดในลิ้นชัก (ยอดเริ่มต้น)",
@@ -484,15 +1004,50 @@
       "noteOptional": "หมายเหตุ (optional)",
       "notePlaceholder": "เช่น สาเหตุที่เงินขาด/เกิน...",
       "counted": "นับได้",
-      "difference": "ผลต่าง"
+      "difference": "ผลต่าง",
+      "openShiftSuccess": "เปิดกะสำเร็จ: {{shiftNumber}}",
+      "openingCashLabel": "เงินสดในลิ้นชัก (ยอดเริ่มต้น)",
+      "countedCashLabel": "นับเงินสดจริงในลิ้นชัก",
+      "notesLabel": "หมายเหตุ (optional)",
+      "notesPlaceholder": "เช่น สาเหตุที่เงินขาด/เกิน...",
+      "voidBillSuccess": "ยกเลิกบิล {{billNumber}} สำเร็จ",
+      "openSince": "เปิดตั้งแต่ {{time}}",
+      "billsInShift": "บิลในกะนี้",
+      "startShift": "เริ่มกะ",
+      "openShiftHint": "กรอกยอดเงินสดเริ่มต้นเพื่อเปิดกะขาย",
+      "cash": "เงินสด",
+      "qrTransfer": "QR/โอน",
+      "openingCash": "เงินทอนเริ่มต้น",
+      "cashSales": "ยอดขายเงินสด",
+      "expectedCash": "ยอดที่ควรมี",
+      "confirmCloseShift": "ยืนยันปิดกะ",
+      "voidJournalHint": "การยกเลิกบิลจะสร้างสมุดรายวันย้อนกลับอัตโนมัติ",
+      "confirmVoidBill": "ยืนยันยกเลิกบิล",
+      "shiftTitle": "กะขาย POS",
+      "shiftSubtitle": "เปิด/ปิดกะและตรวจสอบยอด",
+      "noOpenShift": "ไม่มีกะที่เปิดอยู่",
+      "openShiftHint2": "เปิดกะเพื่อเริ่มขาย",
+      "shiftOpen": "กำลังเปิด",
+      "totalSales": "ยอดขายรวม",
+      "shiftHistory": "ประวัติกะ",
+      "confirmReceivePayment": "บันทึกรับเงิน"
     },
     "validation": {
       "cancelReason": "กรุณาระบุสาเหตุการยกเลิก",
-      "customerInfo": "กรุณากรอก ชื่อ, รหัสลูกค้า และเบอร์โทร"
+      "customerInfo": "กรุณากรอก ชื่อ, รหัสลูกค้า และเบอร์โทร",
+      "selectCustomer": "กรุณาเลือกลูกค้า",
+      "addItem": "กรุณาเพิ่มอย่างน้อย 1 รายการ",
+      "selectInvoice": "กรุณาเลือกใบแจ้งหนี้",
+      "creditReason": "กรุณาระบุเหตุผลการลดหนี้",
+      "amountRequired": "กรุณาระบุจำนวนเงิน",
+      "fileTooLarge": "ไฟล์ใหญ่เกิน 10MB"
     },
     "paymentMethod": {
       "cash": "เงินสด",
-      "qrTransfer": "QR/โอน"
+      "qrTransfer": "QR/โอน",
+      "transfer": "โอนเงิน",
+      "cheque": "เช็ค",
+      "creditCard": "บัตรเครดิต"
     },
     "labels": {
       "cancelReason": "สาเหตุการยกเลิก *"
@@ -505,7 +1060,162 @@
     },
     "confirm": {
       "deleteQuotation": "ต้องการลบใบเสนอราคานี้?",
-      "deleteTemplate": "ต้องการลบเทมเพลตนี้?"
+      "deleteTemplate": "ต้องการลบเทมเพลตนี้?",
+      "deleteImage": "ลบรูปภาพนี้?"
+    },
+    "journal": {
+      "title": "สมุดรายวัน (ระบบบันทึกอัตโนมัติ)",
+      "debit": "Dr.",
+      "credit": "Cr.",
+      "cashAccount": "1100 เงินสด",
+      "bankAccount": "1101 เงินฝากธนาคาร",
+      "arAccount": "1110 ลูกหนี้การค้า"
+    },
+    "pagination": {
+      "showing": "แสดง {{start}}–{{end}} จาก {{total}} รายการ",
+      "perPage": "{{count}} / หน้า"
+    },
+    "overview": {
+      "itemCount": "{{count}} รายการ",
+      "pendingActionsTitle": "รายการรอดำเนินการ",
+      "workflowTitle": "กระบวนการขาย"
+    },
+    "orders": {
+      "pendingDelivery": "ค้างส่ง {{qty}}"
+    },
+    "deliveryOrders": {
+      "deliveryDateHeader": "วันส่ง"
+    },
+    "templates": {
+      "title": "เทมเพลตใบเสนอราคา",
+      "create": "สร้างเทมเพลต",
+      "use": "ใช้เทมเพลต",
+      "expiresIn": "หมดอายุใน",
+      "expiresInDays": "{{days}} วัน",
+      "expirationDays": "หมดอายุ {{days}} วัน"
+    },
+    "createBackorder": "สร้างใบค้างส่ง",
+    "quickAddCustomer": {
+      "title": "เพิ่มลูกค้าใหม่",
+      "nameLabel": "ชื่อ *",
+      "namePlaceholder": "ชื่อลูกค้า",
+      "codeLabel": "รหัส *",
+      "phoneLabel": "เบอร์โทร *",
+      "typeLabel": "ประเภท",
+      "emailLabel": "อีเมล"
+    },
+    "customerType": {
+      "individual": "บุคคลธรรมดา",
+      "company": "บริษัท",
+      "government": "หน่วยงานราชการ"
+    },
+    "customerSearch": {
+      "placeholder": "ค้นหาลูกค้า...",
+      "noResults": "ไม่พบลูกค้า"
+    },
+    "productSearch": {
+      "placeholder": "ค้นหาสินค้า..."
+    },
+    "itemEditor": {
+      "addItem": "เพิ่มรายการ",
+      "discountPercent": "ส่วนลด (%)"
+    },
+    "totals": {
+      "discountLabel": "ส่วนลด (฿)",
+      "vatLabel": "VAT ({{rate}}%)",
+      "discountAmount": "ส่วนลด (฿)"
+    },
+    "quotationModal": {
+      "titleCreate": "สร้างใบเสนอราคา",
+      "titleEdit": "แก้ไขใบเสนอราคา {{number}}",
+      "customerLabel": "ลูกค้า *",
+      "expiryDateLabel": "วันหมดอายุ",
+      "notesLabel": "หมายเหตุ",
+      "notesPlaceholder": "หมายเหตุ..."
+    },
+    "orderModal": {
+      "titleCreate": "สร้างคำสั่งขาย",
+      "titleEdit": "แก้ไขคำสั่งขาย {{number}}",
+      "titleConvert": "แปลง {{quotation}} → SO",
+      "customerLabel": "ลูกค้า *",
+      "notesLabel": "หมายเหตุ",
+      "notesPlaceholder": "หมายเหตุ..."
+    },
+    "soActions": {
+      "confirmSO": "ยืนยันคำสั่งขาย",
+      "startProcessing": "เริ่มจัดเตรียม",
+      "createInvoice": "ออกใบแจ้งหนี้"
+    },
+    "soDetail": {
+      "orderDate": "วันสั่งซื้อ",
+      "stockInsufficient": "สต็อกไม่พอ (มี {{qty}} ชิ้น)"
+    },
+    "invoiceDetail": {
+      "issuedDate": "วันที่ออก",
+      "totalAmount": "ยอดรวม",
+      "balanceAmount": "ยอดคงค้าง",
+      "summary": "สรุป",
+      "beforeTax": "ก่อนภาษี",
+      "paidAmount": "ชำระแล้ว",
+      "netAfterWht": "สุทธิหลังหัก ณ ที่จ่าย",
+      "paymentHistory": "ประวัติการชำระ",
+      "noPayments": "ยังไม่มีการชำระ",
+      "attachments": "ไฟล์แนบ",
+      "addImage": "เพิ่มรูปภาพ",
+      "noAttachments": "ไม่มีไฟล์แนบ",
+      "withholdingTax": "หัก ณ ที่จ่าย {{type}} {{rate}}%"
+    },
+    "paymentModal": {
+      "title": "บันทึกการรับเงิน",
+      "amountLabel": "จำนวนเงิน",
+      "methodLabel": "วิธีชำระ",
+      "dateLabel": "วันที่รับ",
+      "refLabel": "เลขที่อ้างอิง",
+      "refPlaceholder": "เช่น เลขสลิป / เลขเช็ค",
+      "notePlaceholder": "หมายเหตุ...",
+      "maxAmountPlaceholder": "สูงสุด {{amount}}",
+      "debitLabel": "รับเงิน",
+      "creditLabel": "ลดลูกหนี้"
+    },
+    "creditNoteModal": {
+      "title": "สร้างใบลดหนี้",
+      "invoiceLabel": "ใบแจ้งหนี้อ้างอิง",
+      "selectInvoice": "-- เลือกใบแจ้งหนี้ --",
+      "dateLabel": "วันที่ลดหนี้",
+      "reasonLabel": "เหตุผล",
+      "reasonPlaceholder": "ระบุเหตุผลการลดหนี้..."
+    },
+    "creditNoteStatus": {
+      "draft": "ร่าง",
+      "issued": "ออกแล้ว",
+      "applied": "ปรับปรุงแล้ว",
+      "cancelled": "ยกเลิก"
+    },
+    "creditNoteDetail": {
+      "invoiceRef": "อ้างอิงใบแจ้งหนี้",
+      "issuedDate": "วันที่ออก",
+      "amount": "ยอดลดหนี้"
+    },
+    "backorderStatus": {
+      "pending": "รอดำเนินการ",
+      "fulfilled": "จัดส่งครบ",
+      "cancelled": "ยกเลิก"
+    },
+    "backorderDetail": {
+      "itemsTitle": "รายการค้างส่ง",
+      "ordered": "สั่ง",
+      "delivered": "ส่งแล้ว",
+      "remaining": "ค้าง",
+      "noItems": "ไม่มีรายการค้างส่ง"
+    },
+    "paymentAccount": {
+      "bank": "1101 เงินฝากธนาคาร",
+      "cash": "1100 เงินสด",
+      "receivable": "1110 ลูกหนี้การค้า"
+    },
+    "statusBadge": {
+      "outOfStock": "สต็อกไม่พอ (มี {{count}} ชิ้น)",
+      "pendingDelivery": "ค้างส่ง {{count}}"
     }
   },
   "crm": {
