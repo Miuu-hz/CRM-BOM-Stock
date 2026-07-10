@@ -49,6 +49,12 @@ export function can(
     dept => departmentResources[dept as Department]?.includes(resource as Resource)
   )
 
+  // CEO or IT department → admin-level: all actions on all business resources
+  if (departments.some(d => d === 'CEO' || d === 'IT')) {
+    if (SYSTEM_RESOURCES.includes(resource)) return false
+    return true
+  }
+
   if (role === 'MANAGER')   return ['read', 'write', 'approve', 'delete'].includes(action) && hasDepAccess
   if (role === 'POWERUSER') return ['read', 'write', 'approve'].includes(action)
   if (role === 'USER')      return ['read', 'write'].includes(action) && hasDepAccess

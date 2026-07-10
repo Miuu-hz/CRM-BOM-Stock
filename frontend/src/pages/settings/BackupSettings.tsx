@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   Database, UploadCloud, Download, Trash2, RefreshCw,
   CheckCircle, XCircle, Clock, AlertTriangle, Info,
@@ -18,14 +19,6 @@ interface BackupLog {
   completed_at: string | null
 }
 
-const STATUS_CONFIG = {
-  SUCCESS:  { label: 'สำเร็จ',      icon: CheckCircle,    color: 'text-success',          bg: 'bg-[var(--success-soft)]' },
-  PARTIAL:  { label: 'บางส่วน',     icon: AlertTriangle,  color: 'text-warning',          bg: 'bg-[var(--warning-soft)]' },
-  FAILED:   { label: 'ล้มเหลว',     icon: XCircle,        color: 'text-danger',           bg: 'bg-[var(--danger-soft)]'  },
-  RUNNING:  { label: 'กำลังทำงาน', icon: RefreshCw,      color: 'text-[var(--primary)]', bg: 'bg-[var(--primary-soft)]' },
-  PENDING:  { label: 'รอดำเนินการ', icon: Clock,          color: 'text-[var(--fg-3)]',    bg: 'bg-[var(--surface-2)]'    },
-}
-
 function fmtSize(bytes: number | null) {
   if (!bytes) return '-'
   if (bytes < 1024) return `${bytes} B`
@@ -39,6 +32,7 @@ function fmtDate(iso: string | null) {
 }
 
 export default function BackupSettings() {
+  const { t } = useTranslation()
   const [backups, setBackups] = useState<BackupLog[]>([])
   const [driveConfigured, setDriveConfigured] = useState(false)
   const [lastBackup, setLastBackup] = useState<string | null>(null)
@@ -54,7 +48,7 @@ export default function BackupSettings() {
       setDriveConfigured(res.data.data.driveConfigured)
       setLastBackup(res.data.data.lastBackup)
     } catch {
-      toast.error('โหลดข้อมูล backup ไม่สำเร็จ')
+      toast.error(t('settings.backup.toast.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -67,9 +61,9 @@ export default function BackupSettings() {
     try {
       const res = await api.post('/backup/trigger')
       setBackups(res.data.data.backups)
-      toast.success('Backup สำเร็จ!')
+      toast.success(t('settings.backup.toast.success'))
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Backup ล้มเหลว')
+      toast.error(err.response?.data?.message || t('settings.backup.toast.failed'))
     } finally {
       setTriggering(false)
     }
@@ -87,14 +81,14 @@ export default function BackupSettings() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('ลบ backup นี้? (ลบทั้งไฟล์ local และ Google Drive)')) return
+    if (!confirm(t('settings.backup.toast.deleteConfirm'))) return
     setDeletingId(id)
     try {
       await api.delete(`/backup/${id}`)
       setBackups(prev => prev.filter(b => b.id !== id))
-      toast.success('ลบ backup แล้ว')
+      toast.success(t('settings.backup.toast.deleteSuccess'))
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'ลบไม่สำเร็จ')
+      toast.error(err.response?.data?.message || t('settings.backup.toast.deleteFailed'))
     } finally {
       setDeletingId(null)
     }
@@ -104,7 +98,6 @@ export default function BackupSettings() {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token') || ''
     const a = document.createElement('a')
     a.href = `/api/backup/download/${id}`
-    // Use fetch with auth header for protected download
     fetch(`/api/backup/download/${id}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.blob())
       .then(blob => {
@@ -113,12 +106,22 @@ export default function BackupSettings() {
         a.click()
         URL.revokeObjectURL(a.href)
       })
-      .catch(() => toast.error('ดาวน์โหลดไม่สำเร็จ'))
+      .catch(() => toast.error(t('settings.backup.toast.downloadFailed')))
   }
 
   const nextBackup = lastBackup
     ? new Date(new Date(lastBackup).getTime() + 3 * 24 * 60 * 60 * 1000)
     : null
+
+  const getStatusConfig = (status: BackupLog['status']) => {
+    switch (status) {
+      case 'SUCCESS': return { label: t('settings.backup.status.SUCCESS'), icon: CheckCircle, color: 'text-success', bg: 'bg-[var(--success-soft)]' }
+      case 'PARTIAL': return { label: t('settings.backup.status.PARTIAL'), icon: AlertTriangle, color: 'text-warning', bg: 'bg-[var(--warning-soft)]' }
+      case 'FAILED': return { label: t('settings.backup.status.FAILED'), icon: XCircle, color: 'text-danger', bg: 'bg-[var(--danger-soft)]' }
+      case 'RUNNING': return { label: t('settings.backup.status.RUNNING'), icon: RefreshCw, color: 'text-[var(--primary)]', bg: 'bg-[var(--primary-soft)]' }
+      default: return { label: t('settings.backup.status.PENDING'), icon: Clock, color: 'text-[var(--fg-3)]', bg: 'bg-[var(--surface-2)]' }
+    }
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -127,10 +130,10 @@ export default function BackupSettings() {
         <div>
           <h2 className="text-xl font-bold text-[var(--fg-1)] flex items-center gap-2">
             <Database className="w-5 h-5 text-[var(--primary)]" />
-            Auto Backup
+            {t('settings.backup.title')}
           </h2>
           <p className="text-sm text-[var(--fg-3)] mt-1">
-            สำรองฐานข้อมูลอัตโนมัติทุก 3 วัน · เฉพาะ Master เท่านั้น
+            {t('settings.backup.subtitle')}
           </p>
         </div>
         <button
@@ -141,26 +144,26 @@ export default function BackupSettings() {
           {triggering
             ? <RefreshCw className="w-4 h-4 animate-spin" />
             : <Database className="w-4 h-4" />}
-          {triggering ? 'กำลัง Backup...' : 'Backup ตอนนี้เลย'}
+          {triggering ? t('settings.backup.backingUp') : t('settings.backup.backupNow')}
         </button>
       </div>
 
       {/* Status cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="phopy-card p-4 space-y-1">
-          <p className="text-xs text-[var(--fg-3)]">Backup ล่าสุด</p>
+          <p className="text-xs text-[var(--fg-3)]">{t('settings.backup.latest')}</p>
           <p className="font-semibold text-[var(--fg-1)]">{fmtDate(lastBackup)}</p>
         </div>
         <div className="phopy-card p-4 space-y-1">
-          <p className="text-xs text-[var(--fg-3)]">Backup ถัดไป (ประมาณ)</p>
-          <p className="font-semibold text-[var(--fg-1)]">{nextBackup ? fmtDate(nextBackup.toISOString()) : 'ยังไม่เคย backup'}</p>
+          <p className="text-xs text-[var(--fg-3)]">{t('settings.backup.next')}</p>
+          <p className="font-semibold text-[var(--fg-1)]">{nextBackup ? fmtDate(nextBackup.toISOString()) : t('settings.backup.never')}</p>
         </div>
         <div className="phopy-card p-4 space-y-1">
-          <p className="text-xs text-[var(--fg-3)]">Google Drive</p>
+          <p className="text-xs text-[var(--fg-3)]">{t('settings.backup.googleDrive')}</p>
           <div className="flex items-center gap-2">
             {driveConfigured
-              ? <><CheckCircle className="w-4 h-4 text-success" /><span className="text-success font-semibold text-sm">ตั้งค่าแล้ว</span></>
-              : <><XCircle className="w-4 h-4 text-danger" /><span className="text-danger font-semibold text-sm">ยังไม่ได้ตั้งค่า</span></>}
+              ? <><CheckCircle className="w-4 h-4 text-success" /><span className="text-success font-semibold text-sm">{t('settings.backup.configured')}</span></>
+              : <><XCircle className="w-4 h-4 text-danger" /><span className="text-danger font-semibold text-sm">{t('settings.backup.notConfigured')}</span></>}
           </div>
         </div>
       </div>
@@ -171,15 +174,15 @@ export default function BackupSettings() {
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
             <div className="space-y-3 text-sm">
-              <p className="font-semibold text-[var(--fg-1)]">วิธีตั้งค่า Google Drive backup</p>
+              <p className="font-semibold text-[var(--fg-1)]">{t('settings.backup.setupTitle')}</p>
               <ol className="space-y-1.5 text-[var(--fg-2)] list-decimal ml-4">
-                <li>ไปที่ <span className="font-mono text-[var(--primary)]">console.cloud.google.com</span> → สร้าง Project ใหม่</li>
-                <li>เปิด <strong>Google Drive API</strong> → APIs &amp; Services → Enable</li>
-                <li>สร้าง <strong>Service Account</strong> → IAM &amp; Admin → Create Service Account</li>
-                <li>Download JSON key → Actions → Manage Keys → Add Key → JSON</li>
-                <li>สร้าง folder ใน Google Drive → Share กับ email ของ Service Account (Editor)</li>
-                <li>คัดลอก Folder ID จาก URL: <span className="font-mono text-xs bg-[var(--surface)] px-1 rounded">drive.google.com/drive/folders/<strong>FOLDER_ID</strong></span></li>
-                <li>เพิ่มใน <code className="font-mono text-xs bg-[var(--surface)] px-1 rounded">backend/.env</code>:</li>
+                <li dangerouslySetInnerHTML={{ __html: t('settings.backup.setupSteps.0', { consoleUrl: '<span class="font-mono text-[var(--primary)]">console.cloud.google.com</span>' }) }} />
+                <li dangerouslySetInnerHTML={{ __html: t('settings.backup.setupSteps.1', { driveApi: '<strong>Google Drive API</strong>' }) }} />
+                <li dangerouslySetInnerHTML={{ __html: t('settings.backup.setupSteps.2', { serviceAccount: '<strong>Service Account</strong>' }) }} />
+                <li>{t('settings.backup.setupSteps.3')}</li>
+                <li>{t('settings.backup.setupSteps.4')}</li>
+                <li dangerouslySetInnerHTML={{ __html: t('settings.backup.setupSteps.5', { folderUrl: '<span class="font-mono text-xs bg-[var(--surface)] px-1 rounded">drive.google.com/drive/folders/<strong>FOLDER_ID</strong></span>' }) }} />
+                <li dangerouslySetInnerHTML={{ __html: t('settings.backup.setupSteps.6', { envFile: '<code class="font-mono text-xs bg-[var(--surface)] px-1 rounded">backend/.env</code>' }) }} />
               </ol>
               <pre className="bg-[var(--surface)] rounded-lg p-3 text-xs font-mono text-[var(--fg-2)] overflow-x-auto">
 {`GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","private_key":"...","client_email":"...",...}'
@@ -201,16 +204,16 @@ GOOGLE_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz`}
             {testingDrive
               ? <RefreshCw className="w-4 h-4 animate-spin" />
               : <UploadCloud className="w-4 h-4" />}
-            ทดสอบเชื่อมต่อ Google Drive
+            {t('settings.backup.testDrive')}
           </button>
-          <p className="text-xs text-[var(--fg-3)]">ตรวจสอบว่า Service Account เข้าถึง folder ได้</p>
+          <p className="text-xs text-[var(--fg-3)]">{t('settings.backup.testDriveHint')}</p>
         </div>
       )}
 
       {/* Backup history table */}
       <div className="phopy-card overflow-hidden">
         <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
-          <p className="font-semibold text-[var(--fg-1)] text-sm">ประวัติ Backup</p>
+          <p className="font-semibold text-[var(--fg-1)] text-sm">{t('settings.backup.historyTitle')}</p>
           <button onClick={load} className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--surface-2)] rounded transition-colors">
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -223,23 +226,23 @@ GOOGLE_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz`}
         ) : backups.length === 0 ? (
           <div className="text-center py-12 text-[var(--fg-3)]">
             <Database className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p>ยังไม่มี backup</p>
+            <p>{t('settings.backup.empty')}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)]">
-                  <th className="text-left px-5 py-3 text-[var(--fg-3)] font-medium">ไฟล์</th>
-                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">ขนาด</th>
-                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">สถานะ</th>
-                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">วันที่</th>
-                  <th className="text-center px-4 py-3 text-[var(--fg-3)] font-medium">Actions</th>
+                  <th className="text-left px-5 py-3 text-[var(--fg-3)] font-medium">{t('settings.backup.table.file')}</th>
+                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">{t('settings.backup.table.size')}</th>
+                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">{t('settings.backup.table.status')}</th>
+                  <th className="text-left px-4 py-3 text-[var(--fg-3)] font-medium">{t('settings.backup.table.date')}</th>
+                  <th className="text-center px-4 py-3 text-[var(--fg-3)] font-medium">{t('settings.backup.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {backups.map(b => {
-                  const cfg = STATUS_CONFIG[b.status] ?? STATUS_CONFIG.PENDING
+                  const cfg = getStatusConfig(b.status)
                   const Icon = cfg.icon
                   return (
                     <tr key={b.id} className="border-b border-[var(--border)]/30 hover:bg-[var(--surface-2)] transition-colors">
@@ -267,7 +270,7 @@ GOOGLE_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz`}
                             <button
                               onClick={() => handleDownload(b.id, b.filename)}
                               className="p-1.5 text-[var(--primary)] hover:bg-[var(--primary-soft)] rounded transition-colors"
-                              title="Download"
+                              title={t('settings.backup.table.download')}
                             >
                               <Download className="w-4 h-4" />
                             </button>
@@ -276,7 +279,7 @@ GOOGLE_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz`}
                             onClick={() => handleDelete(b.id)}
                             disabled={deletingId === b.id}
                             className="p-1.5 text-danger hover:bg-[var(--danger-soft)] rounded transition-colors disabled:opacity-40"
-                            title="ลบ"
+                            title={t('common.delete')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -292,7 +295,7 @@ GOOGLE_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz`}
       </div>
 
       <p className="text-xs text-[var(--fg-4)] text-center">
-        เก็บไฟล์ล่าสุด 10 ชุดในเซิร์ฟเวอร์ · backup อัตโนมัติทุกคืน 02:00 น. ถ้าเกิน 3 วันนับจาก backup ล่าสุด
+        {t('settings.backup.footer')}
       </p>
     </motion.div>
   )

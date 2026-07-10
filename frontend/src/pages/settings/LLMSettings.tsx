@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   Brain,
   CheckCircle,
@@ -21,6 +22,7 @@ import {
 } from '../../services/llm'
 
 export default function LLMSettings() {
+  const { t } = useTranslation()
   const [kimiVersion, setKimiVersion] = useState<string | null>(null)
   const [kimiOnline, setKimiOnline] = useState<boolean | null>(null)
   const [statusLoading, setStatusLoading] = useState(false)
@@ -62,17 +64,17 @@ export default function LLMSettings() {
   }
 
   const handleMcpRegenerate = async () => {
-    if (!confirm('สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?')) return
+    if (!confirm(t('settings.llm.mcp.regenerateConfirm'))) return
     setMcpRegenLoading(true)
     setMcpTestSteps(null)
     try {
       const res = await regenerateMcpKey()
       if (res.success) {
         setMcpKey(res.data.key)
-        toast.success('สร้าง API Key ใหม่แล้ว')
+        toast.success(t('settings.llm.mcp.regenerateSuccess'))
       }
     } catch {
-      toast.error('สร้าง Key ไม่สำเร็จ')
+      toast.error(t('settings.llm.mcp.regenerateFailed'))
     } finally {
       setMcpRegenLoading(false)
     }
@@ -85,7 +87,7 @@ export default function LLMSettings() {
       const res = await testMcpServer()
       setMcpTestSteps(res.steps)
     } catch {
-      toast.error('ทดสอบไม่สำเร็จ')
+      toast.error(t('settings.llm.mcp.testFailed'))
     } finally {
       setMcpTestLoading(false)
     }
@@ -100,10 +102,10 @@ export default function LLMSettings() {
       if (res.success) {
         setChatReply(res.reply)
       } else {
-        toast.error(res.message || 'ส่งข้อความไม่สำเร็จ')
+        toast.error(res.message || t('settings.llm.mcp.sendFailed'))
       }
     } catch {
-      toast.error('เกิดข้อผิดพลาด')
+      toast.error(t('settings.llm.mcp.error'))
     } finally {
       setChatLoading(false)
     }
@@ -115,9 +117,9 @@ export default function LLMSettings() {
       <div>
         <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
           <Brain className="w-5 h-5 text-[var(--primary)]" />
-          AI Assistant
+          {t('settings.llm.title')}
         </h2>
-        <p className="text-sm text-[var(--fg-3)]">Kimi Code CLI — ผู้ช่วย AI สำหรับระบบ ERP</p>
+        <p className="text-sm text-[var(--fg-3)]">{t('settings.llm.subtitle')}</p>
       </div>
 
       {/* Kimi Status */}
@@ -128,15 +130,15 @@ export default function LLMSettings() {
               <Terminal className={`w-5 h-5 ${kimiOnline ? 'text-success' : kimiOnline === false ? 'text-danger' : 'text-[var(--fg-4)]'}`} />
             </div>
             <div>
-              <p className="font-semibold text-[var(--fg-1)]">Kimi Code CLI</p>
+              <p className="font-semibold text-[var(--fg-1)]">{t('settings.llm.kimi.name')}</p>
               <p className="text-xs text-[var(--fg-3)]">
                 {statusLoading
-                  ? 'กำลังตรวจสอบ...'
+                  ? t('settings.llm.kimi.checking')
                   : kimiOnline && kimiVersion
-                    ? `v${kimiVersion} — พร้อมใช้งาน`
+                    ? t('settings.llm.kimi.online', { version: kimiVersion })
                     : kimiOnline === false
-                      ? 'ไม่สามารถเชื่อมต่อได้'
-                      : 'ยังไม่ได้ตรวจสอบ'}
+                      ? t('settings.llm.kimi.offline')
+                      : t('settings.llm.kimi.notChecked')}
               </p>
             </div>
           </div>
@@ -152,7 +154,7 @@ export default function LLMSettings() {
               className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:border-phopy-indigo/50 hover:text-[var(--primary)] transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${statusLoading ? 'animate-spin' : ''}`} />
-              ตรวจสอบ
+              {t('settings.llm.kimi.check')}
             </button>
           </div>
         </div>
@@ -163,8 +165,8 @@ export default function LLMSettings() {
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-[var(--primary)]" />
           <div>
-            <h3 className="text-lg font-bold text-[var(--fg-1)]">AI Playground</h3>
-            <p className="text-xs text-[var(--fg-3)]">ทดสอบถามคำถามเกี่ยวกับข้อมูลในระบบ</p>
+            <h3 className="text-lg font-bold text-[var(--fg-1)]">{t('settings.llm.playground.title')}</h3>
+            <p className="text-xs text-[var(--fg-3)]">{t('settings.llm.playground.subtitle')}</p>
           </div>
         </div>
 
@@ -172,7 +174,7 @@ export default function LLMSettings() {
           <textarea
             value={chatMsg}
             onChange={(e) => setChatMsg(e.target.value)}
-            placeholder="เช่น หมูสับในสต็อกมีเท่าไหร่, ยอดขายเดือนนี้เป็นยังไงบ้าง..."
+            placeholder={t('settings.llm.playground.placeholder')}
             className="phopy-input w-full resize-none"
             rows={3}
             onKeyDown={(e) => {
@@ -188,7 +190,7 @@ export default function LLMSettings() {
             className="phopy-btn-primary px-4 flex flex-col items-center justify-center gap-1 disabled:opacity-50"
           >
             {chatLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            <span className="text-xs">ส่ง</span>
+            <span className="text-xs">{t('settings.llm.playground.send')}</span>
           </button>
         </div>
 
@@ -202,7 +204,7 @@ export default function LLMSettings() {
             >
               <div className="flex items-center gap-2 text-[var(--primary)] text-sm font-medium">
                 <Bot className="w-4 h-4" />
-                Kimi ตอบ
+                {t('settings.llm.playground.replyLabel')}
               </div>
               <div className="text-[var(--fg-2)] whitespace-pre-wrap text-sm leading-relaxed">
                 {chatReply}
@@ -217,27 +219,27 @@ export default function LLMSettings() {
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-purple-400" />
           <div>
-            <h3 className="text-lg font-bold text-[var(--fg-1)]">MCP Server</h3>
-            <p className="text-xs text-[var(--fg-3)]">สำหรับ AI clients ที่รองรับ MCP protocol</p>
+            <h3 className="text-lg font-bold text-[var(--fg-1)]">{t('settings.llm.mcp.title')}</h3>
+            <p className="text-xs text-[var(--fg-3)]">{t('settings.llm.mcp.subtitle')}</p>
           </div>
         </div>
 
         {!mcpKey ? (
           <div className="text-center py-4 space-y-3">
-            <p className="text-sm text-[var(--fg-3)]">ยังไม่มี API Key — สร้างเพื่อเปิดใช้งาน MCP</p>
+            <p className="text-sm text-[var(--fg-3)]">{t('settings.llm.mcp.noKey')}</p>
             <button
               onClick={handleMcpRegenerate}
               disabled={mcpRegenLoading}
               className="phopy-btn-primary text-sm flex items-center gap-2 mx-auto"
             >
               {mcpRegenLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              สร้าง API Key
+              {t('settings.llm.mcp.generateKey')}
             </button>
           </div>
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1">MCP Server URL</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.llm.mcp.urlLabel')}</label>
               <div className="flex gap-2">
                 <input
                   readOnly
@@ -249,12 +251,12 @@ export default function LLMSettings() {
                   onClick={() => {
                     if (mcpUrl) {
                       navigator.clipboard.writeText(mcpUrl)
-                      toast.success('คัดลอก URL แล้ว')
+                      toast.success(t('settings.llm.mcp.copied'))
                     }
                   }}
                   className="px-3 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors text-sm whitespace-nowrap"
                 >
-                  Copy
+                  {t('common.copy')}
                 </button>
               </div>
             </div>
@@ -266,7 +268,7 @@ export default function LLMSettings() {
                 className="px-4 py-2 rounded-lg border border-phopy-indigo/50 text-[var(--primary)] hover:bg-phopy-indigo/10 transition-colors text-sm flex items-center gap-2"
               >
                 {mcpTestLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Test MCP
+                {t('settings.llm.mcp.test')}
               </button>
               <button
                 onClick={handleMcpRegenerate}
@@ -274,7 +276,7 @@ export default function LLMSettings() {
                 className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-danger hover:border-[var(--danger-soft)] transition-colors text-sm flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
-                Regenerate Key
+                {t('settings.llm.mcp.regenerate')}
               </button>
             </div>
 
@@ -284,7 +286,7 @@ export default function LLMSettings() {
                 animate={{ opacity: 1, y: 0 }}
                 className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
               >
-                <p className="text-sm font-medium text-[var(--fg-2)] mb-2">ผลการทดสอบ MCP Server</p>
+                <p className="text-sm font-medium text-[var(--fg-2)] mb-2">{t('settings.llm.mcp.resultTitle')}</p>
                 {mcpTestSteps.map((s, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     {s.ok
@@ -298,7 +300,7 @@ export default function LLMSettings() {
                   </div>
                 ))}
                 {mcpTestSteps.every((s) => s.ok) && (
-                  <p className="text-success text-sm font-medium pt-1">MCP Server พร้อมใช้งาน</p>
+                  <p className="text-success text-sm font-medium pt-1">{t('settings.llm.mcp.ready')}</p>
                 )}
               </motion.div>
             )}

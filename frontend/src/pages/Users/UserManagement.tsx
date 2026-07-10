@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   UserPlus, Pencil, Trash2, X, ChevronDown, ChevronUp,
@@ -48,6 +49,7 @@ function RoleBadge({ role }: { role: Role }) {
 const emptyForm = { name: '', email: '', password: '', role: 'USER' as Role, departments: [] as string[], custom_permissions: {} as Record<string, boolean> }
 
 export default function UserManagement() {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,11 +68,11 @@ export default function UserManagement() {
       const res = await api.get('/users')
       setUsers(res.data.data)
     } catch (e: any) {
-      setError(e.response?.data?.message || 'โหลดข้อมูลไม่สำเร็จ')
+      setError(e.response?.data?.message || t('settings.userManagement.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { loadUsers() }, [loadUsers])
 
@@ -134,7 +136,7 @@ export default function UserManagement() {
       await loadUsers()
       closeModal()
     } catch (e: any) {
-      setError(e.response?.data?.message || 'บันทึกไม่สำเร็จ')
+      setError(e.response?.data?.message || t('settings.userManagement.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -148,7 +150,7 @@ export default function UserManagement() {
       await loadUsers()
       setDeleteTarget(null)
     } catch (e: any) {
-      setError(e.response?.data?.message || 'ลบไม่สำเร็จ')
+      setError(e.response?.data?.message || t('settings.userManagement.deleteFailed'))
     } finally {
       setDeleting(false)
     }
@@ -162,12 +164,12 @@ export default function UserManagement() {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold text-[var(--fg-1)]">จัดการผู้ใช้งาน</h1>
-          <p className="text-sm text-[var(--fg-3)] mt-1">กำหนด role แผนก และสิทธิ์การเข้าถึง</p>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('settings.userManagement.title')}</h1>
+          <p className="text-sm text-[var(--fg-3)] mt-1">{t('settings.userManagement.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="phopy-btn-primary flex items-center gap-2 px-4 py-2">
           <UserPlus className="w-4 h-4" />
-          เพิ่ม User
+          {t('settings.userManagement.addUser')}
         </button>
       </motion.div>
 
@@ -187,16 +189,16 @@ export default function UserManagement() {
         {loading ? (
           <div className="p-12 text-center text-[var(--fg-3)]">
             <div className="w-8 h-8 border-2 border-[var(--primary)]/30 border-t-[var(--primary)] rounded-full animate-spin mx-auto mb-3" />
-            กำลังโหลด...
+            {t('common.loading')}
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]/50">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">ผู้ใช้งาน</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">Role</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">แผนก</th>
-                <th className="text-right px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">จัดการ</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('settings.userManagement.userCol')}</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('settings.userManagement.roleCol')}</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('settings.userManagement.departmentCol')}</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
@@ -225,7 +227,7 @@ export default function UserManagement() {
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap gap-1">
                       {u.departments.length === 0 ? (
-                        <span className="text-xs text-[var(--fg-3)]">—</span>
+                        <span className="text-xs text-[var(--fg-3)]">{t('settings.userManagement.noDepartment')}</span>
                       ) : (
                         u.departments.map(d => (
                           <span key={d} className="px-2 py-0.5 bg-[var(--surface-2)] border border-[var(--border)] rounded text-xs text-[var(--fg-2)]">
@@ -235,7 +237,7 @@ export default function UserManagement() {
                       )}
                       {u.custom_permissions && Object.keys(u.custom_permissions).length > 0 && (
                         <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-400">
-                          +custom
+                          {t('settings.userManagement.customBadge')}
                         </span>
                       )}
                     </div>
@@ -277,7 +279,7 @@ export default function UserManagement() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
                 <h2 className="text-lg font-semibold text-[var(--fg-1)]">
-                  {modalMode === 'create' ? 'เพิ่มผู้ใช้ใหม่' : `แก้ไข: ${selectedUser?.name}`}
+                  {modalMode === 'create' ? t('settings.userManagement.modal.titleCreate') : t('settings.userManagement.modal.titleEdit', { name: selectedUser?.name })}
                 </h2>
                 <button onClick={closeModal} className="p-1 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)]">
                   <X className="w-5 h-5" />
@@ -288,43 +290,43 @@ export default function UserManagement() {
                 {/* Basic Info */}
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-1.5">ชื่อ *</label>
+                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-1.5">{t('settings.userManagement.modal.nameLabel')}</label>
                     <input
                       type="text"
                       value={form.name}
                       onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                       className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
-                      placeholder="ชื่อผู้ใช้งาน"
+                      placeholder={t('settings.userManagement.modal.namePlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-1.5">Email *</label>
+                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-1.5">{t('settings.userManagement.modal.emailLabel')}</label>
                     <input
                       type="email"
                       value={form.email}
                       onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                       disabled={modalMode === 'edit'}
                       className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50"
-                      placeholder="email@example.com"
+                      placeholder={t('settings.userManagement.modal.emailPlaceholder')}
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[var(--fg-3)] mb-1.5">
-                      รหัสผ่าน {modalMode === 'edit' && <span className="font-normal text-[var(--fg-3)]">(เว้นว่างถ้าไม่เปลี่ยน)</span>}
+                      {t('settings.userManagement.modal.passwordLabel')} {modalMode === 'edit' && <span className="font-normal text-[var(--fg-3)]">{t('settings.userManagement.modal.passwordHintEdit')}</span>}
                     </label>
                     <input
                       type="password"
                       value={form.password}
                       onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                       className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
-                      placeholder={modalMode === 'create' ? 'รหัสผ่าน *' : '••••••••'}
+                      placeholder={modalMode === 'create' ? t('settings.userManagement.modal.passwordPlaceholderCreate') : t('settings.userManagement.modal.passwordPlaceholderEdit')}
                     />
                   </div>
                 </div>
 
                 {/* Role */}
                 <div>
-                  <label className="block text-xs font-medium text-[var(--fg-3)] mb-2">Role</label>
+                  <label className="block text-xs font-medium text-[var(--fg-3)] mb-2">{t('settings.userManagement.modal.roleLabel')}</label>
                   <div className="flex flex-wrap gap-2">
                     {(['ADMIN', 'MANAGER', 'POWERUSER', 'USER'] as Role[]).map(r => (
                       <button
@@ -342,17 +344,14 @@ export default function UserManagement() {
                     ))}
                   </div>
                   <p className="text-[10px] text-[var(--fg-3)] mt-1.5">
-                    {form.role === 'ADMIN' && 'เข้าถึงได้ทุกอย่างในระบบ'}
-                    {form.role === 'MANAGER' && 'อ่าน/เขียน/อนุมัติ/ลบ ในแผนกที่กำหนด'}
-                    {form.role === 'POWERUSER' && 'อ่าน/เขียน/อนุมัติ ทุกแผนก (ไม่ลบ)'}
-                    {form.role === 'USER' && 'อ่าน/เขียน ในแผนกที่กำหนดเท่านั้น'}
+                    {t(`settings.userManagement.roleDescriptions.${form.role}`)}
                   </p>
                 </div>
 
                 {/* Departments */}
                 {(form.role === 'MANAGER' || form.role === 'USER') && (
                   <div>
-                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-2">แผนก (เลือกได้หลายแผนก)</label>
+                    <label className="block text-xs font-medium text-[var(--fg-3)] mb-2">{t('settings.userManagement.modal.departmentsLabel')}</label>
                     <div className="grid grid-cols-3 gap-2">
                       {ALL_DEPARTMENTS.map(dept => (
                         <button
@@ -381,10 +380,10 @@ export default function UserManagement() {
                   >
                     <span className="flex items-center gap-2">
                       <Shield className="w-4 h-4 text-blue-400" />
-                      สิทธิ์ขั้นสูง (Custom Override)
+                      {t('settings.userManagement.modal.advancedTitle')}
                       {Object.keys(form.custom_permissions).length > 0 && (
                         <span className="px-1.5 py-0.5 bg-blue-500/15 text-blue-400 rounded text-xs">
-                          {Object.keys(form.custom_permissions).length} overrides
+                          {t('settings.userManagement.modal.overridesCount', { count: Object.keys(form.custom_permissions).length })}
                         </span>
                       )}
                     </span>
@@ -398,16 +397,16 @@ export default function UserManagement() {
                       >
                         <div className="p-4">
                           <p className="text-xs text-[var(--fg-3)] mb-3">
-                            กำหนด override เฉพาะ user นี้ — จะมีผลก่อน role+แผนก
-                            <span className="text-green-400 ml-2">✅ = อนุญาต</span>
-                            <span className="text-red-400 ml-2">❌ = ปฏิเสธ</span>
-                            <span className="text-[var(--fg-3)] ml-2">⬜ = ตามระบบ</span>
+                            {t('settings.userManagement.modal.advancedHint')}
+                            <span className="text-green-400 ml-2">{t('settings.userManagement.modal.allowed')}</span>
+                            <span className="text-red-400 ml-2">{t('settings.userManagement.modal.denied')}</span>
+                            <span className="text-[var(--fg-3)] ml-2">{t('settings.userManagement.modal.default')}</span>
                           </p>
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr>
-                                  <th className="text-left pb-2 text-[var(--fg-3)]">Resource</th>
+                                  <th className="text-left pb-2 text-[var(--fg-3)]">{t('settings.userManagement.modal.resourceCol')}</th>
                                   {ALL_ACTIONS.map(a => (
                                     <th key={a} className="text-center pb-2 text-[var(--fg-3)] capitalize w-16">{a}</th>
                                   ))}
@@ -430,7 +429,7 @@ export default function UserManagement() {
                                               else togglePerm(resource, action, null)
                                             }}
                                             className="w-7 h-7 rounded flex items-center justify-center mx-auto hover:bg-[var(--surface-2)] transition-colors text-base"
-                                            title={val === undefined ? 'คลิกเพื่อ override' : val ? 'อนุญาต → คลิกเพื่อปฏิเสธ' : 'ปฏิเสธ → คลิกเพื่อล้าง'}
+                                            title={val === undefined ? t('settings.userManagement.modal.overrideNone') : val ? t('settings.userManagement.modal.overrideAllow') : t('settings.userManagement.modal.overrideDeny')}
                                           >
                                             {val === undefined ? '⬜' : val ? '✅' : '❌'}
                                           </button>
@@ -451,14 +450,14 @@ export default function UserManagement() {
 
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border)]">
                 <button onClick={closeModal} className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors">
-                  ยกเลิก
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving || !form.name || !form.email || (modalMode === 'create' && !form.password)}
                   className="phopy-btn-primary px-5 py-2 text-sm disabled:opacity-50"
                 >
-                  {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  {saving ? t('common.saving') : t('common.save')}
                 </button>
               </div>
             </motion.div>
@@ -482,23 +481,23 @@ export default function UserManagement() {
                   <Trash2 className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-[var(--fg-1)]">ยืนยันการลบ</h3>
+                  <h3 className="font-semibold text-[var(--fg-1)]">{t('settings.userManagement.deleteConfirm.title')}</h3>
                   <p className="text-xs text-[var(--fg-3)]">{deleteTarget.email}</p>
                 </div>
               </div>
               <p className="text-sm text-[var(--fg-2)] mb-5">
-                ต้องการลบ <span className="font-medium text-[var(--fg-1)]">{deleteTarget.name}</span> ออกจากระบบใช่ไหม? การกระทำนี้ไม่สามารถย้อนกลับได้
+                {t('settings.userManagement.deleteConfirm.message', { name: deleteTarget.name })}
               </p>
               <div className="flex gap-3">
                 <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors">
-                  ยกเลิก
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
                   className="flex-1 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {deleting ? 'กำลังลบ...' : 'ลบผู้ใช้'}
+                  {deleting ? t('settings.userManagement.deleteConfirm.deleting') : t('settings.userManagement.deleteConfirm.delete')}
                 </button>
               </div>
             </motion.div>

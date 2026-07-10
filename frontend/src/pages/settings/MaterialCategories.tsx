@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   Tag, Plus, Trash2, Edit2, Search, X, Save, Package, Info,
 } from 'lucide-react'
@@ -12,6 +13,7 @@ const ul = (u: string) => UNIT_LABELS[u] ? `${u} (${UNIT_LABELS[u]})` : u
 const VALID_UNITS = Object.keys(UNIT_LABELS)
 
 export default function MaterialCategories() {
+  const { t } = useTranslation()
   const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -33,7 +35,7 @@ export default function MaterialCategories() {
       const data = await materialsService.getCategories()
       setCategories(data ?? [])
     } catch {
-      toast.error('โหลดข้อมูลหมวดหมู่ไม่สำเร็จ')
+      toast.error(t('settings.materialCategories.toast.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -61,7 +63,7 @@ export default function MaterialCategories() {
 
   const handleSave = async () => {
     if (!code.trim() || !name.trim() || !defaultUnit) {
-      return toast.error('กรุณากรอก Code, ชื่อหมวดหมู่ และหน่วยเริ่มต้น')
+      return toast.error(t('settings.materialCategories.toast.validation'))
     }
     setSaving(true)
     try {
@@ -71,7 +73,7 @@ export default function MaterialCategories() {
           defaultUnit,
           description: description.trim() || undefined,
         })
-        toast.success('บันทึกแล้ว')
+        toast.success(t('settings.materialCategories.toast.updateSuccess'))
       } else {
         await materialsService.createCategory({
           code: code.trim(),
@@ -79,25 +81,25 @@ export default function MaterialCategories() {
           defaultUnit,
           description: description.trim() || undefined,
         })
-        toast.success('เพิ่มหมวดหมู่แล้ว')
+        toast.success(t('settings.materialCategories.toast.createSuccess'))
       }
       closeForm()
       fetchAll()
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
+      toast.error(err?.response?.data?.message ?? t('settings.adminUserManagement.toast.error'))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string, label: string) => {
-    if (!confirm(`ลบหมวดหมู่ "${label}" ใช่หรือไม่?`)) return
+    if (!confirm(t('settings.materialCategories.toast.deleteConfirm', { label }))) return
     try {
       await materialsService.deleteCategory(id)
-      toast.success('ลบแล้ว')
+      toast.success(t('settings.materialCategories.toast.deleteSuccess'))
       setCategories(prev => prev.filter(c => c.id !== id))
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
+      toast.error(err?.response?.data?.message ?? t('settings.materialCategories.toast.deleteFailed'))
     }
   }
 
@@ -118,8 +120,8 @@ export default function MaterialCategories() {
             <Tag className="w-5 h-5 text-[var(--primary)]" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-[var(--fg-1)]">หมวดหมู่วัตถุดิบ</h2>
-            <p className="text-xs text-[var(--fg-3)]">จัดการหมวดหมู่และหน่วยเริ่มต้นสำหรับวัตถุดิบใน BOM</p>
+            <h2 className="text-lg font-semibold text-[var(--fg-1)]">{t('settings.materialCategories.title')}</h2>
+            <p className="text-xs text-[var(--fg-3)]">{t('settings.materialCategories.subtitle')}</p>
           </div>
         </div>
         <button
@@ -127,7 +129,7 @@ export default function MaterialCategories() {
           className="phopy-btn-primary flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          เพิ่มหมวดหมู่
+          {t('settings.materialCategories.add')}
         </button>
       </div>
 
@@ -135,7 +137,7 @@ export default function MaterialCategories() {
       <div className="flex items-start gap-2 p-3 bg-phopy-indigo/5 border border-phopy-indigo-50 rounded-lg">
         <Info className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
         <p className="text-xs text-[var(--fg-3)]">
-          หมวดหมู่ถูกใช้ในการจัดกลุ่มวัตถุดิบและกำหนดหน่วยนับเริ่มต้นอัตโนมัติ เมื่อสร้างวัตถุดิบใหม่ใน BOM จะไม่สามารถเปลี่ยนหมวดหมู่ได้ภายหลัง
+          {t('settings.materialCategories.info')}
         </p>
       </div>
 
@@ -144,7 +146,7 @@ export default function MaterialCategories() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
         <input
           type="text"
-          placeholder="ค้นหาหมวดหมู่ หรือรหัส..."
+          placeholder={t('settings.materialCategories.searchPlaceholder')}
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           className="phopy-input w-full pl-9 pr-4"
@@ -160,19 +162,19 @@ export default function MaterialCategories() {
       <div className="phopy-card overflow-hidden">
         <div className="p-4 border-b border-[var(--border)] flex items-center gap-2">
           <Package className="w-4 h-4 text-[var(--primary)]" />
-          <span className="text-sm font-medium text-[var(--fg-2)]">รายการหมวดหมู่</span>
+          <span className="text-sm font-medium text-[var(--fg-2)]">{t('settings.materialCategories.listTitle')}</span>
           <span className="px-2 py-0.5 bg-[var(--primary-soft)] text-[var(--primary)] text-xs rounded-full">
-            {categories.length} รายการ
+            {t('settings.materialCategories.itemCount', { count: categories.length })}
           </span>
         </div>
 
         {loading ? (
-          <div className="p-6 text-center text-[var(--fg-4)] text-sm">กำลังโหลด...</div>
+          <div className="p-6 text-center text-[var(--fg-4)] text-sm">{t('common.loading')}</div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-center">
             <Tag className="w-10 h-10 text-[var(--fg-4)] mx-auto mb-2" />
-            <p className="text-[var(--fg-4)] text-sm">ยังไม่มีหมวดหมู่วัตถุดิบ</p>
-            <p className="text-[var(--fg-4)] text-xs mt-1">เพิ่มหมวดหมู่แรก เช่น วัตถุดิบทั่วไป, สารเคมี, อุปกรณ์</p>
+            <p className="text-[var(--fg-4)] text-sm">{t('settings.materialCategories.empty')}</p>
+            <p className="text-[var(--fg-4)] text-xs mt-1">{t('settings.materialCategories.emptyHint')}</p>
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]/30">
@@ -193,7 +195,7 @@ export default function MaterialCategories() {
                       <span className="px-2 py-0.5 bg-[var(--primary-soft)] border border-phopy-indigo/30 rounded text-[11px] text-[var(--primary)] font-mono font-bold tracking-wide">{c.code}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-[var(--fg-4)] mt-0.5">
-                      <span>หน่วยเริ่มต้น: <span className="text-[var(--primary)] font-medium">{ul(c.defaultUnit)}</span></span>
+                      <span>{t('settings.materialCategories.defaultUnit', { unit: ul(c.defaultUnit) })}</span>
                       {c.description && <span className="truncate max-w-[200px]">· {c.description}</span>}
                     </div>
                   </div>
@@ -202,14 +204,14 @@ export default function MaterialCategories() {
                   <button
                     onClick={() => openEdit(c)}
                     className="p-1.5 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors"
-                    title="แก้ไข"
+                    title={t('common.edit')}
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDelete(c.id, c.name)}
                     className="p-1.5 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
-                    title="ลบ"
+                    title={t('common.delete')}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -237,7 +239,7 @@ export default function MaterialCategories() {
                 <div className="flex items-center gap-2">
                   <Tag className="w-5 h-5 text-[var(--primary)]" />
                   <h3 className="font-semibold text-[var(--fg-1)]">
-                    {editTarget ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่วัตถุดิบ'}
+                    {editTarget ? t('settings.materialCategories.modal.titleEdit') : t('settings.materialCategories.modal.titleCreate')}
                   </h3>
                 </div>
                 <button onClick={closeForm} className="text-[var(--fg-3)] hover:text-[var(--fg-2)] transition-colors">
@@ -248,24 +250,24 @@ export default function MaterialCategories() {
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">รหัส (Code) *</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.materialCategories.modal.codeLabel')}</label>
                     <input
                       type="text"
                       value={code}
                       onChange={e => setCode(e.target.value)}
                       disabled={!!editTarget}
-                      placeholder="เช่น RAW, CHEM"
+                      placeholder={t('settings.materialCategories.modal.codePlaceholder')}
                       className="phopy-input w-full disabled:opacity-50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยเริ่มต้น *</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.materialCategories.modal.unitLabel')}</label>
                     <select
                       value={defaultUnit}
                       onChange={e => setDefaultUnit(e.target.value)}
                       className="phopy-input w-full"
                     >
-                      <option value="">เลือกหน่วย</option>
+                      <option value="">{t('settings.materialCategories.modal.unitPlaceholder')}</option>
                       {VALID_UNITS.map(u => (
                         <option key={u} value={u}>{ul(u)}</option>
                       ))}
@@ -274,37 +276,37 @@ export default function MaterialCategories() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อหมวดหมู่ *</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.materialCategories.modal.nameLabel')}</label>
                   <input
                     type="text"
                     value={name}
                     onChange={e => setName(e.target.value)}
-                    placeholder="เช่น วัตถุดิบทั่วไป, สารเคมี"
+                    placeholder={t('settings.materialCategories.modal.namePlaceholder')}
                     className="phopy-input w-full"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">คำอธิบาย (ไม่บังคับ)</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.materialCategories.modal.descriptionLabel')}</label>
                   <input
                     type="text"
                     value={description}
                     onChange={e => setDescription(e.target.value)}
-                    placeholder="เช่น ใช้สำหรับวัตถุดิบหลักในการผลิต"
+                    placeholder={t('settings.materialCategories.modal.descriptionPlaceholder')}
                     className="phopy-input w-full"
                   />
                 </div>
 
                 <div className="flex gap-3 pt-1">
                   <button onClick={closeForm} className="flex-1 py-2.5 border border-[var(--border)] text-[var(--fg-2)] hover:text-[var(--fg-1)] rounded-lg text-sm transition-colors">
-                    ยกเลิก
+                    {t('common.cancel')}
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}
                     className="flex-1 py-2.5 bg-phopy-indigo hover:bg-phopy-indigo-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
-                    {saving ? <span className="animate-pulse">กำลังบันทึก...</span> : <><Save className="w-4 h-4" />บันทึก</>}
+                    {saving ? <span className="animate-pulse">{t('settings.materialCategories.modal.saving')}</span> : <><Save className="w-4 h-4" />{t('common.save')}</>}
                   </button>
                 </div>
               </div>

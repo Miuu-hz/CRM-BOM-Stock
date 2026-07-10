@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   ArrowRight,
@@ -17,28 +18,41 @@ import {
   ShoppingCart,
   Trash2,
   X,
+  XCircle,
+  ClipboardCheck,
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  DRAFT: { label: 'Draft', color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
-  PLANNED: { label: 'Planned', color: 'bg-[var(--info-soft)] text-blue-400 border-info/30', icon: Clock },
-  IN_PROGRESS: { label: 'In Progress', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Play },
-  ON_HOLD: { label: 'On Hold', color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Pause },
-  COMPLETED: { label: 'Completed', color: 'bg-[var(--success-soft)] text-success border-success/30', icon: CheckCircle },
-  CANCELLED: { label: 'Cancelled', color: 'bg-[var(--danger-soft)] text-danger border-danger/30', icon: X },
+const STATUS_STYLES: Record<string, { color: string; icon: any }> = {
+  DRAFT: { color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
+  PLANNED: { color: 'bg-[var(--info-soft)] text-blue-400 border-info/30', icon: Clock },
+  IN_PROGRESS: { color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Play },
+  ON_HOLD: { color: 'bg-[var(--warning-soft)] text-warning border-warning/30', icon: Pause },
+  COMPLETED: { color: 'bg-[var(--success-soft)] text-success border-success/30', icon: CheckCircle },
+  CANCELLED: { color: 'bg-[var(--danger-soft)] text-danger border-danger/30', icon: X },
 }
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  URGENT: { label: 'Urgent', color: 'text-danger bg-[var(--danger-soft)] border-danger/30' },
-  HIGH: { label: 'High', color: 'text-warning bg-[var(--warning-soft)] border-warning/30' },
-  NORMAL: { label: 'Normal', color: 'text-blue-400 bg-[var(--info-soft)] border-info/30' },
-  LOW: { label: 'Low', color: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]' },
+const PRIORITY_STYLES: Record<string, { color: string }> = {
+  URGENT: { color: 'text-danger bg-[var(--danger-soft)] border-danger/30' },
+  HIGH: { color: 'text-warning bg-[var(--warning-soft)] border-warning/30' },
+  NORMAL: { color: 'text-blue-400 bg-[var(--info-soft)] border-info/30' },
+  LOW: { color: 'text-[var(--fg-3)] bg-[var(--surface-sunken)] border-[var(--border-strong)]' },
+}
+
+function getStatusConfig(t: (key: string) => string, status: string) {
+  const base = STATUS_STYLES[status] || STATUS_STYLES.DRAFT
+  return { ...base, label: t(`workOrders.status.${status.toLowerCase()}`) }
+}
+
+function getPriorityConfig(t: (key: string) => string, priority: string) {
+  const base = PRIORITY_STYLES[priority] || PRIORITY_STYLES.NORMAL
+  return { ...base, label: t(`workOrders.priority.${priority.toLowerCase()}`) }
 }
 
 function WorkOrders() {
+  const { t } = useTranslation()
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [stats, setStats] = useState<WOStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,17 +84,17 @@ function WorkOrders() {
       await workOrderService.updateStatus(id, status)
       loadData()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to update status')
+      alert(err.response?.data?.message || t('workOrders.error.updateStatus'))
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this work order?')) return
+    if (!confirm(t('workOrders.confirmDelete'))) return
     try {
       await workOrderService.delete(id)
       loadData()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete')
+      alert(err.response?.data?.message || t('workOrders.error.delete'))
     }
   }
 
@@ -111,23 +125,23 @@ function WorkOrders() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
-            <span className="text-[var(--fg-1)]">Work Orders</span>
+            <span className="text-[var(--fg-1)]">{t('workOrders.title')}</span>
           </h1>
-          <p className="text-[var(--fg-3)]">จัดการใบสั่งผลิตและติดตามสถานะ</p>
+          <p className="text-[var(--fg-3)]">{t('workOrders.subtitle')}</p>
         </div>
         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreateModal(true)} className="phopy-btn-primary flex items-center gap-2">
-          <Plus className="w-5 h-5" /> Create Work Order
+          <Plus className="w-5 h-5" /> {t('workOrders.createWorkOrder')}
         </motion.button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <StatCard label="Total WOs" value={(stats?.totalOrders ?? 0).toString()} color="text-[var(--primary)]" />
-        <StatCard label="Planned" value={(stats?.planned ?? 0).toString()} color="text-blue-400" />
-        <StatCard label="In Progress" value={(stats?.inProgress ?? 0).toString()} color="text-warning" />
-        <StatCard label="Completed" value={(stats?.completed ?? 0).toString()} color="text-success" />
-        <StatCard label="Total Produced" value={(stats?.totalProduced ?? 0).toLocaleString()} color="text-purple-500" />
+        <StatCard labelKey="workOrders.stats.total" value={(stats?.totalOrders ?? 0).toString()} color="text-[var(--primary)]" />
+        <StatCard labelKey="workOrders.stats.planned" value={(stats?.planned ?? 0).toString()} color="text-blue-400" />
+        <StatCard labelKey="workOrders.stats.inProgress" value={(stats?.inProgress ?? 0).toString()} color="text-warning" />
+        <StatCard labelKey="workOrders.stats.completed" value={(stats?.completed ?? 0).toString()} color="text-success" />
+        <StatCard labelKey="workOrders.stats.totalProduced" value={(stats?.totalProduced ?? 0).toLocaleString()} color="text-purple-500" />
       </div>
 
       {/* Filters */}
@@ -135,7 +149,7 @@ function WorkOrders() {
         <div className="flex flex-col lg:flex-row gap-4 items-center">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
-            <input type="text" placeholder="Search WO number, product, or assignee..."
+            <input type="text" placeholder={t('workOrders.searchPlaceholder')}
               value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="phopy-input pl-10 w-full" />
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -145,7 +159,7 @@ function WorkOrders() {
                   statusFilter === s ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
                     : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]'
                 }`}>
-                {s === 'all' ? 'All' : STATUS_CONFIG[s]?.label || s}
+                {s === 'all' ? t('common.all') : getStatusConfig(t, s).label}
               </button>
             ))}
           </div>
@@ -158,24 +172,24 @@ function WorkOrders() {
           <table className="phopy-table">
             <thead>
               <tr>
-                <th>WO Number</th>
-                <th>Product</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Quantity</th>
-                <th>Progress</th>
-                <th>Due Date</th>
-                <th>Assigned To</th>
-                <th>Actions</th>
+                <th>{t('workOrders.table.woNumber')}</th>
+                <th>{t('workOrders.table.product')}</th>
+                <th>{t('workOrders.table.priority')}</th>
+                <th>{t('workOrders.table.status')}</th>
+                <th>{t('workOrders.table.quantity')}</th>
+                <th>{t('workOrders.table.progress')}</th>
+                <th>{t('workOrders.table.dueDate')}</th>
+                <th>{t('workOrders.table.assignedTo')}</th>
+                <th>{t('workOrders.table.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">No work orders found</td></tr>
+                <tr><td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">{t('workOrders.empty')}</td></tr>
               ) : (
                 filtered.map((wo, i) => {
-                  const statusConf = STATUS_CONFIG[wo.status] || STATUS_CONFIG.DRAFT
-                  const priorityConf = PRIORITY_CONFIG[wo.priority] || PRIORITY_CONFIG.NORMAL
+                  const statusConf = getStatusConfig(t, wo.status)
+                  const priorityConf = getPriorityConfig(t, wo.priority)
                   const progress = wo.quantity > 0 ? Math.round((wo.completed_qty / wo.quantity) * 100) : 0
                   const isOverdue = wo.due_date && new Date(wo.due_date) < new Date() && wo.status !== 'COMPLETED' && wo.status !== 'CANCELLED'
 
@@ -187,7 +201,7 @@ function WorkOrders() {
                       <td>
                         <div>
                           <p className="text-[var(--fg-2)]">{wo.product_name || '-'}</p>
-                          <p className="text-[var(--fg-4)] text-xs">{wo.material_count || 0} materials</p>
+                          <p className="text-[var(--fg-4)] text-xs">{t('workOrders.materialsCount', { count: wo.material_count || 0 })}</p>
                         </div>
                       </td>
                       <td>
@@ -218,7 +232,7 @@ function WorkOrders() {
                         <div className="flex items-center gap-1">
                           {isOverdue && <AlertTriangle className="w-3 h-3 text-danger" />}
                           <span className={`text-sm ${isOverdue ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                            {wo.due_date ? new Date(wo.due_date).toLocaleDateString() : '-'}
+                            {wo.due_date ? new Date(wo.due_date).toLocaleDateString('th-TH') : '-'}
                           </span>
                         </div>
                       </td>
@@ -231,19 +245,19 @@ function WorkOrders() {
                           </button>
                           {wo.status === 'DRAFT' && (
                             <button onClick={() => handleStatusChange(wo.id, 'PLANNED')}
-                              className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg" title="Plan">
+                              className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg" title={t('workOrders.actions.plan')}>
                               <Clock className="w-4 h-4" />
                             </button>
                           )}
                           {wo.status === 'PLANNED' && (
                             <button onClick={() => handleStatusChange(wo.id, 'IN_PROGRESS')}
-                              className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg" title="Start Production">
+                              className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg" title={t('workOrders.actions.startProduction')}>
                               <Play className="w-4 h-4" />
                             </button>
                           )}
                           {wo.status === 'IN_PROGRESS' && (
                             <button onClick={() => handleStatusChange(wo.id, 'COMPLETED')}
-                              className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg" title="Mark Complete">
+                              className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg" title={t('workOrders.actions.markComplete')}>
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
@@ -275,10 +289,11 @@ function WorkOrders() {
   )
 }
 
-function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
+function StatCard({ labelKey, value, color }: { labelKey: string; value: string; color: string }) {
+  const { t } = useTranslation()
   return (
     <div className="phopy-card p-4">
-      <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
+      <p className="text-sm text-[var(--fg-3)] mb-1">{t(labelKey)}</p>
       <p className={`text-2xl font-bold ${color}`}>{value}</p>
     </div>
   )
@@ -287,6 +302,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
 function CreateWOModal({ open, onClose, onSave }: {
   open: boolean; onClose: () => void; onSave: () => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [productName, setProductName] = useState('')
   const [quantity, setQuantity] = useState(1)
@@ -395,12 +411,12 @@ function CreateWOModal({ open, onClose, onSave }: {
         return { material_id: m.materialId, material_name: m.materialName, quantity: qty, unit: m.unit }
       })
       await api.post('/purchase-requests', {
-        reason: `ขาดวัตถุดิบสำหรับผลิต: ${productName} จำนวน ${quantity} หน่วย`,
+        reason: t('workOrders.create.prReason', { name: productName, quantity }),
         items,
       })
-      alert(`สร้าง Purchase Request สำเร็จ — ${items.length} รายการ`)
+      alert(t('workOrders.create.prCreated', { count: items.length }))
     } catch (err: any) {
-      alert(err.response?.data?.message || 'ไม่สามารถสร้าง PR ได้')
+      alert(err.response?.data?.message || t('workOrders.create.prFailed'))
     } finally { setCreatingPR(false) }
   }
 
@@ -419,16 +435,16 @@ function CreateWOModal({ open, onClose, onSave }: {
       })
       onSave(); onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to create work order')
+      alert(err.response?.data?.message || t('workOrders.error.create'))
     } finally { setSaving(false) }
   }
 
   const selectedBom = boms.find(b => b.id === selectedBomId)
   const priorityOptions = [
-    { value: 'LOW', label: 'Low', color: 'text-[var(--fg-3)] border-[var(--border-strong)] hover:border-[var(--border)]' },
-    { value: 'NORMAL', label: 'Normal', color: 'text-blue-400 border-info/30 hover:border-blue-400' },
-    { value: 'HIGH', label: 'High', color: 'text-warning border-warning/30 hover:border-orange-400' },
-    { value: 'URGENT', label: 'Urgent', color: 'text-danger border-danger/30 hover:border-red-400' },
+    { value: 'LOW', color: 'text-[var(--fg-3)] border-[var(--border-strong)] hover:border-[var(--border)]' },
+    { value: 'NORMAL', color: 'text-blue-400 border-info/30 hover:border-blue-400' },
+    { value: 'HIGH', color: 'text-warning border-warning/30 hover:border-orange-400' },
+    { value: 'URGENT', color: 'text-danger border-danger/30 hover:border-red-400' },
   ]
 
   return (
@@ -443,8 +459,8 @@ function CreateWOModal({ open, onClose, onSave }: {
             {/* Header */}
             <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-[var(--fg-1)]">Create Work Order</h2>
-                <p className="text-xs text-[var(--fg-4)] mt-0.5">เลือก BOM เพื่อ auto-fill วัตถุดิบ</p>
+                <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.create.title')}</h2>
+                <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('workOrders.create.subtitle')}</p>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
             </div>
@@ -457,11 +473,11 @@ function CreateWOModal({ open, onClose, onSave }: {
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">1</span>
-                      เลือก BOM
+                      {t('workOrders.create.step1')}
                     </p>
                     <button type="button" onClick={() => { setManualMode(true); setSelectedBomId(''); setProductName(''); setMaterials([]) }}
                       className={`text-xs px-2 py-1 rounded border transition-all ${manualMode ? 'border-phopy-indigo/50 text-[var(--primary)] bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}>
-                      Manual entry
+                      {t('workOrders.create.manualEntry')}
                     </button>
                   </div>
 
@@ -469,7 +485,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                     <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
                       {boms.length === 0 ? (
                         <div className="col-span-2 text-center py-6 text-[var(--fg-4)] text-sm bg-[var(--surface-2)] rounded-lg">
-                          ยังไม่มี BOM — ใช้ Manual entry แทน
+                          {t('workOrders.create.noBOMs')}
                         </div>
                       ) : boms.map((bom) => (
                         <button key={bom.id} type="button" onClick={() => handleBomSelect(bom)}
@@ -490,7 +506,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                                 : 'bg-gray-500/10 text-[var(--fg-4)] border-gray-500/20'
                             }`}>{bom.status}</span>
                             {bom.is_semi_finished === 1 && (
-                              <span className="text-xs text-purple-500">Semi-finished</span>
+                              <span className="text-xs text-purple-500">{t('workOrders.create.semiFinished')}</span>
                             )}
                           </div>
                         </button>
@@ -498,7 +514,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                     </div>
                   ) : (
                     <div className="p-3 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]/30 text-sm text-[var(--fg-3)]">
-                      กรอกข้อมูลเองด้านล่าง
+                      {t('workOrders.create.manualModeHint')}
                     </div>
                   )}
                 </div>
@@ -507,21 +523,21 @@ function CreateWOModal({ open, onClose, onSave }: {
                 <div>
                   <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5 mb-3">
                     <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">2</span>
-                    รายละเอียด
+                    {t('workOrders.create.step2')}
                   </p>
 
                   <div className="space-y-3">
                     {/* Product + Qty side by side */}
                     <div className="grid grid-cols-3 gap-3">
                       <div className="col-span-2">
-                        <label className="text-xs text-[var(--fg-4)] mb-1 block">ชื่อสินค้า *</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.productLabel')}</label>
                         <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
-                          className="phopy-input w-full" placeholder="ชื่อสินค้าที่ผลิต" required
+                          className="phopy-input w-full" placeholder={t('workOrders.create.productPlaceholder')} required
                           readOnly={!!selectedBomId && !manualMode}
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-[var(--fg-4)] mb-1 block">จำนวนผลิต *</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.quantityLabel')}</label>
                         <div className="flex items-center gap-1">
                           <button type="button" onClick={() => handleQuantityChange(Math.max(1, quantity - 1))}
                             className="w-8 h-9 flex items-center justify-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] shrink-0">−</button>
@@ -535,7 +551,7 @@ function CreateWOModal({ open, onClose, onSave }: {
 
                     {/* Priority as button group */}
                     <div>
-                      <label className="text-xs text-[var(--fg-4)] mb-1.5 block">Priority</label>
+                      <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('workOrders.create.priorityLabel')}</label>
                       <div className="flex gap-2">
                         {priorityOptions.map(opt => (
                           <button key={opt.value} type="button" onClick={() => setPriority(opt.value)}
@@ -544,7 +560,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                                 ? `${opt.color} bg-current/10`.replace('text-', 'bg-').replace('/10 bg-current/10', '/15 ') + opt.color
                                 : 'border-[var(--border)]/30 text-[var(--fg-4)] hover:text-[var(--fg-2)]'
                             } ${priority === opt.value ? opt.color + ' border-current/40' : ''}`}>
-                            {opt.label}
+                            {getPriorityConfig(t, opt.value).label}
                           </button>
                         ))}
                       </div>
@@ -553,13 +569,13 @@ function CreateWOModal({ open, onClose, onSave }: {
                     {/* Due date + Assigned */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-xs text-[var(--fg-4)] mb-1 block">วันกำหนดเสร็จ</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.dueDateLabel')}</label>
                         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="phopy-input w-full" />
                       </div>
                       <div>
-                        <label className="text-xs text-[var(--fg-4)] mb-1 block">ผู้รับผิดชอบ</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.assignedToLabel')}</label>
                         <input type="text" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}
-                          className="phopy-input w-full" placeholder="ทีม / ชื่อ" />
+                          className="phopy-input w-full" placeholder={t('workOrders.create.assignedToPlaceholder')} />
                       </div>
                     </div>
                   </div>
@@ -570,13 +586,13 @@ function CreateWOModal({ open, onClose, onSave }: {
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">3</span>
-                      วัตถุดิบที่ต้องใช้
+                      {t('workOrders.create.step3')}
                       {(bomLoading || stockChecking) && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
                     </p>
                     <button type="button"
                       onClick={() => setMaterials([...materials, { materialName: '', requiredQty: 1, unit: 'pcs' }])}
                       className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
-                      <Plus className="w-3 h-3" /> เพิ่ม
+                      <Plus className="w-3 h-3" /> {t('common.add')}
                     </button>
                   </div>
 
@@ -588,9 +604,9 @@ function CreateWOModal({ open, onClose, onSave }: {
                         : 'bg-[var(--success-soft)] border-success/20 text-success'
                     }`}>
                       {shortages.length > 0 ? (
-                        <><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> ขาดวัตถุดิบ {shortages.length} รายการ — กดปุ่ม "สร้าง PR" ด้านล่างเพื่อสั่งซื้ออัตโนมัติ</>
+                        <><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {t('workOrders.create.stockShortage', { count: shortages.length })}</>
                       ) : (
-                        <><PackageCheck className="w-3.5 h-3.5 shrink-0" /> วัตถุดิบเพียงพอสำหรับการผลิตนี้ทั้งหมด</>
+                        <><PackageCheck className="w-3.5 h-3.5 shrink-0" /> {t('workOrders.create.stockSufficient')}</>
                       )}
                     </div>
                   )}
@@ -598,7 +614,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                   {materials.length === 0 ? (
                     <div className="text-center py-5 bg-[var(--surface-2)] rounded-lg border border-dashed border-[var(--border)]/40">
                       <p className="text-xs text-[var(--fg-4)]">
-                        {selectedBomId ? (bomLoading ? 'กำลังโหลด...' : 'BOM นี้ไม่มี raw materials') : 'เลือก BOM เพื่อ auto-fill หรือกด "+ เพิ่ม"'}
+                        {selectedBomId ? (bomLoading ? t('common.loading') : t('workOrders.create.bomNoMaterials')) : t('workOrders.create.noMaterialsSelected')}
                       </p>
                     </div>
                   ) : (
@@ -615,7 +631,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                             <input value={mat.materialName} onChange={(e) => {
                               const u = [...materials]; u[idx].materialName = e.target.value; setMaterials(u)
                             }} className="flex-1 bg-transparent text-sm text-[var(--fg-2)] outline-none placeholder-gray-600 min-w-0"
-                              placeholder="ชื่อวัตถุดิบ" />
+                              placeholder={t('workOrders.create.materialPlaceholder')} />
                             <input type="number" value={mat.requiredQty} onChange={(e) => {
                               const u = [...materials]; u[idx].requiredQty = Number(e.target.value); setMaterials(u)
                             }} className="w-20 bg-transparent text-sm text-success text-right outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
@@ -623,7 +639,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                             <input value={mat.unit} onChange={(e) => {
                               const u = [...materials]; u[idx].unit = e.target.value; setMaterials(u)
                             }} className="w-12 bg-transparent text-xs text-[var(--fg-4)] outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
-                              placeholder="unit" />
+                              placeholder={t('workOrders.create.unitPlaceholder')} />
                             {/* Stock status badge */}
                             {mat.materialId && (() => {
                               if (stockChecking) return <Loader2 key="spin" className="w-3 h-3 animate-spin text-[var(--fg-4)] shrink-0" />
@@ -639,16 +655,16 @@ function CreateWOModal({ open, onClose, onSave }: {
                           </div>
                         )
                       })}
-                      <p className="text-xs text-[var(--fg-4)] text-right">{materials.length} รายการ</p>
+                      <p className="text-xs text-[var(--fg-4)] text-right">{t('workOrders.create.itemsCount', { count: materials.length })}</p>
                     </div>
                   )}
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="text-xs text-[var(--fg-4)] mb-1 block">หมายเหตุ</label>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('common.notes')}</label>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-                    className="phopy-input w-full text-sm" rows={2} placeholder="หมายเหตุหรือคำสั่งพิเศษ..." />
+                    className="phopy-input w-full text-sm" rows={2} placeholder={t('workOrders.create.notesPlaceholder')} />
                 </div>
               </div>
 
@@ -659,12 +675,12 @@ function CreateWOModal({ open, onClose, onSave }: {
                   <div className="flex items-center justify-between px-3 py-2.5 bg-[var(--danger-soft)] border border-danger/20 rounded-lg">
                     <div className="flex items-center gap-2 text-xs text-danger">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>ขาดวัตถุดิบ <strong>{shortages.length}</strong> รายการ</span>
+                      <span dangerouslySetInnerHTML={{ __html: t('workOrders.create.shortageSummary', { count: shortages.length }) }} />
                     </div>
                     <button type="button" onClick={handleCreateAutoPR} disabled={creatingPR}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-danger text-white rounded-lg hover:bg-danger/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                       {creatingPR ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShoppingCart className="w-3.5 h-3.5" />}
-                      สร้าง Purchase Request อัตโนมัติ
+                      {t('workOrders.create.createPR')}
                     </button>
                   </div>
                 )}
@@ -672,18 +688,18 @@ function CreateWOModal({ open, onClose, onSave }: {
                   <div className="text-xs text-[var(--fg-4)]">
                     {selectedBom ? (
                       <span className="flex items-center gap-1 text-[var(--primary)]">
-                        <CheckCircle className="w-3 h-3" /> ใช้ BOM: {selectedBom.product_name}
+                        <CheckCircle className="w-3 h-3" /> {t('workOrders.create.bomSelected', { name: selectedBom.product_name })}
                       </span>
-                    ) : manualMode ? 'Manual entry' : 'ยังไม่ได้เลือก BOM'}
+                    ) : manualMode ? t('workOrders.create.manualEntrySelected') : t('workOrders.create.noBOMSelected')}
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]">
-                      ยกเลิก
+                      {t('common.cancel')}
                     </button>
                     <button type="submit" disabled={saving || bomLoading || !productName.trim()}
                       className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      สร้าง Work Order
+                      {t('workOrders.create.createButton')}
                     </button>
                   </div>
                 </div>
@@ -699,16 +715,17 @@ function CreateWOModal({ open, onClose, onSave }: {
 function WODetailModal({ wo, onClose, onStatusChange }: {
   wo: WorkOrder | null; onClose: () => void; onStatusChange: (id: string, status: string) => void
 }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   if (!wo) return null
-  const statusConf = STATUS_CONFIG[wo.status] || STATUS_CONFIG.DRAFT
-  const priorityConf = PRIORITY_CONFIG[wo.priority] || PRIORITY_CONFIG.NORMAL
+  const statusConf = getStatusConfig(t, wo.status)
+  const priorityConf = getPriorityConfig(t, wo.priority)
   const progress = wo.quantity > 0 ? Math.round((wo.completed_qty / wo.quantity) * 100) : 0
 
   const nextStatus: Record<string, { label: string; status: string; color: string }> = {
-    DRAFT: { label: 'Plan Production', status: 'PLANNED', color: 'bg-blue-500 text-white' },
-    PLANNED: { label: 'Start Production', status: 'IN_PROGRESS', color: 'bg-yellow-500 text-black' },
-    IN_PROGRESS: { label: 'Mark Complete', status: 'COMPLETED', color: 'bg-success text-black' },
+    DRAFT: { label: t('workOrders.detail.planProduction'), status: 'PLANNED', color: 'bg-blue-500 text-white' },
+    PLANNED: { label: t('workOrders.detail.startProduction'), status: 'IN_PROGRESS', color: 'bg-yellow-500 text-black' },
+    IN_PROGRESS: { label: t('workOrders.detail.markComplete'), status: 'COMPLETED', color: 'bg-success text-black' },
   }
 
   const next = nextStatus[wo.status]
@@ -734,25 +751,28 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
           <div className="p-6 space-y-4">
             {/* Status Flow */}
             <div className="flex items-center gap-2 text-sm overflow-x-auto py-2">
-              {['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].map((s, i) => (
-                <div key={s} className="flex items-center gap-2">
-                  <div className={`px-3 py-1 rounded-full whitespace-nowrap ${
-                    wo.status === s ? STATUS_CONFIG[s].color + ' font-semibold'
-                    : ['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].indexOf(wo.status) > i
-                    ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
-                  }`}>
-                    {STATUS_CONFIG[s].label}
+              {['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].map((s, i) => {
+                const sc = getStatusConfig(t, s)
+                return (
+                  <div key={s} className="flex items-center gap-2">
+                    <div className={`px-3 py-1 rounded-full whitespace-nowrap ${
+                      wo.status === s ? sc.color + ' font-semibold'
+                      : ['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].indexOf(wo.status) > i
+                      ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'
+                    }`}>
+                      {sc.label}
+                    </div>
+                    {i < 3 && <ArrowRight className="w-4 h-4 text-[var(--fg-4)] flex-shrink-0" />}
                   </div>
-                  {i < 3 && <ArrowRight className="w-4 h-4 text-[var(--fg-4)] flex-shrink-0" />}
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Progress */}
             <div className="bg-[var(--surface-2)] p-4 rounded-lg">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-[var(--fg-3)] text-sm">Production Progress</span>
-                <span className="text-[var(--fg-2)] font-semibold">{wo.completed_qty} / {wo.quantity} units ({progress}%)</span>
+                <span className="text-[var(--fg-3)] text-sm">{t('workOrders.detail.productionProgress')}</span>
+                <span className="text-[var(--fg-2)] font-semibold">{wo.completed_qty} / {wo.quantity} {t('workOrders.detail.units')} ({progress}%)</span>
               </div>
               <div className="h-3 bg-[var(--bg)] rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${
@@ -764,34 +784,34 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
             {/* Details */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-[var(--surface-2)] p-3 rounded-lg">
-                <p className="text-xs text-[var(--fg-4)] mb-1">Assigned To</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('workOrders.detail.assignedTo')}</p>
                 <p className="text-[var(--fg-2)]">{wo.assigned_to || '-'}</p>
               </div>
               <div className="bg-[var(--surface-2)] p-3 rounded-lg">
-                <p className="text-xs text-[var(--fg-4)] mb-1">Due Date</p>
-                <p className="text-[var(--fg-2)]">{wo.due_date ? new Date(wo.due_date).toLocaleDateString() : '-'}</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('workOrders.detail.dueDate')}</p>
+                <p className="text-[var(--fg-2)]">{wo.due_date ? new Date(wo.due_date).toLocaleDateString('th-TH') : '-'}</p>
               </div>
               <div className="bg-[var(--surface-2)] p-3 rounded-lg">
-                <p className="text-xs text-[var(--fg-4)] mb-1">Estimated Cost</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('workOrders.detail.estimatedCost')}</p>
                 <p className="text-success font-semibold">฿{wo.estimated_cost.toLocaleString()}</p>
               </div>
               <div className="bg-[var(--surface-2)] p-3 rounded-lg">
-                <p className="text-xs text-[var(--fg-4)] mb-1">Actual Cost</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('workOrders.detail.actualCost')}</p>
                 <p className="text-[var(--fg-2)]">฿{wo.actual_cost.toLocaleString()}</p>
               </div>
             </div>
 
             {/* Materials */}
             <div>
-              <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3">Materials Required</h3>
+              <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3">{t('workOrders.detail.materialsRequired')}</h3>
               {wo.materials && wo.materials.length > 0 ? (
                 <div className="space-y-2">
                   {wo.materials.map((mat) => (
                     <div key={mat.id} className="flex justify-between items-center p-3 bg-[var(--surface-2)] rounded-lg">
                       <div>
-                        <p className="text-[var(--fg-2)]">{mat.material_name || 'Material'}</p>
+                        <p className="text-[var(--fg-2)]">{mat.material_name || t('workOrders.detail.materialFallback')}</p>
                         <p className="text-[var(--fg-4)] text-xs">
-                          Issued: {mat.issued_qty}/{mat.required_qty} {mat.unit}
+                          {t('workOrders.detail.issued', { issued: mat.issued_qty, required: mat.required_qty, unit: mat.unit })}
                         </p>
                       </div>
                       <span className={`px-2 py-1 rounded text-xs ${
@@ -805,14 +825,71 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                   ))}
                 </div>
               ) : (
-                <p className="text-[var(--fg-4)]">No materials linked</p>
+                <p className="text-[var(--fg-4)]">{t('workOrders.detail.noMaterialsLinked')}</p>
+              )}
+            </div>
+
+            {/* QC Status */}
+            <div>
+              <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
+                <ClipboardCheck className="w-5 h-5 text-[var(--primary)]" />
+                {t('workOrders.detail.qcTitle')}
+              </h3>
+              {wo.inspections && wo.inspections.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2 flex-wrap">
+                    {(() => {
+                      const pass = wo.inspections!.filter(i => i.status === 'PASS').length
+                      const fail = wo.inspections!.filter(i => i.status === 'FAIL').length
+                      const pending = wo.inspections!.filter(i => i.status === 'PENDING').length
+                      return (
+                        <>
+                          {pass > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-[var(--success-soft)] text-success">
+                              <CheckCircle className="w-3.5 h-3.5" /> {t('workOrders.detail.qcPass', { count: pass })}
+                            </span>
+                          )}
+                          {fail > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-[var(--danger-soft)] text-danger">
+                              <XCircle className="w-3.5 h-3.5" /> {t('workOrders.detail.qcFail', { count: fail })}
+                            </span>
+                          )}
+                          {pending > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-[var(--warning-soft)] text-warning">
+                              <Clock className="w-3.5 h-3.5" /> {t('workOrders.detail.qcPending', { count: pending })}
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                  {wo.inspections.map(insp => (
+                    <div key={insp.id} className="flex justify-between items-center p-3 bg-[var(--surface-2)] rounded-lg text-sm">
+                      <div>
+                        <p className="text-[var(--fg-2)]">{insp.checklist_name}</p>
+                        <p className="text-[var(--fg-4)] text-xs">
+                          {t('workOrders.detail.qcQty', { passed: insp.passed_qty, rejected: insp.rejected_qty, inspected: insp.inspected_qty })}
+                        </p>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        insp.status === 'PASS' ? 'bg-[var(--success-soft)] text-success' :
+                        insp.status === 'FAIL' ? 'bg-[var(--danger-soft)] text-danger' :
+                        'bg-[var(--warning-soft)] text-warning'
+                      }`}>
+                        {insp.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[var(--fg-4)]">{t('workOrders.detail.qcNone')}</p>
               )}
             </div>
 
             {/* Notes */}
             {wo.notes && (
               <div className="bg-[var(--surface-2)] p-4 rounded-lg">
-                <p className="text-xs text-[var(--fg-4)] mb-1">Notes</p>
+                <p className="text-xs text-[var(--fg-4)] mb-1">{t('common.notes')}</p>
                 <p className="text-[var(--fg-2)] text-sm">{wo.notes}</p>
               </div>
             )}
@@ -821,9 +898,9 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
               <div className="p-4 bg-success/10 border border-success/30 rounded-lg flex items-center gap-3">
                 <CheckCircle className="w-6 h-6 text-success" />
                 <div>
-                  <p className="text-success font-medium">Production Complete</p>
+                  <p className="text-success font-medium">{t('workOrders.detail.productionComplete')}</p>
                   <p className="text-[var(--fg-3)] text-sm">
-                    {wo.completed_date ? `Completed on ${new Date(wo.completed_date).toLocaleDateString()}` : 'Completed'}
+                    {wo.completed_date ? t('workOrders.detail.completedOn', { date: new Date(wo.completed_date).toLocaleDateString('th-TH') }) : t('workOrders.detail.completed')}
                   </p>
                 </div>
               </div>
@@ -834,19 +911,19 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
               {wo.status === 'IN_PROGRESS' && (
                 <button onClick={() => { onStatusChange(wo.id, 'ON_HOLD'); onClose() }}
                   className="px-4 py-2 border border-warning/30 text-warning rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-2">
-                  <Pause className="w-4 h-4" /> Put On Hold
+                  <Pause className="w-4 h-4" /> {t('workOrders.detail.putOnHold')}
                 </button>
               )}
               {wo.status === 'ON_HOLD' && (
                 <button onClick={() => { onStatusChange(wo.id, 'IN_PROGRESS'); onClose() }}
                   className="px-4 py-2 border border-warning/30 text-warning rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-2">
-                  <Play className="w-4 h-4" /> Resume
+                  <Play className="w-4 h-4" /> {t('workOrders.detail.resume')}
                 </button>
               )}
               {wo.status !== 'COMPLETED' && wo.status !== 'CANCELLED' && (
                 <button onClick={() => { onStatusChange(wo.id, 'CANCELLED'); onClose() }}
                   className="px-4 py-2 border border-danger/30 text-danger rounded-lg hover:bg-[var(--danger-soft)]">
-                  Cancel Order
+                  {t('workOrders.detail.cancelOrder')}
                 </button>
               )}
               {next && (

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Package,
@@ -21,6 +22,7 @@ import {
 import materialsService, { Material, MaterialStats, CreateMaterialInput, MaterialCategory } from '../../services/materials'
 
 function MaterialsTab() {
+  const { t } = useTranslation()
   const [materials, setMaterials] = useState<Material[]>([])
   const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [stats, setStats] = useState<MaterialStats | null>(null)
@@ -49,7 +51,7 @@ function MaterialsTab() {
       setCategories(categoriesData)
     } catch (err) {
       console.error('Failed to fetch materials:', err)
-      setError('ไม่สามารถโหลดข้อมูลวัตถุดิบได้')
+      setError(t('bom.materialsTab.errors.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -80,13 +82,13 @@ function MaterialsTab() {
 
   // Handle delete
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`คุณต้องการลบวัตถุดิบ "${name}" หรือไม่?`)) return
+    if (!confirm(t('bom.materialsTab.confirmDelete', { name }))) return
 
     try {
       await materialsService.delete(id)
       fetchData()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'ไม่สามารถลบวัตถุดิบได้')
+      alert(err.response?.data?.message || t('bom.materialsTab.errors.deleteFailed'))
     }
   }
 
@@ -102,27 +104,27 @@ function MaterialsTab() {
       CRITICAL: {
         icon: AlertCircle,
         className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
-        label: 'Critical',
+        label: t('bom.materialsTab.status.critical'),
       },
       LOW: {
         icon: AlertTriangle,
         className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
-        label: 'Low',
+        label: t('bom.materialsTab.status.low'),
       },
       ADEQUATE: {
         icon: CheckCircle,
         className: 'bg-[var(--success-soft)] text-success border-success/30',
-        label: 'Adequate',
+        label: t('bom.materialsTab.status.adequate'),
       },
       OVERSTOCK: {
         icon: Boxes,
         className: 'bg-[var(--info-soft)] text-blue-400 border-info/30',
-        label: 'Overstock',
+        label: t('bom.materialsTab.status.overstock'),
       },
       NO_STOCK: {
         icon: Package,
         className: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
-        label: 'No Stock',
+        label: t('bom.materialsTab.status.noStock'),
       },
     }
 
@@ -151,7 +153,7 @@ function MaterialsTab() {
         <AlertCircle className="w-12 h-12 text-danger mx-auto mb-4" />
         <p className="text-[var(--fg-2)]">{error}</p>
         <button onClick={fetchData} className="phopy-btn-primary mt-4">
-          ลองใหม่
+          {t('bom.materialsTab.retry')}
         </button>
       </div>
     )
@@ -164,7 +166,7 @@ function MaterialsTab() {
         <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-[var(--fg-3)]">Total Materials</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('bom.materialsTab.stats.totalMaterials')}</p>
               <p className="text-2xl font-bold text-[var(--primary)]">
                 {stats?.totalMaterials || 0}
               </p>
@@ -175,7 +177,7 @@ function MaterialsTab() {
         <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-[var(--fg-3)]">Low Stock</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('bom.materialsTab.stats.lowStock')}</p>
               <p className="text-2xl font-bold text-warning">
                 {stats?.lowStockCount || 0}
               </p>
@@ -186,7 +188,7 @@ function MaterialsTab() {
         <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-[var(--fg-3)]">Total Value</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('bom.materialsTab.stats.totalValue')}</p>
               <p className="text-2xl font-bold text-success">
                 ฿{(stats?.totalValue || 0).toLocaleString()}
               </p>
@@ -197,7 +199,7 @@ function MaterialsTab() {
         <div className="phopy-card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-[var(--fg-3)]">Active Items</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('bom.materialsTab.stats.activeItems')}</p>
               <p className="text-2xl font-bold text-[var(--primary)]">
                 {stats?.activeItems || 0}
               </p>
@@ -213,7 +215,7 @@ function MaterialsTab() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
           <input
             type="text"
-            placeholder="Search materials..."
+            placeholder={t('bom.materialsTab.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="phopy-input pl-10 w-full"
@@ -221,7 +223,7 @@ function MaterialsTab() {
         </div>
         <button onClick={handleCreate} className="phopy-btn-primary flex items-center gap-2">
           <Plus className="w-5 h-5" />
-          Add Material
+          {t('bom.materialsTab.addMaterial')}
         </button>
       </div>
 
@@ -231,22 +233,22 @@ function MaterialsTab() {
         <table className="phopy-table w-full">
           <thead>
             <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Category</th>
-              <th>Unit</th>
-              <th>Cost/Unit</th>
-              <th>Stock</th>
-              <th>Status</th>
-              <th>Used In</th>
-              <th className="text-right">Actions</th>
+              <th>{t('bom.materialsTab.table.code')}</th>
+              <th>{t('bom.materialsTab.table.name')}</th>
+              <th>{t('bom.materialsTab.table.category')}</th>
+              <th>{t('bom.materialsTab.table.unit')}</th>
+              <th>{t('bom.materialsTab.table.costPerUnit')}</th>
+              <th>{t('bom.materialsTab.table.stock')}</th>
+              <th>{t('bom.materialsTab.table.status')}</th>
+              <th>{t('bom.materialsTab.table.usedIn')}</th>
+              <th className="text-right">{t('bom.materialsTab.table.actions')}</th>
             </tr>
           </thead>
           <tbody>
             {filteredMaterials.length === 0 ? (
               <tr>
                 <td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">
-                  {searchTerm ? 'ไม่พบวัตถุดิบที่ค้นหา' : 'ยังไม่มีวัตถุดิบ'}
+                  {searchTerm ? t('bom.materialsTab.empty.noResults') : t('bom.materialsTab.empty.noMaterials')}
                 </td>
               </tr>
             ) : (
@@ -257,7 +259,7 @@ function MaterialsTab() {
                   <td>
                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--surface)] rounded text-xs text-[var(--primary)]">
                       <Tag className="w-3 h-3" />
-                      {material.categoryName || 'Uncategorized'}
+                      {material.categoryName || t('bom.materialsTab.uncategorized')}
                     </span>
                   </td>
                   <td className="text-[var(--fg-3)]">{material.unit}</td>
@@ -271,13 +273,13 @@ function MaterialsTab() {
                     </div>
                   </td>
                   <td>{getStatusBadge(material.stockStatus)}</td>
-                  <td className="text-[var(--fg-3)]">{material.usedInBOMs || 0} BOMs</td>
+                  <td className="text-[var(--fg-3)]">{t('bom.materialsTab.usedInBOMs', { count: material.usedInBOMs || 0 })}</td>
                   <td>
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleStockAdjust(material)}
                         className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-                        title="Adjust Stock"
+                        title={t('bom.materialsTab.actions.adjustStock')}
                       >
                         <Boxes className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
                       </button>
@@ -339,6 +341,7 @@ function MaterialModal({
   editMaterial: Material | null
   categories: MaterialCategory[]
 }) {
+  const { t } = useTranslation()
   const [submitting, setSubmitting] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<MaterialCategory | null>(null)
   const [formData, setFormData] = useState<CreateMaterialInput>({
@@ -389,7 +392,7 @@ function MaterialModal({
     e.preventDefault()
 
     if (!formData.code || !formData.name || !formData.categoryId) {
-      alert('กรุณากรอกข้อมูลให้ครบ')
+      alert(t('bom.materialsTab.modal.errors.required'))
       return
     }
 
@@ -403,7 +406,7 @@ function MaterialModal({
       onSuccess()
       onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'ไม่สามารถบันทึกได้')
+      alert(err.response?.data?.message || t('bom.materialsTab.modal.errors.saveFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -429,7 +432,7 @@ function MaterialModal({
         >
           <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-bold text-[var(--fg-1)]">
-              {isEdit ? 'แก้ไขวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่'}
+              {isEdit ? t('bom.materialsTab.modal.title.edit') : t('bom.materialsTab.modal.title.create')}
             </h2>
             <button onClick={onClose} className="p-2 hover:bg-[var(--surface-2)] rounded-lg">
               <X className="w-5 h-5 text-[var(--fg-3)]" />
@@ -439,7 +442,7 @@ function MaterialModal({
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Code *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.code')} *</label>
                 <input
                   type="text"
                   value={formData.code}
@@ -450,14 +453,14 @@ function MaterialModal({
                 />
               </div>
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Category *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.category')} *</label>
                 <select
                   value={formData.categoryId}
                   onChange={(e) => handleCategoryChange(e.target.value)}
                   className="phopy-input w-full"
                   disabled={isEdit} // ห้ามเปลี่ยน category ตอน edit เพราะจะทำให้ unit เปลี่ยน
                 >
-                  <option value="">เลือกหมวดหมู่</option>
+                  <option value="">{t('bom.materialsTab.modal.placeholders.selectCategory')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
@@ -474,25 +477,25 @@ function MaterialModal({
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="phopy-input w-full"
-                placeholder="Material name"
+                placeholder={t('bom.materialsTab.modal.placeholders.name')}
               />
             </div>
 
             {/* Unit - แสดงเป็น read-only ตามที่กำหนดโดย category */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Unit (Auto)</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.unit')}</label>
                 <div className="phopy-input w-full bg-[var(--surface-2)] text-[var(--fg-3)] flex items-center">
                   <span className={selectedCategory ? 'text-[var(--primary)] font-semibold' : ''}>
-                    {selectedCategory?.defaultUnit || 'เลือกหมวดหมู่ก่อน'}
+                    {selectedCategory?.defaultUnit || t('bom.materialsTab.modal.placeholders.selectCategoryFirst')}
                   </span>
                 </div>
                 <p className="text-xs text-[var(--fg-4)] mt-1">
-                  หน่วยถูกกำหนดโดยอัตโนมัติตามหมวดหมู่
+                  {t('bom.materialsTab.modal.labels.unitHint')}
                 </p>
               </div>
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Cost per Unit (฿) *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.costPerUnit')} *</label>
                 <input
                   type="number"
                   value={formData.unitCost}
@@ -506,7 +509,7 @@ function MaterialModal({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Min Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.minStock')}</label>
                 <input
                   type="number"
                   value={formData.minStock}
@@ -516,7 +519,7 @@ function MaterialModal({
                 />
               </div>
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Max Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.maxStock')}</label>
                 <input
                   type="number"
                   value={formData.maxStock}
@@ -529,7 +532,7 @@ function MaterialModal({
 
             {!isEdit && (
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Initial Stock</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.modal.labels.initialStock')}</label>
                 <input
                   type="number"
                   value={formData.initialStock}
@@ -542,7 +545,7 @@ function MaterialModal({
 
             <div className="flex justify-end gap-3 pt-4">
               <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)]">
-                ยกเลิก
+                {t('common.cancel')}
               </button>
               <button 
                 type="submit" 
@@ -550,7 +553,7 @@ function MaterialModal({
                 className="phopy-btn-primary disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                {isEdit ? 'บันทึก' : 'เพิ่ม'}
+                {isEdit ? t('common.save') : t('common.add')}
               </button>
             </div>
           </form>
@@ -572,6 +575,7 @@ function StockAdjustModal({
   onSuccess: () => void
   material: Material | null
 }) {
+  const { t } = useTranslation()
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN')
   const [quantity, setQuantity] = useState(0)
   const [notes, setNotes] = useState('')
@@ -589,7 +593,7 @@ function StockAdjustModal({
     e.preventDefault()
 
     if (!material || quantity <= 0) {
-      alert('กรุณาระบุจำนวน')
+      alert(t('bom.materialsTab.stockModal.errors.quantityRequired'))
       return
     }
 
@@ -599,7 +603,7 @@ function StockAdjustModal({
       onSuccess()
       onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'ไม่สามารถปรับ Stock ได้')
+      alert(err.response?.data?.message || t('bom.materialsTab.stockModal.errors.adjustFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -624,7 +628,7 @@ function StockAdjustModal({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-            <h2 className="text-xl font-bold text-[var(--fg-1)]">Adjust Stock</h2>
+            <h2 className="text-xl font-bold text-[var(--fg-1)]">{t('bom.materialsTab.stockModal.title')}</h2>
             <button onClick={onClose} className="p-2 hover:bg-[var(--surface-2)] rounded-lg">
               <X className="w-5 h-5 text-[var(--fg-3)]" />
             </button>
@@ -632,15 +636,15 @@ function StockAdjustModal({
 
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="text-center p-4 bg-[var(--surface-2)] rounded-lg">
-              <p className="text-[var(--fg-3)] text-sm">Material</p>
+              <p className="text-[var(--fg-3)] text-sm">{t('bom.materialsTab.stockModal.materialLabel')}</p>
               <p className="text-lg font-bold text-[var(--fg-1)]">{material.name}</p>
               <p className="text-[var(--primary)]">
-                Current Stock: {material.currentStock || 0} {material.unit}
+                {t('bom.materialsTab.stockModal.currentStock', { stock: material.currentStock || 0, unit: material.unit })}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">Type</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">{t('bom.materialsTab.stockModal.typeLabel')}</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -652,7 +656,7 @@ function StockAdjustModal({
                   }`}
                 >
                   <ArrowDownCircle className="w-5 h-5" />
-                  <span className="text-sm">Stock In</span>
+                  <span className="text-sm">{t('bom.materialsTab.stockModal.types.in')}</span>
                 </button>
                 <button
                   type="button"
@@ -664,7 +668,7 @@ function StockAdjustModal({
                   }`}
                 >
                   <ArrowUpCircle className="w-5 h-5" />
-                  <span className="text-sm">Stock Out</span>
+                  <span className="text-sm">{t('bom.materialsTab.stockModal.types.out')}</span>
                 </button>
                 <button
                   type="button"
@@ -676,14 +680,14 @@ function StockAdjustModal({
                   }`}
                 >
                   <Edit className="w-5 h-5" />
-                  <span className="text-sm">Adjust</span>
+                  <span className="text-sm">{t('bom.materialsTab.stockModal.types.adjust')}</span>
                 </button>
               </div>
             </div>
 
             <div>
               <label className="block text-sm text-[var(--fg-3)] mb-1">
-                {type === 'ADJUST' ? 'New Quantity' : 'Quantity'}
+                {type === 'ADJUST' ? t('bom.materialsTab.stockModal.labels.newQuantity') : t('bom.materialsTab.stockModal.labels.quantity')}
               </label>
               <input
                 type="number"
@@ -696,19 +700,19 @@ function StockAdjustModal({
             </div>
 
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-1">Notes</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bom.materialsTab.stockModal.labels.notes')}</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="phopy-input w-full"
                 rows={2}
-                placeholder="Optional notes..."
+                placeholder={t('bom.materialsTab.stockModal.placeholders.notes')}
               />
             </div>
 
             {type !== 'ADJUST' && (
               <div className="text-center p-3 bg-[var(--bg)]/30 rounded-lg">
-                <p className="text-sm text-[var(--fg-3)]">New Stock:</p>
+                <p className="text-sm text-[var(--fg-3)]">{t('bom.materialsTab.stockModal.newStockLabel')}:</p>
                 <p className="text-xl font-bold text-[var(--primary)]">
                   {type === 'IN'
                     ? (material.currentStock || 0) + quantity
@@ -720,11 +724,11 @@ function StockAdjustModal({
 
             <div className="flex justify-end gap-3 pt-4">
               <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-2)]">
-                ยกเลิก
+                {t('common.cancel')}
               </button>
               <button type="submit" disabled={submitting} className="phopy-btn-primary">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                Confirm
+                {t('common.confirm')}
               </button>
             </div>
           </form>

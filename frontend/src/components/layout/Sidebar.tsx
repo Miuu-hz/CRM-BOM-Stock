@@ -16,6 +16,8 @@ import {
   Package,
   Percent,
   Settings,
+  ShieldCheck,
+  Trello,
   ShoppingCart,
   Star,
   Store,
@@ -79,9 +81,11 @@ const menuItems: MenuItem[] = [
       { path: '/accounting/phopy-board', tKey: 'sidebar.phopyBoard', icon: LayoutDashboard },
     ],
   },
+  { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
   { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog, adminOnly: true },
   { path: '/cashier', tKey: 'sidebar.cashier', icon: Store, descriptionKey: 'sidebar.cashierDesc' },
   { path: '/kds', tKey: 'sidebar.kitchenDisplay', icon: MonitorPlay, descriptionKey: 'sidebar.kitchenDisplayDesc' },
+  { path: 'https://kanban.phopy.net', tKey: 'sidebar.kanban', icon: Trello, descriptionKey: 'sidebar.kanbanDesc' },
 ]
 
 function Sidebar({ mode }: SidebarProps) {
@@ -92,22 +96,25 @@ function Sidebar({ mode }: SidebarProps) {
   const [tenantOpen, setTenantOpen] = useState(false)
   const [sysStats, setSysStats] = useState({ activeOrders: 0, lowStock: 0, pendingPO: 0 })
 
+  const [pendingApprovals, setPendingApprovals] = useState(0)
   const isRail = mode === 'rail'
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MASTER'
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [stats, stock, po] = await Promise.all([
+        const [stats, stock, po, approvals] = await Promise.all([
           api.get('/dashboard/stats'),
           api.get('/dashboard/low-stock'),
           api.get('/purchase-orders?status=PENDING').catch(() => ({ data: { data: [] } })),
+          api.get('/approval/pending').catch(() => ({ data: { data: [] } })),
         ])
         setSysStats({
           activeOrders: stats.data.data?.activeOrders ?? 0,
           lowStock: Array.isArray(stock.data.data) ? stock.data.data.length : 0,
           pendingPO: Array.isArray(po.data.data) ? po.data.data.length : 0,
         })
+        setPendingApprovals(Array.isArray(approvals.data.data) ? approvals.data.data.length : 0)
       } catch (err: any) {
         console.error('Sidebar stats load error:', err)
       }
@@ -287,6 +294,24 @@ function Sidebar({ mode }: SidebarProps) {
               )
             }
 
+            if (item.path.startsWith('http')) {
+              return (
+                <a
+                  key={item.path}
+                  href={item.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all group hover:bg-[var(--surface-2)] text-[var(--fg-2)]"
+                >
+                  <item.icon className="w-5 h-5 transition-colors text-[var(--fg-3)] group-hover:text-[var(--primary)]" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-[var(--fg-2)]">{label}</p>
+                    {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
+                  </div>
+                </a>
+              )
+            }
+
             return (
               <NavLink
                 key={item.path}
@@ -309,6 +334,11 @@ function Sidebar({ mode }: SidebarProps) {
                       </p>
                       {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
                     </div>
+                    {item.path === '/approvals' && pendingApprovals > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
+                        {pendingApprovals}
+                      </span>
+                    )}
                   </>
                 )}
               </NavLink>

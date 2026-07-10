@@ -22,6 +22,7 @@ import KDS from './pages/KDS'
 import POSClearing from './pages/Accounting/POSClearing'
 import { UserManagement } from './pages/Users'
 import MasterPanel from './pages/MasterPanel'
+import ApprovalInbox from './pages/ApprovalInbox'
 
 function AppContent() {
   const { t } = useTranslation()
@@ -75,6 +76,7 @@ function AppContent() {
         <Route path="/accounting/phopy-board" element={<PhopyBoard />} />
 
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/approvals" element={<ApprovalInbox />} />
 
         {/* Master Panel */}
         {isMaster && <Route path="/master" element={<MasterPanel />} />}

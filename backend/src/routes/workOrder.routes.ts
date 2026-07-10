@@ -79,8 +79,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id)
+    const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC').all(req.params.id, tenantId)
 
-    res.json({ success: true, data: { ...wo, materials } })
+    res.json({ success: true, data: { ...wo, materials, inspections } })
   } catch (error) {
     console.error('Get work order error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch work order' })
@@ -222,9 +223,26 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         return res.status(400).json({ success: false, message: err.message })
       }
     } else if (status === 'COMPLETED') {
+      // QC gate: ถ้า tenant เปิดใช้งาน qc_gate_enabled ต้องมี qc_inspections ของ WO นี้อย่างน้อย 1 รายการ status = 'PASS'
+      const companySettings = db.prepare('SELECT qc_gate_enabled FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const qcGateEnabled = Number(companySettings?.qc_gate_enabled) === 1
+      if (qcGateEnabled) {
+        const passCount = db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ? AND status = 'PASS'")
+          .get(tenantId, req.params.id) as any
+        if (!passCount || passCount.c === 0) {
+          return res.status(400).json({ success: false, message: 'ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน' })
+        }
+      }
+
+      // ถ้ามีข้อมูล QC (passed_qty รวม > 0) ใช้จำนวนที่สะสมจาก QC แทนการปิดยอดเต็มจำนวนแบบเดิม
+      const qcSum = db.prepare("SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ?")
+        .get(tenantId, req.params.id) as any
+      const hasQcData = Number(qcSum?.total) > 0
+      const finalCompletedQty = hasQcData ? Math.min(wo.quantity, wo.completed_qty || 0) : wo.quantity
+
       const completeTransaction = db.transaction(() => {
-        db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(status, now, now, req.params.id, tenantId)
+        db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(status, now, finalCompletedQty, now, req.params.id, tenantId)
 
         // Add finished product to stock
         if (wo.bom_id) {
@@ -233,11 +251,11 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             const finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
             if (finishedStock) {
               db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(wo.quantity, now, finishedStock.id, tenantId)
+                .run(finalCompletedQty, now, finishedStock.id, tenantId)
               db.prepare(`
                 INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                 VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, finishedStock.id, wo.quantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+              `).run(generateId(), tenantId, finishedStock.id, finalCompletedQty, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
             }
           }
         }

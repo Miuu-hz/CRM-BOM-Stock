@@ -49,6 +49,31 @@ export function formatDocumentNumber(
     docType,
     segment !== undefined ? Number(segment) : 0
   )
+
+  // Custom format override (Settings → เลขที่เอกสาร): {PREFIX}{sep}{SEQ}{sep}{DATE}
+  let fmt: any
+  try {
+    fmt = db.prepare(
+      'SELECT * FROM document_number_formats WHERE tenant_id = ? AND doc_type = ? AND enabled = 1'
+    ).get(tenantId, docType)
+  } catch { /* table not migrated yet */ }
+
+  if (fmt) {
+    const p = fmt.prefix || prefix
+    const num = String(seq).padStart(fmt.padding || pad, '0')
+    const sep = fmt.separator ?? '-'
+    const d = new Date()
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yy = String(d.getFullYear()).slice(-2)
+    let dateStr = ''
+    if (fmt.date_format === 'DDMMYY') dateStr = dd + mm + yy
+    else if (fmt.date_format === 'YYMMDD') dateStr = yy + mm + dd
+    else if (fmt.date_format === 'MMYY') dateStr = mm + yy
+    else if (fmt.date_format === 'YYYY') dateStr = String(d.getFullYear())
+    return dateStr ? `${p}${sep}${num}${sep}${dateStr}` : `${p}${sep}${num}`
+  }
+
   const middle = segment !== undefined ? `-${segment}-` : '-'
   return `${prefix}${middle}${String(seq).padStart(pad, '0')}`
 }

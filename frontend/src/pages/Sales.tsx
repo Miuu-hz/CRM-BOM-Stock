@@ -200,6 +200,7 @@ const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string
   UNPAID:     { labelKey: 'sales.status.unpaid',       bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
   OVERDUE:    { labelKey: 'sales.status.overdue',      bg: 'bg-red-600/15',     text: 'text-danger' },
   PENDING:    { labelKey: 'sales.status.pending',      bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
+  PENDING_APPROVAL: { labelKey: 'sales.status.pendingApproval', bg: 'bg-amber-500/20', text: 'text-amber-400' },
 }
 
 const StatusBadge = ({ status }: { status: string }) => {
@@ -504,6 +505,22 @@ const Sales = () => {
       toast.success(t('sales.toast.quotationDeleted'))
       fetchQuotations()
     } catch { toast.error(t('sales.toast.quotationDeleteFailed')) }
+  }
+  const handleDeleteSO = async (id: string) => {
+    if (!confirm('ยืนยันลบ Sales Order นี้? (ลบได้เฉพาะ DRAFT)')) return
+    try {
+      await api.delete(`/sales/sales-orders/${id}`)
+      toast.success('ลบ SO เรียบร้อย')
+      fetchSalesOrders()
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'ลบไม่สำเร็จ') }
+  }
+  const handleDeleteDO = async (id: string) => {
+    if (!confirm('ยืนยันลบใบส่งของนี้? (ลบได้เฉพาะ DRAFT)')) return
+    try {
+      await api.delete(`/sales/delivery-orders/${id}`)
+      toast.success('ลบใบส่งของเรียบร้อย')
+      fetchDeliveryOrders()
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'ลบไม่สำเร็จ') }
   }
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm(t('sales.confirm.deleteTemplate'))) return
@@ -1032,6 +1049,12 @@ const Sales = () => {
                               <Pencil className="w-3 h-3" />
                             </button>
                           )}
+                          {order.status === 'DRAFT' && (
+                            <button onClick={() => handleDeleteSO(order.id)}
+                              className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                           {next && (
                             <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -1115,6 +1138,12 @@ const Sales = () => {
                       <button onClick={() => handleEditSO(order)}
                         className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                         <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {order.status === 'DRAFT' && (
+                      <button onClick={() => handleDeleteSO(order.id)}
+                        className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     )}
                     {next && (
@@ -1531,6 +1560,12 @@ const Sales = () => {
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
+                          {do_.status === 'DRAFT' && (
+                            <button onClick={() => handleDeleteDO(do_.id)}
+                              className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                           {next && (
                             <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
                               className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
@@ -3028,8 +3063,12 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const updateStatus = async (status: string) => {
     setUpdating(true)
     try {
-      await salesService.updateSOStatus(salesOrder.id, status)
-      toast.success(t('sales.toast.statusUpdated'))
+      const result = await salesService.updateSOStatus(salesOrder.id, status)
+      if (result?.pending_approval) {
+        toast.success(result.message || 'ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน')
+      } else {
+        toast.success(t('sales.toast.statusUpdated'))
+      }
       onRefresh()
       onClose()
     } catch (err: any) {
@@ -3141,12 +3180,16 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               <Printer className="w-4 h-4" />
             </button>
           )}
-          {nextStatus[salesOrder.status] && (
+          {salesOrder.status === 'PENDING_APPROVAL' ? (
+            <div className="flex-1 py-2 px-3 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-lg text-sm font-medium text-center">
+              รออนุมัติจาก Approver
+            </div>
+          ) : nextStatus[salesOrder.status] ? (
             <button onClick={() => updateStatus(nextStatus[salesOrder.status])} disabled={updating}
               className="flex-1 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50">
               {nextLabel[salesOrder.status]}
             </button>
-          )}
+          ) : null}
           {['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
             <button onClick={handleCreateInvoice} disabled={creatingInv}
               className="flex-1 py-2 bg-[var(--warning-soft)] border border-yellow-500/50 text-warning rounded-lg text-sm font-medium hover:bg-[var(--warning-soft)] disabled:opacity-50 flex items-center justify-center gap-1">

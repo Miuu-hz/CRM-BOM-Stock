@@ -19,6 +19,7 @@ export interface WorkOrder {
   actual_cost: number
   material_count?: number
   materials?: WorkOrderMaterial[]
+  inspections?: QCInspectionSummary[]
   created_at: string
 }
 
@@ -30,6 +31,17 @@ export interface WorkOrderMaterial {
   issued_qty: number
   unit: string
   status: string
+}
+
+export interface QCInspectionSummary {
+  id: string
+  checklist_name: string
+  status: 'PENDING' | 'PASS' | 'FAIL'
+  inspected_qty: number
+  passed_qty: number
+  rejected_qty: number
+  created_at: string
+  completed_at: string | null
 }
 
 export interface WOStats {

@@ -1010,10 +1010,34 @@ export function runMigrations(db: any): void {
           console.log(`⚠️ document_sequences seed skipped for ${table}: no tenant_id column`)
           continue
         }
-        db.prepare(`
-          INSERT OR REPLACE INTO document_sequences (tenant_id, doc_type, year, last_number, updated_at)
-          SELECT tenant_id, ?, 0, COUNT(*), CURRENT_TIMESTAMP FROM ${table} GROUP BY tenant_id
-        `).run(docType)
+        // ponytail: seed from MAX numeric tail of the document number, not COUNT(*).
+        // COUNT drifts below MAX when documents are deleted, causing duplicate
+        // numbers after restart. Never decrease an existing counter.
+        const numCol = cols.find((c: any) => c.name.endsWith('_number'))
+        if (!numCol) {
+          console.log(`⚠️ document_sequences seed skipped for ${table}: no *_number column`)
+          continue
+        }
+        const rows = db.prepare(`SELECT tenant_id, ${numCol.name} AS num FROM ${table}`).all() as any[]
+        const maxByTenant = new Map<string, number>()
+        for (const r of rows) {
+          if (!r.num) continue
+          const parts = String(r.num).split('-')
+          const tail = parseInt(parts[parts.length - 1], 10)
+          if (isNaN(tail)) continue
+          const cur = maxByTenant.get(r.tenant_id) || 0
+          if (tail > cur) maxByTenant.set(r.tenant_id, tail)
+        }
+        const upsert = db.prepare(`
+          INSERT INTO document_sequences (tenant_id, doc_type, year, last_number, updated_at)
+          VALUES (?, ?, 0, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(tenant_id, doc_type, year) DO UPDATE SET
+            last_number = MAX(last_number, excluded.last_number),
+            updated_at = CURRENT_TIMESTAMP
+        `)
+        for (const [tenantId, maxNum] of maxByTenant) {
+          upsert.run(tenantId, docType, maxNum)
+        }
       } catch (seedErr) {
         console.error(`⚠️ document_sequences seed error for ${table}:`, seedErr)
       }
@@ -1022,4 +1046,57 @@ export function runMigrations(db: any): void {
   } catch (e) {
     console.error('⚠️ document_sequences migration error:', e)
   }
+
+  // Migration: configurable document number formats (Settings → เลขที่เอกสาร)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS document_number_formats (
+        tenant_id TEXT NOT NULL,
+        doc_type TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        prefix TEXT NOT NULL,
+        padding INTEGER NOT NULL DEFAULT 3,
+        date_format TEXT NOT NULL DEFAULT 'DDMMYY',
+        separator TEXT NOT NULL DEFAULT '-',
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, doc_type)
+      );
+    `)
+    console.log('✅ Migration: document_number_formats table ready')
+  } catch (e) {
+    console.error('⚠️ document_number_formats migration error:', e)
+  }
+
+  // Migration: QC ↔ Work Order integration (Phase 1)
+  // Links qc_inspections to a work_order and tracks inspected/passed/rejected qty
+  // so work order completion can be gated on QC results and use QC-verified quantities.
+  try {
+    const cols = db.prepare(`PRAGMA table_info(qc_inspections)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'work_order_id')) {
+      db.exec(`ALTER TABLE qc_inspections ADD COLUMN work_order_id TEXT`)
+      console.log('✅ Migration: added work_order_id to qc_inspections')
+    }
+    if (!cols.some((c: any) => c.name === 'inspected_qty')) {
+      db.exec(`ALTER TABLE qc_inspections ADD COLUMN inspected_qty INTEGER DEFAULT 0`)
+      console.log('✅ Migration: added inspected_qty to qc_inspections')
+    }
+    if (!cols.some((c: any) => c.name === 'passed_qty')) {
+      db.exec(`ALTER TABLE qc_inspections ADD COLUMN passed_qty INTEGER DEFAULT 0`)
+      console.log('✅ Migration: added passed_qty to qc_inspections')
+    }
+    if (!cols.some((c: any) => c.name === 'rejected_qty')) {
+      db.exec(`ALTER TABLE qc_inspections ADD COLUMN rejected_qty INTEGER DEFAULT 0`)
+      console.log('✅ Migration: added rejected_qty to qc_inspections')
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_qc_inspections_wo ON qc_inspections(work_order_id)`)
+    console.log('✅ Migration: qc_inspections work_order columns/index ready')
+  } catch (e) {
+    console.error('⚠️ qc_inspections work_order migration error:', e)
+  }
+
+  // Migration: QC gate toggle on company_settings (default 0 = disabled → preserves existing behavior)
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN qc_gate_enabled INTEGER DEFAULT 0`)
+    console.log('✅ Migration: company_settings.qc_gate_enabled added')
+  } catch { /* column already exists */ }
 }

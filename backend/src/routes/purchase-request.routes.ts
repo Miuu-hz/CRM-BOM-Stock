@@ -323,12 +323,12 @@ router.patch('/:id/items', (req: Request, res: Response) => {
     }
 })
 
-// ─── POST /api/purchase-requests/:id/approve ─────────────────────────────────
+// -- POST /api/purchase-requests/:id/approve
 const ApproveSchema = z.object({ notes: z.string().max(500).optional() })
 
-router.post('/:id/approve', requireRole('MASTER', 'MANAGER'), async (req: Request, res: Response) => {
+router.post('/:id/approve', async (req: Request, res: Response) => {
     try {
-        const { tenantId, userId, email } = req.user!
+        const { tenantId, userId, email, role } = req.user!
         const db = getDb()
 
         const pr = db.prepare(
@@ -336,11 +336,31 @@ router.post('/:id/approve', requireRole('MASTER', 'MANAGER'), async (req: Reques
         ).get(req.params.id, tenantId) as any
         if (!pr) return res.status(404).json({ success: false, message: 'PR not found or not pending' })
 
+        // Advanced approval permission check
+        if (role !== 'MASTER' && role !== 'ADMIN') {
+            const setting = db.prepare(
+                "SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'purchase_request'"
+            ).get(tenantId, role) as any
+            const prAmount = pr.total_amount || 0
+            const autoApprove = setting && setting.auto_approve_threshold > 0 && prAmount <= setting.auto_approve_threshold
+            if (!autoApprove) {
+                const perm = db.prepare(
+                    "SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_request'"
+                ).get(tenantId, userId) as any
+                if (!perm || perm.can_approve !== 1) {
+                    return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์อนุมัติ PR กรุณาติดต่อ Admin' })
+                }
+                if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && prAmount > perm.approval_limit) {
+                    return res.status(403).json({ success: false, message: 'วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ' + perm.approval_limit.toLocaleString() + ', ยอด PR: ' + prAmount.toLocaleString() + ')' })
+                }
+            }
+        }
+
         const parsed = ApproveSchema.safeParse(req.body)
         if (!parsed.success) {
             return res.status(400).json({ success: false, message: parsed.error.issues[0].message })
         }
-
+        const now = new Date().toISOString()
         const approverName = email
         db.prepare(`
             UPDATE purchase_requests
@@ -349,17 +369,25 @@ router.post('/:id/approve', requireRole('MASTER', 'MANAGER'), async (req: Reques
             WHERE id = ? AND tenant_id = ?
         `).run(userId, parsed.data.notes ?? null, pr.id, tenantId)
 
-        // Push LINE notification
-        await lineBotService.notifyPRStatus(tenantId, {
-            id:                   pr.id,
-            prNumber:             pr.pr_number,
-            supplierName:         pr.supplier_name,
-            status:               'APPROVED',
-            requesterLineUserId:  pr.requester_line_user_id,
-            sourceGroupId:        pr.source_group_id,
-            approverName,
-        })
+        // Sync approval_logs if approval_request exists
+        try {
+            const { randomUUID } = require('crypto')
+            const logId = randomUUID().replace(/-/g, '').substring(0, 25)
+            const existingReq = db.prepare(
+                "SELECT id FROM approval_requests WHERE tenant_id = ? AND reference_type = 'purchase_requests' AND reference_id = ? ORDER BY created_at DESC LIMIT 1"
+            ).get(tenantId, pr.id) as any
+            if (existingReq) {
+                db.prepare('INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role, comment, old_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                    .run(logId, tenantId, existingReq.id, 'APPROVED', userId, approverName, role, parsed.data.notes || 'Approved', 'PENDING', 'APPROVED', now)
+                db.prepare("UPDATE approval_requests SET status = 'APPROVED', updated_at = ? WHERE id = ?").run(now, existingReq.id)
+            }
+        } catch (_) {}
 
+        await lineBotService.notifyPRStatus(tenantId, {
+            id: pr.id, prNumber: pr.pr_number, supplierName: pr.supplier_name,
+            status: 'APPROVED', requesterLineUserId: pr.requester_line_user_id,
+            sourceGroupId: pr.source_group_id, approverName,
+        })
         res.json({ success: true, message: 'PR approved' })
     } catch (e) {
         console.error(e)
@@ -367,12 +395,12 @@ router.post('/:id/approve', requireRole('MASTER', 'MANAGER'), async (req: Reques
     }
 })
 
-// ─── POST /api/purchase-requests/:id/reject ──────────────────────────────────
+// -- POST /api/purchase-requests/:id/reject
 const RejectSchema = z.object({ reason: z.string().min(1).max(500) })
 
-router.post('/:id/reject', requireRole('MASTER', 'MANAGER'), async (req: Request, res: Response) => {
+router.post('/:id/reject', async (req: Request, res: Response) => {
     try {
-        const { tenantId, userId, email } = req.user!
+        const { tenantId, userId, email, role } = req.user!
         const db = getDb()
 
         const pr = db.prepare(
@@ -380,11 +408,20 @@ router.post('/:id/reject', requireRole('MASTER', 'MANAGER'), async (req: Request
         ).get(req.params.id, tenantId) as any
         if (!pr) return res.status(404).json({ success: false, message: 'PR not found or not pending' })
 
+        if (role !== 'MASTER' && role !== 'ADMIN') {
+            const perm = db.prepare(
+                "SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_request'"
+            ).get(tenantId, userId) as any
+            if (!perm || perm.can_approve !== 1) {
+                return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ปฏิเสธ PR กรุณาติดต่อ Admin' })
+            }
+        }
+
         const parsed = RejectSchema.safeParse(req.body)
         if (!parsed.success) {
             return res.status(400).json({ success: false, message: parsed.error.issues[0].message })
         }
-
+        const now = new Date().toISOString()
         db.prepare(`
             UPDATE purchase_requests
             SET status = 'REJECTED', approved_by = ?, approved_at = CURRENT_TIMESTAMP,
@@ -392,17 +429,24 @@ router.post('/:id/reject', requireRole('MASTER', 'MANAGER'), async (req: Request
             WHERE id = ? AND tenant_id = ?
         `).run(userId, parsed.data.reason, pr.id, tenantId)
 
-        await lineBotService.notifyPRStatus(tenantId, {
-            id:                   pr.id,
-            prNumber:             pr.pr_number,
-            supplierName:         pr.supplier_name,
-            status:               'REJECTED',
-            requesterLineUserId:  pr.requester_line_user_id,
-            sourceGroupId:        pr.source_group_id,
-            approverName:         email,
-            rejectionReason:      parsed.data.reason,
-        })
+        try {
+            const { randomUUID } = require('crypto')
+            const logId = randomUUID().replace(/-/g, '').substring(0, 25)
+            const existingReq = db.prepare(
+                "SELECT id FROM approval_requests WHERE tenant_id = ? AND reference_type = 'purchase_requests' AND reference_id = ? ORDER BY created_at DESC LIMIT 1"
+            ).get(tenantId, pr.id) as any
+            if (existingReq) {
+                db.prepare('INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role, comment, old_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                    .run(logId, tenantId, existingReq.id, 'REJECTED', userId, email, role, parsed.data.reason, 'PENDING', 'REJECTED', now)
+                db.prepare("UPDATE approval_requests SET status = 'REJECTED', updated_at = ? WHERE id = ?").run(now, existingReq.id)
+            }
+        } catch (_) {}
 
+        await lineBotService.notifyPRStatus(tenantId, {
+            id: pr.id, prNumber: pr.pr_number, supplierName: pr.supplier_name,
+            status: 'REJECTED', requesterLineUserId: pr.requester_line_user_id,
+            sourceGroupId: pr.source_group_id, approverName: email, rejectionReason: parsed.data.reason,
+        })
         res.json({ success: true, message: 'PR rejected' })
     } catch (e) {
         console.error(e)

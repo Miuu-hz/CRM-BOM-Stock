@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   ArrowLeftRight, Plus, Trash2, Edit2, Globe, Lock,
   Search, X, Save, ChevronDown, ChevronUp, Info, Package,
@@ -39,14 +40,8 @@ interface StockItem {
 const ul = (u: string) => UNIT_LABELS[u] ? `${u} (${UNIT_LABELS[u]})` : u
 const unitLabel = (u: string) => UNIT_LABELS[u] ?? u
 
-const STANDARD_GROUPS = [
-  { label: 'น้ำหนัก', units: ['kg', 'g', 'mg', 'lb', 'oz'] },
-  { label: 'ความยาว', units: ['m', 'cm', 'mm', 'km', 'inch', 'ft', 'yard'] },
-  { label: 'ปริมาตร', units: ['l', 'ltr', 'ml', 'gallon'] },
-  { label: 'หน่วยนับสากล', units: ['pcs', 'dozen', 'gross', 'pair'] },
-]
-
 export default function UnitConversions() {
+  const { t } = useTranslation()
   const [allConversions, setAllConversions] = useState<UnitConversion[]>([])
   const [standards, setStandards] = useState<StandardConversion[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,7 +49,7 @@ export default function UnitConversions() {
   const [editTarget, setEditTarget] = useState<UnitConversion | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'น้ำหนัก': true, 'ความยาว': true, 'ปริมาตร': false, 'หน่วยนับสากล': true,
+    weight: true, length: true, volume: false, count: true,
   })
 
   // Form state
@@ -108,7 +103,7 @@ export default function UnitConversions() {
       setStandards(stdRes.data.data ?? [])
       setAllStock(stockRes.data.data ?? stockRes.data ?? [])
     } catch {
-      toast.error('โหลดข้อมูลไม่สำเร็จ')
+      toast.error(t('settings.unitConversions.toast.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -140,7 +135,7 @@ export default function UnitConversions() {
       })
       setPathResult(res.data.data)
     } catch {
-      toast.error('ตรวจสอบเส้นทางไม่สำเร็จ')
+      toast.error(t('settings.unitConversions.toast.pathCheckFailed'))
     } finally {
       setChecking(false)
     }
@@ -158,7 +153,7 @@ export default function UnitConversions() {
       })
       setSuggestion(res.data.data)
     } catch {
-      toast.error('ขอคำแนะนำ AI ไม่สำเร็จ')
+      toast.error(t('settings.unitConversions.toast.aiSuggestFailed'))
     } finally {
       setSuggesting(false)
     }
@@ -200,9 +195,9 @@ export default function UnitConversions() {
   const closeForm = () => { setShowForm(false); setEditTarget(null) }
 
   const handleSave = async () => {
-    if (!fromUnit.trim() || !toUnit.trim() || !factor) return toast.error('กรุณาระบุหน่วยและค่าแปลง')
-    if (Number(factor) <= 0) return toast.error('ค่าแปลงต้องมากกว่า 0')
-    if (fromUnit.trim() === toUnit.trim()) return toast.error('หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน')
+    if (!fromUnit.trim() || !toUnit.trim() || !factor) return toast.error(t('settings.unitConversions.toast.validation'))
+    if (Number(factor) <= 0) return toast.error(t('settings.unitConversions.toast.factorPositive'))
+    if (fromUnit.trim() === toUnit.trim()) return toast.error(t('settings.unitConversions.toast.sameUnit'))
     setSaving(true)
     try {
       if (editTarget) {
@@ -210,7 +205,7 @@ export default function UnitConversions() {
           conversion_factor: Number(factor),
           notes: notes.trim() || undefined,
         })
-        toast.success('บันทึกแล้ว')
+        toast.success(t('settings.unitConversions.toast.updateSuccess'))
       } else {
         await api.post('/materials/unit-conversions', {
           from_unit: normalizeUnit(fromUnit),
@@ -219,27 +214,27 @@ export default function UnitConversions() {
           notes: notes.trim() || undefined,
           material_id: selectedMaterial?.id ?? undefined,
         })
-        toast.success('เพิ่มการแปลงหน่วยแล้ว')
+        toast.success(t('settings.unitConversions.toast.createSuccess'))
       }
       invalidateUnitsCache()
       closeForm()
       fetchAll()
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
+      toast.error(err?.response?.data?.message ?? t('settings.adminUserManagement.toast.error'))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string, label: string) => {
-    if (!confirm(`ลบการแปลง "${label}" ใช่หรือไม่?`)) return
+    if (!confirm(t('settings.unitConversions.toast.deleteConfirm', { label }))) return
     try {
       await api.delete(`/materials/unit-conversions/${id}`)
-      toast.success('ลบแล้ว')
+      toast.success(t('settings.unitConversions.toast.deleteSuccess'))
       invalidateUnitsCache()
       setAllConversions(prev => prev.filter(c => c.id !== id))
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
+      toast.error(err?.response?.data?.message ?? t('settings.unitConversions.toast.deleteFailed'))
     }
   }
 
@@ -270,8 +265,8 @@ export default function UnitConversions() {
   const chainConversions = useMemo(
     () => chainEditorCtx
       ? allConversions.filter(c =>
-          chainEditorCtx.id ? c.material_id === chainEditorCtx.id : !c.material_id,
-        )
+        chainEditorCtx.id ? c.material_id === chainEditorCtx.id : !c.material_id,
+      )
       : [],
     [allConversions, chainEditorCtx],
   )
@@ -306,6 +301,13 @@ export default function UnitConversions() {
     invalidateUnitsCache()
     setAllConversions(prev => prev.filter(c => c.id !== id))
   }
+
+  const standardGroups = [
+    { key: 'weight', units: ['kg', 'g', 'mg', 'lb', 'oz'] },
+    { key: 'length', units: ['m', 'cm', 'mm', 'km', 'inch', 'ft', 'yard'] },
+    { key: 'volume', units: ['l', 'ltr', 'ml', 'gallon'] },
+    { key: 'count', units: ['pcs', 'dozen', 'gross', 'pair'] },
+  ]
 
   const ConversionRow = ({ c }: { c: UnitConversion }) => (
     <motion.div
@@ -347,8 +349,8 @@ export default function UnitConversions() {
             <ArrowLeftRight className="w-5 h-5 text-[var(--primary)]" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-[var(--fg-1)]">การแปลงหน่วย</h2>
-            <p className="text-xs text-[var(--fg-3)]">กำหนดอัตราแปลงระหว่างหน่วยนับ ทั่วไป หรือเฉพาะสินค้า</p>
+            <h2 className="text-lg font-semibold text-[var(--fg-1)]">{t('settings.unitConversions.title')}</h2>
+            <p className="text-xs text-[var(--fg-3)]">{t('settings.unitConversions.subtitle')}</p>
           </div>
         </div>
         <button
@@ -356,7 +358,7 @@ export default function UnitConversions() {
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
-          เพิ่มการแปลงหน่วย
+          {t('settings.unitConversions.add')}
         </button>
       </div>
 
@@ -365,7 +367,7 @@ export default function UnitConversions() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
         <input
           type="text"
-          placeholder="ค้นหาหน่วย หรือชื่อสินค้า..."
+          placeholder={t('settings.unitConversions.searchPlaceholder')}
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           className="w-full pl-9 pr-4 py-2 bg-[var(--surface)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
@@ -381,25 +383,25 @@ export default function UnitConversions() {
       <div className="bg-[var(--surface)] rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
         <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Globe className="w-4 h-4 text-blue-400" />
-          <span className="text-sm font-medium text-[var(--fg-2)]">ทั่วไป (ใช้กับทุกสินค้า)</span>
+          <span className="text-sm font-medium text-[var(--fg-2)]">{t('settings.unitConversions.global.title')}</span>
           <span className="px-2 py-0.5 bg-[var(--info-soft)] text-[var(--info)] text-xs rounded-full">
-            {globalConversions.length} รายการ
+            {t('common.itemCount', { count: globalConversions.length })}
           </span>
           <button
-            onClick={() => setChainEditorCtx({ id: null, name: 'ทั่วไป' })}
+            onClick={() => setChainEditorCtx({ id: null, name: t('settings.unitConversions.global.title') })}
             className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/10 border border-purple-500/30 text-[var(--primary)] rounded-lg text-xs hover:bg-purple-500/20 transition-colors"
           >
             <Network className="w-3.5 h-3.5" />
-            Chain View
+            {t('settings.unitConversions.global.chainView')}
           </button>
         </div>
 
         {loading ? (
-          <div className="p-6 text-center text-[var(--fg-4)] text-sm">กำลังโหลด...</div>
+          <div className="p-6 text-center text-[var(--fg-4)] text-sm">{t('common.loading')}</div>
         ) : filterConv(globalConversions).length === 0 ? (
           <div className="p-6 text-center">
-            <p className="text-[var(--fg-4)] text-sm">ยังไม่มีการแปลงหน่วยทั่วไป</p>
-            <p className="text-[var(--fg-4)] text-xs mt-1">ตัวอย่าง: 1 ลัง = 12 กล่อง</p>
+            <p className="text-[var(--fg-4)] text-sm">{t('settings.unitConversions.global.empty')}</p>
+            <p className="text-[var(--fg-4)] text-xs mt-1">{t('settings.unitConversions.global.emptyHint')}</p>
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]">
@@ -412,19 +414,19 @@ export default function UnitConversions() {
       <div className="bg-[var(--surface)] rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
         <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Package className="w-4 h-4 text-[var(--warning)]" />
-          <span className="text-sm font-medium text-[var(--fg-2)]">เฉพาะสินค้า (override per item)</span>
+          <span className="text-sm font-medium text-[var(--fg-2)]">{t('settings.unitConversions.perMaterial.title')}</span>
           <span className="px-2 py-0.5 bg-amber-500/20 text-[var(--warning)] text-xs rounded-full">
-            {perMaterialConversions.length} รายการ
+            {t('common.itemCount', { count: perMaterialConversions.length })}
           </span>
         </div>
 
         {loading ? (
-          <div className="p-6 text-center text-[var(--fg-4)] text-sm">กำลังโหลด...</div>
+          <div className="p-6 text-center text-[var(--fg-4)] text-sm">{t('common.loading')}</div>
         ) : Object.keys(perMaterialGroups).length === 0 ? (
           <div className="p-6 text-center">
             <Package className="w-10 h-10 text-[var(--fg-4)] mx-auto mb-2" />
-            <p className="text-[var(--fg-4)] text-sm">ยังไม่มีการแปลงเฉพาะสินค้า</p>
-            <p className="text-[var(--fg-4)] text-xs mt-1">ใช้เมื่อสินค้าแต่ละชิ้นมีขนาดบรรจุต่างกัน เช่น แป้ง A: 1 ถุง = 25 kg</p>
+            <p className="text-[var(--fg-4)] text-sm">{t('settings.unitConversions.perMaterial.empty')}</p>
+            <p className="text-[var(--fg-4)] text-xs mt-1">{t('settings.unitConversions.perMaterial.emptyHint')}</p>
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]">
@@ -436,13 +438,13 @@ export default function UnitConversions() {
                     <Package className="w-3.5 h-3.5 text-[var(--warning)]" />
                     <span className="text-xs font-medium text-[var(--warning)]">{group.name}</span>
                     {group.sku && <span className="text-xs text-[var(--fg-4)] font-mono">{group.sku}</span>}
-                    <span className="text-xs text-[var(--fg-4)]">{group.items.length} รายการ</span>
+                    <span className="text-xs text-[var(--fg-4)]">{t('settings.unitConversions.perMaterial.itemCount', { count: group.items.length })}</span>
                     <button
                       onClick={() => setChainEditorCtx({ id: materialId, name: group.name })}
                       className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 text-[var(--primary)] rounded-lg text-xs hover:bg-purple-500/20 transition-colors"
                     >
                       <Network className="w-3 h-3" />
-                      Chain
+                      {t('settings.unitConversions.perMaterial.chain')}
                     </button>
                   </div>
                   {filterConv(group.items).map(c => <ConversionRow key={c.id} c={c} />)}
@@ -456,10 +458,10 @@ export default function UnitConversions() {
       <div className="bg-[var(--surface)] rounded-xl border border-[var(--border-strong)]/50 overflow-hidden">
         <div className="p-4 border-b border-[var(--border-strong)]/50 flex items-center gap-2">
           <Globe className="w-4 h-4 text-[var(--success)]" />
-          <span className="text-sm font-medium text-[var(--fg-2)]">มาตราสากล (Built-in)</span>
-          <span className="px-2 py-0.5 bg-emerald-500/20 text-[var(--success)] text-xs rounded-full">{standards.length} รายการ</span>
+          <span className="text-sm font-medium text-[var(--fg-2)]">{t('settings.unitConversions.builtIn.title')}</span>
+          <span className="px-2 py-0.5 bg-emerald-500/20 text-[var(--success)] text-xs rounded-full">{t('common.itemCount', { count: standards.length })}</span>
           <div className="flex items-center gap-1 ml-2 text-xs text-[var(--fg-4)]">
-            <Lock className="w-3 h-3" /><span>แก้ไขไม่ได้</span>
+            <Lock className="w-3 h-3" /><span>{t('settings.unitConversions.builtIn.locked')}</span>
           </div>
         </div>
 
@@ -467,25 +469,24 @@ export default function UnitConversions() {
           <div className="flex items-start gap-2 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
             <Info className="w-4 h-4 text-[var(--success)] mt-0.5 flex-shrink-0" />
             <p className="text-xs text-[var(--fg-3)]">
-              ระบบรองรับมาตราสากลอัตโนมัติ เช่น kg↔g, inch↔cm, L↔ml, โหล=12ชิ้น, กุรอส=144ชิ้น
-              ไม่ต้องตั้งค่าเพิ่มเติม ใช้งานได้ทันทีใน BOM และ Stock Movement
+              {t('settings.unitConversions.builtIn.info')}
             </p>
           </div>
 
-          {STANDARD_GROUPS.map(group => {
+          {standardGroups.map(group => {
             const groupConversions = standards.filter(s =>
               group.units.includes(s.from_unit) && group.units.includes(s.to_unit)
             )
-            const isOpen = expandedGroups[group.label]
+            const isOpen = expandedGroups[group.key]
             return (
-              <div key={group.label} className="border border-[var(--border-strong)] rounded-lg overflow-hidden">
+              <div key={group.key} className="border border-[var(--border-strong)] rounded-lg overflow-hidden">
                 <button
-                  onClick={() => toggleGroup(group.label)}
+                  onClick={() => toggleGroup(group.key)}
                   className="w-full flex items-center justify-between px-4 py-2.5 bg-[var(--surface-2)] hover:bg-[var(--surface-2)] transition-colors"
                 >
-                  <span className="text-sm font-medium text-[var(--fg-2)]">{group.label}</span>
+                  <span className="text-sm font-medium text-[var(--fg-2)]">{t(`settings.unitConversions.standardGroups.${group.key}`)}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--fg-4)]">{groupConversions.length} คู่</span>
+                    <span className="text-xs text-[var(--fg-4)]">{t('settings.unitConversions.builtIn.pairCount', { count: groupConversions.length })}</span>
                     {isOpen ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" /> : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
                   </div>
                 </button>
@@ -527,7 +528,7 @@ export default function UnitConversions() {
                 <div className="flex items-center gap-2">
                   <ArrowLeftRight className="w-5 h-5 text-[var(--primary)]" />
                   <h3 className="font-semibold text-[var(--fg-1)]">
-                    {editTarget ? 'แก้ไขการแปลงหน่วย' : 'เพิ่มการแปลงหน่วย'}
+                    {editTarget ? t('settings.unitConversions.modal.titleEdit') : t('settings.unitConversions.modal.titleCreate')}
                   </h3>
                 </div>
                 <button onClick={closeForm} className="text-[var(--fg-3)] hover:text-[var(--fg-2)] transition-colors">
@@ -540,8 +541,9 @@ export default function UnitConversions() {
                 {fromUnit && toUnit && factor && Number(factor) > 0 && (
                   <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg text-center">
                     <span className="text-[var(--primary)] font-medium">
-                      1 {unitLabel(fromUnit) || fromUnit} = {factor} {unitLabel(toUnit) || toUnit}
-                      {selectedMaterial && <span className="text-[var(--fg-3)] ml-2 text-sm">({selectedMaterial.name})</span>}
+                      {selectedMaterial
+                        ? t('settings.unitConversions.modal.previewWithMaterial', { from: unitLabel(fromUnit) || fromUnit, factor, to: unitLabel(toUnit) || toUnit, material: selectedMaterial.name })
+                        : t('settings.unitConversions.modal.preview', { from: unitLabel(fromUnit) || fromUnit, factor, to: unitLabel(toUnit) || toUnit })}
                     </span>
                   </div>
                 )}
@@ -551,14 +553,14 @@ export default function UnitConversions() {
                   <div className="p-3 bg-[var(--surface-2)] border border-[var(--border-strong)]/40 rounded-xl space-y-2">
                     <p className="text-xs font-medium text-[var(--fg-3)] flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-[var(--primary)]" />
-                      ตรวจสอบเส้นทาง / ขอคำแนะนำ AI
+                      {t('settings.unitConversions.modal.advisorTitle')}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <input
                         type="text"
                         value={checkFrom}
                         onChange={e => { setCheckFrom(e.target.value); setPathResult(null); setSuggestion(null) }}
-                        placeholder="จาก (pack)"
+                        placeholder={t('settings.unitConversions.modal.fromPlaceholder')}
                         className="flex-1 px-2.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
                       />
                       <span className="text-[var(--fg-4)] self-center">→</span>
@@ -566,7 +568,7 @@ export default function UnitConversions() {
                         type="text"
                         value={checkTo}
                         onChange={e => { setCheckTo(e.target.value); setPathResult(null); setSuggestion(null) }}
-                        placeholder="ถึง (liter)"
+                        placeholder={t('settings.unitConversions.modal.toPlaceholder')}
                         className="flex-1 px-2.5 py-1.5 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
                       />
                       <button
@@ -574,7 +576,7 @@ export default function UnitConversions() {
                         disabled={checking || !checkFrom.trim() || !checkTo.trim()}
                         className="px-3 py-1.5 bg-purple-600/70 hover:bg-purple-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors"
                       >
-                        {checking ? '...' : <span className="whitespace-nowrap">ตรวจสอบ</span>}
+                        {checking ? t('settings.unitConversions.modal.checking') : <span className="whitespace-nowrap">{t('settings.unitConversions.modal.check')}</span>}
                       </button>
                     </div>
 
@@ -585,8 +587,8 @@ export default function UnitConversions() {
                             <div className="flex items-start gap-2 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
                               <CheckCircle2 className="w-4 h-4 text-[var(--success)] flex-shrink-0 mt-0.5" />
                               <div className="text-xs text-[var(--success)] space-y-0.5">
-                                <p className="font-medium">พบเส้นทาง: {pathResult.path?.join(' → ')}</p>
-                                <p className="text-[var(--success)]">1 {pathResult.path?.[0]} = {pathResult.factor?.toFixed(6).replace(/\.?0+$/, '')} {pathResult.path?.[pathResult.path.length - 1]}</p>
+                                <p className="font-medium">{t('settings.unitConversions.modal.pathFound', { path: pathResult.path?.join(' → ') })}</p>
+                                <p className="text-[var(--success)]">{t('settings.unitConversions.modal.pathFoundValue', { from: pathResult.path?.[0], factor: pathResult.factor?.toFixed(6).replace(/\.?0+$/, ''), to: pathResult.path?.[pathResult.path.length - 1] })}</p>
                               </div>
                             </div>
                           ) : (
@@ -594,8 +596,8 @@ export default function UnitConversions() {
                               <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                                 <AlertCircle className="w-4 h-4 text-[var(--warning)] flex-shrink-0 mt-0.5" />
                                 <div className="text-xs text-[var(--warning)]">
-                                  <p className="font-medium">ไม่พบเส้นทาง {pathResult.from_norm} → {pathResult.to_norm}</p>
-                                  <p className="text-[var(--warning)] mt-0.5">กรุณาเพิ่มการแปลงด้านล่าง หรือให้ AI แนะนำค่า</p>
+                                  <p className="font-medium">{t('settings.unitConversions.modal.pathNotFound', { from: pathResult.from_norm, to: pathResult.to_norm })}</p>
+                                  <p className="text-[var(--warning)] mt-0.5">{t('settings.unitConversions.modal.pathNotFoundHint')}</p>
                                 </div>
                               </div>
                               {!suggestion && (
@@ -605,7 +607,7 @@ export default function UnitConversions() {
                                   className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-purple-600/50 hover:bg-purple-600/70 disabled:opacity-40 text-[var(--primary)] rounded-lg text-xs transition-colors"
                                 >
                                   <Sparkles className="w-3.5 h-3.5" />
-                                  {suggesting ? 'AI กำลังคิด...' : 'ขอให้ AI แนะนำค่า'}
+                                  {suggesting ? t('settings.unitConversions.modal.aiThinking') : t('settings.unitConversions.modal.aiSuggest')}
                                 </button>
                               )}
                               {suggestion && (
@@ -614,7 +616,7 @@ export default function UnitConversions() {
                                   <div className="flex-1 min-w-0">
                                     <p className="text-xs text-[var(--primary)] font-medium">
                                       {suggestion.factor
-                                        ? `AI แนะนำ: 1 ${pathResult.from_norm} = ${suggestion.factor} ${pathResult.to_norm}`
+                                        ? t('settings.unitConversions.modal.aiSuggestion', { from: pathResult.from_norm, factor: suggestion.factor, to: pathResult.to_norm })
                                         : suggestion.note}
                                     </p>
                                     {suggestion.note && suggestion.factor && (
@@ -626,7 +628,7 @@ export default function UnitConversions() {
                                       onClick={applyAdvisorToForm}
                                       className="flex-shrink-0 px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-xs font-medium transition-colors"
                                     >
-                                      ใช้ค่านี้
+                                      {t('settings.unitConversions.modal.applyValue')}
                                     </button>
                                   )}
                                 </div>
@@ -643,7 +645,7 @@ export default function UnitConversions() {
                 {!editTarget && (
                   <div ref={materialRef}>
                     <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                      เฉพาะสินค้า <span className="text-[var(--fg-4)]">(ไม่เลือก = ใช้กับทุกสินค้า)</span>
+                      {t('settings.unitConversions.modal.materialLabel')} <span className="text-[var(--fg-4)]">{t('settings.unitConversions.modal.materialHint')}</span>
                     </label>
                     <div className="relative">
                       <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-4)]" />
@@ -652,7 +654,7 @@ export default function UnitConversions() {
                         value={materialSearch}
                         onChange={e => handleMaterialSearch(e.target.value)}
                         onFocus={() => { setShowMaterialDropdown(true); setMaterialResults(allStock.slice(0, 8)) }}
-                        placeholder="ค้นหาสินค้า หรือเว้นว่างเพื่อใช้ทั่วไป..."
+                        placeholder={t('settings.unitConversions.modal.materialPlaceholder')}
                         className="w-full pl-9 pr-8 py-2 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
                       />
                       {selectedMaterial && (
@@ -702,25 +704,25 @@ export default function UnitConversions() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยต้นทาง (from)</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.unitConversions.modal.fromUnitLabel')}</label>
                     <input
                       type="text"
                       value={fromUnit}
                       onChange={e => setFromUnit(e.target.value)}
                       disabled={!!editTarget}
-                      placeholder="เช่น pack, ลัง, ซอง"
+                      placeholder={t('settings.unitConversions.modal.fromUnitPlaceholder')}
                       className="w-full px-3 py-2 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
                     />
                     {fromUnit && <p className="text-xs text-[var(--fg-4)] mt-1">{unitLabel(fromUnit)}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยปลายทาง (to)</label>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.unitConversions.modal.toUnitLabel')}</label>
                     <input
                       type="text"
                       value={toUnit}
                       onChange={e => setToUnit(e.target.value)}
                       disabled={!!editTarget}
-                      placeholder="เช่น pcs, ชิ้น, g"
+                      placeholder={t('settings.unitConversions.modal.toUnitPlaceholder')}
                       className="w-full px-3 py-2 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50 disabled:opacity-50"
                     />
                     {toUnit && <p className="text-xs text-[var(--fg-4)] mt-1">{unitLabel(toUnit)}</p>}
@@ -729,13 +731,13 @@ export default function UnitConversions() {
 
                 <div>
                   <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                    ค่าแปลง — 1 <span className="text-[var(--primary)]">{fromUnit || '?'}</span> = กี่ <span className="text-[var(--success)]">{toUnit || '?'}</span>
+                    {t('settings.unitConversions.modal.factorLabel', { from: fromUnit || '?', to: toUnit || '?' })}
                   </label>
                   <input
                     type="number"
                     value={factor}
                     onChange={e => setFactor(e.target.value)}
-                    placeholder="เช่น 24"
+                    placeholder={t('settings.unitConversions.modal.factorPlaceholder')}
                     min="0.0000001"
                     step="any"
                     className="w-full px-3 py-2 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
@@ -743,26 +745,26 @@ export default function UnitConversions() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">หมายเหตุ (ไม่บังคับ)</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.unitConversions.modal.notesLabel')}</label>
                   <input
                     type="text"
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
-                    placeholder="เช่น บรรจุภัณฑ์ไซส์ L"
+                    placeholder={t('settings.unitConversions.modal.notesPlaceholder')}
                     className="w-full px-3 py-2 bg-[var(--surface-2)] border border-[var(--border-strong)]/50 rounded-lg text-sm text-[var(--fg-2)] placeholder-[var(--fg-4)] focus:outline-none focus:border-purple-500/50"
                   />
                 </div>
 
                 <div className="flex gap-3 pt-1">
                   <button onClick={closeForm} className="flex-1 py-2.5 border border-[var(--border-strong)] text-[var(--fg-2)] hover:text-[var(--fg-1)] rounded-lg text-sm transition-colors">
-                    ยกเลิก
+                    {t('common.cancel')}
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}
                     className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
-                    {saving ? <span className="animate-pulse">กำลังบันทึก...</span> : <><Save className="w-4 h-4" />บันทึก</>}
+                    {saving ? <span className="animate-pulse">{t('settings.unitConversions.modal.saving')}</span> : <><Save className="w-4 h-4" />{t('common.save')}</>}
                   </button>
                 </div>
               </div>

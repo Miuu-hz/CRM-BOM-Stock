@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import {
   Check,
   ChevronRight,
@@ -72,6 +73,7 @@ interface Product {
 // ==================== Components ====================
 
 export default function POSMenuSettings() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<'menus' | 'categories'>('menus')
   const [menus, setMenus] = useState<POSMenu[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
@@ -80,7 +82,7 @@ export default function POSMenuSettings() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [posBomDeduct, setPosBomDeduct] = useState(true)
   const [savingBomSetting, setSavingBomSetting] = useState(false)
-  
+
   const [showMenuModal, setShowMenuModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [editingMenu, setEditingMenu] = useState<POSMenu | null>(null)
@@ -93,22 +95,21 @@ export default function POSMenuSettings() {
         posService.getMenuConfigs(),
         posService.getCategories(),
       ])
-      
+
       if (menusRes.success) setMenus(menusRes.data || [])
       if (categoriesRes.success) setCategories(categoriesRes.data || [])
     } catch (error) {
-      toast.error('Failed to load POS data')
+      toast.error(t('settings.posMenu.toast.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchData()
-    // Load BOM deduct setting
     api.get('/settings/company').then(res => {
       if (res.data.success) setPosBomDeduct(res.data.data?.pos_bom_deduct !== 0)
-    }).catch(() => {})
+    }).catch(() => { })
   }, [fetchData])
 
   const handleToggleBomDeduct = async (value: boolean) => {
@@ -116,23 +117,23 @@ export default function POSMenuSettings() {
     setSavingBomSetting(true)
     try {
       await api.put('/settings/company', { pos_bom_deduct: value })
-      toast.success(value ? 'เปิดการตัด stock ตาม BOM แล้ว' : 'ปิดการตัด stock ตาม BOM แล้ว')
+      toast.success(value ? t('settings.posMenu.toast.bomEnabled') : t('settings.posMenu.toast.bomDisabled'))
     } catch {
-      toast.error('บันทึกไม่สำเร็จ')
-      setPosBomDeduct(!value) // revert
+      toast.error(t('settings.posMenu.toast.bomSaveFailed'))
+      setPosBomDeduct(!value)
     } finally {
       setSavingBomSetting(false)
     }
   }
 
   const filteredMenus = menus.filter(menu => {
-    const matchesSearch = 
+    const matchesSearch =
       menu.product_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       menu.product_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       menu.quick_code?.toLowerCase().includes(searchQuery.toLowerCase())
-    
+
     const matchesCategory = selectedCategory === 'all' || menu.category_id === selectedCategory
-    
+
     return matchesSearch && matchesCategory
   })
 
@@ -140,43 +141,43 @@ export default function POSMenuSettings() {
     try {
       const newStatus = !menu.is_available
       const res = await posService.toggleMenuAvailability(menu.id, newStatus)
-      
+
       if (res.success) {
-        setMenus(prev => prev.map(m => 
+        setMenus(prev => prev.map(m =>
           m.id === menu.id ? { ...m, is_available: newStatus } : m
         ))
-        toast.success(newStatus ? 'Menu enabled' : 'Menu disabled')
+        toast.success(newStatus ? t('settings.posMenu.toast.menuEnabled') : t('settings.posMenu.toast.menuDisabled'))
       }
     } catch (error) {
-      toast.error('Failed to update menu')
+      toast.error(t('settings.posMenu.toast.menuUpdateFailed'))
     }
   }
 
   const deleteMenu = async (menuId: string) => {
-    if (!confirm('Are you sure you want to remove this menu from POS?')) return
-    
+    if (!confirm(t('settings.posMenu.deleteMenuConfirm'))) return
+
     try {
       const res = await posService.deleteMenuConfig(menuId)
       if (res.success) {
         setMenus(prev => prev.filter(m => m.id !== menuId))
-        toast.success('Menu removed from POS')
+        toast.success(t('settings.posMenu.toast.menuDeleted'))
       }
     } catch (error) {
-      toast.error('Failed to delete menu')
+      toast.error(t('settings.posMenu.toast.menuDeleteFailed'))
     }
   }
 
   const deleteCategory = async (categoryId: string) => {
-    if (!confirm('Are you sure? Menus in this category will be uncategorized.')) return
-    
+    if (!confirm(t('settings.posMenu.deleteCategoryConfirm'))) return
+
     try {
       const res = await posService.deleteCategory(categoryId)
       if (res.success) {
         setCategories(prev => prev.filter(c => c.id !== categoryId))
-        toast.success('Category deleted')
+        toast.success(t('settings.posMenu.toast.categoryDeleted'))
       }
     } catch (error) {
-      toast.error('Failed to delete category')
+      toast.error(t('settings.posMenu.toast.categoryDeleteFailed'))
     }
   }
 
@@ -185,10 +186,10 @@ export default function POSMenuSettings() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">POS Menu Management</h1>
-          <p className="text-[var(--fg-3)] mt-1">Configure which products are available for sale in POS</p>
+          <h1 className="text-2xl font-bold text-white">{t('settings.posMenu.title')}</h1>
+          <p className="text-[var(--fg-3)] mt-1">{t('settings.posMenu.subtitle')}</p>
         </div>
-        
+
         <div className="flex bg-[var(--surface)] rounded-lg p-1">
           <button
             onClick={() => setActiveTab('menus')}
@@ -199,7 +200,7 @@ export default function POSMenuSettings() {
             }`}
           >
             <Utensils className="w-4 h-4" />
-            Menus
+            {t('settings.posMenu.tabs.menus')}
           </button>
           <button
             onClick={() => setActiveTab('categories')}
@@ -210,7 +211,7 @@ export default function POSMenuSettings() {
             }`}
           >
             <Grid className="w-4 h-4" />
-            Categories
+            {t('settings.posMenu.tabs.categories')}
           </button>
         </div>
       </div>
@@ -225,10 +226,10 @@ export default function POSMenuSettings() {
         <div>
           <p className="text-sm font-semibold text-[var(--fg-2)] flex items-center gap-2">
             <Package className="w-4 h-4 text-[var(--primary)]" />
-            ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน
+            {t('settings.posMenu.bomDeduct.title')}
           </p>
           <p className="text-xs text-[var(--fg-4)] mt-0.5 ml-6">
-            เปิด = ร้านที่ผลิตเอง (ร้านอาหาร / โรงงาน) ·  ปิด = ร้านค้าที่ขายของสำเร็จรูปโดยตรง
+            {t('settings.posMenu.bomDeduct.description')}
           </p>
         </div>
         {savingBomSetting
@@ -247,24 +248,24 @@ export default function POSMenuSettings() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
               <input
                 type="text"
-                placeholder="Search menus..."
+                placeholder={t('settings.posMenu.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
               />
             </div>
-            
+
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
             >
-              <option value="all">All Categories</option>
+              <option value="all">{t('settings.posMenu.allCategories')}</option>
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
-            
+
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -275,30 +276,30 @@ export default function POSMenuSettings() {
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
             >
               <Plus className="w-4 h-4" />
-              Add Menu
+              {t('settings.posMenu.addMenu')}
             </motion.button>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
-              <p className="text-sm text-[var(--fg-3)]">Total Menus</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.totalMenus')}</p>
               <p className="text-2xl font-bold text-white">{menus.length}</p>
             </div>
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
-              <p className="text-sm text-[var(--fg-3)]">Available</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.available')}</p>
               <p className="text-2xl font-bold text-success">
                 {menus.filter(m => m.is_available).length}
               </p>
             </div>
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
-              <p className="text-sm text-[var(--fg-3)]">Unavailable</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.unavailable')}</p>
               <p className="text-2xl font-bold text-danger">
                 {menus.filter(m => !m.is_available).length}
               </p>
             </div>
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
-              <p className="text-sm text-[var(--fg-3)]">Categories</p>
+              <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.categories')}</p>
               <p className="text-2xl font-bold text-[var(--primary)]">{categories.length}</p>
             </div>
           </div>
@@ -307,14 +308,14 @@ export default function POSMenuSettings() {
           {loading ? (
             <div className="text-center py-12">
               <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-[var(--fg-3)] mt-2">Loading...</p>
+              <p className="text-[var(--fg-3)] mt-2">{t('settings.posMenu.loading')}</p>
             </div>
           ) : filteredMenus.length === 0 ? (
             <div className="text-center py-12 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <Store className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
-              <p className="text-[var(--fg-3)]">No menus found</p>
+              <p className="text-[var(--fg-3)]">{t('settings.posMenu.noMenus')}</p>
               <p className="text-sm text-[var(--fg-4)] mt-1">
-                {searchQuery ? 'Try different search terms' : 'Add your first menu to POS'}
+                {searchQuery ? t('settings.posMenu.noSearchResults') : t('settings.posMenu.addFirstMenu')}
               </p>
             </div>
           ) : (
@@ -330,16 +331,16 @@ export default function POSMenuSettings() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span 
+                        <span
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: menu.category_color || 'var(--primary)' }}
                         />
                         <span className="text-xs text-[var(--fg-3)]">
-                          {menu.category_name || 'Uncategorized'}
+                          {menu.category_name || t('settings.posMenu.uncategorized')}
                         </span>
                         {menu.bom_id && (
                           <span className="text-xs px-1.5 py-0.5 bg-[var(--primary-soft)] text-[var(--primary)] rounded">
-                            BOM v{menu.bom_version}
+                            {t('settings.posMenu.bomVersion', { version: menu.bom_version })}
                           </span>
                         )}
                       </div>
@@ -348,16 +349,16 @@ export default function POSMenuSettings() {
                       </h3>
                       <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
                     </div>
-                    
+
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => toggleAvailability(menu)}
                         className={`p-2 rounded-lg transition-colors ${
-                          menu.is_available 
-                            ? 'text-success hover:bg-success/10' 
+                          menu.is_available
+                            ? 'text-success hover:bg-success/10'
                             : 'text-[var(--fg-4)] hover:bg-gray-500/10'
                         }`}
-                        title={menu.is_available ? 'Enabled' : 'Disabled'}
+                        title={menu.is_available ? t('settings.posMenu.enabled') : t('settings.posMenu.disabled')}
                       >
                         {menu.is_available ? (
                           <ToggleRight className="w-5 h-5" />
@@ -382,7 +383,7 @@ export default function POSMenuSettings() {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="mt-4 pt-4 border-t border-[var(--border)]">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-4">
@@ -393,7 +394,7 @@ export default function POSMenuSettings() {
                         {menu.preparation_time > 0 && (
                           <span className="flex items-center gap-1 text-[var(--fg-3)]">
                             <Clock className="w-4 h-4" />
-                            {menu.preparation_time}m
+                            {t('settings.posMenu.prepTime', { minutes: menu.preparation_time })}
                           </span>
                         )}
                       </div>
@@ -425,14 +426,14 @@ export default function POSMenuSettings() {
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
             >
               <Plus className="w-4 h-4" />
-              Add Category
+              {t('settings.posMenu.addCategory')}
             </motion.button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {categories.map((category) => {
               const menuCount = menus.filter(m => m.category_id === category.id).length
-              
+
               return (
                 <motion.div
                   key={category.id}
@@ -443,21 +444,21 @@ export default function POSMenuSettings() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div 
+                      <div
                         className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ backgroundColor: `${category.color}20` }}
                       >
-                        <div 
+                        <div
                           className="w-4 h-4 rounded-full"
                           style={{ backgroundColor: category.color }}
                         />
                       </div>
                       <div>
                         <h3 className="font-semibold text-white">{category.name}</h3>
-                        <p className="text-sm text-[var(--fg-3)]">{menuCount} menus</p>
+                        <p className="text-sm text-[var(--fg-3)]">{t('common.itemCount', { count: menuCount })}</p>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => {
@@ -513,6 +514,7 @@ interface MenuModalProps {
 }
 
 function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProps) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [step, setStep] = useState<1 | 2>(1)
   const [products, setProducts] = useState<Product[]>([])
@@ -522,8 +524,20 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stockUnits, setStockUnits] = useState<{ base_unit?: string; display_unit?: string; unit?: string } | null>(null)
-  
-  // Fetch BOMs + stock units when product is selected
+
+  const [formData, setFormData] = useState({
+    category_id: '',
+    bom_id: '',
+    pos_price: '',
+    cost_price: '',
+    is_available: true,
+    display_order: 0,
+    quick_code: '',
+    preparation_time: 10,
+    description: '',
+    sale_unit: '',
+  })
+
   useEffect(() => {
     if (selectedProduct?.id) {
       fetchBOMs(selectedProduct.id)
@@ -533,13 +547,12 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       setStockUnits(null)
     }
   }, [selectedProduct?.id])
-  
+
   const fetchBOMs = async (productId: string) => {
     try {
       const res = await posService.getAvailableBOMs(productId)
       if (res.success) {
-        // กรองเฉพาะ BOM ที่ ACTIVE หรือ APPROVED
-        const activeBOMs = (res.data || []).filter((b: BOM) => 
+        const activeBOMs = (res.data || []).filter((b: BOM) =>
           b.status === 'ACTIVE' || b.status === 'APPROVED'
         )
         setBoms(activeBOMs)
@@ -564,23 +577,10 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       console.error('Failed to fetch stock units:', error)
     }
   }
-  
-  const [formData, setFormData] = useState({
-    category_id: '',
-    bom_id: '',
-    pos_price: '',
-    cost_price: '',
-    is_available: true,
-    display_order: 0,
-    quick_code: '',
-    preparation_time: 10,
-    description: '',
-    sale_unit: '',
-  })
 
   useEffect(() => {
     if (!isOpen) return
-    
+
     if (menu) {
       setStep(2)
       setSelectedProduct({
@@ -626,7 +626,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       const res = await posService.getAvailableProducts(productSearch)
       if (res.success) setProducts(res.data || [])
     } catch (error) {
-      toast.error('Failed to load products')
+      toast.error(t('settings.posMenu.toast.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -641,13 +641,13 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
 
   const handleSave = async () => {
     if (!formData.pos_price || (!menu && !selectedProduct)) {
-      toast.error('Please fill in all required fields')
+      toast.error(t('settings.posMenu.menuModal.requiredFields'))
       return
     }
 
     try {
       setSaving(true)
-      
+
       const data = {
         ...formData,
         pos_price: parseFloat(formData.pos_price),
@@ -658,7 +658,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       if (menu) {
         const res = await posService.updateMenuConfig(menu.id, data)
         if (res.success) {
-          toast.success('Menu updated successfully')
+          toast.success(t('settings.posMenu.toast.menuUpdated'))
           onSaved()
           onClose()
         }
@@ -668,13 +668,13 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
           product_id: selectedProduct!.id,
         })
         if (res.success) {
-          toast.success('Menu added to POS successfully')
+          toast.success(t('settings.posMenu.toast.menuSaved'))
           onSaved()
           onClose()
         }
       }
     } catch (error) {
-      toast.error('Failed to save menu')
+      toast.error(t('settings.posMenu.toast.menuSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -693,7 +693,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
-            {menu ? 'Edit Menu' : 'Add Menu to POS'}
+            {menu ? t('settings.posMenu.menuModal.titleEdit') : t('settings.posMenu.menuModal.titleCreate')}
           </h2>
           <button
             onClick={onClose}
@@ -706,13 +706,13 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         <div className="flex-1 overflow-auto p-6">
           {step === 1 && !menu ? (
             <div className="space-y-4">
-              <p className="text-[var(--fg-3)]">Select a product to add to POS</p>
-              
+              <p className="text-[var(--fg-3)]">{t('settings.posMenu.menuModal.step1Title')}</p>
+
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
                 <input
                   type="text"
-                  placeholder="Search products..."
+                  placeholder={t('settings.posMenu.menuModal.searchPlaceholder')}
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
@@ -726,8 +726,8 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
               ) : products.length === 0 ? (
                 <div className="text-center py-8 text-[var(--fg-4)]">
                   <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No available products found</p>
-                  <p className="text-sm mt-1">All products may already be in POS</p>
+                  <p>{t('settings.posMenu.menuModal.noProducts')}</p>
+                  <p className="text-sm mt-1">{t('settings.posMenu.menuModal.allInPos')}</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-64 overflow-auto">
@@ -755,20 +755,20 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
           ) : (
             <div className="space-y-4">
               <div className="p-4 bg-[var(--bg)] rounded-lg">
-                <p className="text-sm text-[var(--fg-3)]">Product</p>
+                <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.menuModal.productLabel')}</p>
                 <p className="font-semibold text-white">{selectedProduct?.name}</p>
                 <p className="text-sm text-[var(--fg-4)]">{selectedProduct?.code}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Category</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.categoryLabel')}</label>
                   <select
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                     className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   >
-                    <option value="">Select category...</option>
+                    <option value="">{t('settings.posMenu.menuModal.selectCategory')}</option>
                     {categories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
@@ -777,9 +777,9 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
 
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-1">
-                    BOM (Bill of Materials)
+                    {t('settings.posMenu.menuModal.bomLabel')}
                     {boms.length > 0 && (
-                      <span className="text-[var(--primary)] ml-1">({boms.length} available)</span>
+                      <span className="text-[var(--primary)] ml-1">{t('settings.posMenu.menuModal.bomAvailable', { count: boms.length })}</span>
                     )}
                   </label>
                   <select
@@ -788,29 +788,29 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">
-                      {boms.length === 0 ? 'No BOM available' : 'Select BOM (optional)...'}
+                      {boms.length === 0 ? t('settings.posMenu.menuModal.noBom') : t('settings.posMenu.menuModal.selectBom')}
                     </option>
                     {boms.map(bom => (
                       <option key={bom.id} value={bom.id}>
-                        Version {bom.version} {bom.status !== 'ACTIVE' ? `(${bom.status})` : ''}
+                        {t('settings.posMenu.menuModal.versionLabel')} {bom.version} {bom.status !== 'ACTIVE' ? `(${bom.status})` : ''}
                       </option>
                     ))}
                   </select>
                   {formData.bom_id && (
                     <p className="text-xs text-success mt-1">
-                      <Check className="w-3.5 h-3.5 inline" /> Stock will be deducted from BOM ingredients
+                      <Check className="w-3.5 h-3.5 inline" /> {t('settings.posMenu.menuModal.bomLinked')}
                     </p>
                   )}
                   {!formData.bom_id && boms.length > 0 && (
                     <p className="text-xs text-[var(--fg-4)] mt-1">
-                      Tip: Link a BOM to auto-deduct stock from production recipe
+                      {t('settings.posMenu.menuModal.bomTip')}
                     </p>
                   )}
                 </div>
 
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-1">
-                    POS Price <span className="text-danger">*</span>
+                    {t('settings.posMenu.menuModal.posPrice')} <span className="text-danger">{t('settings.posMenu.menuModal.required')}</span>
                   </label>
                   <div className="relative">
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
@@ -825,7 +825,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Cost Price</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.costPrice')}</label>
                   <div className="relative">
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
@@ -839,7 +839,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Quick Code</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.quickCode')}</label>
                   <div className="relative">
                     <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
@@ -847,13 +847,13 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       value={formData.quick_code}
                       onChange={(e) => setFormData({ ...formData, quick_code: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
-                      placeholder="e.g., A01"
+                      placeholder={t('settings.posMenu.menuModal.quickPlaceholder')}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Prep Time (min)</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.prepTime')}</label>
                   <div className="relative">
                     <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
@@ -866,7 +866,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Display Order</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.displayOrder')}</label>
                   <input
                     type="number"
                     value={formData.display_order}
@@ -877,7 +877,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
 
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-1">
-                    หน่วยขาย <span className="text-[var(--fg-4)]">(Sale Unit)</span>
+                    {t('settings.posMenu.menuModal.saleUnit')} <span className="text-[var(--fg-4)]">{t('settings.posMenu.menuModal.saleUnitLabel')}</span>
                   </label>
                   <select
                     value={formData.sale_unit}
@@ -886,36 +886,36 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   >
                     <option value="">
                       {stockUnits
-                        ? `${stockUnits.base_unit || stockUnits.unit} (default)`
-                        : 'เลือกหน่วย...'}
+                        ? t('settings.posMenu.menuModal.defaultUnit', { unit: stockUnits.base_unit || stockUnits.unit })
+                        : t('settings.posMenu.menuModal.selectSaleUnit')}
                     </option>
                     {stockUnits?.display_unit && stockUnits.display_unit !== stockUnits.base_unit && (
                       <option value={stockUnits.display_unit}>
-                        {stockUnits.display_unit} (Display)
+                        {t('settings.posMenu.menuModal.displayUnit', { unit: stockUnits.display_unit })}
                       </option>
                     )}
                     {stockUnits?.base_unit && (
                       <option value={stockUnits.base_unit}>
-                        {stockUnits.base_unit} (Base)
+                        {t('settings.posMenu.menuModal.baseUnit', { unit: stockUnits.base_unit })}
                       </option>
                     )}
                   </select>
                   <p className="text-xs text-[var(--fg-4)] mt-1">
                     {stockUnits
-                      ? `Base: ${stockUnits.base_unit || stockUnits.unit} | Display: ${stockUnits.display_unit || stockUnits.unit}`
-                      : 'เลือกสินค้าก่อนเพื่อดูหน่วยที่มี'}
+                      ? t('settings.posMenu.menuModal.unitInfo', { base: stockUnits.base_unit || stockUnits.unit, display: stockUnits.display_unit || stockUnits.unit })
+                      : t('settings.posMenu.menuModal.selectProductFirst')}
                   </p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">Description</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.menuModal.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
                   className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo resize-none"
-                  placeholder="Menu description..."
+                  placeholder={t('settings.posMenu.menuModal.descriptionPlaceholder')}
                 />
               </div>
 
@@ -926,7 +926,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
                   className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
                 />
-                <span className="text-white">Available for sale</span>
+                <span className="text-white">{t('settings.posMenu.menuModal.available')}</span>
               </label>
             </div>
           )}
@@ -938,18 +938,18 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
               onClick={() => setStep(1)}
               className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
             >
-              Back
+              {t('settings.posMenu.menuModal.back')}
             </button>
           ) : (
             <div />
           )}
-          
+
           <div className="flex gap-3">
             <button
               onClick={onClose}
               className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             {step === 2 && (
               <button
@@ -960,12 +960,12 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                 {saving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Saving...
+                    {t('settings.posMenu.menuModal.saving')}
                   </>
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    Save
+                    {t('common.save')}
                   </>
                 )}
               </button>
@@ -987,6 +987,7 @@ interface CategoryModalProps {
 }
 
 function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProps) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const [name, setName] = useState('')
   const [color, setColor] = useState('#3949E5')
@@ -1012,32 +1013,32 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
 
   const handleSave = async () => {
     if (!name.trim()) {
-      toast.error('Category name is required')
+      toast.error(t('settings.posMenu.toast.categoryNameRequired'))
       return
     }
 
     try {
       setSaving(true)
-      
+
       const data = { name, color, icon }
-      
+
       if (category) {
         const res = await posService.updateCategory(category.id, data)
         if (res.success) {
-          toast.success('Category updated')
+          toast.success(t('settings.posMenu.toast.categoryUpdated'))
           onSaved()
           onClose()
         }
       } else {
         const res = await posService.createCategory(data)
         if (res.success) {
-          toast.success('Category created')
+          toast.success(t('settings.posMenu.toast.categorySaved'))
           onSaved()
           onClose()
         }
       }
     } catch (error) {
-      toast.error('Failed to save category')
+      toast.error(t('settings.posMenu.toast.categorySaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -1056,7 +1057,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
           <h2 className="text-xl font-bold text-white">
-            {category ? 'Edit Category' : 'Add Category'}
+            {category ? t('settings.posMenu.categoryModal.titleEdit') : t('settings.posMenu.categoryModal.titleCreate')}
           </h2>
           <button
             onClick={onClose}
@@ -1069,19 +1070,19 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">
-              Name <span className="text-danger">*</span>
+              {t('settings.posMenu.categoryModal.nameLabel')} <span className="text-danger">{t('settings.posMenu.menuModal.required')}</span>
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
-              placeholder="e.g., Main Course"
+              placeholder={t('settings.posMenu.categoryModal.namePlaceholder')}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Color</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">{t('settings.posMenu.categoryModal.colorLabel')}</label>
             <div className="flex flex-wrap gap-2">
               {colors.map((c) => (
                 <button
@@ -1097,13 +1098,13 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">Icon (optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.posMenu.categoryModal.iconLabel')}</label>
             <input
               type="text"
               value={icon}
               onChange={(e) => setIcon(e.target.value)}
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
-              placeholder="Icon name"
+              placeholder={t('settings.posMenu.categoryModal.iconPlaceholder')}
             />
           </div>
         </div>
@@ -1113,7 +1114,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
             onClick={onClose}
             className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
@@ -1123,12 +1124,12 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
             {saving ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
+                {t('settings.posMenu.categoryModal.saving')}
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                Save
+                {t('common.save')}
               </>
             )}
           </button>

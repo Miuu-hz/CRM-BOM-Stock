@@ -46,7 +46,9 @@
     "notes": "Notes",
     "items_count": "{{count}} items",
     "loading": "Loading...",
-    "sessionExpired": "Session expired. Please login again."
+    "sessionExpired": "Session expired. Please login again.",
+    "copy": "Copy",
+    "confirm": "Confirm"
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -82,7 +84,10 @@
     "kitchenDisplayDesc": "POS Orders Queue (KDS)",
     "settings": "Settings",
     "logout": "Logout",
-    "mainMenu": "Main Menu"
+    "mainMenu": "Main Menu",
+    "approvals": "Approvals",
+    "kanban": "Phopy Kanban",
+    "kanbanDesc": "Task board"
   },
   "dashboard": {
     "title": "Executive Dashboard",
@@ -151,6 +156,119 @@
     "salesOrders": "Sales Orders",
     "quotations": "Quotations",
     "invoices": "Invoices"
+  },
+  "workOrders": {
+    "title": "Work Orders",
+    "subtitle": "Manage production orders and track status",
+    "createWorkOrder": "Create Work Order",
+    "searchPlaceholder": "Search WO number, product, or assignee...",
+    "stats": {
+      "total": "Total WOs",
+      "planned": "Planned",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "totalProduced": "Total Produced"
+    },
+    "table": {
+      "woNumber": "WO Number",
+      "product": "Product",
+      "priority": "Priority",
+      "status": "Status",
+      "quantity": "Quantity",
+      "progress": "Progress",
+      "dueDate": "Due Date",
+      "assignedTo": "Assigned To",
+      "actions": "Actions"
+    },
+    "empty": "No work orders found",
+    "materialsCount": "{{count}} materials",
+    "confirmDelete": "Delete this work order?",
+    "status": {
+      "draft": "Draft",
+      "planned": "Planned",
+      "in_progress": "In Progress",
+      "on_hold": "On Hold",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "priority": {
+      "urgent": "Urgent",
+      "high": "High",
+      "normal": "Normal",
+      "low": "Low"
+    },
+    "actions": {
+      "plan": "Plan",
+      "startProduction": "Start Production",
+      "markComplete": "Mark Complete"
+    },
+    "create": {
+      "title": "Create Work Order",
+      "subtitle": "Select a BOM to auto-fill materials",
+      "step1": "Select BOM",
+      "manualEntry": "Manual entry",
+      "noBOMs": "No BOMs yet — use Manual entry instead",
+      "manualModeHint": "Fill in the details below manually",
+      "step2": "Details",
+      "productLabel": "Product Name *",
+      "productPlaceholder": "Product to manufacture",
+      "quantityLabel": "Quantity to Produce *",
+      "priorityLabel": "Priority",
+      "dueDateLabel": "Due Date",
+      "assignedToLabel": "Assigned To",
+      "assignedToPlaceholder": "Team / Name",
+      "step3": "Materials Required",
+      "stockShortage": "Shortage of {{count}} materials — click \"Create PR\" below to auto-order",
+      "stockSufficient": "All materials sufficient for this production",
+      "noMaterialsSelected": "Select a BOM to auto-fill or click \"+ Add\"",
+      "bomNoMaterials": "This BOM has no raw materials",
+      "materialPlaceholder": "Material name",
+      "unitPlaceholder": "unit",
+      "itemsCount": "{{count}} items",
+      "notesPlaceholder": "Notes or special instructions...",
+      "shortageSummary": "Shortage of <strong>{{count}}</strong> materials",
+      "createPR": "Create Purchase Request Automatically",
+      "bomSelected": "Using BOM: {{name}}",
+      "manualEntrySelected": "Manual entry",
+      "noBOMSelected": "No BOM selected",
+      "createButton": "Create Work Order",
+      "semiFinished": "Semi-finished",
+      "prReason": "Raw material shortage for producing: {{name}} quantity {{quantity}} units",
+      "prCreated": "Purchase Request created successfully — {{count}} items",
+      "prFailed": "Unable to create PR"
+    },
+    "detail": {
+      "productionProgress": "Production Progress",
+      "units": "units",
+      "assignedTo": "Assigned To",
+      "dueDate": "Due Date",
+      "estimatedCost": "Estimated Cost",
+      "actualCost": "Actual Cost",
+      "materialsRequired": "Materials Required",
+      "materialFallback": "Material",
+      "issued": "Issued: {{issued}}/{{required}} {{unit}}",
+      "noMaterialsLinked": "No materials linked",
+      "productionComplete": "Production Complete",
+      "completedOn": "Completed on {{date}}",
+      "completed": "Completed",
+      "putOnHold": "Put On Hold",
+      "resume": "Resume",
+      "cancelOrder": "Cancel Order",
+      "planProduction": "Plan Production",
+      "startProduction": "Start Production",
+      "markComplete": "Mark Complete",
+      "qcTitle": "QC Status",
+      "qcPass": "{{count}} Passed",
+      "qcFail": "{{count}} Failed",
+      "qcPending": "{{count}} Pending",
+      "qcQty": "Passed {{passed}} / Rejected {{rejected}} (Inspected {{inspected}})",
+      "qcNone": "No QC inspections for this work order yet"
+    },
+    "error": {
+      "updateStatus": "Failed to update status",
+      "delete": "Failed to delete",
+      "create": "Failed to create work order"
+    }
   },
   "qc": {
     "title": "Quality Control",
@@ -224,6 +342,9 @@
     "batchPlaceholder": "e.g. LOT-001",
     "workOrderRef": "Work Order Ref",
     "workOrderRefPlaceholder": "WO-00001",
+    "linkWorkOrder": "Link Work Order (optional)",
+    "linkWorkOrderNone": "No work order",
+    "inspectedQty": "Inspected Qty",
     "inspector": "Inspector",
     "inspectorPlaceholder": "Inspector name",
     "inspectionCreated": "Inspection created",
@@ -236,6 +357,8 @@
     "target": "Target",
     "actualValue": "Actual value",
     "notesPlaceholder": "Notes (optional)",
+    "passedQty": "Passed Qty",
+    "rejectedQty": "Rejected Qty",
     "summaryNotes": "Summary Notes",
     "summaryNotesPlaceholder": "Inspection summary",
     "pendingConfirm": "Some items are still pending. Submit anyway?",
@@ -1093,7 +1216,8 @@
       "orderDateLabel": "Order date",
       "showingCount": "Showing {{count}} items",
       "success": "Success",
-      "template": "Template"
+      "template": "Template",
+      "delete": "Delete"
     },
     "pos": {
       "cashInDrawerStart": "Cash in drawer (starting)",
@@ -1678,6 +1802,1054 @@
       "update": "Update items",
       "approve": "Approve",
       "reject": "Reject"
+    }
+  },
+  "bom": {
+    "title": "Bill of Materials",
+    "subtitle": "Manage product formulas and materials with nested BOM support",
+    "loading": "Loading BOM data...",
+    "retry": "Retry",
+    "createBOM": "Create BOM",
+    "searchPlaceholder": "Search BOM by product name or code...",
+    "errors": {
+      "loadFailed": "Unable to load BOM data. Please try again.",
+      "deleteFailed": "Unable to delete BOM. Please try again.",
+      "loadTreeFailed": "Unable to load BOM Tree data."
+    },
+    "confirmDelete": "Are you sure you want to delete the BOM for \"{{name}}\"?",
+    "stats": {
+      "totalBOMs": "Total BOMs",
+      "semiFinishedBOMs": "Semi-finished BOMs",
+      "totalMaterials": "Total Materials",
+      "avgCostPerUnit": "Avg. Cost/Unit"
+    },
+    "tabs": {
+      "bomList": "BOM List",
+      "materials": "Materials",
+      "productionCalculator": "Production Calculator",
+      "costSimulation": "Cost Simulation"
+    },
+    "filter": {
+      "all": "All BOMs",
+      "treeView": "Tree View",
+      "semiFinished": "Semi-finished",
+      "finishedGoods": "Finished Goods"
+    },
+    "empty": {
+      "noResults": "No BOMs found",
+      "tryDifferent": "Try searching with a different term",
+      "noBOMs": "No BOMs yet",
+      "startCreate": "Create your first BOM"
+    },
+    "tree": {
+      "selectBOM": "Select BOM to View",
+      "hierarchy": "BOM Hierarchy: {{name}}",
+      "empty": "Select a BOM to view its hierarchy"
+    },
+    "list": {
+      "product": "Product",
+      "level": "Level",
+      "type": "Type",
+      "version": "Version",
+      "items": "Items",
+      "status": "Status",
+      "totalCost": "Total Cost",
+      "actions": "Actions"
+    },
+    "itemsTable": {
+      "type": "Type",
+      "name": "Name",
+      "code": "Code",
+      "quantity": "Quantity",
+      "unitCost": "Unit Cost",
+      "total": "Total"
+    },
+    "itemType": {
+      "material": "Material",
+      "childBOM": "Child BOM"
+    },
+    "card": {
+      "materialsCount": "Materials ({{count}})",
+      "loading": "Loading...",
+      "noItems": "No materials",
+      "usedIn": "Used in: {{name}}",
+      "lastUpdated": "Last updated",
+      "totalProductionCost": "Total production cost"
+    },
+    "typeBadge": {
+      "finished": "Finished",
+      "semiFinished": "Semi-finished",
+      "component": "Component"
+    },
+    "status": {
+      "active": "Active",
+      "draft": "Draft",
+      "archived": "Archived"
+    },
+    "materialsTab": {
+      "errors": {
+        "loadFailed": "Failed to load materials",
+        "deleteFailed": "Failed to delete material",
+        "saveFailed": "Failed to save",
+        "quantityRequired": "Please enter a quantity",
+        "adjustFailed": "Failed to adjust stock"
+      },
+      "confirmDelete": "Are you sure you want to delete material \"{{name}}\"?",
+      "retry": "Retry",
+      "stats": {
+        "totalMaterials": "Total Materials",
+        "lowStock": "Low Stock",
+        "totalValue": "Total Value",
+        "activeItems": "Active Items"
+      },
+      "searchPlaceholder": "Search materials...",
+      "addMaterial": "Add Material",
+      "table": {
+        "code": "Code",
+        "name": "Name",
+        "category": "Category",
+        "unit": "Unit",
+        "costPerUnit": "Cost/Unit",
+        "stock": "Stock",
+        "status": "Status",
+        "usedIn": "Used In",
+        "actions": "Actions"
+      },
+      "empty": {
+        "noResults": "No materials found",
+        "noMaterials": "No materials yet"
+      },
+      "usedInBOMs": "{{count}} BOMs",
+      "uncategorized": "Uncategorized",
+      "status": {
+        "critical": "Critical",
+        "low": "Low",
+        "adequate": "Adequate",
+        "overstock": "Overstock",
+        "noStock": "No Stock"
+      },
+      "actions": {
+        "adjustStock": "Adjust Stock"
+      },
+      "modal": {
+        "title": {
+          "edit": "Edit Material",
+          "create": "Add New Material"
+        },
+        "labels": {
+          "code": "Code",
+          "category": "Category",
+          "name": "Name",
+          "unit": "Unit (Auto)",
+          "unitHint": "Unit is determined automatically by category",
+          "costPerUnit": "Cost per Unit (฿)",
+          "minStock": "Min Stock",
+          "maxStock": "Max Stock",
+          "initialStock": "Initial Stock"
+        },
+        "placeholders": {
+          "selectCategory": "Select category",
+          "selectCategoryFirst": "Select category first",
+          "name": "Material name"
+        },
+        "errors": {
+          "required": "Please fill in all required fields",
+          "saveFailed": "Failed to save"
+        }
+      },
+      "stockModal": {
+        "title": "Adjust Stock",
+        "materialLabel": "Material",
+        "currentStock": "Current Stock: {{stock}} {{unit}}",
+        "typeLabel": "Type",
+        "types": {
+          "in": "Stock In",
+          "out": "Stock Out",
+          "adjust": "Adjust"
+        },
+        "labels": {
+          "quantity": "Quantity",
+          "newQuantity": "New Quantity",
+          "notes": "Notes"
+        },
+        "placeholders": {
+          "notes": "Optional notes"
+        },
+        "newStockLabel": "New Stock",
+        "errors": {
+          "quantityRequired": "Please enter a quantity",
+          "adjustFailed": "Failed to adjust stock"
+        }
+      }
+    }
+  },
+  "bomModal": {
+    "title": {
+      "edit": "Edit BOM",
+      "copy": "Copy BOM",
+      "create": "Create New BOM"
+    },
+    "subtitle": {
+      "edit": "Edit production formula",
+      "copy": "Create a new formula from an existing one",
+      "create": "Define materials for the product"
+    },
+    "labels": {
+      "product": "Product",
+      "version": "Version",
+      "status": "Status",
+      "bomType": "BOM Type",
+      "items": "Materials / Child BOM"
+    },
+    "placeholders": {
+      "product": "Select finished / in-process product...",
+      "version": "e.g., v1.0, v2.1",
+      "searchMaterial": "Search materials...",
+      "selectChildBOM": "Select Semi-finished BOM...",
+      "quantity": "Quantity"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "semiFinishedLabel": "Semi-finished (for use as Child BOM)",
+    "addMaterial": "Add Material",
+    "addChildBOM": "Add Child BOM",
+    "addNewMaterial": "Add New Material",
+    "noMaterialFound": "Material not found?",
+    "noChildBOMs": "No Semi-finished BOMs available to use as Child BOM (create a Semi-finished BOM first).",
+    "unitOptions": {
+      "selectUnit": "Select unit",
+      "set": "Set"
+    },
+    "conversionIssue": ": No unit conversion for \"{{from}}\" → \"{{to}}\"",
+    "editUnitInStock": "Edit unit in Stock",
+    "globalUnitSettings": "Global unit settings",
+    "totalCost": "Total cost:",
+    "saveButton": "Save Changes",
+    "createButton": "Create BOM",
+    "errors": {
+      "changeCategoryFailed": "Unable to change product category",
+      "selectProduct": "Please select a product",
+      "enterVersion": "Please enter a version",
+      "addAtLeastOneItem": "Please add at least 1 item",
+      "saveFailed": "Unable to save BOM"
+    },
+    "categoryChange": {
+      "title": "Change product category first",
+      "subtitle": "This product is set as \"Material\"",
+      "description": "is set as Material, which cannot be used as a BOM output",
+      "instruction": "Please select the correct type for the product to produce:",
+      "finished": {
+        "title": "Finished Good",
+        "subtitle": "Finished Good",
+        "description": "Ready-to-sell product, goes directly into stock after production"
+      },
+      "wip": {
+        "title": "Semi-Finished Good",
+        "subtitle": "Semi-Finished Good",
+        "description": "Passed initial production, can be used as a Child BOM"
+      },
+      "cancel": "Cancel"
+    },
+    "createMaterial": {
+      "title": "Add New Material",
+      "labels": {
+        "code": "Code",
+        "category": "Category",
+        "unit": "Unit",
+        "name": "Material Name",
+        "unitCost": "Unit Cost",
+        "initialStock": "Initial Stock",
+        "minStock": "Min Stock",
+        "maxStock": "Max Stock"
+      },
+      "placeholders": {
+        "selectCategory": "Select category",
+        "selectUnit": "Select unit",
+        "name": "Material name"
+      },
+      "defaultUnit": "Default from category: {{unit}}",
+      "cancel": "Cancel",
+      "addMaterial": "Add Material",
+      "errors": {
+        "required": "Please enter code, name, and select a material category",
+        "createFailed": "Unable to create material"
+      }
+    },
+    "category": {
+      "raw": "Raw Material",
+      "wip": "Work in Process",
+      "finished": "Finished Good",
+      "material": "Material",
+      "product": "Product",
+      "finishedGoods": "Finished Good",
+      "semiFinishedGoods": "Semi-Finished Good",
+      "subMaterial": "Sub-Material",
+      "intangible": "Intangible"
+    }
+  },
+  "settings": {
+    "common": {
+      "searchPlaceholder": "Search...",
+      "actions": "Actions",
+      "status": "Status"
+    },
+    "settingsPage": {
+      "title": "Settings",
+      "subtitle": "System settings and user management",
+      "tabs": {
+        "general": "General",
+        "users": "Users",
+        "security": "Security",
+        "pos": "POS Menu",
+        "line": "LINE Bot",
+        "billing": "Billing",
+        "loyalty": "Loyalty",
+        "units": "Unit Conversions",
+        "materialCategories": "Material Categories",
+        "llm": "AI / LLM",
+        "backup": "Auto Backup",
+        "permissions": "Permissions",
+        "approval": "Approval"
+      },
+      "billing": {
+        "title": "POS Billing",
+        "subtitle": "Configure VAT and service charge added to bills",
+        "vat": "VAT (Value Added Tax)",
+        "vatSub": "Calculate VAT from total item amount",
+        "vatRate": "VAT Rate (%)",
+        "service": "Service Charge",
+        "serviceSub": "Calculate service charge from total item amount",
+        "serviceRate": "Service Charge Rate (%)",
+        "previewTitle": "Preview (items {{amount}})",
+        "subtotal": "Subtotal",
+        "serviceCharge": "Service Charge ({{rate}}%)",
+        "total": "Total",
+        "save": "Save Billing Settings"
+      },
+      "loyalty": {
+        "title": "Member Loyalty Points (CRM)",
+        "subtitle": "Configure point earning and redemption for CRM customers linked to POS bills",
+        "enabled": "Enable Loyalty Points",
+        "enabledSub": "When enabled, linked customers earn points every time they pay",
+        "earnRateTitle": "Earn Rate",
+        "earnRateHint": "Spend X baht to earn 1 point",
+        "spend": "Spend",
+        "bahtPerPoint": "baht = 1 point",
+        "bahtUnit": "baht",
+        "redeemRateTitle": "Redeem Rate",
+        "redeemRateHint": "Use X points for 1 baht discount",
+        "usePoints": "Use",
+        "pointsPerBaht": "points = 1 baht discount",
+        "pointsUnit": "points",
+        "minRedeemTitle": "Minimum Redeem Points",
+        "minRedeemHint": "Customer must have at least this many points to redeem",
+        "previewTitle": "Calculation Example",
+        "previewBuy": "Buy {{amount}}",
+        "previewEarn": "Earn 10 points",
+        "previewRedeem": "Redeem {{points}} points",
+        "previewDiscount": "Discount {{amount}}",
+        "pointValue": "Value of 1 point",
+        "save": "Save Loyalty Settings"
+      },
+      "general": {
+        "companyTitle": "Company Info (for receipts)",
+        "savedSuccess": "Saved successfully",
+        "saveFailed": "Save failed",
+        "uploadLogo": "Upload Logo",
+        "removeLogo": "Remove",
+        "logoHint": "PNG/JPG, displayed at the top of receipts",
+        "companyName": "Company / Shop Name",
+        "companyNamePlaceholder": "Example Co., Ltd.",
+        "taxId": "Tax ID",
+        "taxIdPlaceholder": "0-0000-00000-00-0",
+        "address": "Address",
+        "addressPlaceholder": "House number, street, sub-district, district, province, postal code",
+        "phone": "Phone",
+        "phonePlaceholder": "02-xxx-xxxx",
+        "email": "Email",
+        "emailPlaceholder": "info@company.com",
+        "accountTitle": "Account Info",
+        "tenantCode": "Organization Code",
+        "accountType": "Account Type",
+        "masterAccount": "Master Account",
+        "standardAccount": "Standard Account",
+        "masterPrivilegesTitle": "Master Account Privileges",
+        "privilegeUnlimitedUsers": "Create unlimited child users",
+        "privilegeNoTimeLock": "Edit data without time limit (no 24hr rule)",
+        "privilegeManagePermissions": "Manage user permissions",
+        "timeLockTitle": "Data Edit Rule (24 Hour Rule)",
+        "timeLockRule1": "Every record can be <strong class=\"text-[var(--primary)]\">edited within 24 hours</strong> after creation",
+        "timeLockRule2": "After 24 hours, it cannot be edited or deleted",
+        "timeLockRule2Master": " (except Master Account)",
+        "timeLockRule3": "The system automatically calculates time from <strong>current time - creation time</strong>"
+      },
+      "qcGate": {
+        "title": "Quality Control (QC Gate)",
+        "toggleLabel": "Require QC pass before closing work order",
+        "toggleSub": "When enabled, the work order must have at least one PASS QC inspection before it can be marked as completed"
+      },
+      "userManagement": {
+        "title": "Child Users",
+        "refresh": "Refresh",
+        "addUser": "Add User",
+        "noUsersTitle": "No child users yet",
+        "noUsersHint": "Start creating users in your organization",
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "createdAt": "Created At",
+        "lastLogin": "Last Login",
+        "deleteConfirm": "Delete this user?",
+        "deleteFailed": "Delete failed"
+      },
+      "addChildModal": {
+        "title": "Add Child User",
+        "name": "Name",
+        "namePlaceholder": "User name",
+        "email": "Email",
+        "emailPlaceholder": "email@example.com",
+        "password": "Password",
+        "passwordPlaceholder": "Password",
+        "role": "Role",
+        "roles": {
+          "user": "User - Standard User",
+          "manager": "Manager - Manager",
+          "viewer": "Viewer - View Only"
+        },
+        "creating": "Creating...",
+        "fillRequired": "Please fill in all required fields",
+        "createFailed": "Create failed"
+      },
+      "security": {
+        "changePassword": "Change Password",
+        "comingSoon": "This feature will be available soon",
+        "changePasswordButton": "Change Password",
+        "twoFactor": "Two-Factor Authentication (2FA)",
+        "twoFactorDesc": "Increase security with two-factor authentication",
+        "enable2FA": "Enable 2FA"
+      }
+    },
+    "adminUserManagement": {
+      "title": "User Management",
+      "userCount": "{{count}} users",
+      "searchPlaceholder": "Search by name or email…",
+      "loading": "Loading…",
+      "noUsers": "No users found",
+      "addUser": "Add User",
+      "youBadge": "You",
+      "edit": "Edit",
+      "delete": "Delete",
+      "modal": {
+        "titleEdit": "Edit User",
+        "titleCreate": "Add New User",
+        "nameLabel": "Full Name *",
+        "emailLabel": "Email *",
+        "passwordLabel": "Password",
+        "passwordHintEdit": "(leave blank to keep unchanged)",
+        "passwordPlaceholderCreate": "Set password",
+        "roleLabel": "Role",
+        "role": {
+          "manager": "Manager",
+          "managerDesc": "Approve / manage departments",
+          "powerUser": "Power User",
+          "powerUserDesc": "Access all features",
+          "user": "User",
+          "userDesc": "Basic usage within departments"
+        },
+        "presetLabel": "Position (Preset)",
+        "departmentsLabel": "Departments",
+        "saving": "Saving…",
+        "save": "Save",
+        "saveAndCreate": "Add User",
+        "passwordPlaceholderEdit": "•••••••• (leave blank to keep current)"
+      },
+      "presets": {
+        "sales": "Sales Staff",
+        "cashier": "Cashier",
+        "accountant": "Accountant",
+        "warehouseManager": "Warehouse Manager",
+        "factoryManager": "Factory Manager",
+        "ceo": "CEO / Owner"
+      },
+      "departments": {
+        "sales": "Sales",
+        "purchase": "Purchase",
+        "stock": "Stock",
+        "accounting": "Accounting",
+        "production": "Production",
+        "qc": "QC",
+        "marketing": "Marketing",
+        "ceo": "CEO",
+        "it": "IT"
+      },
+      "toast": {
+        "nameEmailRequired": "Please enter name and email",
+        "passwordRequired": "Please set a password",
+        "updateSuccess": "User updated successfully",
+        "createSuccess": "User added successfully",
+        "error": "An error occurred",
+        "loadFailed": "Failed to load data",
+        "cannotDeleteSelf": "Cannot delete your own account",
+        "cannotDeleteAdmin": "Cannot delete Admin",
+        "deleteConfirm": "Remove \"{{name}}\" from the system?",
+        "deleteSuccess": "User deleted successfully"
+      }
+    },
+    "backup": {
+      "title": "Auto Backup",
+      "subtitle": "Automatic database backup every 3 days · Master only",
+      "backupNow": "Backup Now",
+      "backingUp": "Backing up...",
+      "latest": "Latest Backup",
+      "next": "Next Backup (estimated)",
+      "never": "Never backed up",
+      "googleDrive": "Google Drive",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "setupTitle": "How to set up Google Drive backup",
+      "setupSteps": {
+        "0": "Go to {{consoleUrl}} → Create a new Project",
+        "1": "Enable {{driveApi}} → APIs & Services → Enable",
+        "2": "Create {{serviceAccount}} → IAM & Admin → Create Service Account",
+        "3": "Download JSON key → Actions → Manage Keys → Add Key → JSON",
+        "4": "Create a folder in Google Drive → Share with Service Account email (Editor)",
+        "5": "Copy Folder ID from URL: {{folderUrl}}",
+        "6": "Add to {{envFile}}:"
+      },
+      "testDrive": "Test Google Drive Connection",
+      "testDriveHint": "Verify the Service Account can access the folder",
+      "historyTitle": "Backup History",
+      "table": {
+        "file": "File",
+        "size": "Size",
+        "status": "Status",
+        "date": "Date",
+        "actions": "Actions",
+        "download": "Download"
+      },
+      "status": {
+        "SUCCESS": "Success",
+        "PARTIAL": "Partial",
+        "FAILED": "Failed",
+        "RUNNING": "Running",
+        "PENDING": "Pending"
+      },
+      "empty": "No backups yet",
+      "footer": "Keep latest 10 backups on server · automatic backup every night at 02:00 if more than 3 days since last backup",
+      "toast": {
+        "loadFailed": "Failed to load backup data",
+        "success": "Backup successful!",
+        "failed": "Backup failed",
+        "deleteConfirm": "Delete this backup? (Deletes both local file and Google Drive)",
+        "deleteSuccess": "Backup deleted",
+        "deleteFailed": "Delete failed",
+        "downloadFailed": "Download failed"
+      }
+    },
+    "llm": {
+      "title": "AI Assistant",
+      "subtitle": "Kimi Code CLI — AI assistant for the ERP system",
+      "kimi": {
+        "name": "Kimi Code CLI",
+        "checking": "Checking...",
+        "online": "v{{version}} — Ready",
+        "offline": "Unable to connect",
+        "notChecked": "Not checked yet",
+        "check": "Check"
+      },
+      "playground": {
+        "title": "AI Playground",
+        "subtitle": "Test questions about system data",
+        "placeholder": "e.g. How much minced pork is in stock, how are this month's sales...",
+        "send": "Send",
+        "replyLabel": "Kimi replied"
+      },
+      "mcp": {
+        "title": "MCP Server",
+        "subtitle": "For AI clients that support the MCP protocol",
+        "noKey": "No API Key yet — create one to enable MCP",
+        "generateKey": "Generate API Key",
+        "urlLabel": "MCP Server URL",
+        "copy": "Copy",
+        "copied": "URL copied",
+        "test": "Test MCP",
+        "regenerate": "Regenerate Key",
+        "resultTitle": "MCP Server Test Result",
+        "ready": "MCP Server is ready",
+        "regenerateConfirm": "Generating a new API Key will invalidate the current URL. Continue?",
+        "regenerateSuccess": "New API Key generated",
+        "regenerateFailed": "Failed to generate key",
+        "testFailed": "Test failed",
+        "sendFailed": "Failed to send message",
+        "error": "An error occurred"
+      }
+    },
+    "line": {
+      "title": "LINE Messaging API Settings",
+      "subtitle": "Configure LINE Bot for production order notifications and status updates",
+      "webhookUrlLabel": "Webhook URL:",
+      "channelName": {
+        "label": "Channel Name (display only)",
+        "placeholder": "e.g. BBPillow Bot"
+      },
+      "channelSecret": {
+        "label": "Channel Secret",
+        "placeholderCreate": "Enter Channel Secret",
+        "placeholderEdit": "•••••••••••••••• (leave blank to keep unchanged)"
+      },
+      "channelToken": {
+        "label": "Channel Access Token",
+        "placeholderCreate": "Enter Channel Access Token (long-lived)",
+        "placeholderEdit": "•••••••••••••••• (leave blank to keep unchanged)"
+      },
+      "active": "Enable LINE Bot (send and receive notifications)",
+      "save": "Save Settings",
+      "testMessage": "Send Test Message (to your Role)",
+      "testSuccess": "Test message sent. Please check the LINE app.",
+      "testFailed": "Failed to send test message",
+      "error": "An error occurred while sending test message",
+      "loadFailed": "Failed to load LINE settings",
+      "saveSuccess": "Settings saved successfully",
+      "saveFailed": "Save failed",
+      "accountLinking": {
+        "title": "Link Your LINE Account",
+        "subtitle": "Link your account to receive notifications and commands via LINE",
+        "linked": "Account linked",
+        "linkedOn": " · {{date}}",
+        "notLinked": "LINE account not linked",
+        "unlink": "Unlink",
+        "stepsTitle": "How to link:",
+        "step1": "1. Press \"Generate Link Code\" below",
+        "step2": "2. Press \"Copy\" and send that message in chat with LINE OA",
+        "tokenExpiry": "⏰ Code expires in 10 minutes",
+        "generateToken": "Generate Link Code",
+        "copyToken": "Copy",
+        "copied": "Copied",
+        "tokenPrefix": "Link {{token}}"
+      },
+      "linkedUsers": {
+        "title": "Users Linked to LINE",
+        "subtitle": "Users in the system who have linked their LINE account",
+        "none": "No users linked to LINE",
+        "linkedAt": "Linked on {{date}}"
+      }
+    },
+    "materialCategories": {
+      "title": "Material Categories",
+      "subtitle": "Manage categories and default units for BOM materials",
+      "add": "Add Category",
+      "info": "Categories are used to group materials and set default units automatically. After creating a new material in BOM, the category cannot be changed.",
+      "searchPlaceholder": "Search category or code...",
+      "listTitle": "Category List",
+      "itemCount": "{{count}} items",
+      "loading": "Loading...",
+      "empty": "No material categories yet",
+      "emptyHint": "Add your first category, e.g. General Raw Materials, Chemicals, Equipment",
+      "defaultUnit": "Default unit: {{unit}}",
+      "edit": "Edit",
+      "delete": "Delete",
+      "modal": {
+        "titleEdit": "Edit Category",
+        "titleCreate": "Add Material Category",
+        "codeLabel": "Code *",
+        "codePlaceholder": "e.g. RAW, CHEM",
+        "nameLabel": "Category Name *",
+        "namePlaceholder": "e.g. General Raw Materials, Chemicals",
+        "unitLabel": "Default Unit *",
+        "unitPlaceholder": "Select unit",
+        "descriptionLabel": "Description (optional)",
+        "descriptionPlaceholder": "e.g. Used for main production materials",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save"
+      },
+      "toast": {
+        "loadFailed": "Failed to load categories",
+        "validation": "Please enter Code, Category Name, and Default Unit",
+        "createSuccess": "Category added",
+        "updateSuccess": "Saved",
+        "deleteConfirm": "Delete category \"{{label}}\"?",
+        "deleteSuccess": "Deleted",
+        "deleteFailed": "Delete failed"
+      }
+    },
+    "permission": {
+      "title": "User Permissions",
+      "subtitle": "Assign roles and access for each employee",
+      "loading": "Loading...",
+      "selectUser": "Select employee…",
+      "noUsers": "No users found",
+      "emptyHint": "Select an employee above to manage permissions",
+      "presets": "Quick Presets",
+      "roleSection": "Role",
+      "departmentSection": "Departments / Access",
+      "customOverrides": "Custom Overrides (Advanced)",
+      "save": "Save",
+      "loadFailed": "Failed to load user list",
+      "saveSuccess": "Permissions saved successfully",
+      "saveFailed": "Save failed",
+      "roles": {
+        "manager": "Manager",
+        "managerDesc": "Full control within own department (read/write/approve/delete) but cannot access other departments — unlike Power User who has cross-dept access but no delete",
+        "powerUser": "Power User",
+        "powerUserDesc": "Read/write/approve in all departments",
+        "user": "User",
+        "userDesc": "Read/Write within assigned department only — no approval, no delete, no cross-department access",
+        "poweruser": "Power User",
+        "poweruserDesc": "Read/Write/Approve across ALL departments, but cannot delete — unlike Manager who can delete but is limited to own dept, and unlike User who has no approval rights"
+      },
+      "departments": {
+        "sales": "Sales",
+        "salesDesc": "Customers, orders, marketing",
+        "purchase": "Purchase",
+        "purchaseDesc": "Procurement, suppliers",
+        "stock": "Stock",
+        "stockDesc": "Inventory management",
+        "accounting": "Accounting",
+        "accountingDesc": "Accounting, financial reports",
+        "production": "Production",
+        "productionDesc": "Production, BOM, Work Orders",
+        "qc": "QC",
+        "qcDesc": "Quality inspection",
+        "marketing": "Marketing",
+        "marketingDesc": "Marketing",
+        "ceo": "CEO / Owner",
+        "ceoDesc": "Admin-level access — read, edit and delete any document across all departments and modules, no restrictions",
+        "it": "IT / Admin",
+        "itDesc": "Access all areas including Settings"
+      },
+      "customPermissions": {
+        "accountingDelete": "Delete accounting data",
+        "stockDelete": "Delete stock items",
+        "ordersDelete": "Delete orders",
+        "usersWrite": "Manage users"
+      },
+      "presetsList": {
+        "sales": "Sales Staff",
+        "cashier": "Cashier",
+        "accountant": "Accountant",
+        "warehouseManager": "Warehouse Manager",
+        "factoryManager": "Factory Manager",
+        "ceo": "CEO / Owner"
+      },
+      "ceoModal": {
+        "title": "Grant {{dept}} permission — Admin level",
+        "warning": "This person will receive <span class=\"font-semibold text-[var(--warning)]\">Admin</span> privileges, allowing them to <strong>access, edit, and delete documents in every module and department</strong> without restrictions.",
+        "bullet1": "• Read / Write / Approve / <strong>Delete</strong> all data",
+        "bullet2": "• Access every department and module, second only to Master",
+        "bullet3": "• Can be revoked later by removing the {{dept}} department",
+        "confirm": "Confirm Grant Admin"
+      }
+    },
+    "posMenu": {
+      "title": "POS Menu Management",
+      "subtitle": "Configure which products are available for sale in POS",
+      "tabs": {
+        "menus": "Menus",
+        "categories": "Categories"
+      },
+      "bomDeduct": {
+        "title": "Deduct raw materials by BOM on payment",
+        "description": "On = self-production (restaurant / factory) · Off = retail finished goods"
+      },
+      "searchPlaceholder": "Search menus...",
+      "allCategories": "All Categories",
+      "addMenu": "Add Menu",
+      "addCategory": "Add Category",
+      "stats": {
+        "totalMenus": "Total Menus",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "categories": "Categories"
+      },
+      "loading": "Loading...",
+      "noMenus": "No menus found",
+      "noSearchResults": "Try different search terms",
+      "addFirstMenu": "Add your first menu to POS",
+      "uncategorized": "Uncategorized",
+      "bomVersion": "BOM v{{version}}",
+      "price": "{{price}}",
+      "prepTime": "{{minutes}}m",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "deleteMenuConfirm": "Are you sure you want to remove this menu from POS?",
+      "deleteCategoryConfirm": "Are you sure? Menus in this category will be uncategorized.",
+      "toast": {
+        "loadFailed": "Failed to load POS data",
+        "bomEnabled": "BOM stock deduction enabled",
+        "bomDisabled": "BOM stock deduction disabled",
+        "bomSaveFailed": "Save failed",
+        "menuEnabled": "Menu enabled",
+        "menuDisabled": "Menu disabled",
+        "menuUpdateFailed": "Failed to update menu",
+        "menuDeleted": "Menu removed from POS",
+        "menuDeleteFailed": "Failed to delete menu",
+        "categoryDeleted": "Category deleted",
+        "categoryDeleteFailed": "Failed to delete category",
+        "menuSaved": "Menu added to POS successfully",
+        "menuUpdated": "Menu updated successfully",
+        "menuSaveFailed": "Failed to save menu",
+        "categorySaved": "Category created",
+        "categoryUpdated": "Category updated",
+        "categorySaveFailed": "Failed to save category",
+        "categoryNameRequired": "Category name is required"
+      },
+      "menuModal": {
+        "titleEdit": "Edit Menu",
+        "titleCreate": "Add Menu to POS",
+        "step1Title": "Select a product to add to POS",
+        "searchPlaceholder": "Search products...",
+        "noProducts": "No available products found",
+        "allInPos": "All products may already be in POS",
+        "productLabel": "Product",
+        "categoryLabel": "Category",
+        "selectCategory": "Select category...",
+        "bomLabel": "BOM (Bill of Materials)",
+        "bomAvailable": "({{count}} available)",
+        "versionLabel": "Version",
+        "noBom": "No BOM available",
+        "selectBom": "Select BOM (optional)...",
+        "bomLinked": "Stock will be deducted from BOM ingredients",
+        "bomTip": "Tip: Link a BOM to auto-deduct stock from production recipe",
+        "posPrice": "POS Price",
+        "required": "*",
+        "costPrice": "Cost Price",
+        "quickCode": "Quick Code",
+        "quickPlaceholder": "e.g., A01",
+        "prepTime": "Prep Time (min)",
+        "displayOrder": "Display Order",
+        "saleUnit": "Sale Unit",
+        "saleUnitLabel": "(Sale Unit)",
+        "selectSaleUnit": "Select unit...",
+        "defaultUnit": "{{unit}} (default)",
+        "displayUnit": "{{unit}} (Display)",
+        "baseUnit": "{{unit}} (Base)",
+        "unitInfo": "Base: {{base}} | Display: {{display}}",
+        "selectProductFirst": "Select a product first to see available units",
+        "description": "Description",
+        "descriptionPlaceholder": "Menu description...",
+        "available": "Available for sale",
+        "back": "Back",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save",
+        "requiredFields": "Please fill in all required fields"
+      },
+      "categoryModal": {
+        "titleEdit": "Edit Category",
+        "titleCreate": "Add Category",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g., Main Course",
+        "colorLabel": "Color",
+        "iconLabel": "Icon (optional)",
+        "iconPlaceholder": "Icon name",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save"
+      }
+    },
+    "unitConversions": {
+      "title": "Unit Conversions",
+      "subtitle": "Define conversion rates between units, globally or per product",
+      "add": "Add Conversion",
+      "searchPlaceholder": "Search unit or product name...",
+      "global": {
+        "title": "Global (applies to all products)",
+        "chainView": "Chain View",
+        "empty": "No global conversions yet",
+        "emptyHint": "Example: 1 crate = 12 boxes"
+      },
+      "perMaterial": {
+        "title": "Per Product (override per item)",
+        "empty": "No per-product conversions yet",
+        "emptyHint": "Use when each item has different packaging, e.g. Flour A: 1 bag = 25 kg",
+        "itemCount": "{{count}} items",
+        "chain": "Chain"
+      },
+      "builtIn": {
+        "title": "Built-in Standards",
+        "locked": "Read-only",
+        "count": "{{count}} items",
+        "info": "The system supports automatic standard conversions such as kg↔g, inch↔cm, L↔ml, dozen=12, gross=144. No additional setup needed; works immediately in BOM and Stock Movement.",
+        "pairCount": "{{count}} pairs"
+      },
+      "standardGroups": {
+        "weight": "Weight",
+        "length": "Length",
+        "volume": "Volume",
+        "count": "Universal Count"
+      },
+      "loading": "Loading...",
+      "modal": {
+        "titleEdit": "Edit Unit Conversion",
+        "titleCreate": "Add Unit Conversion",
+        "preview": "1 {{from}} = {{factor}} {{to}}",
+        "previewWithMaterial": "1 {{from}} = {{factor}} {{to}} ({{material}})",
+        "advisorTitle": "Check conversion path / Ask AI suggestion",
+        "fromPlaceholder": "From (pack)",
+        "toPlaceholder": "To (liter)",
+        "check": "Check",
+        "checking": "...",
+        "pathFound": "Path found: {{path}}",
+        "pathFoundValue": "1 {{from}} = {{factor}} {{to}}",
+        "pathNotFound": "No path found {{from}} → {{to}}",
+        "pathNotFoundHint": "Add a conversion below or ask AI for a suggested value",
+        "aiSuggest": "Ask AI for suggestion",
+        "aiThinking": "AI is thinking...",
+        "aiSuggestion": "AI suggests: 1 {{from}} = {{factor}} {{to}}",
+        "applyValue": "Use this value",
+        "materialLabel": "Specific Product",
+        "materialHint": "(leave blank to apply globally)",
+        "materialPlaceholder": "Search product or leave blank for global...",
+        "fromUnitLabel": "From Unit",
+        "fromUnitPlaceholder": "e.g. pack, crate, sachet",
+        "toUnitLabel": "To Unit",
+        "toUnitPlaceholder": "e.g. pcs, piece, g",
+        "factorLabel": "Factor — 1 {{from}} = how many {{to}}",
+        "factorPlaceholder": "e.g. 24",
+        "notesLabel": "Notes (optional)",
+        "notesPlaceholder": "e.g. Size L packaging",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save"
+      },
+      "toast": {
+        "loadFailed": "Failed to load data",
+        "validation": "Please specify units and conversion factor",
+        "factorPositive": "Conversion factor must be greater than 0",
+        "sameUnit": "From and to units must be different",
+        "createSuccess": "Conversion added",
+        "updateSuccess": "Saved",
+        "deleteConfirm": "Delete conversion \"{{label}}\"?",
+        "deleteSuccess": "Deleted",
+        "deleteFailed": "Delete failed",
+        "pathCheckFailed": "Failed to check conversion path",
+        "aiSuggestFailed": "Failed to get AI suggestion"
+      }
+    },
+    "approval": {
+      "title": "Approval Settings",
+      "subtitle": "Set approval conditions per module and assign approver permissions",
+      "info": {
+        "masterAdminAuto": "MASTER and ADMIN can approve everything automatically",
+        "roleScope": "The settings below apply only to MANAGER / POWER USER / USER. If no setting exists for a role, that role does not require approval."
+      },
+      "section": {
+        "approvalConditions": "Approval Conditions by Role",
+        "userPermissions": "Individual Approver Permissions"
+      },
+      "actions": {
+        "addCondition": "Add Condition",
+        "grantPermission": "Grant Permission"
+      },
+      "labels": {
+        "role": "Role",
+        "module": "Module",
+        "approvalRequired": "Approval Required",
+        "autoApproveThreshold": "Auto-approve threshold (฿)",
+        "thresholdHint": "Below this amount passes automatically",
+        "user": "User",
+        "maxApprovalLimit": "Max approval limit (฿)",
+        "limitHint": "0 = use default",
+        "unlimited": "Unlimited amount",
+        "masterApprover": "Master Approver (Level 2)",
+        "autoApproveIfBelow": "Auto-approve if below"
+      },
+      "placeholders": {
+        "thresholdCheckEveryTime": "0 = check every time",
+        "selectUser": "-- Select user --",
+        "limitDefault": "0 = use default"
+      },
+      "options": {
+        "required": "Required",
+        "notRequired": "Not required"
+      },
+      "badge": {
+        "required": "Required",
+        "notRequired": "Not required",
+        "unlimited": "Unlimited",
+        "maxLimit": "Max {{amount}}"
+      },
+      "empty": {
+        "noConditions": "No conditions yet — click \"Add Condition\" to start",
+        "noApprovers": "No approvers assigned yet — click \"Grant Permission\" to start"
+      },
+      "rolesCount": "{{count}} roles",
+      "modules": {
+        "purchaseRequest": "Purchase Request (PR)",
+        "purchaseOrder": "Purchase Order (PO)",
+        "salesOrder": "Sales Order (SO)",
+        "workOrder": "Work Order",
+        "stockAdjustment": "Stock Adjustment"
+      },
+      "roles": {
+        "manager": "Manager",
+        "powerUser": "Power User",
+        "user": "User"
+      },
+      "toasts": {
+        "loadFailed": "Failed to load data",
+        "saveSettingSuccess": "Setting saved successfully",
+        "saveFailed": "Save failed",
+        "deleteSettingSuccess": "Setting deleted",
+        "deleteFailed": "Delete failed",
+        "selectUserError": "Please select a user",
+        "savePermSuccess": "Approver permission saved",
+        "revokeSuccess": "Permission revoked",
+        "revokeFailed": "Failed to revoke permission"
+      }
+    },
+    "userManagement": {
+      "title": "User Management",
+      "subtitle": "Define role, department and access permissions",
+      "addUser": "Add User",
+      "loadFailed": "Failed to load data",
+      "saveFailed": "Save failed",
+      "deleteFailed": "Delete failed",
+      "userCol": "User",
+      "roleCol": "Role",
+      "departmentCol": "Department",
+      "noDepartment": "—",
+      "customBadge": "+custom",
+      "modal": {
+        "titleCreate": "Add New User",
+        "titleEdit": "Edit: {{name}}",
+        "nameLabel": "Name *",
+        "namePlaceholder": "User name",
+        "emailLabel": "Email *",
+        "emailPlaceholder": "email@example.com",
+        "passwordLabel": "Password",
+        "passwordHintEdit": "(leave blank to keep unchanged)",
+        "passwordPlaceholderCreate": "Password *",
+        "passwordPlaceholderEdit": "••••••••",
+        "roleLabel": "Role",
+        "departmentsLabel": "Departments (multiple allowed)",
+        "advancedTitle": "Advanced Permissions (Custom Override)",
+        "advancedHint": "Set overrides for this user — takes precedence over role + department",
+        "allowed": "✅ = Allow",
+        "denied": "❌ = Deny",
+        "default": "⬜ = Default",
+        "resourceCol": "Resource",
+        "overridesCount": "{{count}} overrides",
+        "overrideNone": "Click to override",
+        "overrideAllow": "Allow → click to deny",
+        "overrideDeny": "Deny → click to clear"
+      },
+      "roleDescriptions": {
+        "ADMIN": "Full access to everything",
+        "MANAGER": "Read/write/approve/delete in assigned departments",
+        "POWERUSER": "Read/write/approve in all departments (no delete)",
+        "USER": "Read/write in assigned departments only"
+      },
+      "deleteConfirm": {
+        "title": "Confirm Delete",
+        "message": "Remove {{name}} from the system? This action cannot be undone.",
+        "delete": "Delete User",
+        "deleting": "Deleting..."
+      }
     }
   }
 }

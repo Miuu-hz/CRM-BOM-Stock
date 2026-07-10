@@ -10,7 +10,6 @@ import { IMcpServer } from './sdk-compat'
 import { registerSearchTool } from './tools/search'
 import { registerSummaryTools } from './tools/summary'
 import { registerPurchaseTools } from './tools/purchase'
-import { registerSalesTools } from './tools/sales'
 import { registerStockTools } from './tools/stock'
 import { registerProductionTools } from './tools/production'
 import { registerBomTools } from './tools/bom'
@@ -24,7 +23,6 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerSearchTool(server, tenantId)
   registerSummaryTools(server, tenantId)
   registerPurchaseTools(server, tenantId, userId, callerName)
-  registerSalesTools(server, tenantId, userId)
   registerStockTools(server, tenantId, userId)
   registerProductionTools(server, tenantId, userId)
   registerBomTools(server, tenantId)

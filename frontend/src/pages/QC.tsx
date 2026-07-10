@@ -39,14 +39,24 @@ interface QCInspection {
   checklist_name: string
   checklist_id: string
   work_order_ref: string
+  work_order_id: string | null
   batch_number: string
   product_name: string
   inspector_name: string
   status: 'PENDING' | 'PASS' | 'FAIL'
   results: InspectionResult[]
   notes: string
+  inspected_qty: number
+  passed_qty: number
+  rejected_qty: number
   created_at: string
   completed_at: string | null
+}
+
+interface WorkOrderOption {
+  id: string
+  wo_number: string
+  product_name: string
 }
 
 interface QCStats { total: number; passed: number; failed: number; pending: number; templates: number; passRate: number }
@@ -480,14 +490,20 @@ function CreateInspectionModal({ checklists, onClose, onCreated }: {
 }) {
   useModalClose(onClose)
   const { t } = useTranslation()
-  const [form, setForm] = useState({ checklist_id: '', product_name: '', batch_number: '', work_order_ref: '', inspector_name: '' })
+  const [form, setForm] = useState({ checklist_id: '', product_name: '', batch_number: '', work_order_ref: '', inspector_name: '', work_order_id: '', inspected_qty: '' })
   const [saving, setSaving] = useState(false)
+  const [workOrders, setWorkOrders] = useState<WorkOrderOption[]>([])
+
+  useEffect(() => {
+    api.get('/work-orders').then(res => setWorkOrders(res.data?.data || [])).catch(() => {})
+  }, [])
 
   const create = async () => {
     if (!form.checklist_id) return toast.error(t('qc.selectChecklist'))
     setSaving(true)
     try {
-      const res = await api.post('/qc/inspections', form)
+      const payload = { ...form, inspected_qty: form.inspected_qty ? Number(form.inspected_qty) : 0 }
+      const res = await api.post('/qc/inspections', payload)
       onCreated(res.data.data)
       toast.success(t('qc.inspectionCreated'))
     } catch { toast.error(t('qc.createError')) }
@@ -524,6 +540,21 @@ function CreateInspectionModal({ checklists, onClose, onCreated }: {
                   {checklists.map(c => <option key={c.id} value={c.id}>{c.name} ({c.check_items.length} {t('qc.items')})</option>)}
                 </select>
               </div>
+              <div>
+                <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.linkWorkOrder')}</label>
+                <select value={form.work_order_id} onChange={e => {
+                  const woId = e.target.value
+                  const wo = workOrders.find(w => w.id === woId)
+                  setForm(f => ({
+                    ...f, work_order_id: woId,
+                    product_name: wo ? wo.product_name : f.product_name,
+                    work_order_ref: wo ? wo.wo_number : f.work_order_ref,
+                  }))
+                }} className="phopy-input w-full">
+                  <option value="">-- {t('qc.linkWorkOrderNone')} --</option>
+                  {workOrders.map(w => <option key={w.id} value={w.id}>{w.wo_number} — {w.product_name}</option>)}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.productName')}</label>
@@ -544,6 +575,12 @@ function CreateInspectionModal({ checklists, onClose, onCreated }: {
                   <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.inspector')}</label>
                   <input value={form.inspector_name} onChange={e => setForm(f => ({ ...f, inspector_name: e.target.value }))}
                     className="phopy-input w-full" placeholder={t('qc.inspectorPlaceholder')} />
+                </div>
+                <div>
+                  <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.inspectedQty')}</label>
+                  <input type="number" min="0" value={form.inspected_qty}
+                    onChange={e => setForm(f => ({ ...f, inspected_qty: e.target.value }))}
+                    className="phopy-input w-full" placeholder="0" />
                 </div>
               </div>
             </>
@@ -575,6 +612,8 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
   const { t } = useTranslation()
   const [results, setResults] = useState<InspectionResult[]>(inspection.results.map(r => ({ ...r })))
   const [notes, setNotes] = useState(inspection.notes)
+  const [passedQty, setPassedQty] = useState(String(inspection.passed_qty || inspection.inspected_qty || ''))
+  const [rejectedQty, setRejectedQty] = useState(String(inspection.rejected_qty || ''))
   const [saving, setSaving] = useState(false)
   const isCompleted = inspection.status !== 'PENDING'
 
@@ -587,8 +626,18 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
     }
     setSaving(true)
     try {
-      const res = await api.post(`/qc/inspections/${inspection.id}/complete`, { results, notes })
-      onCompleted({ ...inspection, results, notes, status: res.data.data.status, completed_at: new Date().toISOString() })
+      const payload = {
+        results, notes,
+        passed_qty: passedQty ? Number(passedQty) : undefined,
+        rejected_qty: rejectedQty ? Number(rejectedQty) : undefined,
+      }
+      const res = await api.post(`/qc/inspections/${inspection.id}/complete`, payload)
+      onCompleted({
+        ...inspection, results, notes, status: res.data.data.status,
+        passed_qty: res.data.data.passed_qty ?? inspection.passed_qty,
+        rejected_qty: res.data.data.rejected_qty ?? inspection.rejected_qty,
+        completed_at: new Date().toISOString(),
+      })
       toast.success(res.data.data.status === 'PASS' ? t('qc.resultPass') : t('qc.resultFail'))
     } catch { toast.error(t('qc.completeError')) }
     finally { setSaving(false) }
@@ -678,6 +727,23 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
               </div>
             </div>
           ))}
+
+          {(inspection.inspected_qty > 0 || isCompleted) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.passedQty')}</label>
+                <input type="number" min="0" value={passedQty} disabled={isCompleted}
+                  onChange={e => setPassedQty(e.target.value)}
+                  className="phopy-input w-full" placeholder="0" />
+              </div>
+              <div>
+                <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.rejectedQty')}</label>
+                <input type="number" min="0" value={rejectedQty} disabled={isCompleted}
+                  onChange={e => setRejectedQty(e.target.value)}
+                  className="phopy-input w-full" placeholder="0" />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-sm text-[var(--fg-3)] mb-1 block">{t('qc.summaryNotes')}</label>

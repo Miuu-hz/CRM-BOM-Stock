@@ -204,4 +204,27 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   }
 })
 
+// DELETE quotation (DRAFT only)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const qt = db.prepare('SELECT status FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!qt) {
+      return res.status(404).json({ success: false, message: 'Quotation not found' })
+    }
+    if (qt.status !== 'DRAFT') {
+      return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบเสนอราคาสถานะ DRAFT เท่านั้น' })
+    }
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM quotations WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    })
+    tx()
+    res.json({ success: true, message: 'Quotation deleted' })
+  } catch (error) {
+    console.error('Delete quotation error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete quotation' })
+  }
+})
+
 export default router

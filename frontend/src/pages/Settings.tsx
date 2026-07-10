@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -28,6 +29,8 @@ import {
   Brain,
   Database,
   UserCog,
+  ShieldCheck,
+  Hash,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import LineSettings from './settings/LineSettings'
@@ -37,6 +40,8 @@ import LLMSettings from './settings/LLMSettings'
 import BackupSettings from './settings/BackupSettings'
 import PermissionSettings from './settings/PermissionSettings'
 import AdminUserManagement from './settings/AdminUserManagement'
+import ApprovalSettings from './settings/ApprovalSettings'
+import DocumentNumberSettings from './settings/DocumentNumberSettings'
 import { useAuth } from '../contexts/AuthContext'
 
 interface ChildUser {
@@ -50,9 +55,10 @@ interface ChildUser {
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -85,106 +91,92 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
-            <span className="text-[var(--fg-1)]">Settings</span>
+            <span className="text-[var(--fg-1)]">{t('settings.settingsPage.title')}</span>
           </h1>
-          <p className="text-[var(--fg-3)]">ตั้งค่าระบบและจัดการผู้ใช้งาน</p>
+          <p className="text-[var(--fg-3)]">{t('settings.settingsPage.subtitle')}</p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-[var(--border)] pb-2 overflow-x-auto no-scrollbar">
-        <TabButton
-          active={activeTab === 'general'}
-          onClick={() => setActiveTab('general')}
-          icon={Settings}
-          label="ทั่วไป"
-        />
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'users'}
-            onClick={() => setActiveTab('users')}
-            icon={Users}
-            label="ผู้ใช้งาน"
-            badge={localChildren.length}
-          />
-        )}
-        <TabButton
-          active={activeTab === 'security'}
-          onClick={() => setActiveTab('security')}
-          icon={Shield}
-          label="ความปลอดภัย"
-        />
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'pos'}
-            onClick={() => setActiveTab('pos')}
-            icon={Store}
-            label="POS Menu"
-          />
-        )}
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'line'}
-            onClick={() => setActiveTab('line')}
-            icon={MessageSquare}
-            label="LINE Bot"
-          />
-        )}
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'billing'}
-            onClick={() => setActiveTab('billing')}
-            icon={Receipt}
-            label="การชำระเงิน"
-          />
-        )}
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'loyalty'}
-            onClick={() => setActiveTab('loyalty')}
-            icon={Star}
-            label="สะสมแต้ม"
-          />
-        )}
-        <TabButton
-          active={activeTab === 'units'}
-          onClick={() => setActiveTab('units')}
-          icon={ArrowLeftRight}
-          label="แปลงหน่วย"
-        />
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'material-categories'}
-            onClick={() => setActiveTab('material-categories')}
-            icon={Tag}
-            label="หมวดหมู่วัตถุดิบ"
-          />
-        )}
-        {isMaster && (
-          <TabButton
-            active={activeTab === 'llm'}
-            onClick={() => setActiveTab('llm')}
-            icon={Brain}
-            label="AI / LLM"
-          />
-        )}
-        {isMaster && (
-          <TabButton
-            active={activeTab === 'backup'}
-            onClick={() => setActiveTab('backup')}
-            icon={Database}
-            label="Auto Backup"
-          />
-        )}
-        {(isAdmin || isMaster) && (
-          <TabButton
-            active={activeTab === 'permissions'}
-            onClick={() => setActiveTab('permissions')}
-            icon={UserCog}
-            label="จัดการสิทธิ์"
-          />
-        )}
-      </div>
+      {/* Tabs — grouped */}
+      {(() => {
+        const groups = [
+          {
+            id: 'system', label: 'ระบบ', icon: Settings,
+            tabs: [
+              { id: 'general' as const, icon: Settings, label: t('settings.settingsPage.tabs.general'), show: true },
+              { id: 'units' as const, icon: ArrowLeftRight, label: t('settings.settingsPage.tabs.units'), show: true },
+              { id: 'material-categories' as const, icon: Tag, label: t('settings.settingsPage.tabs.materialCategories'), show: isAdmin || isMaster },
+              { id: 'doc-numbering' as const, icon: Hash, label: 'เลขที่เอกสาร', show: isAdmin || isMaster },
+            ],
+          },
+          {
+            id: 'people', label: 'ผู้ใช้ & สิทธิ์', icon: Users,
+            tabs: [
+              { id: 'users' as const, icon: Users, label: t('settings.settingsPage.tabs.users'), show: isAdmin || isMaster, badge: localChildren.length },
+              { id: 'permissions' as const, icon: UserCog, label: t('settings.settingsPage.tabs.permissions'), show: isAdmin || isMaster },
+              { id: 'approval' as const, icon: ShieldCheck, label: t('settings.settingsPage.tabs.approval'), show: isAdmin || isMaster },
+              { id: 'security' as const, icon: Shield, label: t('settings.settingsPage.tabs.security'), show: true },
+            ],
+          },
+          {
+            id: 'sales', label: 'ขาย & POS', icon: Store,
+            tabs: [
+              { id: 'pos' as const, icon: Store, label: t('settings.settingsPage.tabs.pos'), show: isAdmin || isMaster },
+              { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
+              { id: 'loyalty' as const, icon: Star, label: t('settings.settingsPage.tabs.loyalty'), show: isAdmin || isMaster },
+              { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster },
+            ],
+          },
+          {
+            id: 'advanced', label: 'ขั้นสูง', icon: Database,
+            tabs: [
+              { id: 'llm' as const, icon: Brain, label: t('settings.settingsPage.tabs.llm'), show: isMaster },
+              { id: 'backup' as const, icon: Database, label: t('settings.settingsPage.tabs.backup'), show: isMaster },
+            ],
+          },
+        ]
+        const visibleGroups = groups.filter(g => g.tabs.some(tb => tb.show))
+        const currentGroup = visibleGroups.find(g => g.tabs.some(tb => tb.show && tb.id === activeTab)) || visibleGroups[0]
+        return (
+          <div className="space-y-3">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {visibleGroups.map(g => {
+                const GIcon = g.icon
+                const isActive = currentGroup.id === g.id
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => {
+                      const first = g.tabs.find(tb => tb.show)
+                      if (first) setActiveTab(first.id)
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-phopy-indigo text-white shadow-lg'
+                        : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:border-phopy-indigo/40'
+                    }`}
+                  >
+                    <GIcon className="w-4 h-4" />
+                    {g.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex gap-2 border-b border-[var(--border)] pb-2 overflow-x-auto no-scrollbar">
+              {currentGroup.tabs.filter(tb => tb.show).map(tb => (
+                <TabButton
+                  key={tb.id}
+                  active={activeTab === tb.id}
+                  onClick={() => setActiveTab(tb.id)}
+                  icon={tb.icon}
+                  label={tb.label}
+                  badge={(tb as any).badge}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Content */}
       <div className="space-y-6">
@@ -220,6 +212,10 @@ export default function SettingsPage() {
         {activeTab === 'backup' && isMaster && <BackupSettings />}
 
         {activeTab === 'permissions' && (isAdmin || isMaster) && <PermissionSettings />}
+
+        {activeTab === 'approval' && (isAdmin || isMaster) && <ApprovalSettings />}
+
+        {activeTab === 'doc-numbering' && (isAdmin || isMaster) && <DocumentNumberSettings />}
       </div>
 
       {/* Add User Modal */}
@@ -308,6 +304,7 @@ export function loadBillingConfig(): BillingConfig {
 }
 
 function BillingSettings() {
+  const { t } = useTranslation()
   const [cfg, setCfg] = useState<BillingConfig>(loadBillingConfig)
   const [saved, setSaved] = useState(false)
 
@@ -346,11 +343,13 @@ function BillingSettings() {
     </button>
   )
 
+  const previewAmount = 1000
+
   return (
     <div className="space-y-6 max-w-lg">
       <div>
-        <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1">การชำระเงิน POS</h2>
-        <p className="text-sm text-[var(--fg-3)]">ตั้งค่า VAT และค่าบริการที่คิดเพิ่มในบิล</p>
+        <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1">{t('settings.settingsPage.billing.title')}</h2>
+        <p className="text-sm text-[var(--fg-3)]">{t('settings.settingsPage.billing.subtitle')}</p>
       </div>
 
       {/* VAT */}
@@ -358,13 +357,13 @@ function BillingSettings() {
         <ToggleSwitch
           enabled={cfg.vatEnabled}
           onChange={(v) => setCfg({ ...cfg, vatEnabled: v })}
-          label="VAT (ภาษีมูลค่าเพิ่ม)"
-          sub="คิด VAT จากยอดรวมสินค้า"
+          label={t('settings.settingsPage.billing.vat')}
+          sub={t('settings.settingsPage.billing.vatSub')}
         />
         {cfg.vatEnabled && (
           <div className="pl-2">
             <label className="block text-sm text-[var(--fg-3)] mb-2 flex items-center gap-2">
-              <Percent className="w-4 h-4" /> อัตรา VAT (%)
+              <Percent className="w-4 h-4" /> {t('settings.settingsPage.billing.vatRate')}
             </label>
             <div className="flex items-center gap-3">
               <input
@@ -400,13 +399,13 @@ function BillingSettings() {
         <ToggleSwitch
           enabled={cfg.serviceEnabled}
           onChange={(v) => setCfg({ ...cfg, serviceEnabled: v })}
-          label="Service Charge (ค่าบริการ)"
-          sub="คิดค่าบริการจากยอดรวมสินค้า"
+          label={t('settings.settingsPage.billing.service')}
+          sub={t('settings.settingsPage.billing.serviceSub')}
         />
         {cfg.serviceEnabled && (
           <div className="pl-2">
             <label className="block text-sm text-[var(--fg-3)] mb-2 flex items-center gap-2">
-              <Percent className="w-4 h-4" /> อัตราค่าบริการ (%)
+              <Percent className="w-4 h-4" /> {t('settings.settingsPage.billing.serviceRate')}
             </label>
             <div className="flex items-center gap-3">
               <input
@@ -440,25 +439,25 @@ function BillingSettings() {
       {/* Preview */}
       {(cfg.vatEnabled || cfg.serviceEnabled) && (
         <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-1.5 text-sm">
-          <p className="text-[var(--fg-3)] font-medium mb-2">ตัวอย่าง (ยอดสินค้า ฿1,000)</p>
+          <p className="text-[var(--fg-3)] font-medium mb-2">{t('settings.settingsPage.billing.previewTitle', { amount: `฿${previewAmount.toLocaleString()}` })}</p>
           <div className="flex justify-between text-[var(--fg-3)]">
-            <span>ยอดสินค้า</span><span>฿1,000.00</span>
+            <span>{t('settings.settingsPage.billing.subtotal')}</span><span>฿{previewAmount.toFixed(2)}</span>
           </div>
           {cfg.serviceEnabled && (
             <div className="flex justify-between text-blue-400">
-              <span>Service Charge ({cfg.serviceRate}%)</span>
-              <span>+฿{(1000 * cfg.serviceRate / 100).toFixed(2)}</span>
+              <span>{t('settings.settingsPage.billing.serviceCharge', { rate: cfg.serviceRate })}</span>
+              <span>+฿{(previewAmount * cfg.serviceRate / 100).toFixed(2)}</span>
             </div>
           )}
           {cfg.vatEnabled && (
             <div className="flex justify-between text-warning">
-              <span>VAT ({cfg.vatRate}%)</span>
-              <span>+฿{(1000 * cfg.vatRate / 100).toFixed(2)}</span>
+              <span>{t('settings.settingsPage.billing.vat', { rate: cfg.vatRate })}</span>
+              <span>+฿{(previewAmount * cfg.vatRate / 100).toFixed(2)}</span>
             </div>
           )}
           <div className="flex justify-between text-success font-bold border-t border-[var(--border)] pt-1.5">
-            <span>ยอดสุทธิ</span>
-            <span>฿{(1000 + (cfg.serviceEnabled ? 1000 * cfg.serviceRate / 100 : 0) + (cfg.vatEnabled ? 1000 * cfg.vatRate / 100 : 0)).toFixed(2)}</span>
+            <span>{t('settings.settingsPage.billing.total')}</span>
+            <span>฿{(previewAmount + (cfg.serviceEnabled ? previewAmount * cfg.serviceRate / 100 : 0) + (cfg.vatEnabled ? previewAmount * cfg.vatRate / 100 : 0)).toFixed(2)}</span>
           </div>
         </div>
       )}
@@ -467,7 +466,7 @@ function BillingSettings() {
         onClick={save}
         className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
-        {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
+        {saved ? <><CheckCircle className="w-5 h-5" /> {t('common.saved')}</> : t('settings.settingsPage.billing.save')}
       </button>
     </div>
   )
@@ -498,6 +497,7 @@ export function loadLoyaltyConfig(): LoyaltyConfig {
 }
 
 function LoyaltySettings() {
+  const { t } = useTranslation()
   const [cfg, setCfg] = useState<LoyaltyConfig>(loadLoyaltyConfig)
   const [saved, setSaved] = useState(false)
 
@@ -529,17 +529,17 @@ function LoyaltySettings() {
       <div>
         <h2 className="text-lg font-bold text-[var(--fg-1)] mb-1 flex items-center gap-2">
           <Star className="w-5 h-5 text-warning" />
-          ระบบสะสมแต้มสมาชิก (CRM)
+          {t('settings.settingsPage.loyalty.title')}
         </h2>
-        <p className="text-sm text-[var(--fg-3)]">ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS</p>
+        <p className="text-sm text-[var(--fg-3)]">{t('settings.settingsPage.loyalty.subtitle')}</p>
       </div>
 
       {/* Enable Toggle */}
       <ToggleSwitch
         enabled={cfg.enabled}
         onChange={(v) => setCfg({ ...cfg, enabled: v })}
-        label="เปิดใช้ระบบสะสมแต้ม"
-        sub="เมื่อเปิด ลูกค้าที่ผูกบิลจะได้รับแต้มทุกครั้งที่ชำระเงิน"
+        label={t('settings.settingsPage.loyalty.enabled')}
+        sub={t('settings.settingsPage.loyalty.enabledSub')}
       />
 
       {cfg.enabled && (
@@ -548,11 +548,11 @@ function LoyaltySettings() {
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
               <Gift className="w-4 h-4 text-[var(--primary)]" />
-              <p className="font-medium text-[var(--fg-2)]">อัตราสะสมแต้ม</p>
+              <p className="font-medium text-[var(--fg-2)]">{t('settings.settingsPage.loyalty.earnRateTitle')}</p>
             </div>
-            <p className="text-xs text-[var(--fg-4)]">ซื้อสินค้าครบ X บาท ได้ 1 แต้ม</p>
+            <p className="text-xs text-[var(--fg-4)]">{t('settings.settingsPage.loyalty.earnRateHint')}</p>
             <div className="flex items-center gap-3">
-              <span className="text-[var(--fg-3)] text-sm">ใช้จ่าย</span>
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.spend')}</span>
               <input
                 type="number"
                 value={cfg.earnRate}
@@ -562,7 +562,7 @@ function LoyaltySettings() {
                 min="1"
                 step="1"
               />
-              <span className="text-[var(--fg-3)] text-sm">บาท = 1 แต้ม</span>
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.bahtPerPoint')}</span>
             </div>
             <div className="flex gap-2 flex-wrap">
               {[10, 25, 50, 100, 200].map((r) => (
@@ -572,7 +572,7 @@ function LoyaltySettings() {
                   onClick={() => setCfg({ ...cfg, earnRate: r })}
                   className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.earnRate === r ? 'bg-[var(--primary-soft)] border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                 >
-                  {r} บาท
+                  {r} {t('settings.settingsPage.loyalty.bahtUnit')}
                 </button>
               ))}
             </div>
@@ -582,11 +582,11 @@ function LoyaltySettings() {
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
               <ArrowLeftRight className="w-4 h-4 text-warning" />
-              <p className="font-medium text-[var(--fg-2)]">อัตราแลกแต้ม</p>
+              <p className="font-medium text-[var(--fg-2)]">{t('settings.settingsPage.loyalty.redeemRateTitle')}</p>
             </div>
-            <p className="text-xs text-[var(--fg-4)]">ใช้ X แต้ม แลกส่วนลด 1 บาท</p>
+            <p className="text-xs text-[var(--fg-4)]">{t('settings.settingsPage.loyalty.redeemRateHint')}</p>
             <div className="flex items-center gap-3">
-              <span className="text-[var(--fg-3)] text-sm">ใช้</span>
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.usePoints')}</span>
               <input
                 type="number"
                 value={cfg.redeemRate}
@@ -596,7 +596,7 @@ function LoyaltySettings() {
                 min="1"
                 step="1"
               />
-              <span className="text-[var(--fg-3)] text-sm">แต้ม = ส่วนลด 1 บาท</span>
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.pointsPerBaht')}</span>
             </div>
             <div className="flex gap-2 flex-wrap">
               {[1, 5, 10, 20, 50].map((r) => (
@@ -606,7 +606,7 @@ function LoyaltySettings() {
                   onClick={() => setCfg({ ...cfg, redeemRate: r })}
                   className={`px-3 py-1 rounded-lg text-sm border transition-colors ${cfg.redeemRate === r ? 'bg-yellow-400/20 border-yellow-400 text-warning' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-[var(--border-strong)]'}`}
                 >
-                  {r} แต้ม
+                  {r} {t('settings.settingsPage.loyalty.pointsUnit')}
                 </button>
               ))}
             </div>
@@ -616,9 +616,9 @@ function LoyaltySettings() {
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
             <div className="flex items-center gap-2">
               <Info className="w-4 h-4 text-[var(--fg-3)]" />
-              <p className="font-medium text-[var(--fg-2)]">แต้มขั้นต่ำในการแลก</p>
+              <p className="font-medium text-[var(--fg-2)]">{t('settings.settingsPage.loyalty.minRedeemTitle')}</p>
             </div>
-            <p className="text-xs text-[var(--fg-4)]">ลูกค้าต้องมีแต้มอย่างน้อยเท่านี้จึงจะแลกได้</p>
+            <p className="text-xs text-[var(--fg-4)]">{t('settings.settingsPage.loyalty.minRedeemHint')}</p>
             <div className="flex items-center gap-3">
               <input
                 type="number"
@@ -629,23 +629,23 @@ function LoyaltySettings() {
                 min="0"
                 step="1"
               />
-              <span className="text-[var(--fg-3)] text-sm">แต้ม</span>
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.pointsUnit')}</span>
             </div>
           </div>
 
           {/* Preview */}
           <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2 text-sm">
-            <p className="text-[var(--fg-3)] font-medium mb-2">ตัวอย่างการคำนวณ</p>
+            <p className="text-[var(--fg-3)] font-medium mb-2">{t('settings.settingsPage.loyalty.previewTitle')}</p>
             <div className="flex justify-between text-[var(--fg-3)]">
-              <span>ซื้อ ฿{(cfg.earnRate * 10).toLocaleString()}</span>
-              <span className="text-[var(--primary)]">ได้ 10 แต้ม</span>
+              <span>{t('settings.settingsPage.loyalty.previewBuy', { amount: `฿${(cfg.earnRate * 10).toLocaleString()}` })}</span>
+              <span className="text-[var(--primary)]">{t('settings.settingsPage.loyalty.previewEarn')}</span>
             </div>
             <div className="flex justify-between text-[var(--fg-3)]">
-              <span>แลก {cfg.redeemRate * 10} แต้ม</span>
-              <span className="text-warning">ลด ฿10</span>
+              <span>{t('settings.settingsPage.loyalty.previewRedeem', { points: cfg.redeemRate * 10 })}</span>
+              <span className="text-warning">{t('settings.settingsPage.loyalty.previewDiscount', { amount: '฿10' })}</span>
             </div>
             <div className="flex justify-between text-[var(--fg-4)] text-xs border-t border-[var(--border)] pt-2">
-              <span>ค่าแต้มสะสม 1 แต้ม</span>
+              <span>{t('settings.settingsPage.loyalty.pointValue')}</span>
               <span>≈ ฿{(1 / cfg.redeemRate).toFixed(2)}</span>
             </div>
           </div>
@@ -656,7 +656,7 @@ function LoyaltySettings() {
         onClick={save}
         className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
-        {saved ? <><CheckCircle className="w-5 h-5" /> บันทึกแล้ว</> : 'บันทึกการตั้งค่า'}
+        {saved ? <><CheckCircle className="w-5 h-5" /> {t('common.saved')}</> : t('settings.settingsPage.loyalty.save')}
       </button>
     </div>
   )
@@ -664,16 +664,21 @@ function LoyaltySettings() {
 
 // General Settings
 function GeneralSettings() {
+  const { t } = useTranslation()
   const { tenant, isMaster } = useAuth()
   const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', logo_base64: '' })
+  const [qcGateEnabled, setQcGateEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [qcSaving, setQcSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     import('../services/companySettings.service').then(m => {
       m.default.get().then(d => {
         setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', logo_base64: d.logo_base64 || '' })
+        setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
       }).catch(() => {})
     })
   }, [])
@@ -684,12 +689,28 @@ function GeneralSettings() {
     try {
       const m = await import('../services/companySettings.service')
       await m.default.update(co)
-      setSaveMsg('บันทึกสำเร็จ')
-      setTimeout(() => setSaveMsg(''), 3000)
+      setSaveSuccess(true)
+      setSaveMsg(t('settings.settingsPage.general.savedSuccess'))
+      setTimeout(() => { setSaveMsg(''); setSaveSuccess(false) }, 3000)
     } catch {
-      setSaveMsg('บันทึกไม่สำเร็จ')
+      setSaveSuccess(false)
+      setSaveMsg(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleToggleQcGate = async () => {
+    const next = !qcGateEnabled
+    setQcGateEnabled(next)
+    setQcSaving(true)
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({ qc_gate_enabled: next })
+    } catch {
+      setQcGateEnabled(!next)
+    } finally {
+      setQcSaving(false)
     }
   }
 
@@ -708,7 +729,7 @@ function GeneralSettings() {
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
             <Building2 className="w-5 h-5 text-[var(--primary)]" />
-            ข้อมูลบริษัท (สำหรับใบบิล)
+            {t('settings.settingsPage.general.companyTitle')}
           </h3>
           <button
             type="button"
@@ -717,12 +738,12 @@ function GeneralSettings() {
             className="phopy-btn-primary flex items-center gap-2 text-sm px-4 py-2"
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
         </div>
 
         {saveMsg && (
-          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveMsg.includes('สำเร็จ') ? 'bg-success/10 text-success border border-success/30' : 'bg-[var(--danger-soft)] text-danger border border-danger/30'}`}>
+          <div className={`mb-4 px-3 py-2 rounded text-sm ${saveSuccess ? 'bg-success/10 text-success border border-success/30' : 'bg-[var(--danger-soft)] text-danger border border-danger/30'}`}>
             {saveMsg}
           </div>
         )}
@@ -740,56 +761,78 @@ function GeneralSettings() {
             </div>
             <div>
               <button type="button" onClick={() => fileRef.current?.click()} className="text-sm text-[var(--primary)] hover:underline">
-                อัปโหลดโลโก้
+                {t('settings.settingsPage.general.uploadLogo')}
               </button>
               {co.logo_base64 && (
                 <button type="button" onClick={() => setCo(p => ({ ...p, logo_base64: '' }))} className="ml-3 text-sm text-danger hover:underline">
-                  ลบ
+                  {t('settings.settingsPage.general.removeLogo')}
                 </button>
               )}
-              <p className="text-xs text-[var(--fg-4)] mt-1">PNG/JPG, แสดงบนหัวใบบิล</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('settings.settingsPage.general.logoHint')}</p>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อบริษัท / ร้าน</label>
-            <input type="text" value={co.name} onChange={e => setCo(p => ({ ...p, name: e.target.value }))} className="phopy-input w-full" placeholder="บริษัท ตัวอย่าง จำกัด" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.companyName')}</label>
+            <input type="text" value={co.name} onChange={e => setCo(p => ({ ...p, name: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.companyNamePlaceholder')} />
           </div>
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">เลขผู้เสียภาษี (Tax ID)</label>
-            <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="phopy-input w-full" placeholder="0-0000-00000-00-0" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.taxId')}</label>
+            <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.taxIdPlaceholder')} />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-sm text-[var(--fg-3)] mb-1">ที่อยู่</label>
-            <textarea value={co.address} onChange={e => setCo(p => ({ ...p, address: e.target.value }))} className="phopy-input w-full resize-none" rows={3} placeholder="เลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.address')}</label>
+            <textarea value={co.address} onChange={e => setCo(p => ({ ...p, address: e.target.value }))} className="phopy-input w-full resize-none" rows={3} placeholder={t('settings.settingsPage.general.addressPlaceholder')} />
           </div>
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">โทรศัพท์</label>
-            <input type="text" value={co.phone} onChange={e => setCo(p => ({ ...p, phone: e.target.value }))} className="phopy-input w-full" placeholder="02-xxx-xxxx" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.phone')}</label>
+            <input type="text" value={co.phone} onChange={e => setCo(p => ({ ...p, phone: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.phonePlaceholder')} />
           </div>
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">อีเมล</label>
-            <input type="email" value={co.email} onChange={e => setCo(p => ({ ...p, email: e.target.value }))} className="phopy-input w-full" placeholder="info@company.com" />
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.email')}</label>
+            <input type="email" value={co.email} onChange={e => setCo(p => ({ ...p, email: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.emailPlaceholder')} />
           </div>
         </div>
+      </div>
+
+      {/* QC Gate — บังคับผ่าน QC ก่อนปิดใบสั่งงาน */}
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
+          {t('settings.settingsPage.qcGate.title')}
+        </h3>
+        <button
+          type="button"
+          onClick={handleToggleQcGate}
+          disabled={qcSaving}
+          className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 ${qcGateEnabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
+        >
+          <div className="text-left">
+            <p className={`font-medium ${qcGateEnabled ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.qcGate.toggleLabel')}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.qcGate.toggleSub')}</p>
+          </div>
+          {qcGateEnabled
+            ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
+            : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+        </button>
       </div>
 
       {/* Tenant meta (read-only) */}
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <Shield className="w-5 h-5 text-[var(--primary)]" />
-          ข้อมูลบัญชี
+          {t('settings.settingsPage.general.accountTitle')}
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">รหัสองค์กร</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.tenantCode')}</label>
             <p className="text-[var(--fg-2)] font-mono">{tenant?.code || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-1">ประเภทบัญชี</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.accountType')}</label>
             <p className={`font-semibold ${isMaster ? 'text-success' : 'text-[var(--primary)]'}`}>
-              {isMaster ? 'Master Account' : 'Standard Account'}
+              {isMaster ? t('settings.settingsPage.general.masterAccount') : t('settings.settingsPage.general.standardAccount')}
             </p>
           </div>
         </div>
@@ -800,20 +843,20 @@ function GeneralSettings() {
         <div className="phopy-card p-6 border-l-4 border-success">
           <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-success" />
-            สิทธิ์ Master Account
+            {t('settings.settingsPage.general.masterPrivilegesTitle')}
           </h3>
           <ul className="space-y-2 text-[var(--fg-2)]">
             <li className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-success" />
-              สามารถสร้างผู้ใช้งานลูกได้ไม่จำกัด
+              {t('settings.settingsPage.general.privilegeUnlimitedUsers')}
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-success" />
-              แก้ไขข้อมูลได้ไม่จำกัดเวลา (ไม่ติด 24hr rule)
+              {t('settings.settingsPage.general.privilegeNoTimeLock')}
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-success" />
-              จัดการสิทธิ์ผู้ใช้งานได้
+              {t('settings.settingsPage.general.privilegeManagePermissions')}
             </li>
           </ul>
         </div>
@@ -823,27 +866,23 @@ function GeneralSettings() {
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-[var(--primary)]" />
-          กฎการแก้ไขข้อมูล (24 Hour Rule)
+          {t('settings.settingsPage.general.timeLockTitle')}
         </h3>
         <div className="space-y-3 text-[var(--fg-2)]">
           <p className="flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
-            <span>
-              ข้อมูลทุกรายการที่สร้างขึ้น <strong className="text-[var(--primary)]">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง
-            </span>
+            <span dangerouslySetInnerHTML={{ __html: t('settings.settingsPage.general.timeLockRule1') }} />
           </p>
           <p className="flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
             <span>
-              หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้
-              {isMaster && <strong className="text-success"> (ยกเว้น Master Account)</strong>}
+              {t('settings.settingsPage.general.timeLockRule2')}
+              {isMaster && <strong className="text-success">{t('settings.settingsPage.general.timeLockRule2Master')}</strong>}
             </span>
           </p>
           <p className="flex items-start gap-2">
             <CheckCircle className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
-            <span>
-              ระบบจะคำนวณเวลาจาก <strong>เวลาปัจจุบัน - เวลาสร้าง</strong> โดยอัตโนมัติ
-            </span>
+            <span dangerouslySetInnerHTML={{ __html: t('settings.settingsPage.general.timeLockRule3') }} />
           </p>
         </div>
       </div>
@@ -853,17 +892,18 @@ function GeneralSettings() {
 
 // User Management (Master Only)
 function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) {
+  const { t } = useTranslation()
   const [deleting, setDeleting] = useState<string | null>(null)
 
   const handleDelete = async (id: string) => {
-    if (!confirm('ต้องการลบผู้ใช้งานนี้?')) return
+    if (!confirm(t('settings.settingsPage.userManagement.deleteConfirm'))) return
 
     setDeleting(id)
     const result = await onDelete(id)
     setDeleting(null)
 
     if (!result.success) {
-      alert(result.message || 'ลบไม่สำเร็จ')
+      alert(result.message || t('settings.settingsPage.userManagement.deleteFailed'))
     }
   }
 
@@ -873,14 +913,14 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
           <Users className="w-5 h-5 text-[var(--primary)]" />
-          รายชื่อผู้ใช้งานในสายงาน
+          {t('settings.settingsPage.userManagement.title')}
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={onRefresh}
             disabled={loading}
             className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors"
-            title="รีเฟรช"
+            title={t('settings.settingsPage.userManagement.refresh')}
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -889,7 +929,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
             className="phopy-btn-primary flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
-            เพิ่มผู้ใช้งาน
+            {t('settings.settingsPage.userManagement.addUser')}
           </button>
         </div>
       </div>
@@ -898,11 +938,11 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
       {children.length === 0 ? (
         <div className="phopy-card p-12 text-center">
           <Users className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">ยังไม่มีผู้ใช้งานลูก</h3>
-          <p className="text-[var(--fg-4)] mb-4">เริ่มต้นสร้างผู้ใช้งานในสายงานของคุณ</p>
+          <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">{t('settings.settingsPage.userManagement.noUsersTitle')}</h3>
+          <p className="text-[var(--fg-4)] mb-4">{t('settings.settingsPage.userManagement.noUsersHint')}</p>
           <button onClick={onAdd} className="phopy-btn-primary">
             <Plus className="w-4 h-4 inline mr-2" />
-            เพิ่มผู้ใช้งาน
+            {t('settings.settingsPage.userManagement.addUser')}
           </button>
         </div>
       ) : (
@@ -911,12 +951,12 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
           <table className="w-full">
             <thead className="bg-[var(--surface-2)]">
               <tr>
-                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">ชื่อ</th>
-                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">อีเมล</th>
-                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">สิทธิ์</th>
-                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">สร้างเมื่อ</th>
-                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">เข้าสู่ระบบล่าสุด</th>
-                <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">จัดการ</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">{t('settings.settingsPage.userManagement.name')}</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">{t('settings.settingsPage.userManagement.email')}</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">{t('settings.settingsPage.userManagement.role')}</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">{t('settings.settingsPage.userManagement.createdAt')}</th>
+                <th className="text-left py-3 px-4 text-[var(--fg-3)] font-medium">{t('settings.settingsPage.userManagement.lastLogin')}</th>
+                <th className="text-center py-3 px-4 text-[var(--fg-3)] font-medium">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
@@ -941,7 +981,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
                       onClick={() => handleDelete(child.id)}
                       disabled={deleting === child.id}
                       className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
-                      title="ลบ"
+                      title={t('common.delete')}
                     >
                       {deleting === child.id ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -979,6 +1019,7 @@ function RoleBadge({ role }: { role: string }) {
 
 // Add Child Modal
 function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useTranslation()
   useModalClose(onClose)
   const { createChildUser } = useAuth()
   const [form, setForm] = useState({
@@ -995,7 +1036,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     setError('')
 
     if (!form.email || !form.password || !form.name) {
-      setError('กรุณากรอกข้อมูลให้ครบ')
+      setError(t('settings.settingsPage.addChildModal.fillRequired'))
       return
     }
 
@@ -1006,7 +1047,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     if (result.success) {
       onSuccess()
     } else {
-      setError(result.message || 'สร้างไม่สำเร็จ')
+      setError(result.message || t('settings.settingsPage.addChildModal.createFailed'))
     }
   }
 
@@ -1026,7 +1067,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         className="phopy-card w-full max-w-md max-h-[80vh] overflow-y-auto"
       >
         <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[var(--fg-1)]">เพิ่มผู้ใช้งานลูก</h2>
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">{t('settings.settingsPage.addChildModal.title')}</h2>
           <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg">
             <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
@@ -1041,51 +1082,51 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           )}
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">ชื่อ</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">{t('settings.settingsPage.addChildModal.name')}</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="phopy-input w-full"
-              placeholder="ชื่อผู้ใช้งาน"
+              placeholder={t('settings.settingsPage.addChildModal.namePlaceholder')}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">อีเมล</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">{t('settings.settingsPage.addChildModal.email')}</label>
             <input
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="phopy-input w-full"
-              placeholder="email@example.com"
+              placeholder={t('settings.settingsPage.addChildModal.emailPlaceholder')}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">รหัสผ่าน</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">{t('settings.settingsPage.addChildModal.password')}</label>
             <input
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="phopy-input w-full"
-              placeholder="รหัสผ่าน"
+              placeholder={t('settings.settingsPage.addChildModal.passwordPlaceholder')}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">สิทธิ์</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">{t('settings.settingsPage.addChildModal.role')}</label>
             <select
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
               className="phopy-input w-full"
             >
-              <option value="USER">User - ผู้ใช้งานทั่วไป</option>
-              <option value="MANAGER">Manager - ผู้จัดการ</option>
-              <option value="VIEWER">Viewer - ดูอย่างเดียว</option>
+              <option value="USER">{t('settings.settingsPage.addChildModal.roles.user')}</option>
+              <option value="MANAGER">{t('settings.settingsPage.addChildModal.roles.manager')}</option>
+              <option value="VIEWER">{t('settings.settingsPage.addChildModal.roles.viewer')}</option>
             </select>
           </div>
 
@@ -1095,7 +1136,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
               onClick={onClose}
               className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:bg-[var(--bg)]"
             >
-              ยกเลิก
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -1103,7 +1144,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
               className="phopy-btn-primary flex items-center gap-2"
             >
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              สร้างผู้ใช้งาน
+              {saving ? t('settings.settingsPage.addChildModal.creating') : t('common.create')}
             </button>
           </div>
         </form>
@@ -1114,31 +1155,32 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
 // Security Settings
 function SecuritySettings() {
+  const { t } = useTranslation()
   return (
     <div className="space-y-6">
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <Key className="w-5 h-5 text-[var(--primary)]" />
-          เปลี่ยนรหัสผ่าน
+          {t('settings.settingsPage.security.changePassword')}
         </h3>
         <p className="text-[var(--fg-3)] text-sm mb-4">
-          ฟีเจอร์นี้จะพร้อมใช้งานในเร็วๆ นี้
+          {t('settings.settingsPage.security.comingSoon')}
         </p>
         <button disabled className="phopy-btn-primary opacity-50 cursor-not-allowed">
-          เปลี่ยนรหัสผ่าน
+          {t('settings.settingsPage.security.changePasswordButton')}
         </button>
       </div>
 
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <Shield className="w-5 h-5 text-[var(--primary)]" />
-          การยืนยันตัวตนแบบ 2 ชั้น (2FA)
+          {t('settings.settingsPage.security.twoFactor')}
         </h3>
         <p className="text-[var(--fg-3)] text-sm mb-4">
-          เพิ่มความปลอดภัยด้วยการยืนยันตัวตนแบบ 2 ชั้น
+          {t('settings.settingsPage.security.twoFactorDesc')}
         </p>
         <button disabled className="phopy-btn-primary opacity-50 cursor-not-allowed">
-          เปิดใช้งาน 2FA
+          {t('settings.settingsPage.security.enable2FA')}
         </button>
       </div>
     </div>

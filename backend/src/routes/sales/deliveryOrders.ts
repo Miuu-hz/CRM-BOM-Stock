@@ -216,4 +216,27 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   }
 })
 
+// DELETE delivery order (DRAFT only)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const doc = db.prepare('SELECT status FROM delivery_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Delivery order not found' })
+    }
+    if (doc.status !== 'DRAFT') {
+      return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบส่งของสถานะ DRAFT เท่านั้น' })
+    }
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM delivery_order_items WHERE delivery_order_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM delivery_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    })
+    tx()
+    res.json({ success: true, message: 'Delivery order deleted' })
+  } catch (error) {
+    console.error('Delete delivery order error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete delivery order' })
+  }
+})
+
 export default router

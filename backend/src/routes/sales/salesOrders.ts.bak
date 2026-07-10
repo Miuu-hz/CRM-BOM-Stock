@@ -204,53 +204,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
-    const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const existing = db.prepare('SELECT id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
-    }
-
-    // ── Approval gate: CONFIRMED transition ─────────────────────────────────
-    if (status === 'CONFIRMED' && existing.status === 'DRAFT') {
-      const userId = req.user!.userId
-
-      const setting = db.prepare(
-        "SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'sales_order'"
-      ).get(tenantId, req.user!.role) as any
-
-      const userPerm = db.prepare(
-        "SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'sales_order'"
-      ).get(tenantId, userId) as any
-
-      const amount = (existing as any).total_amount || 0
-      const autoThreshold = setting?.auto_approve_threshold || 0
-      const withinThreshold = autoThreshold > 0 && amount <= autoThreshold
-      const userCanApprove = userPerm?.can_approve === 1
-      const needsApproval = setting?.approval_required === 1 && !withinThreshold && !userCanApprove
-
-      if (needsApproval) {
-        const now = new Date().toISOString()
-        const reqId = generateId()
-        const reqNum = 'APR-SO-' + Date.now()
-
-        db.prepare("UPDATE sales_orders SET status = 'PENDING_APPROVAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(now, req.params.id, tenantId)
-
-        db.prepare(`
-          INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id,
-            requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
-          VALUES (?, ?, ?, 'sales_order', 'sales_orders', ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).run(reqId, tenantId, reqNum, req.params.id,
-          userId, req.user!.email, req.user!.role,
-          amount,
-          'ขออนุมัติยืนยัน SO ' + (existing as any).so_number + ' ยอด ฿' + amount.toLocaleString(),
-          now, now)
-
-        return res.status(202).json({
-          success: true,
-          pending_approval: true,
-          message: 'ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน (' + (existing as any).so_number + ')'
-        })
-      }
     }
 
     // เช็ค stock ก่อน CONFIRMED
@@ -294,29 +250,6 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Update sales order status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
-  }
-})
-
-// DELETE sales order (DRAFT only)
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const so = db.prepare('SELECT status FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-    if (!so) {
-      return res.status(404).json({ success: false, message: 'Sales order not found' })
-    }
-    if (so.status !== 'DRAFT') {
-      return res.status(400).json({ success: false, message: 'ลบได้เฉพาะ SO สถานะ DRAFT เท่านั้น' })
-    }
-    const tx = db.transaction(() => {
-      db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
-      db.prepare('DELETE FROM sales_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    })
-    tx()
-    res.json({ success: true, message: 'Sales order deleted' })
-  } catch (error) {
-    console.error('Delete sales order error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete sales order' })
   }
 })
 

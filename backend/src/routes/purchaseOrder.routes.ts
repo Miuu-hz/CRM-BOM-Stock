@@ -178,7 +178,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         for (const item of items) {
           if (item.material_id) {
             // Update stock item quantity if exists
-            const stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+            const stockItem = (db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId)
+              || db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId)) as any
             if (stockItem) {
               db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
                 .run(Math.floor(item.quantity), now, stockItem.id, tenantId)
@@ -287,5 +288,98 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Failed to delete purchase order' })
   }
 })
+
+
+// -- POST /api/purchase-orders/:id/approve
+router.post('/:id/approve', async (req: Request, res: Response) => {
+  try {
+    const { tenantId, userId, email, role } = req.user!
+    const po = db.prepare("SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ? AND status = 'SUBMITTED'")
+      .get(req.params.id, tenantId) as any
+    if (!po) return res.status(404).json({ success: false, message: 'PO not found or not in SUBMITTED status' })
+
+    if (role !== 'MASTER' && role !== 'ADMIN') {
+      const setting = db.prepare("SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'purchase_order'")
+        .get(tenantId, role) as any
+      const poAmount = po.total_amount || 0
+      const autoApprove = setting && setting.auto_approve_threshold > 0 && poAmount <= setting.auto_approve_threshold
+      if (!autoApprove) {
+        const perm = db.prepare("SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_order'")
+          .get(tenantId, userId) as any
+        if (!perm || perm.can_approve !== 1)
+          return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์อนุมัติ PO กรุณาติดต่อ Admin' })
+        if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && poAmount > perm.approval_limit)
+          return res.status(403).json({ success: false, message: 'วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ' + perm.approval_limit.toLocaleString() + ', ยอด PO: ' + poAmount.toLocaleString() + ')' })
+      }
+    }
+
+    const now = new Date().toISOString()
+    db.prepare("UPDATE purchase_orders SET status = 'APPROVED', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(userId, now, now, req.params.id, tenantId)
+
+    try {
+      const { randomUUID } = require('crypto')
+      const logId = randomUUID().replace(/-/g, '').substring(0, 25)
+      const existingReq = db.prepare("SELECT id FROM approval_requests WHERE tenant_id = ? AND reference_type = 'purchase_orders' AND reference_id = ? ORDER BY created_at DESC LIMIT 1")
+        .get(tenantId, po.id) as any
+      if (existingReq) {
+        db.prepare('INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role, comment, old_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(logId, tenantId, existingReq.id, 'APPROVED', userId, email, role, 'Approved', 'PENDING', 'APPROVED', now)
+        db.prepare("UPDATE approval_requests SET status = 'APPROVED', updated_at = ? WHERE id = ?").run(now, existingReq.id)
+      }
+    } catch (_) {}
+
+    const updated = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: updated, message: 'PO approved' })
+  } catch (error) {
+    console.error('Approve PO error:', error)
+    res.status(500).json({ success: false, message: 'Failed to approve PO' })
+  }
+})
+
+// -- POST /api/purchase-orders/:id/reject
+router.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { tenantId, userId, email, role } = req.user!
+    const { reason } = req.body
+    if (!reason || !String(reason).trim())
+      return res.status(400).json({ success: false, message: 'กรุณาระบุเหตุผลการปฏิเสธ' })
+
+    const po = db.prepare("SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ? AND status = 'SUBMITTED'")
+      .get(req.params.id, tenantId) as any
+    if (!po) return res.status(404).json({ success: false, message: 'PO not found or not in SUBMITTED status' })
+
+    if (role !== 'MASTER' && role !== 'ADMIN') {
+      const perm = db.prepare("SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_order'")
+        .get(tenantId, userId) as any
+      if (!perm || perm.can_approve !== 1)
+        return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ปฏิเสธ PO กรุณาติดต่อ Admin' })
+    }
+
+    const now = new Date().toISOString()
+    db.prepare("UPDATE purchase_orders SET status = 'REJECTED', approved_by = ?, approved_at = ?, rejection_reason = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(userId, now, String(reason).trim(), now, req.params.id, tenantId)
+
+    try {
+      const { randomUUID } = require('crypto')
+      const logId = randomUUID().replace(/-/g, '').substring(0, 25)
+      const existingReq = db.prepare("SELECT id FROM approval_requests WHERE tenant_id = ? AND reference_type = 'purchase_orders' AND reference_id = ? ORDER BY created_at DESC LIMIT 1")
+        .get(tenantId, po.id) as any
+      if (existingReq) {
+        db.prepare('INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role, comment, old_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(logId, tenantId, existingReq.id, 'REJECTED', userId, email, role, String(reason).trim(), 'PENDING', 'REJECTED', now)
+        db.prepare("UPDATE approval_requests SET status = 'REJECTED', updated_at = ? WHERE id = ?").run(now, existingReq.id)
+      }
+    } catch (_) {}
+
+    const updated = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: updated, message: 'PO rejected' })
+  } catch (error) {
+    console.error('Reject PO error:', error)
+    res.status(500).json({ success: false, message: 'Failed to reject PO' })
+  }
+})
+
+
 
 export default router

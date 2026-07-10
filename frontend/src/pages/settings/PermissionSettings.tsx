@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield, Search, Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield, Search, Check, AlertTriangle, X } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -13,51 +14,24 @@ interface TenantUser {
   status: string
 }
 
-const DEPT_OPTIONS = [
-  { value: 'SALES',      label: 'Sales — ขาย',         desc: 'ลูกค้า, คำสั่งซื้อ, การตลาด' },
-  { value: 'PURCHASE',   label: 'Purchase — จัดซื้อ',  desc: 'จัดซื้อ, ซัพพลายเออร์' },
-  { value: 'STOCK',      label: 'Stock — คลัง',        desc: 'คลังสินค้า' },
-  { value: 'ACCOUNTING', label: 'Accounting — บัญชี',  desc: 'บัญชี, รายงานการเงิน' },
-  { value: 'PRODUCTION', label: 'Production — ผลิต',   desc: 'การผลิต, BOM, Work Orders' },
-  { value: 'QC',         label: 'QC — ควบคุมคุณภาพ',  desc: 'ตรวจสอบคุณภาพ' },
-  { value: 'MARKETING',  label: 'Marketing — การตลาด', desc: 'การตลาด' },
-  { value: 'CEO',        label: 'CEO / เจ้าของ',       desc: 'เข้าถึงทุกส่วน' },
-  { value: 'IT',         label: 'IT / Admin',           desc: 'เข้าถึงทุกส่วนรวมถึง Settings' },
-]
+const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'CEO', 'IT'] as const
 
-const ROLE_OPTIONS = [
-  { value: 'MANAGER',   label: 'Manager — ผู้จัดการ',     desc: 'อ่าน/เขียน/อนุมัติ/ลบ ในแผนกของตน' },
-  { value: 'POWERUSER', label: 'Power User — ผู้ใช้หลัก', desc: 'อ่าน/เขียน/อนุมัติ ทุกแผนก' },
-  { value: 'USER',      label: 'User — ผู้ใช้ทั่วไป',     desc: 'อ่าน/เขียน ในแผนกของตน' },
-]
+const ROLE_VALUES = ['MANAGER', 'POWERUSER', 'USER'] as const
 
-const CUSTOM_PERMS = [
-  { key: 'accounting:delete', label: 'ลบข้อมูลบัญชี' },
-  { key: 'stock:delete',      label: 'ลบรายการคลัง' },
-  { key: 'orders:delete',     label: 'ลบคำสั่งซื้อ' },
-  { key: 'users:write',       label: 'จัดการผู้ใช้งาน' },
-]
-
-const PRESETS: { label: string; departments: string[]; customPermissions: Record<string, boolean> }[] = [
-  { label: 'พนักงานขาย',      departments: ['SALES'],                       customPermissions: {} },
-  { label: 'แคชเชียร์',       departments: [],                              customPermissions: { 'cashier:read': true, 'cashier:write': true } },
-  { label: 'นักบัญชี',        departments: ['ACCOUNTING', 'PURCHASE'],      customPermissions: {} },
-  { label: 'ผู้จัดการคลัง',   departments: ['STOCK', 'PURCHASE'],           customPermissions: {} },
-  { label: 'ผู้จัดการโรงงาน', departments: ['PRODUCTION', 'QC', 'STOCK'],  customPermissions: {} },
-  { label: 'CEO / เจ้าของ',   departments: ['CEO'],                         customPermissions: {} },
-]
+const CUSTOM_PERM_KEYS = ['accounting:delete', 'stock:delete', 'orders:delete', 'users:write'] as const
 
 const ROLE_COLOR: Record<string, string> = {
-  ADMIN:     'bg-[var(--primary-soft)] text-[var(--primary)]',
-  MASTER:    'bg-[var(--warning-soft)] text-[var(--warning)]',
-  MANAGER:   'bg-[var(--success-soft)] text-[var(--success)]',
+  ADMIN: 'bg-[var(--primary-soft)] text-[var(--primary)]',
+  MASTER: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+  MANAGER: 'bg-[var(--success-soft)] text-[var(--success)]',
   POWERUSER: 'bg-[var(--surface-2)] text-[var(--fg-2)]',
-  USER:      'bg-[var(--surface-2)] text-[var(--fg-3)]',
+  USER: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
 function UserDropdown({
   users, selected, onSelect,
 }: { users: TenantUser[]; selected: TenantUser | null; onSelect: (u: TenantUser) => void }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -97,7 +71,7 @@ function UserDropdown({
             </div>
           </>
         ) : (
-          <span className="text-[var(--fg-4)] text-sm flex-1">เลือกพนักงาน…</span>
+          <span className="text-[var(--fg-4)] text-sm flex-1">{t('settings.permission.selectUser')}</span>
         )}
         <ChevronDown size={16} className={`text-[var(--fg-3)] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -111,14 +85,14 @@ function UserDropdown({
                 autoFocus
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="ค้นหาชื่อหรืออีเมล…"
+                placeholder={t('settings.adminUserManagement.searchPlaceholder')}
                 className="w-full pl-8 pr-3 py-1.5 text-sm bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] transition-colors"
               />
             </div>
           </div>
           <div className="max-h-52 overflow-y-auto">
             {filtered.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-[var(--fg-4)]">ไม่พบผู้ใช้</p>
+              <p className="px-4 py-3 text-sm text-[var(--fg-4)]">{t('settings.permission.noUsers')}</p>
             ) : filtered.map(u => (
               <button
                 key={u.id}
@@ -146,6 +120,7 @@ function UserDropdown({
 }
 
 export default function PermissionSettings() {
+  const { t } = useTranslation()
   const [users, setUsers]             = useState<TenantUser[]>([])
   const [selected, setSelected]       = useState<TenantUser | null>(null)
   const [draftRole, setDraftRole]     = useState('')
@@ -154,6 +129,17 @@ export default function PermissionSettings() {
   const [showCustom, setShowCustom]   = useState(false)
   const [saving, setSaving]           = useState(false)
   const [loading, setLoading]         = useState(true)
+  const [showCeoConfirm, setShowCeoConfirm] = useState(false)
+  const [pendingCeoDept, setPendingCeoDept] = useState<string | null>(null)
+
+  const presets: { key: string; departments: string[]; customPermissions: Record<string, boolean> }[] = [
+    { key: 'sales', departments: ['SALES'], customPermissions: {} },
+    { key: 'cashier', departments: [], customPermissions: { 'cashier:read': true, 'cashier:write': true } },
+    { key: 'accountant', departments: ['ACCOUNTING', 'PURCHASE'], customPermissions: {} },
+    { key: 'warehouseManager', departments: ['STOCK', 'PURCHASE'], customPermissions: {} },
+    { key: 'factoryManager', departments: ['PRODUCTION', 'QC', 'STOCK'], customPermissions: {} },
+    { key: 'ceo', departments: ['CEO'], customPermissions: {} },
+  ]
 
   const load = async () => {
     setLoading(true)
@@ -162,7 +148,7 @@ export default function PermissionSettings() {
       const list: TenantUser[] = (res.data.data ?? []).filter((u: TenantUser) => u.role !== 'MASTER')
       setUsers(list)
     } catch {
-      toast.error('โหลดรายชื่อผู้ใช้ไม่สำเร็จ')
+      toast.error(t('settings.permission.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -179,7 +165,21 @@ export default function PermissionSettings() {
   }
 
   function toggleDept(dept: string) {
+    const isEnabled = draftDepts.includes(dept)
+    if (!isEnabled && (dept === 'CEO' || dept === 'IT')) {
+      setPendingCeoDept(dept)
+      setShowCeoConfirm(true)
+      return
+    }
     setDraftDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept])
+  }
+
+  function confirmCeoDept() {
+    if (pendingCeoDept) {
+      setDraftDepts(prev => [...prev, pendingCeoDept])
+    }
+    setShowCeoConfirm(false)
+    setPendingCeoDept(null)
   }
 
   function toggleCustom(key: string) {
@@ -190,7 +190,7 @@ export default function PermissionSettings() {
     })
   }
 
-  function applyPreset(preset: typeof PRESETS[0]) {
+  function applyPreset(preset: typeof presets[0]) {
     setDraftDepts(preset.departments)
     setDraftCustom(preset.customPermissions)
   }
@@ -204,10 +204,10 @@ export default function PermissionSettings() {
         departments: draftDepts,
         customPermissions: draftCustom,
       })
-      toast.success('บันทึกสิทธิ์สำเร็จ')
+      toast.success(t('settings.permission.saveSuccess'))
       await load()
     } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? 'บันทึกไม่สำเร็จ')
+      toast.error(e?.response?.data?.message ?? t('settings.permission.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -220,8 +220,8 @@ export default function PermissionSettings() {
           <UserCog className="w-5 h-5 text-[var(--primary)]" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">จัดการสิทธิ์ผู้ใช้</h2>
-          <p className="text-sm text-[var(--fg-3)]">กำหนดบทบาทและการเข้าถึงสำหรับพนักงานแต่ละคน</p>
+          <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('settings.permission.title')}</h2>
+          <p className="text-sm text-[var(--fg-3)]">{t('settings.permission.subtitle')}</p>
         </div>
       </div>
 
@@ -236,28 +236,28 @@ export default function PermissionSettings() {
           {selected ? (
             <div className="space-y-5">
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">Quick Presets</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.presets')}</p>
                 <div className="flex flex-wrap gap-2">
-                  {PRESETS.map(p => (
-                    <button key={p.label} onClick={() => applyPreset(p)}
+                  {presets.map(p => (
+                    <button key={p.key} onClick={() => applyPreset(p)}
                       className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all cursor-pointer">
-                      {p.label}
+                      {t(`settings.permission.presetsList.${p.key}`)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">บทบาท (Role)</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.roleSection')}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {ROLE_OPTIONS.map(r => (
-                    <label key={r.value}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftRole === r.value ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}>
-                      <input type="radio" name="role" value={r.value} checked={draftRole === r.value}
-                        onChange={() => setDraftRole(r.value)} className="mt-0.5 accent-[var(--primary)]" />
+                  {ROLE_VALUES.map(r => (
+                    <label key={r}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftRole === r ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}>
+                      <input type="radio" name="role" value={r} checked={draftRole === r}
+                        onChange={() => setDraftRole(r)} className="mt-0.5 accent-[var(--primary)]" />
                       <div>
-                        <p className="text-sm font-medium text-[var(--fg-1)]">{r.label}</p>
-                        <p className="text-xs text-[var(--fg-3)]">{r.desc}</p>
+                        <p className="text-sm font-medium text-[var(--fg-1)]">{t(`settings.permission.roles.${r.toLowerCase()}`)}</p>
+                        <p className="text-xs text-[var(--fg-3)]">{t(`settings.permission.roles.${r.toLowerCase()}Desc`)}</p>
                       </div>
                     </label>
                   ))}
@@ -265,16 +265,16 @@ export default function PermissionSettings() {
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">แผนก / สิทธิ์เข้าถึง</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.departmentSection')}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {DEPT_OPTIONS.map(d => (
-                    <label key={d.value}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftDepts.includes(d.value) ? 'border-[var(--success)] bg-[var(--success-soft)]' : 'border-[var(--border)] hover:border-[var(--success)]'}`}>
-                      <input type="checkbox" checked={draftDepts.includes(d.value)}
-                        onChange={() => toggleDept(d.value)} className="mt-0.5 accent-[var(--primary)]" />
+                  {DEPT_VALUES.map(d => (
+                    <label key={d}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftDepts.includes(d) ? 'border-[var(--success)] bg-[var(--success-soft)]' : 'border-[var(--border)] hover:border-[var(--success)]'}`}>
+                      <input type="checkbox" checked={draftDepts.includes(d)}
+                        onChange={() => toggleDept(d)} className="mt-0.5 accent-[var(--primary)]" />
                       <div>
-                        <p className="text-sm font-medium text-[var(--fg-1)]">{d.label}</p>
-                        <p className="text-xs text-[var(--fg-3)]">{d.desc}</p>
+                        <p className="text-sm font-medium text-[var(--fg-1)]">{t(`settings.permission.departments.${d.toLowerCase()}`)}</p>
+                        <p className="text-xs text-[var(--fg-3)]">{t(`settings.permission.departments.${d.toLowerCase()}Desc`)}</p>
                       </div>
                     </label>
                   ))}
@@ -286,16 +286,16 @@ export default function PermissionSettings() {
                   className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors cursor-pointer">
                   {showCustom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                   <Shield className="w-3.5 h-3.5" />
-                  Custom Overrides (ขั้นสูง)
+                  {t('settings.permission.customOverrides')}
                 </button>
                 {showCustom && (
                   <div className="mt-3 space-y-2 pl-4 border-l border-[var(--border)]">
-                    {CUSTOM_PERMS.map(cp => (
-                      <label key={cp.key} className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" checked={!!draftCustom[cp.key]}
-                          onChange={() => toggleCustom(cp.key)} className="accent-[var(--primary)]" />
-                        <span className="text-sm text-[var(--fg-1)]">{cp.label}</span>
-                        <span className="text-xs text-[var(--fg-4)]">({cp.key})</span>
+                    {CUSTOM_PERM_KEYS.map(cp => (
+                      <label key={cp} className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" checked={!!draftCustom[cp]}
+                          onChange={() => toggleCustom(cp)} className="accent-[var(--primary)]" />
+                        <span className="text-sm text-[var(--fg-1)]">{t(`settings.permission.customPermissions.${cp.replace(/:/g, '')}`)}</span>
+                        <span className="text-xs text-[var(--fg-4)]">({cp})</span>
                       </label>
                     ))}
                   </div>
@@ -306,17 +306,66 @@ export default function PermissionSettings() {
                 <button onClick={save} disabled={saving}
                   className="flex items-center gap-2 px-5 py-2.5 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer">
                   {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  บันทึก
+                  {t('common.save')}
                 </button>
               </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-[var(--fg-4)] gap-2">
               <UserCog className="w-10 h-10 opacity-30" />
-              <p className="text-sm">เลือกพนักงานด้านบนเพื่อจัดการสิทธิ์</p>
+              <p className="text-sm">{t('settings.permission.emptyHint')}</p>
             </div>
           )}
         </>
+      )}
+
+      {/* CEO / IT Confirmation Modal */}
+      {showCeoConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowCeoConfirm(false); setPendingCeoDept(null) }} />
+          <div className="relative bg-[var(--surface)] border border-[var(--warning)]/40 rounded-2xl shadow-2xl w-full max-w-md p-6 z-10">
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-12 h-12 rounded-xl bg-[var(--warning)]/15 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-[var(--warning)]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-[var(--fg-1)] text-base mb-1">
+                  {t('settings.permission.ceoModal.title', { dept: pendingCeoDept ?? '' })}
+                </h3>
+                <p
+                  className="text-sm text-[var(--fg-2)] leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: t('settings.permission.ceoModal.warning', { dept: pendingCeoDept ?? '' }) }}
+                />
+              </div>
+              <button
+                onClick={() => { setShowCeoConfirm(false); setPendingCeoDept(null) }}
+                className="p-1 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] transition-colors flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="bg-[var(--warning)]/8 border border-[var(--warning)]/20 rounded-xl p-3 mb-5 text-xs text-[var(--fg-2)] space-y-1">
+              <p dangerouslySetInnerHTML={{ __html: t('settings.permission.ceoModal.bullet1') }} />
+              <p dangerouslySetInnerHTML={{ __html: t('settings.permission.ceoModal.bullet2') }} />
+              <p dangerouslySetInnerHTML={{ __html: t('settings.permission.ceoModal.bullet3', { dept: pendingCeoDept ?? '' }) }} />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowCeoConfirm(false); setPendingCeoDept(null) }}
+                className="px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={confirmCeoDept}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold bg-[var(--warning)] text-white hover:opacity-90 transition-opacity"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                {t('settings.permission.ceoModal.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

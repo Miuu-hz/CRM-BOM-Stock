@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
+import { deductStockForSO } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
@@ -504,6 +505,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     // Receipt approved - mark as confirmed
     db.prepare("UPDATE receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(now, request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'sales_orders') {
+    db.prepare("UPDATE sales_orders SET status = 'CONFIRMED', approved_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(executorId, now, request.reference_id, request.tenant_id)
+    try { deductStockForSO(request.tenant_id, request.reference_id, '') } catch(e) { console.error('deductStock on approval:', e) }
   } else if (request.reference_type === 'stock_adjustments') {
     // Stock adjustment approved - execute the adjustment
     const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any
@@ -547,6 +552,9 @@ function revertReferenceStatus(request: any) {
     db.prepare("UPDATE supplier_payments SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'receipts') {
     db.prepare("UPDATE receipts SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'sales_orders') {
+    db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'stock_adjustments') {
     db.prepare("UPDATE stock_adjustments SET status = 'REJECTED' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   }

@@ -56,7 +56,10 @@
     "settings": "ตั้งค่า",
     "logout": "ออกจากระบบ",
     "mainMenu": "เมนูหลัก",
-    "userManagement": "จัดการผู้ใช้"
+    "userManagement": "จัดการผู้ใช้",
+    "approvals": "การอนุมัติ",
+    "kanban": "Phopy Kanban",
+    "kanbanDesc": "บอร์ดจัดการงาน"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",
@@ -151,7 +154,228 @@
     "notes": "หมายเหตุ",
     "items_count": "{{count}} รายการ",
     "loading": "กำลังโหลด...",
-    "sessionExpired": "Session expired. Please login again."
+    "sessionExpired": "Session expired. Please login again.",
+    "copy": "Copy",
+    "confirm": "ยืนยัน"
+  },
+  "workOrders": {
+    "title": "ใบสั่งงาน",
+    "subtitle": "จัดการใบสั่งผลิตและติดตามสถานะ",
+    "createWorkOrder": "สร้างใบสั่งงาน",
+    "searchPlaceholder": "ค้นหาเลข WO, สินค้า หรือผู้รับผิดชอบ...",
+    "stats": {
+      "total": "WO ทั้งหมด",
+      "planned": "วางแผนแล้ว",
+      "inProgress": "กำลังผลิต",
+      "completed": "เสร็จสิ้น",
+      "totalProduced": "ผลิตรวม"
+    },
+    "table": {
+      "woNumber": "เลขที่ WO",
+      "product": "สินค้า",
+      "priority": "ความสำคัญ",
+      "status": "สถานะ",
+      "quantity": "จำนวน",
+      "progress": "ความคืบหน้า",
+      "dueDate": "กำหนดเสร็จ",
+      "assignedTo": "ผู้รับผิดชอบ",
+      "actions": "จัดการ"
+    },
+    "empty": "ไม่พบใบสั่งงาน",
+    "materialsCount": "{{count}} รายการวัตถุดิบ",
+    "confirmDelete": "ลบใบสั่งงานนี้?",
+    "status": {
+      "draft": "ฉบับร่าง",
+      "planned": "วางแผนแล้ว",
+      "in_progress": "กำลังผลิต",
+      "on_hold": "ระงับ",
+      "completed": "เสร็จสิ้น",
+      "cancelled": "ยกเลิก"
+    },
+    "priority": {
+      "urgent": "ด่วนมาก",
+      "high": "สูง",
+      "normal": "ปกติ",
+      "low": "ต่ำ"
+    },
+    "actions": {
+      "plan": "วางแผน",
+      "startProduction": "เริ่มผลิต",
+      "markComplete": "บันทึกเสร็จสิ้น"
+    },
+    "create": {
+      "title": "สร้างใบสั่งงาน",
+      "subtitle": "เลือก BOM เพื่อ auto-fill วัตถุดิบ",
+      "step1": "เลือก BOM",
+      "manualEntry": "กรอกเอง",
+      "noBOMs": "ยังไม่มี BOM — ใช้ Manual entry แทน",
+      "manualModeHint": "กรอกข้อมูลเองด้านล่าง",
+      "step2": "รายละเอียด",
+      "productLabel": "ชื่อสินค้า *",
+      "productPlaceholder": "ชื่อสินค้าที่ผลิต",
+      "quantityLabel": "จำนวนผลิต *",
+      "priorityLabel": "ความสำคัญ",
+      "dueDateLabel": "วันกำหนดเสร็จ",
+      "assignedToLabel": "ผู้รับผิดชอบ",
+      "assignedToPlaceholder": "ทีม / ชื่อ",
+      "step3": "วัตถุดิบที่ต้องใช้",
+      "stockShortage": "ขาดวัตถุดิบ {{count}} รายการ — กดปุ่ม \"สร้าง PR\" ด้านล่างเพื่อสั่งซื้ออัตโนมัติ",
+      "stockSufficient": "วัตถุดิบเพียงพอสำหรับการผลิตนี้ทั้งหมด",
+      "noMaterialsSelected": "เลือก BOM เพื่อ auto-fill หรือกด \"+ เพิ่ม\"",
+      "bomNoMaterials": "BOM นี้ไม่มี raw materials",
+      "materialPlaceholder": "ชื่อวัตถุดิบ",
+      "unitPlaceholder": "หน่วย",
+      "itemsCount": "{{count}} รายการ",
+      "notesPlaceholder": "หมายเหตุหรือคำสั่งพิเศษ...",
+      "shortageSummary": "ขาดวัตถุดิบ <strong>{{count}}</strong> รายการ",
+      "createPR": "สร้าง Purchase Request อัตโนมัติ",
+      "bomSelected": "ใช้ BOM: {{name}}",
+      "manualEntrySelected": "กรอกเอง",
+      "noBOMSelected": "ยังไม่ได้เลือก BOM",
+      "createButton": "สร้างใบสั่งงาน",
+      "semiFinished": "กึ่งสำเร็จรูป",
+      "prReason": "ขาดวัตถุดิบสำหรับผลิต: {{name}} จำนวน {{quantity}} หน่วย",
+      "prCreated": "สร้าง Purchase Request สำเร็จ — {{count}} รายการ",
+      "prFailed": "ไม่สามารถสร้าง PR ได้"
+    },
+    "detail": {
+      "productionProgress": "ความคืบหน้าการผลิต",
+      "units": "หน่วย",
+      "assignedTo": "ผู้รับผิดชอบ",
+      "dueDate": "วันกำหนดเสร็จ",
+      "estimatedCost": "ต้นทุนประมาณการ",
+      "actualCost": "ต้นทุนจริง",
+      "materialsRequired": "วัตถุดิบที่ต้องใช้",
+      "materialFallback": "วัตถุดิบ",
+      "issued": "เบิกแล้ว: {{issued}}/{{required}} {{unit}}",
+      "noMaterialsLinked": "ไม่มีวัตถุดิบที่เชื่อมโยง",
+      "productionComplete": "การผลิตเสร็จสิ้น",
+      "completedOn": "เสร็จสิ้นเมื่อ {{date}}",
+      "completed": "เสร็จสิ้น",
+      "putOnHold": "ระงับการผลิต",
+      "resume": "Resume",
+      "cancelOrder": "ยกเลิกคำสั่งผลิต",
+      "planProduction": "วางแผนการผลิต",
+      "startProduction": "เริ่มการผลิต",
+      "markComplete": "บันทึกเสร็จสิ้น",
+      "qcTitle": "สถานะ QC",
+      "qcPass": "ผ่าน {{count}}",
+      "qcFail": "ไม่ผ่าน {{count}}",
+      "qcPending": "รอตรวจ {{count}}",
+      "qcQty": "ผ่าน {{passed}} / ไม่ผ่าน {{rejected}} (ตรวจ {{inspected}})",
+      "qcNone": "ยังไม่มีการตรวจ QC สำหรับใบสั่งงานนี้"
+    },
+    "error": {
+      "updateStatus": "อัปเดตสถานะไม่สำเร็จ",
+      "delete": "ลบไม่สำเร็จ",
+      "create": "สร้างใบสั่งงานไม่สำเร็จ"
+    }
+  },
+  "qc": {
+    "title": "ควบคุมคุณภาพ",
+    "subtitle": "ตรวจสอบคุณภาพสินค้าและบันทึกผลการตรวจ",
+    "newInspection": "ตรวจใหม่",
+    "tab": {
+      "overview": "ภาพรวม",
+      "checklists": "รายการตรวจ",
+      "inspections": "การตรวจสอบ"
+    },
+    "status": {
+      "pass": "ผ่าน",
+      "fail": "ไม่ผ่าน",
+      "pending": "รอดำเนินการ"
+    },
+    "stats": {
+      "total": "ทั้งหมด",
+      "passed": "ผ่าน",
+      "failed": "ไม่ผ่าน",
+      "pending": "รอดำเนินการ",
+      "passRate": "อัตราผ่าน"
+    },
+    "recentInspections": "การตรวจสอบล่าสุด",
+    "noInspections": "ยังไม่มีการตรวจสอบ",
+    "viewResult": "ดูผล",
+    "inspect": "ตรวจสอบ",
+    "createChecklist": "สร้างรายการตรวจ",
+    "noChecklists": "ยังไม่มีรายการตรวจ",
+    "createFirstChecklist": "สร้างรายการตรวจแรก",
+    "noCheckItems": "ยังไม่มีรายการตรวจย่อย",
+    "itemCount": "{{count}} รายการตรวจ",
+    "created": "สร้างเมื่อ",
+    "inspectionHistory": "ประวัติการตรวจสอบ ({{count}})",
+    "col": {
+      "checklist": "รายการตรวจ",
+      "productBatch": "สินค้า/Batch",
+      "inspector": "ผู้ตรวจ",
+      "date": "วันที่",
+      "result": "ผลลัพธ์",
+      "product": "สินค้า",
+      "batch": "Batch",
+      "manage": "จัดการ"
+    },
+    "editChecklist": "แก้ไขรายการตรวจ",
+    "checklistName": "ชื่อรายการตรวจ",
+    "checklistNamePlaceholder": "เช่น QC สินค้าสำเร็จรูป",
+    "description": "รายละเอียด",
+    "descriptionPlaceholder": "รายละเอียดเพิ่มเติม",
+    "checkItems": "รายการตรวจย่อย",
+    "addItem": "เพิ่มรายการ",
+    "addFirstItem": "เพิ่มรายการตรวจย่อยแรก",
+    "checkItemNamePlaceholder": "ชื่อรายการตรวจย่อย",
+    "type": {
+      "passfail": "ผ่าน/ไม่ผ่าน",
+      "measurement": "ค่าวัด"
+    },
+    "expected": "ค่าที่คาดหวัง",
+    "unit": "หน่วย",
+    "checklistNameRequired": "กรุณาระบุชื่อรายการตรวจ",
+    "checkItemNameRequired": "กรุณาระบุชื่อรายการตรวจย่อยทั้งหมด",
+    "checklistCreated": "สร้างรายการตรวจแล้ว",
+    "updated": "บันทึกการแก้ไขแล้ว",
+    "saveError": "บันทึกไม่สำเร็จ",
+    "startInspection": "เริ่มการตรวจสอบใหม่",
+    "selectChecklist": "เลือกรายการตรวจ",
+    "selectChecklistOption": "เลือกรายการตรวจ",
+    "createChecklistFirst": "สร้างรายการตรวจก่อนในแท็บรายการตรวจ",
+    "productName": "ชื่อสินค้า",
+    "productNamePlaceholder": "เช่น หมอนยางพารา",
+    "batch": "Batch / Lot",
+    "batchPlaceholder": "เช่น LOT-001",
+    "workOrderRef": "อ้างอิงใบสั่งงาน",
+    "workOrderRefPlaceholder": "WO-00001",
+    "linkWorkOrder": "ผูกกับใบสั่งงาน (ไม่บังคับ)",
+    "linkWorkOrderNone": "ไม่ผูกกับใบสั่งงาน",
+    "inspectedQty": "จำนวนที่ตรวจ",
+    "inspector": "ผู้ตรวจ",
+    "inspectorPlaceholder": "ชื่อผู้ตรวจ",
+    "inspectionCreated": "สร้างการตรวจสอบแล้ว",
+    "createError": "สร้างไม่สำเร็จ",
+    "start": "เริ่ม",
+    "productLabel": "สินค้า",
+    "batchLabel": "Batch",
+    "inspectorLabel": "ผู้ตรวจ",
+    "pendingCount": "รอดำเนินการ",
+    "target": "เป้าหมาย",
+    "actualValue": "ค่าจริง",
+    "notesPlaceholder": "หมายเหตุ (optional)",
+    "passedQty": "จำนวนผ่าน",
+    "rejectedQty": "จำนวนไม่ผ่าน",
+    "summaryNotes": "หมายเหตุสรุป",
+    "summaryNotesPlaceholder": "สรุปผลการตรวจสอบ",
+    "pendingConfirm": "ยังมีรายการที่รอดำเนินการ ต้องการส่งหรือไม่?",
+    "resultPass": "ผ่าน",
+    "resultFail": "ไม่ผ่าน",
+    "completeError": "บันทึกผลไม่สำเร็จ",
+    "saveResult": "บันทึกผลการตรวจสอบ",
+    "loadError": "โหลดข้อมูลไม่สำเร็จ",
+    "confirmDeleteChecklist": "ลบรายการตรวจนี้?",
+    "confirmDeleteInspection": "ลบการตรวจสอบนี้?",
+    "deleted": "ลบแล้ว",
+    "items": "รายการ",
+    "result": {
+      "pass": "ผ่าน",
+      "fail": "ไม่ผ่าน"
+    }
   },
   "purchaseOrders": {
     "title": "ใบสั่งซื้อ",
@@ -993,7 +1217,8 @@
       "orderDateLabel": "วันสั่งซื้อ",
       "showingCount": "แสดง {{count}} รายการ",
       "success": "สำเร็จ",
-      "template": "เทมเพลต"
+      "template": "เทมเพลต",
+      "delete": "ลบ"
     },
     "pos": {
       "cashInDrawerStart": "เงินสดในลิ้นชัก (ยอดเริ่มต้น)",
@@ -1578,6 +1803,1054 @@
       "update": "อัพเดทรายการ",
       "approve": "อนุมัติ",
       "reject": "ปฏิเสธ"
+    }
+  },
+  "bom": {
+    "title": "Bill of Materials",
+    "subtitle": "จัดการสูตรการผลิตและวัตถุดิบ รองรับ BOM ซ้อน BOM",
+    "loading": "กำลังโหลดข้อมูล BOM...",
+    "retry": "ลองใหม่",
+    "createBOM": "สร้าง BOM",
+    "searchPlaceholder": "ค้นหา BOM ตามชื่อหรือรหัสสินค้า...",
+    "errors": {
+      "loadFailed": "ไม่สามารถโหลดข้อมูล BOM ได้ กรุณาลองใหม่อีกครั้ง",
+      "deleteFailed": "ไม่สามารถลบ BOM ได้ กรุณาลองใหม่อีกครั้ง",
+      "loadTreeFailed": "ไม่สามารถโหลดข้อมูล BOM Tree ได้"
+    },
+    "confirmDelete": "คุณต้องการลบ BOM ของ \"{{name}}\" หรือไม่?",
+    "stats": {
+      "totalBOMs": "BOM ทั้งหมด",
+      "semiFinishedBOMs": "BOM กึ่งสำเร็จรูป",
+      "totalMaterials": "วัตถุดิบทั้งหมด",
+      "avgCostPerUnit": "ต้นทุนเฉลี่ย/หน่วย"
+    },
+    "tabs": {
+      "bomList": "รายการ BOM",
+      "materials": "วัตถุดิบ",
+      "productionCalculator": "เครื่องคำนวณการผลิต",
+      "costSimulation": "จำลองต้นทุน"
+    },
+    "filter": {
+      "all": "BOM ทั้งหมด",
+      "treeView": "มุมมอง Tree",
+      "semiFinished": "กึ่งสำเร็จรูป",
+      "finishedGoods": "สินค้าสำเร็จรูป"
+    },
+    "empty": {
+      "noResults": "ไม่พบ BOM ที่ค้นหา",
+      "tryDifferent": "ลองค้นหาด้วยคำอื่น",
+      "noBOMs": "ยังไม่มี BOM",
+      "startCreate": "เริ่มต้นสร้าง BOM แรกของคุณ"
+    },
+    "tree": {
+      "selectBOM": "เลือก BOM ที่ต้องการดู",
+      "hierarchy": "ลำดับชั้น BOM: {{name}}",
+      "empty": "เลือก BOM เพื่อดูลำดับชั้น"
+    },
+    "list": {
+      "product": "สินค้า",
+      "level": "ระดับ",
+      "type": "ประเภท",
+      "version": "เวอร์ชัน",
+      "items": "รายการ",
+      "status": "สถานะ",
+      "totalCost": "ต้นทุนรวม",
+      "actions": "การดำเนินการ"
+    },
+    "itemsTable": {
+      "type": "ประเภท",
+      "name": "รายการ",
+      "code": "รหัส",
+      "quantity": "จำนวน",
+      "unitCost": "ต้นทุน/หน่วย",
+      "total": "รวม"
+    },
+    "itemType": {
+      "material": "วัตถุดิบ",
+      "childBOM": "Child BOM"
+    },
+    "card": {
+      "materialsCount": "รายการวัตถุดิบ ({{count}})",
+      "loading": "กำลังโหลด...",
+      "noItems": "ไม่มีรายการวัตถุดิบ",
+      "usedIn": "ใช้ใน: {{name}}",
+      "lastUpdated": "อัปเดตล่าสุด",
+      "totalProductionCost": "ต้นทุนผลิตรวม"
+    },
+    "typeBadge": {
+      "finished": "สำเร็จรูป",
+      "semiFinished": "กึ่งสำเร็จรูป",
+      "component": "ส่วนประกอบ"
+    },
+    "status": {
+      "active": "ใช้งาน",
+      "draft": "ฉบับร่าง",
+      "archived": "เก็บถาวร"
+    },
+    "materialsTab": {
+      "errors": {
+        "loadFailed": "Failed to load materials",
+        "deleteFailed": "Failed to delete material",
+        "saveFailed": "Failed to save",
+        "quantityRequired": "Please enter a quantity",
+        "adjustFailed": "Failed to adjust stock"
+      },
+      "confirmDelete": "Are you sure you want to delete material \"{{name}}\"?",
+      "retry": "Retry",
+      "stats": {
+        "totalMaterials": "Total Materials",
+        "lowStock": "Low Stock",
+        "totalValue": "Total Value",
+        "activeItems": "Active Items"
+      },
+      "searchPlaceholder": "Search materials...",
+      "addMaterial": "Add Material",
+      "table": {
+        "code": "Code",
+        "name": "Name",
+        "category": "Category",
+        "unit": "Unit",
+        "costPerUnit": "Cost/Unit",
+        "stock": "Stock",
+        "status": "Status",
+        "usedIn": "Used In",
+        "actions": "Actions"
+      },
+      "empty": {
+        "noResults": "No materials found",
+        "noMaterials": "No materials yet"
+      },
+      "usedInBOMs": "{{count}} BOMs",
+      "uncategorized": "Uncategorized",
+      "status": {
+        "critical": "Critical",
+        "low": "Low",
+        "adequate": "Adequate",
+        "overstock": "Overstock",
+        "noStock": "No Stock"
+      },
+      "actions": {
+        "adjustStock": "Adjust Stock"
+      },
+      "modal": {
+        "title": {
+          "edit": "Edit Material",
+          "create": "Add New Material"
+        },
+        "labels": {
+          "code": "Code",
+          "category": "Category",
+          "name": "Name",
+          "unit": "Unit (Auto)",
+          "unitHint": "Unit is determined automatically by category",
+          "costPerUnit": "Cost per Unit (฿)",
+          "minStock": "Min Stock",
+          "maxStock": "Max Stock",
+          "initialStock": "Initial Stock"
+        },
+        "placeholders": {
+          "selectCategory": "Select category",
+          "selectCategoryFirst": "Select category first",
+          "name": "Material name"
+        },
+        "errors": {
+          "required": "Please fill in all required fields",
+          "saveFailed": "Failed to save"
+        }
+      },
+      "stockModal": {
+        "title": "Adjust Stock",
+        "materialLabel": "Material",
+        "currentStock": "Current Stock: {{stock}} {{unit}}",
+        "typeLabel": "Type",
+        "types": {
+          "in": "Stock In",
+          "out": "Stock Out",
+          "adjust": "Adjust"
+        },
+        "labels": {
+          "quantity": "Quantity",
+          "newQuantity": "New Quantity",
+          "notes": "Notes"
+        },
+        "placeholders": {
+          "notes": "Optional notes"
+        },
+        "newStockLabel": "New Stock",
+        "errors": {
+          "quantityRequired": "Please enter a quantity",
+          "adjustFailed": "Failed to adjust stock"
+        }
+      }
+    }
+  },
+  "bomModal": {
+    "title": {
+      "edit": "แก้ไข BOM",
+      "copy": "คัดลอก BOM",
+      "create": "สร้าง BOM ใหม่"
+    },
+    "subtitle": {
+      "edit": "แก้ไขสูตรการผลิต",
+      "copy": "สร้างสูตรใหม่จากสูตรที่มีอยู่",
+      "create": "กำหนดวัตถุดิบสำหรับสินค้า"
+    },
+    "labels": {
+      "product": "สินค้า",
+      "version": "เวอร์ชัน",
+      "status": "สถานะ",
+      "bomType": "ประเภท BOM",
+      "items": "รายการวัตถุดิบ / Child BOM"
+    },
+    "placeholders": {
+      "product": "เลือกสินค้าสำเร็จรูป / ระหว่างผลิต...",
+      "version": "เช่น v1.0, v2.1",
+      "searchMaterial": "ค้นหาวัตถุดิบ...",
+      "selectChildBOM": "เลือก Semi-finished BOM...",
+      "quantity": "จำนวน"
+    },
+    "status": {
+      "draft": "ฉบับร่าง",
+      "active": "ใช้งาน",
+      "archived": "เก็บถาวร"
+    },
+    "semiFinishedLabel": "Semi-finished (สำหรับเป็น Child BOM)",
+    "addMaterial": "เพิ่มวัตถุดิบ",
+    "addChildBOM": "เพิ่ม Child BOM",
+    "addNewMaterial": "เพิ่มวัตถุดิบใหม่",
+    "noMaterialFound": "ไม่พบวัตถุดิบ?",
+    "noChildBOMs": "ไม่มี Semi-finished BOM ที่สามารถใช้เป็น Child BOM ได้ (สร้าง BOM ที่เป็น Semi-finished ก่อน)",
+    "unitOptions": {
+      "selectUnit": "เลือกหน่วย",
+      "set": "ชุด"
+    },
+    "conversionIssue": ": ยังไม่มีการแปลงหน่วย \"{{from}}\" → \"{{to}}\"",
+    "editUnitInStock": "แก้ไขหน่วยใน Stock",
+    "globalUnitSettings": "ตั้งค่าหน่วยทั้งระบบ",
+    "totalCost": "ต้นทุนรวม:",
+    "saveButton": "บันทึกการแก้ไข",
+    "createButton": "สร้าง BOM",
+    "errors": {
+      "changeCategoryFailed": "ไม่สามารถเปลี่ยนประเภทสินค้าได้",
+      "selectProduct": "กรุณาเลือกสินค้า",
+      "enterVersion": "กรุณาระบุเวอร์ชัน",
+      "addAtLeastOneItem": "กรุณาเพิ่มรายการอย่างน้อย 1 รายการ",
+      "saveFailed": "ไม่สามารถบันทึก BOM ได้"
+    },
+    "categoryChange": {
+      "title": "ต้องเปลี่ยนประเภทสินค้าก่อน",
+      "subtitle": "สินค้านี้ถูกตั้งเป็น \"วัตถุดิบ\"",
+      "description": "ถูกตั้งค่าเป็น วัตถุดิบ (Material) ซึ่งไม่สามารถใช้เป็น output ของ BOM ได้",
+      "instruction": "กรุณาเลือกประเภทที่ถูกต้องสำหรับสินค้าที่จะผลิต:",
+      "finished": {
+        "title": "สินค้าสำเร็จรูป",
+        "subtitle": "Finished Good",
+        "description": "สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง"
+      },
+      "wip": {
+        "title": "กึ่งสำเร็จรูป",
+        "subtitle": "Semi-Finished Good",
+        "description": "ผ่านการผลิตขั้นต้น ใช้เป็น Child BOM ต่อได้"
+      },
+      "cancel": "ยกเลิก"
+    },
+    "createMaterial": {
+      "title": "เพิ่มวัตถุดิบใหม่",
+      "labels": {
+        "code": "รหัส",
+        "category": "หมวดหมู่",
+        "unit": "หน่วย",
+        "name": "ชื่อวัตถุดิบ",
+        "unitCost": "ต้นทุน/หน่วย",
+        "initialStock": "สต๊อกเริ่มต้น",
+        "minStock": "สต๊อกต่ำสุด",
+        "maxStock": "สต๊อกสูงสุด"
+      },
+      "placeholders": {
+        "selectCategory": "เลือกหมวดหมู่",
+        "selectUnit": "เลือกหน่วย",
+        "name": "ชื่อวัตถุดิบ"
+      },
+      "defaultUnit": "ค่าเริ่มต้นจากหมวดหมู่: {{unit}}",
+      "cancel": "ยกเลิก",
+      "addMaterial": "เพิ่มวัตถุดิบ",
+      "errors": {
+        "required": "กรุณากรอกรหัส ชื่อ และเลือกหมวดหมู่วัตถุดิบ",
+        "createFailed": "ไม่สามารถสร้างวัตถุดิบได้"
+      }
+    },
+    "category": {
+      "raw": "วัตถุดิบ",
+      "wip": "กึ่งสำเร็จรูป",
+      "finished": "สำเร็จรูป",
+      "material": "วัสดุ",
+      "product": "สินค้า",
+      "finishedGoods": "สำเร็จรูป",
+      "semiFinishedGoods": "กึ่งสำเร็จรูป",
+      "subMaterial": "วัสดุย่อย",
+      "intangible": "ไม่มีตัวตน"
+    }
+  },
+  "settings": {
+    "common": {
+      "searchPlaceholder": "ค้นหา...",
+      "actions": "จัดการ",
+      "status": "สถานะ"
+    },
+    "settingsPage": {
+      "title": "Settings",
+      "subtitle": "ตั้งค่าระบบและจัดการผู้ใช้งาน",
+      "tabs": {
+        "general": "ทั่วไป",
+        "users": "ผู้ใช้งาน",
+        "security": "ความปลอดภัย",
+        "pos": "POS Menu",
+        "line": "LINE Bot",
+        "billing": "การชำระเงิน",
+        "loyalty": "สะสมแต้ม",
+        "units": "แปลงหน่วย",
+        "materialCategories": "หมวดหมู่วัตถุดิบ",
+        "llm": "AI / LLM",
+        "backup": "Auto Backup",
+        "permissions": "จัดการสิทธิ์",
+        "approval": "ระบบอนุมัติ"
+      },
+      "billing": {
+        "title": "การชำระเงิน POS",
+        "subtitle": "ตั้งค่า VAT และค่าบริการที่คิดเพิ่มในบิล",
+        "vat": "VAT (ภาษีมูลค่าเพิ่ม)",
+        "vatSub": "คิด VAT จากยอดรวมสินค้า",
+        "vatRate": "อัตรา VAT (%)",
+        "service": "Service Charge (ค่าบริการ)",
+        "serviceSub": "คิดค่าบริการจากยอดรวมสินค้า",
+        "serviceRate": "อัตราค่าบริการ (%)",
+        "previewTitle": "ตัวอย่าง (ยอดสินค้า {{amount}})",
+        "subtotal": "ยอดสินค้า",
+        "serviceCharge": "Service Charge ({{rate}}%)",
+        "total": "ยอดสุทธิ",
+        "save": "บันทึกการตั้งค่า"
+      },
+      "loyalty": {
+        "title": "ระบบสะสมแต้มสมาชิก (CRM)",
+        "subtitle": "ตั้งค่าการคิดและแลกแต้มสำหรับลูกค้า CRM ที่ผูกกับบิล POS",
+        "enabled": "เปิดใช้ระบบสะสมแต้ม",
+        "enabledSub": "เมื่อเปิด ลูกค้าที่ผูกบิลจะได้รับแต้มทุกครั้งที่ชำระเงิน",
+        "earnRateTitle": "อัตราสะสมแต้ม",
+        "earnRateHint": "ซื้อสินค้าครบ X บาท ได้ 1 แต้ม",
+        "spend": "ใช้จ่าย",
+        "bahtPerPoint": "บาท = 1 แต้ม",
+        "bahtUnit": "บาท",
+        "redeemRateTitle": "อัตราแลกแต้ม",
+        "redeemRateHint": "ใช้ X แต้ม แลกส่วนลด 1 บาท",
+        "usePoints": "ใช้",
+        "pointsPerBaht": "แต้ม = ส่วนลด 1 บาท",
+        "pointsUnit": "แต้ม",
+        "minRedeemTitle": "แต้มขั้นต่ำในการแลก",
+        "minRedeemHint": "ลูกค้าต้องมีแต้มอย่างน้อยเท่านี้จึงจะแลกได้",
+        "previewTitle": "ตัวอย่างการคำนวณ",
+        "previewBuy": "ซื้อ {{amount}}",
+        "previewEarn": "ได้ 10 แต้ม",
+        "previewRedeem": "แลก {{points}} แต้ม",
+        "previewDiscount": "ลด {{amount}}",
+        "pointValue": "ค่าแต้มสะสม 1 แต้ม",
+        "save": "บันทึกการตั้งค่า"
+      },
+      "general": {
+        "companyTitle": "ข้อมูลบริษัท (สำหรับใบบิล)",
+        "savedSuccess": "บันทึกสำเร็จ",
+        "saveFailed": "บันทึกไม่สำเร็จ",
+        "uploadLogo": "อัปโหลดโลโก้",
+        "removeLogo": "ลบ",
+        "logoHint": "PNG/JPG, แสดงบนหัวใบบิล",
+        "companyName": "ชื่อบริษัท / ร้าน",
+        "companyNamePlaceholder": "บริษัท ตัวอย่าง จำกัด",
+        "taxId": "เลขผู้เสียภาษี (Tax ID)",
+        "taxIdPlaceholder": "0-0000-00000-00-0",
+        "address": "ที่อยู่",
+        "addressPlaceholder": "เลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์",
+        "phone": "โทรศัพท์",
+        "phonePlaceholder": "02-xxx-xxxx",
+        "email": "อีเมล",
+        "emailPlaceholder": "info@company.com",
+        "accountTitle": "ข้อมูลบัญชี",
+        "tenantCode": "รหัสองค์กร",
+        "accountType": "ประเภทบัญชี",
+        "masterAccount": "Master Account",
+        "standardAccount": "Standard Account",
+        "masterPrivilegesTitle": "สิทธิ์ Master Account",
+        "privilegeUnlimitedUsers": "สามารถสร้างผู้ใช้งานลูกได้ไม่จำกัด",
+        "privilegeNoTimeLock": "แก้ไขข้อมูลได้ไม่จำกัดเวลา (ไม่ติด 24hr rule)",
+        "privilegeManagePermissions": "จัดการสิทธิ์ผู้ใช้งานได้",
+        "timeLockTitle": "กฎการแก้ไขข้อมูล (24 Hour Rule)",
+        "timeLockRule1": "ข้อมูลทุกรายการที่สร้างขึ้น <strong class=\"text-[var(--primary)]\">สามารถแก้ไขได้ภายใน 24 ชั่วโมง</strong> หลังจากสร้าง",
+        "timeLockRule2": "หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้",
+        "timeLockRule2Master": " (ยกเว้น Master Account)",
+        "timeLockRule3": "ระบบจะคำนวณเวลาจาก <strong>เวลาปัจจุบัน - เวลาสร้าง</strong> โดยอัตโนมัติ"
+      },
+      "qcGate": {
+        "title": "ควบคุมคุณภาพ (QC Gate)",
+        "toggleLabel": "บังคับผ่าน QC ก่อนปิดใบสั่งงาน",
+        "toggleSub": "เมื่อเปิดใช้งาน ต้องมีผลตรวจ QC ที่ผ่าน (PASS) อย่างน้อย 1 รายการ จึงจะปิดใบสั่งงานเป็นสถานะเสร็จสิ้นได้"
+      },
+      "userManagement": {
+        "title": "รายชื่อผู้ใช้งานในสายงาน",
+        "refresh": "รีเฟรช",
+        "addUser": "เพิ่มผู้ใช้งาน",
+        "noUsersTitle": "ยังไม่มีผู้ใช้งานลูก",
+        "noUsersHint": "เริ่มต้นสร้างผู้ใช้งานในสายงานของคุณ",
+        "name": "ชื่อ",
+        "email": "อีเมล",
+        "role": "สิทธิ์",
+        "createdAt": "สร้างเมื่อ",
+        "lastLogin": "เข้าสู่ระบบล่าสุด",
+        "deleteConfirm": "ต้องการลบผู้ใช้งานนี้?",
+        "deleteFailed": "ลบไม่สำเร็จ"
+      },
+      "addChildModal": {
+        "title": "เพิ่มผู้ใช้งานลูก",
+        "name": "ชื่อ",
+        "namePlaceholder": "ชื่อผู้ใช้งาน",
+        "email": "อีเมล",
+        "emailPlaceholder": "email@example.com",
+        "password": "รหัสผ่าน",
+        "passwordPlaceholder": "รหัสผ่าน",
+        "role": "สิทธิ์",
+        "roles": {
+          "user": "User - ผู้ใช้งานทั่วไป",
+          "manager": "Manager - ผู้จัดการ",
+          "viewer": "Viewer - ดูอย่างเดียว"
+        },
+        "creating": "กำลังสร้าง...",
+        "fillRequired": "กรุณากรอกข้อมูลให้ครบ",
+        "createFailed": "สร้างไม่สำเร็จ"
+      },
+      "security": {
+        "changePassword": "เปลี่ยนรหัสผ่าน",
+        "comingSoon": "ฟีเจอร์นี้จะพร้อมใช้งานในเร็วๆ นี้",
+        "changePasswordButton": "เปลี่ยนรหัสผ่าน",
+        "twoFactor": "การยืนยันตัวตนแบบ 2 ชั้น (2FA)",
+        "twoFactorDesc": "เพิ่มความปลอดภัยด้วยการยืนยันตัวตนแบบ 2 ชั้น",
+        "enable2FA": "เปิดใช้งาน 2FA"
+      }
+    },
+    "adminUserManagement": {
+      "title": "จัดการผู้ใช้งาน",
+      "userCount": "{{count}} คน",
+      "searchPlaceholder": "ค้นหาชื่อหรืออีเมล…",
+      "loading": "กำลังโหลด…",
+      "noUsers": "ไม่พบผู้ใช้",
+      "addUser": "เพิ่มผู้ใช้",
+      "youBadge": "คุณ",
+      "edit": "แก้ไข",
+      "delete": "ลบ",
+      "modal": {
+        "titleEdit": "แก้ไขผู้ใช้",
+        "titleCreate": "เพิ่มผู้ใช้ใหม่",
+        "nameLabel": "ชื่อ-นามสกุล *",
+        "emailLabel": "อีเมล *",
+        "passwordLabel": "รหัสผ่าน",
+        "passwordHintEdit": "(เว้นว่างถ้าไม่เปลี่ยน)",
+        "passwordPlaceholderCreate": "ตั้งรหัสผ่าน",
+        "roleLabel": "ระดับสิทธิ์",
+        "role": {
+          "manager": "Manager",
+          "managerDesc": "อนุมัติ / จัดการแผนก",
+          "powerUser": "Power User",
+          "powerUserDesc": "ใช้งานได้ทุกฟีเจอร์",
+          "user": "User",
+          "userDesc": "ใช้งานพื้นฐานในแผนก"
+        },
+        "presetLabel": "ตำแหน่ง (Preset)",
+        "departmentsLabel": "แผนก",
+        "saving": "กำลังบันทึก…",
+        "save": "บันทึก",
+        "saveAndCreate": "เพิ่มผู้ใช้",
+        "passwordPlaceholderEdit": "•••••••• (leave blank to keep current)"
+      },
+      "presets": {
+        "sales": "พนักงานขาย",
+        "cashier": "แคชเชียร์",
+        "accountant": "นักบัญชี",
+        "warehouseManager": "ผู้จัดการคลัง",
+        "factoryManager": "ผู้จัดการโรงงาน",
+        "ceo": "CEO / เจ้าของ"
+      },
+      "departments": {
+        "sales": "Sales",
+        "purchase": "Purchase",
+        "stock": "Stock",
+        "accounting": "Accounting",
+        "production": "Production",
+        "qc": "QC",
+        "marketing": "Marketing",
+        "ceo": "CEO",
+        "it": "IT"
+      },
+      "toast": {
+        "nameEmailRequired": "กรุณากรอกชื่อและอีเมล",
+        "passwordRequired": "กรุณาตั้งรหัสผ่าน",
+        "updateSuccess": "อัปเดตผู้ใช้สำเร็จ",
+        "createSuccess": "เพิ่มผู้ใช้สำเร็จ",
+        "error": "เกิดข้อผิดพลาด",
+        "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+        "cannotDeleteSelf": "ไม่สามารถลบบัญชีตัวเองได้",
+        "cannotDeleteAdmin": "ไม่สามารถลบ Admin ได้",
+        "deleteConfirm": "ลบ \"{{name}}\" ออกจากระบบ?",
+        "deleteSuccess": "ลบผู้ใช้สำเร็จ"
+      }
+    },
+    "backup": {
+      "title": "Auto Backup",
+      "subtitle": "สำรองฐานข้อมูลอัตโนมัติทุก 3 วัน · เฉพาะ Master เท่านั้น",
+      "backupNow": "Backup ตอนนี้เลย",
+      "backingUp": "กำลัง Backup...",
+      "latest": "Backup ล่าสุด",
+      "next": "Backup ถัดไป (ประมาณ)",
+      "never": "ยังไม่เคย backup",
+      "googleDrive": "Google Drive",
+      "configured": "ตั้งค่าแล้ว",
+      "notConfigured": "ยังไม่ได้ตั้งค่า",
+      "setupTitle": "วิธีตั้งค่า Google Drive backup",
+      "setupSteps": {
+        "0": "ไปที่ {{consoleUrl}} → สร้าง Project ใหม่",
+        "1": "เปิด {{driveApi}} → APIs & Services → Enable",
+        "2": "สร้าง {{serviceAccount}} → IAM & Admin → Create Service Account",
+        "3": "Download JSON key → Actions → Manage Keys → Add Key → JSON",
+        "4": "สร้าง folder ใน Google Drive → Share กับ email ของ Service Account (Editor)",
+        "5": "คัดลอก Folder ID จาก URL: {{folderUrl}}",
+        "6": "เพิ่มใน {{envFile}}:"
+      },
+      "testDrive": "ทดสอบเชื่อมต่อ Google Drive",
+      "testDriveHint": "ตรวจสอบว่า Service Account เข้าถึง folder ได้",
+      "historyTitle": "ประวัติ Backup",
+      "table": {
+        "file": "ไฟล์",
+        "size": "ขนาด",
+        "status": "สถานะ",
+        "date": "วันที่",
+        "actions": "Actions",
+        "download": "Download"
+      },
+      "status": {
+        "SUCCESS": "สำเร็จ",
+        "PARTIAL": "บางส่วน",
+        "FAILED": "ล้มเหลว",
+        "RUNNING": "กำลังทำงาน",
+        "PENDING": "รอดำเนินการ"
+      },
+      "empty": "ยังไม่มี backup",
+      "footer": "เก็บไฟล์ล่าสุด 10 ชุดในเซิร์ฟเวอร์ · backup อัตโนมัติทุกคืน 02:00 น. ถ้าเกิน 3 วันนับจาก backup ล่าสุด",
+      "toast": {
+        "loadFailed": "โหลดข้อมูล backup ไม่สำเร็จ",
+        "success": "Backup สำเร็จ!",
+        "failed": "Backup ล้มเหลว",
+        "deleteConfirm": "ลบ backup นี้? (ลบทั้งไฟล์ local และ Google Drive)",
+        "deleteSuccess": "ลบ backup แล้ว",
+        "deleteFailed": "ลบไม่สำเร็จ",
+        "downloadFailed": "ดาวน์โหลดไม่สำเร็จ"
+      }
+    },
+    "llm": {
+      "title": "AI Assistant",
+      "subtitle": "Kimi Code CLI — ผู้ช่วย AI สำหรับระบบ ERP",
+      "kimi": {
+        "name": "Kimi Code CLI",
+        "checking": "กำลังตรวจสอบ...",
+        "online": "v{{version}} — พร้อมใช้งาน",
+        "offline": "ไม่สามารถเชื่อมต่อได้",
+        "notChecked": "ยังไม่ได้ตรวจสอบ",
+        "check": "ตรวจสอบ"
+      },
+      "playground": {
+        "title": "AI Playground",
+        "subtitle": "ทดสอบถามคำถามเกี่ยวกับข้อมูลในระบบ",
+        "placeholder": "เช่น หมูสับในสต็อกมีเท่าไหร่, ยอดขายเดือนนี้เป็นยังไงบ้าง...",
+        "send": "ส่ง",
+        "replyLabel": "Kimi ตอบ"
+      },
+      "mcp": {
+        "title": "MCP Server",
+        "subtitle": "สำหรับ AI clients ที่รองรับ MCP protocol",
+        "noKey": "ยังไม่มี API Key — สร้างเพื่อเปิดใช้งาน MCP",
+        "generateKey": "สร้าง API Key",
+        "urlLabel": "MCP Server URL",
+        "copy": "Copy",
+        "copied": "คัดลอก URL แล้ว",
+        "test": "Test MCP",
+        "regenerate": "Regenerate Key",
+        "resultTitle": "ผลการทดสอบ MCP Server",
+        "ready": "MCP Server พร้อมใช้งาน",
+        "regenerateConfirm": "สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?",
+        "regenerateSuccess": "สร้าง API Key ใหม่แล้ว",
+        "regenerateFailed": "สร้าง Key ไม่สำเร็จ",
+        "testFailed": "ทดสอบไม่สำเร็จ",
+        "sendFailed": "ส่งข้อความไม่สำเร็จ",
+        "error": "เกิดข้อผิดพลาด"
+      }
+    },
+    "line": {
+      "title": "การตั้งค่า LINE Messaging API",
+      "subtitle": "ตั้งค่าเพื่อใช้งาน LINE Bot สำหรับแจ้งเตือนใบสั่งผลิต แจ้งเตือนสถานะต่างๆ",
+      "webhookUrlLabel": "URL สำหรับ Webhook:",
+      "channelName": {
+        "label": "ชื่อ Channel (แสดงผลเท่านั้น)",
+        "placeholder": "เช่น BBPillow Bot"
+      },
+      "channelSecret": {
+        "label": "Channel Secret",
+        "placeholderCreate": "กรอก Channel Secret",
+        "placeholderEdit": "•••••••••••••••• (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)"
+      },
+      "channelToken": {
+        "label": "Channel Access Token",
+        "placeholderCreate": "กรอก Channel Access Token (long-lived)",
+        "placeholderEdit": "•••••••••••••••• (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)"
+      },
+      "active": "เปิดใช้งาน LINE Bot (ส่งแจ้งเตือนและรับคำสั่ง)",
+      "save": "บันทึกการตั้งค่า",
+      "testMessage": "ทดสอบส่งข้อความ (เข้า Role ของคุณ)",
+      "testSuccess": "ส่งข้อความทดสอบสำเร็จ กรุณาตรวจสอบในแอป LINE",
+      "testFailed": "ส่งข้อความทดสอบไม่สำเร็จ",
+      "error": "เกิดข้อผิดพลาดในการส่งข้อความทดสอบ",
+      "loadFailed": "ไม่สามารถโหลดข้อมูลการตั้งค่า LINE ได้",
+      "saveSuccess": "บันทึกการตั้งค่าสำเร็จ",
+      "saveFailed": "บันทึกไม่สำเร็จ",
+      "accountLinking": {
+        "title": "เชื่อมบัญชี LINE ของคุณ",
+        "subtitle": "เชื่อมบัญชีเพื่อรับแจ้งเตือนและสั่งงานผ่าน LINE โดยตรง",
+        "linked": "เชื่อมบัญชีแล้ว",
+        "linkedOn": " · {{date}}",
+        "notLinked": "ยังไม่ได้เชื่อมบัญชี LINE",
+        "unlink": "ยกเลิกการเชื่อม",
+        "stepsTitle": "วิธีเชื่อมบัญชี:",
+        "step1": "1. กดปุ่ม \"สร้างรหัสเชื่อม\" ด้านล่าง",
+        "step2": "2. กด \"คัดลอก\" แล้วส่งข้อความนั้นในแชทกับ LINE OA",
+        "tokenExpiry": "⏰ รหัสมีอายุ 10 นาที",
+        "generateToken": "สร้างรหัสเชื่อม",
+        "copyToken": "คัดลอก",
+        "copied": "คัดลอกแล้ว",
+        "tokenPrefix": "ลิงก์ {{token}}"
+      },
+      "linkedUsers": {
+        "title": "ผู้ใช้ที่เชื่อมต่อ LINE แล้ว",
+        "subtitle": "รายชื่อผู้ใช้ในระบบที่เชื่อมบัญชี LINE ไว้แล้ว",
+        "none": "ยังไม่มีผู้ใช้เชื่อมต่อ LINE",
+        "linkedAt": "เชื่อมเมื่อ {{date}}"
+      }
+    },
+    "materialCategories": {
+      "title": "หมวดหมู่วัตถุดิบ",
+      "subtitle": "จัดการหมวดหมู่และหน่วยเริ่มต้นสำหรับวัตถุดิบใน BOM",
+      "add": "เพิ่มหมวดหมู่",
+      "info": "หมวดหมู่ถูกใช้ในการจัดกลุ่มวัตถุดิบและกำหนดหน่วยนับเริ่มต้นอัตโนมัติ เมื่อสร้างวัตถุดิบใหม่ใน BOM จะไม่สามารถเปลี่ยนหมวดหมู่ได้ภายหลัง",
+      "searchPlaceholder": "ค้นหาหมวดหมู่ หรือรหัส...",
+      "listTitle": "รายการหมวดหมู่",
+      "itemCount": "{{count}} รายการ",
+      "loading": "กำลังโหลด...",
+      "empty": "ยังไม่มีหมวดหมู่วัตถุดิบ",
+      "emptyHint": "เพิ่มหมวดหมู่แรก เช่น วัตถุดิบทั่วไป, สารเคมี, อุปกรณ์",
+      "defaultUnit": "หน่วยเริ่มต้น: {{unit}}",
+      "edit": "แก้ไข",
+      "delete": "ลบ",
+      "modal": {
+        "titleEdit": "แก้ไขหมวดหมู่",
+        "titleCreate": "เพิ่มหมวดหมู่วัตถุดิบ",
+        "codeLabel": "รหัส (Code) *",
+        "codePlaceholder": "เช่น RAW, CHEM",
+        "nameLabel": "ชื่อหมวดหมู่ *",
+        "namePlaceholder": "เช่น วัตถุดิบทั่วไป, สารเคมี",
+        "unitLabel": "หน่วยเริ่มต้น *",
+        "unitPlaceholder": "เลือกหน่วย",
+        "descriptionLabel": "คำอธิบาย (ไม่บังคับ)",
+        "descriptionPlaceholder": "เช่น ใช้สำหรับวัตถุดิบหลักในการผลิต",
+        "cancel": "ยกเลิก",
+        "saving": "กำลังบันทึก...",
+        "save": "บันทึก"
+      },
+      "toast": {
+        "loadFailed": "โหลดข้อมูลหมวดหมู่ไม่สำเร็จ",
+        "validation": "กรุณากรอก Code, ชื่อหมวดหมู่ และหน่วยเริ่มต้น",
+        "createSuccess": "เพิ่มหมวดหมู่แล้ว",
+        "updateSuccess": "บันทึกแล้ว",
+        "deleteConfirm": "ลบหมวดหมู่ \"{{label}}\" ใช่หรือไม่?",
+        "deleteSuccess": "ลบแล้ว",
+        "deleteFailed": "ลบไม่สำเร็จ"
+      }
+    },
+    "permission": {
+      "title": "จัดการสิทธิ์ผู้ใช้",
+      "subtitle": "กำหนดบทบาทและการเข้าถึงสำหรับพนักงานแต่ละคน",
+      "loading": "กำลังโหลด...",
+      "selectUser": "เลือกพนักงาน…",
+      "noUsers": "ไม่พบผู้ใช้",
+      "emptyHint": "เลือกพนักงานด้านบนเพื่อจัดการสิทธิ์",
+      "presets": "Quick Presets",
+      "roleSection": "บทบาท (Role)",
+      "departmentSection": "แผนก / สิทธิ์เข้าถึง",
+      "customOverrides": "Custom Overrides (ขั้นสูง)",
+      "save": "บันทึก",
+      "loadFailed": "โหลดรายชื่อผู้ใช้ไม่สำเร็จ",
+      "saveSuccess": "บันทึกสิทธิ์สำเร็จ",
+      "saveFailed": "บันทึกไม่สำเร็จ",
+      "roles": {
+        "manager": "Manager — ผู้จัดการ",
+        "managerDesc": "จัดการได้เต็มที่ในแผนกตัวเอง (อ่าน/เขียน/อนุมัติ/ลบ) แต่ข้ามแผนกไม่ได้ — ต่างจาก Power User ที่ข้ามแผนกได้แต่ลบไม่ได้",
+        "powerUser": "Power User — ผู้ใช้หลัก",
+        "powerUserDesc": "อ่าน/เขียน/อนุมัติ ทุกแผนก",
+        "user": "User — ผู้ใช้ทั่วไป",
+        "userDesc": "เข้าถึงเฉพาะแผนกที่ได้รับมอบหมาย อ่าน/เขียนได้เท่านั้น ไม่มีสิทธิ์อนุมัติหรือลบข้อมูล",
+        "poweruser": "Power User — ผู้ใช้หลัก",
+        "poweruserDesc": "เข้าถึงได้ทุกแผนก อ่าน/เขียน/อนุมัติ แต่ลบข้อมูลไม่ได้ — ต่างจาก Manager ที่ลบได้แต่อยู่แค่แผนกตัวเอง และต่างจาก User ที่ไม่มีสิทธิ์อนุมัติ"
+      },
+      "departments": {
+        "sales": "Sales — ขาย",
+        "salesDesc": "ลูกค้า, คำสั่งซื้อ, การตลาด",
+        "purchase": "Purchase — จัดซื้อ",
+        "purchaseDesc": "จัดซื้อ, ซัพพลายเออร์",
+        "stock": "Stock — คลัง",
+        "stockDesc": "คลังสินค้า",
+        "accounting": "Accounting — บัญชี",
+        "accountingDesc": "บัญชี, รายงานการเงิน",
+        "production": "Production — ผลิต",
+        "productionDesc": "การผลิต, BOM, Work Orders",
+        "qc": "QC — ควบคุมคุณภาพ",
+        "qcDesc": "ตรวจสอบคุณภาพ",
+        "marketing": "Marketing — การตลาด",
+        "marketingDesc": "การตลาด",
+        "ceo": "CEO / เจ้าของ",
+        "ceoDesc": "สิทธิ์ระดับ Admin — เข้าถึง แก้ไข และลบเอกสารได้ทุกแผนก ทุกโมดูล ไม่มีข้อจำกัด",
+        "it": "IT / Admin",
+        "itDesc": "เข้าถึงทุกส่วนรวมถึง Settings"
+      },
+      "customPermissions": {
+        "accountingDelete": "ลบข้อมูลบัญชี",
+        "stockDelete": "ลบรายการคลัง",
+        "ordersDelete": "ลบคำสั่งซื้อ",
+        "usersWrite": "จัดการผู้ใช้งาน"
+      },
+      "presetsList": {
+        "sales": "พนักงานขาย",
+        "cashier": "แคชเชียร์",
+        "accountant": "นักบัญชี",
+        "warehouseManager": "ผู้จัดการคลัง",
+        "factoryManager": "ผู้จัดการโรงงาน",
+        "ceo": "CEO / เจ้าของ"
+      },
+      "ceoModal": {
+        "title": "Grant {{dept}} permission — Admin level",
+        "warning": "This person will receive <span class=\"font-semibold text-[var(--warning)]\">Admin</span> privileges, allowing them to <strong>access, edit, and delete documents in every module and department</strong> without restrictions.",
+        "bullet1": "• Read / Write / Approve / <strong>Delete</strong> all data",
+        "bullet2": "• Access every department and module, second only to Master",
+        "bullet3": "• Can be revoked later by removing the {{dept}} department",
+        "confirm": "Confirm Grant Admin"
+      }
+    },
+    "posMenu": {
+      "title": "POS Menu Management",
+      "subtitle": "Configure which products are available for sale in POS",
+      "tabs": {
+        "menus": "Menus",
+        "categories": "Categories"
+      },
+      "bomDeduct": {
+        "title": "ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน",
+        "description": "เปิด = ร้านที่ผลิตเอง (ร้านอาหาร / โรงงาน) · ปิด = ร้านค้าที่ขายของสำเร็จรูปโดยตรง"
+      },
+      "searchPlaceholder": "Search menus...",
+      "allCategories": "All Categories",
+      "addMenu": "Add Menu",
+      "addCategory": "Add Category",
+      "stats": {
+        "totalMenus": "Total Menus",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "categories": "Categories"
+      },
+      "loading": "Loading...",
+      "noMenus": "No menus found",
+      "noSearchResults": "Try different search terms",
+      "addFirstMenu": "Add your first menu to POS",
+      "uncategorized": "Uncategorized",
+      "bomVersion": "BOM v{{version}}",
+      "price": "{{price}}",
+      "prepTime": "{{minutes}}m",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "deleteMenuConfirm": "Are you sure you want to remove this menu from POS?",
+      "deleteCategoryConfirm": "Are you sure? Menus in this category will be uncategorized.",
+      "toast": {
+        "loadFailed": "Failed to load POS data",
+        "bomEnabled": "เปิดการตัด stock ตาม BOM แล้ว",
+        "bomDisabled": "ปิดการตัด stock ตาม BOM แล้ว",
+        "bomSaveFailed": "บันทึกไม่สำเร็จ",
+        "menuEnabled": "Menu enabled",
+        "menuDisabled": "Menu disabled",
+        "menuUpdateFailed": "Failed to update menu",
+        "menuDeleted": "Menu removed from POS",
+        "menuDeleteFailed": "Failed to delete menu",
+        "categoryDeleted": "Category deleted",
+        "categoryDeleteFailed": "Failed to delete category",
+        "menuSaved": "Menu added to POS successfully",
+        "menuUpdated": "Menu updated successfully",
+        "menuSaveFailed": "Failed to save menu",
+        "categorySaved": "Category created",
+        "categoryUpdated": "Category updated",
+        "categorySaveFailed": "Failed to save category",
+        "categoryNameRequired": "Category name is required"
+      },
+      "menuModal": {
+        "titleEdit": "Edit Menu",
+        "titleCreate": "Add Menu to POS",
+        "step1Title": "Select a product to add to POS",
+        "searchPlaceholder": "Search products...",
+        "noProducts": "No available products found",
+        "allInPos": "All products may already be in POS",
+        "productLabel": "Product",
+        "categoryLabel": "Category",
+        "selectCategory": "Select category...",
+        "bomLabel": "BOM (Bill of Materials)",
+        "bomAvailable": "({{count}} available)",
+        "versionLabel": "Version",
+        "noBom": "No BOM available",
+        "selectBom": "Select BOM (optional)...",
+        "bomLinked": "Stock will be deducted from BOM ingredients",
+        "bomTip": "Tip: Link a BOM to auto-deduct stock from production recipe",
+        "posPrice": "POS Price",
+        "required": "*",
+        "costPrice": "Cost Price",
+        "quickCode": "Quick Code",
+        "quickPlaceholder": "e.g., A01",
+        "prepTime": "Prep Time (min)",
+        "displayOrder": "Display Order",
+        "saleUnit": "หน่วยขาย",
+        "saleUnitLabel": "(Sale Unit)",
+        "selectSaleUnit": "เลือกหน่วย...",
+        "defaultUnit": "{{unit}} (default)",
+        "displayUnit": "{{unit}} (Display)",
+        "baseUnit": "{{unit}} (Base)",
+        "unitInfo": "Base: {{base}} | Display: {{display}}",
+        "selectProductFirst": "เลือกสินค้าก่อนเพื่อดูหน่วยที่มี",
+        "description": "Description",
+        "descriptionPlaceholder": "Menu description...",
+        "available": "Available for sale",
+        "back": "Back",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save",
+        "requiredFields": "Please fill in all required fields"
+      },
+      "categoryModal": {
+        "titleEdit": "Edit Category",
+        "titleCreate": "Add Category",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g., Main Course",
+        "colorLabel": "Color",
+        "iconLabel": "Icon (optional)",
+        "iconPlaceholder": "Icon name",
+        "cancel": "Cancel",
+        "saving": "Saving...",
+        "save": "Save"
+      }
+    },
+    "unitConversions": {
+      "title": "การแปลงหน่วย",
+      "subtitle": "กำหนดอัตราแปลงระหว่างหน่วยนับ ทั่วไป หรือเฉพาะสินค้า",
+      "add": "เพิ่มการแปลงหน่วย",
+      "searchPlaceholder": "ค้นหาหน่วย หรือชื่อสินค้า...",
+      "global": {
+        "title": "ทั่วไป (ใช้กับทุกสินค้า)",
+        "chainView": "Chain View",
+        "empty": "ยังไม่มีการแปลงหน่วยทั่วไป",
+        "emptyHint": "ตัวอย่าง: 1 ลัง = 12 กล่อง"
+      },
+      "perMaterial": {
+        "title": "เฉพาะสินค้า (override per item)",
+        "empty": "ยังไม่มีการแปลงเฉพาะสินค้า",
+        "emptyHint": "ใช้เมื่อสินค้าแต่ละชิ้นมีขนาดบรรจุต่างกัน เช่น แป้ง A: 1 ถุง = 25 kg",
+        "itemCount": "{{count}} รายการ",
+        "chain": "Chain"
+      },
+      "builtIn": {
+        "title": "มาตราสากล (Built-in)",
+        "locked": "แก้ไขไม่ได้",
+        "count": "{{count}} รายการ",
+        "info": "ระบบรองรับมาตราสากลอัตโนมัติ เช่น kg↔g, inch↔cm, L↔ml, โหล=12ชิ้น, กุรอส=144ชิ้น ไม่ต้องตั้งค่าเพิ่มเติม ใช้งานได้ทันทีใน BOM และ Stock Movement",
+        "pairCount": "{{count}} คู่"
+      },
+      "standardGroups": {
+        "weight": "น้ำหนัก",
+        "length": "ความยาว",
+        "volume": "ปริมาตร",
+        "count": "หน่วยนับสากล"
+      },
+      "loading": "กำลังโหลด...",
+      "modal": {
+        "titleEdit": "แก้ไขการแปลงหน่วย",
+        "titleCreate": "เพิ่มการแปลงหน่วย",
+        "preview": "1 {{from}} = {{factor}} {{to}}",
+        "previewWithMaterial": "1 {{from}} = {{factor}} {{to}} ({{material}})",
+        "advisorTitle": "ตรวจสอบเส้นทาง / ขอคำแนะนำ AI",
+        "fromPlaceholder": "จาก (pack)",
+        "toPlaceholder": "ถึง (liter)",
+        "check": "ตรวจสอบ",
+        "checking": "...",
+        "pathFound": "พบเส้นทาง: {{path}}",
+        "pathFoundValue": "1 {{from}} = {{factor}} {{to}}",
+        "pathNotFound": "ไม่พบเส้นทาง {{from}} → {{to}}",
+        "pathNotFoundHint": "กรุณาเพิ่มการแปลงด้านล่าง หรือให้ AI แนะนำค่า",
+        "aiSuggest": "ขอให้ AI แนะนำค่า",
+        "aiThinking": "AI กำลังคิด...",
+        "aiSuggestion": "AI แนะนำ: 1 {{from}} = {{factor}} {{to}}",
+        "applyValue": "ใช้ค่านี้",
+        "materialLabel": "เฉพาะสินค้า",
+        "materialHint": "(ไม่เลือก = ใช้กับทุกสินค้า)",
+        "materialPlaceholder": "ค้นหาสินค้า หรือเว้นว่างเพื่อใช้ทั่วไป...",
+        "fromUnitLabel": "หน่วยต้นทาง (from)",
+        "fromUnitPlaceholder": "เช่น pack, ลัง, ซอง",
+        "toUnitLabel": "หน่วยปลายทาง (to)",
+        "toUnitPlaceholder": "เช่น pcs, ชิ้น, g",
+        "factorLabel": "ค่าแปลง — 1 {{from}} = กี่ {{to}}",
+        "factorPlaceholder": "เช่น 24",
+        "notesLabel": "หมายเหตุ (ไม่บังคับ)",
+        "notesPlaceholder": "เช่น บรรจุภัณฑ์ไซส์ L",
+        "cancel": "ยกเลิก",
+        "saving": "กำลังบันทึก...",
+        "save": "บันทึก"
+      },
+      "toast": {
+        "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+        "validation": "กรุณาระบุหน่วยและค่าแปลง",
+        "factorPositive": "ค่าแปลงต้องมากกว่า 0",
+        "sameUnit": "หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน",
+        "createSuccess": "เพิ่มการแปลงหน่วยแล้ว",
+        "updateSuccess": "บันทึกแล้ว",
+        "deleteConfirm": "ลบการแปลง \"{{label}}\" ใช่หรือไม่?",
+        "deleteSuccess": "ลบแล้ว",
+        "deleteFailed": "ลบไม่สำเร็จ",
+        "pathCheckFailed": "ตรวจสอบเส้นทางไม่สำเร็จ",
+        "aiSuggestFailed": "ขอคำแนะนำ AI ไม่สำเร็จ"
+      }
+    },
+    "approval": {
+      "title": "Approval Settings",
+      "subtitle": "Set approval conditions per module and assign approver permissions",
+      "info": {
+        "masterAdminAuto": "MASTER and ADMIN can approve everything automatically",
+        "roleScope": "The settings below apply only to MANAGER / POWER USER / USER. If no setting exists for a role, that role does not require approval."
+      },
+      "section": {
+        "approvalConditions": "Approval Conditions by Role",
+        "userPermissions": "Individual Approver Permissions"
+      },
+      "actions": {
+        "addCondition": "Add Condition",
+        "grantPermission": "Grant Permission"
+      },
+      "labels": {
+        "role": "Role",
+        "module": "Module",
+        "approvalRequired": "Approval Required",
+        "autoApproveThreshold": "Auto-approve threshold (฿)",
+        "thresholdHint": "Below this amount passes automatically",
+        "user": "User",
+        "maxApprovalLimit": "Max approval limit (฿)",
+        "limitHint": "0 = use default",
+        "unlimited": "Unlimited amount",
+        "masterApprover": "Master Approver (Level 2)",
+        "autoApproveIfBelow": "Auto-approve if below"
+      },
+      "placeholders": {
+        "thresholdCheckEveryTime": "0 = check every time",
+        "selectUser": "-- Select user --",
+        "limitDefault": "0 = use default"
+      },
+      "options": {
+        "required": "Required",
+        "notRequired": "Not required"
+      },
+      "badge": {
+        "required": "Required",
+        "notRequired": "Not required",
+        "unlimited": "Unlimited",
+        "maxLimit": "Max {{amount}}"
+      },
+      "empty": {
+        "noConditions": "No conditions yet — click \"Add Condition\" to start",
+        "noApprovers": "No approvers assigned yet — click \"Grant Permission\" to start"
+      },
+      "rolesCount": "{{count}} roles",
+      "modules": {
+        "purchaseRequest": "Purchase Request (PR)",
+        "purchaseOrder": "Purchase Order (PO)",
+        "salesOrder": "Sales Order (SO)",
+        "workOrder": "Work Order",
+        "stockAdjustment": "Stock Adjustment"
+      },
+      "roles": {
+        "manager": "Manager",
+        "powerUser": "Power User",
+        "user": "User"
+      },
+      "toasts": {
+        "loadFailed": "Failed to load data",
+        "saveSettingSuccess": "Setting saved successfully",
+        "saveFailed": "Save failed",
+        "deleteSettingSuccess": "Setting deleted",
+        "deleteFailed": "Delete failed",
+        "selectUserError": "Please select a user",
+        "savePermSuccess": "Approver permission saved",
+        "revokeSuccess": "Permission revoked",
+        "revokeFailed": "Failed to revoke permission"
+      }
+    },
+    "userManagement": {
+      "title": "จัดการผู้ใช้งาน",
+      "subtitle": "กำหนด role แผนก และสิทธิ์การเข้าถึง",
+      "addUser": "เพิ่ม User",
+      "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+      "saveFailed": "บันทึกไม่สำเร็จ",
+      "deleteFailed": "ลบไม่สำเร็จ",
+      "userCol": "ผู้ใช้งาน",
+      "roleCol": "Role",
+      "departmentCol": "แผนก",
+      "noDepartment": "—",
+      "customBadge": "+custom",
+      "modal": {
+        "titleCreate": "เพิ่มผู้ใช้ใหม่",
+        "titleEdit": "แก้ไข: {{name}}",
+        "nameLabel": "ชื่อ *",
+        "namePlaceholder": "ชื่อผู้ใช้งาน",
+        "emailLabel": "Email *",
+        "emailPlaceholder": "email@example.com",
+        "passwordLabel": "รหัสผ่าน",
+        "passwordHintEdit": "(เว้นว่างถ้าไม่เปลี่ยน)",
+        "passwordPlaceholderCreate": "รหัสผ่าน *",
+        "passwordPlaceholderEdit": "••••••••",
+        "roleLabel": "Role",
+        "departmentsLabel": "แผนก (เลือกได้หลายแผนก)",
+        "advancedTitle": "สิทธิ์ขั้นสูง (Custom Override)",
+        "advancedHint": "กำหนด override เฉพาะ user นี้ — จะมีผลก่อน role+แผนก",
+        "allowed": "✅ = อนุญาต",
+        "denied": "❌ = ปฏิเสธ",
+        "default": "⬜ = ตามระบบ",
+        "resourceCol": "Resource",
+        "overridesCount": "{{count}} overrides",
+        "overrideNone": "คลิกเพื่อ override",
+        "overrideAllow": "อนุญาต → คลิกเพื่อปฏิเสธ",
+        "overrideDeny": "ปฏิเสธ → คลิกเพื่อล้าง"
+      },
+      "roleDescriptions": {
+        "ADMIN": "เข้าถึงได้ทุกอย่างในระบบ",
+        "MANAGER": "อ่าน/เขียน/อนุมัติ/ลบ ในแผนกที่กำหนด",
+        "POWERUSER": "อ่าน/เขียน/อนุมัติ ทุกแผนก (ไม่ลบ)",
+        "USER": "อ่าน/เขียน ในแผนกที่กำหนดเท่านั้น"
+      },
+      "deleteConfirm": {
+        "title": "ยืนยันการลบ",
+        "message": "ต้องการลบ {{name}} ออกจากระบบใช่ไหม? การกระทำนี้ไม่สามารถย้อนกลับได้",
+        "delete": "ลบผู้ใช้",
+        "deleting": "กำลังลบ..."
+      }
     }
   }
 }

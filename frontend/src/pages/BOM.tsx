@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText,
@@ -173,6 +174,7 @@ const nestedBomService = {
 }
 
 function BOMPage() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabType>('bom')
   const [boms, setBoms] = useState<BOM[]>([])
   const [stats, setStats] = useState<BOMStats | null>(null)
@@ -225,7 +227,7 @@ function BOMPage() {
       setStats(statsData)
     } catch (err) {
       console.error('Failed to fetch BOM data:', err)
-      setError('ไม่สามารถโหลดข้อมูล BOM ได้ กรุณาลองใหม่อีกครั้ง')
+      setError(t('bom.errors.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -278,7 +280,7 @@ function BOMPage() {
 
   // Handle delete BOM
   const handleDelete = async (id: string, productName: string) => {
-    if (!confirm(`คุณต้องการลบ BOM ของ "${productName}" หรือไม่?`)) {
+    if (!confirm(t('bom.confirmDelete', { name: productName }))) {
       return
     }
 
@@ -289,7 +291,7 @@ function BOMPage() {
       setStats(newStats)
     } catch (err) {
       console.error('Failed to delete BOM:', err)
-      alert('ไม่สามารถลบ BOM ได้ กรุณาลองใหม่อีกครั้ง')
+      alert(t('bom.errors.deleteFailed'))
     }
   }
 
@@ -329,7 +331,7 @@ function BOMPage() {
       setExpandedTreeNodes(new Set([bom.id]))
     } catch (err) {
       console.error('Failed to load BOM tree:', err)
-      alert('ไม่สามารถโหลดข้อมูล BOM Tree ได้')
+      alert(t('bom.errors.loadTreeFailed'))
     } finally {
       setTreeLoading(false)
     }
@@ -354,7 +356,7 @@ function BOMPage() {
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-[var(--primary)] animate-spin mx-auto mb-4" />
-          <p className="text-[var(--fg-3)]">กำลังโหลดข้อมูล BOM...</p>
+          <p className="text-[var(--fg-3)]">{t('bom.loading')}</p>
         </div>
       </div>
     )
@@ -372,7 +374,7 @@ function BOMPage() {
             className="phopy-btn-primary flex items-center gap-2 mx-auto"
           >
             <RefreshCw className="w-5 h-5" />
-            ลองใหม่
+            {t('bom.retry')}
           </button>
         </div>
       </div>
@@ -380,17 +382,17 @@ function BOMPage() {
   }
 
   const tabs = [
-    { id: 'bom' as TabType, label: 'BOM List', icon: FileText },
-    { id: 'materials' as TabType, label: 'Materials', icon: Boxes },
-    { id: 'calculator' as TabType, label: 'Production Calculator', icon: Calculator },
-    { id: 'simulation' as TabType, label: 'Cost Simulation', icon: TrendingUp },
+    { id: 'bom' as TabType, label: t('bom.tabs.bomList'), icon: FileText },
+    { id: 'materials' as TabType, label: t('bom.tabs.materials'), icon: Boxes },
+    { id: 'calculator' as TabType, label: t('bom.tabs.productionCalculator'), icon: Calculator },
+    { id: 'simulation' as TabType, label: t('bom.tabs.costSimulation'), icon: TrendingUp },
   ]
 
   const filterTabs = [
-    { id: 'all' as BOMFilterType, label: 'All BOMs', count: stats?.totalBOMs || 0 },
-    { id: 'tree-view' as BOMFilterType, label: 'Tree View', icon: FolderTree },
-    { id: 'semi-finished' as BOMFilterType, label: 'Semi-finished', count: stats?.semiFinishedBOMs || 0 },
-    { id: 'finished' as BOMFilterType, label: 'Finished Goods' },
+    { id: 'all' as BOMFilterType, label: t('bom.filter.all'), count: stats?.totalBOMs || 0 },
+    { id: 'tree-view' as BOMFilterType, label: t('bom.filter.treeView'), icon: FolderTree },
+    { id: 'semi-finished' as BOMFilterType, label: t('bom.filter.semiFinished'), count: stats?.semiFinishedBOMs || 0 },
+    { id: 'finished' as BOMFilterType, label: t('bom.filter.finishedGoods') },
   ]
 
   return (
@@ -404,9 +406,9 @@ function BOMPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
-              <span className="text-[var(--fg-1)]">Bill of Materials</span>
+              <span className="text-[var(--fg-1)]">{t('bom.title')}</span>
             </h1>
-            <p className="text-[var(--fg-3)]">Manage product formulas and materials with nested BOM support</p>
+            <p className="text-[var(--fg-3)]">{t('bom.subtitle')}</p>
           </div>
           {activeTab === 'bom' && (
             <motion.button
@@ -416,7 +418,7 @@ function BOMPage() {
               className="phopy-btn-primary flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              Create BOM
+              {t('bom.createBOM')}
             </motion.button>
           )}
         </div>
@@ -453,25 +455,25 @@ function BOMPage() {
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <StatCard
-                label="Total BOMs"
+                label={t('bom.stats.totalBOMs')}
                 value={stats?.totalBOMs.toString() || '0'}
                 icon={FileText}
                 color="primary"
               />
               <StatCard
-                label="Semi-finished BOMs"
+                label={t('bom.stats.semiFinishedBOMs')}
                 value={stats?.semiFinishedBOMs?.toString() || '0'}
                 icon={GitBranch}
                 color="purple"
               />
               <StatCard
-                label="Total Materials"
+                label={t('bom.stats.totalMaterials')}
                 value={stats?.totalMaterials.toString() || '0'}
                 icon={Package}
                 color="green"
               />
               <StatCard
-                label="Avg. Cost/Unit"
+                label={t('bom.stats.avgCostPerUnit')}
                 value={`฿${(stats?.avgCostPerUnit || 0).toLocaleString()}`}
                 icon={DollarSign}
                 color="primary"
@@ -508,7 +510,7 @@ function BOMPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
                   <input
                     type="text"
-                    placeholder="Search BOM by product name or code..."
+                    placeholder={t('bom.searchPlaceholder')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="phopy-input pl-10 w-full"
@@ -548,15 +550,15 @@ function BOMPage() {
               <div className="phopy-card p-12 text-center">
                 <Package className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
-                  {searchTerm ? 'ไม่พบ BOM ที่ค้นหา' : 'ยังไม่มี BOM'}
+                  {searchTerm ? t('bom.empty.noResults') : t('bom.empty.noBOMs')}
                 </h3>
                 <p className="text-[var(--fg-4)] mb-4">
-                  {searchTerm ? 'ลองค้นหาด้วยคำอื่น' : 'เริ่มต้นสร้าง BOM แรกของคุณ'}
+                  {searchTerm ? t('bom.empty.tryDifferent') : t('bom.empty.startCreate')}
                 </p>
                 {!searchTerm && (
                   <button onClick={handleCreate} className="phopy-btn-primary">
                     <Plus className="w-5 h-5 mr-2" />
-                    สร้าง BOM
+                    {t('bom.createBOM')}
                   </button>
                 )}
               </div>
@@ -569,7 +571,7 @@ function BOMPage() {
                 <div className="phopy-card p-4">
                   <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
                     <FolderTree className="w-5 h-5 text-[var(--primary)]" />
-                    Select BOM to View
+                    {t('bom.tree.selectBOM')}
                   </h3>
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
                     {(boms || []).filter(b => b.isTopLevel || b.level === 0).map((bom) => (
@@ -607,7 +609,7 @@ function BOMPage() {
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-[var(--fg-2)] flex items-center gap-2">
                           <GitBranch className="w-5 h-5 text-[var(--primary)]" />
-                          BOM Hierarchy: {treeData.productName}
+                          {t('bom.tree.hierarchy', { name: treeData.productName })}
                         </h3>
                         <span className="text-2xl font-bold text-[var(--primary)]">
                           ฿{treeData.totalCost?.toLocaleString()}
@@ -626,7 +628,7 @@ function BOMPage() {
                     <div className="flex items-center justify-center h-[400px] text-[var(--fg-4)]">
                       <div className="text-center">
                         <FolderTree className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p>Select a BOM to view its hierarchy</p>
+                        <p>{t('bom.tree.empty')}</p>
                       </div>
                     </div>
                   )}
@@ -658,14 +660,14 @@ function BOMPage() {
                   <thead>
                     <tr>
                       <th className="w-8"></th>
-                      <th>Product</th>
-                      <th>Level</th>
-                      <th>Type</th>
-                      <th>Version</th>
-                      <th>Items</th>
-                      <th>Status</th>
-                      <th>Total Cost</th>
-                      <th className="text-right">Actions</th>
+                      <th>{t('bom.list.product')}</th>
+                      <th>{t('bom.list.level')}</th>
+                      <th>{t('bom.list.type')}</th>
+                      <th>{t('bom.list.version')}</th>
+                      <th>{t('bom.list.items')}</th>
+                      <th>{t('bom.list.status')}</th>
+                      <th>{t('bom.list.totalCost')}</th>
+                      <th className="text-right">{t('bom.list.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -702,7 +704,7 @@ function BOMPage() {
                             />
                           </td>
                           <td className="text-[var(--primary)]">{bom.version}</td>
-                          <td className="text-[var(--fg-3)]">{bom.items?.length || bom.materials?.length || 0} items</td>
+                          <td className="text-[var(--fg-3)]">{bom.items?.length || bom.materials?.length || 0} {t('common.items')}</td>
                           <td>
                             <StatusBadge
                               status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'}
@@ -719,21 +721,21 @@ function BOMPage() {
                               <button
                                 onClick={() => handleEdit(bom)}
                                 className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-                                title="แก้ไข"
+                                title={t('common.edit')}
                               >
                                 <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--primary)]" />
                               </button>
                               <button
                                 onClick={() => handleCopy(bom)}
                                 className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-                                title="คัดลอก"
+                                title={t('common.copy')}
                               >
                                 <Copy className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
                               </button>
                               <button
                                 onClick={() => handleDelete(bom.id, bom.productName)}
                                 className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
-                                title="ลบ"
+                                title={t('common.delete')}
                               >
                                 <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-danger" />
                               </button>
@@ -904,6 +906,7 @@ function TreeNode({
 
 // BOM Items Table Component (for expanded view)
 function BOMItemsTable({ items }: { items: BOMItem[] }) {
+  const { t } = useTranslation()
   return (
     <div>
       <h4 className="text-sm font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
@@ -913,12 +916,12 @@ function BOMItemsTable({ items }: { items: BOMItem[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-[var(--fg-4)] border-b border-[var(--border)]/30">
-            <th className="text-left py-2">Type</th>
-            <th className="text-left py-2">Name</th>
-            <th className="text-left py-2">Code</th>
-            <th className="text-right py-2">Quantity</th>
-            <th className="text-right py-2">Unit Cost</th>
-            <th className="text-right py-2">Total</th>
+            <th className="text-left py-2">{t('bom.itemsTable.type')}</th>
+            <th className="text-left py-2">{t('bom.itemsTable.name')}</th>
+            <th className="text-left py-2">{t('bom.itemsTable.code')}</th>
+            <th className="text-right py-2">{t('bom.itemsTable.quantity')}</th>
+            <th className="text-right py-2">{t('bom.itemsTable.unitCost')}</th>
+            <th className="text-right py-2">{t('bom.itemsTable.total')}</th>
           </tr>
         </thead>
         <tbody>
@@ -937,12 +940,12 @@ function BOMItemsTable({ items }: { items: BOMItem[] }) {
                   {isChildBOM ? (
                     <span className="flex items-center gap-1 text-purple-500">
                       <GitBranch className="w-3 h-3" />
-                      <span className="text-xs">Child BOM</span>
+                      <span className="text-xs">{t('bom.itemType.childBOM')}</span>
                     </span>
                   ) : (
                     <span className="flex items-center gap-1 text-[var(--fg-3)]">
                       <Box className="w-3 h-3" />
-                      <span className="text-xs">Material</span>
+                      <span className="text-xs">{t('bom.itemType.material')}</span>
                     </span>
                   )}
                 </td>
@@ -980,6 +983,7 @@ function BOMCard({
   onCopy: (bom: BOM) => void
   onDelete: (id: string, name: string) => void
 }) {
+  const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const [cardItems, setCardItems] = useState<BOMItem[]>(bom.items || bom.materials || [])
   const [cardLoading, setCardLoading] = useState(false)
@@ -1051,7 +1055,7 @@ function BOMCard({
             {bom.parentProductName && (
               <div className="flex items-center gap-1 mt-1 text-sm text-[var(--fg-4)]">
                 <ArrowRight className="w-3 h-3" />
-                <span>Used in: {bom.parentProductName}</span>
+                <span>{t('bom.card.usedIn', { name: bom.parentProductName })}</span>
               </div>
             )}
           </div>
@@ -1062,21 +1066,21 @@ function BOMCard({
           <button
             onClick={() => onEdit(bom)}
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-            title="แก้ไข"
+            title={t('common.edit')}
           >
             <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-[var(--primary)]" />
           </button>
           <button
             onClick={() => onCopy(bom)}
             className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-            title="คัดลอก"
+            title={t('common.copy')}
           >
             <Copy className="w-5 h-5 text-[var(--fg-3)] hover:text-success" />
           </button>
           <button
             onClick={() => onDelete(bom.id, bom.productName)}
             className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
-            title="ลบ"
+            title={t('common.delete')}
           >
             <Trash2 className="w-5 h-5 text-[var(--fg-3)] hover:text-danger" />
           </button>
@@ -1090,7 +1094,7 @@ function BOMCard({
           className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 mb-2"
         >
           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          <span className="font-medium">รายการวัตถุดิบ ({itemCount})</span>
+          <span className="font-medium">{t('bom.card.materialsCount', { count: itemCount })}</span>
         </button>
         
         <AnimatePresence>
@@ -1104,24 +1108,24 @@ function BOMCard({
               {cardLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-[var(--fg-3)]">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  กำลังโหลด...
+                  {t('bom.card.loading')}
                 </div>
               ) : itemCount === 0 ? (
                 <div className="py-4 text-center text-sm text-[var(--fg-4)] bg-[var(--bg)]/30 rounded-lg border border-[var(--border)]/30">
                   <Box className="w-5 h-5 mx-auto mb-1 text-[var(--fg-4)]" />
-                  ไม่มีรายการวัตถุดิบ
+                  {t('bom.card.noItems')}
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-[var(--border)]/30">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[var(--fg-4)] border-b border-[var(--border)]/30 bg-[var(--bg)]/30">
-                        <th className="text-left py-2 px-3">ประเภท</th>
-                        <th className="text-left py-2 px-3">รายการ</th>
-                        <th className="text-left py-2 px-3">รหัส</th>
-                        <th className="text-right py-2 px-3">จำนวน</th>
-                        <th className="text-right py-2 px-3">ต้นทุน/หน่วย</th>
-                        <th className="text-right py-2 px-3">รวม</th>
+                        <th className="text-left py-2 px-3">{t('bom.itemsTable.type')}</th>
+                        <th className="text-left py-2 px-3">{t('bom.itemsTable.name')}</th>
+                        <th className="text-left py-2 px-3">{t('bom.itemsTable.code')}</th>
+                        <th className="text-right py-2 px-3">{t('bom.itemsTable.quantity')}</th>
+                        <th className="text-right py-2 px-3">{t('bom.itemsTable.unitCost')}</th>
+                        <th className="text-right py-2 px-3">{t('bom.itemsTable.total')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1143,7 +1147,7 @@ function BOMCard({
                               ) : (
                                 <span className="flex items-center gap-1 text-[var(--fg-3)] text-xs">
                                   <Box className="w-3 h-3" />
-                                  วัตถุดิบ
+                                  {t('bom.itemType.material')}
                                 </span>
                               )}
                             </td>
@@ -1173,10 +1177,10 @@ function BOMCard({
       {/* Total Cost */}
       <div className="flex items-center justify-between pt-4 border-t border-[var(--border)]">
         <div className="text-sm text-[var(--fg-3)]">
-          อัปเดตล่าสุด: {fmtDate(bom.updatedAt)}
+          {t('bom.card.lastUpdated')}: {fmtDate(bom.updatedAt)}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[var(--fg-3)]">ต้นทุนผลิตรวม:</span>
+          <span className="text-[var(--fg-3)]">{t('bom.card.totalProductionCost')}:</span>
           <span className="text-2xl font-bold text-[var(--primary)]">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>
@@ -1212,11 +1216,12 @@ function BOMTypeBadge({
   isSemiFinished: boolean
   isTopLevel: boolean 
 }) {
+  const { t } = useTranslation()
   if (isTopLevel) {
     return (
       <span className="px-2 py-0.5 rounded text-xs font-medium border bg-[var(--success-soft)] text-success border-success/30 flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" />
-        Finished
+        {t('bom.typeBadge.finished')}
       </span>
     )
   }
@@ -1225,7 +1230,7 @@ function BOMTypeBadge({
     return (
       <span className="px-2 py-0.5 rounded text-xs font-medium border bg-purple-500/20 text-purple-500 border-purple-500/30 flex items-center gap-1">
         <GitBranch className="w-3 h-3" />
-        Semi-finished
+        {t('bom.typeBadge.semiFinished')}
       </span>
     )
   }
@@ -1233,7 +1238,7 @@ function BOMTypeBadge({
   return (
     <span className="px-2 py-0.5 rounded text-xs font-medium border bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)] flex items-center gap-1">
       <Box className="w-3 h-3" />
-      Component
+      {t('bom.typeBadge.component')}
     </span>
   )
 }
@@ -1272,17 +1277,18 @@ function StatCard({
 }
 
 function StatusBadge({ status }: { status: 'active' | 'draft' | 'archived' }) {
+  const { t } = useTranslation()
   const config = {
     active: {
-      label: 'Active',
+      label: t('bom.status.active'),
       className: 'bg-[var(--success-soft)] text-success border-success/30',
     },
     draft: {
-      label: 'Draft',
+      label: t('bom.status.draft'),
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
     },
     archived: {
-      label: 'Archived',
+      label: t('bom.status.archived'),
       className: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]',
     },
   }

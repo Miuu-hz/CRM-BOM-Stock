@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, AlertTriangle, Check, Wrench} from 'lucide-react'
 import bomService, { BOM, Material, Product } from '../../services/bom'
@@ -27,25 +28,6 @@ interface BOMItemRow {
   notes: string
 }
 
-// Helper: แปลง category เป็นป้ายสั้น (ไม่มีวงเล็บ)
-const getCategoryLabel = (category: string): string => {
-  const labels: Record<string, string> = {
-    // English keys
-    'raw': 'วัตถุดิบ',
-    'wip': 'กึ่งสำเร็จรูป',
-    'finished': 'สำเร็จรูป',
-    'material': 'วัสดุ',
-    // Thai keys (ตัดวงเล็บออกแล้วแสดงตรงๆ)
-    '[สินค้า]': 'สินค้า',
-    '[สินค้าสำเร็จรูป]': 'สำเร็จรูป',
-    '[สินค้ากึ่งสำเร็จรูป]': 'กึ่งสำเร็จรูป',
-    '[วัตถุดิบ]': 'วัตถุดิบ',
-    '[วัสดุย่อย]': 'วัสดุย่อย',
-    '[สินค้าไม่มีตัวตน]': 'ไม่มีตัวตน',
-  }
-  return labels[category] || labels[category?.toLowerCase()] || category.replace(/^\[|\]$/g, '')
-}
-
 // Helper: ตรวจสอบว่า category ต้องเปลี่ยนก่อนใช้เป็น BOM product หรือไม่
 const SAFE_BOM_CATEGORIES = ['[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]', 'finished', 'wip', 'FINISHED', 'WIP']
 const needsCategoryChange = (category: string): boolean => !SAFE_BOM_CATEGORIES.includes(category)
@@ -56,6 +38,25 @@ const getValidBOMProducts = (products: Product[]): Product[] => {
 }
 
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
+  const { t } = useTranslation()
+
+  // Helper: แปลง category เป็นป้ายสั้น (ไม่มีวงเล็บ)
+  const getCategoryLabel = (category: string): string => {
+    const labels: Record<string, string> = {
+      'raw': t('bomModal.category.raw'),
+      'wip': t('bomModal.category.wip'),
+      'finished': t('bomModal.category.finished'),
+      'material': t('bomModal.category.material'),
+      '[สินค้า]': t('bomModal.category.product'),
+      '[สินค้าสำเร็จรูป]': t('bomModal.category.finishedGoods'),
+      '[สินค้ากึ่งสำเร็จรูป]': t('bomModal.category.semiFinishedGoods'),
+      '[วัตถุดิบ]': t('bomModal.category.raw'),
+      '[วัสดุย่อย]': t('bomModal.category.subMaterial'),
+      '[สินค้าไม่มีตัวตน]': t('bomModal.category.intangible'),
+    }
+    return labels[category] || labels[category?.toLowerCase()] || category.replace(/^\[|\]$/g, '')
+  }
+
   const [products, setProducts] = useState<Product[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
   const [availableChildBOMs, setAvailableChildBOMs] = useState<BOM[]>([])
@@ -95,7 +96,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setProductId(categoryChangeModal.productId)
       setCategoryChangeModal(null)
     } catch (err: any) {
-      alert(err.response?.data?.message || 'ไม่สามารถเปลี่ยนประเภทสินค้าได้')
+      alert(err.response?.data?.message || t('bomModal.errors.changeCategoryFailed'))
     } finally {
       setChangingCategory(false)
     }
@@ -332,11 +333,11 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
     // Validation
     if (!productId) {
-      alert('กรุณาเลือกสินค้า')
+      alert(t('bomModal.errors.selectProduct'))
       return
     }
     if (!version.trim()) {
-      alert('กรุณาระบุเวอร์ชัน')
+      alert(t('bomModal.errors.enterVersion'))
       return
     }
 
@@ -349,7 +350,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     })
 
     if (validItems.length === 0) {
-      alert('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ')
+      alert(t('bomModal.errors.addAtLeastOneItem'))
       return
     }
 
@@ -381,7 +382,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       resetForm()
     } catch (err: any) {
       console.error('Failed to save BOM:', err)
-      alert(err.response?.data?.message || 'ไม่สามารถบันทึก BOM ได้')
+      alert(err.response?.data?.message || t('bomModal.errors.saveFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -466,14 +467,14 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-[var(--fg-1)]">
-                    {isEdit ? 'แก้ไข BOM' : isCopy ? 'คัดลอก BOM' : 'สร้าง BOM ใหม่'}
+                    {isEdit ? t('bomModal.title.edit') : isCopy ? t('bomModal.title.copy') : t('bomModal.title.create')}
                   </h2>
                   <p className="text-sm text-[var(--fg-3)]">
                     {isEdit
-                      ? 'แก้ไขสูตรการผลิต'
+                      ? t('bomModal.subtitle.edit')
                       : isCopy
-                        ? 'สร้างสูตรใหม่จากสูตรที่มีอยู่'
-                        : 'กำหนดวัตถุดิบสำหรับสินค้า'}
+                        ? t('bomModal.subtitle.copy')
+                        : t('bomModal.subtitle.create')}
                   </p>
                 </div>
               </div>
@@ -497,7 +498,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-1">
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        สินค้า <span className="text-danger">*</span>
+                        {t('bomModal.labels.product')} <span className="text-danger">*</span>
                       </label>
                       <SearchableDropdown
                         value={productId}
@@ -507,42 +508,42 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
                           searchText: `${p.code} ${p.name} ${p.category}`,
                         }))}
-                        placeholder="เลือกสินค้าสำเร็จรูป / ระหว่างผลิต..."
+                        placeholder={t('bomModal.placeholders.product')}
                         disabled={isEdit}
                       />
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        เวอร์ชัน <span className="text-danger">*</span>
+                        {t('bomModal.labels.version')} <span className="text-danger">*</span>
                       </label>
                       <input
                         type="text"
                         value={version}
                         onChange={(e) => setVersion(e.target.value)}
-                        placeholder="เช่น v1.0, v2.1"
+                        placeholder={t('bomModal.placeholders.version')}
                         className="phopy-input w-full"
                       />
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        สถานะ
+                        {t('bomModal.labels.status')}
                       </label>
                       <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
                         className="phopy-input w-full"
                       >
-                        <option value="DRAFT">Draft</option>
-                        <option value="ACTIVE">Active</option>
-                        <option value="ARCHIVED">Archived</option>
+                        <option value="DRAFT">{t('bomModal.status.draft')}</option>
+                        <option value="ACTIVE">{t('bomModal.status.active')}</option>
+                        <option value="ARCHIVED">{t('bomModal.status.archived')}</option>
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        ประเภท BOM
+                        {t('bomModal.labels.bomType')}
                       </label>
                       <button
                         type="button"
@@ -558,7 +559,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           <Square className="w-5 h-5" />
                         )}
                         <GitBranch className="w-4 h-4" />
-                        <span>Semi-finished (สำหรับเป็น Child BOM)</span>
+                        <span>{t('bomModal.semiFinishedLabel')}</span>
                       </button>
                     </div>
                   </div>
@@ -567,7 +568,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <label className="block text-sm font-medium text-[var(--fg-2)]">
-                        รายการวัตถุดิบ / Child BOM <span className="text-danger">*</span>
+                        {t('bomModal.labels.items')} <span className="text-danger">*</span>
                       </label>
                       <div className="flex items-center gap-2">
                         <button
@@ -576,7 +577,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50"
                         >
                           <Box className="w-4 h-4" />
-                          เพิ่มวัตถุดิบ
+                          {t('bomModal.addMaterial')}
                         </button>
                         <button
                           type="button"
@@ -585,7 +586,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           disabled={availableChildBOMs.length === 0}
                         >
                           <GitBranch className="w-4 h-4" />
-                          เพิ่ม Child BOM
+                          {t('bomModal.addChildBOM')}
                         </button>
                       </div>
                     </div>
@@ -629,18 +630,18 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                       label: `${m.code} - ${m.name}`,
                                       searchText: `${m.code} ${m.name}`,
                                     }))}
-                                    placeholder="ค้นหาวัตถุดิบ..."
+                                    placeholder={t('bomModal.placeholders.searchMaterial')}
                                   />
                                   {!row.materialId && (
                                     <div className="mt-1 flex items-center gap-2">
-                                      <span className="text-xs text-[var(--fg-4)]">ไม่พบวัตถุดิบ?</span>
+                                      <span className="text-xs text-[var(--fg-4)]">{t('bomModal.noMaterialFound')}</span>
                                       <button
                                         type="button"
                                         onClick={() => setIsMaterialModalOpen(true)}
                                         className="text-xs text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
                                       >
                                         <Plus className="w-3 h-3" />
-                                        เพิ่มวัตถุดิบใหม่
+                                        {t('bomModal.addNewMaterial')}
                                       </button>
                                     </div>
                                   )}
@@ -654,7 +655,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                     label: `${b.productCode || b.product?.code} - ${b.productName || b.product?.name} (฿${(b.totalCost || 0).toLocaleString()})`,
                                     searchText: `${b.productCode || b.product?.code} ${b.productName || b.product?.name}`,
                                   }))}
-                                  placeholder="เลือก Semi-finished BOM..."
+                                  placeholder={t('bomModal.placeholders.selectChildBOM')}
                                 />
                               )}
                             </div>
@@ -667,7 +668,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 onChange={(e) =>
                                   handleItemChange(row.id, 'quantity', parseFloat(e.target.value) || 0)
                                 }
-                                placeholder="จำนวน"
+                                placeholder={t('bomModal.placeholders.quantity')}
                                 min="0"
                                 step="0.01"
                                 className="phopy-input w-full text-sm"
@@ -688,7 +689,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                     const hasCurrent = opts.some(u => u.code === unitCode)
                                     const allOpts = hasCurrent || !unitCode ? opts : [{ code: unitCode, label: unitCode }, ...opts]
                                     if (allOpts.length === 0) {
-                                      return <option value="">เลือกหน่วย</option>
+                                      return <option value="">{t('bomModal.unitOptions.selectUnit')}</option>
                                     }
                                     return allOpts.map((u) => (
                                       <option key={u.code} value={u.code}>{u.label}</option>
@@ -697,7 +698,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 </select>
                               ) : (
                                 <div className="phopy-input w-full text-sm bg-[var(--surface-2)] text-[var(--primary)] font-semibold flex items-center justify-center">
-                                  {selectedChildBOM ? 'ชุด' : '-'}
+                                  {selectedChildBOM ? t('bomModal.unitOptions.set') : '-'}
                                 </div>
                               )}
                             </div>
@@ -736,7 +737,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
                     {availableChildBOMs.length === 0 && (
                       <p className="text-sm text-[var(--fg-4)] mt-2">
-                        * ไม่มี Semi-finished BOM ที่สามารถใช้เป็น Child BOM ได้ (สร้าง BOM ที่เป็น Semi-finished ก่อน)
+                        * {t('bomModal.noChildBOMs')}
                       </p>
                     )}
                   </div>
@@ -749,7 +750,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                           <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-amber-300">
-                              <span className="font-medium">{issue.materialName}</span>: ยังไม่มีการแปลงหน่วย "{issue.from}" → "{issue.to}"
+                              <span className="font-medium">{issue.materialName}</span>
+                              {t('bomModal.conversionIssue', { from: issue.from, to: issue.to })}
                             </p>
                             <div className="flex gap-2 mt-1.5">
                               <button
@@ -780,14 +782,14 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 }}
                                 className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
                               >
-                                แก้ไขหน่วยใน Stock
+                                {t('bomModal.editUnitInStock')}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => window.open('/settings/unit-conversions', '_blank')}
                                 className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
                               >
-                                ตั้งค่าหน่วยทั้งระบบ
+                                {t('bomModal.globalUnitSettings')}
                               </button>
                             </div>
                           </div>
@@ -798,7 +800,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
 
                   {/* Total Cost */}
                   <div className="flex items-center justify-end gap-4 pt-4 border-t border-[var(--border)]">
-                    <span className="text-[var(--fg-3)]">ต้นทุนรวม:</span>
+                    <span className="text-[var(--fg-3)]">{t('bomModal.totalCost')}</span>
                     <span className="text-2xl font-bold text-[var(--primary)]">
                       ฿{totalCost.toLocaleString()}
                     </span>
@@ -814,7 +816,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 onClick={onClose}
                 className="px-6 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors"
               >
-                ยกเลิก
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleSubmit}
@@ -822,7 +824,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 className="phopy-btn-primary flex items-center gap-2"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isEdit ? 'บันทึกการแก้ไข' : 'สร้าง BOM'}
+                {isEdit ? t('bomModal.saveButton') : t('bomModal.createButton')}
               </button>
             </div>
           </motion.div>
@@ -846,17 +848,17 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     <AlertTriangle className="w-5 h-5 text-warning" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-[var(--fg-1)]">ต้องเปลี่ยนประเภทสินค้าก่อน</h3>
-                    <p className="text-sm text-[var(--fg-3)]">สินค้านี้ถูกตั้งเป็น "วัตถุดิบ"</p>
+                    <h3 className="text-lg font-bold text-[var(--fg-1)]">{t('bomModal.categoryChange.title')}</h3>
+                    <p className="text-sm text-[var(--fg-3)]">{t('bomModal.categoryChange.subtitle')}</p>
                   </div>
                 </div>
 
                 <div className="p-5 space-y-4">
                   <p className="text-sm text-[var(--fg-2)]">
                     <span className="text-[var(--primary)] font-semibold">{categoryChangeModal.productName}</span>{' '}
-                    ถูกตั้งค่าเป็น วัตถุดิบ (Material) ซึ่งไม่สามารถใช้เป็น output ของ BOM ได้
+                    {t('bomModal.categoryChange.description')}
                   </p>
-                  <p className="text-sm text-[var(--fg-3)]">กรุณาเลือกประเภทที่ถูกต้องสำหรับสินค้าที่จะผลิต:</p>
+                  <p className="text-sm text-[var(--fg-3)]">{t('bomModal.categoryChange.instruction')}</p>
 
                   <div className="grid grid-cols-2 gap-3">
                     <button
@@ -864,18 +866,18 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       disabled={changingCategory}
                       className="p-4 rounded-lg border border-phopy-indigo/30 bg-phopy-indigo/10 hover:bg-[var(--primary-soft)] text-left transition-all group"
                     >
-                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Check className="w-4 h-4" /> สินค้าสำเร็จรูป</div>
-                      <div className="text-xs text-[var(--fg-3)]">Finished Good</div>
-                      <div className="text-xs text-[var(--fg-4)] mt-2">สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Check className="w-4 h-4" /> {t('bomModal.categoryChange.finished.title')}</div>
+                      <div className="text-xs text-[var(--fg-3)]">{t('bomModal.categoryChange.finished.subtitle')}</div>
+                      <div className="text-xs text-[var(--fg-4)] mt-2">{t('bomModal.categoryChange.finished.description')}</div>
                     </button>
                     <button
                       onClick={() => handleConfirmCategoryChange('wip')}
                       disabled={changingCategory}
                       className="p-4 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 text-left transition-all"
                     >
-                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Wrench className="w-4 h-4" /> กึ่งสำเร็จรูป</div>
-                      <div className="text-xs text-[var(--fg-3)]">Semi-Finished Good</div>
-                      <div className="text-xs text-[var(--fg-4)] mt-2">ผ่านการผลิตขั้นต้น ใช้เป็น Child BOM ต่อได้</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Wrench className="w-4 h-4" /> {t('bomModal.categoryChange.wip.title')}</div>
+                      <div className="text-xs text-[var(--fg-3)]">{t('bomModal.categoryChange.wip.subtitle')}</div>
+                      <div className="text-xs text-[var(--fg-4)] mt-2">{t('bomModal.categoryChange.wip.description')}</div>
                     </button>
                   </div>
                 </div>
@@ -885,7 +887,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                     onClick={() => setCategoryChangeModal(null)}
                     className="px-4 py-2 text-sm border border-[var(--border)] rounded text-[var(--fg-3)] hover:text-[var(--fg-2)]"
                   >
-                    ยกเลิก
+                    {t('bomModal.categoryChange.cancel')}
                   </button>
                 </div>
               </motion.div>
@@ -933,6 +935,7 @@ interface CreateMaterialModalProps {
 }
 
 function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModalProps) {
+  const { t } = useTranslation()
   const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState<MaterialCategory | null>(null)
   const [formData, setFormData] = useState({
@@ -978,7 +981,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.code || !formData.name || !formData.categoryId) {
-      alert('กรุณากรอกรหัส ชื่อ และเลือกหมวดหมู่วัตถุดิบ')
+      alert(t('bomModal.createMaterial.errors.required'))
       return
     }
 
@@ -1010,7 +1013,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
       setSelectedCategory(null)
     } catch (err) {
       console.error('Failed to create material:', err)
-      alert('ไม่สามารถสร้างวัตถุดิบได้')
+      alert(t('bomModal.createMaterial.errors.createFailed'))
     } finally {
       setSaving(false)
     }
@@ -1038,7 +1041,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
             <div className="p-4 border-b border-[var(--border)] flex items-center justify-between bg-phopy-indigo/10">
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-[var(--primary)]" />
-                <h3 className="text-lg font-bold text-[var(--fg-1)]">เพิ่มวัตถุดิบใหม่</h3>
+                <h3 className="text-lg font-bold text-[var(--fg-1)]">{t('bomModal.createMaterial.title')}</h3>
               </div>
               <button onClick={onClose} className="p-1 hover:bg-[var(--bg)] rounded">
                 <X className="w-5 h-5 text-[var(--fg-3)]" />
@@ -1048,7 +1051,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
             <form onSubmit={handleSubmit} className="p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">รหัส *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.code')} *</label>
                   <input
                     type="text"
                     value={formData.code}
@@ -1059,14 +1062,14 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">หมวดหมู่ *</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.category')} *</label>
                   <select
                     value={formData.categoryId}
                     onChange={(e) => handleCategoryChange(e.target.value)}
                     className="phopy-input w-full text-sm"
                     required
                   >
-                    <option value="">เลือกหมวดหมู่</option>
+                    <option value="">{t('bomModal.createMaterial.placeholders.selectCategory')}</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1078,40 +1081,40 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
 
               {/* Unit - เลือกได้จากหมวดหมู่หรือ override */}
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">หน่วย *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.unit')} *</label>
                 <select
                   value={formData.unit || selectedCategory?.defaultUnit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                   className="phopy-input w-full text-sm"
                   required
                 >
-                  <option value="">เลือกหน่วย</option>
+                  <option value="">{t('bomModal.createMaterial.placeholders.selectUnit')}</option>
                   {availableUnits.map((u) => (
                     <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                   ))}
                 </select>
                 {selectedCategory?.defaultUnit && (
                   <p className="text-xs text-[var(--fg-4)] mt-1">
-                    ค่าเริ่มต้นจากหมวดหมู่: {selectedCategory.defaultUnit}
+                    {t('bomModal.createMaterial.defaultUnit', { unit: selectedCategory.defaultUnit })}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-1">ชื่อวัตถุดิบ *</label>
+                <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.name')} *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="phopy-input w-full text-sm"
-                  placeholder="ชื่อวัตถุดิบ"
+                  placeholder={t('bomModal.createMaterial.placeholders.name')}
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">ต้นทุน/หน่วย</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.unitCost')}</label>
                   <input
                     type="number"
                     value={formData.unitCost}
@@ -1122,7 +1125,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">สต๊อกเริ่มต้น</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.initialStock')}</label>
                   <input
                     type="number"
                     value={formData.initialStock}
@@ -1134,7 +1137,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Min Stock</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.minStock')}</label>
                   <input
                     type="number"
                     value={formData.minStock}
@@ -1144,7 +1147,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-1">Max Stock</label>
+                  <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.maxStock')}</label>
                   <input
                     type="number"
                     value={formData.maxStock}
@@ -1161,7 +1164,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                   onClick={onClose}
                   className="px-3 py-1.5 text-sm border border-[var(--border)] rounded text-[var(--fg-3)] hover:text-[var(--fg-2)]"
                 >
-                  ยกเลิก
+                  {t('bomModal.createMaterial.cancel')}
                 </button>
                 <button
                   type="submit"
@@ -1170,7 +1173,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 >
                   {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                   <Plus className="w-3 h-3" />
-                  เพิ่มวัตถุดิบ
+                  {t('bomModal.createMaterial.addMaterial')}
                 </button>
               </div>
             </form>
