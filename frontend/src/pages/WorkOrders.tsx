@@ -20,8 +20,12 @@ import {
   X,
   XCircle,
   ClipboardCheck,
+  HardHat,
+  Banknote,
+  Landmark,
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
+import subcontractService, { Subcontract } from '../services/subcontract'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
 
@@ -717,6 +721,27 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
+  const [contracts, setContracts] = useState<Subcontract[]>([])
+  const [contractsLoading, setContractsLoading] = useState(false)
+  const [showAddContract, setShowAddContract] = useState(false)
+  const [payingContract, setPayingContract] = useState<Subcontract | null>(null)
+
+  const loadContracts = async (woId: string) => {
+    setContractsLoading(true)
+    try {
+      setContracts(await subcontractService.getAll({ work_order_id: woId }))
+    } catch {
+      setContracts([])
+    } finally {
+      setContractsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (wo) loadContracts(wo.id)
+    else setContracts([])
+  }, [wo?.id])
+
   if (!wo) return null
   const statusConf = getStatusConfig(t, wo.status)
   const priorityConf = getPriorityConfig(t, wo.priority)
@@ -886,6 +911,74 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
               )}
             </div>
 
+            {/* Subcontract (Phase 2: จ้างเหมาค่าแรง) */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-[var(--fg-2)] flex items-center gap-2">
+                  <HardHat className="w-5 h-5 text-[var(--primary)]" />
+                  {t('workOrders.subcontract.title')}
+                </h3>
+                <button onClick={() => setShowAddContract(true)}
+                  className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> {t('workOrders.subcontract.add')}
+                </button>
+              </div>
+              {contractsLoading ? (
+                <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-[var(--primary)]" /></div>
+              ) : contracts.length === 0 ? (
+                <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.none')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {contracts.map((c) => {
+                    const outstanding = Math.max(0, Math.round((c.labor_amount - c.paid_amount) * 100) / 100)
+                    return (
+                      <div key={c.id} className="p-3 bg-[var(--surface-2)] rounded-lg">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-[var(--fg-2)] font-medium">{c.contract_number}</p>
+                            <p className="text-xs text-[var(--fg-4)]">{c.supplier_name} · ฿{c.rate_per_unit}/{t('workOrders.detail.units')}</p>
+                          </div>
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            c.status === 'SETTLED' ? 'bg-[var(--success-soft)] text-success' :
+                            c.status === 'CANCELLED' ? 'bg-[var(--surface-sunken)] text-[var(--fg-4)]' :
+                            'bg-[var(--warning-soft)] text-warning'
+                          }`}>
+                            {c.status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 mt-2 text-xs">
+                          <div>
+                            <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.agreed')}</p>
+                            <p className="text-[var(--fg-2)]">{c.agreed_qty}</p>
+                          </div>
+                          <div>
+                            <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.billed')}</p>
+                            <p className="text-[var(--fg-2)]">{c.billed_qty}</p>
+                          </div>
+                          <div>
+                            <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.laborAmount')}</p>
+                            <p className="text-[var(--fg-2)]">฿{c.labor_amount.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.paid')}</p>
+                            <p className="text-success">฿{c.paid_amount.toLocaleString()}</p>
+                          </div>
+                        </div>
+                        {outstanding > 0 && c.status === 'OPEN' && (
+                          <div className="flex justify-end mt-2">
+                            <button onClick={() => setPayingContract(c)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] hover:bg-phopy-indigo/20 flex items-center gap-1">
+                              <Banknote className="w-3 h-3" /> {t('workOrders.subcontract.pay')} (฿{outstanding.toLocaleString()})
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Notes */}
             {wo.notes && (
               <div className="bg-[var(--surface-2)] p-4 rounded-lg">
@@ -933,6 +1026,209 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                   {next.label}
                 </button>
               )}
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+
+      <AddSubcontractModal open={showAddContract} workOrderId={wo.id}
+        onClose={() => setShowAddContract(false)} onSaved={() => loadContracts(wo.id)} />
+      <PaySubcontractModal contract={payingContract}
+        onClose={() => setPayingContract(null)} onPaid={() => loadContracts(wo.id)} />
+    </AnimatePresence>
+  )
+}
+
+function AddSubcontractModal({ open, workOrderId, onClose, onSaved }: {
+  open: boolean; workOrderId: string; onClose: () => void; onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [suppliers, setSuppliers] = useState<any[]>([])
+  const [supplierId, setSupplierId] = useState('')
+  const [ratePerUnit, setRatePerUnit] = useState<number>(0)
+  const [agreedQty, setAgreedQty] = useState<number>(0)
+  const [whtRate, setWhtRate] = useState<number>(3)
+  const [dueDate, setDueDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    api.get('/suppliers').then(res => {
+      const list: any[] = res.data?.data || []
+      list.sort((a, b) => (a.type === 'SERVICE' ? -1 : 0) - (b.type === 'SERVICE' ? -1 : 0))
+      setSuppliers(list)
+    }).catch(() => {})
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setSupplierId(''); setRatePerUnit(0); setAgreedQty(0); setWhtRate(3); setDueDate(''); setNotes('')
+    }
+  }, [open])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!supplierId || ratePerUnit <= 0 || agreedQty <= 0) return
+    setSaving(true)
+    try {
+      await subcontractService.create({
+        work_order_id: workOrderId,
+        supplier_id: supplierId,
+        rate_per_unit: ratePerUnit,
+        agreed_qty: agreedQty,
+        wht_rate: whtRate,
+        due_date: dueDate || undefined,
+        notes,
+      })
+      onSaved(); onClose()
+    } catch (err: any) {
+      alert(err.response?.data?.message || t('workOrders.subcontract.createFailed'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+          <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+            onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-md">
+            <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.subcontract.addTitle')}</h2>
+              <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.supplierLabel')}</label>
+                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="phopy-input w-full" required>
+                  <option value="">{t('workOrders.subcontract.selectSupplier')}</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.type === 'SERVICE' ? ` (${t('workOrders.subcontract.serviceType')})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.rateLabel')}</label>
+                  <input type="number" min="0" step="0.01" value={ratePerUnit}
+                    onChange={(e) => setRatePerUnit(Number(e.target.value))} className="phopy-input w-full" required />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.agreedQtyLabel')}</label>
+                  <input type="number" min="1" value={agreedQty}
+                    onChange={(e) => setAgreedQty(Number(e.target.value))} className="phopy-input w-full" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.whtRateLabel')}</label>
+                  <input type="number" min="0" max="100" step="0.5" value={whtRate}
+                    onChange={(e) => setWhtRate(Number(e.target.value))} className="phopy-input w-full" />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.dueDateLabel')}</label>
+                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="phopy-input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('common.notes')}</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="phopy-input w-full text-sm" rows={2} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                  {t('common.cancel')}
+                </button>
+                <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {t('common.save')}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+function PaySubcontractModal({ contract, onClose, onPaid }: {
+  contract: Subcontract | null; onClose: () => void; onPaid: () => void
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [method, setMethod] = useState<'CASH' | 'BANK'>('BANK')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setMethod('BANK') }, [contract?.id])
+
+  if (!contract) return null
+  const outstanding = Math.max(0, Math.round((contract.labor_amount - contract.paid_amount) * 100) / 100)
+  const whtAmount = Math.round(outstanding * (contract.wht_rate || 0)) / 100
+  const netAmount = Math.round((outstanding - whtAmount) * 100) / 100
+
+  const handlePay = async () => {
+    setSaving(true)
+    try {
+      await subcontractService.pay(contract.id, { payment_method: method })
+      onPaid(); onClose()
+    } catch (err: any) {
+      alert(err.response?.data?.message || t('workOrders.subcontract.payFailed'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+        <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+          onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-sm">
+          <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.subcontract.payTitle')}</h2>
+            <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-sm text-[var(--fg-3)]">{contract.contract_number} — {contract.supplier_name}</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setMethod('CASH')}
+                className={`flex-1 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 ${
+                  method === 'CASH' ? 'border-phopy-indigo bg-phopy-indigo/10 text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)]'
+                }`}>
+                <Banknote className="w-4 h-4" /> {t('workOrders.subcontract.cash')}
+              </button>
+              <button type="button" onClick={() => setMethod('BANK')}
+                className={`flex-1 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 ${
+                  method === 'BANK' ? 'border-phopy-indigo bg-phopy-indigo/10 text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)]'
+                }`}>
+                <Landmark className="w-4 h-4" /> {t('workOrders.subcontract.bank')}
+              </button>
+            </div>
+            <div className="bg-[var(--surface-2)] rounded-lg p-3 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[var(--fg-4)]">{t('workOrders.subcontract.outstanding')}</span>
+                <span className="text-[var(--fg-2)]">฿{outstanding.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--fg-4)]">{t('workOrders.subcontract.whtDeduct', { rate: contract.wht_rate })}</span>
+                <span className="text-danger">-฿{whtAmount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t border-[var(--border)]/30 pt-1">
+                <span className="text-[var(--fg-2)]">{t('workOrders.subcontract.netPay')}</span>
+                <span className="text-success">฿{netAmount.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                {t('common.cancel')}
+              </button>
+              <button type="button" onClick={handlePay} disabled={saving || outstanding <= 0}
+                className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Banknote className="w-4 h-4" />}
+                {t('workOrders.subcontract.confirmPay')}
+              </button>
             </div>
           </div>
         </motion.div>

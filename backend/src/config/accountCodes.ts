@@ -40,6 +40,11 @@ export const ACC = {
   COGS_PRODUCT:      '5101',  // ต้นทุนสินค้าขาย
   COGS_RAW_MATERIAL: '5102',  // ต้นทุนวัตถุดิบใช้ไป
   DIRECT_LABOR:      '5103',
+  // NOTE: 5104 is already allocated to "ค่าใช้จ่ายผลิตแปรผัน" (Variable Overhead) in
+  // DEFAULT_CHART_OF_ACCOUNTS (accounts.routes.ts) and already exists in production tenant
+  // data with that name. Using 5106 instead keeps subcontract labor on its own account
+  // instead of silently reusing the Variable Overhead account via getOrCreateAccount().
+  SUBCON_LABOR:      '5106',  // ค่าจ้างเหมาช่วง (Phase 2)
 
   // Operating Expenses (examples)
   DEPRECIATION:      '5201',
@@ -76,6 +81,10 @@ export const ACC_META: Record<string, AccountMeta> = {
 
   [ACC.COGS_PRODUCT]:     { name: 'ต้นทุนสินค้าขาย', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
   [ACC.COGS_RAW_MATERIAL]:{ name: 'ต้นทุนวัตถุดิบใช้ไป', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
+  [ACC.DIRECT_LABOR]:     { name: 'ค่าแรงทางตรง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
+  [ACC.SUBCON_LABOR]:     { name: 'ค่าจ้างเหมาช่วง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
+
+  [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
 }
 
 export default ACC

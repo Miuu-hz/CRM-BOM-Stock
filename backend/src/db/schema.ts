@@ -1606,5 +1606,31 @@ export function applySchema(db: any): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- ==================== WORK ORDER SUBCONTRACTS (Phase 2: จ้างเหมาค่าแรง) ====================
+    -- สัญญาจ้างเหมาช่วงต่อ Work Order (piece-rate) — QC ผ่านปุ๊บ ตั้งค่าแรงค้างจ่ายอัตโนมัติ
+    CREATE TABLE IF NOT EXISTS wo_subcontracts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      contract_number TEXT,                 -- ออกด้วย formatDocumentNumber('SC', tenantId, 'SUBCONTRACT', undefined, 5)
+      work_order_id TEXT NOT NULL,
+      supplier_id TEXT NOT NULL,            -- suppliers (แนะนำ type SERVICE แต่ไม่บังคับ)
+      supplier_name TEXT,                   -- denormalize ไว้แสดงผล
+      contract_type TEXT DEFAULT 'PIECE_RATE',  -- 'PIECE_RATE' | 'OUTSOURCE' (OUTSOURCE ใช้ใน Phase 3)
+      purchase_order_id TEXT,               -- สำหรับ Phase 3
+      rate_per_unit REAL DEFAULT 0,
+      agreed_qty INTEGER DEFAULT 0,
+      received_qty INTEGER DEFAULT 0,       -- Phase 3
+      billed_qty INTEGER DEFAULT 0,         -- จำนวนที่คิดค่าแรงไปแล้ว (กันคิดซ้ำ)
+      labor_amount REAL DEFAULT 0,          -- ค่าแรงสะสมที่ตั้งค้างจ่ายแล้ว
+      wht_rate REAL DEFAULT 3,
+      paid_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'OPEN',           -- OPEN, SETTLED, CLOSED, CANCELLED (Phase 3 เพิ่ม MATERIAL_SENT ฯลฯ)
+      due_date TEXT, notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, contract_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wo_subcontracts_wo ON wo_subcontracts(work_order_id);
   `)
 }

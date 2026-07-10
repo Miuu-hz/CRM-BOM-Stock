@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { accrueSubcontractLabor } from '../services/subcontract.service'
 
 const router = Router()
 router.use(authenticate)
@@ -166,6 +167,15 @@ router.post('/inspections/:id/complete', (req: Request, res: Response) => {
     }
   })
   tx()
+
+  // Phase 2: QC ผ่านปุ๊บ ตั้งค่าแรงเหมาช่วง (piece-rate) ค้างจ่ายอัตโนมัติ ถ้า WO นี้มีสัญญาจ้างเหมาเปิดอยู่
+  if (inspection.work_order_id && passed_qty > 0) {
+    try {
+      accrueSubcontractLabor(tid, inspection.work_order_id, passed_qty, req.user!.email)
+    } catch (err) {
+      console.error('accrueSubcontractLabor error:', err)
+    }
+  }
 
   res.json({ success: true, data: { status, passed_qty, rejected_qty } })
 })

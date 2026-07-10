@@ -100,7 +100,8 @@ const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '5103', name: 'ค่าแรงงานตรง', type: 'EXPENSE', category: 'DIRECT_LABOR', level: 2, parent_code: '51', normal_balance: 'DEBIT' },
   { code: '5104', name: 'ค่าใช้จ่ายผลิตแปรผัน', type: 'EXPENSE', category: 'VARIABLE_OVERHEAD', level: 2, parent_code: '51', normal_balance: 'DEBIT' },
   { code: '5105', name: 'ค่าใช้จ่ายผลิตคงที่', type: 'EXPENSE', category: 'FIXED_OVERHEAD', level: 2, parent_code: '51', normal_balance: 'DEBIT' },
-  
+  { code: '5106', name: 'ค่าจ้างเหมาช่วง', type: 'EXPENSE', category: 'COGS', level: 2, parent_code: '51', normal_balance: 'DEBIT' },
+
   { code: '52', name: 'ค่าใช้จ่ายในการขาย', type: 'EXPENSE', category: 'SELLING_EXPENSE', level: 1, parent_code: '5', normal_balance: 'DEBIT' },
   { code: '5201', name: 'ค่าโฆษณาและประชาสัมพันธ์', type: 'EXPENSE', category: 'MARKETING', level: 2, parent_code: '52', normal_balance: 'DEBIT' },
   { code: '5202', name: 'ค่าขนส่งสินค้า', type: 'EXPENSE', category: 'SHIPPING', level: 2, parent_code: '52', normal_balance: 'DEBIT' },

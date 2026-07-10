@@ -1099,4 +1099,39 @@ export function runMigrations(db: any): void {
     db.exec(`ALTER TABLE company_settings ADD COLUMN qc_gate_enabled INTEGER DEFAULT 0`)
     console.log('✅ Migration: company_settings.qc_gate_enabled added')
   } catch { /* column already exists */ }
+
+  // Migration: Phase 2 — Subcontract piece-rate labor (wo_subcontracts)
+  // Table is also created via CREATE TABLE IF NOT EXISTS in schema.ts (applySchema runs on
+  // every boot); repeated here for parity with the other table migrations in this file and
+  // as a safety net in case applySchema and runMigrations ever diverge.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS wo_subcontracts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        contract_number TEXT,
+        work_order_id TEXT NOT NULL,
+        supplier_id TEXT NOT NULL,
+        supplier_name TEXT,
+        contract_type TEXT DEFAULT 'PIECE_RATE',
+        purchase_order_id TEXT,
+        rate_per_unit REAL DEFAULT 0,
+        agreed_qty INTEGER DEFAULT 0,
+        received_qty INTEGER DEFAULT 0,
+        billed_qty INTEGER DEFAULT 0,
+        labor_amount REAL DEFAULT 0,
+        wht_rate REAL DEFAULT 3,
+        paid_amount REAL DEFAULT 0,
+        status TEXT DEFAULT 'OPEN',
+        due_date TEXT, notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, contract_number)
+      );
+      CREATE INDEX IF NOT EXISTS idx_wo_subcontracts_wo ON wo_subcontracts(work_order_id);
+    `)
+    console.log('✅ Migration: wo_subcontracts table ready')
+  } catch (e) {
+    console.error('⚠️ wo_subcontracts migration error:', e)
+  }
 }

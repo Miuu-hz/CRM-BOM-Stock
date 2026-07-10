@@ -154,6 +154,7 @@ import { startBackupScheduler } from './services/backup.scheduler'
 
 
 import qcRoutes from './routes/qc.routes'
+import subcontractRoutes from './routes/subcontract.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -511,6 +512,7 @@ app.use('/api/users', userRoutes)
 
 
 app.use('/api/qc', qcRoutes)
+app.use('/api/subcontracts', subcontractRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)
