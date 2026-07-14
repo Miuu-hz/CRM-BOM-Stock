@@ -59,6 +59,16 @@ export interface PhopyBoardExtendedData {
     currentRatio: number; quickRatio: number; cashBurnRate: number
     wcTrend: Array<{ month: string; currentRatio: number; quickRatio: number }>
   }
+  outsourceProduction: {
+    stockValue: { inHouse: number; offsite: number }
+    suppliersWithStock: Array<{ supplier_id: string; supplier_name: string; value: number; items: number }>
+    overdueContracts: Array<{ id: string; contract_number: string; supplier_id: string; supplier_name: string; due_date: string; status: string; outstanding_amount: number }>
+    yield: {
+      good: number; scrap: number; shortage: number
+      goodPct: number; scrapPct: number; shortagePct: number
+      byContract: Array<{ contract_id: string; contract_number: string; supplier_name: string; good: number; scrap: number; shortage: number; goodPct: number }>
+    }
+  }
 }
 
 export const phopyBoardApi = {

@@ -725,6 +725,9 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
   const [contractsLoading, setContractsLoading] = useState(false)
   const [showAddContract, setShowAddContract] = useState(false)
   const [payingContract, setPayingContract] = useState<Subcontract | null>(null)
+  const [issuingContract, setIssuingContract] = useState<Subcontract | null>(null)
+  const [receivingContract, setReceivingContract] = useState<Subcontract | null>(null)
+  const [reconcileContract, setReconcileContract] = useState<Subcontract | null>(null)
 
   const loadContracts = async (woId: string) => {
     setContractsLoading(true)
@@ -935,11 +938,18 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                       <div key={c.id} className="p-3 bg-[var(--surface-2)] rounded-lg">
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="text-[var(--fg-2)] font-medium">{c.contract_number}</p>
+                            <p className="text-[var(--fg-2)] font-medium flex items-center gap-1.5">
+                              {c.contract_number}
+                              {c.contract_type === 'OUTSOURCE' && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-phopy-indigo/10 text-[var(--primary)]">
+                                  {t('workOrders.subcontract.typeOutsource')}
+                                </span>
+                              )}
+                            </p>
                             <p className="text-xs text-[var(--fg-4)]">{c.supplier_name} · ฿{c.rate_per_unit}/{t('workOrders.detail.units')}</p>
                           </div>
                           <span className={`px-2 py-1 rounded text-xs ${
-                            c.status === 'SETTLED' ? 'bg-[var(--success-soft)] text-success' :
+                            c.status === 'SETTLED' || c.status === 'RECEIVED' ? 'bg-[var(--success-soft)] text-success' :
                             c.status === 'CANCELLED' ? 'bg-[var(--surface-sunken)] text-[var(--fg-4)]' :
                             'bg-[var(--warning-soft)] text-warning'
                           }`}>
@@ -952,8 +962,10 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                             <p className="text-[var(--fg-2)]">{c.agreed_qty}</p>
                           </div>
                           <div>
-                            <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.billed')}</p>
-                            <p className="text-[var(--fg-2)]">{c.billed_qty}</p>
+                            <p className="text-[var(--fg-4)]">
+                              {c.contract_type === 'OUTSOURCE' ? t('workOrders.subcontract.received') : t('workOrders.subcontract.billed')}
+                            </p>
+                            <p className="text-[var(--fg-2)]">{c.contract_type === 'OUTSOURCE' ? c.received_qty : c.billed_qty}</p>
                           </div>
                           <div>
                             <p className="text-[var(--fg-4)]">{t('workOrders.subcontract.laborAmount')}</p>
@@ -964,14 +976,32 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                             <p className="text-success">฿{c.paid_amount.toLocaleString()}</p>
                           </div>
                         </div>
-                        {outstanding > 0 && c.status === 'OPEN' && (
-                          <div className="flex justify-end mt-2">
+                        <div className="flex flex-wrap justify-end gap-2 mt-2">
+                          {c.contract_type === 'OUTSOURCE' && ['OPEN', 'MATERIAL_SENT', 'PARTIAL_RECEIVED'].includes(c.status) && (
+                            <button onClick={() => setIssuingContract(c)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] hover:bg-phopy-indigo/20 flex items-center gap-1">
+                              <PackageCheck className="w-3 h-3" /> {t('workOrders.subcontract.issueMaterials')}
+                            </button>
+                          )}
+                          {c.contract_type === 'OUTSOURCE' && !['SETTLED', 'CANCELLED', 'CLOSED'].includes(c.status) && (
+                            <button onClick={() => setReceivingContract(c)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] hover:bg-phopy-indigo/20 flex items-center gap-1">
+                              <ClipboardCheck className="w-3 h-3" /> {t('workOrders.subcontract.receiveGoods')}
+                            </button>
+                          )}
+                          {c.contract_type === 'OUTSOURCE' && (
+                            <button onClick={() => setReconcileContract(c)}
+                              className="text-xs px-2.5 py-1 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)] flex items-center gap-1">
+                              <Eye className="w-3 h-3" /> {t('workOrders.subcontract.viewReconcile')}
+                            </button>
+                          )}
+                          {outstanding > 0 && c.status !== 'CANCELLED' && (
                             <button onClick={() => setPayingContract(c)}
                               className="text-xs px-2.5 py-1 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] hover:bg-phopy-indigo/20 flex items-center gap-1">
                               <Banknote className="w-3 h-3" /> {t('workOrders.subcontract.pay')} (฿{outstanding.toLocaleString()})
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     )
                   })}
@@ -1035,6 +1065,11 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
         onClose={() => setShowAddContract(false)} onSaved={() => loadContracts(wo.id)} />
       <PaySubcontractModal contract={payingContract}
         onClose={() => setPayingContract(null)} onPaid={() => loadContracts(wo.id)} />
+      <IssueMaterialsModal contract={issuingContract}
+        onClose={() => setIssuingContract(null)} onSaved={() => loadContracts(wo.id)} />
+      <ReceiveGoodsModal contract={receivingContract}
+        onClose={() => setReceivingContract(null)} onSaved={() => loadContracts(wo.id)} />
+      <ReconcileModal contract={reconcileContract} onClose={() => setReconcileContract(null)} />
     </AnimatePresence>
   )
 }
@@ -1046,6 +1081,7 @@ function AddSubcontractModal({ open, workOrderId, onClose, onSaved }: {
   useModalClose(onClose)
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [supplierId, setSupplierId] = useState('')
+  const [contractType, setContractType] = useState<'PIECE_RATE' | 'OUTSOURCE'>('PIECE_RATE')
   const [ratePerUnit, setRatePerUnit] = useState<number>(0)
   const [agreedQty, setAgreedQty] = useState<number>(0)
   const [whtRate, setWhtRate] = useState<number>(3)
@@ -1064,7 +1100,7 @@ function AddSubcontractModal({ open, workOrderId, onClose, onSaved }: {
 
   useEffect(() => {
     if (!open) {
-      setSupplierId(''); setRatePerUnit(0); setAgreedQty(0); setWhtRate(3); setDueDate(''); setNotes('')
+      setSupplierId(''); setContractType('PIECE_RATE'); setRatePerUnit(0); setAgreedQty(0); setWhtRate(3); setDueDate(''); setNotes('')
     }
   }, [open])
 
@@ -1076,6 +1112,7 @@ function AddSubcontractModal({ open, workOrderId, onClose, onSaved }: {
       await subcontractService.create({
         work_order_id: workOrderId,
         supplier_id: supplierId,
+        contract_type: contractType,
         rate_per_unit: ratePerUnit,
         agreed_qty: agreedQty,
         wht_rate: whtRate,
@@ -1100,6 +1137,25 @@ function AddSubcontractModal({ open, workOrderId, onClose, onSaved }: {
               <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.typeLabel')}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setContractType('PIECE_RATE')}
+                    className={`px-3 py-2 rounded-lg border text-xs flex flex-col items-center gap-0.5 ${
+                      contractType === 'PIECE_RATE' ? 'border-phopy-indigo bg-phopy-indigo/10 text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)]'
+                    }`}>
+                    <span className="font-semibold">{t('workOrders.subcontract.typePieceRate')}</span>
+                    <span className="text-[10px] text-[var(--fg-4)]">{t('workOrders.subcontract.typePieceRateDesc')}</span>
+                  </button>
+                  <button type="button" onClick={() => setContractType('OUTSOURCE')}
+                    className={`px-3 py-2 rounded-lg border text-xs flex flex-col items-center gap-0.5 ${
+                      contractType === 'OUTSOURCE' ? 'border-phopy-indigo bg-phopy-indigo/10 text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-3)]'
+                    }`}>
+                    <span className="font-semibold">{t('workOrders.subcontract.typeOutsource')}</span>
+                    <span className="text-[10px] text-[var(--fg-4)]">{t('workOrders.subcontract.typeOutsourceDesc')}</span>
+                  </button>
+                </div>
+              </div>
               <div>
                 <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.supplierLabel')}</label>
                 <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="phopy-input w-full" required>
@@ -1233,6 +1289,340 @@ function PaySubcontractModal({ contract, onClose, onPaid }: {
           </div>
         </motion.div>
       </motion.div>
+    </AnimatePresence>
+  )
+}
+
+// Phase 3: ส่งวัตถุดิบให้ผู้รับเหมา (OUTSOURCE)
+function IssueMaterialsModal({ contract, onClose, onSaved }: {
+  contract: Subcontract | null; onClose: () => void; onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [stockItems, setStockItems] = useState<any[]>([])
+  const [rows, setRows] = useState<Array<{ stock_item_id: string; quantity: number }>>([{ stock_item_id: '', quantity: 0 }])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!contract) return
+    api.get('/stock').then(res => setStockItems(res.data?.data || [])).catch(() => setStockItems([]))
+    setRows([{ stock_item_id: '', quantity: 0 }])
+  }, [contract?.id])
+
+  if (!contract) return null
+
+  const updateRow = (i: number, patch: Partial<{ stock_item_id: string; quantity: number }>) => {
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+  }
+  const addRow = () => setRows(prev => [...prev, { stock_item_id: '', quantity: 0 }])
+  const removeRow = (i: number) => setRows(prev => prev.filter((_, idx) => idx !== i))
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const items = rows.filter(r => r.stock_item_id && r.quantity > 0)
+    if (items.length === 0) return
+    setSaving(true)
+    try {
+      await subcontractService.issueMaterials(contract.id, { items })
+      onSaved(); onClose()
+    } catch (err: any) {
+      alert(err.response?.data?.message || t('workOrders.subcontract.issueFailed'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <AnimatePresence>
+      {contract && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+          <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+            onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.subcontract.issueMaterialsTitle')}</h2>
+              <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <p className="text-sm text-[var(--fg-3)]">{contract.contract_number} — {contract.supplier_name}</p>
+              <div className="space-y-2">
+                {rows.map((row, i) => {
+                  const selected = stockItems.find(s => s.id === row.stock_item_id)
+                  return (
+                    <div key={i} className="flex gap-2 items-start">
+                      <select value={row.stock_item_id} onChange={(e) => updateRow(i, { stock_item_id: e.target.value })}
+                        className="phopy-input flex-1 text-sm">
+                        <option value="">{t('workOrders.subcontract.selectItem')}</option>
+                        {stockItems.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.quantity} {s.unit})</option>
+                        ))}
+                      </select>
+                      <input type="number" min="0" step="0.01" value={row.quantity || ''}
+                        onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
+                        placeholder={t('workOrders.subcontract.quantity')}
+                        className="phopy-input w-28 text-sm" />
+                      <button type="button" onClick={() => removeRow(i)} disabled={rows.length <= 1}
+                        className="p-2 text-danger disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                      {selected && row.quantity > selected.quantity && (
+                        <span className="sr-only">{t('workOrders.subcontract.insufficientStock')}</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <button type="button" onClick={addRow}
+                className="text-xs text-[var(--primary)] flex items-center gap-1"><Plus className="w-3 h-3" /> {t('workOrders.subcontract.addItem')}</button>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                  {t('common.cancel')}
+                </button>
+                <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                  {t('common.save')}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// Phase 3: รับของกลับจากผู้รับเหมา (OUTSOURCE) + เคลียร์วัตถุดิบนอกบริษัท
+function ReceiveGoodsModal({ contract, onClose, onSaved }: {
+  contract: Subcontract | null; onClose: () => void; onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [receivedQty, setReceivedQty] = useState<number>(0)
+  const [scrapQty, setScrapQty] = useState<number>(0)
+  const [shortageQty, setShortageQty] = useState<number>(0)
+  const [notes, setNotes] = useState('')
+  const [materialRows, setMaterialRows] = useState<Array<{
+    stock_item_id: string; item_name: string; unit: string; outstanding: number
+    consumed_qty: number; returned_qty: number; shortage_qty: number
+  }>>([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!contract) return
+    setReceivedQty(0); setScrapQty(0); setShortageQty(0); setNotes('')
+    setLoading(true)
+    subcontractService.getSubconStock()
+      .then(({ rows }) => {
+        const forSupplier = rows.filter(r => r.supplier_id === contract.supplier_id)
+        setMaterialRows(forSupplier.map(r => ({
+          stock_item_id: r.stock_item_id, item_name: r.item_name, unit: r.unit, outstanding: r.quantity,
+          consumed_qty: 0, returned_qty: 0, shortage_qty: 0,
+        })))
+      })
+      .catch(() => setMaterialRows([]))
+      .finally(() => setLoading(false))
+  }, [contract?.id])
+
+  if (!contract) return null
+
+  const updateMaterial = (i: number, patch: Partial<{ consumed_qty: number; returned_qty: number; shortage_qty: number }>) => {
+    setMaterialRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const materials = materialRows
+        .filter(r => (r.consumed_qty + r.returned_qty + r.shortage_qty) > 0)
+        .map(r => ({ stock_item_id: r.stock_item_id, consumed_qty: r.consumed_qty, returned_qty: r.returned_qty, shortage_qty: r.shortage_qty }))
+      await subcontractService.receiveGoods(contract.id, {
+        received_qty: receivedQty, scrap_qty: scrapQty, shortage_qty: shortageQty, materials, notes,
+      })
+      onSaved(); onClose()
+    } catch (err: any) {
+      alert(err.response?.data?.message || t('workOrders.subcontract.receiveFailed'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <AnimatePresence>
+      {contract && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+          <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+            onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.subcontract.receiveGoodsTitle')}</h2>
+              <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+              <p className="text-sm text-[var(--fg-3)]">{contract.contract_number} — {contract.supplier_name}</p>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.receivedQty')}</label>
+                  <input type="number" min="0" value={receivedQty} onChange={(e) => setReceivedQty(Number(e.target.value))} className="phopy-input w-full" />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.scrapQty')}</label>
+                  <input type="number" min="0" value={scrapQty} onChange={(e) => setScrapQty(Number(e.target.value))} className="phopy-input w-full" />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.subcontract.shortageQty')}</label>
+                  <input type="number" min="0" value={shortageQty} onChange={(e) => setShortageQty(Number(e.target.value))} className="phopy-input w-full" />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-[var(--fg-2)] mb-2">{t('workOrders.subcontract.materialsReconcileTitle')}</p>
+                {loading ? (
+                  <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-[var(--primary)]" /></div>
+                ) : materialRows.length === 0 ? (
+                  <p className="text-xs text-[var(--fg-4)]">{t('workOrders.subcontract.noMaterials')}</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--border)]">
+                          {[t('workOrders.subcontract.item'), t('workOrders.subcontract.outstandingAtSupplier'), t('workOrders.subcontract.consumedQty'), t('workOrders.subcontract.returnedQty'), t('workOrders.subcontract.materialShortageQty')].map(h => (
+                            <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-2 font-medium">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {materialRows.map((r, i) => (
+                          <tr key={r.stock_item_id} className="border-b border-[var(--border)] last:border-0">
+                            <td className="py-1.5 pr-2 text-[var(--fg-1)]">{r.item_name}</td>
+                            <td className="py-1.5 pr-2 text-[var(--fg-2)]">{r.outstanding} {r.unit}</td>
+                            <td className="py-1.5 pr-2">
+                              <input type="number" min="0" value={r.consumed_qty || ''} onChange={(e) => updateMaterial(i, { consumed_qty: Number(e.target.value) })} className="phopy-input w-20 text-xs" />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input type="number" min="0" value={r.returned_qty || ''} onChange={(e) => updateMaterial(i, { returned_qty: Number(e.target.value) })} className="phopy-input w-20 text-xs" />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input type="number" min="0" value={r.shortage_qty || ''} onChange={(e) => updateMaterial(i, { shortage_qty: Number(e.target.value) })} className="phopy-input w-20 text-xs" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('common.notes')}</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="phopy-input w-full text-sm" rows={2} />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                  {t('common.cancel')}
+                </button>
+                <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+                  {t('common.save')}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// Phase 3: ดู Reconcile ต่อสัญญา OUTSOURCE
+function ReconcileModal({ contract, onClose }: { contract: Subcontract | null; onClose: () => void }) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!contract) { setData(null); return }
+    setLoading(true)
+    subcontractService.getReconcile(contract.id)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [contract?.id])
+
+  if (!contract) return null
+
+  return (
+    <AnimatePresence>
+      {contract && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+          <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+            onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-[var(--border)] flex justify-between items-center">
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.subcontract.reconcileTitle')}</h2>
+              <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-[var(--fg-3)]">{contract.contract_number} — {contract.supplier_name}</p>
+              {loading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" /></div>
+              ) : !data ? (
+                <p className="text-sm text-[var(--fg-4)]">{t('workOrders.subcontract.noMaterials')}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    {[
+                      { label: t('workOrders.subcontract.agreed'), value: data.pieces.agreed_qty },
+                      { label: t('workOrders.subcontract.received'), value: data.pieces.received_qty },
+                      { label: t('workOrders.subcontract.scrapQty'), value: data.pieces.scrap_qty },
+                      { label: t('workOrders.subcontract.shortageQty'), value: data.pieces.shortage_qty },
+                    ].map((k) => (
+                      <div key={k.label} className="bg-[var(--surface-2)] rounded-lg p-3">
+                        <p className="text-xs text-[var(--fg-4)]">{k.label}</p>
+                        <p className="text-lg font-bold text-[var(--fg-1)]">{k.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--fg-2)] mb-2">{t('workOrders.subcontract.materialsReconcileTitle')}</p>
+                    {data.materials.length === 0 ? (
+                      <p className="text-xs text-[var(--fg-4)]">{t('workOrders.subcontract.noMaterials')}</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-[var(--border)]">
+                              {[t('workOrders.subcontract.item'), t('workOrders.subcontract.issuedQty'), t('workOrders.subcontract.consumedQty'), t('workOrders.subcontract.returnedQty'), t('workOrders.subcontract.materialShortageQty'), t('workOrders.subcontract.outstandingQty')].map(h => (
+                                <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.materials.map((m: any) => (
+                              <tr key={m.stock_item_id} className="border-b border-[var(--border)] last:border-0">
+                                <td className="py-1.5 pr-3 text-[var(--fg-1)]">{m.item_name}</td>
+                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.issued_qty} {m.unit}</td>
+                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.consumed_qty}</td>
+                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.returned_qty}</td>
+                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.shortage_qty}</td>
+                                <td className="py-1.5 font-semibold" style={{ color: m.outstanding_qty > 0 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{m.outstanding_qty}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              <div className="flex justify-end pt-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                  {t('common.close')}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   )
 }

@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   ShoppingBag, Megaphone, DollarSign, TrendingUp,
-  TrendingDown, Package, Activity, AlertCircle
+  TrendingDown, Package, Activity, AlertCircle, Factory
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { phopyBoardApi } from '../../services/phopyBoard'
@@ -56,6 +56,16 @@ interface ExtendedData {
     currentRatio: number; quickRatio: number; cashBurnRate: number
     wcTrend: Array<{ month: string; currentRatio: number; quickRatio: number }>
   }
+  outsourceProduction: {
+    stockValue: { inHouse: number; offsite: number }
+    suppliersWithStock: Array<{ supplier_id: string; supplier_name: string; value: number; items: number }>
+    overdueContracts: Array<{ id: string; contract_number: string; supplier_id: string; supplier_name: string; due_date: string; status: string; outstanding_amount: number }>
+    yield: {
+      good: number; scrap: number; shortage: number
+      goodPct: number; scrapPct: number; shortagePct: number
+      byContract: Array<{ contract_id: string; contract_number: string; supplier_name: string; good: number; scrap: number; shortage: number; goodPct: number }>
+    }
+  }
 }
 
 interface Props {
@@ -89,7 +99,7 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
   )
   if (!data) return null
 
-  const { channel, adsROI, costStructure, products, workingCapital } = data
+  const { channel, adsROI, costStructure, products, workingCapital, outsourceProduction } = data
   const totalRevenue = channel.onlineTotal + channel.offlineRevenue
   const onlinePct = totalRevenue > 0 ? (channel.onlineTotal / totalRevenue) * 100 : 0
   const offlinePct = 100 - onlinePct
@@ -452,6 +462,184 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
             </LineChart>
           </ResponsiveContainer>
         </motion.div>
+      </div>
+
+      {/* ─── Zone 6: Outsource Production (Phase 3) ──────────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Factory className="w-5 h-5 text-[var(--primary)]" />
+          <h2 className="text-lg font-bold text-[var(--fg-1)]">การผลิตภายนอก</h2>
+          <span className="text-xs text-[var(--fg-3)] ml-1">Outsource Stock · ผู้รับเหมาที่ของค้าง · Yield</span>
+        </div>
+
+        {(() => {
+          const op = outsourceProduction
+          const totalStock = op.stockValue.inHouse + op.stockValue.offsite
+          const offsitePct = totalStock > 0 ? (op.stockValue.offsite / totalStock) * 100 : 0
+          return (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+                  <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกในบริษัท</p>
+                  <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(op.stockValue.inHouse)}</p>
+                </motion.div>
+                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+                  <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกนอกบริษัท (ที่ผู้รับเหมา)</p>
+                  <p className="text-2xl font-bold mt-1" style={{ color: offsitePct > 20 ? 'var(--warning, #f59e0b)' : 'var(--fg-1)' }}>฿{fmt(op.stockValue.offsite)}</p>
+                  <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtPct(offsitePct)} ของสต็อกรวม</p>
+                </motion.div>
+                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+                  <p className="text-xs text-[var(--fg-3)]">สัญญาเกินกำหนดส่งคืน</p>
+                  <p className="text-2xl font-bold mt-1" style={{ color: op.overdueContracts.length > 0 ? 'var(--danger)' : 'var(--success, #22c55e)' }}>{op.overdueContracts.length}</p>
+                  <p className="text-xs text-[var(--fg-4)] mt-0.5">฿{fmt(op.overdueContracts.reduce((s, c) => s + c.outstanding_amount, 0))} ค้างจ่าย</p>
+                </motion.div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Suppliers with stock outstanding */}
+                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 lg:col-span-2">
+                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ผู้รับเหมาที่มีวัตถุดิบค้างอยู่</p>
+                  {op.suppliersWithStock.length === 0 ? (
+                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีวัตถุดิบค้างที่ผู้รับเหมา</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border)]">
+                            {['ผู้รับเหมา', 'รายการ', 'มูลค่าค้าง', 'สถานะกำหนดส่ง'].map(h => (
+                              <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-3 font-medium">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {op.suppliersWithStock.map(s => {
+                            const overdue = op.overdueContracts.filter(c => c.supplier_id === s.supplier_id)
+                            const isOverdue = overdue.length > 0
+                            return (
+                              <tr key={s.supplier_id} className="border-b border-[var(--border)] last:border-0">
+                                <td className="py-2 pr-3 font-semibold text-[var(--fg-1)]">{s.supplier_name}</td>
+                                <td className="py-2 pr-3 text-[var(--fg-2)]">{s.items}</td>
+                                <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(s.value)}</td>
+                                <td className="py-2">
+                                  {isOverdue ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: 'var(--danger, #ef4444)' }}>
+                                      <AlertCircle className="w-3 h-3" /> เกินกำหนด ({overdue.length})
+                                    </span>
+                                  ) : (
+                                    <span className="text-[var(--fg-4)]">ปกติ</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </motion.div>
+
+                {/* Stock value split donut */}
+                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">สัดส่วนมูลค่าสต็อก</p>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <PieChart>
+                      <Pie
+                        data={[{ name: 'ในบริษัท', value: op.stockValue.inHouse }, { name: 'นอกบริษัท', value: op.stockValue.offsite }]}
+                        cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
+                      >
+                        <Cell fill={COLORS[0]} />
+                        <Cell fill={COLORS[1]} />
+                      </Pie>
+                      <Tooltip formatter={(v: number) => '฿' + fmt(v)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 mt-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[0] }} />ในบริษัท</span>
+                      <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.inHouse)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[1] }} />นอกบริษัท</span>
+                      <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.offsite)}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                {/* Yield donut */}
+                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ผู้รับเหมา (ดี/เสีย/หาย)</p>
+                  {op.yield.good + op.yield.scrap + op.yield.shortage === 0 ? (
+                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ยังไม่มีข้อมูลรับของจากผู้รับเหมา</p>
+                  ) : (
+                    <>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <PieChart>
+                          <Pie
+                            data={[{ name: 'ดี', value: op.yield.good }, { name: 'เสีย', value: op.yield.scrap }, { name: 'หาย', value: op.yield.shortage }]}
+                            cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
+                          >
+                            <Cell fill={COLORS[2]} />
+                            <Cell fill={COLORS[3]} />
+                            <Cell fill={COLORS[4]} />
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmt(v) + ' ชิ้น'} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="space-y-1.5 mt-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[2] }} />ดี</span>
+                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.good)} ({fmtPct(op.yield.goodPct)})</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[3] }} />เสีย</span>
+                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.scrap)} ({fmtPct(op.yield.scrapPct)})</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[4] }} />หาย</span>
+                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.shortage)} ({fmtPct(op.yield.shortagePct)})</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </motion.div>
+
+                {/* Yield by contract table */}
+                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ต่อสัญญา</p>
+                  {op.yield.byContract.length === 0 ? (
+                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border)]">
+                            {['สัญญา', 'ผู้รับเหมา', 'ดี', 'เสีย', 'หาย', 'Yield%'].map(h => (
+                              <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {op.yield.byContract.slice(0, 10).map(c => (
+                            <tr key={c.contract_id} className="border-b border-[var(--border)] last:border-0">
+                              <td className="py-1.5 pr-3 font-semibold text-[var(--fg-1)]">{c.contract_number}</td>
+                              <td className="py-1.5 pr-3 text-[var(--fg-2)] max-w-[100px] truncate">{c.supplier_name}</td>
+                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.good)}</td>
+                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.scrap)}</td>
+                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.shortage)}</td>
+                              <td className="py-1.5 font-bold" style={{ color: c.goodPct >= 90 ? 'var(--success, #22c55e)' : c.goodPct >= 75 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(c.goodPct)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </motion.div>
+              </div>
+            </>
+          )
+        })()}
       </div>
 
     </div>

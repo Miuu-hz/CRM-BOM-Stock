@@ -465,6 +465,70 @@ router.get('/extended', (req: Request, res: Response) => {
       })
     }
 
+    // ── Zone 6: Outsource Production (Phase 3 — ส่งวัตถุดิบออกไปผลิตข้างนอก) ─────────────────
+    const inHouseStockValue = (db.prepare(
+      `SELECT COALESCE(SUM(quantity * unit_cost), 0) as v FROM stock_items WHERE tenant_id = ?`
+    ).get(tenantId) as any).v
+
+    const offsiteStockValue = (db.prepare(
+      `SELECT COALESCE(SUM(total_value), 0) as v FROM subcon_stock WHERE tenant_id = ?`
+    ).get(tenantId) as any).v
+
+    const suppliersWithStock = db.prepare(`
+      SELECT supplier_id, supplier_name, COALESCE(SUM(total_value), 0) as value, COUNT(*) as items
+      FROM subcon_stock WHERE tenant_id = ? AND quantity > 0
+      GROUP BY supplier_id, supplier_name
+      ORDER BY value DESC
+    `).all(tenantId) as Array<{ supplier_id: string; supplier_name: string; value: number; items: number }>
+
+    const overdueContracts = db.prepare(`
+      SELECT sc.id, sc.contract_number, sc.supplier_id, sc.supplier_name, sc.due_date, sc.status,
+        MAX(sc.labor_amount - sc.paid_amount, 0) as outstanding_amount
+      FROM wo_subcontracts sc
+      WHERE sc.tenant_id = ? AND sc.contract_type = 'OUTSOURCE'
+        AND sc.status NOT IN ('SETTLED', 'CANCELLED', 'CLOSED')
+        AND sc.due_date IS NOT NULL AND sc.due_date != '' AND date(sc.due_date) < date('now')
+      ORDER BY sc.due_date ASC
+    `).all(tenantId) as Array<{ id: string; contract_number: string; supplier_id: string; supplier_name: string; due_date: string; status: string; outstanding_amount: number }>
+
+    const yieldRow = db.prepare(`
+      SELECT COALESCE(SUM(sr.received_qty), 0) as good, COALESCE(SUM(sr.scrap_qty), 0) as scrap, COALESCE(SUM(sr.shortage_qty), 0) as shortage
+      FROM subcon_receipts sr
+      JOIN wo_subcontracts sc ON sr.subcontract_id = sc.id
+      WHERE sr.tenant_id = ? AND sc.contract_type = 'OUTSOURCE'
+    `).get(tenantId) as { good: number; scrap: number; shortage: number }
+
+    const yieldGood = Number(yieldRow.good), yieldScrap = Number(yieldRow.scrap), yieldShortage = Number(yieldRow.shortage)
+    const yieldTotal = yieldGood + yieldScrap + yieldShortage
+    const yieldByContract = db.prepare(`
+      SELECT sc.id as contract_id, sc.contract_number, sc.supplier_name,
+        COALESCE(SUM(sr.received_qty), 0) as good, COALESCE(SUM(sr.scrap_qty), 0) as scrap, COALESCE(SUM(sr.shortage_qty), 0) as shortage
+      FROM wo_subcontracts sc
+      JOIN subcon_receipts sr ON sr.subcontract_id = sc.id
+      WHERE sc.tenant_id = ? AND sc.contract_type = 'OUTSOURCE'
+      GROUP BY sc.id
+      ORDER BY sc.created_at DESC
+    `).all(tenantId) as Array<{ contract_id: string; contract_number: string; supplier_name: string; good: number; scrap: number; shortage: number }>
+
+    const outsourceProduction = {
+      stockValue: { inHouse: Number(inHouseStockValue), offsite: Number(offsiteStockValue) },
+      suppliersWithStock: suppliersWithStock.map(s => ({ ...s, value: Number(s.value) })),
+      overdueContracts: overdueContracts.map(c => ({ ...c, outstanding_amount: Number(c.outstanding_amount) })),
+      yield: {
+        good: yieldGood, scrap: yieldScrap, shortage: yieldShortage,
+        goodPct: yieldTotal > 0 ? Math.round((yieldGood / yieldTotal) * 1000) / 10 : 0,
+        scrapPct: yieldTotal > 0 ? Math.round((yieldScrap / yieldTotal) * 1000) / 10 : 0,
+        shortagePct: yieldTotal > 0 ? Math.round((yieldShortage / yieldTotal) * 1000) / 10 : 0,
+        byContract: yieldByContract.map(c => {
+          const total = Number(c.good) + Number(c.scrap) + Number(c.shortage)
+          return {
+            ...c, good: Number(c.good), scrap: Number(c.scrap), shortage: Number(c.shortage),
+            goodPct: total > 0 ? Math.round((Number(c.good) / total) * 1000) / 10 : 0
+          }
+        })
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -475,7 +539,8 @@ router.get('/extended', (req: Request, res: Response) => {
         },
         costStructure: { cogsByCategory: cogsByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseByCategory: expByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseRatio: Math.round(expenseRatio * 10) / 10, productionVariance: { estimated: Number(woVar.estimated), actual: Number(woVar.actual), variancePct: Number(woVar.estimated) > 0 ? Math.round(((Number(woVar.actual) - Number(woVar.estimated)) / Number(woVar.estimated)) * 1000) / 10 : 0, count: Number(woVar.count) }, costTrend },
         products: { top10: productsWithMargin.slice(0, 10), bottom10: [...productsWithMargin].sort((a, b) => a.margin - b.margin).slice(0, 10), concentrationRisk, totalRevenue: totalProdRev },
-        workingCapital: { currentAssets, currentLiabilities: currentLiab, cash: cashBal, ar: arBal, currentRatio, quickRatio, cashBurnRate, wcTrend }
+        workingCapital: { currentAssets, currentLiabilities: currentLiab, cash: cashBal, ar: arBal, currentRatio, quickRatio, cashBurnRate, wcTrend },
+        outsourceProduction
       }
     })
   } catch (err: any) {

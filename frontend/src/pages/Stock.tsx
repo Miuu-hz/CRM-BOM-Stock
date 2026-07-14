@@ -60,6 +60,8 @@ import {
 
   Network,
 
+  Factory,
+
 } from 'lucide-react'
 
 import * as XLSX from 'xlsx'
@@ -69,6 +71,8 @@ import toast from 'react-hot-toast'
 import api from '../services/api'
 
 import stockService, { StockItem, StockStats } from '../services/stock'
+
+import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
 
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
@@ -288,7 +292,28 @@ function Stock() {
 
     loadData()
 
+    loadSubconStock()
+
   }, [])
+
+
+
+  // Phase 3: สต็อกวัตถุดิบที่อยู่นอกบริษัท (ที่ผู้รับเหมา)
+  const [subconStock, setSubconStock] = useState<{ rows: SubconStockRow[]; summary: SubconStockSummary } | null>(null)
+  const [subconStockLoading, setSubconStockLoading] = useState(false)
+  const [showSubconStock, setShowSubconStock] = useState(true)
+
+  const loadSubconStock = async () => {
+    setSubconStockLoading(true)
+    try {
+      const data = await subcontractService.getSubconStock()
+      setSubconStock(data)
+    } catch (err) {
+      console.error('Failed to load subcon stock:', err)
+    } finally {
+      setSubconStockLoading(false)
+    }
+  }
 
 
 
@@ -803,6 +828,79 @@ function Stock() {
           color="green"
 
         />
+
+      </div>
+
+
+
+      {/* Phase 3: สต็อกที่ผู้รับเหมา (Outsource) */}
+
+      <div className="phopy-card p-6">
+
+        <button
+          type="button"
+          onClick={() => setShowSubconStock(v => !v)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2">
+            <Factory className="w-5 h-5 text-[var(--primary)]" />
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">สต็อกที่ผู้รับเหมา</h2>
+            {subconStock && subconStock.summary.total_value > 0 && (
+              <span className="text-sm text-[var(--fg-3)]">
+                (฿{subconStock.summary.total_value.toLocaleString()})
+              </span>
+            )}
+          </div>
+          {showSubconStock ? <ChevronUp className="w-5 h-5 text-[var(--fg-3)]" /> : <ChevronDown className="w-5 h-5 text-[var(--fg-3)]" />}
+        </button>
+
+        {showSubconStock && (
+          <div className="mt-4">
+            {subconStockLoading ? (
+              <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" /></div>
+            ) : !subconStock || subconStock.rows.length === 0 ? (
+              <p className="text-sm text-[var(--fg-4)] text-center py-4">ไม่มีวัตถุดิบค้างอยู่ที่ผู้รับเหมา</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
+                    <p className="text-xs text-[var(--fg-4)]">มูลค่ารวม</p>
+                    <p className="text-lg font-bold text-[var(--fg-1)]">฿{subconStock.summary.total_value.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
+                    <p className="text-xs text-[var(--fg-4)]">จำนวนผู้รับเหมา</p>
+                    <p className="text-lg font-bold text-[var(--fg-1)]">{subconStock.summary.by_supplier.length}</p>
+                  </div>
+                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
+                    <p className="text-xs text-[var(--fg-4)]">จำนวนรายการ</p>
+                    <p className="text-lg font-bold text-[var(--fg-1)]">{subconStock.rows.length}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--border)]">
+                        {['ผู้รับเหมา', 'วัตถุดิบ', 'จำนวน', 'มูลค่า'].map(h => (
+                          <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-4 font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subconStock.rows.map(row => (
+                        <tr key={row.id} className="border-b border-[var(--border)] last:border-0">
+                          <td className="py-2 pr-4 font-semibold text-[var(--fg-1)]">{row.supplier_name}</td>
+                          <td className="py-2 pr-4 text-[var(--fg-2)]">{row.item_name}</td>
+                          <td className="py-2 pr-4 text-[var(--fg-2)]">{row.quantity.toLocaleString()} {row.unit}</td>
+                          <td className="py-2 pr-4 text-[var(--fg-2)]">฿{row.total_value.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
       </div>
 

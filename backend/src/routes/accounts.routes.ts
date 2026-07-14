@@ -36,7 +36,8 @@ const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '1109', name: 'ค่าใช้จ่ายจ่ายล่วงหน้า', type: 'ASSET', category: 'PREPAID', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
   { code: '1110', name: 'ภาษีซื้อ', type: 'ASSET', category: 'TAX', level: 2, parent_code: '11', normal_balance: 'DEBIT', tax_related: 1 },
   { code: '1111', name: 'เงินประกัน', type: 'ASSET', category: 'DEPOSIT', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
-  
+  { code: '1112', name: 'วัตถุดิบที่ผู้รับจ้างช่วง', type: 'ASSET', category: 'INVENTORY', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+
   { code: '12', name: 'สินทรัพย์ไม่หมุนเวียน', type: 'ASSET', category: 'FIXED_ASSET', level: 1, parent_code: '1', normal_balance: 'DEBIT' },
   { code: '1201', name: 'ที่ดิน', type: 'ASSET', category: 'PROPERTY', level: 2, parent_code: '12', normal_balance: 'DEBIT' },
   { code: '1202', name: 'อาคาร', type: 'ASSET', category: 'PROPERTY', level: 2, parent_code: '12', normal_balance: 'DEBIT' },

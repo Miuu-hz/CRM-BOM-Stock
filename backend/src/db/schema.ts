@@ -1632,5 +1632,48 @@ export function applySchema(db: any): void {
       UNIQUE(tenant_id, contract_number)
     );
     CREATE INDEX IF NOT EXISTS idx_wo_subcontracts_wo ON wo_subcontracts(work_order_id);
+
+    -- ==================== SUBCONTRACT OUTSOURCE MATERIALS (Phase 3: ส่งวัตถุดิบออกไปผลิตข้างนอก) ====================
+    -- ใบส่งวัตถุดิบให้ผู้รับเหมาช่วง (OUTSOURCE) — ตัดสต็อกในบริษัท เข้าสต็อกนอกบริษัท (subcon_stock)
+    CREATE TABLE IF NOT EXISTS subcon_material_issues (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      issue_number TEXT,                  -- formatDocumentNumber('SMI', tenantId, 'SUBCON_ISSUE', undefined, 5)
+      subcontract_id TEXT NOT NULL,
+      stock_item_id TEXT NOT NULL,
+      item_name TEXT, quantity REAL, unit TEXT,
+      unit_cost REAL DEFAULT 0,           -- ทุน ณ วันส่ง (ล็อกไว้)
+      total_value REAL DEFAULT 0,
+      issued_at TEXT DEFAULT CURRENT_TIMESTAMP, issued_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_smi_contract ON subcon_material_issues(subcontract_id);
+
+    -- ใบรับของกลับจากผู้รับเหมาช่วง (OUTSOURCE) — ดี/เสีย/หาย + เคลียร์วัตถุดิบนอกบริษัท
+    CREATE TABLE IF NOT EXISTS subcon_receipts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      receipt_number TEXT,                -- formatDocumentNumber('SRC', tenantId, 'SUBCON_RECEIPT', undefined, 5)
+      subcontract_id TEXT NOT NULL,
+      received_qty INTEGER DEFAULT 0,     -- ชิ้นงานดีที่นับได้
+      scrap_qty INTEGER DEFAULT 0,        -- ของเสีย
+      shortage_qty INTEGER DEFAULT 0,     -- ขาดหาย
+      qc_inspection_id TEXT,              -- inspection ที่สร้างอัตโนมัติ
+      material_reconcile TEXT DEFAULT '[]', -- JSON รายละเอียดวัตถุดิบ consumed/returned/shortage
+      notes TEXT,
+      received_at TEXT DEFAULT CURRENT_TIMESTAMP, received_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_src_contract ON subcon_receipts(subcontract_id);
+
+    -- สมุด stock วัตถุดิบที่อยู่นอกบริษัท (อยู่ที่ผู้รับเหมาแต่ละราย) ต่อ stock_item
+    CREATE TABLE IF NOT EXISTS subcon_stock (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT,
+      supplier_id TEXT NOT NULL, supplier_name TEXT,
+      stock_item_id TEXT NOT NULL, item_name TEXT, unit TEXT,
+      quantity REAL DEFAULT 0,
+      total_value REAL DEFAULT 0,         -- มูลค่าตามทุนสะสม
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, supplier_id, stock_item_id)
+    );
   `)
 }

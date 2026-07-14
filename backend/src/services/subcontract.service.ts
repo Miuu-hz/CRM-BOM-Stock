@@ -14,7 +14,9 @@ export interface SubcontractAccrualResult {
 /**
  * เรียกจาก QC complete hook (qc.routes.ts) เมื่อ inspection ที่ผูกกับ Work Order มี passed_qty > 0
  *
- * หา wo_subcontracts ของ WO ที่ contract_type='PIECE_RATE' และ status='OPEN' แล้วตั้งค่าแรงเหมา
+ * หา wo_subcontracts ของ WO ที่ contract_type IN ('PIECE_RATE','OUTSOURCE') และยังไม่ปิดสัญญา
+ * (status IN 'OPEN'/'MATERIAL_SENT'/'PARTIAL_RECEIVED'/'RECEIVED' — Phase 3 เพิ่ม OUTSOURCE ซึ่ง
+ * เปลี่ยนสถานะไปตามขั้นตอนส่งวัตถุดิบ/รับของ ก่อนที่ QC จะตรวจเสร็จ) แล้วตั้งค่าแรงเหมา
  * ค้างจ่ายอัตโนมัติ (Dr ค่าจ้างเหมาช่วง 5106 / Cr ค่าใช้จ่ายค้างจ่าย 2107) โดย cap ยอดคิดค่าแรง
  * ไม่ให้เกิน agreed_qty ของแต่ละสัญญา (กันคิดซ้ำ/คิดเกินสัญญา)
  *
@@ -31,7 +33,9 @@ export function accrueSubcontractLabor(
 
   const contracts = db.prepare(`
     SELECT * FROM wo_subcontracts
-    WHERE tenant_id = ? AND work_order_id = ? AND contract_type = 'PIECE_RATE' AND status = 'OPEN'
+    WHERE tenant_id = ? AND work_order_id = ?
+      AND contract_type IN ('PIECE_RATE', 'OUTSOURCE')
+      AND status IN ('OPEN', 'MATERIAL_SENT', 'PARTIAL_RECEIVED', 'RECEIVED')
     ORDER BY created_at ASC
   `).all(tenantId, workOrderId) as any[]
 

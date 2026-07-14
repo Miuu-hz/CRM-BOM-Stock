@@ -14,6 +14,11 @@ export const ACC = {
   RAW_MATERIAL:      '1107',  // สต็อกวัตถุดิบ
   PREPAID:           '1109',
   INPUT_VAT:         '1110',  // ภาษีซื้อ
+  // NOTE: 1108 is already allocated to "สินค้าส่งเดิมเรียกคืน" in DEFAULT_CHART_OF_ACCOUNTS
+  // (accounts.routes.ts) and already exists in production tenant data with that name.
+  // 1109-1111 are also taken (ค่าใช้จ่ายจ่ายล่วงหน้า / ภาษีซื้อ / เงินประกัน). Next free code
+  // in the 11xx (current asset) range is 1112.
+  SUBCON_MATERIAL:   '1112',  // วัตถุดิบที่ผู้รับจ้างช่วง (Phase 3)
 
   // Liabilities
   AP:                '2101',  // เจ้าหนี้การค้า
@@ -65,8 +70,10 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.CASH]:             { name: 'เงินสด', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
   [ACC.BANK]:             { name: 'เงินฝากธนาคาร', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
   [ACC.AR]:               { name: 'ลูกหนี้การค้า', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
+  [ACC.OTHER_RECEIVABLE]: { name: 'ลูกหนี้อื่น', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
   [ACC.INVENTORY]:        { name: 'สต็อกสินค้า', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },
   [ACC.RAW_MATERIAL]:     { name: 'สต็อกวัตถุดิบ', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },
+  [ACC.SUBCON_MATERIAL]:  { name: 'วัตถุดิบที่ผู้รับจ้างช่วง', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },
   [ACC.INPUT_VAT]:        { name: 'ภาษีซื้อ', type: 'ASSET', category: 'TAX', normalBalance: 'DEBIT', taxRelated: 1 },
 
   [ACC.AP]:               { name: 'เจ้าหนี้การค้า', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },

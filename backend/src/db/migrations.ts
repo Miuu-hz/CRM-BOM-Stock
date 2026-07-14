@@ -1002,6 +1002,9 @@ export function runMigrations(db: any): void {
       ['JOURNAL', 'journal_entries'],
       ['APPROVAL_REQUEST', 'approval_requests'],
       ['STOCK_ADJUSTMENT', 'stock_adjustments'],
+      ['SUBCONTRACT', 'wo_subcontracts'],
+      ['SUBCON_ISSUE', 'subcon_material_issues'],
+      ['SUBCON_RECEIPT', 'subcon_receipts'],
     ]
     for (const [docType, table] of seedMap) {
       try {
@@ -1133,5 +1136,55 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: wo_subcontracts table ready')
   } catch (e) {
     console.error('⚠️ wo_subcontracts migration error:', e)
+  }
+
+  // Migration: Phase 3 — Outsource material issue/receipt + off-site stock ledger
+  // Tables are also created via CREATE TABLE IF NOT EXISTS in schema.ts (applySchema runs on
+  // every boot); repeated here for parity with the other table migrations in this file and
+  // as a safety net in case applySchema and runMigrations ever diverge.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS subcon_material_issues (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        issue_number TEXT,
+        subcontract_id TEXT NOT NULL,
+        stock_item_id TEXT NOT NULL,
+        item_name TEXT, quantity REAL, unit TEXT,
+        unit_cost REAL DEFAULT 0,
+        total_value REAL DEFAULT 0,
+        issued_at TEXT DEFAULT CURRENT_TIMESTAMP, issued_by TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_smi_contract ON subcon_material_issues(subcontract_id);
+
+      CREATE TABLE IF NOT EXISTS subcon_receipts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        receipt_number TEXT,
+        subcontract_id TEXT NOT NULL,
+        received_qty INTEGER DEFAULT 0,
+        scrap_qty INTEGER DEFAULT 0,
+        shortage_qty INTEGER DEFAULT 0,
+        qc_inspection_id TEXT,
+        material_reconcile TEXT DEFAULT '[]',
+        notes TEXT,
+        received_at TEXT DEFAULT CURRENT_TIMESTAMP, received_by TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_src_contract ON subcon_receipts(subcontract_id);
+
+      CREATE TABLE IF NOT EXISTS subcon_stock (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        supplier_id TEXT NOT NULL, supplier_name TEXT,
+        stock_item_id TEXT NOT NULL, item_name TEXT, unit TEXT,
+        quantity REAL DEFAULT 0,
+        total_value REAL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, supplier_id, stock_item_id)
+      );
+    `)
+    console.log('✅ Migration: subcon_material_issues / subcon_receipts / subcon_stock tables ready')
+  } catch (e) {
+    console.error('⚠️ subcon outsource tables migration error:', e)
   }
 }
