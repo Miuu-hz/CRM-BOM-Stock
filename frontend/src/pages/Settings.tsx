@@ -668,10 +668,12 @@ function GeneralSettings() {
   const { tenant, isMaster } = useAuth()
   const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', logo_base64: '' })
   const [qcGateEnabled, setQcGateEnabled] = useState(false)
+  const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [qcSaving, setQcSaving] = useState(false)
+  const [subconWidgetSaving, setSubconWidgetSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -679,6 +681,7 @@ function GeneralSettings() {
       m.default.get().then(d => {
         setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', logo_base64: d.logo_base64 || '' })
         setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
+        setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
       }).catch(() => {})
     })
   }, [])
@@ -711,6 +714,20 @@ function GeneralSettings() {
       setQcGateEnabled(!next)
     } finally {
       setQcSaving(false)
+    }
+  }
+
+  const handleToggleSubconStockWidget = async () => {
+    const next = !showSubconStockWidget
+    setShowSubconStockWidget(next)
+    setSubconWidgetSaving(true)
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({ show_subcon_stock_widget: next })
+    } catch {
+      setShowSubconStockWidget(!next)
+    } finally {
+      setSubconWidgetSaving(false)
     }
   }
 
@@ -813,6 +830,21 @@ function GeneralSettings() {
             <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.qcGate.toggleSub')}</p>
           </div>
           {qcGateEnabled
+            ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
+            : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleToggleSubconStockWidget}
+          disabled={subconWidgetSaving}
+          className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 mt-3 ${showSubconStockWidget ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
+        >
+          <div className="text-left">
+            <p className={`font-medium ${showSubconStockWidget ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.subconStockWidget.toggleLabel')}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.subconStockWidget.toggleSub')}</p>
+          </div>
+          {showSubconStockWidget
             ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
             : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
         </button>

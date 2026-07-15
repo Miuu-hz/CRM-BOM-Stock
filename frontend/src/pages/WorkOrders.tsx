@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import {
@@ -28,6 +28,7 @@ import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
 import subcontractService, { Subcontract } from '../services/subcontract'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
+import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
 const STATUS_STYLES: Record<string, { color: string; icon: any }> = {
   DRAFT: { color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
@@ -329,6 +330,27 @@ function CreateWOModal({ open, onClose, onSave }: {
     api.get('/bom').then(res => setBoms(res.data?.data || [])).catch(() => {})
   }, [open])
 
+  // ตัวเลือก BOM สำหรับ SearchableDropdown (STEP 1)
+  const bomOptions = useMemo(() => boms.map((bom: any) => ({
+    id: bom.id,
+    label: `${bom.product_name} (${bom.product_code} · v${bom.version})`,
+    searchText: `${bom.product_name} ${bom.product_code}`,
+  })), [boms])
+
+  // รายชื่อสินค้าที่มีอยู่จริง (จาก BOM ทั้งหมด — ไม่มี endpoint /products แยกต่างหาก) ใช้เป็น autocomplete
+  // ให้ช่องชื่อสินค้า (STEP 2) โดยยังคงพิมพ์ชื่อใหม่ที่ไม่อยู่ใน list ได้เสมอ
+  const productNameOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const opts: string[] = []
+    for (const b of boms) {
+      if (b.product_name && !seen.has(b.product_name)) {
+        seen.add(b.product_name)
+        opts.push(b.product_name)
+      }
+    }
+    return opts
+  }, [boms])
+
   useEffect(() => {
     if (!open) {
       setProductName(''); setQuantity(1); setPriority('NORMAL')
@@ -486,35 +508,33 @@ function CreateWOModal({ open, onClose, onSave }: {
                   </div>
 
                   {!manualMode ? (
-                    <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                      {boms.length === 0 ? (
-                        <div className="col-span-2 text-center py-6 text-[var(--fg-4)] text-sm bg-[var(--surface-2)] rounded-lg">
-                          {t('workOrders.create.noBOMs')}
-                        </div>
-                      ) : boms.map((bom) => (
-                        <button key={bom.id} type="button" onClick={() => handleBomSelect(bom)}
-                          className={`text-left p-3 rounded-lg border transition-all ${
-                            selectedBomId === bom.id
-                              ? 'border-phopy-indigo bg-phopy-indigo/10'
-                              : 'border-[var(--border)]/40 bg-[var(--surface-2)] hover:border-[var(--border)] hover:bg-[var(--surface-2)]'
-                          }`}>
+                    <div>
+                      <SearchableDropdown
+                        value={selectedBomId}
+                        onChange={(id) => { const bom = boms.find((b: any) => b.id === id); if (bom) handleBomSelect(bom) }}
+                        options={bomOptions}
+                        placeholder={boms.length === 0 ? t('workOrders.create.noBOMsPlaceholder') : t('workOrders.create.selectBomPlaceholder')}
+                        disabled={boms.length === 0}
+                      />
+                      {selectedBom && (
+                        <div className="mt-2 p-3 rounded-lg border border-phopy-indigo/40 bg-phopy-indigo/5">
                           <div className="flex items-start justify-between gap-1">
-                            <p className="text-sm font-medium text-[var(--fg-2)] leading-tight">{bom.product_name}</p>
-                            {selectedBomId === bom.id && <CheckCircle className="w-3.5 h-3.5 text-[var(--primary)] shrink-0 mt-0.5" />}
+                            <p className="text-sm font-medium text-[var(--fg-2)] leading-tight">{selectedBom.product_name}</p>
+                            <CheckCircle className="w-3.5 h-3.5 text-[var(--primary)] shrink-0 mt-0.5" />
                           </div>
-                          <p className="text-xs text-[var(--fg-4)] mt-0.5">{bom.product_code} · v{bom.version}</p>
+                          <p className="text-xs text-[var(--fg-4)] mt-0.5">{selectedBom.product_code} · v{selectedBom.version}</p>
                           <div className="flex items-center gap-2 mt-1.5">
                             <span className={`text-xs px-1.5 py-0.5 rounded border ${
-                              bom.status?.toUpperCase() === 'ACTIVE'
+                              selectedBom.status?.toUpperCase() === 'ACTIVE'
                                 ? 'bg-success/10 text-success border-success-soft'
                                 : 'bg-gray-500/10 text-[var(--fg-4)] border-gray-500/20'
-                            }`}>{bom.status}</span>
-                            {bom.is_semi_finished === 1 && (
+                            }`}>{selectedBom.status}</span>
+                            {selectedBom.is_semi_finished === 1 && (
                               <span className="text-xs text-purple-500">{t('workOrders.create.semiFinished')}</span>
                             )}
                           </div>
-                        </button>
-                      ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="p-3 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]/30 text-sm text-[var(--fg-3)]">
@@ -538,7 +558,12 @@ function CreateWOModal({ open, onClose, onSave }: {
                         <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
                           className="phopy-input w-full" placeholder={t('workOrders.create.productPlaceholder')} required
                           readOnly={!!selectedBomId && !manualMode}
+                          list="wo-product-name-options" autoComplete="off"
                         />
+                        {/* Autocomplete จากชื่อสินค้าที่มี BOM อยู่แล้ว — ยังพิมพ์ชื่อใหม่ที่ไม่อยู่ใน list ได้เสมอ (native <datalist>, ไม่บังคับเลือก) */}
+                        <datalist id="wo-product-name-options">
+                          {productNameOptions.map((name) => <option key={name} value={name} />)}
+                        </datalist>
                       </div>
                       <div>
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.quantityLabel')}</label>

@@ -14,6 +14,7 @@ export interface CompanySettings {
   pos_service_enabled?: number | boolean
   pos_service_rate?: number
   qc_gate_enabled?: number | boolean  // 1=บังคับผ่าน QC ก่อนปิดใบสั่งงาน, 0=ไม่บังคับ (default 0)
+  show_subcon_stock_widget?: number | boolean  // 1=แสดงการ์ดมูลค่าสต็อกผู้รับเหมาในหน้า Stock, 0=ซ่อน (default 1)
 }
 
 const LS_KEY = 'crm_company_settings'

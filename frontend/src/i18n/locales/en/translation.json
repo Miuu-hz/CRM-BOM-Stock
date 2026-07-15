@@ -208,6 +208,8 @@
       "step1": "Select BOM",
       "manualEntry": "Manual entry",
       "noBOMs": "No BOMs yet — use Manual entry instead",
+      "noBOMsPlaceholder": "No BOMs available",
+      "selectBomPlaceholder": "Search or select a BOM...",
       "manualModeHint": "Fill in the details below manually",
       "step2": "Details",
       "productLabel": "Product Name *",
@@ -2247,6 +2249,10 @@
         "title": "Quality Control (QC Gate)",
         "toggleLabel": "Require QC pass before closing work order",
         "toggleSub": "When enabled, the work order must have at least one PASS QC inspection before it can be marked as completed"
+      },
+      "subconStockWidget": {
+        "toggleLabel": "Show subcontractor stock value",
+        "toggleSub": "When enabled, a summary card for materials held at subcontractors appears on the Stock page. Click it to see the breakdown by subcontractor."
       },
       "userManagement": {
         "title": "Child Users",

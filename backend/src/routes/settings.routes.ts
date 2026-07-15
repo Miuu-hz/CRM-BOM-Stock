@@ -24,7 +24,7 @@ router.put('/company', (req, res) => {
     const {
       name, address, phone, email, tax_id, logo_base64, pos_bom_deduct,
       pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
-      qc_gate_enabled
+      qc_gate_enabled, show_subcon_stock_widget
     } = req.body
 
     // Get existing settings to merge partial updates
@@ -46,14 +46,17 @@ router.put('/company', (req, res) => {
     const mergedQcGateEnabled = qc_gate_enabled !== undefined
       ? (qc_gate_enabled ? 1 : 0)
       : (existing.qc_gate_enabled === 1 ? 1 : 0)
+    const mergedShowSubconStockWidget = show_subcon_stock_widget !== undefined
+      ? (show_subcon_stock_widget === false || show_subcon_stock_widget === 0 ? 0 : 1)
+      : (existing.show_subcon_stock_widget === 0 ? 0 : 1)
 
     db.prepare(`
       INSERT INTO company_settings (
         tenant_id, name, address, phone, email, tax_id, logo_base64,
         pos_bom_deduct, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
-        qc_gate_enabled, updated_at
+        qc_gate_enabled, show_subcon_stock_widget, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(tenant_id) DO UPDATE SET
         name              = excluded.name,
         address           = excluded.address,
@@ -67,11 +70,12 @@ router.put('/company', (req, res) => {
         pos_service_enabled = excluded.pos_service_enabled,
         pos_service_rate  = excluded.pos_service_rate,
         qc_gate_enabled   = excluded.qc_gate_enabled,
+        show_subcon_stock_widget = excluded.show_subcon_stock_widget,
         updated_at        = datetime('now')
     `).run(
       tenantId, mergedName, mergedAddress, mergedPhone, mergedEmail, mergedTaxId, mergedLogo,
       mergedBomDeduct, mergedVatEnabled, mergedVatRate, mergedServiceEnabled, mergedServiceRate,
-      mergedQcGateEnabled
+      mergedQcGateEnabled, mergedShowSubconStockWidget
     )
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)

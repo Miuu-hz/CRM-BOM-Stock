@@ -89,6 +89,7 @@ export interface BOM {
   parentProductName?: string
   items?: BOMItem[]
   materials?: BOMItem[]
+  itemCount?: number
   totalCost: number
   isTopLevel?: boolean
 }

@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 
+import { useNavigate } from 'react-router-dom'
+
 import { motion } from 'framer-motion'
 
 import {
@@ -74,6 +76,8 @@ import stockService, { StockItem, StockStats } from '../services/stock'
 
 import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
 
+import companySettingsService from '../services/companySettings.service'
+
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 
 import ImportModal from '../components/common/ImportModal'
@@ -139,6 +143,8 @@ function getDefaultCols(): Record<ColumnKey, boolean> {
 
 
 function Stock() {
+
+  const navigate = useNavigate()
 
   const [stockItems, setStockItems] = useState<StockItem[]>([])
 
@@ -292,16 +298,23 @@ function Stock() {
 
     loadData()
 
-    loadSubconStock()
+    companySettingsService.get().then(d => {
+      const enabled = Number(d.show_subcon_stock_widget) !== 0
+      setShowSubconStockWidget(enabled)
+      if (enabled) loadSubconStock()
+    }).catch(() => {
+      // ถ้าดึง settings ไม่ได้ ให้ยึด default (เปิด) ไว้ก่อน
+      loadSubconStock()
+    })
 
   }, [])
 
 
 
-  // Phase 3: สต็อกวัตถุดิบที่อยู่นอกบริษัท (ที่ผู้รับเหมา)
+  // Phase 3: สต็อกวัตถุดิบที่อยู่นอกบริษัท (ที่ผู้รับเหมา) — สรุปมูลค่าไว้แสดงเป็นการ์ดสถิติ คลิกเพื่อดูรายละเอียดที่ /stock/subcontractors
   const [subconStock, setSubconStock] = useState<{ rows: SubconStockRow[]; summary: SubconStockSummary } | null>(null)
   const [subconStockLoading, setSubconStockLoading] = useState(false)
-  const [showSubconStock, setShowSubconStock] = useState(true)
+  const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
 
   const loadSubconStock = async () => {
     setSubconStockLoading(true)
@@ -779,7 +792,7 @@ function Stock() {
 
       {/* Stats */}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${showSubconStockWidget ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
 
         <StatCard
 
@@ -829,77 +842,22 @@ function Stock() {
 
         />
 
-      </div>
+        {showSubconStockWidget && (
 
+          <StatCard
 
+            label="มูลค่าสต็อกผู้รับเหมา"
 
-      {/* Phase 3: สต็อกที่ผู้รับเหมา (Outsource) */}
+            value={`฿${(subconStock?.summary.total_value ?? 0).toLocaleString()}`}
 
-      <div className="phopy-card p-6">
+            icon={Factory}
 
-        <button
-          type="button"
-          onClick={() => setShowSubconStock(v => !v)}
-          className="w-full flex items-center justify-between"
-        >
-          <div className="flex items-center gap-2">
-            <Factory className="w-5 h-5 text-[var(--primary)]" />
-            <h2 className="text-lg font-bold text-[var(--fg-1)]">สต็อกที่ผู้รับเหมา</h2>
-            {subconStock && subconStock.summary.total_value > 0 && (
-              <span className="text-sm text-[var(--fg-3)]">
-                (฿{subconStock.summary.total_value.toLocaleString()})
-              </span>
-            )}
-          </div>
-          {showSubconStock ? <ChevronUp className="w-5 h-5 text-[var(--fg-3)]" /> : <ChevronDown className="w-5 h-5 text-[var(--fg-3)]" />}
-        </button>
+            color="primary"
 
-        {showSubconStock && (
-          <div className="mt-4">
-            {subconStockLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" /></div>
-            ) : !subconStock || subconStock.rows.length === 0 ? (
-              <p className="text-sm text-[var(--fg-4)] text-center py-4">ไม่มีวัตถุดิบค้างอยู่ที่ผู้รับเหมา</p>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
-                    <p className="text-xs text-[var(--fg-4)]">มูลค่ารวม</p>
-                    <p className="text-lg font-bold text-[var(--fg-1)]">฿{subconStock.summary.total_value.toLocaleString()}</p>
-                  </div>
-                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
-                    <p className="text-xs text-[var(--fg-4)]">จำนวนผู้รับเหมา</p>
-                    <p className="text-lg font-bold text-[var(--fg-1)]">{subconStock.summary.by_supplier.length}</p>
-                  </div>
-                  <div className="bg-[var(--surface-2)] rounded-lg p-3">
-                    <p className="text-xs text-[var(--fg-4)]">จำนวนรายการ</p>
-                    <p className="text-lg font-bold text-[var(--fg-1)]">{subconStock.rows.length}</p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[var(--border)]">
-                        {['ผู้รับเหมา', 'วัตถุดิบ', 'จำนวน', 'มูลค่า'].map(h => (
-                          <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-4 font-medium">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subconStock.rows.map(row => (
-                        <tr key={row.id} className="border-b border-[var(--border)] last:border-0">
-                          <td className="py-2 pr-4 font-semibold text-[var(--fg-1)]">{row.supplier_name}</td>
-                          <td className="py-2 pr-4 text-[var(--fg-2)]">{row.item_name}</td>
-                          <td className="py-2 pr-4 text-[var(--fg-2)]">{row.quantity.toLocaleString()} {row.unit}</td>
-                          <td className="py-2 pr-4 text-[var(--fg-2)]">฿{row.total_value.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
+            onClick={() => navigate('/stock/subcontractors')}
+
+          />
+
         )}
 
       </div>
@@ -4168,6 +4126,8 @@ function StatCard({
 
   color,
 
+  onClick,
+
 }: {
 
   label: string
@@ -4177,6 +4137,8 @@ function StatCard({
   icon: any
 
   color: string
+
+  onClick?: () => void
 
 }) {
 
@@ -4194,27 +4156,47 @@ function StatCard({
 
 
 
+  const cardContent = (
+
+    <div className="flex items-center justify-between">
+
+      <div>
+
+        <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
+
+        <p className={`text-2xl font-bold ${colorClass}`}>
+
+          {value}
+
+        </p>
+
+      </div>
+
+      <Icon className={`w-8 h-8 ${colorClass} opacity-50`} />
+
+    </div>
+
+  )
+
+  if (onClick) {
+
+    return (
+
+      <button type="button" onClick={onClick} className="phopy-card p-4 text-left w-full transition-all hover:border-phopy-indigo/50 hover:shadow-md cursor-pointer">
+
+        {cardContent}
+
+      </button>
+
+    )
+
+  }
+
   return (
 
     <div className="phopy-card p-4">
 
-      <div className="flex items-center justify-between">
-
-        <div>
-
-          <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
-
-          <p className={`text-2xl font-bold ${colorClass}`}>
-
-            {value}
-
-          </p>
-
-        </div>
-
-        <Icon className={`w-8 h-8 ${colorClass} opacity-50`} />
-
-      </div>
+      {cardContent}
 
     </div>
 

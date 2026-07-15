@@ -1187,4 +1187,17 @@ export function runMigrations(db: any): void {
   } catch (e) {
     console.error('⚠️ subcon outsource tables migration error:', e)
   }
+
+  // Migration: toggle for "subcon stock value" stat card on Stock page (default 1 = shown → preserves existing behavior)
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN show_subcon_stock_widget INTEGER DEFAULT 1`)
+    console.log('✅ Migration: company_settings.show_subcon_stock_widget added')
+  } catch { /* column already exists */ }
+
+  // Migration: password_changed_at — lets /auth/refresh reject refresh tokens
+  // issued before the user's last password change (session revocation).
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`)
+    console.log('✅ Migration: users.password_changed_at added')
+  } catch { /* column already exists */ }
 }

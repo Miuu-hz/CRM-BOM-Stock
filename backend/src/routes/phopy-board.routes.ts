@@ -32,27 +32,31 @@ router.get('/summary', (req: Request, res: Response) => {
       SELECT COALESCE(SUM(total_amount), 0) as revenue
       FROM orders
       WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?
-    `).get(startDate, endDate) as { revenue: number }
+        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
+    `).get(startDate, endDate, tenantId) as { revenue: number }
 
     const costRow = db.prepare(`
       SELECT COALESCE(SUM(poi.total_price), 0) as cost
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
-    `).get(startDate, endDate) as { cost: number }
+        AND po.tenant_id = ?
+    `).get(startDate, endDate, tenantId) as { cost: number }
 
     const prevRevRow = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) as revenue
       FROM orders
       WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?
-    `).get(prevStart, prevEnd) as { revenue: number }
+        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
+    `).get(prevStart, prevEnd, tenantId) as { revenue: number }
 
     const prevCostRow = db.prepare(`
       SELECT COALESCE(SUM(poi.total_price), 0) as cost
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
-    `).get(prevStart, prevEnd) as { cost: number }
+        AND po.tenant_id = ?
+    `).get(prevStart, prevEnd, tenantId) as { cost: number }
 
     // Net profit via journal (revenue - expense accounts for tenant)
     const netRow = db.prepare(`
@@ -84,8 +88,8 @@ router.get('/summary', (req: Request, res: Response) => {
       const mEnd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
       const label = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`
 
-      const mRev = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ?`).get(mStart, mEnd) as { v: number }
-      const mCost = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ?`).get(mStart, mEnd) as { v: number }
+      const mRev = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)`).get(mStart, mEnd, tenantId) as { v: number }
+      const mCost = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND po.tenant_id=?`).get(mStart, mEnd, tenantId) as { v: number }
       const r = Number(mRev.v)
       const c = Number(mCost.v)
       revenueChart.push({ month: label, revenue: r, cost: c, grossProfit: r - c })
@@ -102,8 +106,8 @@ router.get('/summary', (req: Request, res: Response) => {
       const lastD = new Date(cur.getFullYear(), cur.getMonth() + 1, 0)
       const mE = lastD.toISOString().substring(0, 10)
 
-      const r2 = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ?`).get(mS, mE) as { v: number }
-      const c2 = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ?`).get(mS, mE) as { v: number }
+      const r2 = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)`).get(mS, mE, tenantId) as { v: number }
+      const c2 = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND po.tenant_id=?`).get(mS, mE, tenantId) as { v: number }
       const n2 = db.prepare(`SELECT COALESCE(SUM(CASE WHEN a.type='REVENUE' THEN jl.credit-jl.debit ELSE 0 END),0)-COALESCE(SUM(CASE WHEN a.type='EXPENSE' THEN jl.debit-jl.credit ELSE 0 END),0) as v FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND je.is_posted=1 AND date(je.date) BETWEEN ? AND ?`).get(tenantId, mS, mE) as { v: number }
 
       const rev = Number(r2.v)
@@ -118,7 +122,8 @@ router.get('/summary', (req: Request, res: Response) => {
     const arOrders = db.prepare(`
       SELECT order_date, total_amount FROM orders
       WHERE status NOT IN ('COMPLETED','CANCELLED','DELIVERED')
-    `).all() as Array<{ order_date: string; total_amount: number }>
+        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
+    `).all(tenantId) as Array<{ order_date: string; total_amount: number }>
 
     const arAging = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
     for (const o of arOrders) {
@@ -135,7 +140,8 @@ router.get('/summary', (req: Request, res: Response) => {
     const apOrders = db.prepare(`
       SELECT order_date, total_amount FROM purchase_orders
       WHERE status NOT IN ('RECEIVED','CANCELLED')
-    `).all() as Array<{ order_date: string; total_amount: number }>
+        AND tenant_id = ?
+    `).all(tenantId) as Array<{ order_date: string; total_amount: number }>
 
     const apAging = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
     for (const o of apOrders) {
@@ -156,12 +162,12 @@ router.get('/summary', (req: Request, res: Response) => {
         MAX(o.order_date) as last_order
       FROM customers c
       LEFT JOIN orders o ON o.customer_id = c.id AND o.status != 'CANCELLED'
-      WHERE c.status = 'ACTIVE'
+      WHERE c.status = 'ACTIVE' AND c.tenant_id = ?
       GROUP BY c.id, c.name, c.credit_limit
       HAVING curr_rev > 0 OR prev_rev > 0
       ORDER BY curr_rev DESC
       LIMIT 20
-    `).all(startDate, endDate, prevStart, prevEnd) as Array<{
+    `).all(startDate, endDate, prevStart, prevEnd, tenantId) as Array<{
       id: string; name: string; credit_limit: number
       curr_rev: number; prev_rev: number; last_order: string | null
     }>
@@ -192,10 +198,10 @@ router.get('/summary', (req: Request, res: Response) => {
     // ── Stock Alerts ──────────────────────────────────────────────────────────
     const stockAlerts = (db.prepare(`
       SELECT id, name, quantity, min_stock, unit FROM stock_items
-      WHERE quantity <= min_stock AND status = 'ACTIVE'
+      WHERE quantity <= min_stock AND status = 'ACTIVE' AND tenant_id = ?
       ORDER BY (quantity * 1.0 / CASE WHEN min_stock=0 THEN 1 ELSE min_stock END) ASC
       LIMIT 10
-    `).all() as Array<{ id: string; name: string; quantity: number; min_stock: number; unit: string }>).map(s => ({
+    `).all(tenantId) as Array<{ id: string; name: string; quantity: number; min_stock: number; unit: string }>).map(s => ({
       id: s.id, name: s.name, quantity: s.quantity, minStock: s.min_stock, unit: s.unit,
       daysRemaining: s.quantity <= 0 ? 0 : Math.floor(s.quantity / Math.max(s.min_stock / 30, 1))
     }))
@@ -207,9 +213,9 @@ router.get('/summary', (req: Request, res: Response) => {
         COALESCE(SUM(estimated_cost), 0) as est,
         COALESCE(SUM(actual_cost), 0) as act
       FROM work_orders
-      WHERE date(created_at) BETWEEN ? AND ?
+      WHERE date(created_at) BETWEEN ? AND ? AND tenant_id = ?
       GROUP BY status
-    `).all(startDate, endDate) as Array<{ status: string; cnt: number; est: number; act: number }>
+    `).all(startDate, endDate, tenantId) as Array<{ status: string; cnt: number; est: number; act: number }>
 
     const workOrders = { draft: 0, planned: 0, inProgress: 0, completed: 0, cancelled: 0, costVariance: 0 }
     let totalEst = 0, totalAct = 0
@@ -234,10 +240,10 @@ router.get('/summary', (req: Request, res: Response) => {
     // Supplier concentration
     const supplierConc = db.prepare(`
       SELECT supplier_id, SUM(total_amount) as total
-      FROM purchase_orders WHERE status != 'CANCELLED'
+      FROM purchase_orders WHERE status != 'CANCELLED' AND tenant_id = ?
       GROUP BY supplier_id ORDER BY total DESC LIMIT 1
-    `).get() as { supplier_id: string; total: number } | undefined
-    const totalPO = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as t FROM purchase_orders WHERE status!='CANCELLED'`).get() as { t: number }
+    `).get(tenantId) as { supplier_id: string; total: number } | undefined
+    const totalPO = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as t FROM purchase_orders WHERE status!='CANCELLED' AND tenant_id=?`).get(tenantId) as { t: number }
     const supplierConcPct = totalPO.t > 0 && supplierConc ? (Number(supplierConc.total) / Number(totalPO.t)) * 100 : 0
 
     // Top 3 customer churn risk
@@ -330,8 +336,8 @@ router.get('/extended', (req: Request, res: Response) => {
     const onlineOrders = channelByPlatform.reduce((s, r) => s + Number(r.orders), 0)
 
     const offlineRow = db.prepare(
-      "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?"
-    ).get(startDate, endDate) as { revenue: number; orders: number }
+      "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)"
+    ).get(startDate, endDate, tenantId) as { revenue: number; orders: number }
 
     const orderTrend: Array<{ month: string; online: number; offline: number }> = []
     for (let i = 11; i >= 0; i--) {
@@ -340,7 +346,7 @@ router.get('/extended', (req: Request, res: Response) => {
       const mE = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().substring(0, 10)
       const mn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       const onR = db.prepare("SELECT COALESCE(SUM(orders), 0) as orders FROM marketing_metrics WHERE tenant_id = ? AND date(date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { orders: number }
-      const ofR = db.prepare("SELECT COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?").get(mS, mE) as { orders: number }
+      const ofR = db.prepare("SELECT COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)").get(mS, mE, tenantId) as { orders: number }
       orderTrend.push({ month: mn, online: Number(onR.orders), offline: Number(ofR.orders) })
     }
 
@@ -379,7 +385,7 @@ router.get('/extended', (req: Request, res: Response) => {
       GROUP BY a.category HAVING amount > 0 ORDER BY amount DESC
     `).all(tenantId, startDate, endDate) as Array<{ category: string; amount: number }>
 
-    const revRow2 = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as rev FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?").get(startDate, endDate) as { rev: number }
+    const revRow2 = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as rev FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)").get(startDate, endDate, tenantId) as { rev: number }
     const totalExp = expByCat.reduce((s, r) => s + Number(r.amount), 0)
     const expenseRatio = Number(revRow2.rev) > 0 ? (totalExp / Number(revRow2.rev)) * 100 : 0
 

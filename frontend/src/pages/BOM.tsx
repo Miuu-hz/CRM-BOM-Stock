@@ -73,6 +73,7 @@ interface BOM {
   totalCost: number
   items?: BOMItem[]
   materials?: BOMItem[]
+  itemCount?: number
   createdAt: string
   updatedAt: string
   isTopLevel?: boolean
@@ -197,6 +198,8 @@ function BOMPage() {
 
   // List view expanded states
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [expandedItemsMap, setExpandedItemsMap] = useState<Record<string, BOMItem[]>>({})
+  const [expandedLoadingIds, setExpandedLoadingIds] = useState<Set<string>>(new Set())
 
   // Fetch BOMs and stats
   const fetchData = async () => {
@@ -221,6 +224,7 @@ function BOMPage() {
         parentId: bom.parent_id,
         parentVersion: bom.parent_version,
         parentProductName: bom.parent_product_name,
+        itemCount: bom.itemCount ?? bom.item_count,
       }))
 
       setBoms(transformedBOMs)
@@ -308,16 +312,35 @@ function BOMPage() {
   }
 
   // Toggle expanded row in list view
-  const toggleExpanded = (id: string) => {
+  const toggleExpanded = async (bom: BOM) => {
+    const isCurrentlyExpanded = expandedIds.has(bom.id)
     setExpandedIds((prev) => {
       const newSet = new Set(prev)
-      if (newSet.has(id)) {
-        newSet.delete(id)
+      if (isCurrentlyExpanded) {
+        newSet.delete(bom.id)
       } else {
-        newSet.add(id)
+        newSet.add(bom.id)
       }
       return newSet
     })
+
+    // Lazy-load items on first expand (list view never gets items/materials from GET /bom)
+    if (!isCurrentlyExpanded && !expandedItemsMap[bom.id] && !bom.items && !bom.materials) {
+      setExpandedLoadingIds((prev) => new Set(prev).add(bom.id))
+      try {
+        const full = await nestedBomService.getById(bom.id)
+        setExpandedItemsMap((prev) => ({ ...prev, [bom.id]: full.items || full.materials || [] }))
+      } catch (err) {
+        console.error('Failed to fetch BOM items:', err)
+        setExpandedItemsMap((prev) => ({ ...prev, [bom.id]: [] }))
+      } finally {
+        setExpandedLoadingIds((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(bom.id)
+          return newSet
+        })
+      }
+    }
   }
 
   // Load BOM tree
@@ -638,7 +661,7 @@ function BOMPage() {
 
             {/* Card View */}
             {bomFilter !== 'tree-view' && viewMode === 'card' && filteredBOMs.length > 0 && (
-              <div className="grid grid-cols-1 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
                 {filteredBOMs.map((bom, index) => (
                   <BOMCard
                     key={bom.id}
@@ -675,7 +698,7 @@ function BOMPage() {
                       <React.Fragment key={bom.id}>
                         <tr
                           className="cursor-pointer hover:bg-[var(--surface-2)]"
-                          onClick={() => toggleExpanded(bom.id)}
+                          onClick={() => toggleExpanded(bom)}
                         >
                           <td>
                             {expandedIds.has(bom.id) ? (
@@ -704,7 +727,7 @@ function BOMPage() {
                             />
                           </td>
                           <td className="text-[var(--primary)]">{bom.version}</td>
-                          <td className="text-[var(--fg-3)]">{bom.items?.length || bom.materials?.length || 0} {t('common.items')}</td>
+                          <td className="text-[var(--fg-3)]">{bom.itemCount ?? (bom.items?.length || bom.materials?.length || 0)} {t('common.items')}</td>
                           <td>
                             <StatusBadge
                               status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'}
@@ -747,7 +770,14 @@ function BOMPage() {
                           <tr>
                             <td colSpan={9} className="bg-[var(--bg)]/30 p-0">
                               <div className="p-4">
-                                <BOMItemsTable items={bom.items || bom.materials || []} />
+                                {expandedLoadingIds.has(bom.id) ? (
+                                  <div className="flex items-center gap-2 py-4 text-sm text-[var(--fg-3)]">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {t('bom.card.loading')}
+                                  </div>
+                                ) : (
+                                  <BOMItemsTable items={expandedItemsMap[bom.id] || bom.items || bom.materials || []} />
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -987,13 +1017,17 @@ function BOMCard({
   const [isExpanded, setIsExpanded] = useState(false)
   const [cardItems, setCardItems] = useState<BOMItem[]>(bom.items || bom.materials || [])
   const [cardLoading, setCardLoading] = useState(false)
-  const itemCount = cardItems.length
+  const [itemsFetched, setItemsFetched] = useState(!!(bom.items || bom.materials))
+  // Prefer the server-provided count (available immediately from GET /bom) so the
+  // badge is correct before the user ever expands the card. Once the full item
+  // list has been fetched (or was already present), fall back to its length.
+  const itemCount = itemsFetched ? cardItems.length : (bom.itemCount ?? cardItems.length)
 
   const handleToggle = async () => {
     const next = !isExpanded
     setIsExpanded(next)
     // Fetch items on first expand if not loaded yet
-    if (next && itemCount === 0 && !bom.items && !bom.materials) {
+    if (next && !itemsFetched) {
       setCardLoading(true)
       try {
         const full = await bomService.getById(bom.id)
@@ -1002,6 +1036,7 @@ function BOMCard({
       } catch {
         setCardItems([])
       } finally {
+        setItemsFetched(true)
         setCardLoading(false)
       }
     }
@@ -1018,71 +1053,69 @@ function BOMCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="phopy-card p-6"
+      className="phopy-card p-4 md:p-5"
     >
       {/* BOM Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-lg flex items-center justify-center shadow-2 ${
-            bom.isSemiFinished 
-              ? 'bg-gradient-to-br from-purple-500 to-pink-500' 
+      <div className="flex items-start justify-between mb-4 gap-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-12 h-12 shrink-0 rounded-lg flex items-center justify-center shadow-2 ${
+            bom.isSemiFinished
+              ? 'bg-gradient-to-br from-purple-500 to-pink-500'
               : bom.level === 0
               ? 'bg-gradient-to-br from-phopy-indigo to-phopy-indigo-600'
               : 'bg-gradient-to-br from-success to-phopy-indigo'
           }`}>
             {bom.isSemiFinished ? (
-              <GitBranch className="w-8 h-8 text-white" />
+              <GitBranch className="w-6 h-6 text-white" />
             ) : (
-              <FileText className="w-8 h-8 text-white" />
+              <FileText className="w-6 h-6 text-white" />
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-xl font-bold text-[var(--fg-1)]">{bom.productName}</h3>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="text-base font-bold text-[var(--fg-1)] truncate">{bom.productName}</h3>
               <LevelBadge level={bom.level} />
-              <BOMTypeBadge 
-                isSemiFinished={bom.isSemiFinished} 
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <BOMTypeBadge
+                isSemiFinished={bom.isSemiFinished}
                 isTopLevel={bom.isTopLevel || bom.level === 0}
               />
-            </div>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-sm text-[var(--fg-3)]">{bom.productCode}</span>
-              <span className="text-sm text-[var(--fg-3)]">•</span>
-              <span className="text-sm text-[var(--primary)]">{bom.version}</span>
-              <span className="text-sm text-[var(--fg-3)]">•</span>
-              <span className="text-sm text-[var(--fg-3)]">{bom.productCategory}</span>
+              <span className="text-xs text-[var(--fg-3)]">{bom.productCode}</span>
+              <span className="text-xs text-[var(--fg-3)]">•</span>
+              <span className="text-xs text-[var(--primary)]">{bom.version}</span>
             </div>
             {bom.parentProductName && (
-              <div className="flex items-center gap-1 mt-1 text-sm text-[var(--fg-4)]">
+              <div className="flex items-center gap-1 mt-1 text-xs text-[var(--fg-4)]">
                 <ArrowRight className="w-3 h-3" />
-                <span>{t('bom.card.usedIn', { name: bom.parentProductName })}</span>
+                <span className="truncate">{t('bom.card.usedIn', { name: bom.parentProductName })}</span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5 shrink-0">
           <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'} />
           <button
             onClick={() => onEdit(bom)}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
             title={t('common.edit')}
           >
-            <Edit className="w-5 h-5 text-[var(--fg-3)] hover:text-[var(--primary)]" />
+            <Edit className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--primary)]" />
           </button>
           <button
             onClick={() => onCopy(bom)}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
             title={t('common.copy')}
           >
-            <Copy className="w-5 h-5 text-[var(--fg-3)] hover:text-success" />
+            <Copy className="w-4 h-4 text-[var(--fg-3)] hover:text-success" />
           </button>
           <button
             onClick={() => onDelete(bom.id, bom.productName)}
-            className="p-2 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--danger-soft)] transition-colors"
             title={t('common.delete')}
           >
-            <Trash2 className="w-5 h-5 text-[var(--fg-3)] hover:text-danger" />
+            <Trash2 className="w-4 h-4 text-[var(--fg-3)] hover:text-danger" />
           </button>
         </div>
       </div>
@@ -1116,57 +1149,49 @@ function BOMCard({
                   {t('bom.card.noItems')}
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-[var(--border)]/30">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-[var(--fg-4)] border-b border-[var(--border)]/30 bg-[var(--bg)]/30">
-                        <th className="text-left py-2 px-3">{t('bom.itemsTable.type')}</th>
-                        <th className="text-left py-2 px-3">{t('bom.itemsTable.name')}</th>
-                        <th className="text-left py-2 px-3">{t('bom.itemsTable.code')}</th>
-                        <th className="text-right py-2 px-3">{t('bom.itemsTable.quantity')}</th>
-                        <th className="text-right py-2 px-3">{t('bom.itemsTable.unitCost')}</th>
-                        <th className="text-right py-2 px-3">{t('bom.itemsTable.total')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cardItems.map((item) => {
-                        const isChildBOM = item.itemType === 'CHILD_BOM'
-                        const name = isChildBOM ? item.childBomProductName : item.material?.name
-                        const code = isChildBOM ? item.childBomProductCode : item.material?.code
-                        const unitCost = isChildBOM ? 0 : (item.material?.unitCost || 0)
-                        const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
+                // Compact vertical list (not a wide 6-col table) so it stays readable
+                // inside a narrower grid column. Type/code move to a subtext line
+                // under the material name; only qty + total are shown alongside.
+                <div className="rounded-lg border border-[var(--border)]/30 divide-y divide-[var(--border)]/10 bg-[var(--bg)]/20">
+                  {cardItems.map((item) => {
+                    const isChildBOM = item.itemType === 'CHILD_BOM'
+                    const name = isChildBOM ? item.childBomProductName : item.material?.name
+                    const code = isChildBOM ? item.childBomProductCode : item.material?.code
+                    const unitCost = isChildBOM ? 0 : (item.material?.unitCost || 0)
+                    const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
 
-                        return (
-                          <tr key={item.id} className="border-b border-[var(--border)]/10 hover:bg-[var(--bg)]/20">
-                            <td className="py-2 px-3">
-                              {isChildBOM ? (
-                                <span className="flex items-center gap-1 text-purple-500 text-xs">
-                                  <GitBranch className="w-3 h-3" />
-                                  Child BOM
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 text-[var(--fg-3)] text-xs">
-                                  <Box className="w-3 h-3" />
-                                  {t('bom.itemType.material')}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2 px-3 text-[var(--fg-2)] whitespace-nowrap">{name}</td>
-                            <td className="py-2 px-3 text-[var(--fg-4)] text-xs">{code}</td>
-                            <td className="py-2 px-3 text-right text-[var(--fg-3)]">
-                              {Number(item.quantity)} {item.unit || item.material?.unit}
-                            </td>
-                            <td className="py-2 px-3 text-right text-[var(--fg-3)]">
-                              {!isChildBOM && `฿${unitCost.toLocaleString()}`}
-                            </td>
-                            <td className="py-2 px-3 text-right text-success font-semibold">
-                              {!isChildBOM && `฿${itemTotal.toLocaleString()}`}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-3 py-2 px-3 hover:bg-[var(--surface-2)]">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-[var(--fg-2)] truncate">{name}</div>
+                          <div className="flex items-center gap-1 mt-0.5 text-xs text-[var(--fg-4)]">
+                            {isChildBOM ? (
+                              <span className="flex items-center gap-1 text-purple-500">
+                                <GitBranch className="w-3 h-3" />
+                                Child BOM
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <Box className="w-3 h-3" />
+                                {t('bom.itemType.material')}
+                              </span>
+                            )}
+                            {code && <span>· {code}</span>}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs text-[var(--fg-3)]">
+                            {Number(item.quantity)} {item.unit || item.material?.unit}
+                          </div>
+                          {!isChildBOM && (
+                            <div className="text-sm text-success font-semibold">
+                              ฿{itemTotal.toLocaleString()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </motion.div>
@@ -1175,13 +1200,13 @@ function BOMCard({
       </div>
 
       {/* Total Cost */}
-      <div className="flex items-center justify-between pt-4 border-t border-[var(--border)]">
-        <div className="text-sm text-[var(--fg-3)]">
+      <div className="flex items-center justify-between flex-wrap gap-2 pt-4 border-t border-[var(--border)]">
+        <div className="text-xs text-[var(--fg-3)]">
           {t('bom.card.lastUpdated')}: {fmtDate(bom.updatedAt)}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[var(--fg-3)]">{t('bom.card.totalProductionCost')}:</span>
-          <span className="text-2xl font-bold text-[var(--primary)]">
+          <span className="text-xs text-[var(--fg-3)]">{t('bom.card.totalProductionCost')}:</span>
+          <span className="text-lg font-bold text-[var(--primary)]">
             ฿{(bom.totalCost || 0).toLocaleString()}
           </span>
         </div>

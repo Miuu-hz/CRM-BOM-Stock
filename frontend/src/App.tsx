@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import CRM from './pages/CRM'
 import BOM from './pages/BOM'
 import Stock from './pages/Stock'
+import SubconStock from './pages/SubconStock'
 import Calculator from './pages/Calculator'
 import Marketing from './pages/Marketing'
 import Sales from './pages/Sales'
@@ -49,6 +50,7 @@ function AppContent() {
         <Route path="/crm" element={<CRM />} />
         <Route path="/bom" element={<BOM />} />
         <Route path="/stock" element={<Stock />} />
+        <Route path="/stock/subcontractors" element={<SubconStock />} />
         <Route path="/calculator" element={<Calculator />} />
         <Route path="/marketing" element={<Marketing />} />
         <Route path="/sales" element={<Sales />} />

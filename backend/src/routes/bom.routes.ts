@@ -239,7 +239,8 @@ router.get('/', async (req: Request, res: Response) => {
     const boms = db.prepare(`
       SELECT b.*, p.name as product_name, p.sku as product_code,
              parent_bom.version as parent_version,
-             parent_p.name as parent_product_name
+             parent_p.name as parent_product_name,
+             (SELECT COUNT(*) FROM bom_items WHERE bom_id = b.id) as item_count
       FROM boms b
       LEFT JOIN stock_items p ON b.product_id = p.id
       LEFT JOIN boms parent_bom ON b.parent_id = parent_bom.id
@@ -254,6 +255,7 @@ router.get('/', async (req: Request, res: Response) => {
       return {
         ...bom,
         totalCost,
+        itemCount: bom.item_count,
         isTopLevel: !bom.parent_id && bom.level === 0
       }
     })
