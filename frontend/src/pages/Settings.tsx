@@ -43,6 +43,7 @@ import AdminUserManagement from './settings/AdminUserManagement'
 import ApprovalSettings from './settings/ApprovalSettings'
 import DocumentNumberSettings from './settings/DocumentNumberSettings'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../services/api'
 
 interface ChildUser {
   id: string
@@ -101,16 +102,16 @@ export default function SettingsPage() {
       {(() => {
         const groups = [
           {
-            id: 'system', label: 'ระบบ', icon: Settings,
+            id: 'system', label: t('settings.settingsPage.groups.system'), icon: Settings,
             tabs: [
               { id: 'general' as const, icon: Settings, label: t('settings.settingsPage.tabs.general'), show: true },
               { id: 'units' as const, icon: ArrowLeftRight, label: t('settings.settingsPage.tabs.units'), show: true },
               { id: 'material-categories' as const, icon: Tag, label: t('settings.settingsPage.tabs.materialCategories'), show: isAdmin || isMaster },
-              { id: 'doc-numbering' as const, icon: Hash, label: 'เลขที่เอกสาร', show: isAdmin || isMaster },
+              { id: 'doc-numbering' as const, icon: Hash, label: t('settings.settingsPage.tabs.docNumbering'), show: isAdmin || isMaster },
             ],
           },
           {
-            id: 'people', label: 'ผู้ใช้ & สิทธิ์', icon: Users,
+            id: 'people', label: t('settings.settingsPage.groups.people'), icon: Users,
             tabs: [
               { id: 'users' as const, icon: Users, label: t('settings.settingsPage.tabs.users'), show: isAdmin || isMaster, badge: localChildren.length },
               { id: 'permissions' as const, icon: UserCog, label: t('settings.settingsPage.tabs.permissions'), show: isAdmin || isMaster },
@@ -119,7 +120,7 @@ export default function SettingsPage() {
             ],
           },
           {
-            id: 'sales', label: 'ขาย & POS', icon: Store,
+            id: 'sales', label: t('settings.settingsPage.groups.sales'), icon: Store,
             tabs: [
               { id: 'pos' as const, icon: Store, label: t('settings.settingsPage.tabs.pos'), show: isAdmin || isMaster },
               { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
@@ -128,7 +129,7 @@ export default function SettingsPage() {
             ],
           },
           {
-            id: 'advanced', label: 'ขั้นสูง', icon: Database,
+            id: 'advanced', label: t('settings.settingsPage.groups.advanced'), icon: Database,
             tabs: [
               { id: 'llm' as const, icon: Brain, label: t('settings.settingsPage.tabs.llm'), show: isMaster },
               { id: 'backup' as const, icon: Database, label: t('settings.settingsPage.tabs.backup'), show: isMaster },
@@ -813,7 +814,7 @@ function GeneralSettings() {
         </div>
       </div>
 
-      {/* QC Gate — บังคับผ่าน QC ก่อนปิดใบสั่งงาน */}
+      {/* QC Gate — require QC pass before closing work order */}
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
@@ -1035,6 +1036,7 @@ function UserManagement({ children, loading, onRefresh, onAdd, onDelete }: any) 
 
 // Role Badge
 function RoleBadge({ role }: { role: string }) {
+  const { t } = useTranslation()
   const colors: Record<string, string> = {
     ADMIN: 'bg-[var(--success-soft)] text-success',
     MANAGER: 'bg-[var(--primary-soft)] text-[var(--primary)]',
@@ -1044,7 +1046,7 @@ function RoleBadge({ role }: { role: string }) {
 
   return (
     <span className={`px-2 py-1 rounded text-xs font-medium ${colors[role] || colors.USER}`}>
-      {role}
+      {t(`settings.settingsPage.userManagement.roles.${role}`)}
     </span>
   )
 }
@@ -1188,6 +1190,33 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 // Security Settings
 function SecuritySettings() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const isMasterEnv = typeof user?.id === 'string' && user.id.startsWith('master_')
+
+  const [curPw, setCurPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const submitChangePw = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMsg(null)
+    if (newPw.length < 8) return setMsg({ ok: false, text: t('settings.settingsPage.security.passwordTooShort') })
+    if (newPw !== confirmPw) return setMsg({ ok: false, text: t('settings.settingsPage.security.passwordsDoNotMatch') })
+    setBusy(true)
+    try {
+      const res = await api.post('/auth/change-password', { currentPassword: curPw, newPassword: newPw })
+      setMsg({ ok: true, text: res.data?.message || t('settings.settingsPage.security.changeSuccess') })
+      setCurPw(''); setNewPw(''); setConfirmPw('')
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.response?.data?.message || t('settings.settingsPage.security.changeFailed') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="phopy-card p-6">
@@ -1195,12 +1224,44 @@ function SecuritySettings() {
           <Key className="w-5 h-5 text-[var(--primary)]" />
           {t('settings.settingsPage.security.changePassword')}
         </h3>
-        <p className="text-[var(--fg-3)] text-sm mb-4">
-          {t('settings.settingsPage.security.comingSoon')}
-        </p>
-        <button disabled className="phopy-btn-primary opacity-50 cursor-not-allowed">
-          {t('settings.settingsPage.security.changePasswordButton')}
-        </button>
+
+        {isMasterEnv ? (
+          <p className="text-[var(--fg-3)] text-sm">
+            {t('settings.settingsPage.security.masterPasswordNote')}
+          </p>
+        ) : (
+          <form onSubmit={submitChangePw} className="space-y-4 max-w-md">
+            {msg && (
+              <div className={`p-3 rounded-lg text-sm ${msg.ok ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-danger'}`}>
+                {msg.text}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">{t('settings.settingsPage.security.currentPassword')}</label>
+              <input type={showPw ? 'text' : 'password'} value={curPw} onChange={e => setCurPw(e.target.value)}
+                className="phopy-input w-full" autoComplete="current-password" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">{t('settings.settingsPage.security.newPasswordHint')}</label>
+              <input type={showPw ? 'text' : 'password'} value={newPw} onChange={e => setNewPw(e.target.value)}
+                className="phopy-input w-full" autoComplete="new-password" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">{t('settings.settingsPage.security.confirmPassword')}</label>
+              <input type={showPw ? 'text' : 'password'} value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+                className="phopy-input w-full" autoComplete="new-password" required />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-[var(--fg-3)] cursor-pointer">
+              <input type="checkbox" checked={showPw} onChange={e => setShowPw(e.target.checked)} className="w-4 h-4" />
+              {t('settings.settingsPage.security.showPassword')}
+            </label>
+            <button type="submit" disabled={busy}
+              className="phopy-btn-primary flex items-center gap-2 disabled:opacity-50">
+              {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+              {busy ? t('settings.settingsPage.security.saving') : t('settings.settingsPage.security.changePasswordButton')}
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="phopy-card p-6">

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Mail, Lock, ArrowRight, Loader2, X, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../services/api'
 
 function Login() {
   const { t } = useTranslation()
@@ -11,6 +12,14 @@ function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Forgot / reset-password modal state
+  const [showReset, setShowReset] = useState(false)
+  const [rToken, setRToken] = useState('')
+  const [rNewPw, setRNewPw] = useState('')
+  const [rConfirm, setRConfirm] = useState('')
+  const [rBusy, setRBusy] = useState(false)
+  const [rMsg, setRMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,6 +33,23 @@ function Login() {
     }
 
     setLoading(false)
+  }
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setRMsg(null)
+    if (rNewPw.length < 8) return setRMsg({ ok: false, text: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร' })
+    if (rNewPw !== rConfirm) return setRMsg({ ok: false, text: 'รหัสผ่านใหม่และการยืนยันไม่ตรงกัน' })
+    setRBusy(true)
+    try {
+      const res = await api.post('/auth/reset-password', { token: rToken.trim(), newPassword: rNewPw })
+      setRMsg({ ok: true, text: res.data?.message || 'ตั้งรหัสผ่านใหม่สำเร็จ' })
+      setRToken(''); setRNewPw(''); setRConfirm('')
+    } catch (err: any) {
+      setRMsg({ ok: false, text: err?.response?.data?.message || 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ' })
+    } finally {
+      setRBusy(false)
+    }
   }
 
   return (
@@ -108,6 +134,7 @@ function Login() {
             </label>
             <button
               type="button"
+              onClick={() => { setShowReset(true); setRMsg(null) }}
               className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors"
             >
               {t('login.forgotPassword')}
@@ -140,6 +167,59 @@ function Login() {
           </p>
         </div>
       </motion.div>
+
+      {/* Forgot / Reset Password Modal */}
+      <AnimatePresence>
+        {showReset && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50"
+            onClick={() => setShowReset(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="phopy-card p-6 w-full max-w-md relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button type="button" onClick={() => setShowReset(false)}
+                className="absolute top-4 right-4 text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-2 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-[var(--primary)]" />
+                ตั้งรหัสผ่านใหม่
+              </h3>
+              <p className="text-sm text-[var(--fg-3)] mb-4">
+                ขอ<b>รหัสรีเซ็ต (reset code)</b> จากผู้ดูแลระบบ (Admin) ของบริษัทคุณ แล้วนำมากรอกด้านล่างเพื่อตั้งรหัสผ่านใหม่ด้วยตัวเอง (รหัสมีอายุ 30 นาที)
+              </p>
+              <form onSubmit={submitReset} className="space-y-4">
+                {rMsg && (
+                  <div className={`p-3 rounded-lg text-sm ${rMsg.ok ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-danger'}`}>
+                    {rMsg.text}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">รหัสรีเซ็ต</label>
+                  <input value={rToken} onChange={e => setRToken(e.target.value)} className="phopy-input w-full" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label>
+                  <input type="password" value={rNewPw} onChange={e => setRNewPw(e.target.value)} className="phopy-input w-full" autoComplete="new-password" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1">ยืนยันรหัสผ่านใหม่</label>
+                  <input type="password" value={rConfirm} onChange={e => setRConfirm(e.target.value)} className="phopy-input w-full" autoComplete="new-password" required />
+                </div>
+                <button type="submit" disabled={rBusy}
+                  className="w-full phopy-btn-primary flex items-center justify-center gap-2 disabled:opacity-50">
+                  {rBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                  {rBusy ? 'กำลังบันทึก...' : 'ตั้งรหัสผ่านใหม่'}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

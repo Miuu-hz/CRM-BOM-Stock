@@ -43,7 +43,8 @@ interface MenuItem {
   descriptionKey?: string
   isParent?: boolean
   subMenu?: MenuItem[]
-  adminOnly?: boolean
+  masterOnly?: boolean
+  approverOnly?: boolean
 }
 
 const menuItems: MenuItem[] = [
@@ -81,8 +82,8 @@ const menuItems: MenuItem[] = [
       { path: '/accounting/phopy-board', tKey: 'sidebar.phopyBoard', icon: LayoutDashboard },
     ],
   },
-  { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
-  { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog, adminOnly: true },
+  { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck, approverOnly: true },
+  { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog, masterOnly: true },
   { path: '/cashier', tKey: 'sidebar.cashier', icon: Store, descriptionKey: 'sidebar.cashierDesc' },
   { path: '/kds', tKey: 'sidebar.kitchenDisplay', icon: MonitorPlay, descriptionKey: 'sidebar.kitchenDisplayDesc' },
   { path: 'https://kanban.phopy.net', tKey: 'sidebar.kanban', icon: Trello, descriptionKey: 'sidebar.kanbanDesc' },
@@ -216,7 +217,7 @@ function Sidebar({ mode }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 py-4 overflow-y-auto phopy-scrollbar" role="navigation" aria-label={t('sidebar.mainMenu')}>
         <div className={`space-y-1 ${isRail ? 'px-1.5' : 'px-2'}`}>
-          {menuItems.map((item) => {
+          {menuItems.filter((item) => (!item.masterOnly || isMaster) && (!item.approverOnly || user?.role !== 'USER')).map((item) => {
             const label = t(item.tKey)
             const description = item.descriptionKey ? t(item.descriptionKey) : undefined
             if (item.subMenu) {

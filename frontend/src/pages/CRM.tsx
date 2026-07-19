@@ -984,7 +984,7 @@ function CustomerDetailModal({
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-phopy-indigo/30">
               <Building2 className="w-8 h-8 text-white" />
             </div>
-            <h2 className="text-base font-bold text-white leading-tight">{customer.name}</h2>
+            <h2 className="text-base font-bold text-[var(--fg-1)] leading-tight">{customer.name}</h2>
             <p className="text-xs text-[var(--fg-4)] mt-0.5">{customer.code}</p>
             <div className="flex items-center justify-center gap-1.5 mt-2 flex-wrap">
               <span className="text-xs px-2 py-0.5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] border border-phopy-indigo-50">{customer.type}</span>
@@ -1042,7 +1042,7 @@ function CustomerDetailModal({
             {customer.phone && (
               <div className="flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-[var(--primary)] flex-shrink-0" />
-                <span className="text-xs text-white font-semibold">{customer.phone}</span>
+                <span className="text-xs text-[var(--fg-1)] font-semibold">{customer.phone}</span>
               </div>
             )}
             {customer.city && (
@@ -1087,13 +1087,13 @@ function CustomerDetailModal({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5">
                 <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.table.orders')}</p>
                 <p className="text-lg font-bold text-[var(--primary)]">{totalOrders}</p>
               </div>
-              <div className="bg-[var(--surface-2)/60 rounded-lg p-2.5">
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5">
                 <p className="text-[10px] text-[var(--fg-4)] mb-0.5">{t('crm.detail.latest')}</p>
-                <p className="text-xs font-semibold text-white">{lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</p>
+                <p className="text-xs font-semibold text-[var(--fg-1)]">{lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}</p>
               </div>
             </div>
 
@@ -1177,7 +1177,7 @@ function CustomerDetailModal({
                     </div>
                     <div className="phopy-card p-3 text-center border border-[var(--border-strong)]">
                       <p className="text-xs text-[var(--fg-3)] mb-1">{t('crm.detail.lastOrder')}</p>
-                      <p className="text-sm font-bold text-white">
+                      <p className="text-sm font-bold text-[var(--fg-1)]">
                         {lastDate ? new Date(lastDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
                       </p>
                       {insights.stats.daysSinceLastOrder !== undefined && (
@@ -1351,7 +1351,7 @@ function CustomerDetailModal({
                       {searchResults.map((product) => (
                         <div key={product.id} className="flex items-center justify-between p-2 bg-[var(--bg)] rounded-lg">
                           <div>
-                            <p className="text-sm font-medium text-white">{product.name}</p>
+                            <p className="text-sm font-medium text-[var(--fg-1)]">{product.name}</p>
                             <p className="text-xs text-[var(--fg-3)]">{product.sku} • {product.category}</p>
                           </div>
                           <button onClick={() => handleAddRecommendation(product)} disabled={addingRec}
@@ -1375,7 +1375,7 @@ function CustomerDetailModal({
                   {recommendations.map((rec) => (
                     <div key={rec.id} className="phopy-card p-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-white text-sm truncate">{rec.productName}</p>
+                        <p className="font-semibold text-[var(--fg-1)] text-sm truncate">{rec.productName}</p>
                         <p className="text-xs text-[var(--fg-3)]">{rec.productCategory || '-'}</p>
                         <span className={`text-xs px-2 py-0.5 rounded inline-block mt-1 ${
                           rec.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning' :
@@ -1571,7 +1571,7 @@ function ActivityLogTab({
       {/* Add Activity Form */}
       {showAddForm && (
         <div className="phopy-card p-4 space-y-3 border-2 border-phopy-indigo/30">
-          <h4 className="font-semibold text-white text-sm">{t('crm.activityTab.formTitle')}</h4>
+          <h4 className="font-semibold text-[var(--fg-1)] text-sm">{t('crm.activityTab.formTitle')}</h4>
           <div className="flex gap-2 flex-wrap">
             {(['NOTE', 'CALL', 'EMAIL', 'MEETING'] as const).map((type) => {
               const cfg = typeConfig[type]
@@ -1596,7 +1596,7 @@ function ActivityLogTab({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="บันทึกรายละเอียด..."
-            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-phopy-indigo min-h-[80px] resize-none"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo min-h-[80px] resize-none"
           />
           <div className="flex gap-2 justify-end">
             <button
@@ -1710,15 +1710,15 @@ function ActivityLogTab({
   )
 }
 
-// ── Donut chart for favourites ────────────────────────────────────────────────
-const DONUT_COLORS = ['var(--info)','var(--primary)','var(--success)','var(--warning)','var(--link)','var(--fg-4)']  // ponytail: token palette for distinct chart segments
+// -- Donut chart for favourites ----------------------------------------------
+const DONUT_COLORS = ['#3949E5','#16A34A','#F5A524','#8B5CF6','#EC4899','#0EA5E9','#EF4444','#64748B','#14B8A6','#A855F7']  // distinct categorical hues
 
-function DonutChart({ slices }: { slices: { label: string; value: number; color: string }[] }) {
-  const size = 180
+function DonutChart({ slices, centerValue, centerLabel }: { slices: { label: string; value: number; color: string }[]; centerValue: string; centerLabel: string }) {
+  const size = 200
   const cx = size / 2
   const cy = size / 2
-  const R = 78
-  const r = 48
+  const R = 88
+  const r = 56
   const total = slices.reduce((s, x) => s + x.value, 0)
   if (total === 0) return null
 
@@ -1741,15 +1741,22 @@ function DonutChart({ slices }: { slices: { label: string; value: number; color:
   })
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {paths.map((p, i) => (
-        <path key={i} d={p.d} fill={p.color} opacity={0.9}>
-          <title>{p.label} {p.pct}%</title>
-        </path>
-      ))}
-      <circle cx={cx} cy={cy} r={r - 2} fill="var(--surface)" />
-      <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--fg-1)" fontSize="20" fontWeight="bold">{paths[0]?.pct}%</text>
-      <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--fg-3)" fontSize="9">{paths[0]?.label.substring(0, 10)}</text>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto">
+      <defs>
+        <filter id="donutDepth" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000000" floodOpacity="0.18" />
+        </filter>
+      </defs>
+      <g filter="url(#donutDepth)">
+        {paths.map((p, i) => (
+          <path key={i} d={p.d} fill={p.color} stroke="var(--surface)" strokeWidth={2.5} strokeLinejoin="round">
+            <title>{p.label} · {p.pct}%</title>
+          </path>
+        ))}
+      </g>
+      <circle cx={cx} cy={cy} r={r - 3} fill="var(--surface)" />
+      <text x={cx} y={cy - 2} textAnchor="middle" fill="var(--fg-1)" fontSize="28" fontWeight="800">{centerValue}</text>
+      <text x={cx} y={cy + 18} textAnchor="middle" fill="var(--fg-4)" fontSize="11" fontWeight="600">{centerLabel}</text>
     </svg>
   )
 }
@@ -1767,6 +1774,7 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
   }
 
   const totalQty = products.reduce((s, p) => s + (p.totalQuantity ?? 0), 0)
+  const totalRevenue = products.reduce((s, p) => s + (p.totalRevenue ?? 0), 0)
   const top5 = products.slice(0, 5)
   const othersQty = products.slice(5).reduce((s, p) => s + (p.totalQuantity ?? 0), 0)
 
@@ -1781,6 +1789,12 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
     ...(othersQty > 0 ? [{ label: 'อื่นๆ', value: othersQty, color: DONUT_COLORS[5], revenue: 0, category: '' }] : []),
   ]
 
+  const chips = [
+    { label: 'รายการสินค้า', value: products.length.toLocaleString(), unit: 'ชนิด' },
+    { label: 'ซื้อรวม', value: totalQty.toLocaleString(), unit: 'ชิ้น' },
+    { label: 'มูลค่ารวม', value: `฿${totalRevenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`, unit: '' },
+  ]
+
   return (
     <div className="space-y-4">
       <h3 className="text-base font-semibold text-[var(--fg-1)] flex items-center gap-2">
@@ -1788,25 +1802,34 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
         <span className="text-xs text-[var(--fg-4)] font-normal">{t('crm.favouritesTab.totalItems', { count: totalQty })}</span>
       </h3>
 
-      <div className="flex flex-col sm:flex-row items-center gap-6">
-        {/* Donut */}
+      <div className="grid grid-cols-3 gap-3">
+        {chips.map((ch, i) => (
+          <div key={i} className="rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-3 py-2.5">
+            <p className="text-[11px] text-[var(--fg-4)] mb-0.5">{ch.label}</p>
+            <p className="text-lg font-bold text-[var(--fg-1)] leading-none">
+              {ch.value}{ch.unit && <span className="text-xs font-medium text-[var(--fg-4)] ml-1">{ch.unit}</span>}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-2xl bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] border border-[var(--border)]">
         <div className="flex-shrink-0">
-          <DonutChart slices={slices} />
+          <DonutChart slices={slices} centerValue={totalQty.toLocaleString()} centerLabel="ชิ้นรวม" />
         </div>
 
-        {/* Legend */}
-        <div className="flex-1 space-y-2 w-full">
+        <div className="flex-1 space-y-2.5 w-full">
           {slices.map((sl, i) => {
             const pct = totalQty > 0 ? Math.round((sl.value / totalQty) * 100) : 0
             return (
               <div key={i} className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: sl.color }} />
+                <div className="flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-bold flex-shrink-0 text-white" style={{ backgroundColor: sl.color }}>{i + 1}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-xs text-white font-medium truncate pr-2">{sl.label}</span>
+                    <span className="text-xs text-[var(--fg-1)] font-medium truncate pr-2">{sl.label}</span>
                     <span className="text-xs font-bold flex-shrink-0" style={{ color: sl.color }}>{pct}%</span>
                   </div>
-                  <div className="w-full bg-[var(--surface-2)] rounded-full h-1.5">
+                  <div className="w-full bg-[var(--surface-2)] rounded-full h-1.5 overflow-hidden">
                     <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: sl.color }} />
                   </div>
                   <div className="flex justify-between mt-0.5">
@@ -2225,7 +2248,7 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
         ) : (
           <div className="space-y-2">
             {transactions.map(tx => (
-              <div key={tx.id} className="flex items-start gap-3 p-3 bg-[var(--surface-2)/60 rounded-lg border border-[var(--border)]/50 hover:border-[var(--border)] transition-colors">
+              <div key={tx.id} className="flex items-start gap-3 p-3 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]/50 hover:border-[var(--border)] transition-colors">
                 {/* Icon */}
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tx.type === 'EARN' ? 'bg-[var(--success-soft)]' : tx.type === 'REDEEM' ? 'bg-yellow-500/15' : 'bg-blue-500/15'}`}>
                   {tx.type === 'EARN' ? <Gift className="w-4 h-4 text-success" />

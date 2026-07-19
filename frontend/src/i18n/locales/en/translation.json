@@ -2171,7 +2171,14 @@
         "llm": "AI / LLM",
         "backup": "Auto Backup",
         "permissions": "Permissions",
-        "approval": "Approval"
+        "approval": "Approval",
+        "docNumbering": "Document Numbering"
+      },
+      "groups": {
+        "system": "System",
+        "people": "Users & Permissions",
+        "sales": "Sales & POS",
+        "advanced": "Advanced"
       },
       "billing": {
         "title": "POS Billing",
@@ -2243,7 +2250,8 @@
         "timeLockRule1": "Every record can be <strong class=\"text-[var(--primary)]\">edited within 24 hours</strong> after creation",
         "timeLockRule2": "After 24 hours, it cannot be edited or deleted",
         "timeLockRule2Master": " (except Master Account)",
-        "timeLockRule3": "The system automatically calculates time from <strong>current time - creation time</strong>"
+        "timeLockRule3": "The system automatically calculates time from <strong>current time - creation time</strong>",
+        "receiptFooter": "Thank you for your service"
       },
       "qcGate": {
         "title": "Quality Control (QC Gate)",
@@ -2266,7 +2274,13 @@
         "createdAt": "Created At",
         "lastLogin": "Last Login",
         "deleteConfirm": "Delete this user?",
-        "deleteFailed": "Delete failed"
+        "deleteFailed": "Delete failed",
+        "roles": {
+          "ADMIN": "Admin",
+          "MANAGER": "Manager",
+          "USER": "User",
+          "VIEWER": "Viewer"
+        }
       },
       "addChildModal": {
         "title": "Add Child User",
@@ -2290,6 +2304,17 @@
         "changePassword": "Change Password",
         "comingSoon": "This feature will be available soon",
         "changePasswordButton": "Change Password",
+        "currentPassword": "Current Password",
+        "newPassword": "New Password",
+        "newPasswordHint": "New password (at least 8 characters)",
+        "confirmPassword": "Confirm New Password",
+        "showPassword": "Show password",
+        "saving": "Saving...",
+        "passwordTooShort": "New password must be at least 8 characters",
+        "passwordsDoNotMatch": "New password and confirmation do not match",
+        "changeSuccess": "Password changed successfully",
+        "changeFailed": "Failed to change password",
+        "masterPasswordNote": "MASTER account password is managed via the .env file only and cannot be changed here",
         "twoFactor": "Two-Factor Authentication (2FA)",
         "twoFactorDesc": "Increase security with two-factor authentication",
         "enable2FA": "Enable 2FA"

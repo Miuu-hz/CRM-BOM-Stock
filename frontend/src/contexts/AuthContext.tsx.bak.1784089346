@@ -104,7 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setShowTimeoutWarning(false)
     localStorage.removeItem('crm_user')
     localStorage.removeItem('crm_token')
-    localStorage.removeItem('crm_refresh_token')
     localStorage.removeItem('crm_tenant')
     localStorage.removeItem('crm_original_tenant')
     if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current)
@@ -125,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await api.post('/auth/login', { email, password })
       if (response.data.success) {
-        const { user: apiUser, token: apiToken, refreshToken: apiRefresh } = response.data.data
+        const { user: apiUser, token: apiToken } = response.data.data
         const tenantObj = { code: apiUser.tenant_id, name: apiUser.name || apiUser.tenant_id }
         setUser(apiUser)
         setToken(apiToken)
@@ -133,7 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastActivityRef.current = Date.now()
         localStorage.setItem('crm_user', JSON.stringify(apiUser))
         localStorage.setItem('crm_token', apiToken)
-        if (apiRefresh) localStorage.setItem('crm_refresh_token', apiRefresh)
         localStorage.setItem('crm_tenant', JSON.stringify(tenantObj))
         if (apiUser.role === 'MASTER') {
           setOriginalTenantId(apiUser.tenant_id)

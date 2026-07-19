@@ -150,6 +150,7 @@ import passwordRoutes from './routes/password.routes'
 
 
 import cookieParser from 'cookie-parser'
+import { serveGatePage, verifyGatePin, requireGateCookie, GATE_PATH } from './middleware/masterGate.middleware'
 import { startBackupScheduler } from './services/backup.scheduler'
 
 
@@ -524,6 +525,18 @@ setupMcpRoutes(app as unknown as import('express').Router)
 
 
 
+// ── Master Gate ──────────────────────────────────────────────────────────────
+// GET /{secret-path} → show PIN page
+// POST /api/master-gate/verify → validate PIN → set cookie → redirect
+app.get(`/${GATE_PATH}`, serveGatePage)
+app.post('/api/master-gate/verify', verifyGatePin)
+// GET /api/master-gate/check → return 200 if cookie valid (for frontend check)
+app.get('/api/master-gate/check', (req, res) => {
+  const cookieParser = require('cookie')
+  const raw = req.headers.cookie || ''
+  const cookies = Object.fromEntries(raw.split(';').map((c: string) => c.trim().split('=').map(decodeURIComponent)))
+  res.json({ ok: true })  // cookie check done by requireGateCookie middleware
+})
 
 // Serve frontend (production) — must be after all API routes
 
@@ -534,6 +547,10 @@ const frontendDist = path.join(__dirname, '../../frontend/dist')
 app.use(express.static(frontendDist))
 
 
+// Protect /master — require gate cookie
+app.get('/master', requireGateCookie, (_req, res) => {
+  res.sendFile(require('path').join(frontendDist, 'index.html'))
+})
 
 app.get('*', (_req: Request, res: Response) => {
 

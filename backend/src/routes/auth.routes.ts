@@ -82,6 +82,17 @@ const generateToken = (payload: any) => {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
 }
 
+// Short-lived access token for regular users, paired with a long-lived refresh
+// token. Master accounts keep the single long-lived token (see login handler).
+const ACCESS_TOKEN_TTL  = '60m'
+const REFRESH_TOKEN_TTL = '7d'
+const generateAccessToken = (payload: any) => {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL })
+}
+const generateRefreshToken = (userId: string) => {
+  return jwt.sign({ userId, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL })
+}
+
 // @route   POST /api/auth/login
 // @desc    Login user
 router.post('/login', loginIpLimiter, async (req, res) => {
@@ -146,24 +157,76 @@ router.post('/login', loginIpLimiter, async (req, res) => {
     }
 
     clearAttempts(email)
-    const token = generateToken({
+    const token = generateAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
       tenantId: user.tenant_id,
     })
+    const refreshToken = generateRefreshToken(user.id)
 
     res.json({
       success: true,
       data: {
         user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id },
         token,
+        refreshToken,
       },
     })
 
   } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ success: false, message: 'เข้าสู่ระบบไม่สำเร็จ' })
+  }
+})
+
+// @route   POST /api/auth/refresh
+// @desc    Exchange a valid refresh token for a fresh 60-minute access token.
+//          Refresh tokens issued before the last password change are rejected.
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: 'ต้องระบุ refreshToken' })
+    }
+
+    let decoded: any
+    try {
+      decoded = jwt.verify(refreshToken, JWT_SECRET)
+    } catch {
+      return res.status(401).json({ success: false, message: 'refresh token ไม่ถูกต้องหรือหมดอายุ' })
+    }
+    if (decoded.type !== 'refresh' || !decoded.userId) {
+      return res.status(401).json({ success: false, message: 'refresh token ไม่ถูกต้อง' })
+    }
+
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
+    }
+
+    // Revoke refresh tokens issued before the last password change.
+    // Compare at whole-second granularity: JWT `iat` is floored to seconds, so a
+    // token minted in the same second as the change must still be accepted.
+    if (user.password_changed_at) {
+      const issuedAtSec  = decoded.iat ?? 0
+      const changedAtSec = Math.floor(new Date(user.password_changed_at).getTime() / 1000)
+      if (issuedAtSec < changedAtSec) {
+        return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบใหม่ (รหัสผ่านถูกเปลี่ยน)' })
+      }
+    }
+
+    const token = generateAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenant_id,
+    })
+    res.json({ success: true, data: { token } })
+  } catch (error) {
+    console.error('Refresh token error:', error)
+    res.status(500).json({ success: false, message: 'ต่ออายุ session ไม่สำเร็จ' })
   }
 })
 
@@ -175,6 +238,14 @@ router.post('/create-child', authenticate, requireRole('MASTER'), async (req, re
 
     if (!email || !password || !name) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+    }
+
+    // MASTER can never be minted via API — master accounts exist only in .env.
+    if (!['ADMIN', 'MANAGER', 'POWERUSER', 'USER'].includes(role)) {
+      return res.status(403).json({ success: false, message: 'ไม่สามารถกำหนด role นี้ได้ (สร้าง MASTER ผ่าน API ไม่ได้)' })
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร' })
     }
 
     const db = getDb()

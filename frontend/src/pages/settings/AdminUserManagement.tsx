@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { UserPlus, Pencil, Trash2, Search, X, Eye, EyeOff, Users } from 'lucide-react'
+import { UserPlus, Pencil, Trash2, Search, X, Eye, EyeOff, Users, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
@@ -14,7 +14,7 @@ interface TenantUser {
   status: string
 }
 
-const ROLE_VALUES = ['MANAGER', 'POWERUSER', 'USER'] as const
+const ROLE_VALUES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER'] as const
 
 const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'CEO', 'IT'] as const
 
@@ -145,12 +145,14 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
                 <button key={r} onClick={() => setRole(r)}
                   className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${role === r ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] bg-[var(--surface-2)] hover:border-[var(--primary)]/50'}`}>
                   <div className="text-xs font-semibold text-[var(--fg-1)]">
-                    {r === 'MANAGER' ? t('settings.adminUserManagement.modal.role.manager')
+                    {r === 'ADMIN' ? t('settings.adminUserManagement.modal.role.admin', 'ผู้ดูแลระบบ (Admin)')
+                      : r === 'MANAGER' ? t('settings.adminUserManagement.modal.role.manager')
                       : r === 'POWERUSER' ? t('settings.adminUserManagement.modal.role.powerUser')
                       : t('settings.adminUserManagement.modal.role.user')}
                   </div>
                   <div className="text-[10px] text-[var(--fg-4)] mt-0.5 leading-tight">
-                    {r === 'MANAGER' ? t('settings.adminUserManagement.modal.role.managerDesc')
+                    {r === 'ADMIN' ? t('settings.adminUserManagement.modal.role.adminDesc', 'จัดการผู้ใช้ ทีม และตั้งค่าบริษัทของคุณ')
+                      : r === 'MANAGER' ? t('settings.adminUserManagement.modal.role.managerDesc')
                       : r === 'POWERUSER' ? t('settings.adminUserManagement.modal.role.powerUserDesc')
                       : t('settings.adminUserManagement.modal.role.userDesc')}
                   </div>
@@ -231,6 +233,17 @@ export default function AdminUserManagement() {
     }
   }
 
+  const genResetCode = async (u: TenantUser) => {
+    try {
+      const res = await api.post('/auth/admin/reset-token', { userId: u.id })
+      const tk = res.data?.data?.token as string
+      try { await navigator.clipboard.writeText(tk) } catch { /* clipboard may be blocked */ }
+      toast.success(`คัดลอกรหัสรีเซ็ตของ ${u.name} แล้ว (หมดอายุ 30 นาที) — ส่งให้สมาชิก: ${tk}`, { duration: 12000 })
+    } catch (e: any) {
+      toast.error(e.response?.data?.message ?? t('settings.adminUserManagement.toast.error'))
+    }
+  }
+
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     u.email.toLowerCase().includes(search.toLowerCase())
@@ -287,10 +300,14 @@ export default function AdminUserManagement() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {!isAdminRole && (
-                    <button onClick={() => setModal({ open: true, user: u })}
-                      className="p-2 rounded-lg hover:bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors cursor-pointer" title={t('settings.adminUserManagement.edit')}>
-                      <Pencil size={15} />
+                  <button onClick={() => setModal({ open: true, user: u })}
+                    className="p-2 rounded-lg hover:bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors cursor-pointer" title={t('settings.adminUserManagement.edit')}>
+                    <Pencil size={15} />
+                  </button>
+                  {!isMe && !isAdminRole && (
+                    <button onClick={() => genResetCode(u)}
+                      className="p-2 rounded-lg hover:bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors cursor-pointer" title="สร้างรหัสรีเซ็ตรหัสผ่าน">
+                      <KeyRound size={15} />
                     </button>
                   )}
                   {!isMe && !isAdminRole && (

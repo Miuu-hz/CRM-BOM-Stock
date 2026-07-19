@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {Truck, Plus, Search, Edit2, Trash2, X, Star, Loader2, Phone, Mail, MapPin, ShoppingCart, TrendingUp, Package, ChevronDown, ChevronUp, Pencil, User} from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
 import { useTranslation } from 'react-i18next'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 
 export default function SupplierTab() {
   const { t } = useTranslation()
@@ -771,32 +772,42 @@ function SupplierDetailModal({ supplier, onClose, onEdit, onDelete }: {
   )
 }
 
-// ── Spending Trend Bars (simple SVG-free bar chart) ──────────────────────────
+// -- Spending Trend (monthly purchase amount) --------------------------------
 function SpendingTrendBars({ trend }: { trend: { month: string; orderCount: number; totalAmount: number }[] }) {
-  const max = Math.max(...trend.map(t => t.totalAmount), 1)
+  const fmtK = (v: number) =>
+    v >= 1_000_000 ? `฿${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}k` : `฿${v}`
   return (
-    <div className="flex items-end gap-1.5 h-28">
-      {trend.map((t, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-          <div
-            className="w-full rounded-t bg-purple-500/40 group-hover:bg-purple-500/70 transition-all cursor-default"
-            style={{ height: `${Math.max((t.totalAmount / max) * 96, 4)}px` }}
-          />
-          <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">{t.month?.slice(5)}</span>
-          {/* Tooltip */}
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--border)] rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-            <p className="text-[var(--fg-2)]">{t.month}</p>
-            <p className="text-success">฿{t.totalAmount.toLocaleString()}</p>
-            <p className="text-[var(--fg-4)]">{t.orderCount} ออเดอร์</p>
-          </div>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis
+          dataKey="month"
+          tickFormatter={(m: string) => (m ? m.slice(2) : '')}
+          tick={{ fill: 'var(--fg-4)', fontSize: 11 }}
+          tickLine={false}
+          axisLine={{ stroke: 'var(--border)' }}
+        />
+        <YAxis
+          tickFormatter={fmtK}
+          tick={{ fill: 'var(--fg-4)', fontSize: 11 }}
+          width={52}
+          tickLine={false}
+          axisLine={false}
+        />
+        <Tooltip
+          cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
+          contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: 'var(--fg-2)' }}
+          formatter={(v: number, _n: any, pl: any) => [`฿${v.toLocaleString()} · ${pl?.payload?.orderCount ?? 0} ออเดอร์`, 'ยอดซื้อ']}
+        />
+        <Bar dataKey="totalAmount" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={30} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
 // ── Top Materials Horizontal Bars ─────────────────────────────────────────────
-const MATERIAL_COLORS = ['var(--primary)','var(--info)','var(--success)','var(--warning)','var(--link)','var(--danger)','var(--fg-4)','var(--fg-3)','var(--fg-2)','var(--fg-1)']  // ponytail: token palette for distinct chart segments
+const MATERIAL_COLORS = ['#3949E5','#16A34A','#F5A524','#8B5CF6','#EC4899','#0EA5E9','#EF4444','#64748B','#14B8A6','#A855F7']  // distinct categorical hues
 
 function TopMaterialsChart({ materials }: { materials: any[] }) {
   const top5 = materials.slice(0, 5)

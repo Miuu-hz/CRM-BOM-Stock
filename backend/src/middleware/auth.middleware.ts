@@ -63,6 +63,12 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     const token = authHeader.split(' ')[1]
     const decoded = jwt.verify(token, JWT_SECRET) as UserJwtPayload
 
+    // Refresh tokens must never be accepted as access tokens on protected routes.
+    if ((decoded as any).type === 'refresh') {
+      res.status(401).json({ success: false, message: 'Token ไม่ถูกต้อง' })
+      return
+    }
+
     // Load fresh departments + custom_permissions from DB (always current, no stale JWT)
     const db = getDb()
     const userRecord = db.prepare(

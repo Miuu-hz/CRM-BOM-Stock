@@ -32,9 +32,13 @@ export function can(
   // Layer 1: MASTER sees everything
   if (role === 'MASTER') return true
 
+  // System-level resources (backup/mcp/system) are MASTER-only.
+  // Evaluated before customPermissions/department layers so nothing below
+  // can grant them — closes the custom_permissions escalation hole.
+  if (SYSTEM_RESOURCES.includes(resource)) return false
+
   // ADMIN sees all business resources but not system-level
   if (role === 'ADMIN') {
-    if (SYSTEM_RESOURCES.includes(resource)) return false
     return true
   }
 

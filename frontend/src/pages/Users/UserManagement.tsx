@@ -6,6 +6,7 @@ import {
   Shield, ShieldCheck, ShieldAlert, User as UserIcon, Crown
 } from 'lucide-react'
 import api from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 
 type Role = 'MASTER' | 'ADMIN' | 'MANAGER' | 'POWERUSER' | 'USER'
 
@@ -50,6 +51,7 @@ const emptyForm = { name: '', email: '', password: '', role: 'USER' as Role, dep
 
 export default function UserManagement() {
   const { t } = useTranslation()
+  const { isMaster } = useAuth()
   const [users, setUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -75,6 +77,20 @@ export default function UserManagement() {
   }, [t])
 
   useEffect(() => { loadUsers() }, [loadUsers])
+
+  // Defense in depth: this full-power page (create any role, custom permissions)
+  // is MASTER-only. Admins manage their own team via Settings > Users.
+  if (!isMaster) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <ShieldAlert className="w-12 h-12 text-[var(--fg-4)] mb-3" />
+        <h2 className="text-lg font-semibold text-[var(--fg-1)]">ไม่มีสิทธิ์เข้าถึง</h2>
+        <p className="text-sm text-[var(--fg-3)] mt-1 max-w-sm">
+          หน้าจัดการผู้ใช้เต็มรูปแบบ (สร้าง/กำหนดสิทธิ์ทุกระดับ) สงวนสำหรับ MASTER เท่านั้น — ผู้ดูแล (Admin) จัดการทีมของตนได้ที่ ตั้งค่า › ผู้ใช้งาน
+        </p>
+      </div>
+    )
+  }
 
   const openCreate = () => {
     setForm({ ...emptyForm })

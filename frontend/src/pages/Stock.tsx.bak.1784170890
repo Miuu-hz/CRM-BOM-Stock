@@ -1221,6 +1221,7 @@ function Stock() {
                       <td className="w-10">
 
                         <label className="relative cursor-pointer flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                                                  <label className="relative cursor-pointer flex items-center justify-center" onClick={e => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1228,6 +1229,12 @@ function Stock() {
                             className="sr-only"
                             aria-label={`เลือก ${item.name}`}
                           />
+                          <div className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-[var(--primary)] border-[var(--primary)]' : 'bg-transparent border-[var(--border)] hover:border-[var(--primary)]/60 hover:bg-[var(--primary)]/5'}`}>
+                            <motion.div initial={false} animate={{ scale: isSelected ? 1 : 0, opacity: isSelected ? 1 : 0 }} transition={{ duration: 0.12, type: 'spring', stiffness: 400, damping: 20 }}>
+                              <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />
+                            </motion.div>
+                          </div>
+                        </label>
                           <div className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-[var(--primary)] border-[var(--primary)]' : 'bg-transparent border-[var(--border)] hover:border-[var(--primary)]/60 hover:bg-[var(--primary)]/5'}`}>
                             <motion.div initial={false} animate={{ scale: isSelected ? 1 : 0, opacity: isSelected ? 1 : 0 }} transition={{ duration: 0.12, type: 'spring', stiffness: 400, damping: 20 }}>
                               <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />
