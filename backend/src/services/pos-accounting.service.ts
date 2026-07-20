@@ -159,8 +159,8 @@ class POSAccountingService {
       const entryStmt = db.prepare(`
         INSERT INTO journal_entries (
           id, tenant_id, entry_number, date, reference_type, reference_id,
-          description, total_debit, total_credit, is_auto_generated, created_by, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+          description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
       `)
 
       entryStmt.run(
@@ -243,8 +243,8 @@ class POSAccountingService {
         const cogsEntryStmt = db.prepare(`
           INSERT INTO journal_entries (
             id, tenant_id, entry_number, date, reference_type, reference_id,
-            description, total_debit, total_credit, is_auto_generated, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
         `)
 
         cogsEntryStmt.run(
@@ -369,8 +369,8 @@ class POSAccountingService {
       const entryStmt = db.prepare(`
         INSERT INTO journal_entries (
           id, tenant_id, entry_number, date, reference_type, reference_id,
-          description, total_debit, total_credit, is_auto_generated, created_by, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+          description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
       `)
 
       entryStmt.run(

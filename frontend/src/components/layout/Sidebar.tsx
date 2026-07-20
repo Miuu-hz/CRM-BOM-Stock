@@ -10,6 +10,7 @@ import {
   FileText,
   Landmark,
   LayoutDashboard,
+  Lock,
   LogOut,
   Megaphone,
   MonitorPlay,
@@ -24,11 +25,13 @@ import {
   TrendingUp,
   Users,
   UserCog,
+  Wallet,
   Wrench,
   Building2,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
+import { canViewMenu } from '../../config/menuPermissions'
 
 export type SidebarMode = 'full' | 'rail'
 
@@ -43,8 +46,6 @@ interface MenuItem {
   descriptionKey?: string
   isParent?: boolean
   subMenu?: MenuItem[]
-  masterOnly?: boolean
-  approverOnly?: boolean
 }
 
 const menuItems: MenuItem[] = [
@@ -77,13 +78,15 @@ const menuItems: MenuItem[] = [
     subMenu: [
       { path: '/accounting/chart-of-accounts', tKey: 'sidebar.chartOfAccounts', icon: BookOpen },
       { path: '/accounting/journal-entries', tKey: 'sidebar.journalEntries', icon: FileText },
+      { path: '/accounting/period-closing', tKey: 'sidebar.periodClosing', icon: Lock },
+      { path: '/accounting/budget-vs-actual', tKey: 'sidebar.budgetVsActual', icon: Wallet },
       { path: '/accounting/pos-clearing', tKey: 'sidebar.posClearing', icon: Store },
       { path: '/accounting/reports', tKey: 'sidebar.financialReports', icon: BarChart3 },
       { path: '/accounting/phopy-board', tKey: 'sidebar.phopyBoard', icon: LayoutDashboard },
     ],
   },
-  { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck, approverOnly: true },
-  { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog, masterOnly: true },
+  { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
+  { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog },
   { path: '/cashier', tKey: 'sidebar.cashier', icon: Store, descriptionKey: 'sidebar.cashierDesc' },
   { path: '/kds', tKey: 'sidebar.kitchenDisplay', icon: MonitorPlay, descriptionKey: 'sidebar.kitchenDisplayDesc' },
   { path: 'https://kanban.phopy.net', tKey: 'sidebar.kanban', icon: Trello, descriptionKey: 'sidebar.kanbanDesc' },
@@ -217,7 +220,11 @@ function Sidebar({ mode }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 py-4 overflow-y-auto phopy-scrollbar" role="navigation" aria-label={t('sidebar.mainMenu')}>
         <div className={`space-y-1 ${isRail ? 'px-1.5' : 'px-2'}`}>
-          {menuItems.filter((item) => (!item.masterOnly || isMaster) && (!item.approverOnly || user?.role !== 'USER')).map((item) => {
+          {menuItems
+            .filter((item) => canViewMenu(user?.role, item.path))
+            .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.filter((sub) => canViewMenu(user?.role, sub.path)) } : item)
+            .filter((item) => !item.subMenu || item.subMenu.length > 0)
+            .map((item) => {
             const label = t(item.tKey)
             const description = item.descriptionKey ? t(item.descriptionKey) : undefined
             if (item.subMenu) {

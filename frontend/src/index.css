@@ -15,6 +15,16 @@
     --warning-soft: #FEF4E2;
     --danger: #DC2626;
     --danger-soft: #FEE2E2;
+    --equity: #7C3AED;
+    --equity-soft: #F1EAFE;
+
+    /* AA-safe (>=4.5:1) text-on-soft-badge variants. --success/--warning/--danger
+       themselves are tuned to read well on solid/dark surfaces, not on their own
+       pastel *-soft backgrounds — use *-strong for text sitting on a *-soft pill. */
+    --success-strong: #15803D;
+    --warning-strong: #B45309;
+    --danger-strong: #B91C1C;
+    --equity-strong: #6D28D9;
     --info: #3949E5;
     --info-soft: #EEF0FE;
 
@@ -66,6 +76,12 @@
     --warning-soft: color-mix(in oklab, var(--warning) 22%, transparent);
     --danger-soft: color-mix(in oklab, var(--danger) 22%, transparent);
     --info-soft: color-mix(in oklab, var(--info) 22%, transparent);
+    --equity-soft: color-mix(in oklab, var(--equity) 22%, transparent);
+
+    --success-strong: #4ADE80;
+    --warning-strong: #FBBF24;
+    --danger-strong: #F87171;
+    --equity-strong: #A78BFA;
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.5);

@@ -34,6 +34,8 @@ interface ExtendedData {
     onlineTotal: number; onlineOrders: number
     offlineRevenue: number; offlineOrders: number
     orderTrend: Array<{ month: string; online: number; offline: number }>
+    retailRevenue: number; retailBills: number
+    channels: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE'; label: string; revenue: number; orders: number }>
   }
   adsROI: {
     totals: { impressions: number; clicks: number; orders: number; revenue: number; adCost: number; roas: number; cpc: number; cpo: number; ctr: number; orderRate: number; revenuePerAdBaht: number }
@@ -45,6 +47,7 @@ interface ExtendedData {
     expenseRatio: number
     productionVariance: { estimated: number; actual: number; variancePct: number; count: number }
     costTrend: Array<{ month: string; cogs: number; opex: number }>
+    ledgerCogsTotal: number
   }
   products: {
     top10: Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number; bomCost: number; margin: number }>
@@ -100,13 +103,12 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
   if (!data) return null
 
   const { channel, adsROI, costStructure, products, workingCapital, outsourceProduction } = data
-  const totalRevenue = channel.onlineTotal + channel.offlineRevenue
-  const onlinePct = totalRevenue > 0 ? (channel.onlineTotal / totalRevenue) * 100 : 0
-  const offlinePct = 100 - onlinePct
-  const splitData = [
-    { name: 'Online', value: Math.round(onlinePct * 10) / 10 },
-    { name: 'Offline', value: Math.round(offlinePct * 10) / 10 },
-  ]
+  // 3-way channel split: Retail (POS หน้าร้าน) / Wholesale (ขายส่ง — CRM orders) / Online (platform ads)
+  const channelTotal = channel.channels.reduce((s, c) => s + c.revenue, 0)
+  const splitData = channel.channels.map(c => ({
+    name: c.label,
+    value: channelTotal > 0 ? Math.round((c.revenue / channelTotal) * 1000) / 10 : 0,
+  }))
 
   const ratioColor = (r: number) => r >= 2 ? 'var(--success, #22c55e)' : r >= 1 ? 'var(--warning, #f59e0b)' : 'var(--danger, #ef4444)'
   const ratioLabel = (r: number) => r >= 2 ? 'สุขภาพดี' : r >= 1 ? 'ควรระวัง' : 'เสี่ยงสูง'
@@ -119,7 +121,7 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
         <div className="flex items-center gap-2 mb-4">
           <ShoppingBag className="w-5 h-5 text-[var(--primary)]" />
           <h2 className="text-lg font-bold text-[var(--fg-1)]">Channel Performance</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">Online vs Offline · Revenue per Platform · Order Trend</span>
+          <span className="text-xs text-[var(--fg-3)] ml-1">หน้าร้าน / ขายส่ง / ออนไลน์ · Revenue per Platform · Order Trend</span>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Online vs Offline Donut */}
@@ -134,14 +136,12 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-2 mt-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[0] }} />Online</span>
-                <span className="font-bold text-[var(--fg-1)]">฿{fmt(channel.onlineTotal)} ({fmtPct(onlinePct)})</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[1] }} />Offline</span>
-                <span className="font-bold text-[var(--fg-1)]">฿{fmt(channel.offlineRevenue)} ({fmtPct(offlinePct)})</span>
-              </div>
+              {channel.channels.map((c, i) => (
+                <div key={c.unit} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{c.label}</span>
+                  <span className="font-bold text-[var(--fg-1)]">฿{fmt(c.revenue)} ({fmtPct(splitData[i]?.value || 0)})</span>
+                </div>
+              ))}
             </div>
           </motion.div>
 
@@ -265,10 +265,10 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
         <div className="flex items-center gap-2 mb-4">
           <DollarSign className="w-5 h-5 text-[var(--primary)]" />
           <h2 className="text-lg font-bold text-[var(--fg-1)]">Cost Structure</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">COGS Breakdown · Expense Ratio · Production Variance · Cost Trend</span>
+          <span className="text-xs text-[var(--fg-3)] ml-1">ยอดซื้อตามหมวดวัตถุดิบ (PO) · ต้นทุนขายจริง (Ledger) · Expense Ratio · Production Variance</span>
         </div>
         {/* KPI cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
           <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
             <p className="text-xs text-[var(--fg-3)]">Expense Ratio</p>
             <p className="text-2xl font-bold mt-1" style={{ color: costStructure.expenseRatio > 80 ? 'var(--danger)' : costStructure.expenseRatio > 60 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(costStructure.expenseRatio)}</p>
@@ -282,15 +282,20 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
             <p className="text-xs text-[var(--fg-4)] mt-0.5">Actual vs Estimated ({costStructure.productionVariance.count} WO)</p>
           </motion.div>
           <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-            <p className="text-xs text-[var(--fg-3)]">Total COGS (งวดนี้)</p>
+            <p className="text-xs text-[var(--fg-3)]">ยอดซื้อวัตถุดิบ (PO งวดนี้)</p>
             <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.cogsByCategory.reduce((s, r) => s + r.amount, 0))}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">{costStructure.cogsByCategory.length} หมวดวัตถุดิบ</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{costStructure.cogsByCategory.length} หมวดวัตถุดิบ — ไม่ใช่ COGS จริง</p>
+          </motion.div>
+          <motion.div {...fade(0.12)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+            <p className="text-xs text-[var(--fg-3)]">ต้นทุนขายจริง (Ledger COGS)</p>
+            <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.ledgerCogsTotal)}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">จากสมุดบัญชี — บัญชีหมวด COGS ที่ posted แล้ว</p>
           </motion.div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* COGS Donut */}
           <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">COGS Breakdown</p>
+            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ยอดซื้อตามหมวดวัตถุดิบ (PO)</p>
             {costStructure.cogsByCategory.length === 0 ? (
               <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
             ) : (
@@ -340,7 +345,7 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
                 <YAxis tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
                 <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="COGS" />
+                <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="ยอดซื้อ (PO)" />
                 <Area type="monotone" dataKey="opex" stackId="1" stroke={COLORS[4]} fill={COLORS[4] + '50'} name="OpEx" />
               </AreaChart>
             </ResponsiveContainer>

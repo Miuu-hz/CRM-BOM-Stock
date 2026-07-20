@@ -1200,4 +1200,30 @@ export function runMigrations(db: any): void {
     db.exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`)
     console.log('✅ Migration: users.password_changed_at added')
   } catch { /* column already exists */ }
+
+  // Migration: business_unit on journal_entries — attributes each JE to
+  // RETAIL (POS) / WHOLESALE (sales orders/invoices) / ONLINE (platform ads) / OTHER.
+  // Set at creation time by each JE-creating source; backfilled here for existing rows.
+  try {
+    db.exec(`ALTER TABLE journal_entries ADD COLUMN business_unit TEXT`)
+    console.log('✅ Migration: journal_entries.business_unit added')
+  } catch { /* column already exists */ }
+
+  try {
+    // ponytail: heuristic backfill from reference_type — the only signal old rows carry.
+    // Idempotent (only touches rows still missing business_unit), safe to run every boot.
+    const backfilled = db.prepare(`
+      UPDATE journal_entries
+      SET business_unit = CASE
+        WHEN reference_type IN ('POS_SALE','POS_COGS','POS_CANCEL','POS_VOID') THEN 'RETAIL'
+        WHEN reference_type IN ('INVOICE','PAYMENT') THEN 'WHOLESALE'
+        WHEN reference_type = 'AD_SPEND' THEN 'ONLINE'
+        ELSE 'OTHER'
+      END
+      WHERE business_unit IS NULL
+    `).run()
+    if (backfilled.changes > 0) {
+      console.log(`✅ Migration: backfilled business_unit on ${backfilled.changes} journal_entries`)
+    }
+  } catch (e) { console.error('⚠️ business_unit backfill error:', e) }
 }

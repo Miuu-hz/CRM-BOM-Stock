@@ -1,7 +1,9 @@
-﻿import { Routes, Route, Navigate } from 'react-router-dom'
+﻿import { ReactNode } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Clock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { canViewMenu } from './config/menuPermissions'
 import Login from './pages/Login'
 import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
@@ -16,7 +18,7 @@ import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
 import Settings from './pages/Settings'
-import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard } from './pages/Accounting'
+import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard, PeriodClosing, BudgetVsActual } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
 import KDS from './pages/KDS'
@@ -24,6 +26,15 @@ import POSClearing from './pages/Accounting/POSClearing'
 import { UserManagement } from './pages/Users'
 import MasterPanel from './pages/MasterPanel'
 import ApprovalInbox from './pages/ApprovalInbox'
+
+// Blocks direct-URL access to a route whose menu is restricted in
+// menuPermissions.ts (e.g. typing /users into the address bar as a USER).
+// Sidebar visibility alone doesn't stop that; this reads the same template.
+function Guard({ path, children }: { path: string; children: ReactNode }) {
+  const { user } = useAuth()
+  if (!canViewMenu(user?.role, path)) return <Navigate to="/" replace />
+  return <>{children}</>
+}
 
 function AppContent() {
   const { t } = useTranslation()
@@ -64,6 +75,8 @@ function AppContent() {
         <Route path="/accounting" element={<Navigate to="/accounting/chart-of-accounts" replace />} />
         <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
         <Route path="/accounting/journal-entries" element={<JournalEntries />} />
+        <Route path="/accounting/period-closing" element={<PeriodClosing />} />
+        <Route path="/accounting/budget-vs-actual" element={<BudgetVsActual />} />
         <Route path="/accounting/reports" element={<FinancialReports />} />
 
         {/* Tax Route */}
@@ -77,8 +90,8 @@ function AppContent() {
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />
         <Route path="/accounting/phopy-board" element={<PhopyBoard />} />
 
-        <Route path="/users" element={<UserManagement />} />
-        <Route path="/approvals" element={<ApprovalInbox />} />
+        <Route path="/users" element={<Guard path="/users"><UserManagement /></Guard>} />
+        <Route path="/approvals" element={<Guard path="/approvals"><ApprovalInbox /></Guard>} />
 
         {/* Master Panel */}
         {isMaster && <Route path="/master" element={<MasterPanel />} />}

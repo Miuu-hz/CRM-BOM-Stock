@@ -16,6 +16,18 @@ interface JournalLineInput {
   credit?: number
 }
 
+// Period-closing guard: reject writes dated inside a CLOSED tax_period. The year-end closing
+// entry itself is written directly by period-closing.routes.ts (not through this endpoint),
+// so it never hits this check.
+function closedPeriodLabel(tenantId: string, dateStr: string): string | null {
+  const ymd = String(dateStr).includes('T') ? String(dateStr).split('T')[0] : String(dateStr)
+  const [year, month] = ymd.split('-').map(Number)
+  const period = db.prepare(
+    `SELECT status FROM tax_periods WHERE tenant_id = ? AND year = ? AND month = ?`
+  ).get(tenantId, year, month) as { status: string } | undefined
+  return period?.status === 'CLOSED' ? `${month}/${year}` : null
+}
+
 // Generate entry number: JV-YYYY-XXXXX
 function generateEntryNumber(tenantId: string, date: string): string {
   const year = new Date(date).getFullYear()
@@ -152,7 +164,12 @@ router.post('/', async (req: Request, res: Response) => {
         message: `Journal entry is not balanced. Debit: ${totalDebit}, Credit: ${totalCredit}`
       })
     }
-    
+
+    const closedLabel = closedPeriodLabel(tenantId, date)
+    if (closedLabel) {
+      return res.status(400).json({ success: false, message: `งวด ${closedLabel} ปิดแล้ว ไม่สามารถบันทึกรายการได้` })
+    }
+
     const id = generateId()
     const entryNumber = generateEntryNumber(tenantId, date)
     const now = new Date().toISOString()
@@ -300,11 +317,16 @@ router.post('/:id/post', async (req: Request, res: Response) => {
     if (entry.is_posted) {
       return res.status(400).json({ success: false, message: 'Journal entry already posted' })
     }
-    
+
+    const closedLabel = closedPeriodLabel(tenantId, entry.date)
+    if (closedLabel) {
+      return res.status(400).json({ success: false, message: `งวด ${closedLabel} ปิดแล้ว ไม่สามารถบันทึกรายการได้` })
+    }
+
     const now = new Date().toISOString()
-    
+
     db.prepare(`
-      UPDATE journal_entries 
+      UPDATE journal_entries
       SET is_posted = 1, posted_at = ?, posted_by = ?, updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(now, userName, now, req.params.id, tenantId)

@@ -544,8 +544,8 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
     db.prepare(`
       INSERT INTO journal_entries (
         id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, is_auto_generated, created_by, created_at
-      ) VALUES (?, ?, ?, ?, 'POS_VOID', ?, ?, ?, ?, 1, ?, ?)
+        description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
+      ) VALUES (?, ?, ?, ?, 'POS_VOID', ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
     `).run(
       entryId, tenantId, entryNumber, date, id,
       `ยกเลิกบิล ${bill.bill_number}${reason ? ' - ' + reason : ''}`,

@@ -113,6 +113,10 @@ import customerRecommendationsRoutes from './routes/customerRecommendations.rout
 
 
 import taxRoutes from './routes/tax.routes'
+import periodClosingRoutes from './routes/period-closing.routes'
+import whtCertificateRoutes from './routes/wht-certificate.routes'
+import budgetRoutes from './routes/budget.routes'
+import currencyRoutes from './routes/currency.routes'
 
 
 import posMenuRoutes from './routes/pos-menu.routes'
@@ -483,6 +487,10 @@ app.use('/api/customer-recommendations', customerRecommendationsRoutes)
 
 
 app.use('/api/tax', taxRoutes)
+app.use('/api/period-closing', periodClosingRoutes)
+app.use('/api/wht-certificates', whtCertificateRoutes)
+app.use('/api/budgets', budgetRoutes)
+app.use('/api/currencies', currencyRoutes)
 
 
 app.use('/api/pos', posMenuRoutes)

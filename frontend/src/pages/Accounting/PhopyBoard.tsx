@@ -15,6 +15,13 @@ import PhopyBoardExtended from './PhopyBoardExtended'
 
 type PeriodPreset = 'month' | 'quarter' | 'year' | 'custom'
 
+const BU_LABELS: Record<string, string> = {
+  RETAIL: 'ค้าปลีก (หน้าร้าน)',
+  WHOLESALE: 'ขายส่ง',
+  ONLINE: 'ออนไลน์',
+  OTHER: 'อื่นๆ',
+}
+
 const TIER_COLORS: Record<string, string> = {
   Champion: 'var(--success, #22c55e)',
   Loyal: 'var(--primary)',
@@ -163,6 +170,35 @@ export default function PhopyBoard() {
             <KPICard label="Gross Margin" value={data.kpis.grossMarginPct} prefix="" delay={0.2}
             />
           </div>
+
+          {/* Zone 1b — Business-Unit P&L */}
+          <motion.div {...fade(0.22)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-[var(--primary)]" /> กำไรขาดทุนตามหน่วยธุรกิจ
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    {['หน่วยธุรกิจ', 'รายได้', 'ต้นทุนขาย', 'ค่าใช้จ่าย', 'กำไรสุทธิ'].map(h => (
+                      <th key={h} className="pb-2 text-right first:text-left font-semibold text-[var(--fg-3)]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.businessUnits.map(bu => (
+                    <tr key={bu.unit} className="border-b border-[var(--border)] last:border-0">
+                      <td className="py-2 font-medium text-[var(--fg-1)]">{BU_LABELS[bu.unit] || bu.unit}</td>
+                      <td className="py-2 text-right text-[var(--fg-1)]">฿{fmt(bu.revenue)}</td>
+                      <td className="py-2 text-right text-[color:var(--danger)]">฿{fmt(bu.cogs)}</td>
+                      <td className="py-2 text-right text-[var(--fg-3)]">฿{fmt(bu.expense)}</td>
+                      <td className={`py-2 text-right font-semibold ${bu.netProfit >= 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>฿{fmt(bu.netProfit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
 
           {/* Zone 2 — Revenue Chart + P&L Table */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">

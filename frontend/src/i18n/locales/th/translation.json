@@ -46,6 +46,8 @@
     "accountingDesc": "ผังบัญชีและรายงาน",
     "chartOfAccounts": "ผังบัญชี",
     "journalEntries": "สมุดรายวัน",
+    "periodClosing": "ปิดงวดบัญชี",
+    "budgetVsActual": "งบประมาณเทียบผลจริง",
     "posClearing": "ปิดยอด POS",
     "financialReports": "รายงานการเงิน",
     "phopyBoard": "Phopy Board",
@@ -2173,7 +2175,8 @@
         "backup": "Auto Backup",
         "permissions": "จัดการสิทธิ์",
         "approval": "ระบบอนุมัติ",
-        "docNumbering": "เลขที่เอกสาร"
+        "docNumbering": "เลขที่เอกสาร",
+        "currency": "สกุลเงิน"
       },
       "groups": {
         "system": "ระบบ",

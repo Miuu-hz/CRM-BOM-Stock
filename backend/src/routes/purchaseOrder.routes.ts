@@ -4,6 +4,21 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 
+// Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
+// pattern as tax.routes.ts's wht_form column.
+function ensurePOCurrencyColumns() {
+  try {
+    const columns = db.prepare('PRAGMA table_info(purchase_orders)').all() as { name: string }[]
+    const names = new Set(columns.map((c) => c.name))
+    if (!names.has('currency_code')) db.exec("ALTER TABLE purchase_orders ADD COLUMN currency_code TEXT DEFAULT 'THB'")
+    if (!names.has('exchange_rate')) db.exec('ALTER TABLE purchase_orders ADD COLUMN exchange_rate REAL DEFAULT 1')
+    if (!names.has('foreign_amount')) db.exec('ALTER TABLE purchase_orders ADD COLUMN foreign_amount REAL')
+  } catch (error) {
+    console.error('Failed to ensure PO currency columns:', error)
+  }
+}
+ensurePOCurrencyColumns()
+
 const router = Router()
 
 // ทุก Route ต้องมี Authentication
@@ -12,6 +27,8 @@ router.use(authenticate)
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 function generatePONumber(tenantId: string) {
   return formatDocumentNumber('PO', tenantId, 'PO', undefined, 5)
@@ -94,24 +111,49 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId } = req.body
+    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId, currencyCode, exchangeRate } = req.body
     const id = generateId()
     const poNumber = generatePONumber(tenantId)
     const now = new Date().toISOString()
 
-    // Calculate totals
+    // Calculate totals (in whatever currency the items were entered in)
     let subtotal = 0
     if (items && items.length > 0) {
       subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
     }
     const tax = taxRate || 0
-    const taxAmount = subtotal * (tax / 100)
-    const totalAmount = subtotal + taxAmount
+    let taxAmount = subtotal * (tax / 100)
+    let totalAmount = subtotal + taxAmount
+
+    // ponytail: only the document header (subtotal/tax/total) is converted to THB — line
+    // items keep whatever unit price was entered. No ledger/stock changes here; THB (default)
+    // path is untouched (currency_code stays 'THB', exchange_rate 1, foreign_amount null).
+    let currency_code = 'THB'
+    let exchange_rate = 1
+    let foreign_amount: number | null = null
+    if (currencyCode && currencyCode !== 'THB') {
+      const currency = db.prepare('SELECT code FROM currencies WHERE tenant_id = ? AND code = ? AND is_active = 1')
+        .get(tenantId, currencyCode) as { code: string } | undefined
+      if (!currency) {
+        return res.status(400).json({ success: false, message: 'ไม่พบสกุลเงินที่ระบุ หรือสกุลเงินถูกปิดใช้งาน' })
+      }
+      const rate = Number(exchangeRate)
+      if (!Number.isFinite(rate) || rate <= 0) {
+        return res.status(400).json({ success: false, message: 'อัตราแลกเปลี่ยนไม่ถูกต้อง' })
+      }
+      currency_code = currencyCode
+      exchange_rate = rate
+      foreign_amount = round2(totalAmount)
+      subtotal = round2(subtotal * rate)
+      taxAmount = round2(taxAmount * rate)
+      totalAmount = round2(totalAmount * rate)
+    }
 
     const insertPO = db.prepare(`
       INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
-        subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at,
+        currency_code, exchange_rate, foreign_amount)
+      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertItem = db.prepare(`
@@ -122,7 +164,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const transaction = db.transaction(() => {
       insertPO.run(id, tenantId, poNumber, supplierId, now, expectedDate || null,
-        subtotal, tax, taxAmount, totalAmount, notes || '', linkedPrId || null, now, now)
+        subtotal, tax, taxAmount, totalAmount, notes || '', linkedPrId || null, now, now,
+        currency_code, exchange_rate, foreign_amount)
 
       if (items && items.length > 0) {
         for (const item of items) {
@@ -198,6 +241,16 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       })
 
       updateStock()
+
+      // No accounting entry here on purpose: this simple status endpoint and
+      // the goods-receipt flow (purchase.routes.ts, /goods-receipts/:id/confirm)
+      // both set purchase_orders.status = 'RECEIVED', but only the latter is
+      // actually used in practice, and the real AP/inventory entry is booked
+      // later at Purchase Invoice creation (purchase.routes.ts, POST /invoices).
+      // Posting here too would double-book the same purchase when an invoice
+      // is created afterward — see postPurchaseOrderReceived() for why it's
+      // unused, kept only as a documented reference for a future "book at
+      // receiving instead of at invoice" redesign if that's ever wanted.
     } else {
       db.prepare("UPDATE purchase_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(status, now, req.params.id, tenantId)

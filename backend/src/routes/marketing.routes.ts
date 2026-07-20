@@ -1038,8 +1038,8 @@ router.post('/platform/approve-je/:id', (req: Request, res: Response) => {
     const jvNumber = genJVNumber(tenantId)
 
     // Create journal entry
-    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'AD_SPEND', ?, ?, ?, ?, 0, 1, ?, ?, ?)`
+    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+      VALUES (?, ?, ?, ?, 'AD_SPEND', ?, ?, ?, ?, 0, 1, ?, ?, ?, 'ONLINE')`
     ).run(entryId, tenantId, jvNumber, dateStr, pje.id, pje.description, pje.amount, pje.amount, req.user!.email, now, now)
 
     // DR: ค่าโฆษณา (expense)

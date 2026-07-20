@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts'
 import {
   AlertCircle,
   AlertTriangle,
   ArrowLeftRight,
+  ArrowRight,
   BookOpen,
   Building2,
   CheckCircle,
@@ -17,8 +20,9 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  X,
 } from 'lucide-react'
-import { accountsApi, ACCOUNT_TYPES, Account, AccountType } from '../../services/accounting'
+import { accountsApi, reportsApi, ACCOUNT_TYPES, Account, AccountType } from '../../services/accounting'
 import toast from 'react-hot-toast'
 
 interface TreeNodeProps {
@@ -26,20 +30,24 @@ interface TreeNodeProps {
   level: number
   expandedIds: Set<string>
   onToggle: (id: string) => void
+  onView: (account: Account) => void
   onEdit: (account: Account) => void
   onDelete: (account: Account) => void
 }
 
-const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: TreeNodeProps) => {
+const TreeNode = ({ account, level, expandedIds, onToggle, onView, onEdit, onDelete }: TreeNodeProps) => {
   const hasChildren = account.children && account.children.length > 0
   const isExpanded = expandedIds.has(account.id)
   
+  // *-strong tokens keep text >=4.5:1 against their own *-soft background in
+  // both themes (see index.css) — plain text-success/text-warning/text-danger
+  // read fine on solid surfaces but fail contrast on their own pastel bg.
   const typeColors: Record<AccountType, string> = {
-    ASSET:     'text-success         border-success/30          bg-[var(--success-soft)]',
-    LIABILITY: 'text-danger          border-danger/30           bg-[var(--danger-soft)]',
-    EQUITY:    'text-[var(--primary)] border-[var(--primary)]/30 bg-[var(--primary-soft)]',
-    REVENUE:   'text-[var(--primary)] border-[var(--primary)]/30 bg-[var(--primary-soft)]',
-    EXPENSE:   'text-warning         border-warning/30          bg-[var(--warning-soft)]',
+    ASSET:     'text-[var(--success-strong)] border-success/30           bg-[var(--success-soft)]',
+    LIABILITY: 'text-[var(--danger-strong)]  border-danger/30            bg-[var(--danger-soft)]',
+    EQUITY:    'text-[var(--equity-strong)]  border-[var(--equity)]/30   bg-[var(--equity-soft)]',
+    REVENUE:   'text-[var(--primary)]        border-[var(--primary)]/30  bg-[var(--primary-soft)]',
+    EXPENSE:   'text-[var(--warning-strong)] border-warning/30           bg-[var(--warning-soft)]',
   }
   
   const typeIcons: Record<AccountType, any> = {
@@ -79,12 +87,23 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
         
         <TypeIcon className="w-4 h-4" />
         
-        <span className="font-mono text-sm w-20 opacity-70">{account.code}</span>
-        
-        <span className="flex-1 font-medium">{account.name}</span>
-        
+        {/* Code/nameEn use explicit fg-3/fg-4 tokens rather than opacity on the
+            inherited badge color — opacity on top of an already-tight-contrast
+            badge color drops well below 4.5:1 in both themes. Matches the list
+            view's treatment of the same fields. */}
+        <span className="font-mono text-sm w-20 text-[var(--fg-3)]">{account.code}</span>
+
+        <button
+          type="button"
+          onClick={() => onView(account)}
+          className="flex-1 text-left font-medium hover:underline underline-offset-2 cursor-pointer"
+          title="ดูข้อมูลโดยสังเขป"
+        >
+          {account.name}
+        </button>
+
         {account.nameEn && (
-          <span className="text-sm opacity-50 hidden md:block">{account.nameEn}</span>
+          <span className="text-sm text-[var(--fg-4)] hidden md:block">{account.nameEn}</span>
         )}
         
         <span className={`text-xs px-2 py-1 rounded border ${typeColors[account.type]}`}>
@@ -107,7 +126,7 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
             </button>
             <button
               onClick={() => onDelete(account)}
-              className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg text-danger"
+              className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg text-[var(--danger-strong)]"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -124,12 +143,208 @@ const TreeNode = ({ account, level, expandedIds, onToggle, onEdit, onDelete }: T
               level={level + 1}
               expandedIds={expandedIds}
               onToggle={onToggle}
+              onView={onView}
               onEdit={onEdit}
               onDelete={onDelete}
             />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+interface LedgerTransaction {
+  date: string
+  entryNumber: string
+  entryDescription: string
+  referenceType?: string
+  referenceId?: string
+  debit: number
+  credit: number
+  lineDescription?: string
+  balance: number
+}
+
+interface LedgerData {
+  account: Account
+  openingBalance: number
+  transactions: LedgerTransaction[]
+  closingBalance: number
+}
+
+const fmtMoney = (n: number) =>
+  (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Reconstructs month-end balance snapshots from the already-cumulative
+// `balance` field on each transaction (server computes running balance from
+// openingBalance forward) — avoids a second round of balance queries.
+function monthlyTrendFrom(openingBalance: number, transactions: LedgerTransaction[], monthsBack = 6) {
+  const today = new Date()
+  let idx = 0
+  let running = openingBalance
+  const trend: { month: string; balance: number }[] = []
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const isCurrentMonth = i === 0
+    const cutoff = isCurrentMonth ? today : new Date(d.getFullYear(), d.getMonth() + 1, 0)
+    while (idx < transactions.length && new Date(transactions[idx].date) <= cutoff) {
+      running = transactions[idx].balance
+      idx++
+    }
+    trend.push({ month: `${d.getMonth() + 1}/${d.getFullYear()}`, balance: running })
+  }
+  return trend
+}
+
+const LEDGER_TYPE_TEXT: Record<AccountType, string> = {
+  ASSET: 'text-[var(--success-strong)]',
+  LIABILITY: 'text-[var(--danger-strong)]',
+  EQUITY: 'text-[var(--equity-strong)]',
+  REVENUE: 'text-[var(--primary)]',
+  EXPENSE: 'text-[var(--warning-strong)]',
+}
+
+interface AccountLedgerPanelProps {
+  accountId: string
+  onClose: () => void
+}
+
+// Slide-over "what's inside this account" summary: current balance, a 6-month
+// trend, and the most recent journal lines — so users don't have to leave
+// Chart of Accounts and hunt through Journal Entries to sanity-check a balance.
+const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => {
+  const navigate = useNavigate()
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<LedgerData | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setData(null)
+    const today = new Date()
+    const startDate = new Date(today.getFullYear(), today.getMonth() - 5, 1).toISOString().slice(0, 10)
+    reportsApi.getLedger(accountId, { startDate })
+      .then((res: any) => { if (!cancelled) setData(res.data.data) })
+      .catch(() => { if (!cancelled) toast.error('ไม่สามารถโหลดข้อมูลบัญชีได้') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [accountId])
+
+  const trend = data ? monthlyTrendFrom(data.openingBalance, data.transactions) : []
+  const recentLines = data
+    ? [...data.transactions].slice(-15).reverse().map(t => ({
+        ...t,
+        impact: data.account.normalBalance === 'DEBIT' ? t.debit - t.credit : t.credit - t.debit,
+      }))
+    : []
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-[var(--fg-1)]/50"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'tween', duration: 0.2 }}
+        className="relative w-full max-w-md h-full bg-[var(--surface)] border-l border-[var(--border)] shadow-3 flex flex-col"
+      >
+        {loading || !data ? (
+          <div className="flex-1 flex items-center justify-center">
+            <RefreshCw className="w-6 h-6 animate-spin text-[var(--fg-4)]" />
+          </div>
+        ) : (
+          <>
+            <div className="p-5 border-b border-[var(--border)] flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-sm text-[var(--fg-3)]">{data.account.code}</p>
+                <h3 className="text-lg font-bold text-[var(--fg-1)] truncate">{data.account.name}</h3>
+                {data.account.nameEn && <p className="text-sm text-[var(--fg-4)] truncate">{data.account.nameEn}</p>}
+              </div>
+              <button onClick={onClose} className="p-1.5 hover:bg-[var(--surface-2)] rounded-lg text-[var(--fg-3)] shrink-0">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5 overflow-y-auto phopy-scrollbar flex-1">
+              <div>
+                <p className="text-sm text-[var(--fg-3)]">ยอดคงเหลือปัจจุบัน</p>
+                <p className={`text-3xl font-bold num ${LEDGER_TYPE_TEXT[data.account.type]}`}>
+                  {fmtMoney(data.closingBalance)}
+                  <span className="text-sm font-normal text-[var(--fg-4)] ml-2">
+                    {data.account.normalBalance === 'DEBIT' ? 'เดบิต' : 'เครดิต'}
+                  </span>
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-[var(--fg-3)] mb-2">แนวโน้ม 6 เดือนล่าสุด</p>
+                <div className="h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                      <defs>
+                        <linearGradient id="ledgerTrendFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--fg-4)' }} axisLine={false} tickLine={false} />
+                      <YAxis hide domain={['auto', 'auto']} />
+                      <Tooltip
+                        formatter={(v: number) => [fmtMoney(v), 'ยอดคงเหลือ']}
+                        contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                      />
+                      <Area type="monotone" dataKey="balance" stroke="var(--primary)" strokeWidth={2} fill="url(#ledgerTrendFill)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-[var(--fg-3)]">รายการล่าสุด</p>
+                  {data.transactions.length > 0 && (
+                    <p className="text-xs text-[var(--fg-4)]">{data.transactions.length} รายการ (6 เดือน)</p>
+                  )}
+                </div>
+                {recentLines.length === 0 ? (
+                  <p className="text-sm text-[var(--fg-4)] text-center py-8">ไม่มีรายการในช่วง 6 เดือนที่ผ่านมา</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recentLines.map((t, i) => (
+                      <div key={i} className="p-3 rounded-lg bg-[var(--surface-2)] flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-[var(--fg-1)] truncate">{t.lineDescription || t.entryDescription}</p>
+                          <p className="text-xs text-[var(--fg-4)]">{t.entryNumber} • {t.date}</p>
+                        </div>
+                        <p className="text-sm font-semibold shrink-0 num text-[var(--fg-1)]">
+                          {t.impact >= 0 ? '+' : '−'}{fmtMoney(Math.abs(t.impact))}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-[var(--border)]">
+              <button
+                onClick={() => navigate('/accounting/journal-entries')}
+                className="phopy-btn-secondary w-full flex items-center justify-center gap-2"
+              >
+                ดูสมุดรายวันทั้งหมด
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
     </div>
   )
 }
@@ -148,6 +363,7 @@ const ChartOfAccounts = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showInitConfirm, setShowInitConfirm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+  const [viewingAccountId, setViewingAccountId] = useState<string | null>(null)
   
   // Form state
   const [formData, setFormData] = useState<Partial<Account>>({
@@ -347,28 +563,28 @@ const ChartOfAccounts = () => {
           <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4">
             <div className="phopy-card max-w-md w-full p-6">
               <div className="flex items-center gap-3 mb-4">
-                <AlertCircle className="w-8 h-8 text-warning" />
+                <AlertCircle className="w-8 h-8 text-[var(--warning-strong)]" />
                 <h3 className="text-lg font-bold text-[var(--fg-1)]">ยืนยันการสร้างผังบัญชี</h3>
               </div>
               <ul className="space-y-2 text-sm text-[var(--fg-2)] mb-6">
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-success" />
+                  <CheckCircle className="w-4 h-4 text-[var(--success-strong)]" />
                   บัญชีสินทรัพย์ (1xxxx) - เงินสด ลูกหนี้ สต็อก
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-danger" />
+                  <CheckCircle className="w-4 h-4 text-[var(--danger-strong)]" />
                   บัญชีหนี้สิน (2xxxx) - เจ้าหนี้ เงินกู้
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-purple-400" />
+                  <CheckCircle className="w-4 h-4 text-[var(--equity-strong)]" />
                   บัญชีส่วนของผู้ถือหุ้น (3xxxx)
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-cyan-400" />
+                  <CheckCircle className="w-4 h-4 text-[var(--primary)]" />
                   บัญชีรายได้ (4xxxx) - รายได้ขาย รายได้อื่น
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-warning" />
+                  <CheckCircle className="w-4 h-4 text-[var(--warning-strong)]" />
                   บัญชีค่าใช้จ่าย (5xxxx) - ต้นทุน ค่าใช้จ่ายดำเนินงาน
                 </li>
               </ul>
@@ -499,6 +715,7 @@ const ChartOfAccounts = () => {
                 level={0}
                 expandedIds={expandedIds}
                 onToggle={toggleExpand}
+                onView={(acc) => setViewingAccountId(acc.id)}
                 onEdit={(acc) => {
                   setEditingAccount(acc)
                   setFormData({
@@ -531,7 +748,14 @@ const ChartOfAccounts = () => {
                     <td className="font-mono text-[var(--fg-3)]">{account.code}</td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <span className="text-[var(--fg-1)]">{account.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setViewingAccountId(account.id)}
+                          className="text-[var(--fg-1)] hover:underline underline-offset-2 cursor-pointer text-left"
+                          title="ดูข้อมูลโดยสังเขป"
+                        >
+                          {account.name}
+                        </button>
                         {account.isSystem && (
                           <span className="text-xs bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] px-2 py-0.5 rounded">
                             ระบบ
@@ -576,7 +800,7 @@ const ChartOfAccounts = () => {
                             onClick={() => handleDelete(account)}
                             className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg"
                           >
-                            <Trash2 className="w-4 h-4 text-danger" />
+                            <Trash2 className="w-4 h-4 text-[var(--danger-strong)]" />
                           </button>
                         </div>
                       )}
@@ -725,6 +949,16 @@ const ChartOfAccounts = () => {
           </motion.div>
         </div>
       )}
+
+      <AnimatePresence>
+        {viewingAccountId && (
+          <AccountLedgerPanel
+            key={viewingAccountId}
+            accountId={viewingAccountId}
+            onClose={() => setViewingAccountId(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

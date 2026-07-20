@@ -31,8 +31,10 @@ import {
   UserCog,
   ShieldCheck,
   Hash,
+  Coins,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
+import CurrencySettings from './settings/CurrencySettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
@@ -59,7 +61,7 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -108,6 +110,7 @@ export default function SettingsPage() {
               { id: 'units' as const, icon: ArrowLeftRight, label: t('settings.settingsPage.tabs.units'), show: true },
               { id: 'material-categories' as const, icon: Tag, label: t('settings.settingsPage.tabs.materialCategories'), show: isAdmin || isMaster },
               { id: 'doc-numbering' as const, icon: Hash, label: t('settings.settingsPage.tabs.docNumbering'), show: isAdmin || isMaster },
+              { id: 'currency' as const, icon: Coins, label: t('settings.settingsPage.tabs.currency'), show: isAdmin || isMaster },
             ],
           },
           {
@@ -217,6 +220,8 @@ export default function SettingsPage() {
         {activeTab === 'approval' && (isAdmin || isMaster) && <ApprovalSettings />}
 
         {activeTab === 'doc-numbering' && (isAdmin || isMaster) && <DocumentNumberSettings />}
+
+        {activeTab === 'currency' && (isAdmin || isMaster) && <CurrencySettings />}
       </div>
 
       {/* Add User Modal */}

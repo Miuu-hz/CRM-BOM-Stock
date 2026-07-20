@@ -19,6 +19,7 @@ import {
   Settings,
 } from 'lucide-react'
 import api from '../services/api'
+import { WhtCertActionButton, WhtCertificateList, type WhtCertificate } from './tax/WhtCertificateSection'
 
 // Types
 interface TaxDashboard {
@@ -32,6 +33,8 @@ interface TaxDashboard {
   wht: {
     collected: number
     paid: number
+    pnd3: number
+    pnd53: number
   }
   cit: {
     revenue: number
@@ -39,6 +42,8 @@ interface TaxDashboard {
     netProfit: number
     estimatedTax: number
     taxRate: number
+    isSme: boolean
+    effectiveRate: number
   }
   alerts: Array<{
     type: 'warning' | 'danger' | 'info'
@@ -68,6 +73,7 @@ interface TaxTransaction {
   tax_amount: number
   tax_rate?: number
   is_deductible: number
+  wht_form?: 'PND3' | 'PND53' | null
 }
 
 function Tax() {
@@ -77,6 +83,7 @@ function Tax() {
   const [transactions, setTransactions] = useState<TaxTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<string>('')
+  const [whtCerts, setWhtCerts] = useState<WhtCertificate[]>([])
 
   useEffect(() => {
     loadData()
@@ -109,6 +116,25 @@ function Tax() {
       setTransactions(res.data.data)
     } catch (error) {
       console.error('Failed to load transactions:', error)
+    }
+  }
+
+  const loadWhtCerts = async () => {
+    try {
+      const res = await api.get('/wht-certificates')
+      setWhtCerts(res.data.data)
+    } catch (error) {
+      console.error('Failed to load WHT certificates:', error)
+    }
+  }
+
+  const toggleDeductible = async (id: string, current: number) => {
+    try {
+      await api.patch(`/tax/transactions/${id}/deductible`, { isDeductible: !current })
+      await loadTransactions('VAT')
+      await loadData()
+    } catch (error) {
+      console.error('Failed to toggle deductible status:', error)
     }
   }
 
@@ -239,7 +265,7 @@ function Tax() {
         />
         <TabButton
           active={activeTab === 'wht'}
-          onClick={() => { setActiveTab('wht'); loadTransactions('WHT') }}
+          onClick={() => { setActiveTab('wht'); loadTransactions('WHT'); loadWhtCerts() }}
           icon={Wallet}
           label="ภาษีหัก ณ ที่จ่าย (WHT)"
         />
@@ -391,13 +417,22 @@ function Tax() {
                         <td className="text-right">{formatCurrency(t.base_amount)}</td>
                         <td className="text-right text-[var(--primary)]">{formatCurrency(t.tax_amount)}</td>
                         <td>
-                          <span className={`px-2 py-1 rounded text-xs ${
-                            t.is_deductible 
-                              ? 'bg-[var(--success-soft)] text-success' 
-                              : 'bg-[var(--warning-soft)] text-warning'
-                          }`}>
-                            {t.is_deductible ? 'หักได้' : 'หักไม่ได้'}
-                          </span>
+                          {t.transaction_type.startsWith('VAT_INPUT') ? (
+                            <button
+                              onClick={() => toggleDeductible(t.id, t.is_deductible)}
+                              className={`px-2 py-1 rounded text-xs hover:opacity-80 transition-opacity ${
+                                t.is_deductible
+                                  ? 'bg-[var(--success-soft)] text-success'
+                                  : 'bg-[var(--warning-soft)] text-warning'
+                              }`}
+                            >
+                              {t.is_deductible ? 'หักได้' : 'หักไม่ได้'}
+                            </button>
+                          ) : (
+                            <span className="px-2 py-1 rounded text-xs bg-[var(--surface-2)] text-[var(--fg-4)]">
+                              -
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -412,27 +447,33 @@ function Tax() {
       {/* WHT Tab */}
       {activeTab === 'wht' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="phopy-card p-6">
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-12 h-12 rounded-lg bg-[var(--bg)] flex items-center justify-center">
+                  <Wallet className="w-6 h-6 text-danger" />
+                </div>
+              </div>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ภาษีหัก ณ ที่จ่าย ที่เราหักคู่ค้า (ต้องนำส่งสรรพากร)</p>
+              <p className="text-2xl font-bold text-danger">{formatCurrency(dashboard?.wht.paid || 0)}</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">ยอดที่ต้องนำส่งผ่าน ภ.ง.ด.3 / ภ.ง.ด.53</p>
+              <div className="mt-3 pt-3 border-t border-[var(--border)] grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-[var(--fg-4)]">ภ.ง.ด.3</p>
+                  <p className="text-sm font-semibold text-[var(--fg-2)]">{formatCurrency(dashboard?.wht.pnd3 || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--fg-4)]">ภ.ง.ด.53</p>
+                  <p className="text-sm font-semibold text-[var(--fg-2)]">{formatCurrency(dashboard?.wht.pnd53 || 0)}</p>
+                </div>
+              </div>
+            </div>
             <TaxCard
-              title="ภาษีหักได้รับ"
+              title="ภาษีถูกหัก ณ ที่จ่าย (เครดิตภาษีเงินได้)"
               amount={dashboard?.wht.collected || 0}
               icon={Wallet}
               color="green"
-              description="ภาษีหักจากลูกค้า"
-            />
-            <TaxCard
-              title="ภาษีหักจ่ายไป"
-              amount={dashboard?.wht.paid || 0}
-              icon={Wallet}
-              color="red"
-              description="ภาษีหักให้ผู้ขาย"
-            />
-            <TaxCard
-              title="สุทธิ"
-              amount={(dashboard?.wht.collected || 0) - (dashboard?.wht.paid || 0)}
-              icon={Calculator}
-              color="primary"
-              description="ยอดคงเหลือ"
+              description="ลูกค้าหักไว้ ใช้เครดิตตอนยื่น ภ.ง.ด.50"
             />
           </div>
 
@@ -449,12 +490,14 @@ function Tax() {
                     <th>ยอดจ่าย</th>
                     <th>อัตรา WHT</th>
                     <th>ภาษีหัก</th>
+                    <th>แบบฟอร์ม</th>
+                    <th>50 ทวิ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-[var(--fg-4)]">
+                      <td colSpan={9} className="text-center py-8 text-[var(--fg-4)]">
                         ไม่พบรายการ
                       </td>
                     </tr>
@@ -468,6 +511,18 @@ function Tax() {
                         <td className="text-right">{formatCurrency(t.base_amount)}</td>
                         <td>{t.tax_rate}%</td>
                         <td className="text-right text-[var(--primary)]">{formatCurrency(t.tax_amount)}</td>
+                        <td>
+                          {t.wht_form ? (
+                            <span className="px-2 py-1 rounded text-xs bg-[var(--primary-soft)] text-[var(--primary)]">
+                              {t.wht_form === 'PND3' ? 'ภ.ง.ด.3' : 'ภ.ง.ด.53'}
+                            </span>
+                          ) : (
+                            <span className="text-[var(--fg-4)]">-</span>
+                          )}
+                        </td>
+                        <td>
+                          <WhtCertActionButton txn={t} certs={whtCerts} onIssued={loadWhtCerts} />
+                        </td>
                       </tr>
                     ))
                   )}
@@ -475,6 +530,8 @@ function Tax() {
               </table>
             </div>
           </div>
+
+          <WhtCertificateList certs={whtCerts} onChanged={loadWhtCerts} />
         </div>
       )}
 
@@ -505,7 +562,7 @@ function Tax() {
                   <p className="text-2xl font-bold text-success">{formatCurrency(dashboard?.cit?.netProfit || 0)}</p>
                 </div>
                 <div>
-                  <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิทางภาษี</p>
+                  <p className="text-[var(--fg-3)] text-sm">กำไรสุทธิทางภาษี (ประมาณการ — ยังไม่ปรับปรุงรายการบวกกลับ)</p>
                   <p className="text-2xl font-bold text-[var(--primary)]">{formatCurrency(dashboard?.cit?.netProfit || 0)}</p>
                 </div>
               </div>
@@ -517,10 +574,31 @@ function Tax() {
                     <p className="text-3xl font-bold text-[var(--primary)]">{formatCurrency(dashboard?.cit?.estimatedTax || 0)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[var(--fg-3)] text-sm">อัตราภาษี</p>
-                    <p className="text-xl font-bold text-[var(--fg-1)]">{dashboard?.cit?.taxRate || 20}%</p>
+                    <div className="flex items-center gap-2 justify-end">
+                      <p className="text-[var(--fg-3)] text-sm">อัตราภาษีที่แท้จริง</p>
+                      {dashboard?.cit?.isSme && (
+                        <span className="px-2 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success">SME</span>
+                      )}
+                    </div>
+                    <p className="text-xl font-bold text-[var(--fg-1)]">{(dashboard?.cit?.effectiveRate ?? dashboard?.cit?.taxRate ?? 20).toFixed(2)}%</p>
                   </div>
                 </div>
+                {dashboard?.cit?.isSme && (
+                  <div className="mt-4 pt-4 border-t border-phopy-indigo/20 space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-[var(--fg-3)]">กำไรสุทธิ ≤ 300,000 บาท</span>
+                      <span className="text-success font-medium">ยกเว้น</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-[var(--fg-3)]">300,001 - 3,000,000 บาท</span>
+                      <span className="text-[var(--fg-2)] font-medium">15%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-[var(--fg-3)]">มากกว่า 3,000,000 บาท</span>
+                      <span className="text-[var(--fg-2)] font-medium">20%</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -3,6 +3,21 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { createSalesJournal } from './shared'
 
+// Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
+// pattern as tax.routes.ts's wht_form column.
+function ensureInvoiceCurrencyColumns() {
+  try {
+    const columns = db.prepare('PRAGMA table_info(invoices)').all() as { name: string }[]
+    const names = new Set(columns.map((c) => c.name))
+    if (!names.has('currency_code')) db.exec("ALTER TABLE invoices ADD COLUMN currency_code TEXT DEFAULT 'THB'")
+    if (!names.has('exchange_rate')) db.exec('ALTER TABLE invoices ADD COLUMN exchange_rate REAL DEFAULT 1')
+    if (!names.has('foreign_amount')) db.exec('ALTER TABLE invoices ADD COLUMN foreign_amount REAL')
+  } catch (error) {
+    console.error('Failed to ensure invoice currency columns:', error)
+  }
+}
+ensureInvoiceCurrencyColumns()
+
 const router = Router()
 
 // GET all invoices
@@ -75,10 +90,34 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { salesOrderId, dueDate, notes, items: customItems } = req.body
-    
+    const { salesOrderId, dueDate, notes, items: customItems, currencyCode, exchangeRate, foreignAmount } = req.body
+
     if (!salesOrderId) {
       return res.status(400).json({ success: false, message: 'Sales order is required' })
+    }
+
+    // ponytail: invoice totals (subtotal/tax/total) are derived from the linked sales order,
+    // not entered ad hoc — so unlike PO creation, there's no "foreign line total" to convert
+    // here. Currency is stored as pass-through metadata computed by the frontend; the THB
+    // fields below stay authoritative and untouched, keeping THB invoices byte-identical to
+    // before this feature existed.
+    let currency_code = 'THB'
+    let exchange_rate = 1
+    let foreign_amount: number | null = null
+    if (currencyCode && currencyCode !== 'THB') {
+      const currency = db.prepare('SELECT code FROM currencies WHERE tenant_id = ? AND code = ? AND is_active = 1')
+        .get(tenantId, currencyCode) as { code: string } | undefined
+      if (!currency) {
+        return res.status(400).json({ success: false, message: 'ไม่พบสกุลเงินที่ระบุ หรือสกุลเงินถูกปิดใช้งาน' })
+      }
+      const rate = Number(exchangeRate)
+      if (!Number.isFinite(rate) || rate <= 0) {
+        return res.status(400).json({ success: false, message: 'อัตราแลกเปลี่ยนไม่ถูกต้อง' })
+      }
+      currency_code = currencyCode
+      exchange_rate = rate
+      const fa = Number(foreignAmount)
+      foreign_amount = Number.isFinite(fa) ? fa : null
     }
 
     // Get sales order details
@@ -105,21 +144,23 @@ router.post('/', async (req: Request, res: Response) => {
     const transaction = db.transaction(() => {
       db.prepare(`
         INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date,
-          subtotal, discount_amount, tax_rate, tax_amount, total_amount, balance_amount, status, payment_status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?)
+          subtotal, discount_amount, tax_rate, tax_amount, total_amount, balance_amount, status, payment_status, notes, created_at, updated_at,
+          currency_code, exchange_rate, foreign_amount)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?, ?, ?, ?)
       `).run(id, tenantId, invoiceNumber, salesOrderId, salesOrder.customer_id, now, dueDate || null,
         salesOrder.subtotal, salesOrder.discount_amount, salesOrder.tax_rate, salesOrder.tax_amount,
-        salesOrder.total_amount, salesOrder.total_amount, notes || '', now, now)
+        salesOrder.total_amount, salesOrder.total_amount, notes || '', now, now,
+        currency_code, exchange_rate, foreign_amount)
 
       // Create invoice items from sales order items
       const insertItem = db.prepare(`
-        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       for (const item of salesOrderItems) {
         insertItem.run(generateId(), tenantId, id, item.id,
           item.stock_item_id || null, null, item.product_name || null,
-          item.quantity, item.unit || '', item.unit_price, item.total_price)
+          item.quantity, item.unit_price, item.total_price)
       }
 
       // VAT Entry (Output VAT)

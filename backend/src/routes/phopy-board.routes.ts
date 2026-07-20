@@ -15,6 +15,37 @@ function daysBetween(dateStr: string): number {
   return Math.floor((now.getTime() - d.getTime()) / 86400000)
 }
 
+// ── Ledger-based P&L helpers ──────────────────────────────────────────────
+// Accounting-accurate revenue/COGS: REVENUE/EXPENSE accounts from posted, non-closing
+// journal entries. is_closing_entry rows (year-end zero-out) are always excluded —
+// otherwise a closed fiscal year would double-count or cancel out P&L totals.
+const NON_CLOSING = "AND (je.is_closing_entry IS NULL OR je.is_closing_entry = 0)"
+
+function ledgerRevenue(tenantId: string, start: string, end: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(jl.credit - jl.debit), 0) as v
+    FROM journal_lines jl
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    JOIN accounts a ON jl.account_id = a.id
+    WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
+      AND a.type = 'REVENUE' ${NON_CLOSING}
+  `).get(tenantId, start, end) as { v: number }
+  return Number(row.v)
+}
+
+// Real COGS (accounts.category = 'COGS'), not purchases-in-period.
+function ledgerCogs(tenantId: string, start: string, end: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as v
+    FROM journal_lines jl
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    JOIN accounts a ON jl.account_id = a.id
+    WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
+      AND a.type = 'EXPENSE' AND a.category = 'COGS' ${NON_CLOSING}
+  `).get(tenantId, start, end) as { v: number }
+  return Number(row.v)
+}
+
 router.get('/summary', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -27,38 +58,13 @@ router.get('/summary', (req: Request, res: Response) => {
     const prevEnd = new Date(new Date(startDate).getTime() - 86400000).toISOString().substring(0, 10)
     const prevStart = new Date(new Date(startDate).getTime() - durationMs - 86400000).toISOString().substring(0, 10)
 
-    // ── KPIs ──────────────────────────────────────────────────────────────────
-    const revRow = db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as revenue
-      FROM orders
-      WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?
-        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
-    `).get(startDate, endDate, tenantId) as { revenue: number }
+    // ── KPIs (ledger-based: revenue = REVENUE accounts, cost = real COGS) ──────
+    const revenue = ledgerRevenue(tenantId, startDate, endDate)
+    const cost = ledgerCogs(tenantId, startDate, endDate)
+    const prevRevenue = ledgerRevenue(tenantId, prevStart, prevEnd)
+    const prevCost = ledgerCogs(tenantId, prevStart, prevEnd)
 
-    const costRow = db.prepare(`
-      SELECT COALESCE(SUM(poi.total_price), 0) as cost
-      FROM purchase_order_items poi
-      JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      WHERE po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
-        AND po.tenant_id = ?
-    `).get(startDate, endDate, tenantId) as { cost: number }
-
-    const prevRevRow = db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as revenue
-      FROM orders
-      WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ?
-        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
-    `).get(prevStart, prevEnd, tenantId) as { revenue: number }
-
-    const prevCostRow = db.prepare(`
-      SELECT COALESCE(SUM(poi.total_price), 0) as cost
-      FROM purchase_order_items poi
-      JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      WHERE po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
-        AND po.tenant_id = ?
-    `).get(prevStart, prevEnd, tenantId) as { cost: number }
-
-    // Net profit via journal (revenue - expense accounts for tenant)
+    // Net profit via journal (revenue - all expense accounts, posted, non-closing)
     const netRow = db.prepare(`
       SELECT
         COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as revenue_net,
@@ -67,17 +73,37 @@ router.get('/summary', (req: Request, res: Response) => {
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       JOIN accounts a ON jl.account_id = a.id
       WHERE je.tenant_id = ? AND je.is_posted = 1
-        AND date(je.date) BETWEEN ? AND ?
+        AND date(je.date) BETWEEN ? AND ? ${NON_CLOSING}
     `).get(tenantId, startDate, endDate) as { revenue_net: number; expense_net: number }
 
-    const revenue = Number(revRow.revenue)
-    const cost = Number(costRow.cost)
-    const prevRevenue = Number(prevRevRow.revenue)
-    const prevCost = Number(prevCostRow.cost)
     const grossProfit = revenue - cost
     const prevGrossProfit = prevRevenue - prevCost
     const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
     const netProfit = Number(netRow.revenue_net) - Number(netRow.expense_net)
+
+    // ── Business-unit P&L split (RETAIL / WHOLESALE / ONLINE / OTHER) ─────────
+    const buRows = db.prepare(`
+      SELECT
+        COALESCE(je.business_unit, 'OTHER') as unit,
+        COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as revenue,
+        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category = 'COGS' THEN jl.debit - jl.credit ELSE 0 END), 0) as cogs,
+        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category != 'COGS' THEN jl.debit - jl.credit ELSE 0 END), 0) as expense
+      FROM journal_lines jl
+      JOIN journal_entries je ON jl.journal_entry_id = je.id
+      JOIN accounts a ON jl.account_id = a.id
+      WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
+        AND a.type IN ('REVENUE', 'EXPENSE') ${NON_CLOSING}
+      GROUP BY COALESCE(je.business_unit, 'OTHER')
+    `).all(tenantId, startDate, endDate) as Array<{ unit: string; revenue: number; cogs: number; expense: number }>
+
+    const buMap = new Map(buRows.map(r => [r.unit, r]))
+    const businessUnits = (['RETAIL', 'WHOLESALE', 'ONLINE', 'OTHER'] as const).map(unit => {
+      const r = buMap.get(unit)
+      const uRevenue = Number(r?.revenue || 0)
+      const uCogs = Number(r?.cogs || 0)
+      const uExpense = Number(r?.expense || 0)
+      return { unit, revenue: uRevenue, cogs: uCogs, expense: uExpense, netProfit: uRevenue - uCogs - uExpense }
+    })
 
     // ── 12-month revenue chart ────────────────────────────────────────────────
     const revenueChart: Array<{ month: string; revenue: number; cost: number; grossProfit: number }> = []
@@ -88,10 +114,8 @@ router.get('/summary', (req: Request, res: Response) => {
       const mEnd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
       const label = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`
 
-      const mRev = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)`).get(mStart, mEnd, tenantId) as { v: number }
-      const mCost = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND po.tenant_id=?`).get(mStart, mEnd, tenantId) as { v: number }
-      const r = Number(mRev.v)
-      const c = Number(mCost.v)
+      const r = ledgerRevenue(tenantId, mStart, mEnd)
+      const c = ledgerCogs(tenantId, mStart, mEnd)
       revenueChart.push({ month: label, revenue: r, cost: c, grossProfit: r - c })
     }
 
@@ -106,12 +130,10 @@ router.get('/summary', (req: Request, res: Response) => {
       const lastD = new Date(cur.getFullYear(), cur.getMonth() + 1, 0)
       const mE = lastD.toISOString().substring(0, 10)
 
-      const r2 = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status!='CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)`).get(mS, mE, tenantId) as { v: number }
-      const c2 = db.prepare(`SELECT COALESCE(SUM(poi.total_price),0) as v FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id=po.id WHERE po.status='RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND po.tenant_id=?`).get(mS, mE, tenantId) as { v: number }
-      const n2 = db.prepare(`SELECT COALESCE(SUM(CASE WHEN a.type='REVENUE' THEN jl.credit-jl.debit ELSE 0 END),0)-COALESCE(SUM(CASE WHEN a.type='EXPENSE' THEN jl.debit-jl.credit ELSE 0 END),0) as v FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND je.is_posted=1 AND date(je.date) BETWEEN ? AND ?`).get(tenantId, mS, mE) as { v: number }
+      const rev = ledgerRevenue(tenantId, mS, mE)
+      const cogs = ledgerCogs(tenantId, mS, mE)
+      const n2 = db.prepare(`SELECT COALESCE(SUM(CASE WHEN a.type='REVENUE' THEN jl.credit-jl.debit ELSE 0 END),0)-COALESCE(SUM(CASE WHEN a.type='EXPENSE' THEN jl.debit-jl.credit ELSE 0 END),0) as v FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND je.is_posted=1 AND date(je.date) BETWEEN ? AND ? ${NON_CLOSING}`).get(tenantId, mS, mE) as { v: number }
 
-      const rev = Number(r2.v)
-      const cogs = Number(c2.v)
       const gp = rev - cogs
       const np = Number(n2.v)
       plTable.push({ month: mLabel, revenue: rev, cogs, grossProfit: gp, netProfit: np, margin: rev > 0 ? (gp / rev) * 100 : 0 })
@@ -300,6 +322,7 @@ router.get('/summary', (req: Request, res: Response) => {
       data: {
         period: { start: startDate, end: endDate },
         kpis: { revenue, cost, grossProfit, netProfit, grossMarginPct, prevRevenue, prevGrossProfit },
+        businessUnits,
         revenueChart,
         plTable,
         arAging,
@@ -338,6 +361,11 @@ router.get('/extended', (req: Request, res: Response) => {
     const offlineRow = db.prepare(
       "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)"
     ).get(startDate, endDate, tenantId) as { revenue: number; orders: number }
+
+    // Retail (POS หน้าร้าน) — previously missing from the board entirely.
+    const retailRow = db.prepare(
+      "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as bills FROM pos_running_bills WHERE tenant_id = ? AND status = 'PAID' AND date(COALESCE(closed_at, opened_at)) BETWEEN ? AND ?"
+    ).get(tenantId, startDate, endDate) as { revenue: number; bills: number }
 
     const orderTrend: Array<{ month: string; online: number; offline: number }> = []
     for (let i = 11; i >= 0; i--) {
@@ -388,6 +416,9 @@ router.get('/extended', (req: Request, res: Response) => {
     const revRow2 = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as rev FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)").get(startDate, endDate, tenantId) as { rev: number }
     const totalExp = expByCat.reduce((s, r) => s + Number(r.amount), 0)
     const expenseRatio = Number(revRow2.rev) > 0 ? (totalExp / Number(revRow2.rev)) * 100 : 0
+    // Real ledger COGS (accounts.category = 'COGS') — cogsByCategory above is a PO-purchases
+    // breakdown by material category, not actual cost-of-goods-sold. Keep both, don't conflate.
+    const ledgerCogsTotal = ledgerCogs(tenantId, startDate, endDate)
 
     const woVar = db.prepare(`
       SELECT COALESCE(SUM(estimated_cost), 0) as estimated, COALESCE(SUM(actual_cost), 0) as actual, COUNT(*) as count
@@ -538,12 +569,23 @@ router.get('/extended', (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        channel: { byPlatform: channelByPlatform, onlineTotal, onlineOrders, offlineRevenue: Number(offlineRow.revenue), offlineOrders: Number(offlineRow.orders), orderTrend },
+        channel: {
+          byPlatform: channelByPlatform, onlineTotal, onlineOrders,
+          offlineRevenue: Number(offlineRow.revenue), offlineOrders: Number(offlineRow.orders),
+          orderTrend,
+          // Retail (POS หน้าร้าน) — new. offline* above is actually wholesale (sales orders); kept as-is for back-compat.
+          retailRevenue: Number(retailRow.revenue), retailBills: Number(retailRow.bills),
+          channels: [
+            { unit: 'RETAIL', label: 'หน้าร้าน', revenue: Number(retailRow.revenue), orders: Number(retailRow.bills) },
+            { unit: 'WHOLESALE', label: 'ขายส่ง', revenue: Number(offlineRow.revenue), orders: Number(offlineRow.orders) },
+            { unit: 'ONLINE', label: 'ออนไลน์', revenue: onlineTotal, orders: onlineOrders }
+          ]
+        },
         adsROI: {
           totals: { impressions: adImpr, clicks: adClicks, orders: adOrders, revenue: adRev, adCost, roas: adCost > 0 ? Math.round((adRev / adCost) * 100) / 100 : 0, cpc: adClicks > 0 ? Math.round((adCost / adClicks) * 100) / 100 : 0, cpo: adOrders > 0 ? Math.round((adCost / adOrders) * 100) / 100 : 0, ctr: adImpr > 0 ? Math.round((adClicks / adImpr) * 10000) / 100 : 0, orderRate: adClicks > 0 ? Math.round((adOrders / adClicks) * 10000) / 100 : 0, revenuePerAdBaht: adCost > 0 ? Math.round((adRev / adCost) * 100) / 100 : 0 },
           byPlatform: adByPlatform.map(p => ({ platform: p.platform, impressions: Number(p.impressions), clicks: Number(p.clicks), orders: Number(p.orders), revenue: Number(p.revenue), adCost: Number(p.adCost), roas: Number(p.adCost) > 0 ? Math.round((Number(p.revenue) / Number(p.adCost)) * 100) / 100 : 0, cpc: Number(p.clicks) > 0 ? Math.round((Number(p.adCost) / Number(p.clicks)) * 100) / 100 : 0, cpo: Number(p.orders) > 0 ? Math.round((Number(p.adCost) / Number(p.orders)) * 100) / 100 : 0 }))
         },
-        costStructure: { cogsByCategory: cogsByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseByCategory: expByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseRatio: Math.round(expenseRatio * 10) / 10, productionVariance: { estimated: Number(woVar.estimated), actual: Number(woVar.actual), variancePct: Number(woVar.estimated) > 0 ? Math.round(((Number(woVar.actual) - Number(woVar.estimated)) / Number(woVar.estimated)) * 1000) / 10 : 0, count: Number(woVar.count) }, costTrend },
+        costStructure: { cogsByCategory: cogsByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseByCategory: expByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseRatio: Math.round(expenseRatio * 10) / 10, productionVariance: { estimated: Number(woVar.estimated), actual: Number(woVar.actual), variancePct: Number(woVar.estimated) > 0 ? Math.round(((Number(woVar.actual) - Number(woVar.estimated)) / Number(woVar.estimated)) * 1000) / 10 : 0, count: Number(woVar.count) }, costTrend, ledgerCogsTotal },
         products: { top10: productsWithMargin.slice(0, 10), bottom10: [...productsWithMargin].sort((a, b) => a.margin - b.margin).slice(0, 10), concentrationRisk, totalRevenue: totalProdRev },
         workingCapital: { currentAssets, currentLiabilities: currentLiab, cash: cashBal, ar: arBal, currentRatio, quickRatio, cashBurnRate, wcTrend },
         outsourceProduction

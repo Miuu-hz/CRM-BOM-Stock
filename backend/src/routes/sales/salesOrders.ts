@@ -288,6 +288,15 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // ตัด stock เมื่อยืนยัน SO
     if (status === 'CONFIRMED' && salesOrder) {
       deductStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
+
+      // No accounting entry here on purpose: sales/invoices.ts's POST /
+      // already books the real entry (Dr AR/COGS, Cr Revenue/VAT/Inventory,
+      // via createSalesJournal in ./shared) when an Invoice is created for
+      // this SO, and that endpoint doesn't check SO status — posting here too
+      // would double-book revenue+COGS once the SO is invoiced. See
+      // postSalesOrderConfirmed() for why it's unused, kept only as a
+      // documented reference for a future "book at confirm instead of at
+      // invoice" redesign if that's ever wanted.
     }
 
     res.json({ success: true, data: salesOrder })

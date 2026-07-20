@@ -203,10 +203,24 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { type, active } = req.query
     
+    // a.* keeps the raw snake_case columns (some backend code still reads
+    // those); the aliases below additionally expose camelCase so the
+    // response matches the frontend's Account type — the frontend was
+    // reading account.nameEn/isSystem/isActive/normalBalance which never
+    // existed in the raw response, so Dr/Cr badges, nameEn, and the
+    // system-account edit/delete gate were all silently broken.
     let query = `
-      SELECT a.*, 
-             p.code as parent_code, 
+      SELECT a.*,
+             a.name_en as nameEn,
+             a.parent_id as parentId,
+             a.is_active as isActive,
+             a.is_system as isSystem,
+             a.normal_balance as normalBalance,
+             a.tax_related as taxRelated,
+             p.code as parent_code,
              p.name as parent_name,
+             p.code as parentCode,
+             p.name as parentName,
              (SELECT COUNT(*) FROM journal_lines WHERE account_id = a.id) as transaction_count
       FROM accounts a
       LEFT JOIN accounts p ON a.parent_id = p.id
@@ -259,11 +273,21 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const account = db.prepare(`
-      SELECT a.*, p.code as parent_code, p.name as parent_name
+      SELECT a.*,
+             a.name_en as nameEn,
+             a.parent_id as parentId,
+             a.is_active as isActive,
+             a.is_system as isSystem,
+             a.normal_balance as normalBalance,
+             a.tax_related as taxRelated,
+             p.code as parent_code,
+             p.name as parent_name,
+             p.code as parentCode,
+             p.name as parentName
       FROM accounts a
       LEFT JOIN accounts p ON a.parent_id = p.id
       WHERE a.id = ? AND a.tenant_id = ?
-    `).get(req.params.id, tenantId) as Account | undefined
+    `).get(req.params.id, tenantId) as (Account & { normalBalance: 'DEBIT' | 'CREDIT' }) | undefined
 
     if (!account) {
       return res.status(404).json({ success: false, message: 'Account not found' })
@@ -278,8 +302,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id = ? AND je.is_posted = 1
     `).get(req.params.id) as AccountBalanceTuple
-    
-    const balance = account.normal_balance === 'DEBIT' 
+
+    const balance = account.normalBalance === 'DEBIT'
       ? Number(balanceInfo.total_debit) - Number(balanceInfo.total_credit)
       : Number(balanceInfo.total_credit) - Number(balanceInfo.total_debit)
     

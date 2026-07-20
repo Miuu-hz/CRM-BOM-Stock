@@ -390,14 +390,22 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { startDate, endDate } = req.query
     
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ? AND tenant_id = ?').get(req.params.accountId, tenantId) as any
+    // accounts table columns are snake_case; alias to camelCase so this
+    // response matches the frontend's Account type (was previously unused by
+    // any page, so no existing consumer depends on the raw snake_case shape).
+    const account = db.prepare(`
+      SELECT id, code, name, name_en as nameEn, type, category, parent_id as parentId, level,
+             is_active as isActive, is_system as isSystem, normal_balance as normalBalance,
+             description, tax_related as taxRelated
+      FROM accounts WHERE id = ? AND tenant_id = ?
+    `).get(req.params.accountId, tenantId) as any
     if (!account) {
       return res.status(404).json({ success: false, message: 'Account not found' })
     }
-    
+
     // Calculate opening balance
     let openingQuery = `
-      SELECT COALESCE(SUM(CASE 
+      SELECT COALESCE(SUM(CASE
         WHEN ? = 'DEBIT' THEN debit - credit
         ELSE credit - debit
       END), 0) as balance
@@ -405,7 +413,7 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id = ? AND je.is_posted = 1
     `
-    const openingParams: any[] = [account.normal_balance, req.params.accountId]
+    const openingParams: any[] = [account.normalBalance, req.params.accountId]
     
     if (startDate) {
       openingQuery += ' AND je.date < ?'
@@ -416,15 +424,15 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
     
     // Get transactions
     let transactionsQuery = `
-      SELECT 
+      SELECT
         je.date,
-        je.entry_number,
-        je.description,
-        je.reference_type,
-        je.reference_id,
+        je.entry_number as entryNumber,
+        je.description as entryDescription,
+        je.reference_type as referenceType,
+        je.reference_id as referenceId,
         jl.debit,
         jl.credit,
-        jl.description as line_description
+        jl.description as lineDescription
       FROM journal_lines jl
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id = ? AND je.is_posted = 1
@@ -447,7 +455,7 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
     // Calculate running balance
     let runningBalance = Number(openingBalance.balance)
     const transactionsWithBalance = transactions.map(t => {
-      if (account.normal_balance === 'DEBIT') {
+      if (account.normalBalance === 'DEBIT') {
         runningBalance += (t.debit - t.credit)
       } else {
         runningBalance += (t.credit - t.debit)

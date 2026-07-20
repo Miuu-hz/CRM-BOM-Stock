@@ -1,0 +1,270 @@
+import { Router, Request, Response } from 'express'
+import { authenticate } from '../middleware/auth.middleware'
+import db from '../db/sqlite'
+import { generateId, formatDocumentNumber } from '../utils/id'
+import { ACC } from '../config/accountCodes'
+
+const router = Router()
+router.use(authenticate)
+
+// Additive schema migration: flags the auto-generated year-end closing JE so it can be told
+// apart from ordinary entries (used by /reopen to block reopening a year that's already closed).
+// Guarded so it only runs once per fresh DB, same pattern as tax.routes.ts's wht_form column.
+function ensureClosingEntryColumn() {
+  try {
+    const columns = db.prepare('PRAGMA table_info(journal_entries)').all() as { name: string }[]
+    if (!columns.some((c) => c.name === 'is_closing_entry')) {
+      db.exec('ALTER TABLE journal_entries ADD COLUMN is_closing_entry INTEGER DEFAULT 0')
+    }
+  } catch (error) {
+    console.error('Failed to ensure is_closing_entry column:', error)
+  }
+}
+ensureClosingEntryColumn()
+
+function monthLabel(year: number, month: number) {
+  return `${month}/${year}`
+}
+
+interface AccountBalance {
+  account_id: string
+  code: string
+  name: string
+  balance: number
+}
+
+// Revenue/expense balances for posted journal lines within a calendar year.
+// Revenue is credit-normal -> balance = credit - debit. Expense/COGS is debit-normal -> debit - credit.
+function computeYearEndBalances(tenantId: string, year: number) {
+  const startDate = `${year}-01-01`
+  const endDate = `${year}-12-31`
+
+  const revenueRows = db.prepare(`
+    SELECT a.id as account_id, a.code, a.name, SUM(jl.credit - jl.debit) as balance
+    FROM journal_lines jl
+    JOIN accounts a ON jl.account_id = a.id
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    WHERE jl.tenant_id = ? AND je.tenant_id = ? AND je.is_posted = 1
+      AND a.type = 'REVENUE' AND je.date >= ? AND je.date <= ?
+    GROUP BY a.id
+    HAVING balance != 0
+  `).all(tenantId, tenantId, startDate, endDate) as AccountBalance[]
+
+  const expenseRows = db.prepare(`
+    SELECT a.id as account_id, a.code, a.name, SUM(jl.debit - jl.credit) as balance
+    FROM journal_lines jl
+    JOIN accounts a ON jl.account_id = a.id
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    WHERE jl.tenant_id = ? AND je.tenant_id = ? AND je.is_posted = 1
+      AND a.type IN ('EXPENSE', 'COGS') AND je.date >= ? AND je.date <= ?
+    GROUP BY a.id
+    HAVING balance != 0
+  `).all(tenantId, tenantId, startDate, endDate) as AccountBalance[]
+
+  const totalRevenue = revenueRows.reduce((s, r) => s + r.balance, 0)
+  const totalExpense = expenseRows.reduce((s, r) => s + r.balance, 0)
+  const netProfit = totalRevenue - totalExpense
+
+  return { revenueRows, expenseRows, totalRevenue, totalExpense, netProfit }
+}
+
+function openMonthsInYear(tenantId: string, year: number): number[] {
+  const rows = db.prepare(
+    `SELECT month FROM tax_periods WHERE tenant_id = ? AND year = ? AND status = 'OPEN' ORDER BY month`
+  ).all(tenantId, year) as { month: number }[]
+  return rows.map((r) => r.month)
+}
+
+// List periods with JE count per period (JEs are matched by falling inside the period's date range —
+// journal_entries has no period_id column, unlike tax_transactions).
+router.get('/periods', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const periods = db.prepare(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM journal_entries je
+         WHERE je.tenant_id = p.tenant_id AND je.date >= p.start_date AND je.date <= p.end_date) AS je_count
+      FROM tax_periods p
+      WHERE p.tenant_id = ?
+      ORDER BY p.year DESC, p.month DESC
+    `).all(tenantId)
+    res.json({ success: true, data: periods })
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// Monthly close is just a lock — no JE generated.
+router.post('/close/:periodId', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const period = db.prepare('SELECT * FROM tax_periods WHERE id = ? AND tenant_id = ?')
+      .get(req.params.periodId, tenantId) as any
+    if (!period) return res.status(404).json({ success: false, message: 'ไม่พบงวดบัญชีที่ต้องการ' })
+    if (period.status !== 'OPEN') {
+      return res.status(400).json({ success: false, message: `งวด ${monthLabel(period.year, period.month)} ไม่ได้อยู่ในสถานะเปิด` })
+    }
+
+    db.prepare(`UPDATE tax_periods SET status = 'CLOSED', updated_at = datetime('now') WHERE id = ?`).run(period.id)
+    res.json({ success: true, message: `ปิดงวด ${monthLabel(period.year, period.month)} เรียบร้อยแล้ว` })
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+router.post('/reopen/:periodId', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const period = db.prepare('SELECT * FROM tax_periods WHERE id = ? AND tenant_id = ?')
+      .get(req.params.periodId, tenantId) as any
+    if (!period) return res.status(404).json({ success: false, message: 'ไม่พบงวดบัญชีที่ต้องการ' })
+    if (period.status !== 'CLOSED') {
+      return res.status(400).json({ success: false, message: `งวด ${monthLabel(period.year, period.month)} ไม่ได้อยู่ในสถานะปิด` })
+    }
+
+    const closingEntry = db.prepare(`
+      SELECT id FROM journal_entries
+      WHERE tenant_id = ? AND is_closing_entry = 1 AND is_posted = 1 AND strftime('%Y', date) = ?
+    `).get(tenantId, String(period.year)) as { id: string } | undefined
+
+    if (closingEntry) {
+      return res.status(400).json({
+        success: false,
+        message: `ไม่สามารถเปิดงวด ${monthLabel(period.year, period.month)} คืนได้ เนื่องจากปี ${period.year} มีการปิดบัญชีสิ้นปีแล้ว`,
+      })
+    }
+
+    db.prepare(`UPDATE tax_periods SET status = 'OPEN', updated_at = datetime('now') WHERE id = ?`).run(period.id)
+    res.json({ success: true, message: `เปิดงวด ${monthLabel(period.year, period.month)} คืนเรียบร้อยแล้ว` })
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// Preview only — same computation as year-end close, no writes.
+router.get('/year-end-preview/:year', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const year = Number(req.params.year)
+    if (!year || year < 2000) return res.status(400).json({ success: false, message: 'ปีไม่ถูกต้อง' })
+
+    const { revenueRows, expenseRows, totalRevenue, totalExpense, netProfit } = computeYearEndBalances(tenantId, year)
+    const openMonths = openMonthsInYear(tenantId, year)
+    const existing = db.prepare(
+      `SELECT id, entry_number FROM journal_entries WHERE tenant_id = ? AND is_closing_entry = 1 AND strftime('%Y', date) = ?`
+    ).get(tenantId, String(year)) as { id: string; entry_number: string } | undefined
+    const retainedEarnings = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?')
+      .get(tenantId, ACC.RETAINED_EARNINGS) as { id: string } | undefined
+
+    res.json({
+      success: true,
+      data: {
+        year,
+        revenueRows,
+        expenseRows,
+        totalRevenue,
+        totalExpense,
+        netProfit,
+        openMonths,
+        alreadyClosed: !!existing,
+        existingEntryNumber: existing?.entry_number ?? null,
+        retainedEarningsAccountFound: !!retainedEarnings,
+      },
+    })
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+router.post('/year-end/:year', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userName = req.user!.email
+    const year = Number(req.params.year)
+    if (!year || year < 2000) return res.status(400).json({ success: false, message: 'ปีไม่ถูกต้อง' })
+
+    const existing = db.prepare(
+      `SELECT id FROM journal_entries WHERE tenant_id = ? AND is_closing_entry = 1 AND strftime('%Y', date) = ?`
+    ).get(tenantId, String(year))
+    if (existing) {
+      return res.status(400).json({ success: false, message: `มีการปิดบัญชีสิ้นปี ${year} ไปแล้ว` })
+    }
+
+    const openMonths = openMonthsInYear(tenantId, year)
+    if (openMonths.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `ไม่สามารถปิดบัญชีสิ้นปีได้ เนื่องจากงวด ${openMonths.map((m) => monthLabel(year, m)).join(', ')} ยังไม่ได้ปิด`,
+      })
+    }
+
+    const retainedEarnings = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?')
+      .get(tenantId, ACC.RETAINED_EARNINGS) as { id: string } | undefined
+    if (!retainedEarnings) {
+      return res.status(400).json({
+        success: false,
+        message: `ไม่พบบัญชีกำไรสะสม (${ACC.RETAINED_EARNINGS}) ในผังบัญชี กรุณาสร้างบัญชีนี้ก่อนปิดบัญชีสิ้นปี`,
+      })
+    }
+
+    const { revenueRows, expenseRows, netProfit } = computeYearEndBalances(tenantId, year)
+    if (revenueRows.length === 0 && expenseRows.length === 0) {
+      return res.status(400).json({ success: false, message: `ไม่พบรายการรายได้หรือค่าใช้จ่ายที่ผ่านรายการแล้วสำหรับปี ${year}` })
+    }
+
+    const id = generateId()
+    const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
+    const date = `${year}-12-31`
+    const now = new Date().toISOString()
+    const description = `ปิดบัญชีสิ้นปี ${year}`
+
+    // Debit revenue accounts to zero them out; credit expense/COGS accounts to zero them out;
+    // the residual (net profit or loss) balances the entry via retained earnings.
+    const totalDebit = revenueRows.reduce((s, r) => s + r.balance, 0) + (netProfit < 0 ? -netProfit : 0)
+    const totalCredit = expenseRows.reduce((s, r) => s + r.balance, 0) + (netProfit > 0 ? netProfit : 0)
+
+    const run = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO journal_entries
+        (id, tenant_id, entry_number, date, reference_type, reference_id, description,
+         total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by,
+         is_closing_entry, notes, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'YEAR_END_CLOSING', ?, ?, ?, ?, 1, 1, ?, ?, 1, ?, ?, ?, ?)
+      `).run(id, tenantId, entryNumber, date, String(year), description, totalDebit, totalCredit, now, userName, null, userName, now, now)
+
+      const insertLine = db.prepare(`
+        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+
+      let lineNo = 1
+      for (const r of revenueRows) {
+        insertLine.run(generateId(), tenantId, id, r.account_id, lineNo++, `ปิดบัญชีรายได้ ${r.code} ${r.name}`, r.balance, 0)
+      }
+      for (const r of expenseRows) {
+        insertLine.run(generateId(), tenantId, id, r.account_id, lineNo++, `ปิดบัญชีค่าใช้จ่าย ${r.code} ${r.name}`, 0, r.balance)
+      }
+      if (netProfit > 0) {
+        insertLine.run(generateId(), tenantId, id, retainedEarnings.id, lineNo++, `โอนกำไรสุทธิเข้ากำไรสะสม ปี ${year}`, 0, netProfit)
+      } else if (netProfit < 0) {
+        insertLine.run(generateId(), tenantId, id, retainedEarnings.id, lineNo++, `โอนขาดทุนสุทธิเข้ากำไรสะสม ปี ${year}`, -netProfit, 0)
+      }
+    })
+
+    run()
+
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ?').get(id)
+    const lines = db.prepare(`
+      SELECT jl.*, a.code as account_code, a.name as account_name
+      FROM journal_lines jl JOIN accounts a ON jl.account_id = a.id
+      WHERE jl.journal_entry_id = ? ORDER BY jl.line_number
+    `).all(id)
+
+    res.json({ success: true, message: `ปิดบัญชีสิ้นปี ${year} เรียบร้อยแล้ว`, data: { ...(entry as object), lines } })
+  } catch (error: any) {
+    console.error('Year-end closing error:', error)
+    res.status(500).json({ success: false, message: error.message || 'เกิดข้อผิดพลาดในการปิดบัญชีสิ้นปี' })
+  }
+})
+
+export default router

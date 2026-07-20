@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: March 2026
+> อัปเดตล่าสุด: 20 กรกฎาคม 2026
 
 ---
 
@@ -23,13 +23,18 @@
 | **POS Clearing Transfer** | ✅ | นำเงินเข้าบัญชีประจำวัน, เลือกวันที่, Cash Over/Short (5901) |
 | **Bill Void** | ✅ | ยกเลิกบิล (PAID→VOID) + Reversal Journal Entry อัตโนมัติ |
 | **Accounting** | ✅ | Chart of Accounts, Journal Entries (T-account UX), VAT |
-| **Tax Management** | ✅ | VAT, Withholding Tax, Tax Periods |
+| **Tax Management** | ✅ | VAT ทิศทาง WHT ครบ, ภ.ง.ด.3/53, ภาษีซื้อต้องห้าม, ภาษีขายครบช่องทาง, CIT ขั้นบันได SME, alerts กำหนดยื่น |
+| **WHT Certificate (50 ทวิ)** | ✅ | ออก/พิมพ์/ยกเลิก, เลขรัน พ.ศ., ตัวอักษรบาทไทย |
+| **Period Closing** | ✅ | ปิดงวด + ล็อก JE + ปิดบัญชีสิ้นปีเข้ากำไรสะสม (3103) |
+| **Budget vs Actual** | ✅ | ตั้งงบรายบัญชี×เดือน เทียบผลจริงจาก ledger |
+| **Multi-Currency (PO)** | ✅ | สกุลเงิน+เรท, PO แปลงเข้า THB เต็มรูปแบบ (UI เลือกสกุลเงินในฟอร์ม Sales/Purchase ยังไม่ทำ — ไฟล์ 3,800+ บรรทัด รอ refactor) |
 | **Approval System** | ✅ | Multi-level approval workflow |
 | **Platform Order Fulfillment** | ✅ | CSV Upload, SKU Matching, Auto Stock Deduction, Ad Spend JE Approval |
 | **Sales Invoice Attachments** | ✅ | อัปโหลดรูป/ไฟล์แนบใบแจ้งหนี้ (max 10MB), gallery preview, lightbox |
 | **Invoice Detail Modal** | ✅ | redesign max-w-4xl, items table, payment history, attachment gallery |
 | **Purchase List/Card View** | ✅ | สลับ list/card view (list default), pagination 25/50/100 per page |
 | **Smart Unit Conversion** | ✅ | BFS chain conversion, sealed stock, auto-unpack, LLM advisor, spelling tolerant |
+| **Phopy Board (Business Unit P&L)** | ✅ | ตัวเลขจาก ledger จริง (ไม่นับ closing entry), การ์ด "กำไรขาดทุนตามหน่วยธุรกิจ" Retail/Wholesale/Online, tag `business_unit` จาก `reference_type` ของ JE ต้นทาง |
 
 #### 🧮 Smart Unit Conversion (May 2026)
 สรุปสั้น ๆ: ระบบแปลงหน่วยอัจฉริยะที่แก้ปัญหา 6 อย่าง — (1) **BFS chain conversion** แปลงหน่วยหลายขั้นต่อเนื่องอัตโนมัติ เช่น `แพ็ค → ขวด → ลิตร` (2) **Sealed stock** แยก stock ที่ยังไม่แกะ (`sealed_qty`) ออกจากที่แกะแล้ว (3) **Auto-unpack** ถ้าของหลักหมด → แกะแพ็คอัตโนมัติเพื่อเบิก/ขายต่อ (4) **Spelling tolerant** รับคำเขียนผิดเช่น `แพค/แพ๊ค/แพ็ค` ทั้งหมด map เป็น `pack` (5) **LLM Advisor** ช่วยแนะนำค่า conversion factor ตอนตั้งค่า (6) **List view UX** หน้า Purchase (GR/PO) คลิก row ได้เหมือน card view พร้อมปุ่ม action ครบ
@@ -44,8 +49,8 @@
 | Ad Spend → Pending JE Queue | ✅ |
 | JE Approval Workflow | ✅ |
 | Import History | ✅ |
-| Organic vs Paid Analytics | 🚧 (ไฟล์ organic ยังไม่มี) |
-| Business Unit P&L (Retail/Wholesale/Online) | 📋 Planned |
+| Organic vs Paid Analytics | 🚧 (รอไฟล์ยอดขายรวมจาก Shopee/Lazada) |
+| Business Unit P&L (Retail/Wholesale/Online) | ✅ (Phopy Board, ledger-accurate) |
 
 ### 🚧 อยู่ระหว่างพัฒนา (In Progress)
 
@@ -62,8 +67,7 @@
 |--------|-----------|---------|
 | **RBAC** | 🟠 ปานกลาง | Role-Based Access Control |
 | **Credit Note** | 🟠 ปานกลาง | ใบลดหนี้ (คืนสินค้าบางส่วน, ไม่ใช่ยกเลิกทั้งบิล) |
-| **Period Closing** | 🟠 ปานกลาง | ปิดงวดบัญชี + ยอดยกมาอัตโนมัติ |
-| **Financial Statements** | 🟠 ปานกลาง | งบดุล + งบกำไรขาดทุน auto-generate |
+| **Financial Statements** | 🟠 ปานกลาง | งบดุล auto-generate (P&L แยกหน่วยธุรกิจมีแล้วบน Phopy Board) |
 | **QMS** | 🟡 ต่ำ | Quality Management System |
 | **Capacity Planning** | 🟡 ต่ำ | Production capacity planning |
 
@@ -368,12 +372,21 @@ sales_orders → work_orders
 - [ ] POS Kitchen Display System (KDS)
 - [ ] COGS auto-calculation on sale
 
-### 📋 Phase 4: Advanced Features (PLANNED)
+### ✅ Phase 4: Advanced Accounting (COMPLETED — 19-20 July 2026)
+- [x] Tax module ตรงหลักภาษีไทย (WHT ทิศทาง, ภ.ง.ด.3/53, ภาษีซื้อต้องห้าม, ภาษีขายครบช่องทาง, CIT ขั้นบันได SME, alerts)
+- [x] Period Closing (ปิดงวด + ล็อก JE + ปิดบัญชีสิ้นปีเข้ากำไรสะสม 3103)
+- [x] WHT Certificate 50 ทวิ (ออก/พิมพ์/ยกเลิก, เลขรัน พ.ศ., ตัวอักษรบาทไทย)
+- [x] Budget vs Actual (งบรายบัญชี×เดือน เทียบผลจริงจาก ledger)
+- [x] Multi-Currency ขั้นต่ำ (สกุลเงิน+เรท, PO แปลงเข้า THB เต็มรูปแบบ)
+- [x] Phopy Board ledger-accurate + P&L แยกหน่วยธุรกิจ (Retail/Wholesale/Online)
+
+### 📋 Phase 5: Remaining Advanced Features (PLANNED)
 - [ ] MRP (Material Requirements Planning)
 - [ ] RBAC (Role-Based Access Control)
 - [ ] Credit Note (ใบลดหนี้)
-- [ ] Period Closing (ปิดงวดบัญชี)
-- [ ] Financial Statements (งบดุล / P&L)
+- [ ] Financial Statements — งบดุล auto-generate
+- [ ] UI เลือกสกุลเงินในฟอร์ม Sales/Purchase (รอ refactor ไฟล์ 3,800+ บรรทัด)
+- [ ] Organic vs Paid Analytics (รอไฟล์ยอดขายรวมจาก Shopee/Lazada)
 - [ ] Advanced Reports & Dashboard
 - [ ] Multi-warehouse support
 - [ ] API for external integrations
@@ -514,9 +527,25 @@ Phase 3 — Higher Risk · Architecture Change
 
 
 🟢 Phase 3: Advanced Features (อนาคต)
-ลำดับ	หัวข้อ	ความซับซ้อน
-3.1	Year-End Closing Entries	ปิดบัญชีรายได้ → กำไรสะสม (3103), ปิดบัญชีค่าใช้จ่าย → กำไรสะสม
-3.2	WHT Certificate Tracking	ติดตามใบหัก ณ ที่จ่าย ภ.ง.ด. 3/53 พร้อมรายงาน
-3.3	Budget vs Actual	ตั้งงบประมาณรายบัญชี → เทียบกับ actual
-3.4	Multi-Currency	รองรับธุรกรรมต่างประเทศ
-3.5	Fixed Asset Depreciation	คำนวณค่าเสื่อมอัตโนมัติ
+ลำดับ	หัวข้อ	ความซับซ้อน	สถานะ
+3.1	Year-End Closing Entries	ปิดบัญชีรายได้ → กำไรสะสม (3103), ปิดบัญชีค่าใช้จ่าย → กำไรสะสม	✅ เสร็จแล้ว (Period Closing)
+3.2	WHT Certificate Tracking	ติดตามใบหัก ณ ที่จ่าย ภ.ง.ด. 3/53 พร้อมรายงาน	✅ เสร็จแล้ว (50 ทวิ)
+3.3	Budget vs Actual	ตั้งงบประมาณรายบัญชี → เทียบกับ actual	✅ เสร็จแล้ว
+3.4	Multi-Currency	รองรับธุรกรรมต่างประเทศ	✅ เสร็จแล้ว (PO), UI ฟอร์ม Sales/Purchase ค้าง
+3.5	Fixed Asset Depreciation	คำนวณค่าเสื่อมอัตโนมัติ	📋 ยังไม่ทำ
+
+---
+
+## 📅 Session Log — 20 กรกฎาคม 2026 (รอบ 3: Phopy Board แม่นยำเชิงบัญชี)
+
+**สิ่งที่ทำ:**
+- Tag `business_unit` ที่ JE ต้นทาง — map ตรงจาก `reference_type` ที่มีอยู่แล้ว ไม่ต้องเดาจาก pattern: POS → RETAIL, ใบแจ้งหนี้/รับเงิน → WHOLESALE, ค่า ads → ONLINE, ลงมือเอง → OTHER พร้อม backfill ของเก่า (dev DB: 10 ใบ — RETAIL 3, OTHER 7)
+- ตัวเลขบน Phopy Board ดึงจาก ledger จริง — รายได้/COGS/กราฟ 12 เดือน/ตาราง P&L มาจาก journal (ไม่นับ closing entry — ของเดิมลืมกันจุดนี้ไว้ด้วย แก้ไปพร้อมกัน) schema จริงเก็บ COGS เป็น `type=EXPENSE, category=COGS` — ตรวจเทียบกับ `reports.routes` แล้วถูกต้อง
+- ครบ 3 ช่องทาง: หน้าร้าน (POS) / ขายส่ง / ออนไลน์ + การ์ด "กำไรขาดทุนตามหน่วยธุรกิจ" ใหม่ + relabel ยอดซื้อ PO ว่า "ไม่ใช่ COGS จริง" คู่กับการ์ด Ledger COGS
+
+**พบระหว่างทาง (ยังไม่แก้):**
+- `sales.routes.ts` (2,477 บรรทัด) เป็นโค้ดตายไม่ได้ mount — candidate ลบทิ้งรอบ refactor ถัดไป
+- JE จาก POS ต้อง post/approve ก่อนถึงเข้าตัวเลข ledger บน board (พฤติกรรมเดิมของระบบ ไม่ได้เกิดจากงานวันนี้) — ช่อง Retail ใน Zone 1 เห็นยอดทันทีเพราะอ่านจากบิลตรง แต่ P&L ต้องรอ post
+- Backup ทุกอย่างอยู่บนเซิร์ฟเวอร์ (`.bak2/.bak3/.bak4` + `dev.db.bak-*`) — ใช้งานจริงสักพักแล้วค่อยลบ
+
+**อัปเดตเพิ่ม:** ตรวจ `sales.routes.ts` endpoint-by-endpoint เทียบกับ `routes/sales/*` แล้ว — migrate ครบ 47/48 (จุดเดียวที่ path เปลี่ยนคือ `from-template` แต่ไม่มีใครเรียกทั้งเก่า/ใหม่อยู่แล้ว) เช็คแล้วว่า unit conversion engine (`services/unitConversion.service.ts` + ตาราง `unit_conversions` 39 กฎ + `sealed_qty` auto-unpack) ไม่ได้อยู่ในไฟล์นี้ ไม่กระทบ และ `deductStockForSO` เวอร์ชันใหม่ใน `shared.ts` ดีกว่าเดิม (ห่อ transaction + throw เมื่อสต็อกไม่พอ แทน silent clamp) — **ลบ `backend/src/routes/sales.routes.ts` แล้ว** ยืนยัน `tsc --noEmit` ผ่านสะอาด

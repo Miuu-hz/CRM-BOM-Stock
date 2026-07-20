@@ -253,12 +253,15 @@ export const reportsApi = {
 
 // ==================== CONSTANTS ====================
 
+// color = *-strong tokens: tuned for >=4.5:1 contrast on top of their own
+// bgColor (*-soft) in both light and dark mode — see index.css. EQUITY gets its
+// own violet hue (was sharing indigo with REVENUE, making the two indistinguishable).
 export const ACCOUNT_TYPES: { value: AccountType; label: string; color: string; bgColor: string }[] = [
-  { value: 'ASSET',     label: 'สินทรัพย์',        color: 'text-success',           bgColor: 'bg-[var(--success-soft)]' },
-  { value: 'LIABILITY', label: 'หนี้สิน',           color: 'text-danger',            bgColor: 'bg-[var(--danger-soft)]' },
-  { value: 'EQUITY',    label: 'ส่วนของผู้ถือหุ้น', color: 'text-[var(--primary)]',         bgColor: 'bg-[var(--primary-soft)]' },
-  { value: 'REVENUE',   label: 'รายได้',            color: 'text-[var(--primary)]',  bgColor: 'bg-[var(--primary-soft)]' },
-  { value: 'EXPENSE',   label: 'ค่าใช้จ่าย',        color: 'text-warning',           bgColor: 'bg-[var(--warning-soft)]' },
+  { value: 'ASSET',     label: 'สินทรัพย์',        color: 'text-[var(--success-strong)]', bgColor: 'bg-[var(--success-soft)]' },
+  { value: 'LIABILITY', label: 'หนี้สิน',           color: 'text-[var(--danger-strong)]',  bgColor: 'bg-[var(--danger-soft)]' },
+  { value: 'EQUITY',    label: 'ส่วนของผู้ถือหุ้น', color: 'text-[var(--equity-strong)]',  bgColor: 'bg-[var(--equity-soft)]' },
+  { value: 'REVENUE',   label: 'รายได้',            color: 'text-[var(--primary)]',        bgColor: 'bg-[var(--primary-soft)]' },
+  { value: 'EXPENSE',   label: 'ค่าใช้จ่าย',        color: 'text-[var(--warning-strong)]', bgColor: 'bg-[var(--warning-soft)]' },
 ]
 
 export const ACCOUNT_CATEGORIES: Record<AccountType, string[]> = {

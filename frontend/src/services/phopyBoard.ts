@@ -11,6 +11,7 @@ export interface PhopyBoardData {
     prevRevenue: number
     prevGrossProfit: number
   }
+  businessUnits: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'OTHER'; revenue: number; cogs: number; expense: number; netProfit: number }>
   revenueChart: Array<{ month: string; revenue: number; cost: number; grossProfit: number }>
   plTable: Array<{ month: string; revenue: number; cogs: number; grossProfit: number; netProfit: number; margin: number }>
   arAging: { current: number; days30: number; days60: number; days90: number; over90: number }
@@ -31,6 +32,8 @@ export interface PhopyBoardExtendedData {
     onlineTotal: number; onlineOrders: number
     offlineRevenue: number; offlineOrders: number
     orderTrend: Array<{ month: string; online: number; offline: number }>
+    retailRevenue: number; retailBills: number
+    channels: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE'; label: string; revenue: number; orders: number }>
   }
   adsROI: {
     totals: {
@@ -48,6 +51,7 @@ export interface PhopyBoardExtendedData {
     expenseRatio: number
     productionVariance: { estimated: number; actual: number; variancePct: number; count: number }
     costTrend: Array<{ month: string; cogs: number; opex: number }>
+    ledgerCogsTotal: number
   }
   products: {
     top10: Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number; bomCost: number; margin: number }>

@@ -75,6 +75,8 @@
     "accountingDesc": "Chart of Accounts & Reports",
     "chartOfAccounts": "Chart of Accounts",
     "journalEntries": "Journal Entries",
+    "periodClosing": "Period Closing",
+    "budgetVsActual": "Budget vs Actual",
     "posClearing": "POS Clearing",
     "financialReports": "Financial Reports",
     "phopyBoard": "Phopy Board",
@@ -2172,7 +2174,8 @@
         "backup": "Auto Backup",
         "permissions": "Permissions",
         "approval": "Approval",
-        "docNumbering": "Document Numbering"
+        "docNumbering": "Document Numbering",
+        "currency": "Currency"
       },
       "groups": {
         "system": "System",
