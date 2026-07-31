@@ -75,25 +75,32 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       'SELECT role, status, departments, custom_permissions FROM users WHERE id = ?'
     ).get(decoded.userId) as { role: Role; status: string; departments: string | null; custom_permissions: string | null } | undefined
 
+    // Env-configured MASTER accounts (id "master_<email>", see auth.routes.ts) have
+    // no row in `users` — they can't be deactivated via the DB, so skip the status
+    // gate for them. Any other missing/inactive row is rejected.
+    if (!userRecord && decoded.role !== 'MASTER') {
+      res.status(401).json({ success: false, message: 'บัญชีถูกระงับการใช้งาน' })
+      return
+    }
     // Bounds every already-issued access token to its remaining lifetime after
     // a deactivation, not just new logins/refreshes.
-    if (!userRecord || userRecord.status !== 'active') {
+    if (userRecord && userRecord.status !== 'active') {
       res.status(401).json({ success: false, message: 'บัญชีถูกระงับการใช้งาน' })
       return
     }
 
-    const departments: Department[] = userRecord.departments
+    const departments: Department[] = userRecord?.departments
       ? JSON.parse(userRecord.departments)
       : (decoded.department ? [decoded.department] : [])
 
-    const customPermissions: Record<string, boolean> | undefined = userRecord.custom_permissions
+    const customPermissions: Record<string, boolean> | undefined = userRecord?.custom_permissions
       ? JSON.parse(userRecord.custom_permissions)
       : undefined
 
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
-      role: userRecord.role,
+      role: userRecord?.role ?? decoded.role,
       department: decoded.department,
       departments,
       customPermissions,
