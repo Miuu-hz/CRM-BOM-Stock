@@ -2451,22 +2451,7 @@
     },
     "llm": {
       "title": "AI Assistant",
-      "subtitle": "Kimi Code CLI — ผู้ช่วย AI สำหรับระบบ ERP",
-      "kimi": {
-        "name": "Kimi Code CLI",
-        "checking": "กำลังตรวจสอบ...",
-        "online": "v{{version}} — พร้อมใช้งาน",
-        "offline": "ไม่สามารถเชื่อมต่อได้",
-        "notChecked": "ยังไม่ได้ตรวจสอบ",
-        "check": "ตรวจสอบ"
-      },
-      "playground": {
-        "title": "AI Playground",
-        "subtitle": "ทดสอบถามคำถามเกี่ยวกับข้อมูลในระบบ",
-        "placeholder": "เช่น หมูสับในสต็อกมีเท่าไหร่, ยอดขายเดือนนี้เป็นยังไงบ้าง...",
-        "send": "ส่ง",
-        "replyLabel": "Kimi ตอบ"
-      },
+      "subtitle": "เชื่อมต่อ AI client ภายนอกผ่าน MCP protocol",
       "mcp": {
         "title": "MCP Server",
         "subtitle": "สำหรับ AI clients ที่รองรับ MCP protocol",
@@ -2482,9 +2467,7 @@
         "regenerateConfirm": "สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?",
         "regenerateSuccess": "สร้าง API Key ใหม่แล้ว",
         "regenerateFailed": "สร้าง Key ไม่สำเร็จ",
-        "testFailed": "ทดสอบไม่สำเร็จ",
-        "sendFailed": "ส่งข้อความไม่สำเร็จ",
-        "error": "เกิดข้อผิดพลาด"
+        "testFailed": "ทดสอบไม่สำเร็จ"
       }
     },
     "line": {

@@ -1,7 +1,6 @@
 import { ReactNode, useState } from 'react'
 import Sidebar, { SidebarMode } from './Sidebar'
 import Header from './Header'
-import FloatingChat from '../common/FloatingChat'
 
 interface LayoutProps {
   children: ReactNode
@@ -32,7 +31,6 @@ function Layout({ children }: LayoutProps) {
           </div>
         </main>
       </div>
-      <FloatingChat />
     </div>
   )
 }

@@ -1,20 +1,16 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import {
   Brain,
   CheckCircle,
   AlertCircle,
   RefreshCw,
-  Send,
   Bot,
   Plus,
-  Terminal,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
-  getKimiStatus,
-  kimiChat,
   getMcpSettings,
   regenerateMcpKey,
   testMcpServer,
@@ -23,14 +19,6 @@ import {
 
 export default function LLMSettings() {
   const { t } = useTranslation()
-  const [kimiVersion, setKimiVersion] = useState<string | null>(null)
-  const [kimiOnline, setKimiOnline] = useState<boolean | null>(null)
-  const [statusLoading, setStatusLoading] = useState(false)
-
-  const [chatMsg, setChatMsg] = useState('')
-  const [chatReply, setChatReply] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-
   const [mcpKey, setMcpKey] = useState<string | null>(null)
   const [mcpRegenLoading, setMcpRegenLoading] = useState(false)
   const [mcpTestLoading, setMcpTestLoading] = useState(false)
@@ -38,23 +26,8 @@ export default function LLMSettings() {
   const mcpUrl = mcpKey ? `${window.location.origin}/mcp/sse?key=${mcpKey}` : null
 
   useEffect(() => {
-    checkKimiStatus()
     loadMcpSettings()
   }, [])
-
-  const checkKimiStatus = async () => {
-    setStatusLoading(true)
-    try {
-      const res = await getKimiStatus()
-      setKimiOnline(res.success)
-      setKimiVersion(res.version ?? null)
-    } catch {
-      setKimiOnline(false)
-      setKimiVersion(null)
-    } finally {
-      setStatusLoading(false)
-    }
-  }
 
   const loadMcpSettings = async () => {
     try {
@@ -93,24 +66,6 @@ export default function LLMSettings() {
     }
   }
 
-  const handleChatSend = async () => {
-    if (!chatMsg.trim()) return
-    setChatLoading(true)
-    setChatReply('')
-    try {
-      const res = await kimiChat(chatMsg)
-      if (res.success) {
-        setChatReply(res.reply)
-      } else {
-        toast.error(res.message || t('settings.llm.mcp.sendFailed'))
-      }
-    } catch {
-      toast.error(t('settings.llm.mcp.error'))
-    } finally {
-      setChatLoading(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -120,98 +75,6 @@ export default function LLMSettings() {
           {t('settings.llm.title')}
         </h2>
         <p className="text-sm text-[var(--fg-3)]">{t('settings.llm.subtitle')}</p>
-      </div>
-
-      {/* Kimi Status */}
-      <div className="phopy-card p-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${kimiOnline ? 'bg-success/15' : kimiOnline === false ? 'bg-danger/15' : 'bg-[var(--surface-2)]'}`}>
-              <Terminal className={`w-5 h-5 ${kimiOnline ? 'text-success' : kimiOnline === false ? 'text-danger' : 'text-[var(--fg-4)]'}`} />
-            </div>
-            <div>
-              <p className="font-semibold text-[var(--fg-1)]">{t('settings.llm.kimi.name')}</p>
-              <p className="text-xs text-[var(--fg-3)]">
-                {statusLoading
-                  ? t('settings.llm.kimi.checking')
-                  : kimiOnline && kimiVersion
-                    ? t('settings.llm.kimi.online', { version: kimiVersion })
-                    : kimiOnline === false
-                      ? t('settings.llm.kimi.offline')
-                      : t('settings.llm.kimi.notChecked')}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {kimiOnline !== null && (
-              kimiOnline
-                ? <CheckCircle className="w-5 h-5 text-success" />
-                : <AlertCircle className="w-5 h-5 text-danger" />
-            )}
-            <button
-              onClick={checkKimiStatus}
-              disabled={statusLoading}
-              className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:border-phopy-indigo/50 hover:text-[var(--primary)] transition-colors flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${statusLoading ? 'animate-spin' : ''}`} />
-              {t('settings.llm.kimi.check')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Playground */}
-      <div className="phopy-card p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-[var(--primary)]" />
-          <div>
-            <h3 className="text-lg font-bold text-[var(--fg-1)]">{t('settings.llm.playground.title')}</h3>
-            <p className="text-xs text-[var(--fg-3)]">{t('settings.llm.playground.subtitle')}</p>
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <textarea
-            value={chatMsg}
-            onChange={(e) => setChatMsg(e.target.value)}
-            placeholder={t('settings.llm.playground.placeholder')}
-            className="phopy-input w-full resize-none"
-            rows={3}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleChatSend()
-              }
-            }}
-          />
-          <button
-            onClick={handleChatSend}
-            disabled={chatLoading || !chatMsg.trim() || !kimiOnline}
-            className="phopy-btn-primary px-4 flex flex-col items-center justify-center gap-1 disabled:opacity-50"
-          >
-            {chatLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            <span className="text-xs">{t('settings.llm.playground.send')}</span>
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {chatReply && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-2"
-            >
-              <div className="flex items-center gap-2 text-[var(--primary)] text-sm font-medium">
-                <Bot className="w-4 h-4" />
-                {t('settings.llm.playground.replyLabel')}
-              </div>
-              <div className="text-[var(--fg-2)] whitespace-pre-wrap text-sm leading-relaxed">
-                {chatReply}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* MCP Server */}

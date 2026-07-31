@@ -7,22 +7,6 @@ export interface McpTestStep {
   error?: string
 }
 
-export const getKimiStatus = async () => {
-  const { data } = await api.get('/llm-providers/status')
-  return data as { success: boolean; provider: string; version: string }
-}
-
-export const kimiChat = async (message: string, imageBase64?: string, imageExt?: string) => {
-  const { data } = await api.post('/llm-providers/chat', {
-    message,
-    ...(imageBase64 ? { imageBase64, imageExt: imageExt || 'jpg' } : {}),
-  })
-  return data as { success: boolean; reply: string; message?: string }
-}
-
-// kept for any existing callers
-export const testChat = kimiChat
-
 export const getMcpSettings = async () => {
   const { data } = await api.get('/mcp-settings')
   return data as { success: boolean; data: { key: string | null } }

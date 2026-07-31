@@ -2450,22 +2450,7 @@
     },
     "llm": {
       "title": "AI Assistant",
-      "subtitle": "Kimi Code CLI — AI assistant for the ERP system",
-      "kimi": {
-        "name": "Kimi Code CLI",
-        "checking": "Checking...",
-        "online": "v{{version}} — Ready",
-        "offline": "Unable to connect",
-        "notChecked": "Not checked yet",
-        "check": "Check"
-      },
-      "playground": {
-        "title": "AI Playground",
-        "subtitle": "Test questions about system data",
-        "placeholder": "e.g. How much minced pork is in stock, how are this month's sales...",
-        "send": "Send",
-        "replyLabel": "Kimi replied"
-      },
+      "subtitle": "Connect external AI clients via the MCP protocol",
       "mcp": {
         "title": "MCP Server",
         "subtitle": "For AI clients that support the MCP protocol",
@@ -2481,9 +2466,7 @@
         "regenerateConfirm": "Generating a new API Key will invalidate the current URL. Continue?",
         "regenerateSuccess": "New API Key generated",
         "regenerateFailed": "Failed to generate key",
-        "testFailed": "Test failed",
-        "sendFailed": "Failed to send message",
-        "error": "An error occurred"
+        "testFailed": "Test failed"
       }
     },
     "line": {
