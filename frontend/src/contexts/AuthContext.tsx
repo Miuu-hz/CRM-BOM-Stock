@@ -176,6 +176,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('crm_token', newToken)
         localStorage.setItem('crm_user', JSON.stringify(updatedUser))
         localStorage.setItem('crm_tenant', JSON.stringify(tenantObj))
+        // Pages fetch their data once on mount ([] deps) — reload so every
+        // currently-open page refetches under the new tenant context instead
+        // of silently keeping the previous tenant's data on screen.
+        window.location.reload()
         return { success: true, tenantName }
       }
       return { success: false, message: res.data.message }
