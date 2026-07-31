@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Trello,
   ShoppingCart,
+  X,
   Star,
   Store,
   TrendingUp,
@@ -47,6 +48,8 @@ interface MenuItem {
   isParent?: boolean
   subMenu?: MenuItem[]
 }
+
+const KANBAN_SSO_PATH = 'https://kanban.phopy.net'
 
 const menuItems: MenuItem[] = [
   { path: '/', tKey: 'sidebar.dashboard', icon: LayoutDashboard },
@@ -89,7 +92,7 @@ const menuItems: MenuItem[] = [
   { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog },
   { path: '/cashier', tKey: 'sidebar.cashier', icon: Store, descriptionKey: 'sidebar.cashierDesc' },
   { path: '/kds', tKey: 'sidebar.kitchenDisplay', icon: MonitorPlay, descriptionKey: 'sidebar.kitchenDisplayDesc' },
-  { path: 'https://kanban.phopy.net', tKey: 'sidebar.kanban', icon: Trello, descriptionKey: 'sidebar.kanbanDesc' },
+  { path: KANBAN_SSO_PATH, tKey: 'sidebar.kanban', icon: Trello, descriptionKey: 'sidebar.kanbanDesc' },
 ]
 
 function Sidebar({ mode }: SidebarProps) {
@@ -101,8 +104,42 @@ function Sidebar({ mode }: SidebarProps) {
   const [sysStats, setSysStats] = useState({ activeOrders: 0, lowStock: 0, pendingPO: 0 })
 
   const [pendingApprovals, setPendingApprovals] = useState(0)
+  const [kanbanModalOpen, setKanbanModalOpen] = useState(false)
+  const [kanbanLoading, setKanbanLoading] = useState(false)
+  const [kanbanError, setKanbanError] = useState<string | null>(null)
   const isRail = mode === 'rail'
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MASTER'
+
+  const confirmKanbanSso = async () => {
+    // Open the tab synchronously, still inside the click's user-gesture
+    // window, and navigate it once the token comes back. Opening it only
+    // after the `await` below (as we used to) loses the gesture in Safari
+    // and the popup gets silently blocked. This can't carry `noopener` since
+    // we need the window handle back to navigate it later — acceptable here
+    // because the target (kanban.phopy.net) is our own trusted subdomain,
+    // not third-party content.
+    const popup = window.open('', '_blank')
+    setKanbanLoading(true)
+    setKanbanError(null)
+    try {
+      const res = await api.post('/kanban/sso')
+      const url = res.data?.data?.url
+      if (url && popup) {
+        popup.location.href = url
+        setKanbanModalOpen(false)
+      } else if (!popup) {
+        setKanbanError(t('sidebar.kanbanSso.popupBlocked'))
+      } else {
+        setKanbanError(t('sidebar.kanbanSso.error'))
+      }
+    } catch (err) {
+      console.error('kanban sso error:', err)
+      setKanbanError(t('sidebar.kanbanSso.error'))
+      popup?.close()
+    } finally {
+      setKanbanLoading(false)
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -227,6 +264,35 @@ function Sidebar({ mode }: SidebarProps) {
             .map((item) => {
             const label = t(item.tKey)
             const description = item.descriptionKey ? t(item.descriptionKey) : undefined
+
+            if (item.path === KANBAN_SSO_PATH) {
+              if (isRail) {
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => setKanbanModalOpen(true)}
+                    title={label}
+                    className="w-full flex justify-center items-center py-3 rounded-lg transition-all text-[var(--fg-3)] hover:bg-[var(--surface-2)] hover:text-[var(--fg-2)]"
+                  >
+                    <item.icon className="w-5 h-5" />
+                  </button>
+                )
+              }
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => setKanbanModalOpen(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group hover:bg-[var(--surface-2)] text-[var(--fg-2)] text-left"
+                >
+                  <item.icon className="w-5 h-5 transition-colors text-[var(--fg-3)] group-hover:text-[var(--primary)]" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-[var(--fg-2)]">{label}</p>
+                    {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
+                  </div>
+                </button>
+              )
+            }
+
             if (item.subMenu) {
               const isChildActive = item.subMenu.some(
                 sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')
@@ -442,6 +508,47 @@ function Sidebar({ mode }: SidebarProps) {
           </>
         )}
       </div>
+
+      {/* Phopy Kanban SSO confirm modal */}
+      {kanbanModalOpen && (
+        <div
+          className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-[100] p-4"
+          onClick={() => !kanbanLoading && setKanbanModalOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-[var(--fg-1)]">{t('sidebar.kanbanSso.title')}</h3>
+              <button
+                onClick={() => setKanbanModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-[var(--surface-2)]"
+                disabled={kanbanLoading}
+              >
+                <X className="w-4 h-4 text-[var(--fg-3)]" />
+              </button>
+            </div>
+            <p className="text-sm text-[var(--fg-2)] mb-6">
+              {t('sidebar.kanbanSso.confirm', { email: user?.email, tenant: tenant?.name || tenant?.code || '' })}
+            </p>
+            {kanbanError && <p className="text-xs text-danger mb-3">{kanbanError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setKanbanModalOpen(false)}
+                disabled={kanbanLoading}
+                className="flex-1 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] text-sm font-medium hover:bg-[var(--surface-2)] transition-all disabled:opacity-50"
+              >
+                {t('sidebar.kanbanSso.cancel')}
+              </button>
+              <button
+                onClick={confirmKanbanSso}
+                disabled={kanbanLoading}
+                className="flex-1 py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-all disabled:opacity-50"
+              >
+                {kanbanLoading ? '...' : t('sidebar.kanbanSso.confirmButton')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   )
 }

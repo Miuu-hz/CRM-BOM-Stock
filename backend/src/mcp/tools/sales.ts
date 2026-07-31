@@ -89,7 +89,7 @@ const insertSoItems = (tenantId: string, soId: string, items: SalesItem[]): { de
   return results
 }
 
-export function registerSalesTools(server: IMcpServer, tenantId: string, userId: string): void {
+export function registerSalesTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── create_sales_order ──────────────────────────────────────────────────────
   server.tool(
     'create_sales_order',
@@ -275,6 +275,47 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
       }
       if (status === 'CONFIRMED' && so.status !== 'DRAFT') {
         return ok({ success: false, message: `ยืนยันได้เฉพาะ SO สถานะ DRAFT (ปัจจุบัน: ${so.status})` })
+      }
+
+      // ── Approval gate: CONFIRMED transition (เลียนแบบ REST salesOrders.ts) ──────
+      // ถ้า role ต้องขออนุมัติก่อน (ไม่เข้า auto-approve threshold และไม่มีสิทธิ์อนุมัติเอง)
+      // ให้ส่งเป็นคำขออนุมัติแทนการยืนยัน+ตัดสต็อกทันที
+      if (status === 'CONFIRMED' && callerRole !== 'MASTER' && callerRole !== 'ADMIN') {
+        const setting = db.prepare(
+          `SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'sales_order'`
+        ).get(tenantId, callerRole) as any
+        const userPerm = db.prepare(
+          `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'sales_order'`
+        ).get(tenantId, userId) as any
+
+        const amount = so.total_amount || 0
+        const autoThreshold = setting?.auto_approve_threshold || 0
+        const withinThreshold = autoThreshold > 0 && amount <= autoThreshold
+        const userCanApprove = userPerm?.can_approve === 1
+        const needsApproval = setting?.approval_required === 1 && !withinThreshold && !userCanApprove
+
+        if (needsApproval) {
+          const now = new Date().toISOString()
+          const reqId = genId()
+          const reqNum = 'APR-SO-' + Date.now()
+
+          db.prepare("UPDATE sales_orders SET status = 'PENDING_APPROVAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
+            .run(now, so.id, tenantId)
+
+          db.prepare(`
+            INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id,
+              requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
+            VALUES (?, ?, ?, 'sales_order', 'sales_orders', ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+          `).run(reqId, tenantId, reqNum, so.id, userId, callerName, callerRole, amount,
+            `ขออนุมัติยืนยัน SO ${so.so_number} ยอด ฿${amount.toLocaleString()}`, now, now)
+
+          return ok({
+            success: true,
+            pending_approval: true,
+            soNumber: so.so_number,
+            message: `ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน (${so.so_number})`,
+          })
+        }
       }
 
       // เช็คสต็อกก่อนยืนยัน — แปลงหน่วยถ้าต่างกัน

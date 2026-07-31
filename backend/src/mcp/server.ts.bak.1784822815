@@ -7,7 +7,6 @@ import { Request, Response, Router } from 'express'
 import db from '../db/sqlite'
 import { McpServer, SSEServerTransport, StreamableHTTPServerTransport, ISSETransport, IStreamableHTTPTransport } from './sdk-compat'
 import { registerTools } from './tools'
-import { getSubscription } from '../services/subscription.service'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -19,19 +18,15 @@ function resolveTenant(key: string): TenantContext | null {
     `SELECT id, tenant_id FROM users WHERE mcp_api_key = ? AND status = 'active' LIMIT 1`
   ).get(key) as { id: string; tenant_id: string } | undefined
   if (userRow) {
-    // Quota check: effective MCP limit = override (company_settings.mcp_user_limit)
-    // ถ้าไม่ตั้ง override (NULL) → ยึด max_users ของแพ็กเกจ · limit = null คือไม่จำกัด
+    // Quota check: count active MCP users in this tenant vs limit
     const cs = db.prepare(
       `SELECT mcp_user_limit FROM company_settings WHERE tenant_id = ?`
-    ).get(userRow.tenant_id) as { mcp_user_limit: number | null } | undefined
-    const override = cs ? cs.mcp_user_limit : null
-    const limit = override != null ? override : getSubscription(userRow.tenant_id).maxUsers
-    if (limit != null) {
-      const used = (db.prepare(
-        `SELECT COUNT(*) as c FROM users WHERE tenant_id = ? AND mcp_api_key IS NOT NULL AND mcp_api_key != ''`
-      ).get(userRow.tenant_id) as any)?.c ?? 0
-      if (used > limit) return null  // over quota — reject
-    }
+    ).get(userRow.tenant_id) as { mcp_user_limit: number } | undefined
+    const limit = cs?.mcp_user_limit ?? 1
+    const used = (db.prepare(
+      `SELECT COUNT(*) as c FROM users WHERE tenant_id = ? AND mcp_api_key IS NOT NULL AND mcp_api_key != ''`
+    ).get(userRow.tenant_id) as any)?.c ?? 0
+    if (used > limit) return null  // over quota — reject
     return { tenantId: userRow.tenant_id, userId: userRow.id }
   }
 

@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Building2, Users, Database, Star, ArrowRight, Home, RefreshCw, Zap, Plus, Trash2, X,
   CreditCard, Package, CalendarClock, Save, Search, Check, LayoutGrid, SlidersHorizontal,
-  Copy, Eye, EyeOff, KeyRound, Wand2, Mail, CheckCircle2, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -20,15 +19,7 @@ interface TenantStats {
   lastLogin: string | null
 }
 
-interface McpQuota {
-  used: number
-  limit: number | null        // effective: override ?? max_users ตามแพ็กเกจ · null = ไม่จำกัด
-  planLimit: number | null    // max_users ของแพ็กเกจปัจจุบัน
-  override: number | null      // ค่าที่ override ไว้ (null = ยึดตามแพ็กเกจ)
-  source: 'plan' | 'override'
-}
-
-const EMPTY_QUOTA: McpQuota = { used: 0, limit: 1, planLimit: 1, override: null, source: 'plan' }
+interface McpQuota { used: number; limit: number }
 
 interface ProvisionForm {
   businessName: string
@@ -120,15 +111,7 @@ const PLAN_BADGE_CLS: Record<string, string> = {
   enterprise: 'bg-[var(--success-soft)] text-[var(--success)]',
 }
 
-function QuotaBar({ used, limit }: { used: number; limit: number | null }) {
-  if (limit === null) {
-    // ไม่จำกัด — แสดงแถบเต็มแบบจาง
-    return (
-      <div className="h-1.5 w-full bg-[var(--surface-2)] rounded-full overflow-hidden">
-        <div className="h-full w-full rounded-full opacity-40" style={{ backgroundColor: 'var(--success)' }} />
-      </div>
-    )
-  }
+function QuotaBar({ used, limit }: { used: number; limit: number }) {
   const ratio = limit > 0 ? Math.min(used / limit, 1) : 0
   const barColor = ratio >= 1 ? 'var(--danger)' : ratio >= 0.8 ? 'var(--warning)' : 'var(--success)'
   return (
@@ -145,44 +128,6 @@ function fmtDate(iso: string | null) {
 
 const EMPTY_FORM: ProvisionForm = { businessName: '', adminEmail: '', adminPassword: '', adminName: '', customTenantId: '' }
 
-// URL ที่ลูกค้าใช้เข้าระบบ (จาก APP_URL ฝั่ง backend)
-const APP_URL = 'https://erp.phopy.net'
-const GEN_EMAIL_DOMAIN = 'phopy.app'
-
-// slug สำหรับ local-part ของอีเมล — ตัดอักขระที่ไม่ใช่ a-z0-9, กันภาษาไทยได้ (fallback 'shop')
-function emailSlug(name: string): string {
-  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 16)
-  return s || 'shop'
-}
-
-function randToken(len: number): string {
-  const chars = 'abcdefghijkmnpqrstuvwxyz23456789' // ตัด 0/o/1/l/i กันสับสน
-  let out = ''
-  const arr = new Uint32Array(len)
-  crypto.getRandomValues(arr)
-  for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length]
-  return out
-}
-
-// อีเมลอัตโนมัติ — <slug>-<rand4>@phopy.app (ยูนีคพอจนแทบไม่ชนกัน)
-function genEmail(businessName: string): string {
-  return `${emailSlug(businessName)}-${randToken(4)}@${GEN_EMAIL_DOMAIN}`
-}
-
-// รหัสผ่านอ่านง่าย: 3 กลุ่ม กลุ่มละ 4 ตัว คั่นด้วย - (เช่น k7m2-rp9q-ta4x) ยาว 14 ≥ 8
-function genPassword(): string {
-  return `${randToken(4)}-${randToken(4)}-${randToken(4)}`
-}
-
-async function copyText(text: string, okMsg: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(okMsg)
-  } catch {
-    toast.error('คัดลอกไม่สำเร็จ — คัดลอกด้วยมือได้เลย')
-  }
-}
-
 type TopTab = 'tenants' | 'system'
 type DetailTab = 'overview' | 'subscription' | 'quota'
 
@@ -196,11 +141,6 @@ export default function MasterPanel() {
   const [showProvisionModal, setShowProvisionModal] = useState(false)
   const [provisionForm, setProvisionForm] = useState<ProvisionForm>(EMPTY_FORM)
   const [provisioning, setProvisioning] = useState(false)
-  const [provisionStep, setProvisionStep] = useState<'form' | 'done'>('form')
-  const [emailMode, setEmailMode] = useState<'manual' | 'auto'>('manual')
-  const [showPw, setShowPw] = useState(true)
-  // เก็บ credential ณ ตอนสร้าง (password ดึงย้อนหลังไม่ได้เพราะ hash แล้ว)
-  const [createdCreds, setCreatedCreds] = useState<{ business: string; email: string; password: string; tenantId: string } | null>(null)
   const [deactivating, setDeactivating] = useState<string | null>(null)
   const [subscriptions, setSubscriptions] = useState<TenantSubscription[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
@@ -332,7 +272,7 @@ export default function MasterPanel() {
           try {
             const r = await api.get(`/master/mcp-quota/${t.tenantId}`, { headers: { Authorization: `Bearer ${token}` } })
             quotas[t.tenantId] = r.data.data
-          } catch { quotas[t.tenantId] = { ...EMPTY_QUOTA } }
+          } catch { quotas[t.tenantId] = { used: 0, limit: 1 } }
         }))
         setMcpQuotas(quotas)
       }
@@ -353,29 +293,6 @@ export default function MasterPanel() {
     }
   }
 
-  // เปิด modal พร้อม reset + gen password ให้อัตโนมัติ
-  const openProvision = () => {
-    setProvisionForm({ ...EMPTY_FORM, adminPassword: genPassword() })
-    setEmailMode('manual')
-    setShowPw(true)
-    setProvisionStep('form')
-    setCreatedCreds(null)
-    setShowProvisionModal(true)
-  }
-
-  const closeProvision = () => {
-    setShowProvisionModal(false)
-    setProvisionForm(EMPTY_FORM)
-    setCreatedCreds(null)
-    setProvisionStep('form')
-  }
-
-  // สลับโหมดอีเมล: auto = gen ให้, manual = กรอกเอง
-  const setEmailAuto = (auto: boolean) => {
-    setEmailMode(auto ? 'auto' : 'manual')
-    setProvisionForm(f => ({ ...f, adminEmail: auto ? genEmail(f.businessName) : '' }))
-  }
-
   const handleProvision = async (e: React.FormEvent) => {
     e.preventDefault()
     setProvisioning(true)
@@ -389,15 +306,9 @@ export default function MasterPanel() {
       }, { headers: { Authorization: `Bearer ${token}` } })
       if (res.data.success) {
         const d = res.data.data
-        toast.success(`สร้าง ${d.companyName} สำเร็จ!`)
-        // เก็บ credential ไว้โชว์ในสเต็ป handoff (password โชว์ได้ครั้งเดียว)
-        setCreatedCreds({
-          business: d.companyName,
-          email: provisionForm.adminEmail,
-          password: provisionForm.adminPassword,
-          tenantId: d.tenantId,
-        })
-        setProvisionStep('done')
+        toast.success(`สร้าง ${d.companyName} สำเร็จ! (${d.tenantId})`)
+        setShowProvisionModal(false)
+        setProvisionForm(EMPTY_FORM)
         setSelectedId(d.tenantId)
         loadStats()
         loadSubscriptionData()
@@ -408,14 +319,6 @@ export default function MasterPanel() {
       setProvisioning(false)
     }
   }
-
-  // ข้อความ handoff สำหรับคัดลอกส่งลูกค้า
-  const handoffText = (c: { business: string; email: string; password: string }) =>
-    `ยินดีต้อนรับสู่ ${c.business} 🎉\n` +
-    `เข้าใช้งานระบบที่: ${APP_URL}\n` +
-    `อีเมล (ชื่อผู้ใช้): ${c.email}\n` +
-    `รหัสผ่าน: ${c.password}\n\n` +
-    `แนะนำให้เปลี่ยนรหัสผ่านหลังเข้าใช้ครั้งแรก`
 
   const handleDeactivate = async (tenantId: string, tenantName: string) => {
     if (!window.confirm(`ปิดการใช้งาน "${tenantName}" ใช่ไหม?\nผู้ใช้ทั้งหมดใน tenant นี้จะถูก deactivate`)) return
@@ -433,25 +336,16 @@ export default function MasterPanel() {
     }
   }
 
-  // value = number (override) หรือ null (เคลียร์ override → ยึดตามแพ็กเกจ)
-  const handleSaveMcp = async (tenantId: string, value: number | null) => {
+  const handleSaveMcp = async (tenantId: string) => {
+    const n = parseInt(mcpDraft, 10)
+    if (isNaN(n) || n < 0) { toast.error('กรุณาใส่ตัวเลข'); return }
     setSavingMcp(true)
     try {
-      await api.patch(`/master/tenant/${tenantId}/quota`, { mcpUserLimit: value }, { headers: { Authorization: `Bearer ${token}` } })
-      toast.success(value === null ? 'กลับไปใช้ลิมิตตามแพ็กเกจแล้ว' : `override MCP limit → ${value} แล้ว`)
-      setMcpDraft('')
+      await api.patch(`/master/tenant/${tenantId}/quota`, { mcpUserLimit: n }, { headers: { Authorization: `Bearer ${token}` } })
+      toast.success(`MCP limit → ${n} แล้ว`)
       loadStats()
     } catch { toast.error('อัปเดตไม่สำเร็จ') }
     finally { setSavingMcp(false) }
-  }
-
-  // แปลงค่าในช่องกรอก: ว่าง = null (ตามแพ็กเกจ), มีเลข = override
-  const submitMcp = (tenantId: string) => {
-    const t = mcpDraft.trim()
-    if (t === '') { handleSaveMcp(tenantId, null); return }
-    const n = parseInt(t, 10)
-    if (isNaN(n) || n < 0) { toast.error('กรุณาใส่ตัวเลข หรือเว้นว่างเพื่อใช้ตามแพ็กเกจ'); return }
-    handleSaveMcp(tenantId, n)
   }
 
   const subByTenant = useMemo(() => {
@@ -462,8 +356,7 @@ export default function MasterPanel() {
 
   const totalUsers = stats.reduce((s, t) => s + t.userCount, 0)
   const mcpUsedTotal = Object.values(mcpQuotas).reduce((s, q) => s + q.used, 0)
-  const mcpHasUnlimited = Object.values(mcpQuotas).some(q => q.limit === null)
-  const mcpLimitTotal = Object.values(mcpQuotas).reduce((s, q) => s + (q.limit ?? 0), 0)
+  const mcpLimitTotal = Object.values(mcpQuotas).reduce((s, q) => s + q.limit, 0)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -473,14 +366,14 @@ export default function MasterPanel() {
 
   const selStat = stats.find(t => t.tenantId === selectedId) ?? null
   const selSub = selectedId ? subByTenant[selectedId] : undefined
-  const selQuota = selectedId ? (mcpQuotas[selectedId] ?? EMPTY_QUOTA) : EMPTY_QUOTA
+  const selQuota = selectedId ? (mcpQuotas[selectedId] ?? { used: 0, limit: 1 }) : { used: 0, limit: 1 }
   const selDraft = selectedId ? (planDrafts[selectedId] ?? { planCode: 'free', billingCycle: 'monthly' as const }) : { planCode: 'free', billingCycle: 'monthly' as const }
 
   const SUMMARY = [
     { label: 'ทั้งหมด', value: stats.length + ' tenants', icon: Building2 },
     { label: 'ผู้ใช้งานรวม', value: totalUsers + ' คน', icon: Users },
     { label: 'Backup ล่าสุด', value: fmtDate(stats.find(t => t.lastBackup)?.lastBackup ?? null), icon: Database },
-    { label: 'MCP รวม', value: `${mcpUsedTotal}/${mcpHasUnlimited ? '∞' : mcpLimitTotal} users`, icon: Zap },
+    { label: 'MCP รวม', value: `${mcpUsedTotal}/${mcpLimitTotal} users`, icon: Zap },
   ]
 
   return (
@@ -569,7 +462,7 @@ export default function MasterPanel() {
                   return (
                     <button
                       key={t.tenantId}
-                      onClick={() => { setSelectedId(t.tenantId); setDetailTab('overview'); setMcpDraft('') }}
+                      onClick={() => { setSelectedId(t.tenantId); setDetailTab('overview') }}
                       className={'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all ' +
                         (active ? 'bg-[var(--primary-soft)]' : 'hover:bg-[var(--surface-2)]')}
                     >
@@ -590,7 +483,7 @@ export default function MasterPanel() {
 
             <div className="p-2 border-t border-[var(--border)]">
               <button
-                onClick={openProvision}
+                onClick={() => setShowProvisionModal(true)}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium"
               >
                 <Plus className="w-4 h-4" />
@@ -661,7 +554,7 @@ export default function MasterPanel() {
                           { label: 'Users', value: selStat.userCount },
                           { label: 'สินค้า', value: selSub ? `${selSub.usage.products.used}/${fmtMax(selSub.usage.products.max)}` : '-' },
                           { label: 'Backups', value: selStat.backupCount },
-                          { label: 'MCP', value: `${selQuota.used}/${fmtMax(selQuota.limit)}` },
+                          { label: 'MCP', value: `${selQuota.used}/${selQuota.limit}` },
                         ].map(box => (
                           <div key={box.label} className="text-center p-3 bg-[var(--surface-2)] rounded-lg">
                             <p className="text-lg font-bold text-[var(--fg-1)]">{box.value}</p>
@@ -765,36 +658,24 @@ export default function MasterPanel() {
                           <div className="flex items-center gap-1.5">
                             <Zap className="w-4 h-4 text-[var(--primary)]" />
                             <span className="text-sm font-medium text-[var(--fg-1)]">MCP users</span>
-                            {selQuota.source === 'override'
-                              ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-[var(--warning-soft)] text-[var(--warning)]">override</span>
-                              : <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-[var(--primary-soft)] text-[var(--primary)]">ตามแพ็กเกจ</span>}
                           </div>
-                          <span className="text-sm text-[var(--fg-3)]">{selQuota.used}/{fmtMax(selQuota.limit)} users</span>
+                          <span className="text-sm text-[var(--fg-3)]">{selQuota.used}/{selQuota.limit} users</span>
                         </div>
                         <QuotaBar used={selQuota.used} limit={selQuota.limit} />
-
-                        {/* ที่มาของลิมิต */}
-                        <p className="text-xs text-[var(--fg-4)] mt-2">
-                          {selQuota.source === 'override'
-                            ? <>override เป็น <b className="text-[var(--fg-2)]">{fmtMax(selQuota.override)}</b> · แพ็กเกจ{selSub?.planName ? ` ${selSub.planName}` : ''} กำหนด {fmtMax(selQuota.planLimit)}</>
-                            : <>ยึดตามแพ็กเกจ{selSub?.planName ? ` ${selSub.planName}` : ''} — max_users = <b className="text-[var(--fg-2)]">{fmtMax(selQuota.planLimit)}</b></>}
-                        </p>
-
                         <div className="flex items-end gap-2 mt-3">
                           <div className="flex-1">
-                            <label className="block text-xs text-[var(--fg-3)] mb-1">override <span className="text-[var(--fg-4)]">(เว้นว่าง = ตามแพ็กเกจ)</span></label>
+                            <label className="block text-xs text-[var(--fg-3)] mb-1">แก้ MCP user limit</label>
                             <input
                               type="number"
                               min={0}
                               value={mcpDraft}
-                              placeholder={`ตามแพ็กเกจ: ${fmtMax(selQuota.planLimit)}`}
+                              placeholder={String(selQuota.limit)}
                               onChange={e => setMcpDraft(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter' && selStat) submitMcp(selStat.tenantId) }}
                               className="w-full px-2.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                             />
                           </div>
                           <button
-                            onClick={() => selStat && submitMcp(selStat.tenantId)}
+                            onClick={() => selStat && handleSaveMcp(selStat.tenantId)}
                             disabled={savingMcp}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium disabled:opacity-60"
                           >
@@ -802,15 +683,6 @@ export default function MasterPanel() {
                             บันทึก
                           </button>
                         </div>
-                        {selQuota.source === 'override' && (
-                          <button
-                            onClick={() => selStat && handleSaveMcp(selStat.tenantId, null)}
-                            disabled={savingMcp}
-                            className="mt-2 text-xs text-[var(--primary)] hover:underline disabled:opacity-60"
-                          >
-                            ← ล้าง override · ใช้ลิมิตตามแพ็กเกจ
-                          </button>
-                        )}
                       </div>
 
                       {selSub && (
@@ -933,7 +805,7 @@ export default function MasterPanel() {
         </div>
       )}
 
-      {/* Provision Modal — 2 สเต็ป: form → handoff */}
+      {/* Provision Modal */}
       <AnimatePresence>
         {showProvisionModal && (
           <motion.div
@@ -941,7 +813,7 @@ export default function MasterPanel() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={e => { if (e.target === e.currentTarget && provisionStep === 'form') closeProvision() }}
+            onClick={e => { if (e.target === e.currentTarget) setShowProvisionModal(false) }}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -952,211 +824,96 @@ export default function MasterPanel() {
             >
               <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2.5">
-                  <div className={'w-8 h-8 rounded-lg flex items-center justify-center ' + (provisionStep === 'done' ? 'bg-[var(--success-soft)]' : 'bg-[var(--primary-soft)]')}>
-                    {provisionStep === 'done'
-                      ? <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
-                      : <Plus className="w-4 h-4 text-[var(--primary)]" />}
+                  <div className="w-8 h-8 rounded-lg bg-[var(--primary-soft)] flex items-center justify-center">
+                    <Plus className="w-4 h-4 text-[var(--primary)]" />
                   </div>
-                  <h2 className="text-lg font-semibold text-[var(--fg-1)]">
-                    {provisionStep === 'done' ? 'สร้างลูกค้าสำเร็จ' : 'เพิ่มลูกค้าใหม่'}
-                  </h2>
+                  <h2 className="text-lg font-semibold text-[var(--fg-1)]">เพิ่มลูกค้าใหม่</h2>
                 </div>
-                <button onClick={closeProvision} className="p-1.5 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)] transition-all">
+                <button onClick={() => setShowProvisionModal(false)} className="p-1.5 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)] transition-all">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* ---------- STEP: FORM ---------- */}
-              {provisionStep === 'form' && (
-                <form onSubmit={handleProvision} className="p-5 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">ชื่อธุรกิจ *</label>
-                    <input
-                      type="text"
-                      required
-                      value={provisionForm.businessName}
-                      onChange={e => {
-                        const businessName = e.target.value
-                        setProvisionForm(f => ({ ...f, businessName, adminEmail: emailMode === 'auto' ? genEmail(businessName) : f.adminEmail }))
-                      }}
-                      placeholder="เช่น ร้านกาแฟ ABC"
-                      className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">ชื่อ Admin *</label>
-                    <input
-                      type="text"
-                      required
-                      value={provisionForm.adminName}
-                      onChange={e => setProvisionForm(f => ({ ...f, adminName: e.target.value }))}
-                      placeholder="ชื่อ-นามสกุล Admin"
-                      className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
-                    />
-                  </div>
-
-                  {/* Email + toggle กรอกเอง / gen ให้ */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-sm font-medium text-[var(--fg-2)]">อีเมล (ชื่อผู้ใช้) *</label>
-                      <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-                        <button type="button" onClick={() => setEmailAuto(false)}
-                          className={'px-2 py-0.5 rounded-md text-xs font-medium transition-all ' + (emailMode === 'manual' ? 'bg-[var(--surface)] text-[var(--fg-1)] shadow-sm' : 'text-[var(--fg-3)]')}>
-                          กรอกเอง
-                        </button>
-                        <button type="button" onClick={() => setEmailAuto(true)}
-                          className={'flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-all ' + (emailMode === 'auto' ? 'bg-[var(--surface)] text-[var(--fg-1)] shadow-sm' : 'text-[var(--fg-3)]')}>
-                          <Wand2 className="w-3 h-3" /> gen ให้
-                        </button>
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <Mail className="w-4 h-4 text-[var(--fg-4)] absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={emailMode === 'auto' ? 'text' : 'email'}
-                        required
-                        readOnly={emailMode === 'auto'}
-                        value={provisionForm.adminEmail}
-                        onChange={e => setProvisionForm(f => ({ ...f, adminEmail: e.target.value }))}
-                        placeholder="admin@example.com"
-                        className={'w-full pl-9 pr-10 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm ' + (emailMode === 'auto' ? 'font-mono' : '')}
-                      />
-                      {emailMode === 'auto' && (
-                        <button type="button" title="สุ่มอีเมลใหม่"
-                          onClick={() => setProvisionForm(f => ({ ...f, adminEmail: genEmail(f.businessName) }))}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)] transition-all">
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    {emailMode === 'auto' && (
-                      <p className="text-xs text-[var(--fg-4)] mt-1">อีเมลอัตโนมัติ (ใช้เป็นชื่อผู้ใช้เข้าระบบ ไม่ต้องส่งอีเมลจริง)</p>
-                    )}
-                  </div>
-
-                  {/* Password — gen อัตโนมัติ, ดู/สุ่มใหม่/คัดลอกได้ */}
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
-                      รหัสผ่าน * <span className="text-[var(--fg-4)] font-normal">(ระบบสุ่มให้ · แก้ได้)</span>
-                    </label>
-                    <div className="relative">
-                      <KeyRound className="w-4 h-4 text-[var(--fg-4)] absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPw ? 'text' : 'password'}
-                        required
-                        minLength={8}
-                        value={provisionForm.adminPassword}
-                        onChange={e => setProvisionForm(f => ({ ...f, adminPassword: e.target.value }))}
-                        placeholder="••••••••"
-                        className="w-full pl-9 pr-24 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm font-mono"
-                      />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                        <button type="button" title={showPw ? 'ซ่อน' : 'แสดง'} onClick={() => setShowPw(v => !v)}
-                          className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)] transition-all">
-                          {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button type="button" title="คัดลอก" onClick={() => copyText(provisionForm.adminPassword, 'คัดลอกรหัสผ่านแล้ว')}
-                          className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)] transition-all">
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button type="button" title="สุ่มใหม่" onClick={() => setProvisionForm(f => ({ ...f, adminPassword: genPassword() }))}
-                          className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)] transition-all">
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
-                      Tenant ID <span className="text-[var(--fg-4)] font-normal">(เว้นว่างให้ระบบสร้างอัตโนมัติ)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={provisionForm.customTenantId}
-                      onChange={e => setProvisionForm(f => ({ ...f, customTenantId: e.target.value }))}
-                      placeholder="tenant_my_shop (optional)"
-                      className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm font-mono"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={closeProvision}
-                      className="flex-1 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm"
-                    >
-                      ยกเลิก
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={provisioning}
-                      className="flex-1 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2"
-                    >
-                      {provisioning ? <><RefreshCw className="w-4 h-4 animate-spin" /> กำลังสร้าง...</> : <>สร้าง & แสดงข้อมูลเข้าใช้ <ArrowRight className="w-4 h-4" /></>}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* ---------- STEP: HANDOFF ---------- */}
-              {provisionStep === 'done' && createdCreds && (
-                <div className="p-5 space-y-4">
-                  <p className="text-sm text-[var(--fg-2)]">
-                    สร้าง <b className="text-[var(--fg-1)]">{createdCreds.business}</b> เรียบร้อย —
-                    คัดลอกข้อมูลด้านล่างส่งให้ลูกค้าเข้าใช้งานได้เลย
-                  </p>
-
-                  {/* การ์ด credential */}
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] divide-y divide-[var(--border)]">
-                    {[
-                      { icon: ExternalLink, label: 'เว็บไซต์', value: APP_URL, ok: 'คัดลอกลิงก์แล้ว', mono: false },
-                      { icon: Mail, label: 'อีเมล (ชื่อผู้ใช้)', value: createdCreds.email, ok: 'คัดลอกอีเมลแล้ว', mono: true },
-                      { icon: KeyRound, label: 'รหัสผ่าน', value: createdCreds.password, ok: 'คัดลอกรหัสผ่านแล้ว', mono: true },
-                    ].map(row => (
-                      <div key={row.label} className="flex items-center gap-3 p-3">
-                        <row.icon className="w-4 h-4 text-[var(--fg-4)] shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-[var(--fg-3)]">{row.label}</p>
-                          <p className={'text-sm text-[var(--fg-1)] truncate ' + (row.mono ? 'font-mono' : '')}>{row.value}</p>
-                        </div>
-                        <button onClick={() => copyText(row.value, row.ok)} title="คัดลอก"
-                          className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)] transition-all shrink-0">
-                          <Copy className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-start gap-2 text-xs text-[var(--warning)] bg-[var(--warning-soft)] rounded-lg p-2.5">
-                    <KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>บันทึกรหัสผ่านนี้ไว้ตอนนี้ — ระบบเก็บแบบเข้ารหัส ไม่สามารถเปิดดูย้อนหลังได้ (รีเซ็ตใหม่ได้เท่านั้น)</span>
-                  </div>
-
-                  <button
-                    onClick={() => copyText(handoffText(createdCreds), 'คัดลอกข้อความส่งลูกค้าแล้ว')}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium"
-                  >
-                    <Copy className="w-4 h-4" /> คัดลอกทั้งหมด (ข้อความส่งลูกค้า)
-                  </button>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={openProvision}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm"
-                    >
-                      <Plus className="w-4 h-4" /> เพิ่มอีกราย
-                    </button>
-                    <button
-                      onClick={closeProvision}
-                      className="flex-1 py-2.5 rounded-lg bg-[var(--surface-2)] text-[var(--fg-1)] hover:bg-[var(--border)] transition-all text-sm font-medium"
-                    >
-                      เสร็จสิ้น
-                    </button>
-                  </div>
+              <form onSubmit={handleProvision} className="p-5 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">ชื่อธุรกิจ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={provisionForm.businessName}
+                    onChange={e => setProvisionForm(f => ({ ...f, businessName: e.target.value }))}
+                    placeholder="เช่น ร้านกาแฟ ABC"
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
+                  />
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">ชื่อ Admin *</label>
+                  <input
+                    type="text"
+                    required
+                    value={provisionForm.adminName}
+                    onChange={e => setProvisionForm(f => ({ ...f, adminName: e.target.value }))}
+                    placeholder="ชื่อ-นามสกุล Admin"
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">Email Admin *</label>
+                  <input
+                    type="email"
+                    required
+                    value={provisionForm.adminEmail}
+                    onChange={e => setProvisionForm(f => ({ ...f, adminEmail: e.target.value }))}
+                    placeholder="admin@example.com"
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">รหัสผ่าน Admin * <span className="text-[var(--fg-4)] font-normal">(อย่างน้อย 8 ตัว)</span></label>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={provisionForm.adminPassword}
+                    onChange={e => setProvisionForm(f => ({ ...f, adminPassword: e.target.value }))}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                    Tenant ID <span className="text-[var(--fg-4)] font-normal">(เว้นว่างให้ระบบสร้างอัตโนมัติ)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={provisionForm.customTenantId}
+                    onChange={e => setProvisionForm(f => ({ ...f, customTenantId: e.target.value }))}
+                    placeholder="tenant_my_shop (optional)"
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm font-mono"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setShowProvisionModal(false); setProvisionForm(EMPTY_FORM) }}
+                    className="flex-1 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={provisioning}
+                    className="flex-1 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {provisioning ? <><RefreshCw className="w-4 h-4 animate-spin" /> กำลังสร้าง...</> : 'สร้าง Tenant'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

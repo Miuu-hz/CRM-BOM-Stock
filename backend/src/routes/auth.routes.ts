@@ -41,6 +41,16 @@ const loginIpLimiter = rateLimit({
   message: { success: false, message: 'คำขอมากเกินไป กรุณารอ 15 นาที แล้วลองใหม่' },
 })
 
+// Public self-service signup: 5 requests per IP per hour (spam guard; Master still
+// reviews every request before a tenant is created).
+const registerIpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'สมัครบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่' },
+})
+
 // ── Credential-level rate limit: 3 attempts then 5-minute lockout ─────────────
 interface AttemptRecord { count: number; lockedUntil: number }
 const loginAttempts = new Map<string, AttemptRecord>()
@@ -144,6 +154,17 @@ router.post('/login', loginIpLimiter, async (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any
 
     if (!user) {
+      // Not an active account yet — surface a helpful status if a self-service
+      // signup request exists for this email (awaiting Master approval / rejected).
+      const sr = db.prepare(
+        `SELECT status FROM signup_requests WHERE email = ? ORDER BY created_at DESC LIMIT 1`,
+      ).get(email) as { status: string } | undefined
+      if (sr?.status === 'pending') {
+        return res.status(403).json({ success: false, message: 'บัญชีของคุณอยู่ระหว่างรอผู้ดูแลอนุมัติ' })
+      }
+      if (sr?.status === 'rejected') {
+        return res.status(403).json({ success: false, message: 'คำขอสมัครถูกปฏิเสธ กรุณาติดต่อผู้ดูแลระบบ' })
+      }
       recordFailedAttempt(email)
       return res.status(401).json({ success: false, message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     }
@@ -154,6 +175,13 @@ router.post('/login', loginIpLimiter, async (req, res) => {
       const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count ?? MAX_ATTEMPTS)
       const msg = remaining > 0 ? `รหัสผ่านไม่ถูกต้อง (เหลือ ${remaining} ครั้ง)` : 'รหัสผ่านไม่ถูกต้อง กรุณารอ 5 นาที'
       return res.status(401).json({ success: false, message: msg })
+    }
+
+    // Deactivated account: same generic error as a bad password, so we never
+    // confirm to a caller that the email exists but was deactivated.
+    if (user.status !== 'active') {
+      recordFailedAttempt(email)
+      return res.status(401).json({ success: false, message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     }
 
     clearAttempts(email)
@@ -206,6 +234,10 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
     }
 
+    if (user.status !== 'active') {
+      return res.status(401).json({ success: false, message: 'บัญชีถูกระงับการใช้งาน' })
+    }
+
     // Revoke refresh tokens issued before the last password change.
     // Compare at whole-second granularity: JWT `iat` is floored to seconds, so a
     // token minted in the same second as the change must still be accepted.
@@ -231,7 +263,54 @@ router.post('/refresh', async (req, res) => {
 })
 
 // @route   POST /api/auth/register
-// @desc    Register new user (for master to create child)
+// @desc    Public self-service signup. Creates a PENDING signup request (no tenant
+//          yet) that a Master must approve. The applicant sets their own password.
+//          Spam guards: IP rate-limit + honeypot field (`website`) + duplicate checks.
+router.post('/register', registerIpLimiter, async (req, res) => {
+  try {
+    const { businessName, adminName, email, password, phone, website } = req.body
+
+    // Honeypot: real users never fill `website`; bots do → pretend success, do nothing.
+    if (website) return res.json({ success: true, data: { pending: true } })
+
+    if (!businessName || !adminName || !email || !password) {
+      return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง' })
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร' })
+    }
+
+    const db = getDb()
+
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว กรุณาเข้าสู่ระบบ' })
+    }
+    const existingPending = db.prepare(
+      `SELECT id FROM signup_requests WHERE email = ? AND status = 'pending'`,
+    ).get(email)
+    if (existingPending) {
+      return res.status(409).json({ success: false, message: 'มีคำขอสมัครด้วยอีเมลนี้อยู่แล้ว กรุณารอผู้ดูแลอนุมัติ' })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+    db.prepare(
+      `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, created_at)
+       VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
+    ).run(businessName, adminName, email, passwordHash, phone || null)
+
+    res.json({ success: true, data: { pending: true } })
+  } catch (error) {
+    console.error('Register error:', error)
+    res.status(500).json({ success: false, message: 'สมัครไม่สำเร็จ' })
+  }
+})
+
+// @route   POST /api/auth/create-child
+// @desc    Master creates a child user directly in their tenant
 router.post('/create-child', authenticate, requireRole('MASTER'), async (req, res) => {
   try {
     const { email, password, name, role = 'USER' } = req.body

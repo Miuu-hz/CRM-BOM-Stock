@@ -2,7 +2,6 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
-import { getLimits } from '../services/subscription.service'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 
 const router = Router()
@@ -50,21 +49,6 @@ router.post('/', async (req, res) => {
   const db = getDb()
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว' })
-  }
-
-  // Subscription: จำกัดจำนวน users ตามแพ็กเกจ (MASTER bypass)
-  if (req.user!.role !== 'MASTER') {
-    const { maxUsers } = getLimits(req.user!.tenantId)
-    if (maxUsers !== null) {
-      const count = (db.prepare('SELECT COUNT(*) as c FROM users WHERE tenant_id = ?').get(req.user!.tenantId) as any).c
-      if (count >= maxUsers) {
-        return res.status(403).json({
-          success: false,
-          code: 'USER_LIMIT',
-          message: `แพ็กเกจนี้ใช้งานได้สูงสุด ${maxUsers} ผู้ใช้ กรุณาอัปเกรดแพ็กเกจ`,
-        })
-      }
-    }
   }
 
   const hashed = await bcrypt.hash(password, 12)

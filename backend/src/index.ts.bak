@@ -151,7 +151,6 @@ import backupRoutes from './routes/backup.routes'
 import phopyBoardRoutes from './routes/phopy-board.routes'
 import userRoutes from './routes/user.routes'
 import passwordRoutes from './routes/password.routes'
-import kanbanSsoRoutes from './routes/kanban-sso.routes'
 
 
 import cookieParser from 'cookie-parser'
@@ -167,8 +166,6 @@ import { setupMcpRoutes } from './mcp/server'
 
 import mcpSettingsRoutes from './routes/mcpSettings.routes'
 import masterRoutes from './routes/master.routes'
-import { authenticate } from './middleware/auth.middleware'
-import { subscriptionGate } from './middleware/subscription.middleware'
 
 
 
@@ -420,53 +417,6 @@ app.use('/api/auth', authRoutes)
 app.use('/api/auth', passwordRoutes)
 
 
-// ── Subscription gates ───────────────────────────────────────────────
-// วางก่อน router mounts ด้านล่าง — expiry gate ทุก mount ธุรกิจของ tenant,
-// feature gate เฉพาะ mount ที่ผูกกับ feature ในแพ็กเกจ (ดู subscription.middleware.ts)
-// ไม่ gate: /api/auth, /api/master, /api/line, /api/agent, /api/backup (MASTER-only อยู่แล้ว)
-app.use('/api/customers', authenticate, subscriptionGate('crm'))
-app.use('/api/customer-recommendations', authenticate, subscriptionGate('crm'))
-app.use('/api/activities', authenticate, subscriptionGate('crm'))
-app.use('/api/orders', authenticate, subscriptionGate('sales'))
-app.use('/api/sales', authenticate, subscriptionGate('sales'))
-app.use('/api/stock', authenticate, subscriptionGate('stock'))
-app.use('/api/materials', authenticate, subscriptionGate('stock'))
-app.use('/api/purchase', authenticate, subscriptionGate('purchase'))
-app.use('/api/purchase-orders', authenticate, subscriptionGate('purchase'))
-app.use('/api/purchase-requests', authenticate, subscriptionGate('purchase'))
-app.use('/api/suppliers', authenticate, subscriptionGate('purchase'))
-app.use('/api/pos', authenticate, subscriptionGate('pos'))
-// ponytail: request /api/pos/kds ผ่าน gate 'pos' (ด้านบน) แล้วมาเจอ gate 'kds' ซ้อน —
-// ไม่เป็นไรเพราะทุกแพ็กเกจที่มี kds มี pos อยู่แล้ว
-app.use('/api/pos/kds', authenticate, subscriptionGate('kds'))
-app.use('/api/bom', authenticate, subscriptionGate('bom'))
-app.use('/api/calculator', authenticate, subscriptionGate('bom'))
-app.use('/api/work-orders', authenticate, subscriptionGate('work_orders'))
-app.use('/api/subcontracts', authenticate, subscriptionGate('work_orders'))
-app.use('/api/accounts', authenticate, subscriptionGate('accounting'))
-app.use('/api/journal', authenticate, subscriptionGate('accounting'))
-app.use('/api/period-closing', authenticate, subscriptionGate('accounting'))
-app.use('/api/budgets', authenticate, subscriptionGate('accounting'))
-app.use('/api/currencies', authenticate, subscriptionGate('accounting'))
-app.use('/api/tax', authenticate, subscriptionGate('tax'))
-app.use('/api/wht-certificates', authenticate, subscriptionGate('tax'))
-app.use('/api/llm-providers', authenticate, subscriptionGate('ai'))
-app.use('/api/analytics', authenticate, subscriptionGate('ai'))
-app.use('/api/reports', authenticate, subscriptionGate('reports'))
-app.use('/api/dashboard', authenticate, subscriptionGate('reports'))
-// expiry-only (ไม่ผูก feature) — mount ธุรกิจที่ไม่มี feature เฉพาะ
-app.use('/api/users', authenticate, subscriptionGate())
-app.use('/api/settings', authenticate, subscriptionGate())
-app.use('/api/data', authenticate, subscriptionGate())
-app.use('/api/search', authenticate, subscriptionGate())
-app.use('/api/import', authenticate, subscriptionGate())
-app.use('/api/mcp-settings', authenticate, subscriptionGate())
-app.use('/api/marketing', authenticate, subscriptionGate())
-app.use('/api/approval', authenticate, subscriptionGate())
-app.use('/api/qc', authenticate, subscriptionGate())
-app.use('/api/phopy-board', authenticate, subscriptionGate())
-
-
 app.use('/api/customers', customerRoutes)
 
 
@@ -568,7 +518,6 @@ app.use('/api/backup', backupRoutes)
 
 app.use('/api/phopy-board', phopyBoardRoutes)
 app.use('/api/users', userRoutes)
-app.use('/api/kanban', kanbanSsoRoutes)
 
 
 app.use('/api/qc', qcRoutes)
@@ -590,15 +539,7 @@ setupMcpRoutes(app as unknown as import('express').Router)
 const frontendDist = path.join(__dirname, '../../frontend/dist')
 
 
-app.use(express.static(frontendDist, {
-  setHeaders: (res, filePath) => {
-    if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
-    } else {
-      res.setHeader('Cache-Control', 'no-cache')
-    }
-  }
-}))
+app.use(express.static(frontendDist))
 
 
 

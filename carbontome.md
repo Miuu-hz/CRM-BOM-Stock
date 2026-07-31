@@ -548,4 +548,34 @@ Phase 3 — Higher Risk · Architecture Change
 - JE จาก POS ต้อง post/approve ก่อนถึงเข้าตัวเลข ledger บน board (พฤติกรรมเดิมของระบบ ไม่ได้เกิดจากงานวันนี้) — ช่อง Retail ใน Zone 1 เห็นยอดทันทีเพราะอ่านจากบิลตรง แต่ P&L ต้องรอ post
 - Backup ทุกอย่างอยู่บนเซิร์ฟเวอร์ (`.bak2/.bak3/.bak4` + `dev.db.bak-*`) — ใช้งานจริงสักพักแล้วค่อยลบ
 
+---
+
+## 📅 Session Log — 21 กรกฎาคม 2026 (Kimi CLI removal + MCP approval-bypass audit)
+
+**สิ่งที่ทำ:**
+- ถอด Kimi CLI (Moonshot AI remote coding agent) ออกจาก LXC 100 — เดิมรันเป็น root ผ่าน VS Code/Antigravity Remote-SSH server ที่ค้างอยู่บนเครื่อง production ตั้งแต่ boot (รวม `.antigravity-server` + `.vscode-server` + `.kimi-code` ~5.7GB มี credentials/oauth token อยู่ด้วย) ลบทิ้งหมด, ทำ snapshot `pre-kimi-removal-20260721` ไว้ก่อนแก้ (storage `local-lvm` รองรับ `pct snapshot`)
+- Audit MCP tools (`src/mcp/tools/*.ts`, 2,276 บรรทัด) เทียบ logic กับ REST route validation ทีละไฟล์ — พบ 4 จุดที่ MCP อนุมัติ/ยืนยันเอกสารได้โดย **ข้าม approval gate ของ REST ทั้งหมด**: `approve_purchase_request`, `reject_purchase_request`, `update_po_status(APPROVED)` (ไม่เช็ค `user_approval_permissions`/`approval_settings`/วงเงินอนุมัติเลย) และ `update_sales_order_status(CONFIRMED)` (ยืนยัน+ตัดสต็อกทันทีโดยข้าม flow `PENDING_APPROVAL` ทั้งหมด — จุดร้ายแรงสุดเพราะเป็น business flow หลักที่เคย E2E test ไว้)
+- แก้โดยเพิ่ม `checkApprovalPermission` / `checkCanApprove` ใน `mcp/tools/shared.ts` เลียนแบบ logic REST เป๊ะ (auto-approve threshold → `user_approval_permissions.can_approve`/`approval_limit`), ผูก role ของผู้ใช้จาก MCP API key เข้ากับทุก tool ที่แก้ (`registerTools` ใน `tools.ts` resolve role จาก `users` table, master key = role `MASTER`) — build ผ่าน, restart แล้ว, ทดสอบ end-to-end จริงผ่าน MCP session (init handshake + tool call) สำเร็จ
+- ตรวจไฟล์ที่เหลือ (stock.ts, production.ts, bom.ts, finance.ts, search.ts, summary.ts) ครบ — ไม่มี divergence เพิ่มเติม เพราะ REST เองก็ไม่มี role-gate ให้ MCP ข้าม (record_stock_movement, create_work_order ฯลฯ) หรือเป็น read-only ล้วน (finance.ts, search.ts, summary.ts)
+
+**พบระหว่างทาง (ยังไม่แก้) — ความเสี่ยง shared process / event loop:**
+
+*ปัญหา:* `crm-backend` เป็น Node.js **single-thread** รันด้วย pm2 mode `fork` instance เดียว ต่อกับ **better-sqlite3** ซึ่งเป็น driver แบบ **synchronous** (ทุกครั้งที่เรียก `db.prepare().get()/.all()/.run()` เธรดหลักจะหยุดรอจนกว่า query จะเสร็จ ไม่ยอมสลับไปทำ request อื่นระหว่างนั้น) ทั้ง REST API ที่ลูกค้า/พนักงานใช้งานจริง **และ** MCP tool calls ที่ AI เรียก วิ่งอยู่บนโปรเซสและเธรดเดียวกันทั้งหมด ไม่มีการแยกทรัพยากรเลย
+
+*จุดประสงค์ที่บันทึกไว้:* กันลืมว่านี่คือ known technical debt ที่ตัดสินใจ **ยอมรับความเสี่ยงไว้แบบตั้งใจ** (ไม่ใช่ bug ที่มองข้าม) — บันทึกเหตุผลไว้ให้คนอื่น/อนาคตอ่านว่าทำไมถึงไม่รีบแก้ตอนนี้ และมีเกณฑ์ชัดว่าต้องกลับมาดูเมื่อไหร่
+
+*ยิ่งใช้งานยิ่งเป็นแบบไหน (growth trajectory):*
+- **ตอนนี้** (scale เล็ก, query เร็วหลัก ms) → แทบไม่รู้สึกผลกระทบ
+- **ข้อมูลสะสมเยอะขึ้น** (PR/PO/SO/stock_movements หลักหมื่น-แสนแถว) → query ที่เคย <10ms ค่อยๆ ยืดเป็นหลักร้อย ms ถึงระดับวินาที โดยไม่มี error ใดเตือนล่วงหน้า (เสื่อมแบบ silent)
+- **มี AI conversation พร้อมกันหลายวง/หลาย tenant** → โอกาสที่ query หนักจากฝั่ง AI (เช่น `get_financial_summary(period="ytd")`, `explode_bom` หลายชั้น, `confirm_goods_receipt` ที่มีหลายรายการ) ชนจังหวะกับลูกค้าจริงกำลังใช้งานสูงขึ้นเรื่อยๆ
+- **อาการที่จะเห็น:** เว็บ "ค้าง" เป็นพักๆ แบบสุ่ม ไม่มี error log ชัดเจน (ไม่ crash แค่รอคิวอยู่) — debug ยากเพราะดูเผินๆ เหมือนเน็ตช้า/เซิร์ฟเวอร์แรงไม่พอ ทั้งที่ต้นตอคือ 1 synchronous query บล็อกทุกอย่างพร้อมกัน
+
+*แนวทางแก้ไข (เรียงจากง่าย → ใหญ่):*
+1. **จำกัดขนาดงานที่ AI เรียกได้** — เพิ่ม LIMIT ให้เข้มกว่าเดิม, ตัด JOIN ที่ไม่จำเป็นใน tools ที่ AI ใช้บ่อย (`get_financial_summary`, `explode_bom`) — ต้นทุนต่ำสุด ทำได้ทันที แต่บรรเทาไม่หมด
+2. **แยก MCP ออกจาก process หลัก** — รัน MCP server เป็น pm2 process แยก (คนละ Node process บนเครื่องเดียวกันได้) เปิด SQLite connection คนละตัวแบบ read-only กัน query จาก AI บล็อกเธรดที่ REST API ใช้ (ต้องดูแลให้ write ทั้งหมดผ่าน process หลักเท่านั้น กัน DB lock conflict)
+3. **แยกไป LXC ต่างหาก + read replica** — ตามแผนที่เคยคุยกันไว้ก่อนหน้า (LXC แยกรัน AI + sync DB เป็นรอบๆ) แยก compute/DB โหลดออกจาก production เต็มรูปแบบ ไม่กระทบกันเลยแม้ query หนักแค่ไหน แลกกับ data staleness ตามรอบ sync (เหมาะกับ read-only queries; ส่วนที่ต้อง approve/write ยังต้องยิงกลับ REST API จริงเสมอ)
+4. **เปลี่ยน DB engine เป็นแบบ async + connection pool** (เช่น Postgres แบบที่ Kanban ใช้อยู่แล้วบน LXC 103) — แก้ที่รากที่สุด แต่เป็น migration ใหญ่ที่สุด กระทบทั้งระบบ ควรทำเป็นโปรเจกต์แยกต่างหาก ไม่ใช่ patch เล็กๆ
+
+*เกณฑ์ตัดสินใจกลับมาแก้จริงจัง:* เริ่มมี complaint ว่าเว็บค้างเป็นพักๆ โดยไม่มี error ชัดเจน, หรือจำนวน concurrent AI session เพิ่มขึ้นจนเห็น query time ใน log ยาวขึ้นชัดเจน
+
 **อัปเดตเพิ่ม:** ตรวจ `sales.routes.ts` endpoint-by-endpoint เทียบกับ `routes/sales/*` แล้ว — migrate ครบ 47/48 (จุดเดียวที่ path เปลี่ยนคือ `from-template` แต่ไม่มีใครเรียกทั้งเก่า/ใหม่อยู่แล้ว) เช็คแล้วว่า unit conversion engine (`services/unitConversion.service.ts` + ตาราง `unit_conversions` 39 กฎ + `sealed_qty` auto-unpack) ไม่ได้อยู่ในไฟล์นี้ ไม่กระทบ และ `deductStockForSO` เวอร์ชันใหม่ใน `shared.ts` ดีกว่าเดิม (ห่อ transaction + throw เมื่อสต็อกไม่พอ แทน silent clamp) — **ลบ `backend/src/routes/sales.routes.ts` แล้ว** ยืนยัน `tsc --noEmit` ผ่านสะอาด

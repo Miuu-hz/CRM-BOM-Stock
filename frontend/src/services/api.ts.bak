@@ -1,5 +1,4 @@
 import axios from 'axios'
-import toast from 'react-hot-toast'
 
 const api = axios.create({
   baseURL: '/api',
@@ -30,19 +29,9 @@ function clearAuthAndRedirect() {
 let isRefreshing = false
 let refreshWaiters: Array<(token: string | null) => void> = []
 
-// Subscription error codes from the backend — toast ข้อความจาก server ทันที
-// (ใช้ id เดียวกันกัน toast ซ้ำเมื่อ component แสดง error เดิมอยู่แล้ว)
-const SUBSCRIPTION_ERROR_CODES = new Set([
-  'SUBSCRIPTION_EXPIRED', 'FEATURE_LOCKED', 'USER_LIMIT', 'PRODUCT_LIMIT', 'POS_SHIFT_LIMIT',
-])
-
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const code = error.response?.data?.code
-    if (code && SUBSCRIPTION_ERROR_CODES.has(code)) {
-      toast.error(error.response.data.message || 'เกิดข้อผิดพลาดเกี่ยวกับแพ็กเกจ', { id: `sub-${code}` })
-    }
     const original: any = error.config
     if (error.response?.status !== 401 || !original || original._retry) {
       return Promise.reject(error)

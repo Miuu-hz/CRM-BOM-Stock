@@ -1,8 +1,52 @@
+import db from '../../db/sqlite'
+
 export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
 
 export const ok = (data: unknown): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
 })
+
+export interface ApprovalCheckResult { allowed: boolean; message?: string }
+
+// เลียนแบบ permission check ใน REST routes (purchase-request.routes.ts, purchaseOrder.routes.ts)
+// ป้องกัน MCP tool อนุมัติเอกสารโดยข้ามวงเงิน/สิทธิ์อนุมัติที่ผู้ใช้ตั้งไว้
+export function checkApprovalPermission(
+  tenantId: string, userId: string, role: string, moduleType: string, amount: number
+): ApprovalCheckResult {
+  if (role === 'MASTER' || role === 'ADMIN') return { allowed: true }
+
+  const setting = db.prepare(
+    `SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?`
+  ).get(tenantId, role, moduleType) as any
+  const autoApprove = setting && setting.auto_approve_threshold > 0 && amount <= setting.auto_approve_threshold
+  if (autoApprove) return { allowed: true }
+
+  const perm = db.prepare(
+    `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?`
+  ).get(tenantId, userId, moduleType) as any
+  if (!perm || perm.can_approve !== 1) {
+    return { allowed: false, message: 'ไม่มีสิทธิ์อนุมัติ กรุณาติดต่อ Admin' }
+  }
+  if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && amount > perm.approval_limit) {
+    return {
+      allowed: false,
+      message: `วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ${perm.approval_limit.toLocaleString()}, ยอด: ${amount.toLocaleString()})`,
+    }
+  }
+  return { allowed: true }
+}
+
+// เช็คสิทธิ์แบบไม่มีวงเงิน (ใช้กับ reject ที่ REST ไม่เช็ค approval_limit)
+export function checkCanApprove(tenantId: string, userId: string, role: string, moduleType: string): ApprovalCheckResult {
+  if (role === 'MASTER' || role === 'ADMIN') return { allowed: true }
+  const perm = db.prepare(
+    `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?`
+  ).get(tenantId, userId, moduleType) as any
+  if (!perm || perm.can_approve !== 1) {
+    return { allowed: false, message: 'ไม่มีสิทธิ์ กรุณาติดต่อ Admin' }
+  }
+  return { allowed: true }
+}
 
 // ── DB-Anchored Token Intersection ────────────────────────────────────────────
 // existsFn  — return true if a substring appears in at least one relevant row

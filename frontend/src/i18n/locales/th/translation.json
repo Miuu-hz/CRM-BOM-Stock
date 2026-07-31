@@ -61,7 +61,15 @@
     "userManagement": "จัดการผู้ใช้",
     "approvals": "การอนุมัติ",
     "kanban": "Phopy Kanban",
-    "kanbanDesc": "บอร์ดจัดการงาน"
+    "kanbanDesc": "บอร์ดจัดการงาน",
+    "kanbanSso": {
+      "title": "เข้าใช้ Phopy Board",
+      "confirm": "เข้าใช้ Phopy Board ในนาม {{email}} ของธุรกิจ {{tenant}}?",
+      "confirmButton": "ยืนยัน",
+      "cancel": "ยกเลิก",
+      "error": "ไม่สามารถเข้าใช้ Phopy Board ได้ กรุณาลองใหม่อีกครั้ง",
+      "popupBlocked": "เบราว์เซอร์บล็อกการเปิดแท็บใหม่ กรุณาอนุญาต pop-up สำหรับเว็บไซต์นี้แล้วลองใหม่"
+    }
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",

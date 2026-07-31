@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
-import { getLimits } from '../../services/subscription.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 
 const router = Router()
@@ -398,23 +397,6 @@ router.post('/pos-shifts/open', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'กรุณาระบุเงินสดเปิดกะ' })
     }
 
-    // Subscription: จำกัดจำนวนกะที่เปิดพร้อมกันตามแพ็กเกจ (MASTER bypass)
-    if (req.user!.role !== 'MASTER') {
-      const { maxPosShifts } = getLimits(tenantId)
-      if (maxPosShifts !== null) {
-        const openCount = (db.prepare(`SELECT COUNT(*) as c FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN'`).get(tenantId) as any).c
-        if (openCount >= maxPosShifts) {
-          return res.status(403).json({
-            success: false,
-            code: 'POS_SHIFT_LIMIT',
-            message: `แพ็กเกจนี้เปิดกะพร้อมกันได้ ${maxPosShifts} กะ กรุณาปิดกะก่อนหรืออัปเกรดแพ็กเกจ`,
-          })
-        }
-      }
-    }
-
-    // ponytail: เช็คเดิม (ห้ามเปิดกะซ้อนเลย) ยังคงอยู่ — แพ็กเกจที่ max_pos_shifts IS NULL
-    // (business/enterprise) ยังเปิดได้ทีละ 1 กะจนกว่า UI จะรองรับหลายกะ
     // Check no open shift already
     const existing = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN'`).get(tenantId)
     if (existing) {

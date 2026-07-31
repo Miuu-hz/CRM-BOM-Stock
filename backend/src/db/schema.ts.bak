@@ -1675,36 +1675,5 @@ export function applySchema(db: any): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(tenant_id, supplier_id, stock_item_id)
     );
-
-    -- ==================== SUBSCRIPTIONS ====================
-    CREATE TABLE IF NOT EXISTS subscription_plans (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,        -- free, starter, business, enterprise
-      name TEXT NOT NULL,
-      description TEXT,
-      price_monthly REAL DEFAULT 0,
-      price_yearly REAL DEFAULT 0,
-      max_users INTEGER,                -- NULL = ไม่จำกัด
-      max_products INTEGER,             -- NULL = ไม่จำกัด
-      max_pos_shifts INTEGER,           -- NULL = ไม่จำกัด
-      features TEXT DEFAULT '[]',       -- JSON array of feature keys
-      is_active INTEGER DEFAULT 1,
-      sort_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS tenant_subscriptions (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT UNIQUE NOT NULL,
-      plan_code TEXT NOT NULL DEFAULT 'free',
-      status TEXT NOT NULL DEFAULT 'FREE',  -- FREE, ACTIVE, EXPIRED, CANCELLED
-      billing_cycle TEXT,                   -- monthly, yearly (NULL = free)
-      current_period_start TEXT,
-      current_period_end TEXT,              -- NULL = ไม่หมดอายุ (free)
-      notes TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
   `)
 }

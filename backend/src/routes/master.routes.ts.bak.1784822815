@@ -5,47 +5,9 @@ import { randomBytes } from 'crypto'
 import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { getSubscription } from '../services/subscription.service'
-import { provisionTenant, ProvisionError } from '../services/provisioning'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET!
-
-// ── Seamless Phopy Board (Kanban) provisioning ──────────────────────────────
-// Right after an ERP tenant + admin is created, mirror it into Planka so the
-// admin gets a matching org + org-admin account with the SAME password (login
-// works on both systems). Non-fatal: if Planka is unreachable, the first SSO
-// click will JIT-provision the account anyway (SSO-only until a password sync).
-const KANBAN_SSO_SECRET = process.env.KANBAN_SSO_SECRET
-const KANBAN_INTERNAL_URL = process.env.KANBAN_INTERNAL_URL || 'http://192.168.1.96:1337'
-
-async function provisionKanban(params: {
-  erpUserId: string; tenantId: string; tenantName: string; email: string; name: string; password: string
-}): Promise<boolean> {
-  if (!KANBAN_SSO_SECRET) {
-    console.warn('[kanban-provision] KANBAN_SSO_SECRET not set — skipping')
-    return false
-  }
-  try {
-    const token = jwt.sign(
-      { ...params, erpRole: 'ADMIN', purpose: 'kanban-provision' },
-      KANBAN_SSO_SECRET,
-      { algorithm: 'HS256', expiresIn: 120 },
-    )
-    const resp = await fetch(`${KANBAN_INTERNAL_URL}/erp-sso/provision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    })
-    if (!resp.ok) {
-      console.warn('[kanban-provision] failed', resp.status, await resp.text().catch(() => ''))
-      return false
-    }
-    return true
-  } catch (err) {
-    console.warn('[kanban-provision] error (non-fatal)', err)
-    return false
-  }
-}
 
 function slugify(text: string): string {
   return text.toLowerCase()
@@ -97,32 +59,31 @@ router.post('/tenants', authenticate, requireMaster, async (req: Request, res: R
     res.status(400).json({ success: false, message: 'Password ต้องมีอย่างน้อย 8 ตัวอักษร' }); return
   }
 
+  const db = getDb()
+  const tenantId = customTenantId?.trim() || `tenant_${slugify(businessName)}_${Date.now().toString(36)}`
+
+  const tExists = db.prepare('SELECT 1 FROM company_settings WHERE tenant_id = ?').get(tenantId)
+  if (tExists) { res.status(409).json({ success: false, message: `Tenant ID "${tenantId}" มีอยู่แล้ว` }); return }
+
+  const eExists = db.prepare('SELECT 1 FROM users WHERE email = ?').get(adminEmail)
+  if (eExists) { res.status(409).json({ success: false, message: `Email "${adminEmail}" ถูกใช้งานแล้ว` }); return }
+
   const passwordHash = await bcrypt.hash(adminPassword, 10)
+  const userId = randomBytes(12).toString('hex')
+  const now = new Date().toISOString()
 
-  let tenantId: string, userId: string
-  try {
-    ;({ tenantId, userId } = provisionTenant({
-      businessName,
-      adminEmail,
-      adminName,
-      adminPasswordHash: passwordHash,
-      customTenantId,
-    }))
-  } catch (err) {
-    if (err instanceof ProvisionError) { res.status(err.status).json({ success: false, message: err.message }); return }
-    throw err
-  }
+  db.prepare('INSERT INTO company_settings (tenant_id, name, mcp_user_limit) VALUES (?, ?, 1)').run(tenantId, businessName)
+  // Tenant ใหม่เริ่มที่แพ็กเกจ Free อัตโนมัติ (ไม่มีวันหมดอายุ) — MASTER อัปเกรดทีหลัง
+  db.prepare(
+    `INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, current_period_start)
+     VALUES (?, ?, 'free', 'FREE', ?)`
+  ).run(randomBytes(8).toString('hex'), tenantId, now)
+  db.prepare(
+    `INSERT INTO users (id, email, password, name, role, tenant_id, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'ADMIN', ?, 'active', ?, ?)`
+  ).run(userId, adminEmail, passwordHash, adminName, tenantId, now, now)
 
-  const kanbanProvisioned = await provisionKanban({
-    erpUserId: userId,
-    tenantId,
-    tenantName: businessName,
-    email: adminEmail,
-    name: adminName,
-    password: adminPassword,
-  })
-
-  res.json({ success: true, data: { tenantId, adminEmail, adminName, companyName: businessName, userId, kanbanProvisioned } })
+  res.json({ success: true, data: { tenantId, adminEmail, adminName, companyName: businessName, userId } })
 })
 
 // POST /api/master/switch-tenant
@@ -155,27 +116,21 @@ router.get('/stats', authenticate, requireMaster, (req: Request, res: Response) 
 })
 
 // GET /api/master/mcp-quota/:tenantId
-// limit = effective (override ?? max_users ตามแพ็กเกจ) · null = ไม่จำกัด
-// override = ค่าที่ตั้งเองไว้ (null = ยึดตามแพ็กเกจ) · planLimit = max_users ของแพ็กเกจปัจจุบัน
 router.get('/mcp-quota/:tenantId', authenticate, requireMaster, (req: Request, res: Response) => {
   const db = getDb()
   const { tenantId } = req.params
   const cs   = db.prepare('SELECT mcp_user_limit FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
   const used = (db.prepare("SELECT COUNT(*) as c FROM users WHERE tenant_id = ? AND mcp_api_key IS NOT NULL AND mcp_api_key != ''").get(tenantId) as any)?.c ?? 0
-  const override: number | null = cs ? cs.mcp_user_limit : null
-  const planLimit = getSubscription(tenantId).maxUsers
-  const limit = override != null ? override : planLimit
-  res.json({ success: true, data: { tenantId, used, limit, planLimit, override, source: override != null ? 'override' : 'plan' } })
+  res.json({ success: true, data: { tenantId, used, limit: cs?.mcp_user_limit ?? 1 } })
 })
 
 // PATCH /api/master/tenant/:tenantId/quota
-// mcpUserLimit: number = override, null = เคลียร์ override (กลับไปยึด max_users ตามแพ็กเกจ)
 router.patch('/tenant/:tenantId/quota', authenticate, requireMaster, (req: Request, res: Response) => {
   const db = getDb()
   const { tenantId } = req.params
   const { mcpUserLimit } = req.body
-  if (mcpUserLimit !== null && (typeof mcpUserLimit !== 'number' || mcpUserLimit < 0)) {
-    res.status(400).json({ success: false, message: 'mcpUserLimit ต้องเป็นตัวเลขบวก หรือ null (ตามแพ็กเกจ)' }); return
+  if (typeof mcpUserLimit !== 'number' || mcpUserLimit < 0) {
+    res.status(400).json({ success: false, message: 'mcpUserLimit ต้องเป็นตัวเลขบวก' }); return
   }
   const exists = db.prepare('SELECT 1 FROM company_settings WHERE tenant_id = ?').get(tenantId)
   if (exists) {
@@ -327,70 +282,6 @@ router.post('/tenant/:id/extend', authenticate, requireMaster, (req: Request, re
   ).run(newEnd, new Date().toISOString(), id)
 
   res.json({ success: true, data: getSubscription(id) })
-})
-
-// ==================== SIGNUP REQUESTS (self-service, Master-approved) ====================
-
-// GET /api/master/signup-requests?status=pending|approved|rejected|all
-router.get('/signup-requests', authenticate, requireMaster, (req: Request, res: Response) => {
-  const db = getDb()
-  const status = (req.query.status as string) || 'pending'
-  const rows =
-    status === 'all'
-      ? db.prepare(
-          `SELECT id, business_name, admin_name, email, phone, status, tenant_id, reject_reason, created_at, reviewed_at
-           FROM signup_requests ORDER BY created_at DESC`,
-        ).all()
-      : db.prepare(
-          `SELECT id, business_name, admin_name, email, phone, status, tenant_id, reject_reason, created_at, reviewed_at
-           FROM signup_requests WHERE status = ? ORDER BY created_at DESC`,
-        ).all(status)
-  res.json({ success: true, data: rows })
-})
-
-// POST /api/master/signup-requests/:id/approve — provision the tenant, mark approved
-router.post('/signup-requests/:id/approve', authenticate, requireMaster, (req: Request, res: Response): void => {
-  const db = getDb()
-  const { id } = req.params
-  const reqRow = db.prepare('SELECT * FROM signup_requests WHERE id = ?').get(id) as any
-  if (!reqRow) { res.status(404).json({ success: false, message: 'ไม่พบคำขอสมัคร' }); return }
-  if (reqRow.status !== 'pending') { res.status(409).json({ success: false, message: 'คำขอนี้ถูกดำเนินการไปแล้ว' }); return }
-
-  let tenantId: string, userId: string
-  try {
-    // password_hash was set by the applicant at signup — reuse it verbatim (do not re-hash).
-    ;({ tenantId, userId } = provisionTenant({
-      businessName: reqRow.business_name,
-      adminEmail: reqRow.email,
-      adminName: reqRow.admin_name,
-      adminPasswordHash: reqRow.password_hash,
-    }))
-  } catch (err) {
-    if (err instanceof ProvisionError) { res.status(err.status).json({ success: false, message: err.message }); return }
-    throw err
-  }
-
-  db.prepare(
-    `UPDATE signup_requests SET status = 'approved', tenant_id = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?`,
-  ).run(tenantId, req.user!.userId, id)
-
-  // Phopy Kanban is auto-provisioned just-in-time on the user's first SSO click
-  // (no plaintext password available here to sync).
-  res.json({ success: true, data: { tenantId, userId, email: reqRow.email, businessName: reqRow.business_name } })
-})
-
-// POST /api/master/signup-requests/:id/reject
-router.post('/signup-requests/:id/reject', authenticate, requireMaster, (req: Request, res: Response): void => {
-  const db = getDb()
-  const { id } = req.params
-  const { reason } = req.body
-  const reqRow = db.prepare('SELECT status FROM signup_requests WHERE id = ?').get(id) as any
-  if (!reqRow) { res.status(404).json({ success: false, message: 'ไม่พบคำขอสมัคร' }); return }
-  if (reqRow.status !== 'pending') { res.status(409).json({ success: false, message: 'คำขอนี้ถูกดำเนินการไปแล้ว' }); return }
-  db.prepare(
-    `UPDATE signup_requests SET status = 'rejected', reject_reason = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?`,
-  ).run(reason || null, req.user!.userId, id)
-  res.json({ success: true })
 })
 
 export default router

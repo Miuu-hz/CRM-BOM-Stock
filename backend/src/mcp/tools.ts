@@ -17,14 +17,16 @@ import { registerBomTools } from './tools/bom'
 import { registerFinanceTools } from './tools/finance'
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
-  // Resolve display name for audit trail — lookup from users table, fallback to userId
-  const callerRow = db.prepare(`SELECT name, email FROM users WHERE id = ? LIMIT 1`).get(userId) as any
+  // Resolve display name + role for audit trail and approval-permission checks
+  const callerRow = db.prepare(`SELECT name, email, role FROM users WHERE id = ? LIMIT 1`).get(userId) as any
   const callerName: string = callerRow?.name ?? callerRow?.email ?? userId
+  // Master API key has no row in `users` (resolved separately in mcp/server.ts) — treat as MASTER role
+  const callerRole: string = userId === 'master' ? 'MASTER' : (callerRow?.role ?? 'USER')
 
   registerSearchTool(server, tenantId)
   registerSummaryTools(server, tenantId)
-  registerPurchaseTools(server, tenantId, userId, callerName)
-  registerSalesTools(server, tenantId, userId)
+  registerPurchaseTools(server, tenantId, userId, callerName, callerRole)
+  registerSalesTools(server, tenantId, userId, callerName, callerRole)
   registerStockTools(server, tenantId, userId)
   registerProductionTools(server, tenantId, userId)
   registerBomTools(server, tenantId)

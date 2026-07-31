@@ -69,24 +69,31 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       return
     }
 
-    // Load fresh departments + custom_permissions from DB (always current, no stale JWT)
+    // Load fresh role/status/departments/custom_permissions from DB (always current, no stale JWT)
     const db = getDb()
     const userRecord = db.prepare(
-      'SELECT departments, custom_permissions FROM users WHERE id = ?'
-    ).get(decoded.userId) as { departments: string | null; custom_permissions: string | null } | undefined
+      'SELECT role, status, departments, custom_permissions FROM users WHERE id = ?'
+    ).get(decoded.userId) as { role: Role; status: string; departments: string | null; custom_permissions: string | null } | undefined
 
-    const departments: Department[] = userRecord?.departments
+    // Bounds every already-issued access token to its remaining lifetime after
+    // a deactivation, not just new logins/refreshes.
+    if (!userRecord || userRecord.status !== 'active') {
+      res.status(401).json({ success: false, message: 'บัญชีถูกระงับการใช้งาน' })
+      return
+    }
+
+    const departments: Department[] = userRecord.departments
       ? JSON.parse(userRecord.departments)
       : (decoded.department ? [decoded.department] : [])
 
-    const customPermissions: Record<string, boolean> | undefined = userRecord?.custom_permissions
+    const customPermissions: Record<string, boolean> | undefined = userRecord.custom_permissions
       ? JSON.parse(userRecord.custom_permissions)
       : undefined
 
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
-      role: decoded.role,
+      role: userRecord.role,
       department: decoded.department,
       departments,
       customPermissions,

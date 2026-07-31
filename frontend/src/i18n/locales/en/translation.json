@@ -89,7 +89,15 @@
     "mainMenu": "Main Menu",
     "approvals": "Approvals",
     "kanban": "Phopy Kanban",
-    "kanbanDesc": "Task board"
+    "kanbanDesc": "Task board",
+    "kanbanSso": {
+      "title": "Access Phopy Board",
+      "confirm": "Sign in to Phopy Board as {{email}} for {{tenant}}?",
+      "confirmButton": "Confirm",
+      "cancel": "Cancel",
+      "error": "Could not access Phopy Board. Please try again.",
+      "popupBlocked": "Your browser blocked the new tab. Please allow pop-ups for this site and try again."
+    }
   },
   "dashboard": {
     "title": "Executive Dashboard",

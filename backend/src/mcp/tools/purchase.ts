@@ -3,9 +3,9 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
-import { ok } from './shared'
+import { ok, checkApprovalPermission, checkCanApprove } from './shared'
 
-export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string): void {
+export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
   server.tool(
     'create_purchase_request',
@@ -231,6 +231,11 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       }
       if (!pr) {
         return ok({ success: false, message: `ไม่พบ PR: ${pr_id}` })
+      }
+
+      const check = checkApprovalPermission(tenantId, userId, callerRole, 'purchase_request', pr.total_amount || 0)
+      if (!check.allowed) {
+        return ok({ success: false, message: check.message })
       }
 
       const now = new Date().toISOString()
@@ -596,6 +601,11 @@ items ถ้าส่งมาจะแทนที่รายการทั�
         return ok({ success: false, message: `ปฏิเสธได้เฉพาะ PR สถานะ DRAFT/PENDING (ปัจจุบัน: ${pr.status})` })
       }
 
+      const check = checkCanApprove(tenantId, userId, callerRole, 'purchase_request')
+      if (!check.allowed) {
+        return ok({ success: false, message: check.message })
+      }
+
       const now = new Date().toISOString()
       const notes = reason ? `${pr.notes || ''}\n[ปฏิเสธ] ${reason}`.trim() : pr.notes
       db.prepare('UPDATE purchase_requests SET status = ?, notes = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
@@ -627,6 +637,12 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       }
       if (status === 'SUBMITTED' && po.status !== 'DRAFT') {
         return ok({ success: false, message: `ส่งขออนุมัติได้เฉพาะ PO สถานะ DRAFT (ปัจจุบัน: ${po.status})` })
+      }
+      if (status === 'APPROVED') {
+        const check = checkApprovalPermission(tenantId, userId, callerRole, 'purchase_order', po.total_amount || 0)
+        if (!check.allowed) {
+          return ok({ success: false, message: check.message })
+        }
       }
 
       const now = new Date().toISOString()
