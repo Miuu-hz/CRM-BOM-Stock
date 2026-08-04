@@ -1,274 +1,110 @@
-# 🛏️ CRM-BOM-Stock Management System
+# Phopy ERP
 
-ระบบบริหารจัดการครบวงจรสำหรับโรงงานผลิตเครื่องนอน พร้อม UI แบบ **Futuristic Design**
+ERP ระบบเดียวสำหรับธุรกิจอาหาร/ร้านค้า (Thai food & restaurant business) ครอบคลุมตั้งแต่จัดซื้อ, สต็อก, สูตรการผลิต (BOM), ขาย/POS, ครัว (KDS), QC, บัญชี/ภาษี ไปจนถึง AI assistant ที่คุยผ่าน LINE ได้โดยตรง
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+This is a **live production ERP**, not a scaffold. It runs today under `pm2` inside an LXC container and is actively used by real staff. This README describes the system as it actually exists in this repo — not an early prototype plan.
 
-## ✨ Features
+> Older versions of this README described an early "CRM-BOM-Stock" scaffold for a bedding/mattress factory on PostgreSQL + Prisma. That was scaffolding from the very first iteration of the project and does not reflect the codebase anymore — see [Tech Stack](#tech-stack) below for what is actually wired up today.
 
-### 🤝 CRM (Customer Relationship Management)
-- จัดการข้อมูลลูกค้า (โรงแรม, ร้านค้าปลีก, ขายส่ง)
-- ติดตามประวัติการสั่งซื้อ
-- จัดการ Credit Limit
-- รายงานยอดขายตามลูกค้า
+## What it does
 
-### 📋 BOM (Bill of Materials)
-- สูตรการผลิตสินค้า
-- รายการวัตถุดิบและปริมาณที่ใช้
-- คำนวณต้นทุนการผลิต
-- Version control ของสูตร
-- รองรับหลายประเภทผลิตภัณฑ์
+- **Purchase** — purchase requests → purchase orders → supplier management (`backend/src/routes/purchase-request.routes.ts`, `purchaseOrder.routes.ts`, `purchase.routes.ts`, `supplier.routes.ts`)
+- **Sales** — quotations, sales orders, invoices, receipts, credit notes, delivery orders, backorders, product variants (`backend/src/routes/sales/*`)
+- **POS / Cashier / KDS** — point-of-sale billing, register clearing, kitchen display system (`pos-menu.routes.ts`, `pos-bill.routes.ts`, `pos-clearing.routes.ts`, `kds.routes.ts`)
+- **Stock** — raw material / WIP / finished goods movements (`stock.routes.ts`, `materials.routes.ts`)
+- **BOM & Production** — recipes/bills of materials, work orders, subcontract production (`bom.routes.ts`, `workOrder.routes.ts`, `subcontract.routes.ts`)
+- **QC** — quality control checkpoints (`qc.routes.ts`)
+- **Accounting & Tax** — chart of accounts, journal entries, budgets, multi-currency, tax, withholding tax (WHT) certificates, period closing (`accounts.routes.ts`, `journal.routes.ts`, `budget.routes.ts`, `currency.routes.ts`, `tax.routes.ts`, `wht-certificate.routes.ts`, `period-closing.routes.ts`)
+- **RBAC / Master panel** — role + department based permissions (`MASTER/ADMIN/MANAGER/POWERUSER/USER` × departments), plus a master-only tenant/subscription admin panel (`master.routes.ts`, `middleware/auth.middleware.ts`, `middleware/subscription.middleware.ts`, `config/roles.ts`, `services/rbac.service.ts`)
+- **Backup** — scheduled DB backups with Google Drive upload, master-only (`backup.routes.ts`, `services/backup.scheduler.ts`)
+- **Kanban SSO** — signed-token single sign-on handoff into a separate Planka/Kanban board (`kanban-sso.routes.ts`)
+- **Marketing, approvals, activity log, customer recommendations, dashboard/reports** — supporting modules (`marketing.routes.ts`, `approval.routes.ts`, `activity.routes.ts`, `customerRecommendations.routes.ts`, `dashboard.routes.ts`, `reports.routes.ts`)
+- **AI / MCP assistant** — an MCP server exposing search, purchase, sales, stock, production, BOM, and finance tools directly against the live DB (`backend/src/mcp/tools/`: `search.ts`, `summary.ts`, `purchase.ts`, `sales.ts`, `stock.ts`, `production.ts`, `bom.ts`, `finance.ts`). Every create/update tool takes effect immediately and drops a **Draft** for a human to confirm in the web UI — see root [`CLAUDE.md`](./CLAUDE.md) for the exact parsing rules (Thai receipt formats, unit codes, cross-checking bill totals) the assistant follows.
+- **LINE bot** — the same MCP tools are also reachable as a LINE chat bot (`backend/src/routes/line-bot.routes.ts`, using `@line/bot-sdk`), so staff can create draft POs/PRs and query stock/sales straight from LINE.
 
-### 📦 Stock (Inventory Management)
-- คลังวัตถุดิบ (Raw Material)
-- คลังสินค้ากึ่งสำเร็จ (WIP - Work in Progress)
-- คลังสินค้าสำเร็จรูป (Finished Goods)
-- Stock Alert (แจ้งเตือนเมื่อของใกล้หมด)
-- ติดตามการเข้า-ออกสินค้า
-- รายงาน Stock Movement
-
-### 📊 Dashboard
-- สรุปภาพรวมธุรกิจแบบ Real-time
-- กราฟยอดขายและการผลิต
-- แจ้งเตือนสินค้าคงคลังต่ำ
-- รายการคำสั่งซื้อล่าสุด
-
-## 🎨 UI Design
-
-ใช้ **Futuristic/Cyberpunk Theme** ที่ทันสมัยและสวยงาม:
-
-- 🌊 สีหลัก: Cyan/Neon Blue (#00f0ff, #0066ff)
-- 💜 สีรอง: Purple/Magenta (#9d00ff, #ff00ff)
-- ✨ สีเน้น: Neon Green (#00ff88)
-- 🌑 สีพื้นหลัง: Deep Space (#0a0e27, #1a1d35)
-- Glow Effects และ Smooth Animations
-- Glass Morphism Cards
-
-## 🚀 Tech Stack
-
-### Frontend
-- **React 18** - UI Library
-- **TypeScript** - Type Safety
-- **Vite** - Fast Build Tool
-- **TailwindCSS** - Utility-first CSS
-- **Framer Motion** - Animation Library
-- **Recharts** - Data Visualization
-- **React Query** - Data Fetching
-- **Zustand** - State Management
-- **React Router** - Routing
+## Tech Stack
 
 ### Backend
-- **Node.js** - Runtime
-- **Express** - Web Framework
-- **TypeScript** - Type Safety
-- **Prisma** - ORM
-- **PostgreSQL** - Database
-- **JWT** - Authentication
-- **Zod** - Validation
+- **Node.js + Express + TypeScript**
+- **Database: raw SQLite via `better-sqlite3`** — schema is hand-written SQL in `backend/src/db/schema.ts` (`applySchema`), migrations in `backend/src/db/migrations.ts`, connection in `backend/src/db/connection.ts` / `backend/src/db/sqlite.ts`. The DB file is `backend/dev.db`.
+- **JWT auth** (`jsonwebtoken`), **RBAC** via `services/rbac.service.ts` + `config/roles.ts`
+- **Zod** for validation, **express-validator** for route-level checks, **helmet** + **express-rate-limit** for hardening
+- **`@modelcontextprotocol/sdk`** for the MCP server (`backend/src/mcp/`)
+- **`@line/bot-sdk`** for the LINE bot integration
+- **`node-cron`** for scheduled jobs (backups, etc.)
 
-## 📁 Project Structure
+**Prisma and PostgreSQL are dead leftovers, not the real data layer.** `backend/package.json` still lists `@prisma/client`, `prisma`, and `pg` as dependencies, and `backend/prisma/schema.prisma` still exists, but nothing in `backend/src` imports from `db/prisma.ts` — it's an orphaned file left over from the original scaffold. All actual reads/writes go through `better-sqlite3` (`backend/src/db/connection.ts`). Treat any Prisma/`pg` references you find in `package.json` as historical, not active.
+
+### Frontend
+- **React 18 + TypeScript + Vite**
+- **TailwindCSS**, **Framer Motion**, **Recharts**
+- **TanStack Query** for server state, **Zustand** for client state, **React Router**
+- **i18next** for Thai/English localization
+
+## Project Structure
 
 ```
-CRM-BOM-Stock/
-├── frontend/                 # React Frontend
-│   ├── src/
-│   │   ├── components/      # Reusable Components
-│   │   │   ├── dashboard/   # Dashboard Components
-│   │   │   └── layout/      # Layout Components
-│   │   ├── pages/           # Page Components
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── CRM.tsx
-│   │   │   ├── BOM.tsx
-│   │   │   ├── Stock.tsx
-│   │   │   └── Login.tsx
-│   │   ├── App.tsx
-│   │   ├── main.tsx
-│   │   └── index.css
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── backend/                 # Node.js Backend
-│   ├── src/
-│   │   ├── routes/         # API Routes
-│   │   │   ├── auth.routes.ts
-│   │   │   ├── customer.routes.ts
-│   │   │   ├── order.routes.ts
-│   │   │   ├── bom.routes.ts
-│   │   │   ├── stock.routes.ts
-│   │   │   └── dashboard.routes.ts
-│   │   └── index.ts
-│   ├── prisma/
-│   │   └── schema.prisma   # Database Schema
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── package.json            # Root Package
-└── README.md
+backend/
+  src/
+    routes/          # feature route modules (purchase, sales/, pos-*, stock, bom, work orders,
+                      #   subcontract, qc, accounts/journal/tax/wht/budget/period-closing,
+                      #   master, backup, kanban-sso, marketing, line-bot, ...)
+    mcp/
+      tools/          # MCP tool groups: search, summary, purchase, sales, stock, production, bom, finance
+      server.ts       # MCP server wiring (per-tenant, per-user)
+    db/
+      schema.ts       # hand-written SQLite schema (applySchema)
+      migrations.ts   # incremental migrations run at boot
+      connection.ts   # better-sqlite3 connection (real DB layer)
+      sqlite.ts       # applies schema + migrations on startup
+    middleware/       # auth, RBAC/subscription gating, master gate, rate/time locks
+    services/         # rbac, backup, subscription, and other business logic
+    agent/            # background job worker + webhook routes (Paperclip issue-tracker integration)
+    config/roles.ts   # Role/Department/Resource/Action definitions for RBAC
+  dev.db              # SQLite database file (NOT committed, do not touch in production)
+frontend/
+  src/
+    pages/            # Dashboard, CRM, Purchase(+Orders/Requests), Sales, Stock, BOM, WorkOrders,
+                       #   Cashier, KDS, QC, Accounting/, Tax/, MasterPanel, Settings, Users/, ...
+CLAUDE.md              # AI/MCP assistant behavior rules (Thai bill parsing, unit codes, etc.)
 ```
 
-## 🛠️ Installation
-
-### Prerequisites
-- Node.js 18+
-- npm หรือ yarn
-
-**ไม่ต้องติดตั้ง PostgreSQL!** ใช้ in-memory mock database
-
-### ⚡ Quick Start (2 คำสั่งเท่านั้น!)
+## Local Dev Quick Start
 
 ```bash
-# 1. Clone และ Install
-git clone <repository-url>
-cd CRM-BOM-Stock
-npm run install:all
-
-# 2. Run Everything
-npm run dev
+# from repo root
+npm run install:all      # installs backend/ and frontend/ deps
+npm run dev               # runs backend (nodemon) + frontend (vite) concurrently
 ```
 
-**เสร็จแล้ว!** 🎉
-
-- Frontend: http://localhost:3000
+- Frontend dev server: http://localhost:3000
 - Backend API: http://localhost:5000/api
 
-### การรันแยก (ถ้าต้องการ)
+You need `backend/.env` with at least `JWT_SECRET`, `AGENT_JWT_SECRET`, `KANBAN_SSO_SECRET`, `PORT`, `CORS_ORIGIN`, `APP_URL`. Optional integrations (only needed if you use them): `GOOGLE_SERVICE_ACCOUNT_JSON` + `GOOGLE_DRIVE_FOLDER_ID` (DB backup upload), `KANBAN_URL`/`KANBAN_INTERNAL_URL` (Kanban SSO), `PAPERCLIP_URL`/`PAPERCLIP_API_KEY`/`PAPERCLIP_AGENT_ID`/`PAPERCLIP_COMPANY_ID` (issue-tracker webhook agent), `MASTER_GATE_PATH`/`MASTER_GATE_PIN` (master panel gate). No `DATABASE_URL`/Postgres setup is required — the SQLite file is created automatically on first run.
+
+To build for production locally:
 
 ```bash
-# รัน Frontend เท่านั้น
-npm run dev:frontend
-
-# รัน Backend เท่านั้น
-npm run dev:backend
-
-# Build สำหรับ production
-npm run build
+npm run build:all   # tsc for backend, tsc+vite build for frontend
+npm start            # node backend/dist/index.js, serves frontend/dist as static files too
 ```
 
-## 🌐 Access Application
+## Production Deployment
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000/api
-- **API Health**: http://localhost:5000/api/health
-
-### Demo Login
-- **Email**: `admin@example.com`
-- **Password**: `admin123`
-
-## 📊 Database Schema
-
-### Main Tables
-- `users` - ผู้ใช้งานระบบ
-- `customers` - ข้อมูลลูกค้า
-- `orders` - คำสั่งซื้อ
-- `order_items` - รายการสินค้าในคำสั่งซื้อ
-- `products` - สินค้า
-- `boms` - สูตรการผลิต
-- `bom_items` - รายการวัตถุดิบในสูตร
-- `materials` - วัตถุดิบ
-- `stock_items` - สินค้าคงคลัง
-- `stock_movements` - การเคลื่อนไหวสต็อก
-
-## 🎯 API Endpoints
-
-### Authentication
-- `POST /api/auth/login` - Login
-- `POST /api/auth/register` - Register
-
-### Customers
-- `GET /api/customers` - Get all customers
-- `GET /api/customers/:id` - Get customer by ID
-- `POST /api/customers` - Create customer
-- `PUT /api/customers/:id` - Update customer
-- `DELETE /api/customers/:id` - Delete customer
-
-### Orders
-- `GET /api/orders` - Get all orders
-- `GET /api/orders/:id` - Get order by ID
-- `POST /api/orders` - Create order
-- `PUT /api/orders/:id` - Update order
-- `DELETE /api/orders/:id` - Delete order
-
-### BOM
-- `GET /api/bom` - Get all BOMs
-- `GET /api/bom/:id` - Get BOM by ID
-- `POST /api/bom` - Create BOM
-- `PUT /api/bom/:id` - Update BOM
-- `DELETE /api/bom/:id` - Delete BOM
-
-### Stock
-- `GET /api/stock` - Get all stock items
-- `GET /api/stock/:id` - Get stock item by ID
-- `POST /api/stock` - Create stock item
-- `POST /api/stock/movement` - Record stock movement
-- `PUT /api/stock/:id` - Update stock item
-- `DELETE /api/stock/:id` - Delete stock item
-
-### Dashboard
-- `GET /api/dashboard/stats` - Get dashboard statistics
-- `GET /api/dashboard/activities` - Get recent activities
-
-## 🏗️ Build for Production
-
-### Frontend
+The live system does **not** run via `npm run dev`. It runs as a `pm2` process named `crm-backend` inside a Proxmox LXC container, serving both the API and the built frontend (`express.static`) from the same Node process:
 
 ```bash
-cd frontend
-npm run build
-# Output: frontend/dist
+pm2 list                       # crm-backend
+pm2 logs crm-backend
+pm2 restart crm-backend        # only after a reviewed, built change — this is live prod
 ```
 
-### Backend
+The production SQLite database lives at `backend/dev.db` on that same checkout — treat it as a real production database (back it up before any destructive migration, never overwrite it from a dev/test run).
 
-```bash
-cd backend
-npm run build
-# Output: backend/dist
+## AI / MCP Assistant
 
-# Start production server
-npm start
-```
+`backend/src/mcp/server.ts` exposes an MCP server per tenant/user with tools grouped by domain (search, summary, purchase, sales, stock, production, bom, finance). The same tool layer backs the LINE bot (`line-bot.routes.ts`), so the assistant works identically whether it's driven through an MCP-compatible client or through a LINE chat. Behavioral rules for the assistant — how to read Thai handwritten market bills vs. tax invoices, unit-code normalization, draft-then-confirm flow — are documented in [`CLAUDE.md`](./CLAUDE.md).
 
-## 📝 Development Workflow
+## License
 
-1. **Feature Development**: สร้าง branch ใหม่จาก `main`
-2. **Testing**: ทดสอบ features ให้ครบถ้วน
-3. **Code Review**: ตรวจสอบโค้ดก่อน merge
-4. **Deployment**: Deploy ผ่าน CI/CD pipeline
-
-## 🐛 Known Issues
-
-- Backend API routes ยังเป็น mock data (ต้อง implement Prisma queries)
-- Authentication ยังไม่มี JWT implementation
-- ยังไม่มี unit tests
-
-## 🔮 Future Enhancements
-
-- [ ] Implement full authentication & authorization
-- [ ] Add data export (Excel, PDF)
-- [ ] Barcode/QR Code scanning
-- [ ] Mobile responsive optimization
-- [ ] Email notifications
-- [ ] Advanced reporting & analytics
-- [ ] Multi-language support
-- [ ] Real-time updates with WebSocket
-
-## 🤝 Contributing
-
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 👨‍💻 Author
-
-Developed for Bedding Factory Management
-
----
-
-**Note**: ระบบนี้ยังอยู่ในช่วงพัฒนา (Development Phase) API endpoints บางส่วนยังเป็น mock data และต้องการการ implement เพิ่มเติม
+MIT
