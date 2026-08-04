@@ -19,6 +19,7 @@ import api from '../services/api'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
+import HintBanner from '../components/common/HintBanner'
 
 
 interface Shop {
@@ -694,6 +695,13 @@ function Marketing() {
           </motion.button>
         </div>
       </motion.div>
+
+      {/* Hint: AI-driven import now available alongside manual upload */}
+      <HintBanner id="marketing-mcp-import" title="นำเข้าข้อมูลผ่าน AI ผู้ช่วยได้แล้ว">
+        คุยกับ AI ผู้ช่วยแล้ววางข้อมูล CSV จากรายงานโฆษณา (เช่น Shopee) ลงในแชทได้เลย บอกแพลตฟอร์ม
+        ชื่อร้านค้า และช่วงวันที่ของรายงาน ระบบจะนำเข้าข้อมูลให้อัตโนมัติโดยไม่ต้องมาอัปโหลดไฟล์ที่หน้านี้
+        — ปุ่ม &quot;อัพโหลดข้อมูล&quot; ด้านบนยังใช้งานได้ตามปกติสำหรับอัปโหลดไฟล์โดยตรง
+      </HintBanner>
 
       {/* Main Tab Switcher */}
       <div className="flex gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-1 w-fit">
