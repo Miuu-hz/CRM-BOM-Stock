@@ -26,7 +26,10 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
     {
       csv_content: z.string().min(1).describe('เนื้อหาไฟล์ CSV ทั้งหมด (ดิบ) รวมบรรทัด header'),
       platform: z.enum(['SHOPEE', 'TIKTOK', 'LAZADA', 'FACEBOOK']).describe('แพลตฟอร์มของข้อมูล'),
-      shop_hint: z.string().min(1).describe('ชื่อร้านค้า — ถ้าไม่พบร้านที่ชื่อใกล้เคียงจะสร้างร้านใหม่ให้อัตโนมัติ'),
+      // ponytail: min(2) instead of min(1) — a 1-char hint fuzzy-matches too broadly against
+      // marketingRepo.getAllShops(), which (like the rest of this module) isn't tenant-scoped.
+      // Real fix is scoping shops/marketing_files/marketing_metrics by tenant_id — out of scope here.
+      shop_hint: z.string().min(2).describe('ชื่อร้านค้า (อย่างน้อย 2 ตัวอักษร) — ถ้าไม่พบร้านที่ชื่อใกล้เคียงจะสร้างร้านใหม่ให้อัตโนมัติ'),
       start_date: z.string().describe('วันที่เริ่มต้นของรายงาน (YYYY-MM-DD)'),
       end_date: z.string().describe('วันที่สิ้นสุดของรายงาน (YYYY-MM-DD)'),
     },
