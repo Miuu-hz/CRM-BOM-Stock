@@ -46,6 +46,33 @@ function safeImageUrl(url: unknown): string {
   return ''
 }
 
+// POS receipt bank/QR block — only shown when the bill was paid by QR_CODE
+// and a default bank account with a QR image is configured, since cash/card
+// bills have no reason to display a payment QR.
+function posBankQrBlockA4(d: any): string {
+  if (d._paymentMethod !== 'QR_CODE' || !d._bankQrImage) return ''
+  return `
+    <div class="bank-block">
+      <div class="bank-box">
+        <img src="${d._bankQrImage}" alt="QR" />
+        <div class="bank-info">
+          <label>ชำระผ่าน QR</label>
+          <div class="bank-name">${d._bankName || ''}</div>
+          <div class="bank-acc">${d._bankAccountName || ''}${d._bankAccountName && d._bankAccountNumber ? ' · ' : ''}${d._bankAccountNumber || ''}</div>
+        </div>
+      </div>
+    </div>`
+}
+function posBankQrBlockThermal(d: any): string {
+  if (d._paymentMethod !== 'QR_CODE' || !d._bankQrImage) return ''
+  return `
+  <div class="qr-block">
+    <img src="${d._bankQrImage}" alt="QR" />
+    <div class="qr-acc">${d._bankName || ''}</div>
+    <div class="qr-label">${d._bankAccountName || ''}${d._bankAccountName && d._bankAccountNumber ? ' · ' : ''}${d._bankAccountNumber || ''}</div>
+  </div>`
+}
+
 // ── CSS base ──────────────────────────────────────────────────
 const CSS_A4 = `:root {
     --primary: #3949E5;
@@ -105,6 +132,12 @@ const CSS_A4 = `:root {
   .badge-pending { background: var(--warning-soft); color: var(--warning); }
   .sig-row { display: flex; gap: 8mm; margin-top: 12mm; }
   .sig-box { flex: 1; text-align: center; border-top: 1px solid var(--border-strong); padding-top: 2mm; font-size: 8.5pt; color: var(--fg-3); }
+  .bank-block { margin-top: 3mm; display: flex; justify-content: center; }
+  .bank-box { border: 1px dashed var(--border); border-radius: 6px; padding: 3mm; display: flex; gap: 3mm; align-items: center; }
+  .bank-box img { width: 20mm; height: 20mm; object-fit: contain; flex-shrink: 0; }
+  .bank-box .bank-info label { font-size: 7pt; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .bank-box .bank-name { font-size: 9.5pt; font-weight: 700; color: var(--fg-1); }
+  .bank-box .bank-acc { font-size: 8.5pt; color: var(--fg-3); margin-top: 0.5mm; }
   .footer { margin-top: 7mm; padding-top: 3mm; border-top: 1px dashed var(--border); font-size: 7.5pt; color: var(--fg-4); text-align: center; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } table th { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .totals-row.grand { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
@@ -149,6 +182,10 @@ const CSS_THERMAL = `:root {
   table td.right { text-align: right; }
   .total-line { font-size: 11pt; font-weight: 800; }
   .sig-area { margin-top: 6mm; border-top: 1px solid var(--fg-1); padding-top: 2mm; text-align: center; font-size: 7.5pt; }
+  .qr-block { text-align: center; margin: 2mm 0; }
+  .qr-block img { width: 26mm; height: 26mm; object-fit: contain; }
+  .qr-block .qr-label { font-size: 7pt; color: var(--fg-3); margin-top: 1mm; }
+  .qr-block .qr-acc { font-size: 7.5pt; color: var(--fg-1); font-weight: 600; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
 
@@ -654,6 +691,7 @@ function templatePOS_A4(d: any): string {
         <div class="totals-row"><span>วิธีชำระ</span><span>${METHOD_TH[d._paymentMethod] || d._paymentMethod || '-'}</span></div>`}
       </div>
     </div>
+    ${posBankQrBlockA4(d)}
     ${isVat ? `<div style="margin-top:4mm;padding:3mm 4mm;border:1px solid var(--border);border-radius:3px;font-size:8pt;color:var(--fg-3)">
       ผู้ซื้อสินค้า/บริการ: ${d.customer_name || '-'}<br>
       ที่อยู่: ____________________________________________________<br>
@@ -708,6 +746,7 @@ function templatePOS_Thermal(d: any): string {
   <div class="row"><label>รับเงิน</label><span>${fmt(d._cashReceived)}</span></div>
   <div class="row"><label>เงินทอน</label><span>${fmt(Math.max(0, d._cashReceived - d.total_amount))}</span></div>` : `
   <div class="row"><label>ชำระ</label><span>${METHOD_TH[d._paymentMethod] || d._paymentMethod || '-'}</span></div>`}
+  ${posBankQrBlockThermal(d)}
   ${d._shopFooter ? `<hr class="divider"><div class="center" style="font-size:8pt;line-height:1.6">${d._shopFooter}</div>` : ''}
   <div class="center" style="font-size:7pt;color:var(--fg-4);margin-top:2mm">${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
 }
@@ -745,6 +784,7 @@ export function printDocument(type: DocType, data: any, format: PrintFormat = 'a
 export function printPOSReceipt(bill: any, format: PrintFormat = 'thermal') {
   const safeBill: any = bill ? deepEscape(bill) : {}
   safeBill._companyLogo = safeImageUrl(bill?._companyLogo)
+  safeBill._bankQrImage = safeImageUrl(bill?._bankQrImage)
   const html = format === 'a4' ? templatePOS_A4(safeBill) : templatePOS_Thermal(safeBill)
   openPrint(format === 'a4' ? CSS_A4 : CSS_THERMAL, html, format)
 }

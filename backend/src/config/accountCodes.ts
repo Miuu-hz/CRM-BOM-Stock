@@ -94,4 +94,22 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
 }
 
+// ============================================================
+// Bank-account-aware GL resolver — shared by sales receipts, purchase
+// payments, and POS payments. Looks up the GL sub-account linked to a
+// specific bank_accounts row (set up in Settings) so a payment made via
+// that bank account posts to its own ledger line instead of the generic
+// CASH/BANK account. Returns null when no bank account was selected —
+// callers fall back to their existing CASH-vs-BANK logic in that case.
+// ============================================================
+import db from '../db/sqlite'
+
+export function resolveBankAccountGL(tenantId: string, bankAccountId?: string | null): string | null {
+  if (!bankAccountId) return null
+  const row = db.prepare(
+    'SELECT account_id FROM bank_accounts WHERE id = ? AND tenant_id = ? AND is_active = 1'
+  ).get(bankAccountId, tenantId) as { account_id: string } | undefined
+  return row?.account_id ?? null
+}
+
 export default ACC

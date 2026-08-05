@@ -320,7 +320,10 @@ router.put('/menu-configs/:id', (req, res) => {
     for (const key of allowed) {
       if (key in req.body) {
         fields.push(`${key} = ?`)
-        values.push(req.body[key] ?? null)
+        // Coerce empty string to null so an unselected category_id/bom_id does
+        // not violate the FK constraint; null is the intended "none".
+        const v = req.body[key]
+        values.push(v === '' ? null : (v ?? null))
       }
     }
     if (fields.length === 0) {

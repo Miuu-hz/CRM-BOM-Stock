@@ -3,7 +3,7 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { isValidImageFile, isAllowedImageExt, isAllowedImageMimetype, getSafeImageExtension, sanitizeFilename } from '../../utils/upload'
 import multer from 'multer'
 import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../../services/unitConversion.service'
-import { ACC, ACC_META } from '../../config/accountCodes'
+import { ACC, ACC_META, resolveBankAccountGL } from '../../config/accountCodes'
 import path from 'path'
 import fs from 'fs'
 
@@ -70,7 +70,7 @@ export function updateAccountBalance(tenantId: string, accountId: string, debit:
 export function createSalesJournal(
   tenantId: string, referenceType: string, referenceId: string,
   description: string, totalAmount: number, taxAmount: number,
-  paymentMethod?: string, sourceNumber?: string, soNumber?: string
+  paymentMethod?: string, sourceNumber?: string, soNumber?: string, bankAccountId?: string | null
 ) {
   try {
     const now = new Date().toISOString()
@@ -158,8 +158,9 @@ export function createSalesJournal(
       if (taxAmount > 0) updateAccountBalance(tenantId, vatId, 0, taxAmount)
 
     } else if (referenceType === 'RECEIPT') {
-      // DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า
-      const cashAccId = (paymentMethod === 'TRANSFER' || paymentMethod === 'CHEQUE') ? bankId : cashId
+      // DR เงินสด/ธนาคาร (บัญชีย่อยที่ผูกไว้ถ้าเลือกบัญชีธนาคาร) / CR ลูกหนี้การค้า
+      const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
+      const cashAccId = linkedAccountId || ((paymentMethod === 'TRANSFER' || paymentMethod === 'CHEQUE' || paymentMethod === 'QR_CODE') ? bankId : cashId)
       db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
         VALUES (?, ?, ?, ?, 'PAYMENT', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
         .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
@@ -216,6 +217,161 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
   })
 
   deduct()
+}
+
+export function restoreStockForSO(tenantId: string, soId: string, soNumber: string) {
+  const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
+
+  const restore = db.transaction(() => {
+    for (const item of items) {
+      const stockItemId = item.stock_item_id
+      if (!stockItemId) continue
+      let qty = Number(item.quantity || 0)
+      if (qty <= 0) continue
+
+      // Re-read stock inside the transaction so the restoration is atomic
+      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+      if (!stockItem) continue
+
+      const soUnit = item.unit || ''
+      const stockUnit = stockItem.unit || ''
+      if (soUnit && stockUnit && soUnit !== stockUnit) {
+        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
+        if (converted) {
+          qty = converted.converted
+        }
+      }
+
+      // Mirror deductStockForSO's Math.floor so the restored quantity exactly
+      // matches what was originally deducted for this line.
+      const restoreQty = Math.floor(qty)
+      if (restoreQty <= 0) continue
+
+      db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(restoreQty, new Date().toISOString(), stockItemId, tenantId)
+      db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, 'system')`).run(
+        generateId(), tenantId, stockItemId, restoreQty, `SO: ${soNumber}`, `ยกเลิก SO ${soNumber} - คืนสต็อก${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} \u2192 ${restoreQty} ${stockUnit})` : ''}`, new Date().toISOString())
+    }
+  })
+
+  restore()
+}
+
+// Reverses the sales journal originally posted by createSalesJournal() for an
+// INVOICE (Dr AR/COGS, Cr Revenue/VAT/Inventory) by inserting a mirror-image
+// journal entry with every line's debit/credit swapped, and applying the same
+// swap to account_balances so the net effect nets to zero.
+//
+// Idempotent: if no original 'INVOICE' journal exists (invoice was never
+// posted, e.g. cancelled while still DRAFT) this is a no-op. If a reversal
+// (reference_type = 'INVOICE_CANCEL') already exists for this invoice, this
+// is also a no-op — guards against double-reversal on repeated cancel calls.
+export function reverseSalesJournal(tenantId: string, invoiceId: string, invoiceNumber: string, soNumber?: string): boolean {
+  try {
+    const original = db.prepare(
+      "SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = 'INVOICE' AND reference_id = ?"
+    ).get(tenantId, invoiceId) as any
+    if (!original) return false // nothing was ever posted for this invoice — nothing to reverse
+
+    const alreadyReversed = db.prepare(
+      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'INVOICE_CANCEL' AND reference_id = ?"
+    ).get(tenantId, invoiceId)
+    if (alreadyReversed) return false // already reversed — guard against double reversal
+
+    const originalLines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ? AND tenant_id = ?').all(original.id, tenantId) as any[]
+    if (originalLines.length === 0) return false
+
+    const now = new Date().toISOString()
+    const dateStr = now.split('T')[0]
+    const yr = new Date().getFullYear()
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+    const entryId = generateId()
+
+    const tx = db.transaction(() => {
+      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+        VALUES (?, ?, ?, ?, 'INVOICE_CANCEL', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?, ?)`)
+        .run(entryId, tenantId, jvNumber, dateStr, invoiceId, original.source_number || invoiceNumber || null, original.so_number || soNumber || null,
+          `กลับรายการ (ยกเลิกใบแจ้งหนี้) - ${invoiceNumber}`, original.total_credit, original.total_debit, now, now, original.business_unit || 'WHOLESALE')
+
+      for (const line of originalLines) {
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(generateId(), tenantId, entryId, line.account_id, line.line_number, `กลับรายการ: ${line.description || ''}`, line.credit || 0, line.debit || 0)
+
+        // Swap debit/credit when re-applying to running balances so the
+        // original posting's effect is fully netted out.
+        updateAccountBalance(tenantId, line.account_id, line.credit || 0, line.debit || 0)
+      }
+    })
+    tx()
+    return true
+  } catch (err) {
+    console.error('\u26a0\ufe0f reverseSalesJournal error:', err)
+    return false
+  }
+}
+
+// Generic reversal for any sales-side journal (e.g. RECEIPT). Mirrors
+// reverseSalesJournal but parameterised on the reference_type so it can back
+// out receipt (customer payment) postings too. Idempotent; updates account_balances.
+export function reverseSalesJournalByRef(tenantId: string, originalRefType: string, cancelRefType: string, refId: string, description: string): boolean {
+  try {
+    const original = db.prepare(
+      "SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = ? AND reference_id = ?"
+    ).get(tenantId, originalRefType, refId) as any
+    if (!original) return false
+    const alreadyReversed = db.prepare(
+      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = ? AND reference_id = ?"
+    ).get(tenantId, cancelRefType, refId)
+    if (alreadyReversed) return false
+    const originalLines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ? AND tenant_id = ?').all(original.id, tenantId) as any[]
+    if (originalLines.length === 0) return false
+
+    const now = new Date().toISOString()
+    const dateStr = now.split('T')[0]
+    const yr = new Date().getFullYear()
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+    const entryId = generateId()
+
+    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?, ?)`)
+      .run(entryId, tenantId, jvNumber, dateStr, cancelRefType, refId, original.source_number || null, original.so_number || null,
+        description, original.total_credit, original.total_debit, now, now, original.business_unit || 'WHOLESALE')
+
+    for (const line of originalLines) {
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(generateId(), tenantId, entryId, line.account_id, line.line_number, `กลับรายการ: ${line.description || ''}`, line.credit || 0, line.debit || 0)
+      updateAccountBalance(tenantId, line.account_id, line.credit || 0, line.debit || 0)
+    }
+    return true
+  } catch (err) {
+    console.error('reverseSalesJournalByRef error:', err)
+    return false
+  }
+}
+
+// Voids a receipt (customer payment): reverses its RECEIPT journal, restores the
+// invoice paid/balance/status and the SO payment_status, then deletes the receipt.
+// Caller must wrap in a db.transaction.
+export function voidReceipt(tenantId: string, receipt: any): void {
+  reverseSalesJournalByRef(tenantId, 'PAYMENT', 'PAYMENT_CANCEL', receipt.id, `กลับรายการรับชำระ ${receipt.receipt_number}`)
+  const now = new Date().toISOString()
+  const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(receipt.invoice_id, tenantId) as any
+  if (invoice) {
+    const newPaid = Math.max(0, (invoice.paid_amount || 0) - receipt.amount)
+    const newBalance = invoice.total_amount - newPaid
+    const paymentStatus = newPaid <= 0 ? 'UNPAID' : 'PARTIAL'
+    const newStatus = invoice.status === 'CANCELLED' ? 'CANCELLED' : (newPaid <= 0 ? 'ISSUED' : 'PARTIAL')
+    db.prepare('UPDATE invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(newPaid, newBalance, paymentStatus, newStatus, now, invoice.id, tenantId)
+    if (invoice.sales_order_id) {
+      db.prepare("UPDATE sales_orders SET payment_status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(paymentStatus, now, invoice.sales_order_id, tenantId)
+    }
+  }
+  db.prepare('DELETE FROM receipts WHERE id = ? AND tenant_id = ?').run(receipt.id, tenantId)
 }
 
 export { isValidImageFile, sanitizeFilename }

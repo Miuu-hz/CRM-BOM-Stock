@@ -38,6 +38,18 @@ function resolveTenantName(tenantId: string): string {
   return tenantId
 }
 
+// Master accounts authenticate with a username (e.g. "BB-pillow"), not an email,
+// but Planka requires a valid address to create/link the SSO account. Derive a
+// stable synthetic address so the same master always maps to the same Planka
+// user. Real user emails pass through unchanged.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function kanbanEmail(rawEmail: string): string {
+  if (EMAIL_RE.test(rawEmail)) return rawEmail
+  const local =
+    rawEmail.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'master'
+  return `${local}@master.phopy.net`
+}
+
 // ── POST /api/kanban/sso — mint a one-time SSO token for Phopy Kanban ────────
 router.post('/sso', (req: Request, res: Response): void => {
   const { userId, email, tenantId, role } = req.user!
@@ -52,7 +64,7 @@ router.post('/sso', (req: Request, res: Response): void => {
     {
       erpUserId: userId,
       tenantId,
-      email,
+      email: kanbanEmail(email),
       name,
       erpRole: role,
       tenantName: resolveTenantName(tenantId),

@@ -94,6 +94,7 @@ export interface POSBill {
 export interface POSPayment {
   payment_method: string
   amount: number
+  bank_account_id?: string | null
 }
 
 export interface ChartOfAccountRow {

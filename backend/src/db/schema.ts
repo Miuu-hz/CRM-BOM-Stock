@@ -1276,6 +1276,22 @@ export function applySchema(db: any): void {
       UNIQUE(tenant_id, account_id, fiscal_year, period)
     );
 
+    -- บัญชีธนาคาร / QR รับเงิน (Bank Accounts) - ผูกกับผังบัญชี (บัญชีย่อยใต้ 1102)
+    CREATE TABLE IF NOT EXISTS bank_accounts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      bank_name TEXT NOT NULL,               -- ชื่อธนาคาร เช่น ไทยพาณิชย์
+      account_name TEXT NOT NULL,            -- ชื่อบัญชี
+      account_number TEXT NOT NULL,          -- เลขที่บัญชี
+      qr_code_base64 TEXT,                   -- รูป QR รับเงิน (base64)
+      account_id TEXT NOT NULL,              -- บัญชีย่อยในผังบัญชีที่สร้างอัตโนมัติ
+      is_default BOOLEAN DEFAULT 0,
+      is_active BOOLEAN DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+
     -- รายการเฉพาะทาง (Special Entries)
     -- ภาษีมูลค่าเพิ่ม (VAT)
     CREATE TABLE IF NOT EXISTS vat_entries (

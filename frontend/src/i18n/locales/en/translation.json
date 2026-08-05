@@ -90,6 +90,12 @@
     "approvals": "Approvals",
     "kanban": "Phopy Kanban",
     "kanbanDesc": "Task board",
+    "systemStatus": {
+      "title": "System Status",
+      "activeOrders": "Active Orders",
+      "lowStock": "Low Stock",
+      "pendingPO": "Pending PO"
+    },
     "kanbanSso": {
       "title": "Access Phopy Board",
       "confirm": "Sign in to Phopy Board as {{email}} for {{tenant}}?",
@@ -662,7 +668,15 @@
       "returnConfirmed": "Return confirmed — stock adjusted",
       "returnConfirmFailed": "Failed to confirm return",
       "stockItemAdded": "Added \"{{name}}\" to stock",
-      "requestItemsLoaded": "Loaded items from {{prNumber}} ({{count}} items)"
+      "requestItemsLoaded": "Loaded items from {{prNumber}} ({{count}} items)",
+      "returnDeleted": "Return deleted",
+      "returnDeleteFailed": "Failed to delete return",
+      "receiptCancelled": "Goods receipt cancelled",
+      "receiptCancelFailed": "Failed to cancel goods receipt",
+      "invoiceCancelled": "Purchase invoice cancelled",
+      "invoiceCancelFailed": "Failed to cancel purchase invoice",
+      "paymentVoided": "Payment reversed",
+      "paymentVoidFailed": "Failed to reverse payment"
     },
     "search": {
       "material": "Search code / material name...",
@@ -728,13 +742,18 @@
     "confirm": {
       "deleteRequest": "Delete this purchase request?",
       "deleteOrder": "Delete this purchase order?",
-      "deleteReceipt": "Delete this goods receipt draft?"
+      "deleteReceipt": "Delete this goods receipt draft?",
+      "deleteReturn": "Delete this draft return?",
+      "cancelReceipt": "Cancel this goods receipt? If it was confirmed, stock will be reversed.",
+      "cancelInvoice": "Cancel this purchase invoice? Linked payments will be reversed and the journal entry will be reversed.",
+      "voidPayment": "Reverse this payment? The linked invoice balance will be restored."
     },
     "actions": {
       "submit": "Submit",
       "reject": "Reject",
       "confirm": "Confirm",
       "cancel": "Cancel",
+      "void": "Void",
       "createRequest": "Create Purchase Request",
       "createOrder": "Create Purchase Order",
       "createReceipt": "Record Goods Receipt",
@@ -753,7 +772,9 @@
       "addItem": "Add item",
       "submitForApproval": "Submit for approval",
       "approve": "Approve",
-      "confirmReturn": "Confirm return"
+      "confirmReturn": "Confirm return",
+      "edit": "Edit",
+      "delete": "Delete"
     },
     "requests": {
       "headers": {
@@ -1147,7 +1168,13 @@
       "uploadFailed": "Upload failed",
       "deleteSuccess": "File deleted",
       "deleteFailed": "Failed to delete file",
-      "shiftOpened": "Shift opened: {{number}}"
+      "shiftOpened": "Shift opened: {{number}}",
+      "creditNoteDeleted": "Credit note deleted",
+      "creditNoteDeleteFailed": "Failed to delete credit note",
+      "invoiceCancelled": "Invoice cancelled",
+      "invoiceCancelFailed": "Failed to cancel invoice",
+      "receiptVoided": "Receipt reversed",
+      "receiptVoidFailed": "Failed to reverse receipt"
     },
     "error": {
       "loadQuotations": "Failed to load quotations",
@@ -1208,7 +1235,9 @@
       "issueCreditNote": "Issue credit note",
       "convertToOrder": "Convert to Sales Order",
       "convertToSO": "Convert to SO",
-      "createInvoice": "Create Invoice"
+      "createInvoice": "Create Invoice",
+      "cancelInvoice": "Cancel Invoice",
+      "voidReceipt": "Void"
     },
     "search": {
       "quotation": "Search quotations...",
@@ -1354,7 +1383,10 @@
     "confirm": {
       "deleteQuotation": "Delete this quotation?",
       "deleteTemplate": "Delete this template?",
-      "deleteImage": "Delete this image?"
+      "deleteImage": "Delete this image?",
+      "deleteCreditNote": "Delete this draft credit note?",
+      "cancelInvoice": "Cancel this invoice? Any customer receipts will be reversed and the journal entry will be reversed.",
+      "voidReceipt": "Reverse this receipt? The invoice balance will be restored."
     },
     "journal": {
       "title": "Journal Preview (auto-recorded)",
@@ -1829,6 +1861,8 @@
     "empty": {
       "title": "No purchase requests"
     },
+    "delete": "Delete",
+    "deleteConfirm": "Delete purchase request {{number}}?",
     "status": {
       "draft": "Draft",
       "pending": "Pending Approval",
@@ -1843,7 +1877,9 @@
       "approveSuccess": "PR approved",
       "rejectSuccess": "PR rejected",
       "approveFailed": "Approval failed",
-      "rejectFailed": "Rejection failed"
+      "rejectFailed": "Rejection failed",
+      "deleteSuccess": "Purchase request deleted",
+      "deleteFailed": "Failed to delete"
     },
     "detail": {
       "requester": "Requester",
@@ -2183,7 +2219,8 @@
         "permissions": "Permissions",
         "approval": "Approval",
         "docNumbering": "Document Numbering",
-        "currency": "Currency"
+        "currency": "Currency",
+        "bankAccounts": "Bank Accounts / Payment QR"
       },
       "groups": {
         "system": "System",
@@ -2853,7 +2890,8 @@
         "required": "Required",
         "notRequired": "Not required",
         "unlimited": "Unlimited",
-        "maxLimit": "Max {{amount}}"
+        "maxLimit": "Max {{amount}}",
+        "level2": "Level 2"
       },
       "empty": {
         "noConditions": "No conditions yet — click \"Add Condition\" to start",

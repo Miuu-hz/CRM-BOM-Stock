@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Building2, Users, Database, Star, ArrowRight, Home, RefreshCw, Zap, Plus, Trash2, X,
   CreditCard, Package, CalendarClock, Save, Search, Check, LayoutGrid, SlidersHorizontal,
+  Inbox, Phone, UserPlus,
   Copy, Eye, EyeOff, KeyRound, Wand2, Mail, CheckCircle2, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -183,7 +184,17 @@ async function copyText(text: string, okMsg: string) {
   }
 }
 
-type TopTab = 'tenants' | 'system'
+type TopTab = 'tenants' | 'system' | 'signups'
+
+interface SignupRequest {
+  id: string
+  business_name: string
+  admin_name: string
+  email: string
+  phone: string | null
+  status: string
+  created_at: string
+}
 type DetailTab = 'overview' | 'subscription' | 'quota'
 
 export default function MasterPanel() {
@@ -219,11 +230,60 @@ export default function MasterPanel() {
   const [mcpDraft, setMcpDraft] = useState('')
   const [savingMcp, setSavingMcp] = useState(false)
 
+  // ---- Signup requests (self-service, Master-approved) ----
+  const [signupReqs, setSignupReqs] = useState<SignupRequest[]>([])
+  const [signupLoading, setSignupLoading] = useState(true)
+  const [actingSignup, setActingSignup] = useState<string | null>(null)
+
   useEffect(() => {
     if (!isMaster) { navigate('/'); return }
     loadStats()
     loadSubscriptionData()
+    loadSignupRequests()
   }, [isMaster])
+
+  const loadSignupRequests = async () => {
+    setSignupLoading(true)
+    try {
+      const res = await api.get('/master/signup-requests?status=pending', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.data.success) setSignupReqs(res.data.data)
+    } catch { /* silent — tab just shows empty */ }
+    finally { setSignupLoading(false) }
+  }
+
+  const handleApproveSignup = async (r: SignupRequest) => {
+    setActingSignup(r.id)
+    try {
+      const res = await api.post(`/master/signup-requests/${r.id}/approve`, {}, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.data.success) {
+        toast.success(`อนุมัติ ${r.business_name} แล้ว — ${r.admin_name} เข้าใช้งานได้ทันที`)
+        loadSignupRequests()
+        loadStats()
+        loadSubscriptionData()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'อนุมัติไม่สำเร็จ')
+    } finally {
+      setActingSignup(null)
+    }
+  }
+
+  const handleRejectSignup = async (r: SignupRequest) => {
+    const reason = window.prompt(`ปฏิเสธคำขอของ "${r.business_name}"?\nระบุเหตุผล (ถ้ามี):`, '')
+    if (reason === null) return
+    setActingSignup(r.id)
+    try {
+      const res = await api.post(`/master/signup-requests/${r.id}/reject`, { reason }, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.data.success) {
+        toast.success(`ปฏิเสธคำขอของ ${r.business_name} แล้ว`)
+        loadSignupRequests()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ไม่สำเร็จ')
+    } finally {
+      setActingSignup(null)
+    }
+  }
 
   // เลือก tenant เริ่มต้น = tenant ปัจจุบัน (ถ้าไม่มีค่อยเอาตัวแรก)
   useEffect(() => {
@@ -522,8 +582,9 @@ export default function MasterPanel() {
       {/* Top tabs */}
       <div className="flex items-center gap-1 mb-5 border-b border-[var(--border)]">
         {([
-          { id: 'tenants' as const, label: 'Tenants', icon: LayoutGrid },
-          { id: 'system' as const, label: 'Plans & ตั้งค่าระบบ', icon: SlidersHorizontal },
+          { id: 'tenants' as const, label: 'Tenants', icon: LayoutGrid, badge: 0 },
+          { id: 'signups' as const, label: 'คำขอสมัคร', icon: Inbox, badge: signupReqs.length },
+          { id: 'system' as const, label: 'Plans & ตั้งค่าระบบ', icon: SlidersHorizontal, badge: 0 },
         ]).map(tab => (
           <button
             key={tab.id}
@@ -535,6 +596,11 @@ export default function MasterPanel() {
           >
             <tab.icon className="w-4 h-4" />
             {tab.label}
+            {tab.badge > 0 && (
+              <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--danger)] text-white text-[11px] font-semibold flex items-center justify-center">
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -860,6 +926,95 @@ export default function MasterPanel() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ==================== SIGNUP REQUESTS TAB ==================== */}
+      {topTab === 'signups' && (
+        <div>
+          <div className="mb-4 flex items-center gap-2">
+            <Inbox className="w-5 h-5 text-[var(--primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--fg-1)]">คำขอสมัครใช้งาน</h2>
+            <span className="text-sm text-[var(--fg-4)]">— รออนุมัติ {signupReqs.length} รายการ</span>
+            <button
+              onClick={loadSignupRequests}
+              disabled={signupLoading}
+              className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm"
+            >
+              <RefreshCw className={'w-4 h-4 ' + (signupLoading ? 'animate-spin' : '')} />
+              รีเฟรช
+            </button>
+          </div>
+
+          {signupLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[1, 2].map(i => <div key={i} className="h-40 bg-[var(--surface-2)] rounded-xl animate-pulse" />)}
+            </div>
+          ) : signupReqs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-[var(--surface-2)] flex items-center justify-center mb-3">
+                <Inbox className="w-6 h-6 text-[var(--fg-4)]" />
+              </div>
+              <p className="text-sm text-[var(--fg-3)]">ยังไม่มีคำขอสมัครที่รออนุมัติ</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">คำขอจากหน้าสมัครใช้งานจะมาแสดงที่นี่</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {signupReqs.map((r, i) => (
+                <motion.div
+                  key={r.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-5"
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-[var(--warning-soft)] flex items-center justify-center shrink-0">
+                      <Building2 className="w-5 h-5 text-[var(--warning)]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-[var(--fg-1)] truncate">{r.business_name}</p>
+                      <p className="text-xs text-[var(--fg-4)]">ส่งคำขอ {fmtDate(r.created_at)}</p>
+                    </div>
+                    <span className="text-xs bg-[var(--warning-soft)] text-[var(--warning)] px-2 py-0.5 rounded-full font-medium">รออนุมัติ</span>
+                  </div>
+
+                  <div className="space-y-1.5 text-sm mb-4">
+                    <div className="flex items-center gap-2 text-[var(--fg-2)]">
+                      <UserPlus className="w-4 h-4 text-[var(--fg-4)] shrink-0" /> <span className="truncate">{r.admin_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[var(--fg-2)]">
+                      <Mail className="w-4 h-4 text-[var(--fg-4)] shrink-0" /> <span className="truncate font-mono text-xs">{r.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[var(--fg-2)]">
+                      <Phone className="w-4 h-4 text-[var(--fg-4)] shrink-0" />
+                      {r.phone
+                        ? <a href={`tel:${r.phone}`} className="text-[var(--primary)] hover:underline">{r.phone}</a>
+                        : <span className="text-[var(--fg-4)]">ไม่ระบุ</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleApproveSignup(r)}
+                      disabled={actingSignup === r.id}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium disabled:opacity-60"
+                    >
+                      {actingSignup === r.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      อนุมัติ
+                    </button>
+                    <button
+                      onClick={() => handleRejectSignup(r)}
+                      disabled={actingSignup === r.id}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--danger)] hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all text-sm disabled:opacity-40"
+                    >
+                      <X className="w-4 h-4" /> ปฏิเสธ
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

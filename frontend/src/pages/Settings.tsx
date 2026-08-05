@@ -28,13 +28,16 @@ import {
   Info,
   Brain,
   Database,
+  Zap,
   UserCog,
   ShieldCheck,
   Hash,
   Coins,
+  Landmark,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import CurrencySettings from './settings/CurrencySettings'
+import BankAccountSettings from './settings/BankAccountSettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
@@ -44,6 +47,7 @@ import PermissionSettings from './settings/PermissionSettings'
 import AdminUserManagement from './settings/AdminUserManagement'
 import ApprovalSettings from './settings/ApprovalSettings'
 import DocumentNumberSettings from './settings/DocumentNumberSettings'
+import MCPSettings from './settings/MCPSettings'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 
@@ -61,7 +65,7 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency' | 'bank-accounts' | 'mcp'>('general')
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -129,6 +133,7 @@ export default function SettingsPage() {
               { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
               { id: 'loyalty' as const, icon: Star, label: t('settings.settingsPage.tabs.loyalty'), show: isAdmin || isMaster },
               { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster },
+              { id: 'bank-accounts' as const, icon: Landmark, label: t('settings.settingsPage.tabs.bankAccounts'), show: isAdmin || isMaster },
             ],
           },
           {
@@ -136,6 +141,7 @@ export default function SettingsPage() {
             tabs: [
               { id: 'llm' as const, icon: Brain, label: t('settings.settingsPage.tabs.llm'), show: isMaster },
               { id: 'backup' as const, icon: Database, label: t('settings.settingsPage.tabs.backup'), show: isMaster },
+              { id: 'mcp' as const, icon: Zap, label: 'MCP / AI Connect', show: true },
             ],
           },
         ]
@@ -203,6 +209,8 @@ export default function SettingsPage() {
 
         {activeTab === 'line' && (isAdmin || isMaster) && <LineSettings />}
 
+        {activeTab === 'bank-accounts' && (isAdmin || isMaster) && <BankAccountSettings />}
+
         {activeTab === 'billing' && (isAdmin || isMaster) && <BillingSettings />}
 
         {activeTab === 'loyalty' && (isAdmin || isMaster) && <LoyaltySettings />}
@@ -214,6 +222,7 @@ export default function SettingsPage() {
         {activeTab === 'llm' && isMaster && <LLMSettings />}
 
         {activeTab === 'backup' && isMaster && <BackupSettings />}
+        {activeTab === 'mcp' && <MCPSettings />}
 
         {activeTab === 'permissions' && (isAdmin || isMaster) && <PermissionSettings />}
 

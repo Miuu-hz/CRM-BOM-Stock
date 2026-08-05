@@ -454,4 +454,25 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
     }
 })
 
+// ─── DELETE /api/purchase-requests/:id — remove a DRAFT (unconfirmed) request
+router.delete('/:id', (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.user!
+        const db = getDb()
+        const pr = db.prepare('SELECT status FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+        if (!pr) return res.status(404).json({ success: false, message: 'ไม่พบใบขอซื้อ' })
+        if (pr.status !== 'DRAFT') {
+            return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบขอซื้อฉบับร่าง (DRAFT) ที่ยังไม่ยืนยันเท่านั้น' })
+        }
+        db.transaction(() => {
+            db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+            db.prepare('DELETE FROM purchase_requests WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+        })()
+        res.json({ success: true, message: 'ลบใบขอซื้อเรียบร้อย' })
+    } catch (e) {
+        console.error('Delete PR error:', e)
+        res.status(500).json({ success: false, message: 'ลบใบขอซื้อไม่สำเร็จ' })
+    }
+})
+
 export default router

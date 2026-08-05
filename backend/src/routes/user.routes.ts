@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
 import { getLimits } from '../services/subscription.service'
+import { syncKanbanPassword } from '../services/kanban-password-sync'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 
 const router = Router()
@@ -129,6 +130,11 @@ router.put('/:id', async (req, res) => {
 
   const setClauses = Object.keys(fields).map(k => `${k} = ?`).join(', ')
   db.prepare(`UPDATE users SET ${setClauses} WHERE id = ?`).run(...Object.values(fields), id)
+
+  // If the password was changed, sync it to the linked Phopy Board account.
+  if (password) {
+    await syncKanbanPassword(id, password)
+  }
 
   res.json({ success: true, message: 'อัปเดตสำเร็จ' })
 })

@@ -4,7 +4,7 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../services/unitConversion.service'
-import { ACC, ACC_META } from '../config/accountCodes'
+import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 
 const router = Router()
 
@@ -12,6 +12,37 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+// Resolve a PR/PO line item material_id to a valid materials.id, or null.
+// Callers (incl. the MCP) may send a real materials.id, a stock_items.id for
+// the same logical item (different id but matching code/sku), or a stale value.
+// Map it to the right material so the FK insert never fails; with no confident
+// match the item is stored as free-text (material_id null).
+function resolveMaterialId(tenantId: string, item: any): string | null {
+  const materialById = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?')
+  const materialByCode = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?')
+  const materialByName = db.prepare('SELECT id FROM materials WHERE name = ? AND tenant_id = ?')
+  const raw = item && item.materialId ? String(item.materialId) : null
+  if (raw) {
+    if (materialById.get(raw, tenantId)) return raw
+    const stock = db.prepare('SELECT material_id, sku, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(raw, tenantId) as any
+    if (stock) {
+      if (stock.material_id && materialById.get(stock.material_id, tenantId)) return stock.material_id
+      if (stock.sku) { const m = materialByCode.get(stock.sku, tenantId) as any; if (m) return m.id }
+      if (stock.name) { const m = materialByName.get(stock.name, tenantId) as any; if (m) return m.id }
+    }
+  }
+  const code = item && item.materialCode ? String(item.materialCode).trim() : ''
+  if (code) { const m = materialByCode.get(code, tenantId) as any; if (m) return m.id }
+  const desc = item && item.description ? String(item.description).trim() : ''
+  if (desc) {
+    let m = materialByCode.get(desc, tenantId) as any
+    if (m) return m.id
+    m = materialByName.get(desc, tenantId) as any
+    if (m) return m.id
+  }
+  return null
 }
 
 function generateNumber(prefix: string, tenantId: string, table: string) {
@@ -44,6 +75,144 @@ function getOrCreateAccount(tenantId: string, code: string, name: string, type: 
   db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, code, name, type, category, normalBalance, now, now)
   return id
+}
+
+// ============================================
+// CANCELLATION REVERSAL HELPERS (accounting + stock)
+// Used by the goods-receipt and purchase-invoice CANCELLED transitions below.
+// Reversals are recorded as brand-new rows (never mutate/delete the original
+// posting) so the ledger and stock_movements stay a full audit trail.
+// ============================================
+
+// True if a reversal has already been recorded against this reference — guards
+// against double-reversal if a cancel request is retried/replayed.
+function hasReversalJournal(tenantId: string, reversalReferenceType: string, referenceId: string): boolean {
+  const row = db.prepare(
+    'SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = ? AND reference_id = ?'
+  ).get(tenantId, reversalReferenceType, referenceId) as any
+  return !!row
+}
+
+// Mirror the journal entry posted for (originalReferenceType, referenceId) with every
+// line's debit/credit swapped, filed under reversalReferenceType so it's traceable and
+// double-reversal-safe. Returns the new journal entry id, or null if there was nothing
+// posted to reverse (e.g. GR confirm never posts a journal) or it was already reversed.
+function reverseJournalEntryForReference(
+  tenantId: string,
+  originalReferenceType: string,
+  reversalReferenceType: string,
+  referenceId: string,
+  description: string,
+  actorEmail: string,
+  date: string
+): string | null {
+  const original = db.prepare(
+    'SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = ? AND reference_id = ?'
+  ).get(tenantId, originalReferenceType, referenceId) as any
+  if (!original) return null
+
+  if (hasReversalJournal(tenantId, reversalReferenceType, referenceId)) return null
+
+  const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ?').all(original.id) as any[]
+  if (lines.length === 0) return null
+
+  const journalId = generateId()
+  const journalNumber = generateEntryNumber(tenantId, date)
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
+      description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+  `).run(journalId, tenantId, journalNumber, date, reversalReferenceType, referenceId,
+    description, original.total_credit, original.total_debit, original.is_posted ? 1 : 0, actorEmail, now, now)
+
+  const insertLine = db.prepare(`
+    INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  let lineNo = 1
+  for (const line of lines) {
+    insertLine.run(generateId(), tenantId, journalId, line.account_id, lineNo++,
+      `กลับรายการ: ${line.description || ''}`, line.credit, line.debit)
+  }
+
+  return journalId
+}
+
+// Reverse the stock effects of a previously-CONFIRMED goods receipt: mirrors the
+// stock-increase logic in PUT /goods-receipts/:id/confirm (unit conversion / sealed-qty
+// handling included) and subtracts back out. Also rolls back purchase_order_items
+// received_qty and recomputes the parent PO's status. Caller must ensure this only
+// runs once per GR (guarded by gr.status !== 'CANCELLED' before calling).
+function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now: string) {
+  const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(gr.id) as any[]
+
+  for (const item of items) {
+    if (!item.material_id || !(item.accepted_qty > 0)) continue
+
+    let poItem: any
+    try {
+      poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+    } catch (e) {
+      poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+    }
+    const poUnit = normalizeUnit(poItem?.unit || '')
+
+    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+    if (!stockItem) {
+      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+    }
+    if (!stockItem) continue // nothing we can trace the original stock increase to
+
+    let stockQty = item.accepted_qty
+    let addToSealed = false
+    const stockUnit = normalizeUnit(stockItem?.unit || '')
+    const displayUnit = normalizeUnit(stockItem?.display_unit || '')
+
+    if (poUnit && displayUnit && poUnit === displayUnit) {
+      addToSealed = true
+    } else if (poUnit && poUnit !== stockUnit) {
+      const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
+      if (converted) stockQty = converted.converted
+      // best-effort: if the conversion rate is gone since receipt, fall back to
+      // raw accepted_qty rather than blocking the cancellation
+    }
+
+    if (addToSealed) {
+      db.prepare('UPDATE stock_items SET sealed_qty = MAX(0, COALESCE(sealed_qty, 0) - ?), updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(Math.floor(item.accepted_qty), now, stockItem.id, tenantId)
+    } else {
+      db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(Math.floor(stockQty), now, stockItem.id, tenantId)
+    }
+
+    db.prepare(`
+      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+      VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
+    `).run(generateId(), tenantId, stockItem.id, Math.floor(stockQty), `GR-CANCEL: ${gr.gr_number}`,
+      `Reversed on cancellation of goods receipt ${gr.gr_number}`, now, userId)
+
+    db.prepare('UPDATE purchase_order_items SET received_qty = MAX(0, received_qty - ?) WHERE id = ? AND tenant_id = ?')
+      .run(item.accepted_qty, item.purchase_order_item_id, tenantId)
+  }
+
+  // Recompute the parent PO's status from what's left after the rollback — mirrors
+  // the confirm-side logic (RECEIVED if fully received, PARTIAL if partially, else
+  // back to APPROVED so it's receivable again).
+  const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(gr.purchase_order_id) as any[]
+  const anyReceived = poItems.some((i: any) => i.received_qty > 0)
+  const allReceived = poItems.length > 0 && poItems.every((i: any) => i.received_qty >= i.quantity)
+  if (allReceived) {
+    db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, gr.purchase_order_id, tenantId)
+  } else if (anyReceived) {
+    db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, gr.purchase_order_id, tenantId)
+  } else {
+    db.prepare("UPDATE purchase_orders SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(now, gr.purchase_order_id, tenantId)
+  }
 }
 
 // ============================================
@@ -146,7 +315,7 @@ router.post('/requests', async (req: Request, res: Response) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
-          insertItem.run(generateId(), tenantId, id, item.materialId || null, item.description,
+          insertItem.run(generateId(), tenantId, id, resolveMaterialId(tenantId, item), item.description,
             item.quantity, item.unit || '', item.estimatedUnitPrice || 0, item.estimatedTotalPrice || 0, item.notes || '')
         }
       }
@@ -203,7 +372,7 @@ router.put('/requests/:id', async (req: Request, res: Response) => {
           const price = item.estimatedUnitPrice || 0
           insertItem.run(
             generateId(), tenantId, req.params.id,
-            item.materialId || null, item.description || '',
+            resolveMaterialId(tenantId, item), item.description || '',
             qty, item.unit || '', price, item.estimatedTotalPrice || qty * price, item.notes || ''
           )
         }
@@ -651,6 +820,62 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
   }
 })
 
+// PUT cancel goods receipt (reverse stock if it had been CONFIRMED)
+router.put('/goods-receipts/:id/status', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { status } = req.body
+
+    if (status !== 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'This endpoint only supports cancelling a goods receipt' })
+    }
+
+    const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!gr) {
+      return res.status(404).json({ success: false, message: 'Goods receipt not found' })
+    }
+    if (gr.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'Goods receipt already cancelled' })
+    }
+
+    // Block if an active purchase invoice already references this GR — its AP
+    // journal would then refer to stock that no longer exists.
+    const linkedInvoice = db.prepare(`
+      SELECT id, pi_number FROM purchase_invoices
+      WHERE tenant_id = ? AND status != 'CANCELLED'
+        AND (goods_receipt_id = ? OR goods_receipt_ids LIKE ?)
+    `).get(tenantId, gr.id, `%${gr.id}%`) as any
+    if (linkedInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: `ไม่สามารถยกเลิกใบรับสินค้าได้ — มีใบแจ้งหนี้ ${linkedInvoice.pi_number} อ้างอิงอยู่ กรุณายกเลิกใบแจ้งหนี้ก่อน`,
+      })
+    }
+
+    const now = new Date().toISOString()
+    const wasConfirmed = gr.status === 'CONFIRMED'
+
+    const transaction = db.transaction(() => {
+      if (wasConfirmed) {
+        reverseGoodsReceiptStock(tenantId, gr, req.user!.userId, now)
+      }
+      db.prepare("UPDATE goods_receipts SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
+    })
+    transaction()
+
+    const updated = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({
+      success: true,
+      data: updated,
+      message: wasConfirmed ? 'Goods receipt cancelled and stock reversed' : 'Goods receipt cancelled',
+    })
+  } catch (error: any) {
+    console.error('Cancel goods receipt error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to cancel goods receipt' })
+  }
+})
+
 // ============================================
 // PURCHASE INVOICES
 // ============================================
@@ -836,6 +1061,102 @@ router.post('/invoices', async (req: Request, res: Response) => {
   }
 })
 
+// PUT cancel purchase invoice (reverse its AP journal + reported input VAT)
+function reverseSupplierPayment(tenantId: string, payment: any, actorEmail: string, date: string) {
+  reverseJournalEntryForReference(
+    tenantId, 'SUPPLIER_PAYMENT', 'SUPPLIER_PAYMENT_CANCEL', payment.id,
+    `กลับรายการจ่ายชำระ ${payment.payment_number}`, actorEmail, date
+  )
+  if (payment.purchase_invoice_id) {
+    const pi = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(payment.purchase_invoice_id, tenantId) as any
+    if (pi) {
+      const newPaid = Math.max(0, (pi.paid_amount || 0) - payment.amount)
+      const newBalance = pi.total_amount - newPaid
+      const paymentStatus = newPaid <= 0 ? 'UNPAID' : 'PARTIAL'
+      db.prepare('UPDATE purchase_invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(newPaid, newBalance, paymentStatus, new Date().toISOString(), pi.id, tenantId)
+    }
+  }
+  db.prepare('DELETE FROM supplier_payments WHERE id = ? AND tenant_id = ?').run(payment.id, tenantId)
+}
+
+// DELETE /payments/:id — reverse (void) a supplier payment: reverses its journal
+// and restores the linked purchase invoice's paid/balance/payment_status.
+router.delete('/payments/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
+    const today = new Date().toISOString().substring(0, 10)
+    db.transaction(() => { reverseSupplierPayment(tenantId, payment, req.user!.email, today) })()
+    res.json({ success: true, message: 'Supplier payment reversed' })
+  } catch (error: any) {
+    console.error('Reverse supplier payment error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to reverse payment' })
+  }
+})
+
+router.put('/invoices/:id/status', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { status } = req.body
+
+    if (status !== 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'This endpoint only supports cancelling a purchase invoice' })
+    }
+
+    const pi = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!pi) {
+      return res.status(404).json({ success: false, message: 'Purchase invoice not found' })
+    }
+    if (pi.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'Purchase invoice already cancelled' })
+    }
+    const now = new Date().toISOString()
+    const today = now.substring(0, 10)
+
+    const transaction = db.transaction(() => {
+      // Reverse any supplier payments applied to this PI first (end-to-end cancel)
+      const pays = db.prepare('SELECT * FROM supplier_payments WHERE purchase_invoice_id = ? AND tenant_id = ?').all(pi.id, tenantId) as any[]
+      for (const pay of pays) reverseSupplierPayment(tenantId, pay, req.user!.email, today)
+
+      const reversalJournalId = reverseJournalEntryForReference(
+        tenantId, 'PURCHASE_INVOICE', 'PURCHASE_INVOICE_CANCEL', pi.id,
+        `ยกเลิกใบแจ้งหนี้ซื้อ ${pi.pi_number}`, req.user!.email, today
+      )
+
+      // Best-effort reversal of the input VAT reported at invoice creation.
+      const vatEntry = db.prepare(
+        "SELECT * FROM vat_entries WHERE tenant_id = ? AND document_type = 'PURCHASE_INVOICE' AND document_id = ?"
+      ).get(tenantId, pi.id) as any
+      if (vatEntry) {
+        const alreadyReversed = db.prepare(
+          "SELECT id FROM vat_entries WHERE tenant_id = ? AND document_type = 'PURCHASE_INVOICE_CANCEL' AND document_id = ?"
+        ).get(tenantId, pi.id)
+        if (!alreadyReversed) {
+          db.prepare(`
+            INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date,
+              party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, journal_entry_id, created_at)
+            VALUES (?, ?, 'PURCHASE_INVOICE_CANCEL', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+          `).run(generateId(), tenantId, pi.id, pi.pi_number, today,
+            vatEntry.party_name, vatEntry.party_tax_id, -vatEntry.base_amount, vatEntry.vat_rate,
+            -vatEntry.vat_amount, -vatEntry.total_amount, reversalJournalId, now)
+        }
+      }
+
+      db.prepare("UPDATE purchase_invoices SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
+    })
+    transaction()
+
+    const updated = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: updated, message: 'Purchase invoice cancelled and journal reversed' })
+  } catch (error: any) {
+    console.error('Cancel purchase invoice error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to cancel purchase invoice' })
+  }
+})
+
 // ============================================
 // SUPPLIER PAYMENTS
 // ============================================
@@ -885,7 +1206,7 @@ router.get('/payments/:id', async (req: Request, res: Response) => {
 router.post('/payments', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes } = req.body
+    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes, bankAccountId } = req.body
     
     if (!supplierId || !amount) {
       return res.status(400).json({ success: false, message: 'Supplier and amount are required' })
@@ -911,7 +1232,18 @@ router.post('/payments', async (req: Request, res: Response) => {
 
     // Resolve accounts before transaction
     const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
-    const cashAccId    = getOrCreateAccount(tenantId, ACC.CASH, ACC_META[ACC.CASH]!.name, ACC_META[ACC.CASH]!.type, ACC_META[ACC.CASH]!.category, ACC_META[ACC.CASH]!.normalBalance)
+    // Dr/Cr the specific bank account's linked GL sub-account when one was selected;
+    // otherwise fall back to CASH for cash payments, BANK for everything else
+    // (was previously always CASH regardless of paymentMethod).
+    const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
+    const cashAccId = linkedAccountId || getOrCreateAccount(
+      tenantId,
+      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC.CASH : ACC.BANK,
+      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.name : ACC_META[ACC.BANK]!.name,
+      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.type : ACC_META[ACC.BANK]!.type,
+      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.category : ACC_META[ACC.BANK]!.category,
+      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.normalBalance : ACC_META[ACC.BANK]!.normalBalance
+    )
     const whtAccId     = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
     const journalId    = generateId()
     const journalNumber = generateEntryNumber(tenantId, paymentDate || now)
@@ -920,10 +1252,10 @@ router.post('/payments', async (req: Request, res: Response) => {
       // Create payment
       db.prepare(`
         INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id,
-          payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, bank_account_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, tenantId, paymentNumber, supplierId, purchaseInvoiceId || null, paymentDate || now,
-        paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', now, now)
+        paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, now, now)
 
       // Update invoice if provided
       if (invoice) {
@@ -1092,6 +1424,23 @@ router.post('/returns', async (req: Request, res: Response) => {
 })
 
 // PUT update return status (DRAFT→SUBMITTED, SUBMITTED→APPROVED)
+// DELETE purchase return (DRAFT only)
+router.delete('/returns/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!ret) return res.status(404).json({ success: false, message: 'Not found' })
+    if (ret.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบคืนสินค้าที่ยังเป็นร่างเท่านั้น' })
+    db.transaction(() => {
+      db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM purchase_returns WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    })()
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete purchase return' })
+  }
+})
+
 router.put('/returns/:id/status', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId

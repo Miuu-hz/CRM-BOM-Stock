@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { createSalesJournal } from './shared'
+import { createSalesJournal, reverseSalesJournal, voidReceipt } from './shared'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -203,9 +203,24 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
-    const existing = db.prepare('SELECT id FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
+    }
+
+    // ── Cancellation: reverse the posted sales journal (swap Dr/Cr of every line) ──
+    // so AR/revenue/COGS/inventory are backed out. reverseSalesJournal() is a no-op
+    // if this invoice never had a journal posted, or if it was already reversed
+    // (guards against double-reversal from repeated CANCELLED calls).
+    if (status === 'CANCELLED' && existing.status !== 'CANCELLED') {
+      const so = existing.sales_order_id
+        ? (db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?').get(existing.sales_order_id, tenantId) as any)
+        : null
+      const receiptRows = db.prepare('SELECT * FROM receipts WHERE invoice_id = ? AND tenant_id = ?').all(req.params.id, tenantId) as any[]
+      db.transaction(() => {
+        for (const rc of receiptRows) voidReceipt(tenantId, rc)  // reverse customer payments first (end-to-end cancel)
+        reverseSalesJournal(tenantId, req.params.id, existing.invoice_number, so?.so_number)
+      })()
     }
 
     const now = new Date().toISOString()

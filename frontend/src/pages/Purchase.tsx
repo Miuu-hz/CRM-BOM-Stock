@@ -5,6 +5,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
+  Ban,
   Banknote,
   Check,
   CheckCircle2,
@@ -859,6 +860,9 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 const Purchase = () => {
   const { t } = useTranslation()
   const { user } = useAuth()
+  // Cancel/void of posted documents (GR, PI, supplier payment) reverses journal + stock —
+  // gate behind ADMIN/MANAGER/MASTER same as other irreversible accounting actions.
+  const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
   const { units: availableUnits } = useUnits()
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
@@ -1419,6 +1423,20 @@ const Purchase = () => {
     } catch { toast.error(t('purchase.toast.receiptDeleteFailed')) }
   }
 
+  // Cancel a CONFIRMED goods receipt — backend reverses stock automatically and
+  // blocks the call if an active purchase invoice already references this GR.
+  const handleCancelReceipt = async (id: string) => {
+    if (!confirm(t('purchase.confirm.cancelReceipt'))) return
+    try {
+      const { data } = await api.put(`/purchase/goods-receipts/${id}/status`, { status: 'CANCELLED' })
+      if (data.success) {
+        toast.success(data.message || t('purchase.toast.receiptCancelled'))
+        fetchReceipts()
+        fetchOrders()
+      } else { toast.error(data.message || t('purchase.toast.receiptCancelFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.receiptCancelFailed')) }
+  }
+
   const handleCreateInvoice = async () => {
     setFormLoading(true)
     try {
@@ -1439,6 +1457,20 @@ const Purchase = () => {
       } else { toast.error(data.message || t('purchase.toast.invoiceCreateFailed')) }
     } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
+  }
+
+  // Cancel a purchase invoice — backend reverses linked supplier payments first,
+  // then reverses the AP/inventory journal and input VAT entry.
+  const handleCancelInvoice = async (id: string) => {
+    if (!confirm(t('purchase.confirm.cancelInvoice'))) return
+    try {
+      const { data } = await api.put(`/purchase/invoices/${id}/status`, { status: 'CANCELLED' })
+      if (data.success) {
+        toast.success(data.message || t('purchase.toast.invoiceCancelled'))
+        fetchInvoices()
+        fetchPayments()
+      } else { toast.error(data.message || t('purchase.toast.invoiceCancelFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.invoiceCancelFailed')) }
   }
 
   const handleCreatePayment = async () => {
@@ -1462,6 +1494,20 @@ const Purchase = () => {
       } else { toast.error(data.message || t('purchase.toast.paymentRecordFailed')) }
     } catch (error) { toast.error(t('purchase.error.generic')) }
     finally { setFormLoading(false) }
+  }
+
+  // Void a supplier payment — backend reverses its journal and restores the
+  // linked purchase invoice's paid/balance/payment_status. Hard-deletes the payment row.
+  const handleVoidPayment = async (id: string) => {
+    if (!confirm(t('purchase.confirm.voidPayment'))) return
+    try {
+      const { data } = await api.delete(`/purchase/payments/${id}`)
+      if (data.success) {
+        toast.success(data.message || t('purchase.toast.paymentVoided'))
+        fetchPayments()
+        fetchInvoices()
+      } else { toast.error(data.message || t('purchase.toast.paymentVoidFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.paymentVoidFailed')) }
   }
 
   const handleCreateReturn = async () => {
@@ -1493,6 +1539,15 @@ const Purchase = () => {
         fetchReturns()
       } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
     } catch { toast.error(t('purchase.error.generic')) }
+  }
+
+  const handleDeleteReturn = async (id: string) => {
+    if (!confirm(t('purchase.confirm.deleteReturn'))) return
+    try {
+      await api.delete(`/purchase/returns/${id}`)
+      toast.success(t('purchase.toast.returnDeleted'))
+      fetchReturns()
+    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.returnDeleteFailed')) }
   }
 
   const handleConfirmReturn = async (id: string) => {
@@ -2063,12 +2118,16 @@ const Purchase = () => {
                 <div className="col-span-1"><StatusBadge status={req.status} /></div>
                 <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(req.total_amount)}</p>
                 <div className="col-span-1 flex justify-end gap-1">
-                  {req.status === 'DRAFT' && (
+                  {req.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
                       className="p-1 text-warning bg-[var(--warning-soft)] rounded" title={t('purchase.actions.edit')}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                  )}
+                    <button onClick={() => handleDeleteRequest(req.id)}
+                      className="p-1 text-danger bg-[var(--danger-soft)] rounded" title={t('purchase.actions.delete')}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>)}
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
@@ -2405,6 +2464,12 @@ const Purchase = () => {
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </>)}
+                  {receipt.status === 'CONFIRMED' && canCancelDoc && (
+                    <button onClick={() => handleCancelReceipt(receipt.id)} title={t('purchase.actions.cancel')}
+                      className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2448,6 +2513,12 @@ const Purchase = () => {
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </>)}
+                  {receipt.status === 'CONFIRMED' && canCancelDoc && (
+                    <button onClick={() => handleCancelReceipt(receipt.id)}
+                      className="flex-1 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] font-medium transition-colors flex items-center justify-center gap-1">
+                      <Ban className="w-3 h-3" /> {t('purchase.actions.cancel')}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2491,15 +2562,21 @@ const Purchase = () => {
                 <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{invoice.po_number}</p>
                 <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-danger' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
-                <div className="col-span-1"><StatusBadge status={invoice.payment_status} /></div>
+                <div className="col-span-1"><StatusBadge status={invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} /></div>
                 <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-danger' : 'text-[var(--fg-4)]'}`}>
                   {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
                 </p>
                 <div className="col-span-1 flex justify-end gap-1">
-                  {invoice.payment_status !== 'PAID' && (
+                  {invoice.payment_status !== 'PAID' && invoice.status !== 'CANCELLED' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
                       className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title={t('purchase.actions.pay')}>
                       <DollarSign className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {invoice.status !== 'CANCELLED' && canCancelDoc && (
+                    <button onClick={() => handleCancelInvoice(invoice.id)} title={t('purchase.actions.cancel')}
+                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
+                      <Ban className="w-3.5 h-3.5" />
                     </button>
                   )}
                   <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
@@ -2517,7 +2594,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{invoice.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {invoice.po_number}</p>
                   </div>
-                  <StatusBadge status={invoice.payment_status} />
+                  <StatusBadge status={invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} />
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>{t('purchase.invoices.card.issuedOn', { date: formatDate(invoice.invoice_date) })}</span>
@@ -2538,10 +2615,16 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  {invoice.payment_status !== 'PAID' && (
+                  {invoice.payment_status !== 'PAID' && invoice.status !== 'CANCELLED' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
                       className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
                       <DollarSign className="w-3 h-3" /> {t('purchase.actions.pay')}
+                    </button>
+                  )}
+                  {invoice.status !== 'CANCELLED' && canCancelDoc && (
+                    <button onClick={() => handleCancelInvoice(invoice.id)}
+                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors flex items-center justify-center gap-1" title={t('purchase.actions.cancel')}>
+                      <Ban className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
@@ -2578,9 +2661,10 @@ const Purchase = () => {
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.payments.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.payments.headers.method')}</span><span className="col-span-2">{t('purchase.payments.headers.date')}</span>
+              <span className="col-span-2">{t('purchase.payments.headers.method')}</span><span className="col-span-1">{t('purchase.payments.headers.date')}</span>
               <span className="col-span-2">{t('purchase.payments.headers.journal')}</span>
               <span className="col-span-1 text-right">{t('purchase.payments.headers.amount')}</span>
+              <span className="col-span-1"></span>
             </div>
             {paginated.map((payment, i) => (
               <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
@@ -2588,9 +2672,17 @@ const Purchase = () => {
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{payment.payment_number}</p>
                 <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{payment.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
+                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
                 <p className="col-span-2 text-[var(--primary)]/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
                 <p className="col-span-1 text-right text-success font-bold text-xs">{formatCurrency(payment.amount)}</p>
+                <div className="col-span-1 flex justify-end" onClick={e => e.stopPropagation()}>
+                  {canCancelDoc && (
+                    <button onClick={() => handleVoidPayment(payment.id)} title={t('purchase.actions.void')}
+                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -2622,6 +2714,12 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
+                  {canCancelDoc && (
+                    <button onClick={() => handleVoidPayment(payment.id)} title={t('purchase.actions.void')}
+                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2660,17 +2758,25 @@ const Purchase = () => {
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.returns.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.returns.headers.poReference')}</span><span className="col-span-3">{t('purchase.returns.headers.reason')}</span>
-              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span>
+              <span className="col-span-2">{t('purchase.returns.headers.poReference')}</span><span className="col-span-2">{t('purchase.returns.headers.reason')}</span>
+              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((ret, i) => (
               <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{ret.pr_number}</p>
                 <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{ret.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{ret.po_number}</p>
-                <p className="col-span-3 text-warning/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
+                <p className="col-span-2 text-warning/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
                 <div className="col-span-1"><StatusBadge status={ret.status} /></div>
                 <p className="col-span-1 text-right text-danger font-bold text-xs">{formatCurrency(ret.total_amount)}</p>
+                <div className="col-span-1 flex justify-end gap-1">
+                  {ret.status === 'DRAFT' && (
+                    <button onClick={() => handleDeleteReturn(ret.id)} title={t('purchase.actions.delete')}
+                      className="p-1 text-danger bg-[var(--danger-soft)] rounded">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -2697,12 +2803,16 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
-                  {ret.status === 'DRAFT' && (
+                  {ret.status === 'DRAFT' && (<>
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'SUBMITTED')}
                       className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
                       {t('purchase.actions.submitForApproval')}
                     </button>
-                  )}
+                    <button onClick={() => handleDeleteReturn(ret.id)}
+                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </>)}
                   {ret.status === 'SUBMITTED' && (
                     <button onClick={() => handleUpdateReturnStatus(ret.id, 'APPROVED')}
                       className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">

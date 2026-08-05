@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { getOrCreateAccount } from './accounting.service'
+import { resolveBankAccountGL } from '../config/accountCodes'
 import type { POSBill, POSPayment } from '../types'
 
 const now = () => new Date().toISOString()
@@ -178,11 +179,14 @@ class POSAccountingService {
       )
 
       // Insert journal lines
-      // Line 1: Debit Cash/Bank
+      // Line 1: Debit Cash/Bank — the specific bank account's linked GL sub-account
+      // when the cashier selected one (e.g. QR_CODE payment), else the generic
+      // CASH/BANK account by payment method.
       const line1Id = generateId()
+      const linkedAccountId = resolveBankAccountGL(tenantId, payment.bank_account_id)
       const cashAccountCode = payment.payment_method === 'CASH' ? '1101' : '1102'
       const cashAccountName = payment.payment_method === 'CASH' ? 'เงินสด' : 'เงินฝากธนาคาร'
-      const cashAccountId = getOrCreateAccount(tenantId, cashAccountCode, cashAccountName, 'ASSET', 'CURRENT_ASSET')
+      const cashAccountId = linkedAccountId || getOrCreateAccount(tenantId, cashAccountCode, cashAccountName, 'ASSET', 'CURRENT_ASSET')
 
       const lineStmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)

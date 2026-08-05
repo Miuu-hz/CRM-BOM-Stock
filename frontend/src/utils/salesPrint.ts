@@ -51,6 +51,25 @@ function safeImageUrl(url: unknown): string {
   return ''
 }
 
+// Bank/QR payment block — rendered near the totals box when a default bank
+// account with a QR image is configured (Settings → บัญชีธนาคาร / QR รับเงิน).
+// Renders nothing if no QR image was set, so documents look unchanged
+// until a bank account is configured.
+function bankQrBlock(d: any): string {
+  if (!d._bankQrImage) return ''
+  return `
+    <div class="bank-block">
+      <div class="bank-box">
+        <img src="${d._bankQrImage}" alt="QR" />
+        <div class="bank-info">
+          <label>ชำระเงินผ่าน QR / โอนเข้าบัญชี</label>
+          <div class="bank-name">${d._bankName || ''}</div>
+          <div class="bank-acc">${d._bankAccountName || ''}${d._bankAccountName && d._bankAccountNumber ? ' · ' : ''}${d._bankAccountNumber || ''}</div>
+        </div>
+      </div>
+    </div>`
+}
+
 // ── CSS A4 ────────────────────────────────────────────────────
 const CSS_A4 = `:root {
     --primary: #3949E5;
@@ -106,6 +125,12 @@ const CSS_A4 = `:root {
   .journal-box { margin-top: 4mm; padding: 3mm 4mm; border: 1px solid var(--primary-soft); border-left: 3px solid var(--primary); border-radius: 5px; font-size: 8.5pt; color: var(--fg-2); line-height: 1.7; background: var(--primary-soft); }
   .sig-row { display: flex; gap: 8mm; margin-top: 12mm; }
   .sig-box { flex: 1; text-align: center; border-top: 1px solid var(--border-strong); padding-top: 2mm; font-size: 8.5pt; color: var(--fg-3); }
+  .bank-block { margin-top: 3mm; display: flex; justify-content: flex-end; }
+  .bank-box { width: 72mm; border: 1px dashed var(--border); border-radius: 6px; padding: 3mm; display: flex; gap: 3mm; align-items: center; }
+  .bank-box img { width: 20mm; height: 20mm; object-fit: contain; flex-shrink: 0; }
+  .bank-box .bank-info label { font-size: 7pt; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1mm; font-weight: 600; }
+  .bank-box .bank-name { font-size: 9.5pt; font-weight: 700; color: var(--fg-1); }
+  .bank-box .bank-acc { font-size: 8.5pt; color: var(--fg-3); margin-top: 0.5mm; }
   .footer { margin-top: 7mm; padding-top: 3mm; border-top: 1px dashed var(--border); font-size: 7.5pt; color: var(--fg-4); text-align: center; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } table th { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .totals-row.grand { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `
@@ -230,6 +255,7 @@ function templateQT_A4(d: any): string {
         <div class="totals-row grand"><span>รวมทั้งสิ้น</span><span>${fmt(d.total_amount)}</span></div>
       </div>
     </div>
+    ${bankQrBlock(d)}
     ${d.notes ? `<div class="notes-box"><label>เงื่อนไข / หมายเหตุ</label>${d.notes}</div>` : ''}
     <div class="sig-row">
       <div class="sig-box">ฝ่ายขาย<br><br>&nbsp;</div>
@@ -346,6 +372,7 @@ function templateSO_A4(d: any): string {
         <div class="totals-row grand"><span>รวมทั้งสิ้น</span><span>${fmt(d.total_amount)}</span></div>
       </div>
     </div>
+    ${bankQrBlock(d)}
     ${d.notes ? `<div class="notes-box"><label>เงื่อนไข / หมายเหตุ</label>${d.notes}</div>` : ''}
     <div class="sig-row">
       <div class="sig-box">ฝ่ายขาย<br><br>&nbsp;</div>
@@ -427,6 +454,7 @@ function templateINV_A4(d: any): string {
         ${(d.balance_amount || 0) > 0 ? `<div class="totals-row balance"><span>ยอดคงค้าง</span><span>${fmt(d.balance_amount)}</span></div>` : ''}
       </div>
     </div>
+    ${bankQrBlock(d)}
     <div class="journal-box">
       <strong>รายการบัญชีอัตโนมัติ (JV)</strong><br>
       Dr. 1180 ลูกหนี้การค้า &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.total_amount)} บาท<br>
@@ -642,6 +670,7 @@ export function printSalesDoc(type: SalesDocType, data: any, format: SalesPrintF
   const css = format === 'thermal' ? CSS_THERMAL : CSS_A4
   const safeData: any = data ? deepEscape(data) : {}
   safeData._companyLogo = safeImageUrl(data?._companyLogo)
+  safeData._bankQrImage = safeImageUrl(data?._bankQrImage)
 
   switch (type) {
     case 'qt':

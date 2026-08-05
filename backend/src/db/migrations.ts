@@ -1286,4 +1286,42 @@ export function runMigrations(db: any): void {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_signup_requests_email ON signup_requests(email)`)
     console.log('✅ Migration: signup_requests table ready')
   } catch (e) { console.error('⚠️ signup_requests migration error:', e) }
+
+  // bank_accounts — QR รับเงิน + ผูกบัญชี GL (บัญชีย่อยใต้ 1102)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bank_accounts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        bank_name TEXT NOT NULL,
+        account_name TEXT NOT NULL,
+        account_number TEXT NOT NULL,
+        qr_code_base64 TEXT,
+        account_id TEXT NOT NULL,
+        is_default BOOLEAN DEFAULT 0,
+        is_active BOOLEAN DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (account_id) REFERENCES accounts(id)
+      )
+    `)
+    console.log('✅ Migration: bank_accounts table ready')
+  } catch (e) { console.error('⚠️ bank_accounts migration error:', e) }
+
+  // Link receipts / supplier_payments / pos_payments to the bank account used, so
+  // journal posting can resolve the correct linked GL sub-account per payment.
+  try {
+    db.exec(`ALTER TABLE receipts ADD COLUMN bank_account_id TEXT`)
+    console.log('✅ Migration: receipts.bank_account_id added')
+  } catch { /* column already exists */ }
+
+  try {
+    db.exec(`ALTER TABLE supplier_payments ADD COLUMN bank_account_id TEXT`)
+    console.log('✅ Migration: supplier_payments.bank_account_id added')
+  } catch { /* column already exists */ }
+
+  try {
+    db.exec(`ALTER TABLE pos_payments ADD COLUMN bank_account_id TEXT`)
+    console.log('✅ Migration: pos_payments.bank_account_id added')
+  } catch { /* column already exists */ }
 }

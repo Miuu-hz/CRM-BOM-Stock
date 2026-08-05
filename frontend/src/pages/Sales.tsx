@@ -9,6 +9,7 @@ import salesService, { type Customer, type Product } from '../services/sales.ser
 import { stockService } from '../services/stock'
 import { printSalesDoc } from '../utils/salesPrint'
 import { getCachedCompanySettings } from '../services/companySettings.service'
+import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { normalizeUnit } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
@@ -302,6 +303,10 @@ const Sales = () => {
   const [detailBO, setDetailBO]             = useState<Backorder | null>(null)
   const [convertQT, setConvertQT]           = useState<Quotation | null>(null)  // QT → SO
 
+  // Prime the bank-account cache (used by print templates for the QR/payment block)
+  // — mirrors how Stock.tsx primes getCachedCompanySettings() on mount.
+  useEffect(() => { bankAccountsService.list().catch(() => {}) }, [])
+
   useEffect(() => {
     setCurrentPage(1)
     if (activeTab === 'overview') {
@@ -529,6 +534,14 @@ const Sales = () => {
       toast.success(t('sales.toast.templateDeleted'))
       fetchTemplates()
     } catch { toast.error(t('sales.toast.templateDeleteFailed')) }
+  }
+  const handleDeleteCreditNote = async (id: string) => {
+    if (!confirm(t('sales.confirm.deleteCreditNote'))) return
+    try {
+      await api.delete(`/sales/credit-notes/${id}`)
+      toast.success(t('sales.toast.creditNoteDeleted'))
+      fetchCreditNotes()
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.creditNoteDeleteFailed')) }
   }
   const handleUpdateDOStatus = async (id: string, status: string) => {
     try {
@@ -893,6 +906,12 @@ const Sales = () => {
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
+                    {q.status === 'DRAFT' && (
+                      <button onClick={() => handleDeleteQuotation(q.id)}
+                        className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg" title={t('sales.common.delete')}>
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                     {next && (
                       <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
@@ -1209,7 +1228,7 @@ const Sales = () => {
               <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(inv => {
                   const isOverdue = inv.payment_status === 'OVERDUE'
-                  const isUnpaid = inv.payment_status === 'UNPAID' || isOverdue
+                  const isUnpaid = (inv.payment_status === 'UNPAID' || isOverdue) && inv.status !== 'CANCELLED'
                   return (
                     <tr key={inv.id} className={`hover:bg-[var(--surface-2)] transition-colors ${isOverdue ? 'bg-red-500/5' : ''}`}>
                       <td className="px-4 py-3">
@@ -1292,7 +1311,7 @@ const Sales = () => {
                       <p className="text-[var(--fg-1)] font-medium mt-0.5">{inv.customer_name}</p>
                       <p className="text-xs text-[var(--fg-4)]">{inv.customer_code}</p>
                     </div>
-                    <StatusBadge status={inv.payment_status} />
+                    <StatusBadge status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
@@ -1374,8 +1393,16 @@ const Sales = () => {
                     <td className="px-4 py-3 text-center"><StatusBadge status={cn.status} /></td>
                     <td className="px-4 py-3 text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
-                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
+                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
+                        {cn.status === 'DRAFT' && (
+                          <button onClick={() => handleDeleteCreditNote(cn.id)} title={t('sales.common.delete')}
+                            className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1405,11 +1432,17 @@ const Sales = () => {
                   <span className="text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</span>
                   <span className="col-span-2 text-[var(--fg-3)]">{t('sales.common.reason')} {cn.reason}</span>
                 </div>
-                <div className="pt-3 border-t border-[var(--border)]/50">
+                <div className="pt-3 border-t border-[var(--border)]/50 flex gap-2">
                   <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
-                    className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
+                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     {t('sales.viewDetails')}
                   </button>
+                  {cn.status === 'DRAFT' && (
+                    <button onClick={() => handleDeleteCreditNote(cn.id)} title={t('sales.common.delete')}
+                      className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg transition-colors">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </motion.div>
             ))}
@@ -1613,6 +1646,12 @@ const Sales = () => {
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
+                    {do_.status === 'DRAFT' && (
+                      <button onClick={() => handleDeleteDO(do_.id)}
+                        className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg" title={t('sales.common.delete')}>
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )
@@ -1662,6 +1701,10 @@ const Sales = () => {
               <button onClick={() => toast(t('sales.info.useTemplate') + template.name)}
                 className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm transition-colors">
                 {t('sales.templates.use')}
+              </button>
+              <button onClick={() => handleDeleteTemplate(template.id)} title={t('sales.common.delete')}
+                className="px-3 py-2 bg-[var(--danger-soft)] text-danger rounded-lg hover:bg-[var(--danger-soft)] text-sm transition-colors">
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </motion.div>
@@ -2744,7 +2787,8 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
   const handlePrint = (format: 'a4' | 'thermal') => {
     if (!detail) return
     const co = getCachedCompanySettings()
-    printSalesDoc('qt', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, format)
+    const bank = getCachedDefaultBankAccount()
+    printSalesDoc('qt', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
   }
 
   const updateStatus = async (status: string) => {
@@ -3057,7 +3101,8 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const handlePrint = () => {
     if (!detail) return
     const co = getCachedCompanySettings()
-    printSalesDoc('so', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
+    const bank = getCachedDefaultBankAccount()
+    printSalesDoc('so', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, 'a4')
   }
 
   const updateStatus = async (status: string) => {
@@ -3214,6 +3259,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   invoice: Invoice; onClose: () => void; onRefresh: () => void; companyName?: string
 }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  // Cancel invoice / void receipt reverses journal + stock — gate behind ADMIN/MANAGER/MASTER
+  // same as other irreversible accounting actions elsewhere in the app.
+  const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3235,7 +3284,8 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const handlePrintInv = (format: 'a4' | 'thermal') => {
     if (!detail) return
     const co = getCachedCompanySettings()
-    printSalesDoc('inv', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, format)
+    const bank = getCachedDefaultBankAccount()
+    printSalesDoc('inv', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
   }
   const handlePrintReceipt = (r: any, format: 'a4' | 'thermal') => {
     const co = getCachedCompanySettings()
@@ -3296,9 +3346,37 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     } catch { toast.error(t('sales.toast.deleteFailed')) }
   }
 
+  // Cancel this invoice — backend cascade-voids any customer receipts first, then
+  // reverses the AR/revenue/VAT/COGS/inventory journal.
+  const handleCancelInvoice = async () => {
+    if (!confirm(t('sales.confirm.cancelInvoice'))) return
+    setSaving(true)
+    try {
+      const { data } = await api.put(`/sales/invoices/${invoice.id}/status`, { status: 'CANCELLED' })
+      if (data.success) {
+        toast.success(t('sales.toast.invoiceCancelled'))
+        onRefresh()
+        onClose()
+      } else { toast.error(data.message || t('sales.toast.invoiceCancelFailed')) }
+    } catch (error: any) { toast.error(error.response?.data?.message || t('sales.toast.invoiceCancelFailed')) }
+    finally { setSaving(false) }
+  }
+
+  // Void a customer receipt — backend reverses its journal and restores the invoice balance.
+  const handleVoidReceipt = async (receiptId: string) => {
+    if (!confirm(t('sales.confirm.voidReceipt'))) return
+    try {
+      await api.delete(`/sales/receipts/${receiptId}`)
+      toast.success(t('sales.toast.receiptVoided'))
+      loadDetail()
+      onRefresh()
+    } catch (error: any) { toast.error(error.response?.data?.message || t('sales.toast.receiptVoidFailed')) }
+  }
+
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
-  const isUnpaid = invoice.payment_status === 'UNPAID' || invoice.payment_status === 'OVERDUE' || invoice.payment_status === 'PARTIAL'
+  const isUnpaid = (invoice.payment_status === 'UNPAID' || invoice.payment_status === 'OVERDUE' || invoice.payment_status === 'PARTIAL')
+    && (detail?.status || invoice.status) !== 'CANCELLED'
 
   return (
     <>
@@ -3322,7 +3400,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
             {invoice.customer_code && <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.customer_code}</p>}
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={invoice.payment_status} />
+            <StatusBadge status={(detail?.status || invoice.status) === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} />
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
@@ -3433,6 +3511,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                               className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
                               <Printer className="w-3 h-3" /> 80mm
                             </button>
+                            {canCancelDoc && (
+                              <button onClick={() => handleVoidReceipt(r.id)} title={t('sales.actions.voidReceipt')}
+                                className="px-2 py-1 text-danger hover:text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg text-xs flex items-center gap-1">
+                                <Ban className="w-3 h-3" /> {t('sales.actions.voidReceipt')}
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -3552,6 +3636,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               className="px-3 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-sm flex items-center gap-1">
               <Printer className="w-3.5 h-3.5" /> 80mm
             </button>
+            {canCancelDoc && (detail?.status || invoice.status) !== 'CANCELLED' && (
+              <button onClick={handleCancelInvoice} disabled={saving} title={t('sales.actions.cancelInvoice')}
+                className="px-3 py-2 text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg hover:bg-red-500/20 transition-colors flex items-center gap-1.5 text-sm disabled:opacity-50">
+                <Ban className="w-4 h-4" /> {t('sales.actions.cancelInvoice')}
+              </button>
+            )}
             <div className="flex-1" />
             {isUnpaid && !showPayment && (
               <button onClick={() => setShowPayment(true)}

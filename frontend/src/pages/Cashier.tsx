@@ -8,6 +8,7 @@ import kdsService from '../services/kds.service'
 import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyConfig, loadShopConfig } from './Settings'
 import { printPOSReceipt } from '../utils/purchasePrint'
 import { useModalClose } from '../hooks/useModalClose'
+import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 
 // ==================== Types ====================
 
@@ -125,6 +126,9 @@ export default function Cashier() {
       }).catch(() => {})
     })
   }, [])
+  // Prime the bank-account cache (used for the QR payment step + receipt printing)
+  useEffect(() => { bankAccountsService.list().catch(() => {}) }, [])
+
   const [sendingToKitchen, setSendingToKitchen] = useState(false)
 
   // Fetch data
@@ -314,6 +318,7 @@ export default function Cashier() {
     const serviceAmt = billing.serviceEnabled ? Math.round(subtotal * billing.serviceRate / 100) : 0
     const vatAmt = billing.vatEnabled ? Math.round(subtotal * billing.vatRate / 100) : 0
     const total = subtotal + serviceAmt + vatAmt - discountAmt
+    const bank = method === 'QR_CODE' ? getCachedDefaultBankAccount() : undefined
     return {
       ...bill,
       service_charge_amount: serviceAmt,
@@ -331,11 +336,15 @@ export default function Cashier() {
       _paymentMethod: method,
       _cashReceived: cashReceived || 0,
       _discountAmount: discountAmt,
+      _bankName: bank?.bank_name || '',
+      _bankAccountName: bank?.account_name || '',
+      _bankAccountNumber: bank?.account_number || '',
+      _bankQrImage: bank?.qr_code_base64 || '',
     }
   }
 
   // Process payment
-  const processPayment = async (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number) => {
+  const processPayment = async (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => {
     if (!currentBill) return
 
     try {
@@ -343,6 +352,7 @@ export default function Cashier() {
         payment_method: method,
         earn_rate: loyalty.enabled ? loyalty.earnRate : undefined,
         redeem_points: loyalty.enabled && redeemPoints ? redeemPoints : undefined,
+        bank_account_id: bankAccountId,
       })
 
       // ── Actionable response: cannot pay due to stock/conversion issues ──
@@ -1645,14 +1655,19 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
   isOpen: boolean
   onClose: () => void
   total: number
-  onPay: (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number) => void
+  onPay: (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => void
   loyalty: LoyaltyConfig
   customerPoints: number | null
 }) {
   useModalClose(onClose)
   const [redeemInput, setRedeemInput] = useState(0)
+  const [showQrConfirm, setShowQrConfirm] = useState(false)
+
+  useEffect(() => { if (isOpen) setShowQrConfirm(false) }, [isOpen])
 
   if (!isOpen) return null
+
+  const defaultBank = getCachedDefaultBankAccount()
 
   // Max redeemable: min(customerPoints, points that cover total)
   const maxRedeemable = customerPoints !== null && loyalty.enabled && loyalty.redeemRate > 0
@@ -1663,7 +1678,18 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
   const finalTotal = Math.max(0, total - redeemDiscount)
 
   const handlePay = (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD') => {
+    // Show the QR to the customer first when a bank account with a QR image is
+    // configured — otherwise fall back to paying immediately (no bank account
+    // set up yet, same behavior as before this feature existed).
+    if (method === 'QR_CODE' && defaultBank?.qr_code_base64) {
+      setShowQrConfirm(true)
+      return
+    }
     onPay(method, redeemInput > 0 ? redeemInput : undefined)
+  }
+
+  const confirmQrPaid = () => {
+    onPay('QR_CODE', redeemInput > 0 ? redeemInput : undefined, undefined, defaultBank?.id)
   }
 
   return (
@@ -1675,12 +1701,32 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-[var(--fg-1)]">ชำระเงิน</h2>
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">{showQrConfirm ? 'สแกน QR เพื่อชำระเงิน' : 'ชำระเงิน'}</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]">
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {showQrConfirm ? (
+          <div className="space-y-4">
+            <div className="text-center">
+              <p className="text-[var(--fg-3)] mb-1">ยอดที่ต้องชำระ</p>
+              <p className="text-3xl font-bold text-success">฿{finalTotal.toLocaleString()}</p>
+            </div>
+            <div className="flex justify-center">
+              <img src={defaultBank?.qr_code_base64 || ''} alt="QR" className="w-56 h-56 object-contain border border-[var(--border)] rounded-xl bg-[var(--bg)] p-3" />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-[var(--fg-1)]">{defaultBank?.bank_name}</p>
+              <p className="text-sm text-[var(--fg-3)]">{defaultBank?.account_name} · {defaultBank?.account_number}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setShowQrConfirm(false)} className="phopy-btn-secondary py-3">ย้อนกลับ</button>
+              <button onClick={confirmQrPaid} className="phopy-btn-primary py-3">ยืนยันรับเงินแล้ว</button>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Redeem Points UI */}
         {canRedeem && (
           <div className="mb-4 p-4 bg-[var(--warning-soft)] border border-warning/30 rounded-xl space-y-3">
@@ -1745,6 +1791,8 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
             <span className="text-sm text-[var(--fg-2)]">บัตรเครดิต</span>
           </button>
         </div>
+        </>
+        )}
       </motion.div>
     </div>
   )

@@ -206,6 +206,32 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
+    // Cancelling a PO posts no journal of its own — the real AP/inventory entries
+    // are booked at GR confirm and PI creation (see purchase.routes.ts), which now
+    // have their own CANCELLED reversal logic. Block a PO cancel while those
+    // downstream documents are still active so a cancel here can never leave
+    // stock/AP without a matching reversal.
+    if (status === 'CANCELLED') {
+      const activeGR = db.prepare(
+        "SELECT id, gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED'"
+      ).get(tenantId, req.params.id) as any
+      if (activeGR) {
+        return res.status(400).json({
+          success: false,
+          message: `ไม่สามารถยกเลิกใบสั่งซื้อได้ — มีใบรับสินค้า ${activeGR.gr_number} ที่ยืนยันแล้ว กรุณายกเลิกใบรับสินค้าก่อน`,
+        })
+      }
+      const activeInvoice = db.prepare(
+        "SELECT id, pi_number FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED'"
+      ).get(tenantId, req.params.id) as any
+      if (activeInvoice) {
+        return res.status(400).json({
+          success: false,
+          message: `ไม่สามารถยกเลิกใบสั่งซื้อได้ — มีใบแจ้งหนี้ ${activeInvoice.pi_number} อ้างอิงอยู่ กรุณายกเลิกใบแจ้งหนี้ก่อน`,
+        })
+      }
+    }
+
     const now = new Date().toISOString()
     const updates: any = { status, updated_at: now }
 

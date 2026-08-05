@@ -2,9 +2,14 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional } from '../../services/unitConversion.service'
-import { deductStockForSO } from './shared'
+import { deductStockForSO, restoreStockForSO } from './shared'
 
 const router = Router()
+
+// Statuses reached only after deductStockForSO() has run (i.e. SO was CONFIRMED
+// at some point and hasn't been un-confirmed back to DRAFT). Used to decide whether
+// cancelling needs to restore stock.
+const STOCK_DEDUCTED_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'PARTIAL', 'COMPLETED']
 
 // GET all sales orders
 router.get('/', async (req: Request, res: Response) => {
@@ -209,6 +214,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
     }
 
+    // Snapshot the pre-transition status: needed after the UPDATE below to decide
+    // whether stock was already deducted (so CANCELLED must restore it).
+    const previousStatus = existing.status
+
     // ── Approval gate: CONFIRMED transition ─────────────────────────────────
     if (status === 'CONFIRMED' && existing.status === 'DRAFT') {
       const userId = req.user!.userId
@@ -297,6 +306,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       // postSalesOrderConfirmed() for why it's unused, kept only as a
       // documented reference for a future "book at confirm instead of at
       // invoice" redesign if that's ever wanted.
+    }
+
+    // คืน stock เมื่อยกเลิก SO ที่เคยตัดสต็อกไปแล้ว (previousStatus อยู่ใน STOCK_DEDUCTED_STATUSES).
+    // ถ้า SO ถูกยกเลิกไปแล้ว (previousStatus === 'CANCELLED') จะไม่อยู่ในลิสต์นี้ — ป้องกันคืนสต็อกซ้ำ
+    if (status === 'CANCELLED' && STOCK_DEDUCTED_STATUSES.includes(previousStatus) && salesOrder) {
+      restoreStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
     }
 
     res.json({ success: true, data: salesOrder })

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { createSalesJournal } from './shared'
+import { createSalesJournal, voidReceipt } from './shared'
 
 const router = Router()
 
@@ -9,7 +9,7 @@ const router = Router()
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { invoiceId, receiptDate, paymentMethod, paymentReference, amount, notes } = req.body
+    const { invoiceId, receiptDate, paymentMethod, paymentReference, amount, notes, bankAccountId } = req.body
     
     if (!invoiceId || !amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invoice and valid amount are required' })
@@ -38,10 +38,10 @@ router.post('/', async (req: Request, res: Response) => {
     const transaction = db.transaction(() => {
       db.prepare(`
         INSERT INTO receipts (id, tenant_id, receipt_number, invoice_id, customer_id, receipt_date, payment_method,
-          payment_reference, amount, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          payment_reference, amount, notes, bank_account_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, tenantId, receiptNumber, invoiceId, invoice.customer_id, date, paymentMethod || 'CASH',
-        paymentReference || '', amount, notes || '', now, now)
+        paymentReference || '', amount, notes || '', bankAccountId || null, now, now)
 
       // Update invoice paid and balance
       const newPaid = invoice.paid_amount + amount
@@ -72,7 +72,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Journal: DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า
     createSalesJournal(tenantId, 'RECEIPT', id,
       `รับชำระเงิน ${receiptNumber} (${paymentMethod || 'CASH'})`,
-      amount, 0, paymentMethod, receiptNumber, invoice.so_number)
+      amount, 0, paymentMethod, receiptNumber, invoice.so_number, bankAccountId || null)
 
     res.status(201).json({
       success: true,
@@ -82,6 +82,20 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create receipt error:', error)
     res.status(500).json({ success: false, message: 'Failed to record payment' })
+  }
+})
+
+// DELETE /:id — reverse (void) a receipt: reverses its journal + restores the invoice
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' })
+    db.transaction(() => { voidReceipt(tenantId, receipt) })()
+    res.json({ success: true, message: 'Receipt reversed' })
+  } catch (error: any) {
+    console.error('Void receipt error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to reverse receipt' })
   }
 })
 

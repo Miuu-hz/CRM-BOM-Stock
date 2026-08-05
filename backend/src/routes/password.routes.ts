@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { ROLE_HIERARCHY, Role } from '../config/roles'
+import { syncKanbanPassword } from '../services/kanban-password-sync'
 
 const router = Router()
 
@@ -82,6 +83,9 @@ router.post('/change-password', authenticate, async (req, res) => {
 
     // Invalidate any outstanding reset tokens for this user.
     db.prepare('UPDATE password_reset_tokens SET used = 1 WHERE user_id = ? AND used = 0').run(userId)
+
+    // Keep the linked Phopy Board account's password in sync (non-fatal).
+    await syncKanbanPassword(userId, newPassword)
 
     res.json({ success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จ' })
   } catch (error) {
@@ -170,6 +174,9 @@ router.post('/reset-password', resetLimiter, async (req, res) => {
       db.prepare('UPDATE password_reset_tokens SET used = 1 WHERE id = ?').run(rec.id)
     })
     tx()
+
+    // Keep the linked Phopy Board account's password in sync (non-fatal).
+    await syncKanbanPassword(rec.user_id, newPassword)
 
     res.json({ success: true, message: 'ตั้งรหัสผ่านใหม่สำเร็จ กรุณาเข้าสู่ระบบด้วยรหัสใหม่' })
   } catch (error) {

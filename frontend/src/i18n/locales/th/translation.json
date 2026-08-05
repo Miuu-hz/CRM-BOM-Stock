@@ -62,6 +62,12 @@
     "approvals": "การอนุมัติ",
     "kanban": "Phopy Kanban",
     "kanbanDesc": "บอร์ดจัดการงาน",
+    "systemStatus": {
+      "title": "สถานะระบบ",
+      "activeOrders": "ออเดอร์ที่กำลังดำเนินการ",
+      "lowStock": "สินค้าใกล้หมด",
+      "pendingPO": "ใบสั่งซื้อรอดำเนินการ"
+    },
     "kanbanSso": {
       "title": "เข้าใช้ Phopy Board",
       "confirm": "เข้าใช้ Phopy Board ในนาม {{email}} ของธุรกิจ {{tenant}}?",
@@ -663,7 +669,15 @@
       "returnConfirmed": "ยืนยันคืนสินค้า — ตัดสต็อกแล้ว",
       "returnConfirmFailed": "ไม่สามารถยืนยันการคืนสินค้าได้",
       "stockItemAdded": "เพิ่ม \"{{name}}\" เข้า Stock แล้ว",
-      "requestItemsLoaded": "โหลดรายการจาก {{prNumber}} แล้ว ({{count}} รายการ)"
+      "requestItemsLoaded": "โหลดรายการจาก {{prNumber}} แล้ว ({{count}} รายการ)",
+      "returnDeleted": "ลบใบคืนสินค้าแล้ว",
+      "returnDeleteFailed": "ลบใบคืนสินค้าไม่สำเร็จ",
+      "receiptCancelled": "ยกเลิกใบรับสินค้าแล้ว",
+      "receiptCancelFailed": "ไม่สามารถยกเลิกใบรับสินค้าได้",
+      "invoiceCancelled": "ยกเลิกใบแจ้งหนี้ซื้อแล้ว",
+      "invoiceCancelFailed": "ไม่สามารถยกเลิกใบแจ้งหนี้ซื้อได้",
+      "paymentVoided": "ยกเลิกรายการจ่ายเงินแล้ว",
+      "paymentVoidFailed": "ไม่สามารถยกเลิกรายการจ่ายเงินได้"
     },
     "search": {
       "material": "ค้นหา รหัส / ชื่อวัสดุ...",
@@ -729,13 +743,18 @@
     "confirm": {
       "deleteRequest": "ต้องการลบใบขอซื้อนี้?",
       "deleteOrder": "ต้องการลบใบสั่งซื้อนี้?",
-      "deleteReceipt": "ลบใบรับสินค้าร่างนี้?"
+      "deleteReceipt": "ลบใบรับสินค้าร่างนี้?",
+      "deleteReturn": "ต้องการลบใบคืนสินค้าฉบับร่างนี้ใช่หรือไม่?",
+      "cancelReceipt": "ยกเลิกใบรับสินค้านี้? หากยืนยันรับแล้ว ระบบจะคืนสต็อกให้อัตโนมัติ",
+      "cancelInvoice": "ยกเลิกใบแจ้งหนี้ซื้อนี้? รายการจ่ายเงินที่เกี่ยวข้องจะถูกยกเลิกและ journal จะถูกกลับรายการ",
+      "voidPayment": "ยกเลิกรายการจ่ายเงินนี้? ยอดคงค้างของใบแจ้งหนี้จะถูกคืนกลับ"
     },
     "actions": {
       "submit": "ส่งอนุมัติ",
       "reject": "ปฏิเสธ",
       "confirm": "ยืนยัน",
       "cancel": "ยกเลิก",
+      "void": "ยกเลิกรายการ",
       "createRequest": "สร้างใบขอซื้อ",
       "createOrder": "สร้างใบสั่งซื้อ",
       "createReceipt": "บันทึกรับสินค้า",
@@ -754,7 +773,9 @@
       "addItem": "เพิ่มรายการ",
       "submitForApproval": "ส่งอนุมัติ",
       "approve": "อนุมัติ",
-      "confirmReturn": "ยืนยันคืนสินค้า"
+      "confirmReturn": "ยืนยันคืนสินค้า",
+      "edit": "แก้ไข",
+      "delete": "ลบ"
     },
     "requests": {
       "headers": {
@@ -1148,7 +1169,13 @@
       "uploadFailed": "อัปโหลดไฟล์ไม่สำเร็จ",
       "deleteSuccess": "ลบไฟล์สำเร็จ",
       "deleteFailed": "ลบไฟล์ไม่สำเร็จ",
-      "shiftOpened": "เปิดกะสำเร็จ: {{number}}"
+      "shiftOpened": "เปิดกะสำเร็จ: {{number}}",
+      "creditNoteDeleted": "ลบใบลดหนี้แล้ว",
+      "creditNoteDeleteFailed": "ลบใบลดหนี้ไม่สำเร็จ",
+      "invoiceCancelled": "ยกเลิกใบแจ้งหนี้แล้ว",
+      "invoiceCancelFailed": "ไม่สามารถยกเลิกใบแจ้งหนี้ได้",
+      "receiptVoided": "ยกเลิกใบเสร็จรับเงินแล้ว",
+      "receiptVoidFailed": "ไม่สามารถยกเลิกใบเสร็จรับเงินได้"
     },
     "error": {
       "loadQuotations": "ไม่สามารถดึงข้อมูลใบเสนอราคาได้",
@@ -1209,7 +1236,9 @@
       "issueCreditNote": "ออกใบลดหนี้",
       "convertToOrder": "แปลงเป็นคำสั่งขาย",
       "convertToSO": "แปลง SO",
-      "createInvoice": "ออกใบแจ้งหนี้"
+      "createInvoice": "ออกใบแจ้งหนี้",
+      "cancelInvoice": "ยกเลิกใบแจ้งหนี้",
+      "voidReceipt": "ยกเลิกรายการ"
     },
     "search": {
       "quotation": "ค้นหาใบเสนอราคา...",
@@ -1355,7 +1384,10 @@
     "confirm": {
       "deleteQuotation": "ต้องการลบใบเสนอราคานี้?",
       "deleteTemplate": "ต้องการลบเทมเพลตนี้?",
-      "deleteImage": "ลบรูปภาพนี้?"
+      "deleteImage": "ลบรูปภาพนี้?",
+      "deleteCreditNote": "ต้องการลบใบลดหนี้ฉบับร่างนี้ใช่หรือไม่?",
+      "cancelInvoice": "ยกเลิกใบแจ้งหนี้นี้? รายการรับชำระที่เกี่ยวข้องจะถูกยกเลิกและ journal จะถูกกลับรายการ",
+      "voidReceipt": "ยกเลิกใบเสร็จรับเงินนี้? ยอดคงค้างของใบแจ้งหนี้จะถูกคืนกลับ"
     },
     "journal": {
       "title": "สมุดรายวัน (ระบบบันทึกอัตโนมัติ)",
@@ -1830,6 +1862,8 @@
     "empty": {
       "title": "ไม่มีใบขอซื้อ"
     },
+    "delete": "ลบ",
+    "deleteConfirm": "ลบใบขอซื้อ {{number}} นี้?",
     "status": {
       "draft": "ฉบับร่าง",
       "pending": "รออนุมัติ",
@@ -1844,7 +1878,9 @@
       "approveSuccess": "อนุมัติ PR เรียบร้อย",
       "rejectSuccess": "ปฏิเสธ PR เรียบร้อย",
       "approveFailed": "อนุมัติไม่สำเร็จ",
-      "rejectFailed": "ปฏิเสธไม่สำเร็จ"
+      "rejectFailed": "ปฏิเสธไม่สำเร็จ",
+      "deleteSuccess": "ลบใบขอซื้อเรียบร้อย",
+      "deleteFailed": "ลบไม่สำเร็จ"
     },
     "detail": {
       "requester": "ผู้ขอ",
@@ -2184,7 +2220,8 @@
         "permissions": "จัดการสิทธิ์",
         "approval": "ระบบอนุมัติ",
         "docNumbering": "เลขที่เอกสาร",
-        "currency": "สกุลเงิน"
+        "currency": "สกุลเงิน",
+        "bankAccounts": "บัญชีธนาคาร / QR รับเงิน"
       },
       "groups": {
         "system": "ระบบ",
@@ -2814,59 +2851,60 @@
       }
     },
     "approval": {
-      "title": "Approval Settings",
-      "subtitle": "Set approval conditions per module and assign approver permissions",
+      "title": "ตั้งค่าการอนุมัติ",
+      "subtitle": "กำหนดเงื่อนไขการอนุมัติแยกตามโมดูล และมอบสิทธิ์ผู้อนุมัติ",
       "info": {
-        "masterAdminAuto": "MASTER and ADMIN can approve everything automatically",
-        "roleScope": "The settings below apply only to MANAGER / POWER USER / USER. If no setting exists for a role, that role does not require approval."
+        "masterAdminAuto": "MASTER และ ADMIN อนุมัติได้ทุกอย่างโดยอัตโนมัติ",
+        "roleScope": "การตั้งค่าด้านล่างมีผลเฉพาะ MANAGER / POWER USER / USER เท่านั้น หากไม่มีการตั้งค่าสำหรับบทบาทใด บทบาทนั้นจะไม่ต้องขออนุมัติ"
       },
       "section": {
-        "approvalConditions": "Approval Conditions by Role",
-        "userPermissions": "Individual Approver Permissions"
+        "approvalConditions": "เงื่อนไขการอนุมัติตามบทบาท",
+        "userPermissions": "สิทธิ์ผู้อนุมัติรายบุคคล"
       },
       "actions": {
-        "addCondition": "Add Condition",
-        "grantPermission": "Grant Permission"
+        "addCondition": "เพิ่มเงื่อนไข",
+        "grantPermission": "มอบสิทธิ์"
       },
       "labels": {
-        "role": "Role",
-        "module": "Module",
-        "approvalRequired": "Approval Required",
-        "autoApproveThreshold": "Auto-approve threshold (฿)",
-        "thresholdHint": "Below this amount passes automatically",
-        "user": "User",
-        "maxApprovalLimit": "Max approval limit (฿)",
-        "limitHint": "0 = use default",
-        "unlimited": "Unlimited amount",
-        "masterApprover": "Master Approver (Level 2)",
-        "autoApproveIfBelow": "Auto-approve if below"
+        "role": "บทบาท",
+        "module": "โมดูล",
+        "approvalRequired": "ต้องขออนุมัติ",
+        "autoApproveThreshold": "วงเงินอนุมัติอัตโนมัติ (฿)",
+        "thresholdHint": "ต่ำกว่าจำนวนนี้ผ่านอัตโนมัติ",
+        "user": "ผู้ใช้",
+        "maxApprovalLimit": "วงเงินอนุมัติสูงสุด (฿)",
+        "limitHint": "0 = ใช้ค่าเริ่มต้น",
+        "unlimited": "ไม่จำกัดวงเงิน",
+        "masterApprover": "ผู้อนุมัติสูงสุด (ระดับ 2)",
+        "autoApproveIfBelow": "อนุมัติอัตโนมัติเมื่อต่ำกว่า"
       },
       "placeholders": {
-        "thresholdCheckEveryTime": "0 = check every time",
-        "selectUser": "-- Select user --",
-        "limitDefault": "0 = use default"
+        "thresholdCheckEveryTime": "0 = ตรวจสอบทุกครั้ง",
+        "selectUser": "-- เลือกผู้ใช้ --",
+        "limitDefault": "0 = ใช้ค่าเริ่มต้น"
       },
       "options": {
-        "required": "Required",
-        "notRequired": "Not required"
+        "required": "ต้องอนุมัติ",
+        "notRequired": "ไม่ต้องอนุมัติ"
       },
       "badge": {
-        "required": "Required",
-        "notRequired": "Not required",
-        "unlimited": "Unlimited",
-        "maxLimit": "Max {{amount}}"
+        "required": "ต้องอนุมัติ",
+        "notRequired": "ไม่ต้องอนุมัติ",
+        "unlimited": "ไม่จำกัด",
+        "maxLimit": "สูงสุด {{amount}}",
+        "level2": "ระดับ 2"
       },
       "empty": {
-        "noConditions": "No conditions yet — click \"Add Condition\" to start",
-        "noApprovers": "No approvers assigned yet — click \"Grant Permission\" to start"
+        "noConditions": "ยังไม่มีเงื่อนไข — คลิก \"เพิ่มเงื่อนไข\" เพื่อเริ่มต้น",
+        "noApprovers": "ยังไม่มีผู้อนุมัติ — คลิก \"มอบสิทธิ์\" เพื่อเริ่มต้น"
       },
-      "rolesCount": "{{count}} roles",
+      "rolesCount": "{{count}} บทบาท",
       "modules": {
-        "purchaseRequest": "Purchase Request (PR)",
-        "purchaseOrder": "Purchase Order (PO)",
-        "salesOrder": "Sales Order (SO)",
-        "workOrder": "Work Order",
-        "stockAdjustment": "Stock Adjustment"
+        "purchaseRequest": "ใบขอซื้อ (PR)",
+        "purchaseOrder": "ใบสั่งซื้อ (PO)",
+        "salesOrder": "ใบสั่งขาย (SO)",
+        "workOrder": "ใบสั่งผลิต",
+        "stockAdjustment": "การปรับปรุงสต๊อก"
       },
       "roles": {
         "manager": "Manager",
@@ -2874,15 +2912,15 @@
         "user": "User"
       },
       "toasts": {
-        "loadFailed": "Failed to load data",
-        "saveSettingSuccess": "Setting saved successfully",
-        "saveFailed": "Save failed",
-        "deleteSettingSuccess": "Setting deleted",
-        "deleteFailed": "Delete failed",
-        "selectUserError": "Please select a user",
-        "savePermSuccess": "Approver permission saved",
-        "revokeSuccess": "Permission revoked",
-        "revokeFailed": "Failed to revoke permission"
+        "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+        "saveSettingSuccess": "บันทึกการตั้งค่าสำเร็จ",
+        "saveFailed": "บันทึกไม่สำเร็จ",
+        "deleteSettingSuccess": "ลบการตั้งค่าแล้ว",
+        "deleteFailed": "ลบไม่สำเร็จ",
+        "selectUserError": "กรุณาเลือกผู้ใช้",
+        "savePermSuccess": "บันทึกสิทธิ์ผู้อนุมัติแล้ว",
+        "revokeSuccess": "เพิกถอนสิทธิ์แล้ว",
+        "revokeFailed": "เพิกถอนสิทธิ์ไม่สำเร็จ"
       }
     },
     "userManagement": {

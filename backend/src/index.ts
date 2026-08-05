@@ -117,6 +117,7 @@ import periodClosingRoutes from './routes/period-closing.routes'
 import whtCertificateRoutes from './routes/wht-certificate.routes'
 import budgetRoutes from './routes/budget.routes'
 import currencyRoutes from './routes/currency.routes'
+import bankAccountsRoutes from './routes/bankAccounts.routes'
 
 
 import posMenuRoutes from './routes/pos-menu.routes'
@@ -448,6 +449,7 @@ app.use('/api/journal', authenticate, subscriptionGate('accounting'))
 app.use('/api/period-closing', authenticate, subscriptionGate('accounting'))
 app.use('/api/budgets', authenticate, subscriptionGate('accounting'))
 app.use('/api/currencies', authenticate, subscriptionGate('accounting'))
+app.use('/api/bank-accounts', authenticate, subscriptionGate('accounting'))
 app.use('/api/tax', authenticate, subscriptionGate('tax'))
 app.use('/api/wht-certificates', authenticate, subscriptionGate('tax'))
 app.use('/api/llm-providers', authenticate, subscriptionGate('ai'))
@@ -541,6 +543,7 @@ app.use('/api/period-closing', periodClosingRoutes)
 app.use('/api/wht-certificates', whtCertificateRoutes)
 app.use('/api/budgets', budgetRoutes)
 app.use('/api/currencies', currencyRoutes)
+app.use('/api/bank-accounts', bankAccountsRoutes)
 
 
 app.use('/api/pos', posMenuRoutes)

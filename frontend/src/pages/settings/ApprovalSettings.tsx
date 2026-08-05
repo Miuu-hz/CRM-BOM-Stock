@@ -519,7 +519,7 @@ export default function ApprovalSettings() {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {p.is_master_approver === 1 && (
                             <span className="px-2 py-0.5 bg-purple-500/15 text-purple-400 text-xs rounded-full font-medium">
-                              Level 2
+                              {t('settings.approval.badge.level2')}
                             </span>
                           )}
                           {p.can_approve_unlimited === 1 ? (

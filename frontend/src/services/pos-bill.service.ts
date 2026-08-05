@@ -86,6 +86,7 @@ const posBillService = {
     reference?: string
     earn_rate?: number
     redeem_points?: number
+    bank_account_id?: string
   }) => {
     const response = await api.post(`/pos/bills/${billId}/pay`, data)
     return response.data

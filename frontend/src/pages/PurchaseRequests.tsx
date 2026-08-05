@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
     ShoppingCart, RefreshCw, AlertCircle, CheckCircle, XCircle,
     Clock, ChevronRight, X, Check, MessageSquare, Package,
-    FileText, Edit3, Loader2,
+    FileText, Edit3, Loader2, Trash2,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -154,6 +154,18 @@ export default function PurchaseRequests() {
         }
     }
 
+    // ── Delete (DRAFT / unconfirmed only) ───────────────────────────────────────
+    const handleDelete = async (pr: PR) => {
+        if (!window.confirm(t('purchaseRequests.deleteConfirm', { number: pr.pr_number }))) return
+        try {
+            await api.delete(`/purchase-requests/${pr.id}`)
+            toast.success(t('purchaseRequests.toast.deleteSuccess'))
+            fetchList()
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message ?? t('purchaseRequests.toast.deleteFailed'))
+        }
+    }
+
     // ── Reject ────────────────────────────────────────────────────────────────
     const handleReject = async () => {
         if (!selected || !rejectReason.trim()) return
@@ -254,6 +266,15 @@ export default function PurchaseRequests() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-4 text-right">
+                                {pr.status === 'DRAFT' && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(pr) }}
+                                        className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
+                                        title={t('purchaseRequests.delete')}
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
                                 <p className="text-xs text-[var(--fg-4)]">{new Date(pr.created_at).toLocaleDateString('th-TH')}</p>
                                 <ChevronRight className="w-4 h-4 text-[var(--fg-4)]" />
                             </div>

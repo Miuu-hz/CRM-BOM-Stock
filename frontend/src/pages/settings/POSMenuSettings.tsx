@@ -186,7 +186,7 @@ export default function POSMenuSettings() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">{t('settings.posMenu.title')}</h1>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('settings.posMenu.title')}</h1>
           <p className="text-[var(--fg-3)] mt-1">{t('settings.posMenu.subtitle')}</p>
         </div>
 
@@ -251,14 +251,14 @@ export default function POSMenuSettings() {
                 placeholder={t('settings.posMenu.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
+                className="w-full pl-10 pr-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
               />
             </div>
 
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+              className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
             >
               <option value="all">{t('settings.posMenu.allCategories')}</option>
               {categories.map(cat => (
@@ -284,7 +284,7 @@ export default function POSMenuSettings() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.totalMenus')}</p>
-              <p className="text-2xl font-bold text-white">{menus.length}</p>
+              <p className="text-2xl font-bold text-[var(--fg-1)]">{menus.length}</p>
             </div>
             <div className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
               <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.stats.available')}</p>
@@ -344,7 +344,7 @@ export default function POSMenuSettings() {
                           </span>
                         )}
                       </div>
-                      <h3 className="font-semibold text-white mt-1 truncate">
+                      <h3 className="font-semibold text-[var(--fg-1)] mt-1 truncate">
                         {menu.product_name}
                       </h3>
                       <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
@@ -454,7 +454,7 @@ export default function POSMenuSettings() {
                         />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-white">{category.name}</h3>
+                        <h3 className="font-semibold text-[var(--fg-1)]">{category.name}</h3>
                         <p className="text-sm text-[var(--fg-3)]">{t('common.itemCount', { count: menuCount })}</p>
                       </div>
                     </div>
@@ -692,7 +692,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-          <h2 className="text-xl font-bold text-white">
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">
             {menu ? t('settings.posMenu.menuModal.titleEdit') : t('settings.posMenu.menuModal.titleCreate')}
           </h2>
           <button
@@ -715,7 +715,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   placeholder={t('settings.posMenu.menuModal.searchPlaceholder')}
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
+                  className="w-full pl-10 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder-gray-500 focus:outline-none focus:border-phopy-indigo"
                 />
               </div>
 
@@ -741,7 +741,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       className="w-full p-4 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-left hover:border-phopy-indigo/50 transition-all flex items-center justify-between group"
                     >
                       <div>
-                        <p className="font-medium text-white group-hover:text-[var(--primary)]">
+                        <p className="font-medium text-[var(--fg-1)] group-hover:text-[var(--primary)]">
                           {product.name}
                         </p>
                         <p className="text-sm text-[var(--fg-4)]">{product.code}</p>
@@ -756,7 +756,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
             <div className="space-y-4">
               <div className="p-4 bg-[var(--bg)] rounded-lg">
                 <p className="text-sm text-[var(--fg-3)]">{t('settings.posMenu.menuModal.productLabel')}</p>
-                <p className="font-semibold text-white">{selectedProduct?.name}</p>
+                <p className="font-semibold text-[var(--fg-1)]">{selectedProduct?.name}</p>
                 <p className="text-sm text-[var(--fg-4)]">{selectedProduct?.code}</p>
               </div>
 
@@ -766,7 +766,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   <select
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">{t('settings.posMenu.menuModal.selectCategory')}</option>
                     {categories.map(cat => (
@@ -785,7 +785,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   <select
                     value={formData.bom_id}
                     onChange={(e) => setFormData({ ...formData, bom_id: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">
                       {boms.length === 0 ? t('settings.posMenu.menuModal.noBom') : t('settings.posMenu.menuModal.selectBom')}
@@ -818,7 +818,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       type="number"
                       value={formData.pos_price}
                       onChange={(e) => setFormData({ ...formData, pos_price: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                       placeholder="0.00"
                     />
                   </div>
@@ -832,7 +832,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       type="number"
                       value={formData.cost_price}
                       onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                       placeholder="0.00"
                     />
                   </div>
@@ -846,7 +846,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       type="text"
                       value={formData.quick_code}
                       onChange={(e) => setFormData({ ...formData, quick_code: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                       placeholder={t('settings.posMenu.menuModal.quickPlaceholder')}
                     />
                   </div>
@@ -860,7 +860,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                       type="number"
                       value={formData.preparation_time}
                       onChange={(e) => setFormData({ ...formData, preparation_time: parseInt(e.target.value) || 0 })}
-                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                      className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                     />
                   </div>
                 </div>
@@ -871,7 +871,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     type="number"
                     value={formData.display_order}
                     onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   />
                 </div>
 
@@ -882,7 +882,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   <select
                     value={formData.sale_unit}
                     onChange={(e) => setFormData({ ...formData, sale_unit: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                   >
                     <option value="">
                       {stockUnits
@@ -914,7 +914,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo resize-none"
+                  className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo resize-none"
                   placeholder={t('settings.posMenu.menuModal.descriptionPlaceholder')}
                 />
               </div>
@@ -926,7 +926,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
                   className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
                 />
-                <span className="text-white">{t('settings.posMenu.menuModal.available')}</span>
+                <span className="text-[var(--fg-1)]">{t('settings.posMenu.menuModal.available')}</span>
               </label>
             </div>
           )}
@@ -1056,7 +1056,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md"
       >
         <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-          <h2 className="text-xl font-bold text-white">
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">
             {category ? t('settings.posMenu.categoryModal.titleEdit') : t('settings.posMenu.categoryModal.titleCreate')}
           </h2>
           <button
@@ -1076,7 +1076,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
               placeholder={t('settings.posMenu.categoryModal.namePlaceholder')}
             />
           </div>
@@ -1103,7 +1103,7 @@ function CategoryModal({ isOpen, onClose, category, onSaved }: CategoryModalProp
               type="text"
               value={icon}
               onChange={(e) => setIcon(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
               placeholder={t('settings.posMenu.categoryModal.iconPlaceholder')}
             />
           </div>

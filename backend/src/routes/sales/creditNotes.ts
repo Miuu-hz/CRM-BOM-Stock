@@ -1,8 +1,67 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
+import { ACC, ACC_META } from '../../config/accountCodes'
+import { getOrCreateAccount, updateAccountBalance } from './shared'
 
 const router = Router()
+
+// ─── Accounting: post reversing GL journal entry when a credit note is ISSUED ──
+// Dr Revenue (reduce revenue) + Dr VAT-output (reduce output VAT liability)
+// Cr Accounts Receivable (reduce AR) — mirrors createSalesJournal's INVOICE
+// posting in shared.ts but in reverse. Idempotent: guarded by a lookup on
+// (tenant_id, reference_type='CREDIT_NOTE', reference_id).
+function postCreditNoteJournal(tenantId: string, cn: any) {
+  try {
+    const existing = db.prepare(
+      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'CREDIT_NOTE' AND reference_id = ?"
+    ).get(tenantId, cn.id)
+    if (existing) return // already posted — avoid double-posting
+
+    const now = new Date().toISOString()
+    const dateStr = now.split('T')[0]
+    const yr = new Date().getFullYear()
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+
+    const arMeta = ACC_META[ACC.AR]!
+    const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
+    const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
+
+    const arId = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
+    const revId = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
+    const vatId = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
+
+    const subtotal = cn.subtotal || 0
+    const taxAmount = cn.tax_amount || 0
+    const totalAmount = cn.total_amount || 0
+    const entryId = generateId()
+    const description = `ลดหนี้ CN ${cn.cn_number}`
+
+    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+      VALUES (?, ?, ?, ?, 'CREDIT_NOTE', ?, ?, NULL, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
+      .run(entryId, tenantId, jvNumber, dateStr, cn.id, cn.cn_number || null, description, totalAmount, totalAmount, now, now)
+
+    let lineNum = 1
+    // Dr Revenue — reduces previously recognized revenue
+    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+      .run(generateId(), tenantId, entryId, revId, lineNum++, description, subtotal)
+    // Dr Output VAT — reduces VAT liability owed on the original sale
+    if (taxAmount > 0) {
+      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+        .run(generateId(), tenantId, entryId, vatId, lineNum++, `ภาษีขาย - ${description}`, taxAmount)
+    }
+    // Cr Accounts Receivable — reduces amount owed by customer
+    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+      .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+
+    updateAccountBalance(tenantId, revId, subtotal, 0)
+    if (taxAmount > 0) updateAccountBalance(tenantId, vatId, taxAmount, 0)
+    updateAccountBalance(tenantId, arId, 0, totalAmount)
+  } catch (err) {
+    console.error('⚠️ postCreditNoteJournal error:', err)
+    // Non-fatal — don't block the status update if journal posting fails
+  }
+}
 
 // GET all credit notes
 router.get('/', async (req: Request, res: Response) => {
@@ -119,6 +178,61 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create credit note error:', error)
     res.status(500).json({ success: false, message: 'Failed to create credit note' })
+  }
+})
+
+// PUT update credit note status
+router.put('/:id/status', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { status } = req.body
+    const validStatuses = ['DRAFT', 'ISSUED', 'APPLIED', 'CANCELLED']
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' })
+    }
+
+    const cn = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!cn) {
+      return res.status(404).json({ success: false, message: 'Credit note not found' })
+    }
+
+    const now = new Date().toISOString()
+    db.prepare('UPDATE credit_notes SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(status, now, req.params.id, tenantId)
+
+    if (status === 'ISSUED') {
+      const updated = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+      postCreditNoteJournal(tenantId, updated)
+    }
+
+    const creditNote = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: creditNote })
+  } catch (error) {
+    console.error('Update credit note status error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update credit note status' })
+  }
+})
+
+// DELETE credit note (DRAFT only)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const cn = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!cn) return res.status(404).json({ success: false, message: 'Credit note not found' })
+    if (cn.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบลดหนี้สถานะ DRAFT เท่านั้น' })
+    db.transaction(() => {
+      db.prepare('DELETE FROM credit_note_items WHERE credit_note_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM credit_notes WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      // Restore the invoice balance that was reduced when this credit note was created
+      if (cn.invoice_id && cn.total_amount) {
+        db.prepare('UPDATE invoices SET balance_amount = balance_amount + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(cn.total_amount, new Date().toISOString(), cn.invoice_id, tenantId)
+      }
+    })()
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete credit note' })
   }
 })
 

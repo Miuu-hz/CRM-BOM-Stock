@@ -412,7 +412,7 @@ router.post('/bills/:id/pay', async (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const userId = (req as any).user!.userId
     const { id } = req.params
-    const { payment_method, received_amount, reference, earn_rate, redeem_points } = req.body
+    const { payment_method, received_amount, reference, earn_rate, redeem_points, bank_account_id } = req.body
 
     if (!payment_method) {
       return res.status(400).json({ success: false, message: 'Payment method required' })
@@ -467,13 +467,13 @@ router.post('/bills/:id/pay', async (req, res) => {
     const changeAmount = received_amount ? received_amount - totalAmount : 0
     
     const paymentStmt = db.prepare(`
-      INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by, bank_account_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     paymentStmt.run(
       paymentId, tenantId, id, payment_method, totalAmount,
       received_amount || totalAmount, changeAmount > 0 ? changeAmount : 0,
-      reference || null, userId
+      reference || null, userId, bank_account_id || null
     )
     
     // 3. Update bill status
@@ -485,7 +485,7 @@ router.post('/bills/:id/pay', async (req, res) => {
     updateBill.run(now(), userId, id, tenantId)
     
     // 4. Record accounting entry
-    const payment = { payment_method, amount: totalAmount }
+    const payment = { payment_method, amount: totalAmount, bank_account_id: bank_account_id || null }
     const accountingResult = await posAccountingService.recordSale(
       refreshedBill as any, payment, tenantId, userId
     )

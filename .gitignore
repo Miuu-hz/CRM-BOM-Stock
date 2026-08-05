@@ -64,3 +64,7 @@ coverage/
 *.local.yml
 *.local.js
 *.claude
+# Backup artifacts from agent runs
+*.bak-*
+*.db-shm
+*.db-wal
