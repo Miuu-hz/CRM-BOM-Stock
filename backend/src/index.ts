@@ -24,6 +24,10 @@ import rateLimit from 'express-rate-limit'
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') })
 
+// Initialize error monitoring as early as possible (right after env vars load, before
+// any route/db module runs). Safe no-op when SENTRY_DSN is unset -- see config/sentry.ts.
+import { Sentry, sentryEnabled } from './config/sentry'
+
 
 
 
@@ -613,6 +617,10 @@ app.get('*', (_req: Request, res: Response) => {
 
 
 
+
+// Report route errors to Sentry (safe no-op when SENTRY_DSN is unset) before our own
+// error-handling middleware formats the client response.
+if (sentryEnabled) Sentry.setupExpressErrorHandler(app)
 
 // Error handler
 
