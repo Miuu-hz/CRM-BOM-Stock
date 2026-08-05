@@ -1706,5 +1706,19 @@ export function applySchema(db: any): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- ==================== RECEIPT TOKENS (public QR receipt links) ====================
+    -- token IS the shareable secret (crypto-random, base64url) — primary key means
+    -- lookup is a direct point read, with no way to list/enumerate other tokens.
+    -- One row per (tenant_id, doc_type, doc_id): reprints reuse the same link.
+    CREATE TABLE IF NOT EXISTS receipt_tokens (
+      token TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      doc_type TEXT NOT NULL,     -- 'pos_bill' | 'invoice'
+      doc_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT             -- NULL = no expiry (reserved for future policy; unset today)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_receipt_tokens_doc ON receipt_tokens(tenant_id, doc_type, doc_id);
   `)
 }

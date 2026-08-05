@@ -4,6 +4,7 @@ import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
 import { authenticate } from '../middleware/auth.middleware'
 import { generateId, formatDocumentNumber } from '../utils/id'
+import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../utils/receiptToken'
 
 const router = Router()
 
@@ -85,11 +86,11 @@ router.get('/bills/open', (req, res) => {
 })
 
 // Get single bill with items
-router.get('/bills/:id', (req, res) => {
+router.get('/bills/:id', async (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
-    
+
     // Get bill (JOIN customer loyalty_points if linked)
     const billStmt = db.prepare(`
       SELECT b.*, c.loyalty_points as customer_loyalty_points
@@ -98,14 +99,14 @@ router.get('/bills/:id', (req, res) => {
       WHERE b.id = ? AND b.tenant_id = ?
     `)
     const bill = billStmt.get(id, tenantId)
-    
+
     if (!bill) {
       return res.status(404).json({ success: false, message: 'Bill not found' })
     }
-    
+
     // Get items
     const itemsStmt = db.prepare(`
-      SELECT 
+      SELECT
         bi.*,
         pmc.pos_price as current_price
       FROM pos_bill_items bi
@@ -114,8 +115,13 @@ router.get('/bills/:id', (req, res) => {
       ORDER BY bi.added_at ASC
     `)
     const items = itemsStmt.all(id)
-    
-    res.json({ success: true, data: { ...bill, items } })
+
+    // Paperless receipt: lazily mint/reuse a public share token + QR for this bill
+    const receiptToken = getOrCreateReceiptToken('pos_bill', id, tenantId)
+    const receipt_url = buildReceiptUrl(receiptToken)
+    const receipt_qr = await buildReceiptQr(receiptToken)
+
+    res.json({ success: true, data: { ...bill, items, receipt_url, receipt_qr } })
   } catch (error) {
     console.error('Error fetching bill:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch bill' })

@@ -438,6 +438,10 @@ function templateINV_A4(d: any): string {
       <div class="sig-box">ลูกค้า (ยืนยัน)<br><br>&nbsp;</div>
       <div class="sig-box">ผู้อนุมัติ<br><br>&nbsp;</div>
     </div>
+    ${d.receipt_qr ? `<div style="text-align:center;margin-top:5mm">
+      <img src="${d.receipt_qr}" style="width:26mm;height:26mm" alt="QR">
+      <div style="font-size:8pt;color:var(--fg-3);margin-top:1mm">สแกนดูใบแจ้งหนี้ออนไลน์ / เก็บไว้แทนกระดาษ</div>
+    </div>` : ''}
     <div class="footer">ใบแจ้งหนี้ ${d.invoice_number} · SO: ${d.so_number || '-'} · พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</div>
   </div>`
 }
@@ -476,6 +480,7 @@ function templateINV_Thermal(d: any): string {
   <div class="row total-line"><label>รวมสุทธิ</label><span>${fmt(d.total_amount)}</span></div>
   ${(d.paid_amount || 0) > 0 ? `<div class="row"><label>ชำระแล้ว</label><span>${fmt(d.paid_amount)}</span></div>
   <div class="row bold"><label>ยอดค้าง</label><span>${fmt(d.balance_amount)}</span></div>` : ''}
+  ${d.receipt_qr ? `<hr class="divider"><div class="center"><img src="${d.receipt_qr}" style="width:22mm;height:22mm" alt="QR"><div style="font-size:7pt;color:var(--fg-4)">สแกนดูใบแจ้งหนี้ออนไลน์</div></div>` : ''}
   <div class="center" style="font-size:7pt;color:var(--fg-4);margin-top:3mm">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
 }
 
@@ -642,6 +647,7 @@ export function printSalesDoc(type: SalesDocType, data: any, format: SalesPrintF
   const css = format === 'thermal' ? CSS_THERMAL : CSS_A4
   const safeData: any = data ? deepEscape(data) : {}
   safeData._companyLogo = safeImageUrl(data?._companyLogo)
+  safeData.receipt_qr = safeImageUrl(data?.receipt_qr)
 
   switch (type) {
     case 'qt':
