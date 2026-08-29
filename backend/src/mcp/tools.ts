@@ -15,6 +15,7 @@ import { registerStockTools } from './tools/stock'
 import { registerProductionTools } from './tools/production'
 import { registerBomTools } from './tools/bom'
 import { registerFinanceTools } from './tools/finance'
+import { registerMarketingTools } from './tools/marketing'
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
   // Resolve display name + role for audit trail and approval-permission checks
@@ -31,6 +32,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerProductionTools(server, tenantId, userId)
   registerBomTools(server, tenantId)
   registerFinanceTools(server, tenantId)
+  registerMarketingTools(server, tenantId)
 }
 
 export default registerTools

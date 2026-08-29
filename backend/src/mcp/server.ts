@@ -97,7 +97,7 @@ export function setupMcpRoutes(app: Router): void {
     if (!key) { res.status(401).json({ ok: false, error: 'Missing API key' }); return }
     const ctx = resolveTenant(key)
     if (!ctx) { res.status(401).json({ ok: false, error: 'Invalid API key' }); return }
-    res.json({ ok: true, tools: 21, server: 'mini-erp', tenantId: ctx.tenantId })
+    res.json({ ok: true, tools: 23, server: 'mini-erp', tenantId: ctx.tenantId })
   })
 
   // ── POST /mcp/sse — Streamable HTTP (Gallery sends this) ─────────────────────
