@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { createSalesJournal, reverseSalesJournal, voidReceipt } from './shared'
+import { createSalesJournal } from './shared'
+import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -79,7 +81,12 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT * FROM invoice_attachments WHERE invoice_id = ? ORDER BY created_at ASC
     `).all(req.params.id)
 
-    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax, attachments } })
+    // Paperless receipt: lazily mint/reuse a public share token + QR for this invoice
+    const receiptToken = getOrCreateReceiptToken('invoice', req.params.id, tenantId)
+    const receipt_url = buildReceiptUrl(receiptToken)
+    const receipt_qr = await buildReceiptQr(receiptToken)
+
+    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax, attachments, receipt_url, receipt_qr } })
   } catch (error) {
     console.error('Get invoice error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch invoice' })

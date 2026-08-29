@@ -77,6 +77,8 @@ interface CurrentBill {
   tax_amount: number
   service_charge_amount: number
   total_amount: number
+  receipt_url?: string
+  receipt_qr?: string
 }
 
 interface POSShift {
@@ -114,6 +116,7 @@ export default function Cashier() {
   const [showEditNameModal, setShowEditNameModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showAssignMemberModal, setShowAssignMemberModal] = useState(false)
+  const [showReceiptQR, setShowReceiptQR] = useState(false)
   const [scanningBarcode, setScanningBarcode] = useState(false)
   const [payActionIssues, setPayActionIssues] = useState<any[] | null>(null)
   const [currentShift, setCurrentShift] = useState<POSShift | null | undefined>(undefined)
@@ -1041,6 +1044,15 @@ export default function Cashier() {
                         <Printer className="w-4 h-4" />
                         <span className="text-[9px] leading-none">A4</span>
                       </button>
+                      <button
+                        onClick={() => setShowReceiptQR(true)}
+                        disabled={currentBill.items.length === 0 || !currentBill.receipt_qr}
+                        title="ใบเสร็จดิจิทัล (QR)"
+                        className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-success hover:border-success/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
+                      >
+                        <QrCode className="w-4 h-4" />
+                        <span className="text-[9px] leading-none">QR</span>
+                      </button>
                     </div>
                   </div>
                 )
@@ -1083,6 +1095,28 @@ export default function Cashier() {
             } catch { toast.error('เพิ่มสมาชิกไม่สำเร็จ') }
           }}
         />
+      )}
+
+      {/* Digital Receipt QR Modal — customer scans instead of taking a paper slip */}
+      {showReceiptQR && currentBill?.receipt_qr && (
+        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowReceiptQR(false)}>
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            onClick={e => e.stopPropagation()}
+            className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-xs p-6 flex flex-col items-center gap-3 text-center"
+          >
+            <h2 className="text-base font-bold text-[var(--fg-1)]">สแกนดูใบเสร็จดิจิทัล</h2>
+            <img src={currentBill.receipt_qr} alt="Receipt QR" className="w-48 h-48" />
+            <p className="text-xs text-[var(--fg-3)]">ให้ลูกค้าสแกนด้วยกล้องมือถือแทนการรับใบเสร็จกระดาษ</p>
+            <button
+              onClick={() => setShowReceiptQR(false)}
+              className="mt-2 px-4 py-2 rounded-lg bg-[var(--bg)] text-[var(--fg-2)] text-sm hover:bg-[var(--border)] transition-all"
+            >
+              ปิด
+            </button>
+          </motion.div>
+        </div>
       )}
 
       {/* Edit Name Modal */}

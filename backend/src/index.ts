@@ -130,6 +130,9 @@ import posMenuRoutes from './routes/pos-menu.routes'
 import posBillRoutes from './routes/pos-bill.routes'
 
 
+import receiptRoutes from './routes/receipt.routes'
+
+
 import posClearingRoutes from './routes/pos-clearing.routes'
 
 
@@ -416,6 +419,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 
 
+
+
+// Public paperless-receipt viewer — QR-code target for POS bills / sales invoices.
+// No auth: reached only via an unguessable per-document token. Own rate limiter
+// inside receipt.routes.ts (this path is outside /api, so the global limiter above
+// does not cover it). Must stay mounted before the SPA catch-all at the bottom.
+app.use('/r', receiptRoutes)
 
 
 // API Routes

@@ -698,6 +698,10 @@ function templatePOS_A4(d: any): string {
       เลขประจำตัวผู้เสียภาษี: ___________________________________
     </div>` : ''}
     ${d._shopFooter ? `<div style="text-align:center;margin-top:5mm;font-size:9pt;color:var(--fg-3);border-top:1px solid var(--border);padding-top:3mm">${d._shopFooter}</div>` : ''}
+    ${d.receipt_qr ? `<div style="text-align:center;margin-top:5mm">
+      <img src="${d.receipt_qr}" style="width:26mm;height:26mm" alt="QR">
+      <div style="font-size:8pt;color:var(--fg-3);margin-top:1mm">สแกนดูใบเสร็จออนไลน์ / เก็บไว้แทนกระดาษ</div>
+    </div>` : ''}
     <div class="footer">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</div>
   </div>`
 }
@@ -748,6 +752,7 @@ function templatePOS_Thermal(d: any): string {
   <div class="row"><label>ชำระ</label><span>${METHOD_TH[d._paymentMethod] || d._paymentMethod || '-'}</span></div>`}
   ${posBankQrBlockThermal(d)}
   ${d._shopFooter ? `<hr class="divider"><div class="center" style="font-size:8pt;line-height:1.6">${d._shopFooter}</div>` : ''}
+  ${d.receipt_qr ? `<hr class="divider"><div class="center"><img src="${d.receipt_qr}" style="width:22mm;height:22mm" alt="QR"><div style="font-size:7pt;color:var(--fg-4)">สแกนดูใบเสร็จออนไลน์</div></div>` : ''}
   <div class="center" style="font-size:7pt;color:var(--fg-4);margin-top:2mm">${new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</div>`
 }
 
@@ -759,6 +764,7 @@ export function printDocument(type: DocType, data: any, format: PrintFormat = 'a
   const css = format === 'thermal' ? CSS_THERMAL : CSS_A4
   const safeData: any = data ? deepEscape(data) : {}
   safeData._companyLogo = safeImageUrl(data?._companyLogo)
+  safeData.receipt_qr = safeImageUrl(data?.receipt_qr)
 
   if (type === 'pr') {
     html = templatePR_A4(safeData)                         // PR: A4 only
@@ -785,6 +791,7 @@ export function printPOSReceipt(bill: any, format: PrintFormat = 'thermal') {
   const safeBill: any = bill ? deepEscape(bill) : {}
   safeBill._companyLogo = safeImageUrl(bill?._companyLogo)
   safeBill._bankQrImage = safeImageUrl(bill?._bankQrImage)
+  safeBill.receipt_qr = safeImageUrl(bill?.receipt_qr)
   const html = format === 'a4' ? templatePOS_A4(safeBill) : templatePOS_Thermal(safeBill)
   openPrint(format === 'a4' ? CSS_A4 : CSS_THERMAL, html, format)
 }
