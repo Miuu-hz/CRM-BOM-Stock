@@ -766,7 +766,7 @@ router.get('/search/gs1/:barcode', (req, res) => {
 
 // ==================== HELPERS ====================
 
-function recalculateBillTotals(billId: string) {
+export function recalculateBillTotals(billId: string) {
   // Get all items
   const itemsStmt = db.prepare('SELECT * FROM pos_bill_items WHERE bill_id = ?')
   const items = itemsStmt.all(billId)
