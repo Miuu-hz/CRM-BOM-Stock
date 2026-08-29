@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { createSalesJournal, reverseSalesJournal, voidReceipt } from './shared'
-import { createSalesJournal } from './shared'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
