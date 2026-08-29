@@ -68,3 +68,18 @@ coverage/
 *.bak-*
 *.db-shm
 *.db-wal
+
+# Database artifacts (any suffix) — เคยหลุดขึ้น public repo มาแล้ว
+*.db.*
+*.db-journal
+*.db.gz
+backend/backups/
+
+# Backup / scratch artifacts from agent runs
+*.bak
+*.bak.*
+*.pre-*
+*.CLOBBERED-*
+tmp_*.js
+tmp_*.ts
+*_tmp.js
