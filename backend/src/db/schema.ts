@@ -1745,5 +1745,178 @@ export function applySchema(db: any): void {
       expires_at TEXT             -- NULL = no expiry (reserved for future policy; unset today)
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_receipt_tokens_doc ON receipt_tokens(tenant_id, doc_type, doc_id);
+    -- ==================== ADDITIVE: restored 2026-08-29 — tables that exist in
+    -- production dev.db but were never added to schema.ts, so a fresh git clone
+    -- + migrate could never recreate them. Defs copied verbatim from prod
+    -- sqlite_master (IF NOT EXISTS added). Do not reorder above tax_transactions
+    -- (wht_certificates FK depends on it existing already, see line ~967).
+    CREATE TABLE IF NOT EXISTS ad_spends (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      channel TEXT,
+      amount REAL NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS backup_logs (
+      id          TEXT PRIMARY KEY,
+      tenant_id   TEXT,
+      filename    TEXT NOT NULL,
+      file_size   INTEGER,
+      status      TEXT NOT NULL DEFAULT 'PENDING',
+      cloud_url   TEXT,
+      cloud_file_id TEXT,
+      error       TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      account_id TEXT NOT NULL,
+      month INTEGER NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(tenant_id, year, month, account_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_attachments (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      invoice_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_size INTEGER,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS loyalty_transactions (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('EARN', 'REDEEM', 'ADJUST')),
+      points INTEGER NOT NULL,
+      balance_after INTEGER NOT NULL,
+      reference_type TEXT,
+      reference_id TEXT,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      token_hash  TEXT NOT NULL,
+      expires_at  TEXT NOT NULL,
+      used        INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL,
+      created_by  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_imports (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, platform TEXT NOT NULL,
+      shop_id TEXT, filename TEXT NOT NULL, import_date TEXT NOT NULL,
+      total_rows INT DEFAULT 0, matched_rows INT DEFAULT 0, unmatched_rows INT DEFAULT 0,
+      total_items_sold INT DEFAULT 0, total_ad_cost REAL DEFAULT 0, total_revenue REAL DEFAULT 0,
+      status TEXT DEFAULT 'PENDING',
+      notes TEXT, created_by TEXT, created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_import_items (
+      id TEXT PRIMARY KEY, import_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+      sku TEXT NOT NULL, product_name TEXT NOT NULL, ad_status TEXT,
+      impressions INT DEFAULT 0, clicks INT DEFAULT 0, orders INT DEFAULT 0,
+      items_sold INT DEFAULT 0, direct_items_sold INT DEFAULT 0,
+      revenue REAL DEFAULT 0, direct_revenue REAL DEFAULT 0, ad_cost REAL DEFAULT 0,
+      roas REAL DEFAULT 0,
+      stock_item_id TEXT, stock_item_name TEXT, current_stock INT DEFAULT 0,
+      deduct_status TEXT DEFAULT 'PENDING'
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_pending_je (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+      import_id TEXT, platform TEXT NOT NULL,
+      description TEXT NOT NULL, amount REAL NOT NULL,
+      import_date TEXT NOT NULL,
+      dr_account_id TEXT, cr_account_id TEXT,
+      status TEXT DEFAULT 'PENDING',
+      journal_entry_id TEXT, notes TEXT,
+      reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS qc_checklists (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      check_items TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS qc_inspections (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      checklist_id TEXT NOT NULL,
+      checklist_name TEXT NOT NULL,
+      work_order_ref TEXT DEFAULT '',
+      batch_number TEXT DEFAULT '',
+      product_name TEXT DEFAULT '',
+      inspector_name TEXT DEFAULT '',
+      status TEXT DEFAULT 'PENDING',
+      results TEXT DEFAULT '[]',
+      notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT,
+      work_order_id TEXT, inspected_qty INTEGER DEFAULT 0, passed_qty INTEGER DEFAULT 0, rejected_qty INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_qc_inspections_wo ON qc_inspections(work_order_id);
+
+    CREATE TABLE IF NOT EXISTS sku_mappings (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+      platform_sku TEXT NOT NULL, platform TEXT NOT NULL,
+      stock_item_id TEXT NOT NULL, stock_item_name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(tenant_id, platform_sku, platform)
+    );
+
+    CREATE TABLE IF NOT EXISTS wht_certificates (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      cert_number TEXT NOT NULL,
+      tax_transaction_id TEXT NOT NULL,
+      issue_date TEXT NOT NULL,
+      payer_name TEXT,
+      payer_tax_id TEXT,
+      payer_address TEXT,
+      payee_name TEXT,
+      payee_tax_id TEXT,
+      payee_address TEXT,
+      income_type TEXT,
+      income_section TEXT,
+      wht_form TEXT,
+      base_amount REAL DEFAULT 0,
+      tax_rate REAL DEFAULT 0,
+      tax_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'ISSUED',
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, cert_number),
+      FOREIGN KEY (tax_transaction_id) REFERENCES tax_transactions(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wht_cert_tenant ON wht_certificates(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_wht_cert_txn ON wht_certificates(tax_transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_wht_cert_issue ON wht_certificates(tenant_id, issue_date);
+
   `)
 }

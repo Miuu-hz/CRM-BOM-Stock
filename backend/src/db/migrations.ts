@@ -1347,6 +1347,15 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: pos_payments.bank_account_id added')
   } catch { /* column already exists */ }
 
+  // Migration: schema drift — company_settings.mcp_api_key / mcp_user_limit exist on
+  // production but were missing from schema.ts's company_settings table def. Must run
+  // BEFORE the idx_company_settings_mcp_api_key unique index below, or index creation
+  // silently fails on a fresh DB.
+  ;[
+    "ALTER TABLE company_settings ADD COLUMN mcp_api_key TEXT",
+    "ALTER TABLE company_settings ADD COLUMN mcp_user_limit INTEGER DEFAULT 1",
+  ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
+
   // MCP API key ต้องไม่ซ้ำข้ามบริษัท — resolveTenant() ใช้ LIMIT 1 ถ้าคีย์ซ้ำจะ route ไป tenant ไหนก็ได้
   try {
     db.exec(`
@@ -1753,4 +1762,14 @@ export function runMigrations(db: any): void {
     console.error('⚠️ credit_note_items FK rebuild migration error:', e)
     try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
   }
+
+  // Migration: schema drift — restored 2026-08-29. Columns exist on production but
+  // were missing from schema.ts, so a fresh migrate never created them.
+  ;[
+    "ALTER TABLE invoices ADD COLUMN currency_code TEXT DEFAULT 'THB'",
+    "ALTER TABLE invoices ADD COLUMN exchange_rate REAL DEFAULT 1",
+    "ALTER TABLE invoices ADD COLUMN foreign_amount REAL",
+    "ALTER TABLE journal_entries ADD COLUMN is_closing_entry INTEGER DEFAULT 0",
+    "ALTER TABLE tax_transactions ADD COLUMN wht_form TEXT",
+  ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 }
