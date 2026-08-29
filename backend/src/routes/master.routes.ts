@@ -47,14 +47,6 @@ async function provisionKanban(params: {
   }
 }
 
-function slugify(text: string): string {
-  return text.toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .substring(0, 20) || 'tenant'
-}
-
 function getAllTenants(currentTenantId: string): { tenantId: string; name: string; isCurrentTenant: boolean }[] {
   const db = getDb()
   const rows = db.prepare('SELECT tenant_id, name FROM company_settings').all() as { tenant_id: string; name: string | null }[]
@@ -202,6 +194,42 @@ router.delete('/tenant/:tenantId', authenticate, requireMaster, (req: Request, r
   const { tenantId } = req.params
   const result = db.prepare("UPDATE users SET status = 'inactive' WHERE tenant_id = ?").run(tenantId)
   res.json({ success: true, data: { tenantId, deactivated: result.changes } })
+})
+
+// DELETE /api/master/tenant/:tenantId/purge — ลบถาวร เฉพาะ tenant ที่ไม่มีผู้ใช้และไม่มีข้อมูลธุรกิจ
+// ตารางใน SHELL_TABLES = config ที่ provisionTenant สร้างให้ตอนเปิด tenant ไม่นับเป็น "ข้อมูล"
+const SHELL_TABLES = new Set([
+  'company_settings', 'tenant_subscriptions', 'document_sequences',
+  'document_number_formats', 'currencies', 'accounts',
+])
+router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, (req: Request, res: Response) => {
+  const db = getDb()
+  const { tenantId } = req.params
+  if (tenantId === req.user!.tenantId) {
+    res.status(400).json({ success: false, message: 'ลบ tenant ที่กำลังใช้งานอยู่ไม่ได้ ให้สลับไป tenant อื่นก่อน' }); return
+  }
+  const envKey = Object.keys(process.env).find(k => /^MASTER_.+_TENANT_ID$/.test(k) && process.env[k] === tenantId)
+  if (envKey) {
+    res.status(400).json({ success: false, message: `tenant นี้ผูกกับบัญชี Master ใน .env (${envKey}) ต้องเอาออกจาก .env ก่อน` }); return
+  }
+
+  const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map(r => r.name as string)
+  const owned = tables.filter(t => (db.prepare(`PRAGMA table_info("${t}")`).all() as any[]).some((c: any) => c.name === 'tenant_id'))
+  const blockers = owned
+    .filter(t => !SHELL_TABLES.has(t))
+    .map(t => ({ t, c: (db.prepare(`SELECT COUNT(*) c FROM "${t}" WHERE tenant_id = ?`).get(tenantId) as any).c as number }))
+    .filter(x => x.c > 0)
+  if (blockers.length) {
+    res.status(409).json({
+      success: false,
+      message: `ลบถาวรไม่ได้ ยังมีข้อมูลอยู่: ${blockers.map(b => `${b.t} (${b.c})`).join(', ')} — ใช้ "ปิดใช้งาน" แทน`,
+    }); return
+  }
+
+  const deleted = db.transaction(() =>
+    owned.reduce((n, t) => n + db.prepare(`DELETE FROM "${t}" WHERE tenant_id = ?`).run(tenantId).changes, 0)
+  )()
+  res.json({ success: true, data: { tenantId, deleted } })
 })
 
 // ==================== SUBSCRIPTIONS ====================

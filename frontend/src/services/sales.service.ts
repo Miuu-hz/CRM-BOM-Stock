@@ -17,6 +17,10 @@ export interface Product {
   code: string
   name: string
   unit?: string
+  /** หน่วยฐาน/หน่วยสต็อกจริงของสินค้า (stock_items.base_unit, fallback = unit) */
+  base_unit?: string
+  /** หน่วยที่ตั้งไว้ให้ขาย (stock_items.sale_unit) — ถ้ามี ให้ใช้เป็นค่าเริ่มต้นก่อน unit */
+  sale_unit?: string
   sell_price?: number
 }
 
@@ -88,6 +92,8 @@ const salesService = {
       code: p.sku || p.code,
       name: p.name,
       unit: normalizeUnit(p.unit),
+      base_unit: p.base_unit ? normalizeUnit(p.base_unit) : undefined,
+      sale_unit: p.sale_unit ? normalizeUnit(p.sale_unit) : undefined,
       sell_price: p.unit_price || p.unitCost || 0,
     }))
   },
@@ -182,7 +188,11 @@ const salesService = {
     return data
   },
 
-  createCreditNote: async (payload: { invoiceId: string; reason: string; creditDate?: string }) => {
+  createCreditNote: async (payload: {
+    invoiceId: string; reason: string; creditDate?: string
+    /** ระบุเมื่อโหมด "รับคืนสินค้า" เท่านั้น — ไม่ส่ง = โหมด "ลดราคา/ส่วนลด" (ไม่แตะสต็อก) */
+    items?: { invoiceItemId: string; productId?: string; quantity: number; unitPrice: number; reason?: string }[]
+  }) => {
     const { data } = await api.post('/sales/credit-notes', payload)
     return data
   },

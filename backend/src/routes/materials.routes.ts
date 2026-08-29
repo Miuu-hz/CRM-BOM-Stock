@@ -15,6 +15,8 @@ import {
   getUnitDisplayName,
   findConversionChain,
   normalizeUnit,
+  detectConversionConflict,
+  getUnitCatalog,
 } from '../services/unitConversion.service'
 import { suggestUnitConversion } from '../services/llm.service'
 
@@ -193,6 +195,23 @@ router.get('/unit-conversions/standards', (_req: Request, res: Response) => {
   res.json({ success: true, data: getStandardConversions() })
 })
 
+// GET /api/materials/unit-conversions/catalog
+// รายการหน่วยทั้งหมด (dedupe ด้วย normalizeUnit) + หน่วยพิเศษที่ factor ไม่ใช่ค่ามาตรฐานสากล
+// query: materialId (optional) — ถ้าส่งมา specials จะรวมกฎเฉพาะสินค้านั้นด้วย
+router.get('/unit-conversions/catalog', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { materialId } = req.query
+    const matId =
+      typeof materialId === 'string' && materialId.trim() ? materialId.trim() : undefined
+    const data = getUnitCatalog(tenantId, matId)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('Get unit catalog error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch unit catalog' })
+  }
+})
+
 // GET /api/materials/unit-conversions/compatible — หน่วยที่อยู่ใน category เดียวกัน + custom conversions
 router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
   try {
@@ -251,7 +270,7 @@ router.get('/unit-conversions', (req: Request, res: Response) => {
 router.post('/unit-conversions', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { material_id, from_unit, to_unit, conversion_factor, notes } = req.body
+    const { material_id, from_unit, to_unit, conversion_factor, notes, force } = req.body
 
     if (!from_unit || !to_unit || conversion_factor == null) {
       return res.status(400).json({ success: false, message: 'from_unit, to_unit และ conversion_factor จำเป็นต้องระบุ' })
@@ -261,6 +280,20 @@ router.post('/unit-conversions', (req: Request, res: Response) => {
     }
     if (from_unit === to_unit) {
       return res.status(400).json({ success: false, message: 'หน่วยต้นทางและปลายทางต้องไม่เหมือนกัน' })
+    }
+
+    // Block a rate that contradicts what the other rules already imply, unless the
+    // caller has seen the warning and chosen to override it.
+    if (!force) {
+      const conflict = detectConversionConflict(tenantId, from_unit, to_unit, Number(conversion_factor), material_id)
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          code: 'UNIT_CONVERSION_CONFLICT',
+          message: conflict.message,
+          data: conflict,
+        })
+      }
     }
 
     const record = createConversion(tenantId, { material_id, from_unit, to_unit, conversion_factor: Number(conversion_factor), notes })
@@ -278,10 +311,31 @@ router.post('/unit-conversions', (req: Request, res: Response) => {
 router.put('/unit-conversions/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { conversion_factor, notes } = req.body
+    const { conversion_factor, notes, force } = req.body
 
     if (conversion_factor != null && Number(conversion_factor) <= 0) {
       return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
+    }
+
+    // Same guard as create, but the row being edited is excluded from the check so
+    // a rate is never compared against its own previous value.
+    if (!force && conversion_factor != null) {
+      const current = db.prepare('SELECT from_unit, to_unit, material_id FROM unit_conversions WHERE id = ? AND tenant_id = ?')
+        .get(req.params.id, tenantId) as any
+      if (current) {
+        const conflict = detectConversionConflict(
+          tenantId, current.from_unit, current.to_unit, Number(conversion_factor),
+          current.material_id ?? undefined, req.params.id,
+        )
+        if (conflict) {
+          return res.status(409).json({
+            success: false,
+            code: 'UNIT_CONVERSION_CONFLICT',
+            message: conflict.message,
+            data: conflict,
+          })
+        }
+      }
     }
 
     const updated = updateConversion(req.params.id, tenantId, { conversion_factor: Number(conversion_factor), notes })
@@ -550,7 +604,9 @@ router.post('/', (req: Request, res: Response) => {
     }
 
     // Unit: allow override from request, fallback to category default
-    const unit = reqUnit || category.default_unit
+    // Store the canonical code: a Thai name typed here would otherwise sit in
+    // stock_items.unit as its own unit and show up twice in the picker.
+    const unit = normalizeUnit(reqUnit || category.default_unit || 'pcs')
 
     // Check for duplicate code in materials
     const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
@@ -768,7 +824,7 @@ router.post('/:id/stock', (req: Request, res: Response) => {
         `STK-${material.code}`,
         `Stock: ${material.name}`,
         material.id,
-        material.unit,
+        normalizeUnit(material.unit || 'pcs'),
         material.min_stock,
         material.max_stock,
         now,

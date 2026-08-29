@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Network, ArrowRight, X, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { UNIT_LABELS } from '../../hooks/useUnits'
+import { unitLabel } from '../../hooks/useUnits'
 
 type NodePos = { x: number; y: number }
 
@@ -26,7 +26,7 @@ const CANVAS_H = 360
 const NODE_W = 130
 const NODE_H = 46
 
-const ul = (u: string) => UNIT_LABELS[u] ?? u
+const ul = (u: string) => unitLabel(u)
 
 function autoLayout(
   units: string[],
@@ -218,22 +218,31 @@ export default function UnitChainEditor({
 
   return (
     <>
+      {/* All uce- tokens below resolve through the app's own theme tokens
+          (surface, fg, equity, primary etc.), which already flip correctly
+          between :root and :root[data-theme="dark"] in index.css. Previously
+          this block hardcoded a fixed dark palette (#0d0d1a canvas,
+          rgba(18,18,42) nodes) independent of the site's theme, so in light
+          mode the app's theme-aware fg-2/fg-4 text (dark ink, meant for a
+          light background) rendered on top of that hardcoded dark canvas and
+          became unreadable. equity/equity-strong is the design system's
+          existing AA-safe violet pair (dark shade for light mode, light shade
+          for dark mode), reused here instead of inventing an unvetted purple. */}
       <style>{`
         .uce-theme {
-          --uce-bg: #0d0d1a;
-          --uce-grid: color-mix(in oklab, var(--primary) 18%, transparent);
-          --uce-node: rgba(18, 18, 42, 0.95);
-          --uce-accent: #8b5cf6;
-          --uce-accent-soft: #c4b5fd;
-          --uce-accent-btn: #9333ea;
-          --uce-accent-btn-hover: #a855f7;
-          --uce-tag: #1a1a2e;
-          --uce-blue: #3b82f6;
-          --uce-blue-soft: #93c5fd;
-          --uce-blue-dark: #1e3a8a;
-          --uce-muted: #4b5563;
-          --uce-input-bg: rgba(55, 65, 81, 0.5);
-          --uce-placeholder: #6b7280;
+          --uce-bg: var(--surface-sunken);
+          --uce-grid: color-mix(in oklab, var(--equity) 18%, transparent);
+          --uce-node: var(--surface);
+          --uce-accent: var(--equity);
+          --uce-accent-soft: var(--equity-strong);
+          --uce-accent-btn: var(--equity);
+          --uce-accent-btn-hover: color-mix(in oklab, var(--equity) 82%, black);
+          --uce-tag: var(--equity-soft);
+          --uce-blue: var(--primary);
+          --uce-blue-soft: var(--primary);
+          --uce-blue-dark: var(--surface-2);
+          --uce-muted: var(--fg-4);
+          --uce-input-bg: var(--surface-2);
         }
       `}</style>
       <div className="fixed inset-0 bg-[var(--fg-1)]/70 z-50 flex items-center justify-center p-4 uce-theme">

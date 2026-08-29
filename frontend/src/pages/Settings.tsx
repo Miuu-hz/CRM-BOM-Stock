@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -50,6 +51,7 @@ import DocumentNumberSettings from './settings/DocumentNumberSettings'
 import MCPSettings from './settings/MCPSettings'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
+import { stripNonAscii } from '../utils/email'
 
 interface ChildUser {
   id: string
@@ -65,7 +67,14 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency' | 'bank-accounts' | 'mcp'>('general')
+  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency' | 'bank-accounts' | 'mcp'
+  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'llm', 'backup', 'permissions', 'approval', 'doc-numbering', 'currency', 'bank-accounts', 'mcp']
+  // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
+  const [searchParams] = useSearchParams()
+  const tabFromUrl = searchParams.get('tab') as SettingsTab | null
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    tabFromUrl && VALID_TABS.includes(tabFromUrl) ? tabFromUrl : 'general'
+  )
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
@@ -680,15 +689,21 @@ function LoyaltySettings() {
 // General Settings
 function GeneralSettings() {
   const { t } = useTranslation()
-  const { tenant, isMaster } = useAuth()
+  const { tenant, isMaster, user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
   const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', logo_base64: '' })
   const [qcGateEnabled, setQcGateEnabled] = useState(false)
   const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
+  const [allowNegativeStock, setAllowNegativeStock] = useState(false)
+  const [requirePosShift, setRequirePosShift] = useState(false)
+  const [subPlanName, setSubPlanName] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [qcSaving, setQcSaving] = useState(false)
   const [subconWidgetSaving, setSubconWidgetSaving] = useState(false)
+  const [negStockSaving, setNegStockSaving] = useState(false)
+  const [requireShiftSaving, setRequireShiftSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -697,6 +712,9 @@ function GeneralSettings() {
         setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', logo_base64: d.logo_base64 || '' })
         setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
         setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
+        setAllowNegativeStock(Number(d.allow_negative_stock) === 1)
+        setRequirePosShift(Number(d.require_pos_shift) === 1)
+        setSubPlanName(d.subscription_plan_name || '')
       }).catch(() => {})
     })
   }, [])
@@ -743,6 +761,34 @@ function GeneralSettings() {
       setShowSubconStockWidget(!next)
     } finally {
       setSubconWidgetSaving(false)
+    }
+  }
+
+  const handleToggleAllowNegativeStock = async () => {
+    const next = !allowNegativeStock
+    setAllowNegativeStock(next)
+    setNegStockSaving(true)
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({ allow_negative_stock: next })
+    } catch {
+      setAllowNegativeStock(!next)
+    } finally {
+      setNegStockSaving(false)
+    }
+  }
+
+  const handleToggleRequirePosShift = async () => {
+    const next = !requirePosShift
+    setRequirePosShift(next)
+    setRequireShiftSaving(true)
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({ require_pos_shift: next })
+    } catch {
+      setRequirePosShift(!next)
+    } finally {
+      setRequireShiftSaving(false)
     }
   }
 
@@ -865,13 +911,88 @@ function GeneralSettings() {
         </button>
       </div>
 
+      {/* Allow Negative Stock — risky override, block by default. ADMIN/MASTER only:
+          hidden entirely for lower roles rather than shown disabled, since the
+          backend now rejects this field from anyone else anyway. */}
+      {(isAdmin || isMaster) && (
+      <div className="phopy-card p-6 border-l-4 border-danger">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-danger" />
+          {t('settings.settingsPage.allowNegativeStock.title')}
+        </h3>
+        <button
+          type="button"
+          onClick={() => !negStockSaving && handleToggleAllowNegativeStock()}
+          disabled={negStockSaving}
+          className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 mt-3 ${allowNegativeStock ? 'border-danger/60 bg-danger/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
+        >
+          <div className="text-left">
+            <p className={`font-medium ${allowNegativeStock ? 'text-danger' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.allowNegativeStock.toggleLabel')}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.allowNegativeStock.toggleSub')}</p>
+          </div>
+          {negStockSaving
+            ? <div className="w-5 h-5 border-2 border-danger border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            : allowNegativeStock
+              ? <ToggleRight className="w-8 h-8 text-danger flex-shrink-0" />
+              : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+        </button>
+
+        {/* Scope list always visible — so it's clear what turning this on
+            affects before you flip it, not only after. */}
+        <div className="mt-3 px-4 py-3 rounded-lg bg-danger/5 border border-danger/20">
+          <p className="text-sm font-medium text-danger mb-2">{t('settings.settingsPage.allowNegativeStock.scopeTitle')}</p>
+          <ul className="space-y-1 text-sm text-[var(--fg-2)]">
+            <li className="flex items-start gap-2">
+              <span className="text-danger mt-1">•</span>
+              {t('settings.settingsPage.allowNegativeStock.scopePos')}
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-danger mt-1">•</span>
+              {t('settings.settingsPage.allowNegativeStock.scopeWorkOrder')}
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-danger mt-1">•</span>
+              {t('settings.settingsPage.allowNegativeStock.scopeSalesOrder')}
+            </li>
+          </ul>
+        </div>
+      </div>
+      )}
+
+      {/* Require POS Shift — off by default so existing tenants that never open shifts
+          keep selling uninterrupted. ADMIN/MASTER only, same gate as allow_negative_stock. */}
+      {(isAdmin || isMaster) && (
+      <div className="phopy-card p-6 border-l-4 border-warning">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-warning" />
+          {t('settings.settingsPage.requirePosShift.title')}
+        </h3>
+        <button
+          type="button"
+          onClick={() => !requireShiftSaving && handleToggleRequirePosShift()}
+          disabled={requireShiftSaving}
+          className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 mt-3 ${requirePosShift ? 'border-warning/60 bg-warning/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
+        >
+          <div className="text-left">
+            <p className={`font-medium ${requirePosShift ? 'text-warning' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.requirePosShift.toggleLabel')}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.requirePosShift.toggleSub')}</p>
+          </div>
+          {requireShiftSaving
+            ? <div className="w-5 h-5 border-2 border-warning border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            : requirePosShift
+              ? <ToggleRight className="w-8 h-8 text-warning flex-shrink-0" />
+              : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+        </button>
+      </div>
+      )}
+
       {/* Tenant meta (read-only) */}
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <Shield className="w-5 h-5 text-[var(--primary)]" />
           {t('settings.settingsPage.general.accountTitle')}
         </h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.tenantCode')}</label>
             <p className="text-[var(--fg-2)] font-mono">{tenant?.code || '-'}</p>
@@ -881,6 +1002,10 @@ function GeneralSettings() {
             <p className={`font-semibold ${isMaster ? 'text-success' : 'text-[var(--primary)]'}`}>
               {isMaster ? t('settings.settingsPage.general.masterAccount') : t('settings.settingsPage.general.standardAccount')}
             </p>
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.subscriptionPlan')}</label>
+            <p className="font-semibold text-[var(--primary)]">{subPlanName || '-'}</p>
           </div>
         </div>
       </div>
@@ -1146,7 +1271,7 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => setForm({ ...form, email: stripNonAscii(e.target.value) })}
               className="phopy-input w-full"
               placeholder={t('settings.settingsPage.addChildModal.emailPlaceholder')}
               required

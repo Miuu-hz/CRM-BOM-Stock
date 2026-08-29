@@ -534,6 +534,7 @@ router.get('/menu-configs/:id/stock', (req, res) => {
           si.id as stock_item_id,
           si.name as stock_item_name,
           si.quantity as current_stock,
+          si.base_unit as stock_base_unit,
           si.unit as stock_unit
         FROM bom_items bi
         JOIN stock_items si ON bi.material_id = si.id
@@ -551,6 +552,7 @@ router.get('/menu-configs/:id/stock', (req, res) => {
           si.id as stock_item_id,
           si.name as stock_item_name,
           si.quantity as current_stock,
+          si.base_unit as stock_base_unit,
           si.unit as stock_unit
         FROM pos_menu_ingredients pmi
         JOIN stock_items si ON pmi.stock_item_id = si.id
@@ -562,7 +564,10 @@ router.get('/menu-configs/:id/stock', (req, res) => {
     // Calculate max available quantity (with unit conversion)
     let maxAvailable = Infinity
     const stockDetails = ingredients.map((ing: any) => {
-      const stockBaseUnit = ing.stock_unit || ''
+      // ใช้ base_unit ก่อนเสมอ (fallback ไป unit เดิมกันของเก่าพัง) เพราะ si.quantity
+      // เก็บเป็น base_unit — เดิมจุดนี้ใช้ si.unit (คอลัมน์ legacy) ตรงๆ ทำให้ 23/456
+      // รายการที่ unit != base_unit คำนวณ can_make/sufficient/required ผิดหน่วยเงียบๆ
+      const stockBaseUnit = ing.stock_base_unit || ing.stock_unit || ''
       const ingredientUnit = ing.ingredient_unit || stockBaseUnit
       let quantityUsed = ing.quantity_used
 
@@ -571,6 +576,8 @@ router.get('/menu-configs/:id/stock', (req, res) => {
         const converted = convertQuantityBidirectional(quantityUsed, ingredientUnit, stockBaseUnit, tenantId, ing.stock_item_id)
         if (converted) {
           quantityUsed = converted.converted
+        } else {
+          console.warn(`[qty] POS menu availability: no conversion ${ingredientUnit} → ${stockBaseUnit} for stock item ${ing.stock_item_id}; can_make is unreliable`)
         }
       }
 

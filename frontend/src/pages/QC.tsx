@@ -5,6 +5,7 @@ import {ClipboardCheck, Plus, X, CheckCircle, XCircle, Clock, Trash2, RefreshCw,
 import api from '../services/api'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
+import { unitLabel } from '../hooks/useUnits'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface CheckItem {
@@ -257,7 +258,7 @@ export default function QCPage() {
                         <span className="text-[var(--fg-4)] text-xs w-5 text-right">{idx + 1}.</span>
                         <span>{item.name}</span>
                         {item.type === 'measurement' && item.expected && (
-                          <span className="text-xs text-[var(--fg-4)]">({item.expected} {item.unit})</span>
+                          <span className="text-xs text-[var(--fg-4)]">({item.expected} {unitLabel(item.unit)})</span>
                         )}
                       </div>
                     ))}
@@ -695,7 +696,7 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
                   <div className="flex items-center justify-between mb-2">
                     <p className="font-medium text-[var(--fg-1)] text-sm">{r.item_name}</p>
                     {r.type === 'measurement' && r.expected && (
-                      <span className="text-xs text-[var(--fg-4)]">{t('qc.target')}: {r.expected} {r.unit}</span>
+                      <span className="text-xs text-[var(--fg-4)]">{t('qc.target')}: {r.expected} {unitLabel(r.unit)}</span>
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap">

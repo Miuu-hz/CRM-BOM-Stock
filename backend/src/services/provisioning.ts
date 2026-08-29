@@ -10,12 +10,13 @@
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/sqlite'
 
+// คืนค่าว่างได้ถ้าชื่อไม่เหลือตัวอักษร ASCII เลย (เช่นชื่อไทยล้วน) — ผู้เรียกตัดสินเองว่าจะใช้อะไรแทน
 export function slugify(text: string): string {
   return text.toLowerCase()
     .replace(/[^\w\s-]/g, '')
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .substring(0, 20) || 'tenant'
+    .substring(0, 20)
 }
 
 // Carries an HTTP status so route handlers can map it to a response.
@@ -45,13 +46,15 @@ export interface ProvisionResult {
 // Throws ProvisionError(409) on tenantId / email collision.
 export function provisionTenant(input: ProvisionInput): ProvisionResult {
   const db = getDb()
+  // ชื่อไทยล้วน slugify ได้ค่าว่าง → ข้ามส่วนชื่อไปเลย ไม่งั้นได้ `tenant_tenant_xxx`
+  const slug = slugify(input.businessName)
   const tenantId =
-    input.customTenantId?.trim() || `tenant_${slugify(input.businessName)}_${Date.now().toString(36)}`
+    input.customTenantId?.trim() || `tenant_${slug ? slug + '_' : ''}${Date.now().toString(36)}`
 
   const tExists = db.prepare('SELECT 1 FROM company_settings WHERE tenant_id = ?').get(tenantId)
   if (tExists) throw new ProvisionError(409, `Tenant ID "${tenantId}" มีอยู่แล้ว`)
 
-  const eExists = db.prepare('SELECT 1 FROM users WHERE email = ?').get(input.adminEmail)
+  const eExists = db.prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE').get(input.adminEmail)
   if (eExists) throw new ProvisionError(409, `Email "${input.adminEmail}" ถูกใช้งานแล้ว`)
 
   const userId = randomBytes(12).toString('hex')

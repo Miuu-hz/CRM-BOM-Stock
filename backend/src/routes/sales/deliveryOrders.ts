@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
+import { roundQty } from '../../utils/qty'
 
 const router = Router()
 
@@ -153,11 +154,13 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           if (stockItem) {
             const soItem = db.prepare('SELECT unit FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
             const soUnit = soItem?.unit || ''
-            const stockUnit = stockItem.unit || ''
+            // stock_items.quantity is stored in base_unit, not the legacy `unit` column —
+            // fall back to `unit` only when base_unit is empty (old rows).
+            const stockUnit = stockItem.base_unit || stockItem.unit || ''
             let deductQty = item.quantity
             let movementNotes = `Delivered to customer`
 
-            if (soUnit && stockUnit && soUnit !== stockUnit) {
+            if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
               const converted = convertQuantityBidirectional(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id)
               if (!converted) {
                 throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name}" กรุณาตั้งค่า Unit Conversion ก่อน`)
@@ -166,17 +169,20 @@ router.put('/:id/status', async (req: Request, res: Response) => {
               movementNotes = `Delivered to customer (converted: ${item.quantity} ${soUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`
             }
 
-            const needed = Math.floor(deductQty)
+            const needed = roundQty(Number(deductQty))
             // auto-unpack ถ้า quantity ไม่พอ
             if (stockItem.quantity < needed && (stockItem.sealed_qty ?? 0) > 0) {
               const unpack = autoUnpackIfNeeded(stockItem, needed, tenantId)
               if (unpack && unpack.unpackedPacks > 0) {
+                // quantity ของ stock_movements ต้องเป็น base unit (ไม่ใช่จำนวนแพ็ค) —
+                // ดู unitConversion.service.ts:autoUnpackIfNeeded และ stock.routes.ts /:id/unpack
+                const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
                 db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
                   .run(unpack.sealed_qty, unpack.quantity, now, stockItem.id, tenantId)
-                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)`)
-                  .run(generateId(), tenantId, stockItem.id, unpack.unpackedPacks, `DO: ${deliveryOrder.do_number}`,
-                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stockItem.display_unit}`, now, req.user!.userId)
+                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)`)
+                  .run(generateId(), tenantId, stockItem.id, gained, stockItem.display_unit || null, unpack.unpackedPacks, `DO: ${deliveryOrder.do_number}`,
+                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stockItem.display_unit} → ${gained} ${stockUnit}`, now, req.user!.userId)
                 stockItem.quantity = unpack.quantity
               }
             }

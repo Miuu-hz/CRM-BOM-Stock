@@ -455,6 +455,58 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
 })
 
 // ─── DELETE /api/purchase-requests/:id — remove a DRAFT (unconfirmed) request
+// -- POST /api/purchase-requests/:id/cancel
+// ยกเลิกใบขอซื้อ (คนละเรื่องกับลบ: ลบได้เฉพาะร่าง แต่ยกเลิกเก็บประวัติไว้ให้ตรวจสอบย้อนหลังได้)
+//
+// เงื่อนไขที่ต้องผ่านก่อนยกเลิก — ไม่ใช่ว่ายืนยันไปแล้วจะยกเลิกได้เสมอ:
+//   1) ต้องเป็นระดับหัวหน้าขึ้นไป (MASTER / ADMIN / MANAGER / POWERUSER)
+//   2) ยังไม่เคยยกเลิก และไม่ใช่ใบที่ถูกปฏิเสธไปแล้ว
+//   3) ต้องไม่มีใบสั่งซื้อที่ออกจากใบขอซื้อนี้ค้างอยู่ (purchase_orders.linked_pr_id)
+//      ถ้ามี ต้องไปยกเลิกใบสั่งซื้อก่อน ไม่งั้นจะเหลือ PO ลอยที่อ้างถึงใบขอซื้อที่ถูกยกเลิก
+router.post('/:id/cancel', (req: Request, res: Response) => {
+    try {
+        const { tenantId, role, email } = req.user!
+        const db = getDb()
+
+        const ALLOWED_ROLES = ['MASTER', 'ADMIN', 'MANAGER', 'POWERUSER']
+        if (!ALLOWED_ROLES.includes(String(role))) {
+            return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบขอซื้อ — ต้องเป็นผู้จัดการขึ้นไป' })
+        }
+
+        const pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+        if (!pr) return res.status(404).json({ success: false, message: 'ไม่พบใบขอซื้อ' })
+
+        if (pr.status === 'CANCELLED') {
+            return res.status(400).json({ success: false, message: 'ใบขอซื้อนี้ถูกยกเลิกไปแล้ว' })
+        }
+        if (pr.status === 'REJECTED') {
+            return res.status(400).json({ success: false, message: 'ใบขอซื้อนี้ถูกปฏิเสธไปแล้ว ไม่ต้องยกเลิกซ้ำ' })
+        }
+
+        const linkedPO = db.prepare(
+            "SELECT po_number, status FROM purchase_orders WHERE tenant_id = ? AND linked_pr_id = ? AND status != 'CANCELLED' LIMIT 1"
+        ).get(tenantId, req.params.id) as any
+        if (linkedPO) {
+            return res.status(400).json({
+                success: false,
+                code: 'PR_HAS_ACTIVE_PO',
+                message: `ยกเลิกไม่ได้ — มีใบสั่งซื้อ ${linkedPO.po_number} ที่ออกจากใบขอซื้อนี้อยู่ กรุณายกเลิกใบสั่งซื้อก่อน`,
+            })
+        }
+
+        const reason = String(req.body?.reason || '').trim()
+        const now = new Date().toISOString()
+        db.prepare('UPDATE purchase_requests SET status = ?, rejection_reason = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+            .run('CANCELLED', reason ? `ยกเลิกโดย ${email}: ${reason}` : `ยกเลิกโดย ${email}`, now, req.params.id, tenantId)
+
+        const updated = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+        res.json({ success: true, message: `ยกเลิกใบขอซื้อ ${pr.pr_number} เรียบร้อย`, data: updated })
+    } catch (e) {
+        console.error('Cancel PR error:', e)
+        res.status(500).json({ success: false, message: 'ยกเลิกใบขอซื้อไม่สำเร็จ' })
+    }
+})
+
 router.delete('/:id', (req: Request, res: Response) => {
     try {
         const { tenantId } = req.user!

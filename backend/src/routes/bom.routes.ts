@@ -43,21 +43,35 @@ function mapItem(item: any): any {
 
 /**
  * คำนวณต้นทุน BOM แบบ Recursive (รวมต้นทุนลูกทั้งหมด)
+ *
+ * คืนค่าเป็น "ต้นทุนต่อ 1 หน่วยผลผลิต" (totalCost ของ bom_items ทั้งชุด / output_qty)
+ * ไม่ใช่ต้นทุนรวมของทั้งชุดอีกต่อไป — เดิม BOM ถูกสมมติว่าผลิตได้ 1 หน่วยเสมอ ทำให้
+ * เคส "ซื้อผ้ามาเป็นม้วน → ตัดแบ่งขายเป็นเมตร" (1 BOM ผลิตได้หลายเมตรต่อรอบ) คำนวณ
+ * ต้นทุนต่อหน่วยผิด. BOM เดิมที่ output_qty ยังเป็น 1 (ค่า backfill) จะได้ totalCost
+ * เท่าเดิมทุกประการ เพราะหารด้วย 1 ไม่เปลี่ยนค่า.
  */
 function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> = new Set()): number {
   // Prevent circular reference
   if (visited.has(bomId)) return 0
   visited.add(bomId)
 
+  const bomRow = db.prepare('SELECT output_qty, output_unit, product_id FROM boms WHERE id = ? AND tenant_id = ?').get(bomId, tenantId) as any
+  // output_qty ที่ไม่ถูกตั้ง หรือ <= 0 (ข้อมูลเก่า/ผิดพลาด) ถือว่าผลิตได้ 1 หน่วยเหมือนเดิม
+  const outputQty = Number(bomRow?.output_qty) > 0 ? Number(bomRow.output_qty) : 1
+
   const items = db.prepare(`
     SELECT bi.*,
            COALESCE(m.unit_cost, 0) as unit_cost,
            m.name as material_name,
            m.unit as material_unit,
-           child_bom.product_id as child_product_id
+           child_bom.product_id as child_product_id,
+           child_bom.output_unit as child_output_unit,
+           child_p.base_unit as child_product_base_unit,
+           child_p.unit as child_product_unit
     FROM bom_items bi
     LEFT JOIN stock_items m ON bi.material_id = m.id
     LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
+    LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
 
@@ -68,8 +82,26 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
 
   for (const item of items) {
     if (item.item_type === 'CHILD_BOM' && item.child_bom_id) {
-      const childCost = calculateBOMCost(item.child_bom_id, tenantId, visited)
-      totalCost += childCost * Number(item.quantity)
+      // childCostPerUnit = ต้นทุนต่อ 1 หน่วยผลผลิตของ BOM ลูก (child_bom.output_unit,
+      // หรือ base_unit ของ product ลูกถ้าไม่ได้ตั้ง output_unit ไว้)
+      const childCostPerUnit = calculateBOMCost(item.child_bom_id, tenantId, visited)
+      const childOutputUnit: string = item.child_output_unit || item.child_product_base_unit || item.child_product_unit || ''
+      const recipeUnit: string = getBomItemUnit(item) // หน่วยที่สูตรนี้ระบุไว้สำหรับ child BOM แถวนี้ (bi.unit)
+
+      let qty = Number(item.quantity)
+      if (recipeUnit && childOutputUnit && recipeUnit !== childOutputUnit) {
+        // แปลงจำนวนที่สูตรต้องการ (หน่วยตามแถว bom_items) ให้เป็นหน่วยผลผลิตของ BOM ลูก
+        // ก่อน เพื่อให้ qty * childCostPerUnit ถูกหน่วย — ใช้ child product id เป็น
+        // scope การแปลงหน่วย (เดียวกับที่ material ใช้ material_id)
+        const result = convertQuantityBidirectional(qty, recipeUnit, childOutputUnit, tenantId, item.child_product_id)
+        if (result !== null) {
+          qty = result.converted
+        } else {
+          console.warn(`[qty] BOM cost: no conversion ${recipeUnit} → ${childOutputUnit} for child BOM ${item.child_bom_id}; cost uses the unconverted quantity and is unreliable`)
+        }
+      }
+
+      totalCost += childCostPerUnit * qty
     } else {
       // แปลงหน่วยก่อนคำนวณต้นทุน: ถ้า BOM ใช้หน่วยต่างจาก material base unit
       let qty = Number(item.quantity)
@@ -78,14 +110,20 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
 
       if (bomUnit && materialUnit && bomUnit !== materialUnit) {
         const result = convertQuantityBidirectional(qty, bomUnit, materialUnit, tenantId, item.material_id)
-        if (result !== null) qty = result.converted
+        if (result !== null) {
+          qty = result.converted
+        } else {
+          // Costing the raw number across mismatched units is silently wrong
+          // (1000 g of flour costed as 1000 kg). Surface it; cost stays approximate.
+          console.warn(`[qty] BOM cost: no conversion ${bomUnit} → ${materialUnit} for material ${item.material_id}; cost uses the unconverted quantity and is unreliable`)
+        }
       }
 
       totalCost += qty * Number(item.unit_cost || 0)
     }
   }
 
-  return totalCost
+  return totalCost / outputQty
 }
 
 /**
@@ -96,7 +134,7 @@ function getBOMTree(bomId: string, tenantId: string, level: number = 0, visited:
   visited.add(bomId)
 
   const bom = db.prepare(`
-    SELECT b.*, p.name as product_name, p.sku as product_code, p.category as product_category
+    SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit, p.category as product_category
     FROM boms b
     LEFT JOIN stock_items p ON b.product_id = p.id
     WHERE b.id = ? AND b.tenant_id = ?
@@ -172,7 +210,7 @@ function getAvailableChildBOMs(currentBomId: string | null, tenantId: string): a
   }
 
   let query = `
-    SELECT b.*, p.name as product_name, p.sku as product_code
+    SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit
     FROM boms b
     LEFT JOIN stock_items p ON b.product_id = p.id
     WHERE b.tenant_id = ? AND b.is_semi_finished = 1
@@ -237,7 +275,7 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const boms = db.prepare(`
-      SELECT b.*, p.name as product_name, p.sku as product_code,
+      SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit,
              parent_bom.version as parent_version,
              parent_p.name as parent_product_name,
              (SELECT COUNT(*) FROM bom_items WHERE bom_id = b.id) as item_count
@@ -317,7 +355,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const bom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.sku as product_code,
+      SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit,
              parent_bom.version as parent_version,
              parent_p.name as parent_product_name
       FROM boms b
@@ -377,13 +415,15 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { 
-      productId, 
-      version, 
-      status = 'DRAFT', 
+    const {
+      productId,
+      version,
+      status = 'DRAFT',
       parentId = null,
       isSemiFinished = false,
-      items 
+      outputQty = 1,
+      outputUnit = null,
+      items
     } = req.body
 
     if (!productId || !version) {
@@ -422,13 +462,15 @@ router.post('/', async (req: Request, res: Response) => {
 
     const id = generateId()
     const now = new Date().toISOString()
+    // output_qty <= 0 หรือไม่ใช่ตัวเลข ถือว่าไม่ได้ตั้งค่า -> default 1 (ผลิตได้ 1 หน่วย เหมือนพฤติกรรมเดิม)
+    const safeOutputQty = Number(outputQty) > 0 ? Number(outputQty) : 1
 
     const insertBOM = db.transaction(() => {
       // Insert BOM
       db.prepare(`
-        INSERT INTO boms (id, tenant_id, product_id, parent_id, version, status, level, is_semi_finished, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, productId, parentId, version, status, level, isSemiFinished ? 1 : 0, now, now)
+        INSERT INTO boms (id, tenant_id, product_id, parent_id, version, status, level, is_semi_finished, output_qty, output_unit, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, tenantId, productId, parentId, version, status, level, isSemiFinished ? 1 : 0, safeOutputQty, outputUnit || null, now, now)
 
       // Insert items
       if (items && items.length > 0) {
@@ -467,7 +509,7 @@ router.post('/', async (req: Request, res: Response) => {
     insertBOM()
 
     const newBom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.sku as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit
       FROM boms b
       LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.id = ?
@@ -493,7 +535,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { version, status, isSemiFinished, items } = req.body
+    const { version, status, isSemiFinished, outputQty, outputUnit, items } = req.body
 
     const existingBOM = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existingBOM) {
@@ -504,17 +546,24 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
+    // undefined -> COALESCE เก็บค่าเดิมไว้ (เหมือนฟิลด์อื่นในฟังก์ชันนี้); ส่งมาแล้วต้อง > 0 ไม่งั้น fallback เป็น 1
+    const safeOutputQty = outputQty === undefined ? undefined : (Number(outputQty) > 0 ? Number(outputQty) : 1)
 
     const updateBOM = db.transaction(() => {
       // Update BOM
+      // หมายเหตุ: COALESCE(?, output_unit) เหมือนฟิลด์อื่นๆ ในนี้ แปลว่าส่ง null/undefined
+      // มาจะไม่ล้างค่าเดิม (ต้องส่ง string ว่างถ้าจะล้าง — ข้อจำกัดเดียวกับฟิลด์อื่นในไฟล์นี้)
       db.prepare(`
-        UPDATE boms 
-        SET version = COALESCE(?, version), 
+        UPDATE boms
+        SET version = COALESCE(?, version),
             status = COALESCE(?, status),
             is_semi_finished = COALESCE(?, is_semi_finished),
+            output_qty = COALESCE(?, output_qty),
+            output_unit = COALESCE(?, output_unit),
             updated_at = ?
         WHERE id = ? AND tenant_id = ?
-      `).run(version, status, isSemiFinished !== undefined ? (isSemiFinished ? 1 : 0) : undefined, now, req.params.id, tenantId)
+      `).run(version, status, isSemiFinished !== undefined ? (isSemiFinished ? 1 : 0) : undefined, safeOutputQty,
+        outputUnit, now, req.params.id, tenantId)
 
       // Update items if provided
       if (items) {
@@ -555,7 +604,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     updateBOM()
 
     const updatedBom = db.prepare(`
-      SELECT b.*, p.name as product_name, p.sku as product_code
+      SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit
       FROM boms b
       LEFT JOIN stock_items p ON b.product_id = p.id
       WHERE b.id = ?

@@ -52,8 +52,33 @@ function extractKey(req: Request): string | null {
 
 // ── Session registries ────────────────────────────────────────────────────────
 
-const streamableSessions = new Map<string, IStreamableHTTPTransport>()
-const sseSessions = new Map<string, ISSETransport>()  // legacy SSE (keep for compatibility)
+// ponytail: idle TTL 2 ชม. — session id ที่หลุดออกไปจะใช้ได้ไม่เกิน 2 ชม. หลังใช้ครั้งสุดท้าย
+// ถ้าต้องการ revoke ทันทีเมื่อลบคีย์ ค่อยเปลี่ยนเป็น resolveTenant() ทุก request (ต้องให้ client ส่ง key มาด้วยทุกครั้ง)
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000
+
+interface StreamableSession { transport: IStreamableHTTPTransport; tenantId: string; expiresAt: number }
+const streamableSessions = new Map<string, StreamableSession>()
+const sseSessions = new Map<string, ISSETransport>()  // legacy SSE (transport ตายพร้อม HTTP response จึงไม่ต้องมี TTL)
+
+// คืน session ที่ยังไม่หมดอายุ พร้อมต่ออายุ และกวาดตัวที่หมดอายุทิ้ง
+function touchSession(sessionId: string): StreamableSession | null {
+  const now = Date.now()
+  for (const [id, s] of streamableSessions) {
+    if (s.expiresAt <= now) streamableSessions.delete(id)
+  }
+  const session = streamableSessions.get(sessionId)
+  if (!session) return null
+  session.expiresAt = now + SESSION_TTL_MS
+  return session
+}
+
+// ถ้า client ส่ง key มาพร้อม session id ต้องเป็น tenant เดียวกัน (กัน session ถูกใช้ข้ามบริษัท)
+function keyMatchesSession(req: Request, session: StreamableSession): boolean {
+  const key = extractKey(req)
+  if (!key) return true
+  const ctx = resolveTenant(key)
+  return ctx != null && ctx.tenantId === session.tenantId
+}
 
 // ── MCP server factory ────────────────────────────────────────────────────────
 
@@ -81,9 +106,10 @@ export function setupMcpRoutes(app: Router): void {
 
     if (existingSessionId) {
       // Tool call on existing session
-      const transport = streamableSessions.get(existingSessionId)
-      if (!transport) { res.status(404).json({ error: 'Session not found' }); return }
-      await transport.handleRequest(req, res, req.body)
+      const session = touchSession(existingSessionId)
+      if (!session) { res.status(404).json({ error: 'Session not found or expired' }); return }
+      if (!keyMatchesSession(req, session)) { res.status(401).json({ error: 'Invalid API key' }); return }
+      await session.transport.handleRequest(req, res, req.body)
       return
     }
 
@@ -95,7 +121,7 @@ export function setupMcpRoutes(app: Router): void {
 
     const sessionId = randomUUID()
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId })
-    streamableSessions.set(sessionId, transport)
+    streamableSessions.set(sessionId, { transport, tenantId: ctx.tenantId, expiresAt: Date.now() + SESSION_TTL_MS })
     transport.onclose = () => streamableSessions.delete(sessionId)
 
     const server = buildServer(ctx.tenantId, ctx.userId)
@@ -110,9 +136,10 @@ export function setupMcpRoutes(app: Router): void {
 
     if (existingSessionId) {
       // SSE notification stream for an established Streamable HTTP session
-      const transport = streamableSessions.get(existingSessionId)
-      if (!transport) { res.status(404).json({ error: 'Session not found' }); return }
-      await transport.handleRequest(req, res)
+      const session = touchSession(existingSessionId)
+      if (!session) { res.status(404).json({ error: 'Session not found or expired' }); return }
+      if (!keyMatchesSession(req, session)) { res.status(401).json({ error: 'Invalid API key' }); return }
+      await session.transport.handleRequest(req, res)
       return
     }
 

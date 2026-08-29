@@ -2,7 +2,8 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { isValidImageFile, isAllowedImageExt, isAllowedImageMimetype, getSafeImageExtension, sanitizeFilename } from '../../utils/upload'
 import multer from 'multer'
-import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
+import { roundQty } from '../../utils/qty'
 import { ACC, ACC_META, resolveBankAccountGL } from '../../config/accountCodes'
 import path from 'path'
 import fs from 'fs'
@@ -105,7 +106,8 @@ export function createSalesJournal(
         const invoice = db.prepare('SELECT sales_order_id FROM invoices WHERE id = ? AND tenant_id = ?').get(referenceId, tenantId) as any
         if (invoice?.sales_order_id) {
           const soItems = db.prepare(`
-            SELECT soi.quantity, soi.unit as so_unit, si.unit_cost, si.unit as stock_unit, si.id as stock_item_id
+            SELECT soi.quantity, soi.unit as so_unit, si.unit_cost, si.unit as stock_unit,
+                   si.base_unit as stock_base_unit, si.id as stock_item_id
             FROM sales_order_items soi
             JOIN stock_items si ON soi.stock_item_id = si.id
             WHERE soi.sales_order_id = ?
@@ -113,9 +115,16 @@ export function createSalesJournal(
           for (const it of soItems) {
             let qty = Number(it.quantity || 0)
             const soUnit = it.so_unit || ''
-            const stockUnit = it.stock_unit || ''
-            // Convert SO quantity to stock unit if different for accurate COGS
-            if (soUnit && stockUnit && soUnit !== stockUnit) {
+            // stock_items.quantity is always stored in base_unit (the one true unit) —
+            // `unit` is the legacy pre-unit-system column, only used as a fallback for
+            // old rows where base_unit hasn't been backfilled. Using `unit` here silently
+            // priced/matched COGS against the wrong unit for the 23/456 items where
+            // unit != base_unit (e.g. shrimp: unit=kg, base_unit=g).
+            const stockUnit = it.stock_base_unit || it.stock_unit || ''
+            // Convert SO quantity to stock's base unit if different for accurate COGS.
+            // Compare via normalizeUnit so equivalent spellings ('กก.' vs 'kg') aren't
+            // treated as different units.
+            if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
               const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, it.stock_item_id)
               if (converted) qty = converted.converted
             }
@@ -160,7 +169,11 @@ export function createSalesJournal(
     } else if (referenceType === 'RECEIPT') {
       // DR เงินสด/ธนาคาร (บัญชีย่อยที่ผูกไว้ถ้าเลือกบัญชีธนาคาร) / CR ลูกหนี้การค้า
       const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
-      const cashAccId = linkedAccountId || ((paymentMethod === 'TRANSFER' || paymentMethod === 'CHEQUE' || paymentMethod === 'QR_CODE') ? bankId : cashId)
+      // Allowlist: only CASH posts to the cash account. Everything else (TRANSFER,
+      // CHEQUE, CREDIT_CARD, QR_CODE, and any future method) posts to bank, matching
+      // the purchase side (purchase.routes.ts) and avoiding new methods silently
+      // falling through to cash.
+      const cashAccId = linkedAccountId || (paymentMethod === 'CASH' ? cashId : bankId)
       db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
         VALUES (?, ?, ?, ?, 'PAYMENT', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
         .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
@@ -183,6 +196,11 @@ export function createSalesJournal(
 export function deductStockForSO(tenantId: string, soId: string, soNumber: string) {
   const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
 
+  // When enabled, confirming an SO is allowed to push stock negative instead of
+  // throwing "Insufficient stock" and blocking confirmation.
+  const setting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  const allowNegativeStock = !!setting && setting.allow_negative_stock === 1
+
   const deduct = db.transaction(() => {
     for (const item of items) {
       const stockItemId = item.stock_item_id
@@ -195,17 +213,53 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
       if (!stockItem) continue
 
       const soUnit = item.unit || ''
-      const stockUnit = stockItem.unit || ''
-      if (soUnit && stockUnit && soUnit !== stockUnit) {
+      // stock_items.quantity is always stored in base_unit — `unit` is the legacy
+      // column copied over during the base/sale/display migration and can differ
+      // from base_unit (23/456 items today, e.g. shrimp: unit=kg, base_unit=g).
+      // Deducting against `unit` silently deducted the wrong amount (5kg sold only
+      // took 5g off stock). Fall back to `unit` only when base_unit is empty.
+      const stockUnit = stockItem.base_unit || stockItem.unit || ''
+      if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
         const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
-        if (converted) {
-          qty = converted.converted
+        if (!converted) {
+          // Never deduct the raw SO-unit number: for g -> kg that would take 500 kg
+          // off stock for a 500 g line.
+          throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name || stockItemId}" กรุณาตั้งค่า Unit Conversion ก่อน`)
+        }
+        qty = converted.converted
+      }
+
+      const deductQty = roundQty(qty)
+
+      // Open sealed packs on demand, the way delivery orders and production
+      // already do. Without this, confirming an order failed with "insufficient
+      // stock" while full unopened packs sat in the warehouse.
+      let availableQty = stockItem.quantity
+      if (availableQty < deductQty && (stockItem.sealed_qty ?? 0) > 0) {
+        const unpack = autoUnpackIfNeeded(stockItem, deductQty, tenantId)
+        if (unpack && unpack.unpackedPacks > 0) {
+          const released = roundQty(unpack.unpackedPacks * unpack.packFactor)
+          db.prepare('UPDATE stock_items SET quantity = ?, sealed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+            .run(unpack.quantity, unpack.sealed_qty, new Date().toISOString(), stockItemId, tenantId)
+          // movement_unit/movement_quantity = หน่วย/จำนวนแพ็คที่ user มองเห็น ให้ตรงกับ
+          // แกะแพ็คด้วยมือ (stock.routes.ts POST /:id/unpack) เพื่อ reconcile รายงานได้
+          db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+            VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, 'system')`).run(
+            generateId(), tenantId, stockItemId, released, stockItem.display_unit || null, unpack.unpackedPacks, `SO: ${soNumber}`,
+            `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stockItem.display_unit || ''} → +${released} ${stockUnit}`,
+            new Date().toISOString())
+          availableQty = unpack.quantity
         }
       }
 
-      const deductQty = Math.floor(qty)
-      if (stockItem.quantity < deductQty) {
-        throw new Error(`Insufficient stock for ${stockItem.name || stockItemId}: need ${deductQty} ${stockUnit}, have ${stockItem.quantity}`)
+      if (availableQty < deductQty && !allowNegativeStock) {
+        // Say why the packs could not help, so the fix (set the pack rate) is
+        // obvious instead of looking like a plain shortage.
+        const sealed = stockItem.sealed_qty ?? 0
+        const sealedNote = sealed > 0
+          ? ` — มีในแพ็คอีก ${sealed} ${stockItem.display_unit || ''} แต่แกะไม่ได้ ยังไม่ได้ตั้งอัตราแปลงหน่วย ${stockItem.display_unit || ''} → ${stockUnit}`
+          : ''
+        throw new Error(`Insufficient stock for ${stockItem.name || stockItemId}: need ${deductQty} ${stockUnit}, have ${availableQty}${sealedNote}`)
       }
 
       db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
@@ -234,17 +288,21 @@ export function restoreStockForSO(tenantId: string, soId: string, soNumber: stri
       if (!stockItem) continue
 
       const soUnit = item.unit || ''
-      const stockUnit = stockItem.unit || ''
-      if (soUnit && stockUnit && soUnit !== stockUnit) {
+      // Must mirror deductStockForSO's target-unit choice exactly (base_unit first,
+      // `unit` fallback) — otherwise a confirm-then-cancel round trip restores stock
+      // in a different unit than it was deducted in and the quantity doesn't match.
+      const stockUnit = stockItem.base_unit || stockItem.unit || ''
+      if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
         const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
-        if (converted) {
-          qty = converted.converted
+        if (!converted) {
+          throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name || stockItemId}" จึงคืนสต็อกไม่ได้ กรุณาตั้งค่า Unit Conversion กลับคืนก่อน`)
         }
+        qty = converted.converted
       }
 
-      // Mirror deductStockForSO's Math.floor so the restored quantity exactly
+      // Mirror deductStockForSO's rounding so the restored quantity exactly
       // matches what was originally deducted for this line.
-      const restoreQty = Math.floor(qty)
+      const restoreQty = roundQty(qty)
       if (restoreQty <= 0) continue
 
       db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')

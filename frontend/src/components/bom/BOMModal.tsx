@@ -5,8 +5,10 @@ import {X, Plus, Trash2, Loader2, Package, GitBranch, Box, CheckSquare, Square, 
 import bomService, { BOM, Material, Product } from '../../services/bom'
 import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
+import { UnitPicker } from '../common/UnitPicker'
 import api from '../../services/api'
-import { useUnits } from '../../hooks/useUnits'
+import { useUnits, unitLabel } from '../../hooks/useUnits'
+import { normalizeUnit } from '../../utils/unitNormalize'
 import { EditModal } from '../../pages/Stock'
 import { StockItem } from '../../services/stock'
 
@@ -74,6 +76,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   const [version, setVersion] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE' | 'ARCHIVED'>('DRAFT')
   const [isSemiFinished, setIsSemiFinished] = useState(false)
+  // ผลผลิตต่อ 1 ชุด (R2-UI) — default 1 หน่วย, หน่วย default = หน่วยของสินค้าที่เลือก
+  const [outputQty, setOutputQty] = useState(1)
+  const [outputUnit, setOutputUnit] = useState('')
+  const [outputUnitTouched, setOutputUnitTouched] = useState(false)
 
   const handleProductSelect = (id: string) => {
     const product = products.find(p => p.id === id)
@@ -83,6 +89,16 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setProductId(id)
     }
   }
+
+  // Default หน่วยผลผลิตตามหน่วยของสินค้าที่เลือก — ทำงานทั้งตอนสร้างใหม่และตอน edit ที่โหลด
+  // BOM เก่าซึ่งยังไม่มี output_unit (COALESCE ฝั่ง backend แปลว่าส่ง null ตอน PUT = "ไม่เปลี่ยน"
+  // ไม่ใช่ "ล้างค่า" ดังนั้น UI ต้องบังคับให้มีหน่วยเสมอ ไม่ปล่อยว่าง)
+  // จะไม่ทับค่าที่ผู้ใช้เลือกเอง (outputUnitTouched) หรือค่าที่โหลดมาจาก BOM เดิม
+  useEffect(() => {
+    if (outputUnitTouched) return
+    const product = products.find(p => p.id === productId)
+    if (product?.unit) setOutputUnit(normalizeUnit(product.unit))
+  }, [productId, products, outputUnitTouched])
 
   const handleConfirmCategoryChange = async (newCategory: 'finished' | 'wip') => {
     if (!categoryChangeModal) return
@@ -175,6 +191,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
             fullBOM.isSemiFinished || (fullBOM as any).is_semi_finished === 1 ||
             editBOM.isSemiFinished || editBOM.is_semi_finished === 1
           )
+          const oQty = fullBOM.outputQty ?? fullBOM.output_qty ?? editBOM.outputQty ?? editBOM.output_qty
+          const oUnit = fullBOM.outputUnit ?? fullBOM.output_unit ?? editBOM.outputUnit ?? editBOM.output_unit
+          setOutputQty(oQty && oQty > 0 ? Number(oQty) : 1)
+          if (oUnit) { setOutputUnit(normalizeUnit(oUnit)); setOutputUnitTouched(true) }
 
           const items = fullBOM.items || fullBOM.materials || []
           setItemRows(transformItemsToRows(items, true))
@@ -185,6 +205,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           setVersion(editBOM.version)
           setStatus(editBOM.status)
           setIsSemiFinished(editBOM.isSemiFinished || editBOM.is_semi_finished === 1)
+          const oQty = editBOM.outputQty ?? editBOM.output_qty
+          const oUnit = editBOM.outputUnit ?? editBOM.output_unit
+          setOutputQty(oQty && oQty > 0 ? Number(oQty) : 1)
+          if (oUnit) { setOutputUnit(normalizeUnit(oUnit)); setOutputUnitTouched(true) }
           const items = editBOM.items || editBOM.materials || []
           setItemRows(transformItemsToRows(items, true))
         }
@@ -199,6 +223,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           setVersion(`${fullBOM.version || copyFrom.version}-copy`)
           setStatus('DRAFT')
           setIsSemiFinished(false)
+          const oQty = fullBOM.outputQty ?? fullBOM.output_qty ?? copyFrom.outputQty ?? copyFrom.output_qty
+          const oUnit = fullBOM.outputUnit ?? fullBOM.output_unit ?? copyFrom.outputUnit ?? copyFrom.output_unit
+          setOutputQty(oQty && oQty > 0 ? Number(oQty) : 1)
+          if (oUnit) { setOutputUnit(normalizeUnit(oUnit)); setOutputUnitTouched(true) }
 
           const items = fullBOM.items || fullBOM.materials || []
           setItemRows(transformItemsToRows(items, false))
@@ -208,6 +236,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
           setVersion(`${copyFrom.version}-copy`)
           setStatus('DRAFT')
           setIsSemiFinished(false)
+          const oQty = copyFrom.outputQty ?? copyFrom.output_qty
+          const oUnit = copyFrom.outputUnit ?? copyFrom.output_unit
+          setOutputQty(oQty && oQty > 0 ? Number(oQty) : 1)
+          if (oUnit) { setOutputUnit(normalizeUnit(oUnit)); setOutputUnitTouched(true) }
           const items = copyFrom.items || copyFrom.materials || []
           setItemRows(transformItemsToRows(items, false))
         }
@@ -257,6 +289,9 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     setVersion('')
     setStatus('DRAFT')
     setIsSemiFinished(false)
+    setOutputQty(1)
+    setOutputUnit('')
+    setOutputUnitTouched(false)
     setItemRows([{ id: generateRowId(), itemType: 'MATERIAL', materialId: '', childBomId: '', quantity: 0, unit: '', notes: '' }])
     setCompatibleUnits({})
   }
@@ -361,6 +396,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
         version: version.trim(),
         status: status as 'DRAFT' | 'ACTIVE' | 'ARCHIVED',
         isSemiFinished,
+        outputQty: outputQty > 0 ? outputQty : 1,
+        outputUnit: outputUnit || null,
         items: validItems.map((row) => ({
           itemType: row.itemType,
           materialId: row.itemType === 'MATERIAL' ? row.materialId : undefined,
@@ -561,6 +598,44 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                         <GitBranch className="w-4 h-4" />
                         <span>{t('bomModal.semiFinishedLabel')}</span>
                       </button>
+                    </div>
+                  </div>
+
+                  {/* Output Qty & Unit (R2-UI) — BOM 1 ชุด ผลิตได้กี่หน่วย */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
+                        {t('bomModal.labels.outputQty')}
+                      </label>
+                      <input
+                        type="number"
+                        min={0.0001}
+                        step="any"
+                        value={outputQty}
+                        onChange={(e) => setOutputQty(parseFloat(e.target.value) || 0)}
+                        className="phopy-input w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
+                        {t('bomModal.labels.outputUnit')}
+                      </label>
+                      <UnitPicker
+                        value={outputUnit}
+                        onChange={(u) => { setOutputUnit(u); setOutputUnitTouched(true) }}
+                        materialId={productId || null}
+                        placeholder={t('bomModal.placeholders.outputUnit')}
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex items-end">
+                      {outputQty > 0 && (outputUnit || products.find(p => p.id === productId)?.unit) && (
+                        <p className="text-xs text-[var(--fg-4)] pb-2.5">
+                          {t('bomModal.hints.outputSummary', {
+                            qty: outputQty.toLocaleString('th-TH'),
+                            unit: unitLabel(outputUnit || products.find(p => p.id === productId)?.unit),
+                          })}
+                        </p>
+                      )}
                     </div>
                   </div>
 

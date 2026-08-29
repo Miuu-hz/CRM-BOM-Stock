@@ -4,7 +4,8 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
-import { convertQuantityBidirectional, autoUnpackIfNeeded } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
+import { roundQty } from '../utils/qty'
 
 const router = Router()
 
@@ -92,7 +93,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { bomId, productName, quantity, priority, dueDate, assignedTo, notes, materials } = req.body
+    const { bomId, productName, quantity, priority, dueDate, assignedTo, notes, materials, unit } = req.body
     const id = generateId()
     const woNumber = generateWONumber(tenantId)
     const now = new Date().toISOString()
@@ -103,12 +104,24 @@ router.post('/', async (req: Request, res: Response) => {
       estimatedCost = materials.reduce((sum: number, m: any) => sum + (m.requiredQty * (m.unitCost || 0)), 0)
     }
 
+    // ถ้าไม่ส่ง unit มา ใช้หน่วยของสินค้าสำเร็จรูปจาก BOM (base_unit ก่อน แล้ว fallback unit)
+    // เพื่อให้ COMPLETED ตอนปิดงานมีหน่วยอ้างอิงเสมอแม้ผู้ใช้ไม่ได้เลือกเอง
+    let woUnit: string | null = unit || null
+    if (!woUnit && bomId) {
+      const bomProduct = db.prepare(`
+        SELECT p.base_unit, p.unit FROM boms b
+        LEFT JOIN stock_items p ON b.product_id = p.id
+        WHERE b.id = ? AND b.tenant_id = ?
+      `).get(bomId, tenantId) as any
+      woUnit = bomProduct?.base_unit || bomProduct?.unit || null
+    }
+
     const transaction = db.transaction(() => {
       db.prepare(`
-        INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, priority, 
+        INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, priority, unit,
           due_date, assigned_to, notes, estimated_cost, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, woNumber, bomId || null, productName || '', quantity, priority || 'NORMAL',
+        VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, tenantId, woNumber, bomId || null, productName || '', quantity, priority || 'NORMAL', woUnit,
         dueDate || null, assignedTo || '', notes || '', estimatedCost, now, now)
 
       if (materials && materials.length > 0) {
@@ -162,6 +175,11 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // When starting production (IN_PROGRESS) - deduct materials from stock
     if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
+      // When enabled, issuing materials is allowed to push stock negative
+      // instead of throwing "Insufficient stock" and blocking the status change.
+      const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const allowNegativeStock = !!negSetting && negSetting.allow_negative_stock === 1
+
       // Check stock availability and deduct atomically inside one transaction
       const deductStock = db.transaction(() => {
         db.prepare("UPDATE work_orders SET status = ?, start_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -185,21 +203,24 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             }
 
             // auto-unpack ถ้า quantity ไม่พอ
-            const needed = Math.floor(deductQty)
+            const needed = roundQty(Number(deductQty))
             if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
               const unpack = autoUnpackIfNeeded(stock, needed, tenantId)
               if (unpack && unpack.unpackedPacks > 0) {
+                // quantity ของ stock_movements ต้องเป็น base unit (ไม่ใช่จำนวนแพ็ค) —
+                // ดู unitConversion.service.ts:autoUnpackIfNeeded และ stock.routes.ts /:id/unpack
+                const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
                 db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
                   .run(unpack.sealed_qty, unpack.quantity, now, stock.id, tenantId)
-                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, 'system')`)
-                  .run(generateId(), tenantId, stock.id, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
-                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit}`, now)
+                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, 'system')`)
+                  .run(generateId(), tenantId, stock.id, gained, stock.display_unit || null, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
+                    `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit} → ${gained} ${stock.unit}`, now)
                 stock.quantity = unpack.quantity
               }
             }
 
-            if (stock.quantity < needed) {
+            if (stock.quantity < needed && !allowNegativeStock) {
               throw new Error(`Insufficient stock for ${m.material_name}. Need ${needed} ${stock.unit}, have ${stock.quantity}`)
             }
 
@@ -250,17 +271,42 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           if (bom?.product_id) {
             const finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
             if (finishedStock) {
+              const stockUnit = finishedStock.base_unit || finishedStock.unit
+              const woUnit = wo.unit || stockUnit
+
+              // เดิมบวก finalCompletedQty เข้าสต็อกสินค้าสำเร็จรูปตรงๆ โดยไม่แปลงหน่วยเลย
+              // ทั้งที่ขาเบิกวัตถุดิบ (IN_PROGRESS ด้านบน) แปลงหน่วยครบแล้ว — เคส "ตัดผ้าเป็น
+              // เมตร (คนละ SKU หน่วยเมตร) จากม้วนผ้า" ถ้า wo.unit ต่างจากหน่วยฐานของสินค้า
+              // ต้องแปลงก่อน ไม่งั้นตัวเลขที่เข้าสต็อกจะผิดหน่วยแบบเงียบๆ
+              let addQty = Number(finalCompletedQty)
+              let movementUnit: string | null = null
+              let movementQuantity: number | null = null
+              if (stockUnit && woUnit && normalizeUnit(woUnit) !== normalizeUnit(stockUnit)) {
+                const converted = convertQuantityBidirectional(addQty, woUnit, stockUnit, tenantId, finishedStock.id)
+                if (!converted) {
+                  throw new Error(`ไม่พบการแปลงหน่วย ${woUnit} → ${stockUnit} สำหรับสินค้าสำเร็จรูป "${finishedStock.name}" กรุณาตั้งค่า Unit Conversion ก่อนปิดใบสั่งงาน`)
+                }
+                movementUnit = woUnit
+                movementQuantity = addQty
+                addQty = converted.converted
+              }
+              addQty = roundQty(addQty)
+
               db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(finalCompletedQty, now, finishedStock.id, tenantId)
+                .run(addQty, now, finishedStock.id, tenantId)
               db.prepare(`
-                INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, finishedStock.id, finalCompletedQty, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+                INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?, 'system')
+              `).run(generateId(), tenantId, finishedStock.id, addQty, movementUnit, movementQuantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
             }
           }
         }
       })
-      completeTransaction()
+      try {
+        completeTransaction()
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message })
+      }
     } else {
       db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(status, now, req.params.id, tenantId)
@@ -284,7 +330,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { productName, quantity, priority, dueDate, assignedTo, notes } = req.body
+    const { productName, quantity, priority, dueDate, assignedTo, notes, unit } = req.body
     const now = new Date().toISOString()
 
     // Check if work order exists and belongs to tenant
@@ -293,12 +339,17 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Work order not found' })
     }
 
+    // หน่วยของ WO เดิมรับเฉพาะตอนสร้าง กรอกผิดแล้วแก้ไม่ได้เลย ต้องลบทิ้งสร้างใหม่
+    // ทั้งที่หน่วยเป็นตัวกำหนดว่าตอนปิดงานจะบวกสต็อกเท่าไหร่ — จำกัดไว้ที่ DRAFT/PLANNED
+    // ตาม WHERE เดิม จึงแก้หลังเบิกวัตถุดิบไปแล้วไม่ได้
+    const normalizedUnit = unit === undefined || unit === null || unit === '' ? null : normalizeUnit(String(unit))
+
     db.prepare(`
       UPDATE work_orders SET product_name = COALESCE(?, product_name), quantity = COALESCE(?, quantity),
       priority = COALESCE(?, priority), due_date = ?, assigned_to = COALESCE(?, assigned_to),
-      notes = COALESCE(?, notes), updated_at = ?
+      notes = COALESCE(?, notes), unit = COALESCE(?, unit), updated_at = ?
       WHERE id = ? AND tenant_id = ? AND status IN ('DRAFT', 'PLANNED')
-    `).run(productName, quantity, priority, dueDate || null, assignedTo, notes, now, req.params.id, tenantId)
+    `).run(productName, quantity, priority, dueDate || null, assignedTo, notes, normalizedUnit, now, req.params.id, tenantId)
 
     const updatedWo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updatedWo })

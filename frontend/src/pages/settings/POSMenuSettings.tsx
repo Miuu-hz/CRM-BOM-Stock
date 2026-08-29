@@ -24,6 +24,7 @@ import toast from 'react-hot-toast'
 import { useModalClose } from '../../hooks/useModalClose'
 import posService from '../../services/pos.service'
 import api from '../../services/api'
+import { unitLabel } from '../../hooks/useUnits'
 
 // ==================== Types ====================
 
@@ -886,23 +887,23 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                   >
                     <option value="">
                       {stockUnits
-                        ? t('settings.posMenu.menuModal.defaultUnit', { unit: stockUnits.base_unit || stockUnits.unit })
+                        ? t('settings.posMenu.menuModal.defaultUnit', { unit: unitLabel(stockUnits.base_unit || stockUnits.unit) })
                         : t('settings.posMenu.menuModal.selectSaleUnit')}
                     </option>
                     {stockUnits?.display_unit && stockUnits.display_unit !== stockUnits.base_unit && (
                       <option value={stockUnits.display_unit}>
-                        {t('settings.posMenu.menuModal.displayUnit', { unit: stockUnits.display_unit })}
+                        {t('settings.posMenu.menuModal.displayUnit', { unit: unitLabel(stockUnits.display_unit) })}
                       </option>
                     )}
                     {stockUnits?.base_unit && (
                       <option value={stockUnits.base_unit}>
-                        {t('settings.posMenu.menuModal.baseUnit', { unit: stockUnits.base_unit })}
+                        {t('settings.posMenu.menuModal.baseUnit', { unit: unitLabel(stockUnits.base_unit) })}
                       </option>
                     )}
                   </select>
                   <p className="text-xs text-[var(--fg-4)] mt-1">
                     {stockUnits
-                      ? t('settings.posMenu.menuModal.unitInfo', { base: stockUnits.base_unit || stockUnits.unit, display: stockUnits.display_unit || stockUnits.unit })
+                      ? t('settings.posMenu.menuModal.unitInfo', { base: unitLabel(stockUnits.base_unit || stockUnits.unit), display: unitLabel(stockUnits.display_unit || stockUnits.unit) })
                       : t('settings.posMenu.menuModal.selectProductFirst')}
                   </p>
                 </div>

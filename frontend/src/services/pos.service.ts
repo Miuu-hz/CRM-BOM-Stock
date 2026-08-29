@@ -188,6 +188,40 @@ const posService = {
     const response = await api.post(`/sales/pos-running-bills/${id}/void`, { reason })
     return response.data
   },
+
+  // ==================== Shifts ====================
+
+  getCurrentShift: async () => {
+    const response = await api.get('/sales/pos-shifts/current')
+    return response.data
+  },
+
+  openShift: async (opening_cash: number, notes?: string) => {
+    const response = await api.post('/sales/pos-shifts/open', { opening_cash, notes })
+    return response.data
+  },
+
+  closeShift: async (id: string, closing_cash_counted: number, notes?: string) => {
+    const response = await api.post(`/sales/pos-shifts/${id}/close`, { closing_cash_counted, notes })
+    return response.data
+  },
+
+  // ==================== Shift Cash Movements (petty cash) ====================
+
+  getShiftCashMovements: async (shiftId: string) => {
+    const response = await api.get(`/sales/pos-shifts/${shiftId}/cash-movements`)
+    return response.data
+  },
+
+  addShiftCashMovement: async (shiftId: string, data: {
+    type: 'PAID_OUT' | 'CASH_IN'
+    amount: number
+    reason?: string
+    account_id: string
+  }) => {
+    const response = await api.post(`/sales/pos-shifts/${shiftId}/cash-movement`, data)
+    return response.data
+  },
 }
 
 export default posService

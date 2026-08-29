@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
+import { normalizeUnit } from './unitConversion.service'
 
 // ─── BOM Command Parser ───────────────────────────────────────────────────────
 // รองรับรูปแบบ (ส่วนตัวเท่านั้น):
@@ -418,7 +419,7 @@ class LineBotService {
                 INSERT INTO stock_items
                   (id, tenant_id, sku, name, category, unit, location, status, quantity, unit_cost, min_stock, max_stock, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, 'ไม่ระบุ', 'ACTIVE', 0, 0, 0, 1000, ?, ?)
-            `).run(id, tenantId, sku, name, category, unit, now, now)
+            `).run(id, tenantId, sku, name, category, normalizeUnit(unit || 'pcs'), now, now)
             return { id, isNew: true }
         }
 

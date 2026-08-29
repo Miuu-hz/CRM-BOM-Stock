@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import toast from 'react-hot-toast'
+import { unitLabel } from '../hooks/useUnits'
 
 interface Product {
   id: string
@@ -431,7 +432,7 @@ function Calculator() {
                     <div>
                       <span className="text-[var(--fg-3)] block mb-1">จำนวน:</span>
                       <p className="text-[var(--fg-2)] font-medium">
-                        {material.quantity} {material.unit}
+                        {material.quantity} {unitLabel(material.unit)}
                       </p>
                     </div>
                     <div>

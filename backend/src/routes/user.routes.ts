@@ -10,6 +10,11 @@ const router = Router()
 router.use(authenticate)
 router.use(requireRole('ADMIN', 'MASTER'))
 
+// ASCII-only — mirrors auth.routes.ts EMAIL_REGEX. Rejects stray non-Latin
+// characters (e.g. a leftover Thai IME vowel mark) that look invisible in the
+// UI but break exact-match email lookups at login.
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+
 // Roles assignable via the API. MASTER is intentionally excluded:
 // master accounts exist only in .env and can never be minted through HTTP.
 const ASSIGNABLE_ROLES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER']
@@ -33,10 +38,14 @@ router.get('/', (req, res) => {
 
 // POST /api/users
 router.post('/', async (req, res) => {
-  const { email, password, name, role, departments, custom_permissions } = req.body
+  const { password, name, role, departments, custom_permissions } = req.body
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
   if (!email || !password || !name || !role) {
     return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+  }
+  if (!EMAIL_REGEX.test(email)) {
+    return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง (ใช้ตัวอักษรภาษาอังกฤษเท่านั้น)' })
   }
 
   // MASTER can never be created via API — only from .env master accounts.
@@ -49,7 +58,7 @@ router.post('/', async (req, res) => {
   }
 
   const db = getDb()
-  if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
+  if (db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)) {
     return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว' })
   }
 

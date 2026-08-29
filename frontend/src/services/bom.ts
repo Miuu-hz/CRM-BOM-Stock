@@ -68,6 +68,8 @@ export interface Product {
   category: string
   description?: string
   status: string
+  /** หน่วยของสินค้า (stock_items.unit) — backend คืนมาอยู่แล้วแต่ไม่เคยประกาศ type ไว้ */
+  unit?: string
 }
 
 export interface BOM {
@@ -85,6 +87,8 @@ export interface BOM {
   productName?: string
   productCode?: string
   productCategory?: string
+  /** หน่วยของสินค้าที่ผลิต — ไว้ default output_unit (ตอนนี้ backend ยังไม่คืนค่านี้ใน /bom, /bom/:id) */
+  productUnit?: string
   parentVersion?: string
   parentProductName?: string
   items?: BOMItem[]
@@ -92,6 +96,12 @@ export interface BOM {
   itemCount?: number
   totalCost: number
   isTopLevel?: boolean
+  /** BOM 1 ใบผลิตได้กี่หน่วย (R2-UI) — backend อาจคืนเป็น camelCase หรือ snake_case (output_qty) แล้วแต่ endpoint */
+  outputQty?: number
+  output_qty?: number
+  /** หน่วยผลผลิต — null/undefined = ใช้หน่วยของสินค้า */
+  outputUnit?: string | null
+  output_unit?: string | null
 }
 
 export interface BOMStats {
@@ -122,6 +132,10 @@ export interface CreateBOMInput {
     quantity: number
     unit: string
   }[]
+  /** BOM ชุดนี้ผลิตได้กี่หน่วย (default 1) */
+  outputQty?: number
+  /** หน่วยผลผลิต — ไม่ส่ง/null = ใช้หน่วยของสินค้า */
+  outputUnit?: string | null
 }
 
 export interface UpdateBOMInput {
@@ -134,6 +148,8 @@ export interface UpdateBOMInput {
     quantity: number
     unit: string
   }[]
+  outputQty?: number
+  outputUnit?: string | null
 }
 
 // API Response wrapper

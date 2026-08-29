@@ -2,8 +2,115 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { getLimits } from '../../services/subscription.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
+import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
+import { ACC } from '../../config/accountCodes'
+import { getOrCreateAccount } from '../../services/accounting.service'
+import posStockService from '../../services/pos-stock.service'
 
 const router = Router()
+
+// Post a simple 2-line (debit/credit) journal entry + bump account_balances for
+// both accounts. Shared by shift-close over/short and POS drawer cash movements —
+// both are "one amount moves between two accounts" postings.
+function postSimpleJournal(
+  tenantId: string, userId: string, date: string,
+  referenceType: string, referenceId: string, description: string,
+  debitAccountId: string, creditAccountId: string, amount: number
+): string {
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date).getFullYear(), 6)
+  const entryId = generateId()
+  const nowStr = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO journal_entries (
+      id, tenant_id, entry_number, date, reference_type, reference_id,
+      description, total_debit, total_credit, is_auto_generated, created_by, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(entryId, tenantId, entryNumber, date, referenceType, referenceId, description, amount, amount, userId, nowStr)
+
+  const insertLine = db.prepare(`
+    INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  insertLine.run(generateId(), tenantId, entryId, debitAccountId, 1, description, amount, 0)
+  insertLine.run(generateId(), tenantId, entryId, creditAccountId, 2, description, 0, amount)
+
+  const yr = parseInt(date.split('-')[0])
+  const period = parseInt(date.split('-')[1])
+  const bumpBalance = (accountId: string, debit: number, credit: number) => {
+    const existing = db.prepare(`SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?`).get(accountId, yr, period)
+    if (existing) {
+      db.prepare(`
+        UPDATE account_balances
+        SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
+            ending_balance = ending_balance + ? - ?
+        WHERE account_id = ? AND fiscal_year = ? AND period = ?
+      `).run(debit, credit, debit, credit, accountId, yr, period)
+    } else {
+      db.prepare(`
+        INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+      `).run(generateId(), tenantId, accountId, yr, period, debit, credit, debit - credit)
+    }
+  }
+  bumpBalance(debitAccountId, amount, 0)
+  bumpBalance(creditAccountId, 0, amount)
+
+  return entryId
+}
+
+// Sum PAID_OUT/CASH_IN drawer movements recorded during a shift.
+function getShiftCashMovementTotals(tenantId: string, shiftId: string): { cashIn: number; paidOut: number } {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'CASH_IN' THEN amount ELSE 0 END), 0) as cash_in,
+      COALESCE(SUM(CASE WHEN type = 'PAID_OUT' THEN amount ELSE 0 END), 0) as paid_out
+    FROM pos_shift_cash_movements WHERE tenant_id = ? AND shift_id = ?
+  `).get(tenantId, shiftId) as any
+  return { cashIn: row?.cash_in || 0, paidOut: row?.paid_out || 0 }
+}
+
+// Sales inside a shift: prefer bills tagged with this shift_id (set at bill
+// creation once a shift is open); fall back to the old opened_at time-range
+// match for bills created before the shift_id column existed.
+function getShiftSalesSummary(tenantId: string, shift: { id: string; opened_at: string }) {
+  return db.prepare(`
+    SELECT
+      COUNT(*) as bill_count,
+      COALESCE(SUM(b.total_amount), 0) as total_revenue,
+      COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
+      COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
+    FROM pos_running_bills b
+    LEFT JOIN pos_payments p ON b.id = p.bill_id
+    WHERE b.tenant_id = ? AND b.status = 'PAID'
+      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?))
+  `).get(tenantId, shift.id, shift.opened_at) as any
+}
+
+// แปลงจำนวนตามสูตร (BOM/เมนู) ให้เป็นหน่วยฐาน (base_unit) ของวัตถุดิบก่อนคูณกับ
+// unit_cost (unit_cost เก็บเป็น "ต่อ 1 หน่วยฐาน" เสมอ) — ใช้ตอนคำนวณ estimated COGS
+// ปิดกะ ห้าม throw เพราะเส้นทางนี้ต้องปิดกะได้เสมอ ถ้าแปลงไม่ได้ให้ warn แล้วใช้เลขเดิม
+// (pattern เดียวกับ bom.routes.ts:calculateBOMCost และ pos-accounting.service.ts:toBaseQty)
+function posCogsToBaseQty(
+  qty: number,
+  recipeUnit: string | null | undefined,
+  stockBaseUnit: string | null | undefined,
+  tenantId: string,
+  materialId: string | null | undefined,
+  context: string
+): number {
+  const fromUnit = recipeUnit || stockBaseUnit || ''
+  const toUnit = stockBaseUnit || fromUnit
+  if (!fromUnit || !toUnit || normalizeUnit(fromUnit) === normalizeUnit(toUnit)) {
+    return qty
+  }
+  const result = convertQuantityBidirectional(qty, fromUnit, toUnit, tenantId, materialId || undefined)
+  if (result) {
+    return result.converted
+  }
+  console.warn(`[qty] POS daily-sales COGS: no conversion ${fromUnit} → ${toUnit} for stock item ${materialId}; ${context} cost uses the unconverted quantity and is unreliable`)
+  return qty
+}
 
 // ============================================
 // POS DAILY SALES SUMMARY (Z-Report)
@@ -233,25 +340,43 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
 
         if (item.bom_id) {
           const bomItems = db.prepare(`
-            SELECT bi.quantity, si.unit_cost
+            SELECT bi.quantity, bi.unit as ingredient_unit, bi.material_id, si.unit_cost,
+                   si.base_unit as stock_base_unit, si.unit as stock_unit
             FROM bom_items bi
             JOIN stock_items si ON bi.material_id = si.id
             WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'
           `).all(item.bom_id) as any[]
 
           for (const bi of bomItems) {
-            itemCost += (bi.quantity * bi.unit_cost)
+            const qty = posCogsToBaseQty(
+              bi.quantity,
+              bi.ingredient_unit,
+              bi.stock_base_unit || bi.stock_unit,
+              tenantId,
+              bi.material_id,
+              `bill ${bill.id} bom ${item.bom_id} material ${bi.material_id}`
+            )
+            itemCost += (qty * bi.unit_cost)
           }
         } else {
           const ingItems = db.prepare(`
-            SELECT pmi.quantity_used, si.unit_cost
+            SELECT pmi.quantity_used, pmi.unit_id, pmi.stock_item_id, si.unit_cost,
+                   si.base_unit as stock_base_unit, si.unit as stock_unit
             FROM pos_menu_ingredients pmi
             JOIN stock_items si ON pmi.stock_item_id = si.id
             WHERE pmi.pos_menu_id = ?
           `).all(item.pos_menu_id) as any[]
 
           for (const ing of ingItems) {
-            itemCost += (ing.quantity_used * ing.unit_cost)
+            const qty = posCogsToBaseQty(
+              ing.quantity_used,
+              ing.unit_id,
+              ing.stock_base_unit || ing.stock_unit,
+              tenantId,
+              ing.stock_item_id,
+              `bill ${bill.id} menu ${item.pos_menu_id} stock item ${ing.stock_item_id}`
+            )
+            itemCost += (qty * ing.unit_cost)
           }
         }
 
@@ -348,18 +473,10 @@ router.get('/pos-shifts/current', (req: Request, res: Response) => {
     if (!shift) return res.json({ success: true, data: null })
 
     // Attach current sales summary from bills since shift opened
-    const sales = db.prepare(`
-      SELECT
-        COUNT(*) as bill_count,
-        COALESCE(SUM(b.total_amount), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
-        COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
-      FROM pos_running_bills b
-      LEFT JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.closed_at >= ?
-    `).get(tenantId, shift.opened_at) as any
+    const sales = getShiftSalesSummary(tenantId, shift)
+    const movements = getShiftCashMovementTotals(tenantId, shift.id)
 
-    res.json({ success: true, data: { ...shift, live: sales } })
+    res.json({ success: true, data: { ...shift, live: { ...sales, cash_in: movements.cashIn, paid_out: movements.paidOut } } })
   } catch (error) {
     console.error('Get current shift error:', error)
     res.status(500).json({ success: false, message: 'Failed to get current shift' })
@@ -453,20 +570,13 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     if (!shift) return res.status(404).json({ success: false, message: 'ไม่พบกะที่เปิดอยู่' })
 
     // Calculate sales in this shift
-    const sales = db.prepare(`
-      SELECT
-        COUNT(*) as bill_count,
-        COALESCE(SUM(b.total_amount), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
-        COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
-      FROM pos_running_bills b
-      LEFT JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.closed_at >= ?
-    `).get(tenantId, shift.opened_at) as any
+    const sales = getShiftSalesSummary(tenantId, shift)
+    const movements = getShiftCashMovementTotals(tenantId, id)
 
-    const expectedCash = (shift.opening_cash || 0) + (sales.cash_revenue || 0)
+    const expectedCash = (shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut
     const cashDifference = closing_cash_counted - expectedCash
     const nowStr = new Date().toISOString()
+    const today = nowStr.split('T')[0]
 
     db.prepare(`
       UPDATE pos_shifts SET
@@ -482,6 +592,21 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       sales.bill_count, userId, notes || null, id, tenantId
     )
 
+    // Post เงินขาด/เงินเกิน เข้าบัญชีทันทีที่ปิดกะ (ข้ามถ้าเท่ากันพอดี) — ป้องกันลงซ้ำ
+    // อัตโนมัติเพราะ UPDATE ด้านบนใช้ WHERE status='OPEN' เท่านั้น กดปิดซ้ำจะเจอ 404
+    // ก่อนถึงจุดนี้เสมอ (shift ถูกเปลี่ยนเป็น CLOSED ไปแล้วในรอบแรก)
+    let journalEntryId: string | null = null
+    if (Math.abs(cashDifference) > 0.005) {
+      const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
+      const overShortAccountId = getOrCreateAccount(tenantId, '5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+      const desc = `ปิดกะ ${shift.shift_number} — ${cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'} ${Math.abs(cashDifference).toFixed(2)} บาท`
+      journalEntryId = cashDifference < 0
+        // เงินขาด: Dr 5901 / Cr เงินสด
+        ? postSimpleJournal(tenantId, userId, today, 'POS_SHIFT_CLOSE', id, desc, overShortAccountId, cashAccountId, Math.abs(cashDifference))
+        // เงินเกิน: Dr เงินสด / Cr 5901
+        : postSimpleJournal(tenantId, userId, today, 'POS_SHIFT_CLOSE', id, desc, cashAccountId, overShortAccountId, cashDifference)
+    }
+
     res.json({
       success: true,
       message: 'ปิดกะสำเร็จ',
@@ -491,14 +616,91 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         cash_revenue: sales.cash_revenue,
         bank_revenue: sales.bank_revenue,
         bill_count: sales.bill_count,
+        cash_in: movements.cashIn,
+        paid_out: movements.paidOut,
         expected_cash: expectedCash,
         closing_cash_counted,
-        cash_difference: cashDifference
+        cash_difference: cashDifference,
+        journal_entry_id: journalEntryId
       }
     })
   } catch (error) {
     console.error('Close shift error:', error)
     res.status(500).json({ success: false, message: 'Failed to close shift' })
+  }
+})
+
+// GET cash movements (PAID_OUT/CASH_IN) for a shift
+router.get('/pos-shifts/:id/cash-movements', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { id } = req.params
+    const rows = db.prepare(`
+      SELECT m.*, a.name as account_name, a.code as account_code, u.name as created_by_name
+      FROM pos_shift_cash_movements m
+      LEFT JOIN accounts a ON m.account_id = a.id
+      LEFT JOIN users u ON m.created_by = u.id
+      WHERE m.shift_id = ? AND m.tenant_id = ?
+      ORDER BY m.created_at ASC
+    `).all(id, tenantId)
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('Get shift cash movements error:', error)
+    res.status(500).json({ success: false, message: 'Failed to get cash movements' })
+  }
+})
+
+// POST cash movement (paid-out / cash-in) — เงินเข้า/ออกลิ้นชักระหว่างกะ
+// RBAC: ห้ามปล่อยให้ role USER ธรรมดาดึงเงินออกจากลิ้นชักได้เอง (แพทเทิร์นเดียวกับ
+// purchase.routes.ts ที่เช็คก่อน cancel ใบขอซื้อ)
+router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+    const { id } = req.params
+    const { type, amount, reason, account_id } = req.body
+
+    if (!['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER'].includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์บันทึกเงินเข้า/ออกลิ้นชัก — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER' })
+    }
+
+    if (type !== 'PAID_OUT' && type !== 'CASH_IN') {
+      return res.status(400).json({ success: false, message: 'ประเภทไม่ถูกต้อง (ต้องเป็น PAID_OUT หรือ CASH_IN)' })
+    }
+    const amt = Number(amount)
+    if (!amt || amt <= 0) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุจำนวนเงินให้ถูกต้อง' })
+    }
+    if (!account_id) {
+      return res.status(400).json({ success: false, message: 'กรุณาเลือกบัญชี' })
+    }
+
+    const shift = db.prepare(`SELECT * FROM pos_shifts WHERE id = ? AND tenant_id = ? AND status = 'OPEN'`).get(id, tenantId) as any
+    if (!shift) return res.status(404).json({ success: false, message: 'ไม่พบกะที่เปิดอยู่ — ต้องเปิดกะก่อนบันทึกเงินเข้า/ออก' })
+
+    const account = db.prepare(`SELECT id FROM accounts WHERE id = ? AND tenant_id = ?`).get(account_id, tenantId)
+    if (!account) return res.status(400).json({ success: false, message: 'ไม่พบบัญชีที่เลือก' })
+
+    const nowStr = new Date().toISOString()
+    const movementId = generateId()
+    db.prepare(`
+      INSERT INTO pos_shift_cash_movements (id, tenant_id, shift_id, type, amount, reason, account_id, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(movementId, tenantId, id, type, amt, reason || null, account_id, userId, nowStr)
+
+    const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
+    const today = nowStr.split('T')[0]
+    const desc = `${type === 'PAID_OUT' ? 'จ่ายออกจากลิ้นชัก' : 'รับเข้าลิ้นชัก'} กะ ${shift.shift_number}${reason ? ' - ' + reason : ''}`
+    const journalEntryId = type === 'PAID_OUT'
+      // จ่ายออก: Dr บัญชีค่าใช้จ่ายที่เลือก / Cr เงินสด
+      ? postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, account_id, cashAccountId, amt)
+      // รับเข้า: Dr เงินสด / Cr บัญชีที่เลือก
+      : postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, cashAccountId, account_id, amt)
+
+    res.json({ success: true, message: 'บันทึกสำเร็จ', data: { id: movementId, type, amount: amt, journal_entry_id: journalEntryId } })
+  } catch (error) {
+    console.error('POS cash movement error:', error)
+    res.status(500).json({ success: false, message: 'Failed to record cash movement' })
   }
 })
 
@@ -539,25 +741,46 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
     const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
 
     db.prepare(`
-      UPDATE pos_running_bills SET status = 'VOID', updated_at = ? WHERE id = ? AND tenant_id = ?
-    `).run(nowStr, id, tenantId)
+      UPDATE pos_running_bills
+      SET status = 'VOID', notes = TRIM(COALESCE(notes, '') || ' ' || ?)
+      WHERE id = ? AND tenant_id = ?
+    `).run(voidNote, id, tenantId)
 
-    // Reversal journal: Dr. Revenue 4100, Cr. Clearing 1180
-    const getOrCreate = (code: string, name: string, type: string, category: string, normalBalance: string) => {
-      const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
-      if (existing) return existing.id
-      const newId = generateId()
-      db.prepare(`
-        INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
-      `).run(newId, tenantId, code, name, type, category, normalBalance)
-      return newId
+    // คืนสต็อกกลับ (ใบขายคืน = สต็อกเพิ่ม) — ใช้ฟังก์ชันร่วมกับ CANCEL ใน
+    // pos-stock.service.ts กันคืนซ้ำด้วย pos_stock_deductions.returned เอง
+    const stockReturnResult = await posStockService.returnStockOnCancel(id, tenantId, userId, reason)
+    if (!stockReturnResult.success) {
+      console.warn(`[pos-void] stock return warnings for bill ${id}:`, stockReturnResult.errors)
     }
 
+    // ponytail: กลับรายการด้วยการสลับ debit<->credit ของ journal เดิม (POS_SALE + POS_COGS)
+    // ของบิลนี้ทั้งหมด แทนการ re-derive VAT/COGS/บัญชีเงินสด-ธนาคารเอง — ได้ mirror image
+    // เป๊ะเสมอ แม้ขาขายใน pos-accounting.service.ts จะเปลี่ยน logic ในอนาคต
+    const saleLines = db.prepare(`
+      SELECT jl.account_id, jl.debit, jl.credit
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.journal_entry_id
+      WHERE je.tenant_id = ? AND je.reference_id = ?
+        AND je.reference_type IN ('POS_SALE', 'POS_COGS')
+      ORDER BY je.reference_type DESC, jl.line_number
+    `).all(tenantId, id) as Array<{ account_id: string; debit: number; credit: number }>
+
+    const date = nowStr.split('T')[0]
+
+    if (saleLines.length === 0) {
+      // บิลเก่าที่ไม่เคยลงบัญชี — ไม่มีอะไรให้กลับ อย่าสร้าง entry ปลอม
+      console.warn(`[pos-void] bill ${id} has no POS_SALE/POS_COGS journal; skipping reversal entry`)
+      return res.json({
+        success: true,
+        message: `ยกเลิกบิล ${bill.bill_number} สำเร็จ (ไม่พบรายการบัญชีเดิม จึงไม่มีการกลับรายการ)`,
+        data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote, reversed: false }
+      })
+    }
+
+    const reversalTotal = saleLines.reduce((s, l) => s + (l.debit || 0), 0)
     const year = new Date().getFullYear()
     const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 6)
     const entryId = generateId()
-    const date = nowStr.split('T')[0]
 
     db.prepare(`
       INSERT INTO journal_entries (
@@ -567,53 +790,51 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
     `).run(
       entryId, tenantId, entryNumber, date, id,
       `ยกเลิกบิล ${bill.bill_number}${reason ? ' - ' + reason : ''}`,
-      bill.total_amount, bill.total_amount, userId, nowStr
+      reversalTotal, reversalTotal, userId, nowStr
     )
 
-    const revenueId = getOrCreate('4100', 'รายได้ขาย', 'REVENUE', 'REVENUE', 'CREDIT')
-    const clearingId = getOrCreate('1180', 'ลูกหนี้การค้า-POS', 'ASSET', 'CURRENT_ASSET', 'DEBIT')
-
-    db.prepare(`
+    const insertLine = db.prepare(`
       INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, 1, ?, ?, 0)
-    `).run(generateId(), tenantId, entryId, revenueId, `ยกเลิกบิล ${bill.bill_number}`, bill.total_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
 
-    db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, 2, ?, 0, ?)
-    `).run(generateId(), tenantId, entryId, clearingId, `ยกเลิก Clearing ${bill.bill_number}`, bill.total_amount)
-
-    // Update account balances (reverse)
-    const updateBal = (code: string, debit: number, credit: number) => {
-      const yr = parseInt(date.split('-')[0])
-      const mo = parseInt(date.split('-')[1])
-      const acc = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
-      if (!acc) return
+    // อัปเดต account_balances ด้วย account_id ตรงๆ (บัญชีเงินสด/ธนาคารอาจเป็น sub-account
+    // ที่ผูกกับ bank_accounts จึงหาด้วย code ไม่ได้)
+    const balYear = parseInt(date.split('-')[0])
+    const balPeriod = parseInt(date.split('-')[1])
+    const updateBal = (accountId: string, debit: number, credit: number) => {
       const existing = db.prepare(`
         SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `).get(acc.id, yr, mo)
+      `).get(accountId, balYear, balPeriod)
       if (existing) {
         db.prepare(`
           UPDATE account_balances
           SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
               ending_balance = ending_balance + ? - ?
           WHERE account_id = ? AND fiscal_year = ? AND period = ?
-        `).run(debit, credit, debit, credit, acc.id, yr, mo)
+        `).run(debit, credit, debit, credit, accountId, balYear, balPeriod)
       } else {
         db.prepare(`
           INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
           VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-        `).run(generateId(), tenantId, acc.id, yr, mo, debit, credit, debit - credit)
+        `).run(generateId(), tenantId, accountId, balYear, balPeriod, debit, credit, debit - credit)
       }
     }
 
-    updateBal('4100', bill.total_amount, 0)  // Dr. Revenue (reduces net revenue)
-    updateBal('1180', 0, bill.total_amount)  // Cr. Clearing (reduces receivable)
+    saleLines.forEach((l, i) => {
+      const debit = l.credit || 0
+      const credit = l.debit || 0
+      insertLine.run(
+        generateId(), tenantId, entryId, l.account_id, i + 1,
+        `กลับรายการยกเลิกบิล ${bill.bill_number}`, debit, credit
+      )
+      updateBal(l.account_id, debit, credit)
+    })
 
     res.json({
       success: true,
       message: `ยกเลิกบิล ${bill.bill_number} สำเร็จ`,
-      data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote }
+      data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote, stock_returns: stockReturnResult.returns.length }
     })
   } catch (error) {
     console.error('Void bill error:', error)

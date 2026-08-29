@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
+import { roundQty } from '../../utils/qty'
 import { ok } from './shared'
 
 export function registerStockTools(server: IMcpServer, tenantId: string, userId: string): void {
@@ -67,13 +68,15 @@ export function registerStockTools(server: IMcpServer, tenantId: string, userId:
         if (item.quantity < convertedQuantity && (item.sealed_qty ?? 0) > 0) {
           const unpack = autoUnpackIfNeeded(item, convertedQuantity, tenantId)
           if (unpack && unpack.unpackedPacks > 0) {
+            // quantity ต้องเป็น base unit เสมอ (ไม่ใช่จำนวนแพ็ค) — ดู stock.routes.ts /:id/unpack
+            const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
             db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?)
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
             `).run(
               randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItemId,
-              unpack.unpackedPacks, reference || 'AUTO',
-              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit || ''}`, now, userId
+              gained, item.display_unit || null, unpack.unpackedPacks, reference || 'AUTO',
+              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit || ''} → ${gained} ${baseUnit}`, now, userId
             )
             db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
               .run(unpack.sealed_qty, now, stockItemId)

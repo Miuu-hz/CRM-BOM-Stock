@@ -9,6 +9,7 @@ import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyC
 import { printPOSReceipt } from '../utils/purchasePrint'
 import { useModalClose } from '../hooks/useModalClose'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
+import { accountsApi } from '../services/accounting'
 
 // ==================== Types ====================
 
@@ -78,6 +79,24 @@ interface CurrentBill {
   total_amount: number
 }
 
+interface POSShift {
+  id: string
+  shift_number: string
+  status: 'OPEN' | 'CLOSED'
+  opened_at: string
+  opening_cash: number
+  live?: { total_revenue: number; cash_revenue: number; bank_revenue: number; cash_in?: number; paid_out?: number }
+}
+
+interface CashMovement {
+  id: string
+  type: 'PAID_OUT' | 'CASH_IN'
+  amount: number
+  reason?: string
+  account_name?: string
+  created_at: string
+}
+
 // ==================== Components ====================
 
 export default function Cashier() {
@@ -97,6 +116,9 @@ export default function Cashier() {
   const [showAssignMemberModal, setShowAssignMemberModal] = useState(false)
   const [scanningBarcode, setScanningBarcode] = useState(false)
   const [payActionIssues, setPayActionIssues] = useState<any[] | null>(null)
+  const [currentShift, setCurrentShift] = useState<POSShift | null | undefined>(undefined)
+  const [showShiftModal, setShowShiftModal] = useState<'open' | 'close' | null>(null)
+  const [showCashMovementModal, setShowCashMovementModal] = useState(false)
   // Discount & extra charge (local, per-session)
   const [discount, setDiscount] = useState<{ type: 'pct' | 'fixed'; value: number }>({ type: 'pct', value: 0 })
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
@@ -154,6 +176,18 @@ export default function Cashier() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // POS shift (เปิด/ปิดกะ + เงินเข้า/ออกลิ้นชัก)
+  const fetchShift = useCallback(async () => {
+    try {
+      const res = await posService.getCurrentShift()
+      if (res.success) setCurrentShift(res.data)
+    } catch { /* ไม่บล็อกหน้าจอถ้าดึงกะไม่ได้ */ }
+  }, [])
+
+  useEffect(() => {
+    fetchShift()
+  }, [fetchShift])
 
   // Filter menus
   const filteredMenus = menus.filter(item => {
@@ -380,8 +414,8 @@ export default function Cashier() {
         setView('bills')
         await fetchData()
       }
-    } catch (error) {
-      toast.error('Failed to process payment')
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to process payment')
     }
   }
 
@@ -447,6 +481,33 @@ export default function Cashier() {
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Shift widget — เปิด/ปิดกะ + เงินเข้า/ออกลิ้นชัก จากหน้า POS โดยตรง */}
+            {currentShift ? (
+              <div className="flex items-center gap-2">
+                <span className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg bg-success/10 border border-success/30 text-xs text-success font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success" /> กะ {currentShift.shift_number}
+                </span>
+                <button
+                  onClick={() => setShowCashMovementModal(true)}
+                  className="px-3 py-2 rounded-lg bg-[var(--bg)] text-[var(--fg-2)] text-sm hover:text-[var(--fg-1)] border border-[var(--border)]"
+                >
+                  เงินเข้า/ออกลิ้นชัก
+                </button>
+                <button
+                  onClick={() => setShowShiftModal('close')}
+                  className="px-3 py-2 rounded-lg bg-danger/10 text-danger text-sm hover:bg-danger/20 border border-danger/30"
+                >
+                  ปิดกะ
+                </button>
+              </div>
+            ) : currentShift === null ? (
+              <button
+                onClick={() => setShowShiftModal('open')}
+                className="px-3 py-2 rounded-lg bg-phopy-indigo/10 text-phopy-indigo text-sm hover:bg-phopy-indigo/20 border border-phopy-indigo/30 font-medium"
+              >
+                เปิดกะ
+              </button>
+            ) : null}
             <div className="flex bg-[var(--surface)] rounded-lg p-1">
               <button
                 onClick={() => setView('bills')}
@@ -476,7 +537,7 @@ export default function Cashier() {
         </div>
       </div>
 
-      <div className="flex h-[calc(100vh-80px)]">
+      <div className="flex flex-col md:flex-row md:h-[calc(100vh-80px)]">
         {/* Left Panel */}
         <div className="flex-1 p-6 overflow-auto">
           <AnimatePresence mode="wait">
@@ -1126,6 +1187,25 @@ export default function Cashier() {
         categories={categories}
         onRefresh={fetchData}
       />
+
+      {/* Open/Close Shift Modal */}
+      {showShiftModal && (
+        <ShiftModal
+          mode={showShiftModal}
+          shift={currentShift || null}
+          onClose={() => setShowShiftModal(null)}
+          onDone={fetchShift}
+        />
+      )}
+
+      {/* Cash In/Out Modal */}
+      {showCashMovementModal && currentShift && (
+        <CashMovementModal
+          shift={currentShift}
+          onClose={() => setShowCashMovementModal(false)}
+          onDone={fetchShift}
+        />
+      )}
     </div>
   )
 }
@@ -1792,6 +1872,218 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
           </button>
         </div>
         </>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
+// เปิดกะ / ปิดกะ จากหน้า POS โดยตรง (คู่ขนานกับหน้า ขาย > POS ที่มีอยู่แล้ว)
+function ShiftModal({ mode, shift, onClose, onDone }: {
+  mode: 'open' | 'close'
+  shift: POSShift | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  useModalClose(onClose)
+  const [openingCash, setOpeningCash] = useState('0')
+  const live = shift?.live
+  const cashRevenue = live?.cash_revenue || 0
+  const cashIn = live?.cash_in || 0
+  const paidOut = live?.paid_out || 0
+  const expectedCash = (shift?.opening_cash || 0) + cashRevenue + cashIn - paidOut
+  const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const diff = (parseFloat(closingCash) || 0) - expectedCash
+
+  const handleOpen = async () => {
+    setSaving(true)
+    try {
+      const res = await posService.openShift(parseFloat(openingCash) || 0, notes || undefined)
+      if (res.success) {
+        toast.success(`เปิดกะสำเร็จ: ${res.data.shift_number}`)
+        onDone(); onClose()
+      }
+    } catch (e: any) { toast.error(e.response?.data?.message || 'เปิดกะไม่สำเร็จ') }
+    finally { setSaving(false) }
+  }
+
+  const handleClose = async () => {
+    if (!shift) return
+    setSaving(true)
+    try {
+      const res = await posService.closeShift(shift.id, parseFloat(closingCash) || 0, notes || undefined)
+      if (res.success) {
+        toast.success('ปิดกะสำเร็จ')
+        onDone(); onClose()
+      }
+    } catch (e: any) { toast.error(e.response?.data?.message || 'ปิดกะไม่สำเร็จ') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm p-6 max-h-[80vh] overflow-y-auto">
+        <h2 className="text-xl font-bold text-[var(--fg-1)] mb-4">{mode === 'open' ? 'เปิดกะ' : `ปิดกะ — ${shift?.shift_number}`}</h2>
+
+        {mode === 'open' ? (
+          <>
+            <label className="block text-sm text-[var(--fg-3)] mb-1.5">เงินสดในลิ้นชัก (ยอดเริ่มต้น)</label>
+            <div className="relative mb-4">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
+              <input type="number" value={openingCash} onChange={e => setOpeningCash(e.target.value)} onFocus={e => e.target.select()}
+                className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="p-3 bg-[var(--bg)] rounded-lg space-y-1 text-sm mb-4">
+              <div className="flex justify-between text-[var(--fg-3)]"><span>เงินทอนเริ่มต้น</span><span>{(shift?.opening_cash || 0).toLocaleString()}</span></div>
+              <div className="flex justify-between text-[var(--fg-3)]"><span>ยอดขายเงินสด</span><span>{cashRevenue.toLocaleString()}</span></div>
+              {cashIn > 0 && <div className="flex justify-between text-success"><span>+ เงินเข้า</span><span>{cashIn.toLocaleString()}</span></div>}
+              {paidOut > 0 && <div className="flex justify-between text-danger"><span>− เงินออก</span><span>{paidOut.toLocaleString()}</span></div>}
+              <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-1.5 mt-1.5">
+                <span>ยอดที่ควรมี</span><span>{expectedCash.toLocaleString()}</span>
+              </div>
+            </div>
+            <label className="block text-sm text-[var(--fg-3)] mb-1.5">นับเงินสดจริงในลิ้นชัก</label>
+            <div className="relative mb-3">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
+              <input type="number" value={closingCash} onChange={e => setClosingCash(e.target.value)} onFocus={e => e.target.select()}
+                className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
+            </div>
+            <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium mb-4 ${
+              Math.abs(diff) < 0.01 ? 'bg-success/10 border border-success/30 text-success'
+              : diff > 0 ? 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
+              : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
+            }`}>
+              <span>ผลต่าง</span>
+              <span>{diff >= 0 ? '+' : ''}{diff.toLocaleString()} {Math.abs(diff) < 0.01 ? '(ตรง)' : diff > 0 ? '(เกิน)' : '(ขาด)'}</span>
+            </div>
+          </>
+        )}
+
+        <label className="block text-sm text-[var(--fg-3)] mb-1.5">หมายเหตุ (optional)</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none mb-4" />
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={mode === 'open' ? handleOpen : handleClose} disabled={saving}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold rounded-lg disabled:opacity-50 text-white ${mode === 'open' ? 'bg-phopy-indigo hover:bg-phopy-indigo/80' : 'bg-red-500/80 hover:bg-red-500'}`}>
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
+            {mode === 'open' ? 'เริ่มกะ' : 'ยืนยันปิดกะ'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// เงินเข้า/ออกลิ้นชักระหว่างกะ (petty cash) — บันทึกทันทีและลงบัญชีทันที (backend)
+function CashMovementModal({ shift, onClose, onDone }: {
+  shift: POSShift
+  onClose: () => void
+  onDone: () => void
+}) {
+  useModalClose(onClose)
+  const [type, setType] = useState<'PAID_OUT' | 'CASH_IN'>('PAID_OUT')
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [accounts, setAccounts] = useState<Array<{ id: string; code: string; name: string }>>([])
+  const [accountId, setAccountId] = useState('')
+  const [movements, setMovements] = useState<CashMovement[]>([])
+  const [saving, setSaving] = useState(false)
+
+  const loadMovements = () => {
+    posService.getShiftCashMovements(shift.id).then((res: any) => { if (res.success) setMovements(res.data) }).catch(() => {})
+  }
+
+  useEffect(() => {
+    accountsApi.getAll({ active: true }).then(({ data }: any) => { if (data.success) setAccounts(data.data) }).catch(() => {})
+    loadMovements()
+  }, [])
+
+  const handleSubmit = async () => {
+    const amt = parseFloat(amount)
+    if (!amt || amt <= 0) { toast.error('กรุณาระบุจำนวนเงินให้ถูกต้อง'); return }
+    if (!accountId) { toast.error('กรุณาเลือกบัญชี'); return }
+    setSaving(true)
+    try {
+      const res = await posService.addShiftCashMovement(shift.id, { type, amount: amt, reason: reason || undefined, account_id: accountId })
+      if (res.success) {
+        toast.success('บันทึกเงินเข้า/ออกลิ้นชักสำเร็จ')
+        setAmount(''); setReason('')
+        loadMovements()
+        onDone()
+      }
+    } catch (e: any) { toast.error(e.response?.data?.message || 'บันทึกไม่สำเร็จ') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-[var(--fg-1)]">เงินเข้า/ออกลิ้นชัก</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex bg-[var(--bg)] rounded-lg p-1 mb-4">
+          <button onClick={() => setType('PAID_OUT')}
+            className={`flex-1 py-2 rounded-md text-sm font-medium ${type === 'PAID_OUT' ? 'bg-danger/15 text-danger' : 'text-[var(--fg-3)]'}`}>
+            เงินออก (จ่าย)
+          </button>
+          <button onClick={() => setType('CASH_IN')}
+            className={`flex-1 py-2 rounded-md text-sm font-medium ${type === 'CASH_IN' ? 'bg-success/15 text-success' : 'text-[var(--fg-3)]'}`}>
+            เงินเข้า
+          </button>
+        </div>
+
+        <label className="block text-sm text-[var(--fg-3)] mb-1.5">จำนวนเงิน</label>
+        <div className="relative mb-3">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
+          <input type="number" value={amount} onChange={e => setAmount(e.target.value)} onFocus={e => e.target.select()}
+            className="w-full pl-8 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-lg font-bold focus:outline-none focus:border-phopy-indigo" />
+        </div>
+
+        <label className="block text-sm text-[var(--fg-3)] mb-1.5">บัญชี</label>
+        <select value={accountId} onChange={e => setAccountId(e.target.value)}
+          className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo mb-3">
+          <option value="">เลือกบัญชี</option>
+          {accounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+        </select>
+
+        <label className="block text-sm text-[var(--fg-3)] mb-1.5">เหตุผล</label>
+        <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="เช่น ซื้อวัตถุดิบเพิ่ม, เงินทอนไม่พอ"
+          className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo mb-4" />
+
+        <button onClick={handleSubmit} disabled={saving}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 mb-5">
+          {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
+          บันทึกรายการ
+        </button>
+
+        <p className="text-xs font-medium text-[var(--fg-3)] mb-2">รายการเงินเข้า/ออกในกะนี้</p>
+        {movements.length === 0 ? (
+          <p className="text-xs text-[var(--fg-4)]">ยังไม่มีรายการเงินเข้า/ออกในกะนี้</p>
+        ) : (
+          <div className="space-y-1.5">
+            {movements.map(m => (
+              <div key={m.id} className="flex justify-between items-center text-xs bg-[var(--bg)] rounded-lg px-3 py-2">
+                <span className={m.type === 'CASH_IN' ? 'text-success' : 'text-danger'}>
+                  {m.type === 'CASH_IN' ? '+' : '−'} {m.reason || (m.type === 'CASH_IN' ? 'เงินเข้า' : 'เงินออก')}
+                  {m.account_name && <span className="text-[var(--fg-4)]"> ({m.account_name})</span>}
+                </span>
+                <span className="text-[var(--fg-2)] font-medium">{m.amount.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
         )}
       </motion.div>
     </div>

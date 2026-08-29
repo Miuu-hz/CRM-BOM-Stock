@@ -2,6 +2,7 @@ import { forwardRef } from 'react'
 import { Printer, Download, Mail, User, Phone, Landmark, Hash, XCircle, Check, AlertTriangle } from 'lucide-react'
 import { useBill, BillType, BILL_CONFIGS } from './BillContext'
 import './UnifiedBillTemplate.css'
+import { unitLabel } from '../../hooks/useUnits'
 
 // Utility functions
 function numberToThaiText(num: number): string {
@@ -316,7 +317,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                         <td className="wo-col-req" style={{ textAlign: 'right', fontWeight: 600 }}>
                           {item.quantity}
                         </td>
-                        <td className="wo-col-unit">{item.unit}</td>
+                        <td className="wo-col-unit">{unitLabel(item.unit)}</td>
                         <td className="wo-col-stock">
                           {item.stockStatus === 'ok' && (
                             <span className="wo-stock-ok flex items-center gap-1"><Check className="w-3.5 h-3.5" /> {item.stockQty} {item.stockUnit}</span>
@@ -380,7 +381,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                           {item.description && <span className="item-desc">{item.description}</span>}
                         </td>
                         <td className="col-qty">{item.quantity}</td>
-                        <td className="col-unit">{item.unit}</td>
+                        <td className="col-unit">{unitLabel(item.unit)}</td>
                         <td className="col-price">{formatCurrency(item.price)}</td>
                         <td className="col-discount">
                           {item.discount > 0 ? formatCurrency(item.discount) : '-'}

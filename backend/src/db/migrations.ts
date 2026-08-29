@@ -1033,13 +1033,22 @@ export function runMigrations(db: any): void {
         }
         const upsert = db.prepare(`
           INSERT INTO document_sequences (tenant_id, doc_type, year, last_number, updated_at)
-          VALUES (?, ?, 0, ?, CURRENT_TIMESTAMP)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(tenant_id, doc_type, year) DO UPDATE SET
             last_number = MAX(last_number, excluded.last_number),
             updated_at = CURRENT_TIMESTAMP
         `)
+        // ponytail: generateNumber() call sites are split — some pass no year segment
+        // (bucket year=0: PO, WORK_ORDER, SUBCONTRACT family) and most pass the current
+        // calendar year (bucket year=<current year>: GOODS_RECEIPT, INVOICE, JOURNAL,
+        // QUOTATION, SALES_ORDER, PURCHASE_REQUEST, etc). Seeding only year=0 left the
+        // year-bucket counter unsynced with real data, so it could fall behind and
+        // collide with existing numbers (e.g. after a direct-SQL data seed). Sync both
+        // buckets so whichever one a given doc type actually reads stays ahead of MAX.
+        const currentYear = new Date().getFullYear()
         for (const [tenantId, maxNum] of maxByTenant) {
-          upsert.run(tenantId, docType, maxNum)
+          upsert.run(tenantId, docType, 0, maxNum)
+          upsert.run(tenantId, docType, currentYear, maxNum)
         }
       } catch (seedErr) {
         console.error(`⚠️ document_sequences seed error for ${table}:`, seedErr)
@@ -1324,4 +1333,411 @@ export function runMigrations(db: any): void {
     db.exec(`ALTER TABLE pos_payments ADD COLUMN bank_account_id TEXT`)
     console.log('✅ Migration: pos_payments.bank_account_id added')
   } catch { /* column already exists */ }
+
+  // MCP API key ต้องไม่ซ้ำข้ามบริษัท — resolveTenant() ใช้ LIMIT 1 ถ้าคีย์ซ้ำจะ route ไป tenant ไหนก็ได้
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mcp_api_key
+      ON users(mcp_api_key) WHERE mcp_api_key IS NOT NULL AND mcp_api_key != ''
+    `)
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_company_settings_mcp_api_key
+      ON company_settings(mcp_api_key) WHERE mcp_api_key IS NOT NULL AND mcp_api_key != ''
+    `)
+    console.log('✅ Migration: unique index on mcp_api_key ready')
+  } catch (e) { console.error('⚠️ mcp_api_key unique index migration error:', e) }
+
+  // Goods receipts: remember exactly what was written to stock at confirm time so
+  // cancelling a receipt can reverse the identical amount instead of re-deriving it
+  // from unit-conversion rules that may have been edited or deleted since.
+  // (goods_receipt_items.stock_qty)
+  for (const col of [
+    'stock_item_id TEXT',
+    'stock_qty REAL',
+    'stock_sealed_qty REAL',
+    'stock_factor REAL',
+  ]) {
+    try {
+      db.exec(`ALTER TABLE goods_receipt_items ADD COLUMN ${col}`)
+      console.log(`✅ Migration: goods_receipt_items.${col.split(' ')[0]} added`)
+    } catch { /* column already exists */ }
+  }
+
+  // BOM output qty/unit: ก่อนหน้านี้ BOM 1 ใบสมมติว่าผลิตได้ 1 หน่วยเสมอ ทำให้กรณี
+  // ผลิตแบบ "ซื้อผ้ามาเป็นม้วน → ตัดแบ่งเป็นเมตร (คนละ SKU)" คำนวณต้นทุนต่อหน่วยผิด
+  // และปิดใบสั่งงานแล้วไม่รู้ว่า 1 รอบผลิตได้กี่หน่วยผลผลิตจริง — ต้องเก็บ output_qty/
+  // output_unit ต่อ BOM แทนการ hardcode = 1. บาก backfill output_qty = 1 ให้แถวเดิม
+  // เพื่อไม่ให้ต้นทุนของ BOM ที่มีอยู่แล้วเปลี่ยนค่า (totalCost / 1 = totalCost เท่าเดิม)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(boms)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'output_qty')) {
+      db.exec(`ALTER TABLE boms ADD COLUMN output_qty REAL DEFAULT 1`)
+      db.exec(`UPDATE boms SET output_qty = 1 WHERE output_qty IS NULL`)
+      console.log('✅ Migration: added output_qty to boms (backfilled = 1)')
+    }
+    if (!cols.some((c: any) => c.name === 'output_unit')) {
+      db.exec(`ALTER TABLE boms ADD COLUMN output_unit TEXT`)
+      console.log('✅ Migration: added output_unit to boms (NULL = ใช้ base_unit ของ product)')
+    }
+  } catch (e) { console.error('⚠️ boms output_qty/output_unit migration error:', e) }
+
+  // Work order unit: ปิดใบสั่งงาน (COMPLETED) ต้องรู้ว่า completed_qty กรอกมาเป็นหน่วยไหน
+  // ก่อนจะแปลงเข้าหน่วยฐานของสินค้าสำเร็จรูป (ดู workOrder.routes.ts status === 'COMPLETED')
+  // NULL = ใช้หน่วยของสินค้าตาม BOM เหมือนพฤติกรรมเดิม (ไม่ต้องแปลง)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(work_orders)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'unit')) {
+      db.exec(`ALTER TABLE work_orders ADD COLUMN unit TEXT`)
+      console.log('✅ Migration: added unit to work_orders')
+    }
+  } catch (e) { console.error('⚠️ work_orders unit migration error:', e) }
+
+  // Goods receipt invoicing dedup: once a GR is pulled into a purchase invoice it must
+  // not be selectable for another invoice (was previously unenforced — same GR/PO could
+  // be invoiced twice). invoiced_at is separate from status (DRAFT/CONFIRMED/CANCELLED)
+  // which tracks stock receipt, not billing.
+  try {
+    const grCols = db.prepare(`PRAGMA table_info(goods_receipts)`).all() as any[]
+    if (!grCols.some((c: any) => c.name === 'invoiced_at')) {
+      db.exec(`ALTER TABLE goods_receipts ADD COLUMN invoiced_at TEXT`)
+      console.log('✅ Migration: added invoiced_at to goods_receipts')
+    }
+  } catch (e) { console.error('⚠️ goods_receipts invoiced_at migration error:', e) }
+
+  // ==================== purchase_price / purchase_unit (stock_items) ====================
+  // Shop owners only know what they PAID per purchased unit ("1 pack of eggs = 133 บาท"),
+  // never the derived price-per-base-unit ("4.4333 บาท/ฟอง") — the UI label said "ต่อ แพ็ค"
+  // but the field underneath stored/showed a per-base-unit number, so owners kept typing
+  // the pack price into a field that meant something else and got silently wrong stock
+  // costs. purchase_price/purchase_unit store what the owner actually knows; unit_cost
+  // KEEPS its existing meaning (price per 1 base_unit) and is now DERIVED from these two:
+  //   unit_cost = purchase_price / factor(purchase_unit → base_unit)
+  // See priceToBaseUnitCost() in stock.routes.ts / purchase.routes.ts for the write side.
+  //
+  // Standard-units table duplicated (not imported) from unitConversion.service.ts on
+  // purpose: that service does `import db from '../db/sqlite'`, and this migration runs
+  // synchronously INSIDE db/sqlite.ts's own module init, before its `export default db`
+  // line executes — importing the service here would read `db` as undefined and crash
+  // the very first query it runs. Keeping this file import-free (as it already was)
+  // avoids that circular-require trap entirely.
+  const BACKFILL_STANDARD_FACTORS: Record<string, number> = {
+    'kg->g': 1000, 'g->kg': 0.001, 'kg->mg': 1_000_000, 'mg->g': 0.001, 'g->mg': 1000,
+    'lb->kg': 0.453592, 'kg->lb': 2.20462, 'oz->g': 28.3495, 'g->oz': 0.035274,
+    'hg->g': 100, 'g->hg': 0.01, 'hg->kg': 0.1, 'kg->hg': 10,
+    'inch->cm': 2.54, 'cm->inch': 0.393701, 'inch->mm': 25.4, 'mm->inch': 0.0393701,
+    'm->cm': 100, 'cm->m': 0.01, 'm->mm': 1000, 'mm->m': 0.001, 'km->m': 1000, 'm->km': 0.001,
+    'ft->m': 0.3048, 'm->ft': 3.28084, 'yard->m': 0.9144, 'm->yard': 1.09361,
+    'yard->cm': 91.44, 'cm->yard': 0.0109361,
+    'l->ml': 1000, 'ml->l': 0.001, 'gallon->l': 3.78541, 'l->gallon': 0.264172,
+    'fl_oz->ml': 29.5735, 'ml->fl_oz': 0.033814,
+    'm2->cm2': 10000, 'cm2->m2': 0.0001,
+    'dozen->pcs': 12, 'pcs->dozen': 0.083333, 'gross->pcs': 144, 'pcs->gross': 0.006944,
+    'gross->dozen': 12, 'dozen->gross': 0.083333, 'pair->pcs': 2, 'pcs->pair': 0.5,
+  }
+
+  // Best-effort SINGLE-HOP resolver (no multi-hop graph search like the real
+  // unitConversion.service.ts) — good enough for a one-time backfill sanity check.
+  // Returns null when the factor can't be determined this way; callers must treat
+  // that as "unknown / can't verify", never as "mismatch".
+  function resolveFactorForBackfillCheck(
+    db: any,
+    tenantId: string,
+    fromUnit: string,
+    toUnit: string,
+    materialId: string | null
+  ): number | null {
+    const from = String(fromUnit || '').trim().toLowerCase()
+    const to = String(toUnit || '').trim().toLowerCase()
+    if (!from || !to) return null
+    if (from === to) return 1
+
+    try {
+      if (materialId) {
+        const rows = db.prepare(
+          `SELECT from_unit, to_unit, conversion_factor FROM unit_conversions WHERE material_id = ? AND tenant_id = ?`
+        ).all(materialId, tenantId) as any[]
+        for (const r of rows) {
+          const rf = String(r.from_unit).trim().toLowerCase()
+          const rt = String(r.to_unit).trim().toLowerCase()
+          if (rf === from && rt === to) return Number(r.conversion_factor)
+          if (rf === to && rt === from && Number(r.conversion_factor) > 0) return 1 / Number(r.conversion_factor)
+        }
+      }
+      const gRows = db.prepare(
+        `SELECT from_unit, to_unit, conversion_factor FROM unit_conversions WHERE tenant_id = ? AND material_id IS NULL`
+      ).all(tenantId) as any[]
+      for (const r of gRows) {
+        const rf = String(r.from_unit).trim().toLowerCase()
+        const rt = String(r.to_unit).trim().toLowerCase()
+        if (rf === from && rt === to) return Number(r.conversion_factor)
+        if (rf === to && rt === from && Number(r.conversion_factor) > 0) return 1 / Number(r.conversion_factor)
+      }
+    } catch {
+      // unit_conversions table may not exist yet on a brand-new db — treat as unresolved
+    }
+
+    const key = `${from}->${to}`
+    if (BACKFILL_STANDARD_FACTORS[key] !== undefined) return BACKFILL_STANDARD_FACTORS[key]
+    const revKey = `${to}->${from}`
+    if (BACKFILL_STANDARD_FACTORS[revKey] !== undefined && BACKFILL_STANDARD_FACTORS[revKey] > 0) {
+      return 1 / BACKFILL_STANDARD_FACTORS[revKey]
+    }
+    return null
+  }
+
+  try {
+    const stockCols = db.prepare(`PRAGMA table_info(stock_items)`).all() as any[]
+    const hasPurchasePrice = stockCols.some((c: any) => c.name === 'purchase_price')
+    const hasPurchaseUnit = stockCols.some((c: any) => c.name === 'purchase_unit')
+
+    if (!hasPurchasePrice) {
+      db.exec(`ALTER TABLE stock_items ADD COLUMN purchase_price REAL`)
+      console.log('✅ Migration: added purchase_price to stock_items')
+    }
+    if (!hasPurchaseUnit) {
+      db.exec(`ALTER TABLE stock_items ADD COLUMN purchase_unit TEXT`)
+      console.log('✅ Migration: added purchase_unit to stock_items')
+    }
+
+    // Backfill only runs the moment either column is first created — never again — so a
+    // shop owner's later manual edits to purchase_price/purchase_unit can't be silently
+    // overwritten by re-running this migration on every server start. unit_cost is NEVER
+    // written here — its current value is assumed correct already.
+    if (!hasPurchasePrice || !hasPurchaseUnit) {
+      const items = db.prepare(`SELECT id, tenant_id, sku, name, material_id, base_unit, unit, unit_cost FROM stock_items`).all() as any[]
+      const mismatches: string[] = []
+      let unresolvedCount = 0
+      let filledFromHistory = 0
+      let filledFromBaseUnit = 0
+
+      for (const item of items) {
+        const baseUnit = item.base_unit || item.unit
+        let purchasePrice: number
+        let purchaseUnit: string
+
+        // Latest PO history for this item: purchase_order_items.material_id has been
+        // used inconsistently across the app (sometimes it's stock_items.material_id —
+        // the BOM-linked `materials` row — sometimes it's stock_items.id directly for
+        // standalone stock, see the same OR-fallback pattern in purchase.routes.ts's
+        // goods-receipt-confirm handler) so check both.
+        const hist = db.prepare(`
+          SELECT poi.unit_price as unit_price, poi.unit as unit
+          FROM purchase_order_items poi
+          JOIN purchase_orders po ON po.id = poi.purchase_order_id
+          WHERE (poi.material_id = ? OR poi.material_id = ?)
+            AND poi.unit IS NOT NULL AND poi.unit != ''
+            AND poi.unit_price > 0
+          ORDER BY po.created_at DESC, poi.rowid DESC
+          LIMIT 1
+        `).get(item.material_id, item.id) as any
+
+        if (hist) {
+          purchasePrice = Number(hist.unit_price)
+          purchaseUnit = String(hist.unit)
+          filledFromHistory++
+        } else {
+          purchasePrice = Number(item.unit_cost) || 0
+          purchaseUnit = baseUnit
+          filledFromBaseUnit++
+        }
+
+        db.prepare(`UPDATE stock_items SET purchase_price = ?, purchase_unit = ? WHERE id = ?`)
+          .run(purchasePrice, purchaseUnit, item.id)
+
+        // Sanity check only — never touches unit_cost. Flag rows where the formula
+        // doesn't hold so a human can look at that specific item (this is EXPECTED for
+        // rows whose only PO history predates the pricing fix and recorded a price in
+        // the wrong unit).
+        const factor = resolveFactorForBackfillCheck(db, item.tenant_id, purchaseUnit, baseUnit, item.id)
+        if (factor === null) {
+          unresolvedCount++
+        } else {
+          const expected = purchasePrice / factor
+          const actual = Number(item.unit_cost) || 0
+          const tolerance = Math.max(0.01, Math.abs(actual) * 0.01) // 1% or 0.01 บาท, whichever is bigger
+          if (Math.abs(expected - actual) > tolerance) {
+            mismatches.push(
+              `   - [${item.sku}] ${item.name} (id=${item.id}): purchase_price=${purchasePrice} purchase_unit=${purchaseUnit} base_unit=${baseUnit} factor=${factor} ` +
+              `→ purchase_price/factor=${expected.toFixed(4)} but unit_cost=${actual} (unit_cost left untouched)`
+            )
+          }
+        }
+      }
+
+      console.log(`✅ Migration: backfilled purchase_price/purchase_unit for ${items.length} stock_items (${filledFromHistory} from PO history, ${filledFromBaseUnit} from base_unit fallback)`)
+      if (unresolvedCount > 0) {
+        console.log(`ℹ️ Migration purchase_price backfill: ${unresolvedCount} rows skipped formula check (no known unit conversion rule to verify against)`)
+      }
+      if (mismatches.length > 0) {
+        console.warn(`⚠️ Migration purchase_price backfill: ${mismatches.length} rows where purchase_price/factor != unit_cost (unit_cost NOT modified, needs human review):`)
+        for (const m of mismatches) console.warn(m)
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ stock_items purchase_price/purchase_unit migration error:', e)
+  }
+
+  // Migration: allow_negative_stock — global toggle to permit selling/consuming
+  // past zero (POS payment, sales order confirm, work order material issue) when
+  // stock or BOM materials run short. Default 0 = keep the strict "no stock, no
+  // sale" behaviour that was already in place.
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN allow_negative_stock INTEGER DEFAULT 0`)
+    console.log('✅ Migration: company_settings.allow_negative_stock added')
+  } catch { /* column already exists */ }
+
+  // Migration: require_pos_shift — global toggle to force cashiers to open a
+  // POS shift before a bill can be paid. Default 0 = keep the existing
+  // behaviour (sell without opening a shift) so existing tenants are not
+  // suddenly blocked from selling.
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN require_pos_shift INTEGER DEFAULT 0`)
+    console.log('✅ Migration: company_settings.require_pos_shift added')
+  } catch { /* column already exists */ }
+
+  // Migration: pos_running_bills.shift_id — attributes a running bill to the
+  // POS shift that was open when it was created, so shift close can sum
+  // sales by shift_id instead of guessing from a time range. NULL for bills
+  // created before this migration or while no shift was open.
+  try {
+    db.exec(`ALTER TABLE pos_running_bills ADD COLUMN shift_id TEXT`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_pos_bills_shift ON pos_running_bills(shift_id)`)
+    console.log('✅ Migration: pos_running_bills.shift_id added')
+  } catch { /* column already exists */ }
+
+  // Migration: pos_shift_cash_movements — petty cash in/out of the POS
+  // drawer during an open shift (paid-out for expenses, cash-in top-ups).
+  // Each row also posts a GL entry immediately (see pos.routes.ts).
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pos_shift_cash_movements (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        shift_id TEXT NOT NULL,
+        type TEXT NOT NULL,              -- PAID_OUT | CASH_IN
+        amount REAL NOT NULL,
+        reason TEXT,
+        account_id TEXT NOT NULL,        -- expense/source account chosen by the user
+        created_by TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_pos_shift_cash_mv_shift ON pos_shift_cash_movements(shift_id);
+    `)
+    console.log('✅ Migration: pos_shift_cash_movements table ready')
+  } catch (e) {
+    console.error('⚠️ pos_shift_cash_movements migration error:', e)
+  }
+
+  // Migration: purchase_return_items.material_id FK rebuild — it pointed at
+  // materials(id), but every writer of this column (the return-modal's
+  // MaterialSearchInput, backed by stockService.getAll() the same way
+  // purchase_order_items.material_id / goods_receipt_items.material_id are
+  // populated — both verified to match stock_items.id, not materials.id)
+  // actually stores a stock_items.id there. materials only has ~42 rows vs
+  // ~492 in stock_items, so the stale FK rejected essentially every insert
+  // with "FOREIGN KEY constraint failed", meaning POST /purchase/returns
+  // always 500'd and purchase_returns stayed permanently empty.
+  // Rebuild via the standard SQLite recipe (FK off → new table → copy →
+  // drop → rename → FK on → integrity check). Idempotent: skipped once the
+  // FK already targets stock_items.
+  try {
+    const returnFkList = db.prepare(`PRAGMA foreign_key_list(purchase_return_items)`).all() as any[]
+    const materialFk = returnFkList.find((fk: any) => fk.from === 'material_id')
+    if (materialFk && materialFk.table !== 'stock_items') {
+      db.exec(`PRAGMA foreign_keys=OFF`)
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE purchase_return_items_new (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            purchase_return_id TEXT NOT NULL,
+            goods_receipt_item_id TEXT,
+            material_id TEXT,
+            quantity REAL DEFAULT 0,
+            unit_price REAL DEFAULT 0,
+            reason TEXT,
+            total_price REAL DEFAULT 0,
+            FOREIGN KEY (purchase_return_id) REFERENCES purchase_returns(id) ON DELETE CASCADE,
+            FOREIGN KEY (goods_receipt_item_id) REFERENCES goods_receipt_items(id),
+            FOREIGN KEY (material_id) REFERENCES stock_items(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO purchase_return_items_new (id, tenant_id, purchase_return_id, goods_receipt_item_id, material_id, quantity, unit_price, reason, total_price)
+          SELECT id, tenant_id, purchase_return_id, goods_receipt_item_id, material_id, quantity, unit_price, reason, total_price
+          FROM purchase_return_items
+        `)
+        db.exec(`DROP TABLE purchase_return_items`)
+        db.exec(`ALTER TABLE purchase_return_items_new RENAME TO purchase_return_items`)
+      })
+      rebuild()
+      db.exec(`PRAGMA foreign_keys=ON`)
+      const violations = db.prepare(`PRAGMA foreign_key_check(purchase_return_items)`).all()
+      if (violations.length > 0) {
+        console.error('⚠️ Migration: purchase_return_items FK rebuild left orphaned rows (needs manual review):', violations)
+      } else {
+        console.log('✅ Migration: purchase_return_items.material_id FK now points to stock_items(id)')
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ purchase_return_items FK rebuild migration error:', e)
+    try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
+  }
+
+  // Migration: credit_note_items.product_id NOT NULL + FK rebuild — same defect
+  // class as purchase_return_items.material_id above. product_id was declared
+  // NOT NULL REFERENCES products(id), but nothing in the real sales pipeline ever
+  // populates a products.id here: invoice_items.product_id is NULL on every real
+  // row (18/18) and stock_items.product_id is NULL on every real row (492/492).
+  // products is a disconnected 12-row catalog, unrelated to what's actually sold.
+  // Net effect: POST /sales/credit-notes with return-mode items always threw
+  // "FOREIGN KEY constraint failed", so credit_note_items stayed permanently
+  // empty (0 rows) and restoreCreditNoteStock() never had anything to restore.
+  // Fix: make product_id nullable with no FK — creditNotes.ts already resolves
+  // the actual stock item via invoice_item_id -> invoice_items.stock_item_id,
+  // never via product_id, so nothing downstream depends on this constraint.
+  // Same rebuild recipe as purchase_return_items. Idempotent: skipped once
+  // product_id is already nullable.
+  try {
+    const cniCols = db.prepare(`PRAGMA table_info(credit_note_items)`).all() as any[]
+    const productIdCol = cniCols.find((c: any) => c.name === 'product_id')
+    if (productIdCol && productIdCol.notnull === 1) {
+      db.exec(`PRAGMA foreign_keys=OFF`)
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE credit_note_items_new (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            credit_note_id TEXT NOT NULL,
+            invoice_item_id TEXT NOT NULL,
+            product_id TEXT,
+            quantity REAL DEFAULT 0,
+            unit_price REAL DEFAULT 0,
+            reason TEXT,
+            total_price REAL DEFAULT 0,
+            FOREIGN KEY (credit_note_id) REFERENCES credit_notes(id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO credit_note_items_new (id, tenant_id, credit_note_id, invoice_item_id, product_id, quantity, unit_price, reason, total_price)
+          SELECT id, tenant_id, credit_note_id, invoice_item_id, product_id, quantity, unit_price, reason, total_price
+          FROM credit_note_items
+        `)
+        db.exec(`DROP TABLE credit_note_items`)
+        db.exec(`ALTER TABLE credit_note_items_new RENAME TO credit_note_items`)
+      })
+      rebuild()
+      db.exec(`PRAGMA foreign_keys=ON`)
+      const violations = db.prepare(`PRAGMA foreign_key_check(credit_note_items)`).all()
+      if (violations.length > 0) {
+        console.error('⚠️ Migration: credit_note_items FK rebuild left orphaned rows (needs manual review):', violations)
+      } else {
+        console.log('✅ Migration: credit_note_items.product_id is now nullable with no FK to products')
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ credit_note_items FK rebuild migration error:', e)
+    try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
+  }
 }

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { convertQuantityBidirectional } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { deductStockForSO, restoreStockForSO } from './shared'
 
 const router = Router()
@@ -218,6 +218,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // whether stock was already deducted (so CANCELLED must restore it).
     const previousStatus = existing.status
 
+    if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกคำสั่งขาย — ต้องเป็น ADMIN/MANAGER/MASTER' })
+    }
+
     // ── Approval gate: CONFIRMED transition ─────────────────────────────────
     if (status === 'CONFIRMED' && existing.status === 'DRAFT') {
       const userId = req.user!.userId
@@ -265,7 +269,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // เช็ค stock ก่อน CONFIRMED
     if (status === 'CONFIRMED') {
       const soItems = db.prepare(`
-        SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, COALESCE(soi.product_name, si.name) as item_name
+        SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, si.sealed_qty as stock_sealed,
+               si.base_unit as stock_base_unit, si.display_unit as stock_display_unit,
+               COALESCE(soi.product_name, si.name) as item_name
         FROM sales_order_items soi
         LEFT JOIN stock_items si ON soi.stock_item_id = si.id
         WHERE soi.sales_order_id = ?
@@ -275,15 +281,47 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         if (!it.stock_item_id) return false
         let needQty = Number(it.quantity || 0)
         const soUnit = it.unit || ''
-        const stockUnit = it.stock_unit || ''
-        if (soUnit && stockUnit && soUnit !== stockUnit) {
+        // stock_items.quantity (it.stock_qty here) is in base_unit — the SELECT above
+        // already pulls si.base_unit as stock_base_unit for the sealed-pack math below,
+        // but this comparison used to target the legacy `unit` column instead, so a
+        // sufficient-stock check could pass/fail against the wrong unit for items where
+        // unit != base_unit (e.g. shrimp: unit=kg, base_unit=g).
+        const stockUnit = it.stock_base_unit || it.stock_unit || ''
+        if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
           const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
-          if (converted) needQty = converted.converted
+          if (converted) {
+            needQty = converted.converted
+          } else {
+            // No rule: the raw number is not comparable across units. Flag it as short
+            // so the user is stopped here with a clear message rather than at deduct time.
+            console.warn(`[qty] SO stock check: no conversion ${soUnit} → ${stockUnit} for stock item ${it.stock_item_id}; treating as insufficient`)
+            return true
+          }
         }
-        return (it.stock_qty ?? 0) < needQty
+        // Unopened packs are real stock — delivery unpacks them automatically at
+        // deduct time, so counting only loose quantity here blocked confirming an
+        // order while full packs sat in the warehouse.
+        const stockBase = it.stock_base_unit || it.stock_unit
+        const stockDisplay = it.stock_display_unit || it.stock_unit
+        let sealedInBase = 0
+        if (stockBase && stockDisplay && normalizeUnit(stockBase) !== normalizeUnit(stockDisplay)) {
+          const pack = convertQuantityBidirectional(1, stockDisplay, stockBase, tenantId, it.stock_item_id)
+          if (pack && pack.factor > 0) {
+            it.pack_factor = pack.factor
+            sealedInBase = (it.stock_sealed || 0) * pack.factor
+          }
+        }
+        it.sealed_in_base = sealedInBase
+        it.available_total = (it.stock_qty ?? 0) + sealedInBase
+        return it.available_total < needQty
       })
       if (shortItems.length > 0) {
-        const details = shortItems.map((it: any) => `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} ${it.unit || ''} มีในสต็อก ${it.stock_qty ?? 0} ${it.stock_unit || ''}`).join(', ')
+        const details = shortItems.map((it: any) => {
+          const sealedNote = it.sealed_in_base > 0
+            ? ` (แกะแล้ว ${it.stock_qty ?? 0} + ในแพ็คอีก ${it.stock_sealed} ${getUnitDisplayName(it.stock_display_unit || '')} = ${it.sealed_in_base})`
+            : ''
+          return `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} ${it.unit || ''} มีในสต็อก ${it.available_total ?? it.stock_qty ?? 0} ${it.stock_unit || ''}${sealedNote}`
+        }).join(', ')
         return res.status(400).json({ success: false, message: `สต็อกไม่เพียงพอ: ${details}` })
       }
     }

@@ -88,6 +88,9 @@ router.post('/', async (req: Request, res: Response) => {
 // DELETE /:id — reverse (void) a receipt: reverses its journal + restores the invoice
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
+    if (!['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบเสร็จรับเงิน — ต้องเป็น ADMIN/MANAGER/MASTER' })
+    }
     const tenantId = req.user!.tenantId
     const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' })

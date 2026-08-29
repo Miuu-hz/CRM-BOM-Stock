@@ -2,7 +2,7 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
-import { convertQuantityBidirectional } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { ok } from './shared'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
@@ -27,10 +27,13 @@ const deductStockForSO = (tenantId: string, soId: string, soNumber: string, user
     let qty = Number(item.quantity || 0)
     if (qty <= 0) continue
 
-    const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(stockItemId) as any
+    const stockItem = db.prepare('SELECT unit, base_unit FROM stock_items WHERE id = ?').get(stockItemId) as any
     const soUnit = item.unit || ''
-    const stockUnit = stockItem?.unit || ''
-    if (soUnit && stockUnit && soUnit !== stockUnit) {
+    // stock_items.quantity is stored in base_unit — the legacy `unit` column can differ
+    // (23/456 items today, e.g. shrimp: unit=kg, base_unit=g) and using it here silently
+    // deducted the wrong amount. Fall back to `unit` only when base_unit is empty.
+    const stockUnit = stockItem?.base_unit || stockItem?.unit || ''
+    if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
       const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
       if (converted) qty = converted.converted
     }
@@ -321,7 +324,8 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
       // เช็คสต็อกก่อนยืนยัน — แปลงหน่วยถ้าต่างกัน
       if (status === 'CONFIRMED') {
         const soItems = db.prepare(`
-          SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, COALESCE(soi.product_name, si.name) as item_name
+          SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, si.base_unit as stock_base_unit,
+                 COALESCE(soi.product_name, si.name) as item_name
           FROM sales_order_items soi
           LEFT JOIN stock_items si ON soi.stock_item_id = si.id
           WHERE soi.sales_order_id = ?
@@ -331,8 +335,10 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
           if (!it.stock_item_id) return false
           let needQty = Number(it.quantity || 0)
           const soUnit = it.unit || ''
-          const stockUnit = it.stock_unit || ''
-          if (soUnit && stockUnit && soUnit !== stockUnit) {
+          // stock_qty (si.quantity) is in base_unit — compare/convert against base_unit,
+          // not the legacy `unit` column, so the check isn't fooled the way deduction was.
+          const stockUnit = it.stock_base_unit || it.stock_unit || ''
+          if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
             const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
             if (converted) needQty = converted.converted
           }

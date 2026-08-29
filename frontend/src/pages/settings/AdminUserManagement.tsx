@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { UserPlus, Pencil, Trash2, Search, X, Eye, EyeOff, Users, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import api from '../../services/api'
+import { stripNonAscii } from '../../utils/email'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -116,7 +117,7 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
             </div>
             <div>
               <label className="text-xs font-medium text-[var(--fg-3)] mb-1 block">{t('settings.adminUserManagement.modal.emailLabel')}</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} disabled={isEdit}
+              <input value={email} onChange={e => setEmail(stripNonAscii(e.target.value))} disabled={isEdit}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)] text-sm focus:outline-none focus:border-[var(--primary)] transition-colors disabled:opacity-50"
                 placeholder="email@company.com" type="email" />
             </div>

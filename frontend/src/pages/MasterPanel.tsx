@@ -493,6 +493,24 @@ export default function MasterPanel() {
     }
   }
 
+  const handlePurge = async (tenantId: string, tenantName: string) => {
+    if (!window.confirm(`ลบ "${tenantName}" ถาวรใช่ไหม?
+ลบได้เฉพาะธุรกิจที่ไม่มีผู้ใช้และไม่มีข้อมูล — กู้คืนไม่ได้`)) return
+    setDeactivating(tenantId)
+    try {
+      const res = await api.delete(`/master/tenant/${tenantId}/purge`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.data.success) {
+        toast.success(`ลบ ${tenantName} ถาวรแล้ว`)
+        setSelectedId(null)
+        loadStats()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "ลบไม่สำเร็จ")
+    } finally {
+      setDeactivating(null)
+    }
+  }
+
   // value = number (override) หรือ null (เคลียร์ override → ยึดตามแพ็กเกจ)
   const handleSaveMcp = async (tenantId: string, value: number | null) => {
     setSavingMcp(true)
@@ -922,6 +940,17 @@ export default function MasterPanel() {
                     {deactivating === selStat.tenantId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     ปิดใช้งาน
                   </button>
+                  {selStat.userCount === 0 && !selStat.isCurrentTenant && (
+                    <button
+                      onClick={() => handlePurge(selStat.tenantId, selStat.name)}
+                      disabled={deactivating === selStat.tenantId}
+                      title="ลบถาวร (เฉพาะธุรกิจว่าง)"
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all text-sm disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      ลบถาวร
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { AlertTriangle, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { unitLabel } from '../../hooks/useUnits'
 
 interface StockAlert {
   id: string
@@ -124,13 +125,13 @@ function StockAlerts() {
                           : 'text-warning'
                       }`}
                     >
-                      {alert.current} {alert.unit}
+                      {alert.current} {unitLabel(alert.unit)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-[var(--fg-3)]">{t('dashboard.stockAlerts.minimumRequired')}</span>
                     <span className="text-[var(--fg-2)] font-semibold">
-                      {alert.minimum} {alert.unit}
+                      {alert.minimum} {unitLabel(alert.unit)}
                     </span>
                   </div>
 

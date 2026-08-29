@@ -411,7 +411,7 @@ function templateINV_A4(d: any): string {
         <h1>ใบแจ้งหนี้ / ใบกำกับภาษี</h1>
         <div class="doc-number">${d.invoice_number}</div>
         <div class="doc-date">วันที่ออกใบ: ${fmtDate(d.invoice_date)}</div>
-        <div class="doc-date" style="${isOverdue ? 'color:var(--danger);font-weight:600' : ''}">ครบกำหนด: ${fmtDate(d.due_date)}${isOverdue ? ' <AlertTriangle className="w-4 h-4" /> เกินกำหนด' : ''}</div>
+        <div class="doc-date" style="${isOverdue ? 'color:var(--danger);font-weight:600' : ''}">ครบกำหนด: ${fmtDate(d.due_date)}${isOverdue ? ' ⚠️ เกินกำหนด' : ''}</div>
       </div>
     </div>
     <div class="info-row">
@@ -457,8 +457,8 @@ function templateINV_A4(d: any): string {
     ${bankQrBlock(d)}
     <div class="journal-box">
       <strong>รายการบัญชีอัตโนมัติ (JV)</strong><br>
-      Dr. 1180 ลูกหนี้การค้า &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.total_amount)} บาท<br>
-      Cr. 4100 รายได้จากการขาย &nbsp; ${fmt(netRevenue)} บาท${(d.tax_amount || 0) > 0 ? `<br>Cr. 2210 ภาษีขายค้างจ่าย &nbsp;&nbsp;&nbsp; ${fmt(d.tax_amount)} บาท` : ''}
+      Dr. 1104 ลูกหนี้การค้า &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.total_amount)} บาท<br>
+      Cr. 4101 รายได้ขายสินค้า &nbsp; ${fmt(netRevenue)} บาท${(d.tax_amount || 0) > 0 ? `<br>Cr. 2104 ภาษีขาย &nbsp;&nbsp;&nbsp; ${fmt(d.tax_amount)} บาท` : ''}
     </div>
     ${d.notes ? `<div class="notes-box"><label>หมายเหตุ</label>${d.notes}</div>` : ''}
     <div class="sig-row">
@@ -559,8 +559,8 @@ function templateRC_A4(d: any): string {
     </div>
     <div class="journal-box">
       <strong>รายการบัญชีอัตโนมัติ (JV)</strong><br>
-      Dr. ${d.payment_method === 'TRANSFER' || d.payment_method === 'CHEQUE' ? '1102 เงินฝากธนาคาร' : '1101 เงินสด'} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.amount)} บาท<br>
-      Cr. 1180 ลูกหนี้การค้า &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.amount)} บาท
+      Dr. ${d.payment_method === 'CASH' ? '1101 เงินสด' : '1102 เงินฝากธนาคาร'} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.amount)} บาท<br>
+      Cr. 1104 ลูกหนี้การค้า &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.amount)} บาท
     </div>
     ${d.notes ? `<div class="notes-box"><label>หมายเหตุ</label>${d.notes}</div>` : ''}
     <div class="sig-row">

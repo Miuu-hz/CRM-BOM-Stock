@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import {
   Calculator,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import bomService, { BOM } from '../../services/bom'
 import materialsService, { Material } from '../../services/materials'
+import { unitLabel } from '../../hooks/useUnits'
 
 interface MaterialRequirement {
   materialId: string
@@ -26,6 +28,7 @@ interface MaterialRequirement {
 }
 
 function ProductionCalculator() {
+  const { t } = useTranslation()
   const [boms, setBoms] = useState<BOM[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,9 +68,15 @@ function ProductionCalculator() {
     const selectedBom = boms.find((b) => b.id === selectedBomId)
     if (!selectedBom) return
 
+    // BOM ไม่ได้ผลิตได้แค่ 1 หน่วยเสมอไปอีกต่อไป (R2) — bomItem.quantity คือวัตถุดิบที่ต้องเบิก
+    // "ต่อ 1 ชุด" ซึ่ง 1 ชุดผลิตได้ outputQty หน่วย ดังนั้นต้องแปลง "จำนวนที่ต้องการผลิต" เป็น
+    // "จำนวนชุด" ก่อน แล้วค่อยคูณ ไม่ใช่คูณ quantity ตรง ๆ (ไม่งั้นจะได้วัตถุดิบเกินจริงเป็นเท่าตัว)
+    const outputQtyPerBatch = Number((selectedBom as any).outputQty ?? (selectedBom as any).output_qty) || 1
+    const batches = quantity / outputQtyPerBatch
+
     const reqs: MaterialRequirement[] = (selectedBom.materials || []).map((bomItem) => {
       const material = materials.find((m) => m.id === bomItem.materialId)
-      const requiredQty = Number(bomItem.quantity) * quantity
+      const requiredQty = Number(bomItem.quantity) * batches
       const availableStock = material?.currentStock || 0
       const shortage = Math.max(0, requiredQty - availableStock)
       const unitCost = material ? Number(material.unitCost) : 0
@@ -163,7 +172,16 @@ function ProductionCalculator() {
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Production Quantity</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">
+              Production Quantity
+              {(() => {
+                const b = boms.find((x) => x.id === selectedBomId) as any
+                const outUnit = b?.outputUnit || b?.output_unit
+                return outUnit ? (
+                  <span className="text-[var(--fg-4)] font-normal"> ({t('bom.common.unitLabel')}: {unitLabel(outUnit)})</span>
+                ) : null
+              })()}
+            </label>
             <input
               type="number"
               value={quantity}
@@ -265,7 +283,7 @@ function ProductionCalculator() {
                     <td className="text-[var(--fg-2)]">{req.materialName}</td>
                     <td className="text-[var(--fg-3)] font-mono">{req.materialCode}</td>
                     <td className="text-[var(--fg-2)]">
-                      {req.requiredQuantity.toLocaleString()} {req.unit}
+                      {req.requiredQuantity.toLocaleString()} {unitLabel(req.unit)}
                     </td>
                     <td
                       className={
@@ -284,7 +302,7 @@ function ProductionCalculator() {
                           OUT OF STOCK
                         </span>
                       ) : (
-                        `${req.availableStock.toLocaleString()} ${req.unit}`
+                        `${req.availableStock.toLocaleString()} ${unitLabel(req.unit)}`
                       )}
                     </td>
                     <td className={req.shortage > 0 ? 'text-danger font-semibold' : 'text-[var(--fg-4)]'}>
@@ -336,7 +354,7 @@ function ProductionCalculator() {
                           <span>
                             {r.materialName}{' '}
                             <span className="text-red-500 font-semibold">
-                              (0 {r.unit} available)
+                              (0 {unitLabel(r.unit)} available)
                             </span>
                           </span>
                         </li>
@@ -375,7 +393,7 @@ function ProductionCalculator() {
                           <span>
                             {r.materialName}: Need{' '}
                             <span className="text-danger font-semibold">
-                              {r.shortage.toLocaleString()} {r.unit}
+                              {r.shortage.toLocaleString()} {unitLabel(r.unit)}
                             </span>{' '}
                             more
                           </span>

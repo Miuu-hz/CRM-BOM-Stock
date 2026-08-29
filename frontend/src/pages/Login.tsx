@@ -7,6 +7,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
+import { stripNonAscii, EMAIL_REGEX } from '../utils/email'
 
 type Mode = 'login' | 'signup' | 'submitted'
 
@@ -73,7 +74,7 @@ function Login() {
     const cur = STEPS[step]
     const val = su[cur.key].trim()
     if (cur.key === 'email') {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return 'รูปแบบอีเมลไม่ถูกต้อง'
+      if (!EMAIL_REGEX.test(val)) return 'รูปแบบอีเมลไม่ถูกต้อง (ใช้ตัวอักษรภาษาอังกฤษเท่านั้น)'
     } else if (cur.key === 'password') {
       if (val.length < 8) return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'
     } else if (!val) {
@@ -176,7 +177,7 @@ function Login() {
                 <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">{t('login.emailLabel')}</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
-                  <input type="text" value={email} onChange={(e) => setEmail(e.target.value)}
+                  <input type="text" value={email} onChange={(e) => setEmail(stripNonAscii(e.target.value))}
                     placeholder={t('login.emailPlaceholder')} className="phopy-input pl-10 w-full" required />
                 </div>
               </div>
@@ -188,11 +189,7 @@ function Login() {
                     placeholder="••••••••" className="phopy-input pl-10 w-full" required />
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--primary)] focus:ring-phopy-indigo focus:ring-2" />
-                  <span className="text-sm text-[var(--fg-3)]">{t('login.rememberMe')}</span>
-                </label>
+              <div className="flex items-center justify-end">
                 <button type="button" onClick={() => { setShowReset(true); setRMsg(null) }}
                   className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 transition-colors">
                   {t('login.forgotPassword')}
@@ -250,7 +247,7 @@ function Login() {
                       autoFocus
                       type={cur.type}
                       value={su[cur.key]}
-                      onChange={e => setSu(s => ({ ...s, [cur.key]: e.target.value }))}
+                      onChange={e => setSu(s => ({ ...s, [cur.key]: cur.key === 'email' ? stripNonAscii(e.target.value) : e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goNext() } }}
                       placeholder={cur.placeholder}
                       className="phopy-input pl-10 w-full text-lg"

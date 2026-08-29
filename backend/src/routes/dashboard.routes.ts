@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { convertQuantityBidirectional, normalizeUnit } from '../services/unitConversion.service'
 
 const router = Router()
 
@@ -128,13 +129,30 @@ router.get('/charts', async (req: Request, res: Response) => {
 router.get('/low-stock', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const items = db.prepare(`
-      SELECT id, name, sku, quantity, min_stock, unit
+    const rows = db.prepare(`
+      SELECT id, name, sku, quantity, min_stock, unit, base_unit, display_unit, sealed_qty
       FROM stock_items
       WHERE tenant_id = ? AND quantity <= min_stock
-      ORDER BY (quantity * 1.0 / NULLIF(min_stock, 0)) ASC
-      LIMIT 8
-    `).all(tenantId)
+    `).all(tenantId) as any[]
+
+    // An unopened pack is still stock. Items whose loose quantity is low but
+    // that still hold sealed packs are not actually short, so drop them here
+    // instead of nagging the owner to reorder what is already on the shelf.
+    const items = rows
+      .map((r: any) => {
+        const baseUnit = r.base_unit || r.unit
+        const displayUnit = r.display_unit || r.unit
+        let packFactor: number | null = null
+        if (baseUnit && displayUnit && normalizeUnit(baseUnit) !== normalizeUnit(displayUnit)) {
+          const c = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, r.id)
+          if (c && c.factor > 0) packFactor = c.factor
+        }
+        const available = r.quantity + (packFactor ? (r.sealed_qty || 0) * packFactor : 0)
+        return { ...r, available, pack_factor: packFactor }
+      })
+      .filter((r: any) => r.available <= r.min_stock)
+      .sort((a: any, b: any) => (a.available / (a.min_stock || 1)) - (b.available / (b.min_stock || 1)))
+      .slice(0, 8)
 
     res.json({ success: true, data: items })
   } catch (error) {

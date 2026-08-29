@@ -48,6 +48,7 @@ import supplierService, { Supplier } from '../services/supplier'
 import materialService, { Material } from '../services/materials'
 
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
+import { unitLabel } from '../hooks/useUnits'
 
 
 
@@ -775,7 +776,7 @@ function CreatePOModal({ open, suppliers, onClose, onSave }: {
 
                               id: m.id,
 
-                              label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${m.unit})`,
+                              label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${unitLabel(m.unit)})`,
 
                               searchText: `${m.code} ${m.name}`,
 
@@ -1411,7 +1412,7 @@ function EditPOModal({ po, suppliers, onClose, onSave }: {
 
                             id: m.id,
 
-                            label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${m.unit})`,
+                            label: `${m.code} - ${m.name} (฿${Number(m.unitCost).toLocaleString()}/${unitLabel(m.unit)})`,
 
                             searchText: `${m.code} ${m.name}`,
 

@@ -33,6 +33,7 @@ import BOMModal from '../components/bom/BOMModal'
 import MaterialsTab from '../components/bom/MaterialsTab'
 import ProductionCalculator from '../components/bom/ProductionCalculator'
 import CostSimulation from '../components/bom/CostSimulation'
+import { unitLabel } from '../hooks/useUnits'
 
 // Types for Nested BOM
 interface BOMItem {
@@ -70,6 +71,7 @@ interface BOM {
   parentId?: string
   parentVersion?: string
   parentProductName?: string
+  /** ต้นทุนต่อ 1 หน่วยผลผลิต (Agent A เปลี่ยน calculateBOMCost ให้คืนต้นทุนต่อหน่วยแล้ว) */
   totalCost: number
   items?: BOMItem[]
   materials?: BOMItem[]
@@ -77,7 +79,23 @@ interface BOM {
   createdAt: string
   updatedAt: string
   isTopLevel?: boolean
+  /** BOM 1 ใบผลิตได้กี่หน่วย (R2-UI) — backend อาจคืน camelCase หรือ snake_case แล้วแต่ endpoint */
+  outputQty?: number
+  output_qty?: number
+  /** หน่วยผลผลิต — ไม่มีค่า = ใช้หน่วยของสินค้า */
+  outputUnit?: string
+  output_unit?: string
 }
+
+/** ผลผลิตต่อ 1 ชุดของ BOM (default 1 เมื่อ backend ยังไม่ส่งมา) */
+const bomOutputQty = (bom: BOM): number => {
+  const q = bom.outputQty ?? bom.output_qty
+  return q && q > 0 ? Number(q) : 1
+}
+
+/** หน่วยผลผลิตของ BOM — ใช้หน่วยของสินค้าเป็น fallback ถ้ามีให้ */
+const bomOutputUnit = (bom: BOM, fallback?: string): string =>
+  bom.outputUnit || bom.output_unit || fallback || ''
 
 interface BOMTreeNode extends BOM {
   items: BOMItem[]
@@ -613,7 +631,10 @@ function BOMPage() {
                         </div>
                         <div className="text-sm text-[var(--fg-4)] mt-1">{bom.productCode}</div>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs text-success">฿{bom.totalCost?.toLocaleString()}</span>
+                          <span className="text-xs text-success" title={t('bom.common.costPerUnitTooltip')}>
+                            ฿{bom.totalCost?.toLocaleString()}
+                            {bomOutputUnit(bom) && <span className="text-[var(--fg-4)]"> / {unitLabel(bomOutputUnit(bom))}</span>}
+                          </span>
                           <StatusBadge status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'} />
                         </div>
                       </button>
@@ -634,9 +655,13 @@ function BOMPage() {
                           <GitBranch className="w-5 h-5 text-[var(--primary)]" />
                           {t('bom.tree.hierarchy', { name: treeData.productName })}
                         </h3>
-                        <span className="text-2xl font-bold text-[var(--primary)]">
-                          ฿{treeData.totalCost?.toLocaleString()}
-                        </span>
+                        <div className="text-right">
+                          <span className="text-2xl font-bold text-[var(--primary)]" title={t('bom.common.costPerUnitTooltip')}>
+                            ฿{treeData.totalCost?.toLocaleString()}
+                            {bomOutputUnit(treeData) && <span className="text-sm text-[var(--fg-4)] font-normal"> / {unitLabel(bomOutputUnit(treeData))}</span>}
+                          </span>
+                          <p className="text-[10px] text-[var(--fg-4)]">{t('bom.common.costPerUnitLabel')}</p>
+                        </div>
                       </div>
                       <div className="border-l-2 border-[var(--border)]/50 ml-4 space-y-2">
                         <TreeNode
@@ -733,8 +758,9 @@ function BOMPage() {
                               status={bom.status.toLowerCase() as 'active' | 'draft' | 'archived'}
                             />
                           </td>
-                          <td className="text-success font-semibold">
+                          <td className="text-success font-semibold" title={t('bom.common.costPerUnitTooltip')}>
                             ฿{(bom.totalCost || 0).toLocaleString()}
+                            {bomOutputUnit(bom) && <span className="text-[var(--fg-4)] font-normal"> / {unitLabel(bomOutputUnit(bom))}</span>}
                           </td>
                           <td>
                             <div
@@ -817,6 +843,7 @@ function TreeNode({
   onToggle: (id: string) => void
   level: number
 }) {
+  const { t } = useTranslation()
   const isExpanded = expandedNodes.has(node.id)
   const childItems = (node as BOMTreeNode).items || []
 
@@ -857,7 +884,7 @@ function TreeNode({
               <Box className="w-4 h-4 text-[var(--fg-4)]" />
               <span className="text-[var(--fg-2)]">{item.material?.name || item.materialId}</span>
               <span className="text-xs text-[var(--fg-4)]">{item.material?.code}</span>
-              <span className="text-xs text-[var(--fg-3)]">{item.quantity} {item.unit || item.material?.unit}</span>
+              <span className="text-xs text-[var(--fg-3)]">{item.quantity} {unitLabel(item.unit || item.material?.unit)}</span>
               <span className="ml-auto text-[var(--fg-3)] text-sm">
                 ฿{((item.material?.unitCost || 0) * item.quantity).toLocaleString()}
               </span>
@@ -911,8 +938,9 @@ function TreeNode({
         <LevelBadge level={bomNode.level} />
         <BOMTypeBadge isSemiFinished={bomNode.isSemiFinished} isTopLevel={bomNode.level === 0} />
         <span className="text-xs text-[var(--fg-4)]">{bomNode.productCode}</span>
-        <span className="ml-auto text-[var(--primary)] font-bold">
+        <span className="ml-auto text-[var(--primary)] font-bold" title={t('bom.common.costPerUnitTooltip')}>
           ฿{(bomNode.totalCost || 0).toLocaleString()}
+          {bomOutputUnit(bomNode) && <span className="text-xs text-[var(--fg-4)] font-normal"> / {unitLabel(bomOutputUnit(bomNode))}</span>}
         </span>
       </div>
 
@@ -982,7 +1010,7 @@ function BOMItemsTable({ items }: { items: BOMItem[] }) {
                 <td className="py-2 text-[var(--fg-2)]">{name}</td>
                 <td className="py-2 text-[var(--fg-4)]">{code}</td>
                 <td className="py-2 text-right text-[var(--fg-3)]">
-                  {item.quantity} {item.unit || item.material?.unit}
+                  {item.quantity} {unitLabel(item.unit || item.material?.unit)}
                 </td>
                 <td className="py-2 text-right text-[var(--fg-3)]">
                   {!isChildBOM && `฿${unitCost.toLocaleString()}`}
@@ -1085,6 +1113,11 @@ function BOMCard({
               <span className="text-xs text-[var(--fg-3)]">•</span>
               <span className="text-xs text-[var(--primary)]">{bom.version}</span>
             </div>
+            {bomOutputUnit(bom) && (
+              <div className="text-xs text-[var(--fg-4)] mt-1">
+                {t('bom.card.outputBadge', { qty: bomOutputQty(bom).toLocaleString('th-TH'), unit: unitLabel(bomOutputUnit(bom)) })}
+              </div>
+            )}
             {bom.parentProductName && (
               <div className="flex items-center gap-1 mt-1 text-xs text-[var(--fg-4)]">
                 <ArrowRight className="w-3 h-3" />
@@ -1181,7 +1214,7 @@ function BOMCard({
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-xs text-[var(--fg-3)]">
-                            {Number(item.quantity)} {item.unit || item.material?.unit}
+                            {Number(item.quantity)} {unitLabel(item.unit || item.material?.unit)}
                           </div>
                           {!isChildBOM && (
                             <div className="text-sm text-success font-semibold">
@@ -1205,9 +1238,10 @@ function BOMCard({
           {t('bom.card.lastUpdated')}: {fmtDate(bom.updatedAt)}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--fg-3)]">{t('bom.card.totalProductionCost')}:</span>
+          <span className="text-xs text-[var(--fg-3)]" title={t('bom.common.costPerUnitTooltip')}>{t('bom.card.totalProductionCost')}:</span>
           <span className="text-lg font-bold text-[var(--primary)]">
             ฿{(bom.totalCost || 0).toLocaleString()}
+            {bomOutputUnit(bom) && <span className="text-sm text-[var(--fg-4)] font-normal"> / {unitLabel(bomOutputUnit(bom))}</span>}
           </span>
         </div>
       </div>

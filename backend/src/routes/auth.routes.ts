@@ -11,6 +11,12 @@ if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
 }
 
+// ASCII-only — rejects stray non-Latin characters (e.g. a leftover Thai IME
+// vowel mark) that look invisible in the UI but break exact-match email
+// lookups at login. All email-accepting routes below must run input through
+// this, not the old permissive `[^\s@]+@[^\s@]+\.[^\s@]+` pattern.
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+
 // Master accounts loaded from environment variables (no hardcoded credentials)
 function loadMasterAccounts(): Record<string, { passwordHash: string; tenantId: string; name: string }> {
   const accounts: Record<string, { passwordHash: string; tenantId: string; name: string }> = {}
@@ -27,6 +33,13 @@ function loadMasterAccounts(): Record<string, { passwordHash: string; tenantId: 
   return accounts
 }
 const MASTER_ACCOUNTS = loadMasterAccounts()
+
+// Case-insensitive lookup — MASTER_ACCOUNTS is a plain object keyed by the
+// exact env username, so `foo@x.com` and `Foo@x.com` must resolve the same.
+function findMasterAccount(email: string) {
+  const key = Object.keys(MASTER_ACCOUNTS).find(k => k.toLowerCase() === email.toLowerCase())
+  return key ? MASTER_ACCOUNTS[key] : undefined
+}
 
 // ── IP-level rate limit (express-rate-limit) ─────────────────────────────────
 // Limits each IP to 20 login attempts per 15-minute window.
@@ -107,7 +120,8 @@ const generateRefreshToken = (userId: string) => {
 // @desc    Login user
 router.post('/login', loginIpLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body
+    const { password } = req.body
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกอีเมลและรหัสผ่าน' })
@@ -124,7 +138,7 @@ router.post('/login', loginIpLimiter, async (req, res) => {
     }
 
     // Check master accounts (loaded from env, compared with bcrypt)
-    const masterAccount = MASTER_ACCOUNTS[email]
+    const masterAccount = findMasterAccount(email)
     if (masterAccount) {
       const isMatch = await bcrypt.compare(password, masterAccount.passwordHash)
       if (isMatch) {
@@ -151,13 +165,13 @@ router.post('/login', loginIpLimiter, async (req, res) => {
 
     // Check database for regular/child users
     const db = getDb()
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any
+    const user = db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').get(email) as any
 
     if (!user) {
       // Not an active account yet — surface a helpful status if a self-service
       // signup request exists for this email (awaiting Master approval / rejected).
       const sr = db.prepare(
-        `SELECT status FROM signup_requests WHERE email = ? ORDER BY created_at DESC LIMIT 1`,
+        `SELECT status FROM signup_requests WHERE email = ? COLLATE NOCASE ORDER BY created_at DESC LIMIT 1`,
       ).get(email) as { status: string } | undefined
       if (sr?.status === 'pending') {
         return res.status(403).json({ success: false, message: 'บัญชีของคุณอยู่ระหว่างรอผู้ดูแลอนุมัติ' })
@@ -268,7 +282,8 @@ router.post('/refresh', async (req, res) => {
 //          Spam guards: IP rate-limit + honeypot field (`website`) + duplicate checks.
 router.post('/register', registerIpLimiter, async (req, res) => {
   try {
-    const { businessName, adminName, email, password, phone, website } = req.body
+    const { businessName, adminName, password, phone, website } = req.body
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
     // Honeypot: real users never fill `website`; bots do → pretend success, do nothing.
     if (website) return res.json({ success: true, data: { pending: true } })
@@ -276,8 +291,8 @@ router.post('/register', registerIpLimiter, async (req, res) => {
     if (!businessName || !adminName || !email || !password) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง' })
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง (ใช้ตัวอักษรภาษาอังกฤษเท่านั้น)' })
     }
     if (typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({ success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร' })
@@ -285,12 +300,12 @@ router.post('/register', registerIpLimiter, async (req, res) => {
 
     const db = getDb()
 
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)
     if (existingUser) {
       return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว กรุณาเข้าสู่ระบบ' })
     }
     const existingPending = db.prepare(
-      `SELECT id FROM signup_requests WHERE email = ? AND status = 'pending'`,
+      `SELECT id FROM signup_requests WHERE email = ? COLLATE NOCASE AND status = 'pending'`,
     ).get(email)
     if (existingPending) {
       return res.status(409).json({ success: false, message: 'มีคำขอสมัครด้วยอีเมลนี้อยู่แล้ว กรุณารอผู้ดูแลอนุมัติ' })
@@ -313,10 +328,14 @@ router.post('/register', registerIpLimiter, async (req, res) => {
 // @desc    Master creates a child user directly in their tenant
 router.post('/create-child', authenticate, requireRole('MASTER'), async (req, res) => {
   try {
-    const { email, password, name, role = 'USER' } = req.body
+    const { password, name, role = 'USER' } = req.body
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
     if (!email || !password || !name) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง (ใช้ตัวอักษรภาษาอังกฤษเท่านั้น)' })
     }
 
     // MASTER can never be minted via API — master accounts exist only in .env.
@@ -330,7 +349,7 @@ router.post('/create-child', authenticate, requireRole('MASTER'), async (req, re
     const db = getDb()
 
     // Check if email exists
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+    const existing = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)
     if (existing) {
       return res.status(400).json({ success: false, message: 'อีเมลนี้ถูกใช้แล้ว' })
     }

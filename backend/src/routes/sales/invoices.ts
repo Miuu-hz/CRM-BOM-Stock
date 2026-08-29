@@ -208,6 +208,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
 
+    if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบแจ้งหนี้ — ต้องเป็น ADMIN/MANAGER/MASTER' })
+    }
+
     // ── Cancellation: reverse the posted sales journal (swap Dr/Cr of every line) ──
     // so AR/revenue/COGS/inventory are backed out. reverseSalesJournal() is a no-op
     // if this invoice never had a journal posted, or if it was already reversed

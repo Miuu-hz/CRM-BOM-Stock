@@ -39,8 +39,9 @@ import { stockService } from '../services/stock'
 import { printDocument } from '../utils/purchasePrint'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
-import { useUnits } from '../hooks/useUnits'
+import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
+import { unitLabel as unitLabelFor, invalidateUnitsCache } from '../hooks/useUnits'
 
 // Types
 interface Supplier {
@@ -57,6 +58,7 @@ interface Material {
   code: string
   name: string
   unit: string
+  baseUnit?: string
   currentStock?: number
   stockStatus?: string
   unitCost?: number
@@ -123,6 +125,7 @@ interface GoodsReceipt {
   items?: any[]
   journal_entry_id?: string
   journal_entry_number?: string
+  invoiced_at?: string | null
 }
 
 interface PurchaseInvoice {
@@ -337,7 +340,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
                   className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors ${value === m.id ? 'bg-phopy-indigo/10' : ''}`}>
                   <span className="text-xs font-mono text-[var(--primary)] w-20 shrink-0">{m.code}</span>
                   <span className="text-sm text-[var(--fg-1)] flex-1 truncate">{m.name}</span>
-                  <span className="text-xs text-[var(--fg-4)] shrink-0">{m.unit}</span>
+                  <span className="text-xs text-[var(--fg-4)] shrink-0">{unitLabelFor(m.unit)}</span>
                   <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
                     m.stockStatus === 'ADEQUATE' ? 'text-success bg-[var(--success-soft)]' :
                     m.stockStatus === 'OVERSTOCK' ? 'text-blue-400 bg-blue-400/10' :
@@ -345,7 +348,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
                     m.stockStatus === 'CRITICAL' ? 'text-danger bg-[var(--danger-soft)]' :
                     'text-[var(--fg-4)] bg-gray-500/10'
                   }`}>
-                    {m.currentStock ?? 0} {m.unit}
+                    {m.currentStock ?? 0} {unitLabelFor(m.unit)}
                   </span>
                 </button>
               ))}
@@ -699,7 +702,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
 
 const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   onClose: () => void
-  onCreated: (item: { id: string; code: string; name: string; unit: string }) => void
+  onCreated: (item: { id: string; code: string; name: string; unit: string; unitCost: number }) => void
   prefill?: { name?: string; unitCost?: number }
 }) => {
   const { t } = useTranslation()
@@ -715,20 +718,54 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
     maxStock: 100,
     location: '',
     quantity: 0,
+    // Packaging: opt-in, so an item bought loose keeps the original payload.
+    hasPackaging: false,
+    displayUnit: '',
+    baseUnit: '',
+    packFactor: '',
   })
   const [saving, setSaving] = useState(false)
-  const { units: availableUnits } = useUnits()
   const [err, setErr] = useState('')
+  const [suggestedFactor, setSuggestedFactor] = useState<number | null>(null)
+
+  const unitLabel = (u: string) => unitLabelFor(u)
+
+  // Offer the international rate (1 kg = 1000 g) so the common case is one
+  // click, while still letting a pack of eggs override it with 30.
+  useEffect(() => {
+    if (!form.hasPackaging || !form.displayUnit || !form.baseUnit) return
+    if (normalizeUnit(form.displayUnit) === normalizeUnit(form.baseUnit)) return
+    let cancelled = false
+    api.post('/materials/unit-conversions/check-path', { from_unit: form.displayUnit, to_unit: form.baseUnit })
+      .then(res => {
+        const d = res.data?.data ?? res.data
+        if (cancelled || !d?.found || !(d.factor > 0)) { if (!cancelled) setSuggestedFactor(null); return }
+        setSuggestedFactor(d.factor)
+        setForm(p => (p.packFactor === '' ? { ...p, packFactor: String(d.factor) } : p))
+      })
+      .catch(() => { if (!cancelled) setSuggestedFactor(null) })
+    return () => { cancelled = true }
+  }, [form.hasPackaging, form.displayUnit, form.baseUnit])
 
   const save = async () => {
     if (!form.sku.trim() || !form.name.trim()) { setErr(t('purchase.quickAddStock.validation')); return }
+    if (form.hasPackaging) {
+      const f = Number(form.packFactor)
+      if (!form.displayUnit || !form.baseUnit) { setErr(t('purchase.quickAddStock.packaging.needUnits')); return }
+      if (normalizeUnit(form.displayUnit) === normalizeUnit(form.baseUnit)) { setErr(t('purchase.quickAddStock.packaging.sameUnit')); return }
+      if (!Number.isFinite(f) || f <= 0) { setErr(t('purchase.quickAddStock.packaging.needFactor')); return }
+    }
     setSaving(true); setErr('')
     try {
+      const packFactor = Number(form.packFactor)
       const created = await stockService.create({
         sku: form.sku,
         name: form.name,
         category: form.category,
         unit: form.unit,
+        // With packaging on, stock is held in the smallest unit and received in
+        // the pack unit — that pairing is what lets the system unpack later.
+        ...(form.hasPackaging ? { baseUnit: form.baseUnit, saleUnit: form.baseUnit, displayUnit: form.displayUnit } : {}),
         unitCost: form.unitCost || undefined,
         unitPrice: form.unitPrice || undefined,
         minStock: form.minStock,
@@ -736,7 +773,28 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
         location: form.location || 'Main Warehouse',
         quantity: form.quantity,
       })
-      onCreated({ id: created.id, code: created.sku, name: created.name, unit: created.unit })
+
+      if (form.hasPackaging) {
+        // The item exists at this point. If the rate fails to save, say so loudly
+        // rather than leaving an item that silently cannot be unpacked.
+        try {
+          await api.post('/materials/unit-conversions', {
+            material_id: created.id,
+            from_unit: form.displayUnit,
+            to_unit: form.baseUnit,
+            conversion_factor: packFactor,
+            notes: `1 ${unitLabel(form.displayUnit)} = ${packFactor} ${unitLabel(form.baseUnit)}`,
+          })
+          invalidateUnitsCache()
+        } catch (convErr: any) {
+          toast.error(
+            `สร้างสินค้าแล้ว แต่บันทึกหน่วยย่อยไม่สำเร็จ — ตั้งค่าเองได้ที่ ตั้งค่า > การแปลงหน่วย (${convErr?.response?.data?.message || convErr?.message || ""})`,
+            { duration: 8000 }
+          )
+        }
+      }
+
+      onCreated({ id: created.id, code: created.sku, name: created.name, unit: created.unit, unitCost: created.unitCost || form.unitCost || 0 })
       onClose()
     } catch (e: any) {
       setErr(e.response?.data?.message || t('purchase.quickAddStock.error'))
@@ -792,10 +850,64 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
             </div>
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.common.unit')}</label>
-              <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))} className={inp}>
-                {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
-              </select>
+              <UnitPicker
+                value={form.unit}
+                onChange={u => setForm(p => ({ ...p, unit: u }))}
+                materialId={null}
+              />
             </div>
+          </div>
+
+          {/* หน่วยย่อย — ปิดไว้เป็นค่าเริ่มต้น ฟอร์มจึงเหมือนเดิมถ้าไม่ต้องการ */}
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)]/40 p-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.hasPackaging}
+                onChange={e => setForm(p => ({ ...p, hasPackaging: e.target.checked }))}
+                className="w-4 h-4 accent-[var(--primary)]"
+              />
+              <span className="text-xs text-[var(--fg-2)] font-medium">{t('purchase.quickAddStock.packaging.toggle')}</span>
+            </label>
+
+            {form.hasPackaging && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mt-3 space-y-3 overflow-hidden"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.packaging.displayUnit')}</label>
+                    <UnitPicker value={form.displayUnit} onChange={u => setForm(p => ({ ...p, displayUnit: u, packFactor: '' }))} materialId={null} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1">{t('purchase.quickAddStock.packaging.baseUnit')}</label>
+                    <UnitPicker value={form.baseUnit} onChange={u => setForm(p => ({ ...p, baseUnit: u, packFactor: '' }))} materialId={null} />
+                  </div>
+                </div>
+
+                {form.displayUnit && form.baseUnit && (
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1">
+                      1 {unitLabel(form.displayUnit)} = ? {unitLabel(form.baseUnit)}
+                    </label>
+                    <input
+                      type="number" min="0" step="any" value={form.packFactor}
+                      onChange={e => setForm(p => ({ ...p, packFactor: e.target.value }))}
+                      onFocus={e => e.target.select()} className={inp} placeholder="30" />
+                    {suggestedFactor !== null && (
+                      <p className="text-[11px] text-[var(--fg-4)] mt-1">
+                        {t('purchase.quickAddStock.packaging.suggested', { factor: suggestedFactor })}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-[var(--fg-4)] mt-1">
+                      {t('purchase.quickAddStock.packaging.effect', { base: unitLabel(form.baseUnit), display: unitLabel(form.displayUnit) })}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </div>
 
           {/* ราคาต้นทุน + ราคาขาย */}
@@ -862,8 +974,7 @@ const Purchase = () => {
   const { user } = useAuth()
   // Cancel/void of posted documents (GR, PI, supplier payment) reverses journal + stock —
   // gate behind ADMIN/MANAGER/MASTER same as other irreversible accounting actions.
-  const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
-  const { units: availableUnits } = useUnits()
+  const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER' || user?.role === 'POWERUSER'
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
@@ -875,12 +986,16 @@ const Purchase = () => {
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([])
   const [payments, setPayments] = useState<SupplierPayment[]>([])
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
+  // Whole-category badge numbers from GET /purchase/badge-counts — fetched once on
+  // mount (not gated behind opening a tab) and refreshed after any mutation via the
+  // fetchXxx() helpers below, so every tab shows its pending count immediately.
+  const [badgeCounts, setBadgeCounts] = useState({ requests: 0, orders: 0, receipts: 0, invoices: 0, payments: 0, returns: 0, total: 0 })
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [showQuickAddSupplier, setShowQuickAddSupplier] = useState(false)
   const [quickAddSupplierCallback, setQuickAddSupplierCallback] = useState<((id: string) => void) | null>(null)
   const [showQuickAddStock, setShowQuickAddStock] = useState(false)
   const [quickAddStockPrefill, setQuickAddStockPrefill] = useState<{ name?: string; unitCost?: number } | undefined>()
-  const [quickAddStockCallback, setQuickAddStockCallback] = useState<((item: { id: string; code: string; name: string; unit: string }) => void) | null>(null)
+  const [quickAddStockCallback, setQuickAddStockCallback] = useState<((item: { id: string; code: string; name: string; unit: string; unitCost: number }) => void) | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [drAccounts, setDrAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -977,6 +1092,7 @@ const Purchase = () => {
     fetchReceipts()
     fetchInvoices()
     fetchRequests()
+    fetchBadgeCounts()
     // Load ASSET + EXPENSE accounts for DR dropdown in invoice form
     accountsApi.getAll({ active: true }).then(res => {
       if (res.data.success) {
@@ -1026,7 +1142,7 @@ const Purchase = () => {
   }
 
   const openQuickAddStock = (
-    onSelect: (item: { id: string; code: string; name: string; unit: string }) => void,
+    onSelect: (item: { id: string; code: string; name: string; unit: string; unitCost: number }) => void,
     prefill?: { name?: string; unitCost?: number }
   ) => {
     setQuickAddStockPrefill(prefill)
@@ -1034,7 +1150,7 @@ const Purchase = () => {
     setShowQuickAddStock(true)
   }
 
-  const handleQuickAddStockCreated = async (item: { id: string; code: string; name: string; unit: string }) => {
+  const handleQuickAddStockCreated = async (item: { id: string; code: string; name: string; unit: string; unitCost: number }) => {
     await fetchMaterials()
     if (quickAddStockCallback) quickAddStockCallback(item)
     setShowQuickAddStock(false)
@@ -1062,6 +1178,7 @@ const Purchase = () => {
           code: s.sku || s.id?.slice(0, 8) || '',
           name: s.name,
           unit: s.unit,
+          baseUnit: s.baseUnit ?? s.unit,
           currentStock: qty,
           stockStatus,
           unitCost: s.unitCost ?? 0,
@@ -1084,7 +1201,7 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase/requests')
-      if (data.success) setRequests(data.data)
+      if (data.success) { setRequests(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadRequests')) }
     finally { setLoading(false) }
   }
@@ -1093,7 +1210,7 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase-orders')
-      if (data.success) setOrders(data.data)
+      if (data.success) { setOrders(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadOrders')) }
     finally { setLoading(false) }
   }
@@ -1102,7 +1219,7 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase/goods-receipts')
-      if (data.success) setReceipts(data.data)
+      if (data.success) { setReceipts(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadReceipts')) }
     finally { setLoading(false) }
   }
@@ -1111,7 +1228,7 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase/invoices')
-      if (data.success) setInvoices(data.data)
+      if (data.success) { setInvoices(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadInvoices')) }
     finally { setLoading(false) }
   }
@@ -1120,7 +1237,7 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase/payments')
-      if (data.success) setPayments(data.data)
+      if (data.success) { setPayments(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadPayments')) }
     finally { setLoading(false) }
   }
@@ -1129,9 +1246,20 @@ const Purchase = () => {
     setLoading(true)
     try {
       const { data } = await api.get('/purchase/returns')
-      if (data.success) setReturns(data.data)
+      if (data.success) { setReturns(data.data); fetchBadgeCounts() }
     } catch (error: any) { handleApiError(error, t('purchase.error.loadReturns')) }
     finally { setLoading(false) }
+  }
+
+  // Single call covering all 6 tab badges + the category total (see backend
+  // purchase.routes.ts GET /purchase/badge-counts for the counting criteria).
+  // Deliberately silent on failure — a missing badge number is not worth a
+  // toast interrupting the user, same reasoning as fetchSuppliers/fetchMaterials.
+  const fetchBadgeCounts = async () => {
+    try {
+      const { data } = await api.get('/purchase/badge-counts')
+      if (data.success) setBadgeCounts(data.data)
+    } catch (error) { console.error('Fetch purchase badge counts error:', error) }
   }
 
   // CRUD
@@ -1339,7 +1467,11 @@ const Purchase = () => {
         toast.success(labels[status] || t('purchase.toast.statusUpdated'))
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
-    } catch { toast.error(t('purchase.error.generic')) }
+    } catch (error: any) {
+      // ฝั่ง server บล็อกการยกเลิกไว้เมื่อมีใบรับของที่ยืนยันแล้ว หรือมีใบแจ้งหนี้อ้างอิงอยู่
+      // ข้อความพวกนั้นบอกวิธีแก้ชัดเจน จึงต้องเอามาโชว์ ไม่ใช่กลืนแล้วขึ้นว่า error ทั่วไป
+      toast.error(error?.response?.data?.message || t('purchase.error.generic'))
+    }
   }
 
   const handleDeleteOrder = async (id: string) => {
@@ -1375,7 +1507,7 @@ const Purchase = () => {
         notes: receiptForm.notes,
         items: receiptForm.items.map(item => ({
           poItemId: item.purchase_order_item_id,
-          materialId: item.material_id,
+          materialId: item.material_id || null,
           unit: normalizeUnit(item.unit),
           orderedQty: item.ordered_qty,
           receivedQty: item.received_qty,
@@ -1461,6 +1593,26 @@ const Purchase = () => {
 
   // Cancel a purchase invoice — backend reverses linked supplier payments first,
   // then reverses the AP/inventory journal and input VAT entry.
+  // ยกเลิกใบขอซื้อ — server ตรวจเงื่อนไขให้ (สิทธิ์, สถานะ, และต้องไม่มีใบสั่งซื้อค้างอยู่)
+  const handleCancelRequest = async (id: string, prNumber: string) => {
+    if (!confirm(`ยืนยันยกเลิกใบขอซื้อ ${prNumber}?`)) return
+    try {
+      const { data } = await api.post(`/purchase-requests/${id}/cancel`, {})
+      if (data.success) {
+        toast.success(data.message || 'ยกเลิกใบขอซื้อเรียบร้อย')
+        fetchRequests()
+      } else { toast.error(data.message || 'ยกเลิกใบขอซื้อไม่สำเร็จ') }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'ยกเลิกใบขอซื้อไม่สำเร็จ')
+    }
+  }
+
+  // ยกเลิกใบสั่งซื้อ — ใช้ endpoint เดิมที่มีเงื่อนไขฝั่ง server อยู่แล้ว
+  const handleCancelOrder = async (id: string, poNumber: string) => {
+    if (!confirm(`ยืนยันยกเลิกใบสั่งซื้อ ${poNumber}?`)) return
+    await handleUpdateOrderStatus(id, 'CANCELLED')
+  }
+
   const handleCancelInvoice = async (id: string) => {
     if (!confirm(t('purchase.confirm.cancelInvoice'))) return
     try {
@@ -1474,6 +1626,8 @@ const Purchase = () => {
   }
 
   const handleCreatePayment = async () => {
+    const selInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
+    if (selInv && paymentForm.amount > selInv.balance_amount) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
     setFormLoading(true)
     try {
       const { data } = await api.post('/purchase/payments', {
@@ -2128,6 +2282,13 @@ const Purchase = () => {
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </>)}
+                  {/* ยกเลิกได้เฉพาะใบที่ยังไม่จบเรื่อง — ที่ปฏิเสธ/ยกเลิกไปแล้วไม่ต้องโชว์ซ้ำ */}
+                  {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
+                    <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}
+                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
@@ -2168,6 +2329,12 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
+                  {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
+                    <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}
+                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {req.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
                       className="flex-1 py-1.5 text-xs text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] transition-colors">
@@ -2245,6 +2412,14 @@ const Purchase = () => {
                     className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
+                  {/* รับของแล้ว (บางส่วนหรือครบ) ยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน
+                      ซ่อนปุ่มไปเลยดีกว่าโชว์แล้วกดไปเจอ error ทุกครั้ง */}
+                  {canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status) && (
+                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')}
+                      className="p-1.5 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded transition-colors">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {order.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
                       className="p-1.5 text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] transition-colors" title={t('purchase.actions.edit')}>
@@ -2373,17 +2548,28 @@ const Purchase = () => {
                       <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
                     </button>
                   )}
-                  {/* APPROVED / PARTIAL → รับสินค้า */}
-                  {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (
-                    <button onClick={() => {
-                      setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
-                      loadPendingItems(order.id)
-                      openModal('receipt', 'create')
-                    }}
-                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
-                    </button>
-                  )}
+                  {/* APPROVED / PARTIAL → รับสินค้า (หรือยืนยันร่างที่ค้างอยู่) */}
+                  {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (() => {
+                    const draftReceipt = receipts.find(r => r.purchase_order_id === order.id && r.status === 'DRAFT')
+                    if (draftReceipt) {
+                      return (
+                        <button onClick={() => openModalWithDetail('receipt', 'view', draftReceipt.id, draftReceipt)}
+                          className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] font-medium transition-colors flex items-center justify-center gap-1">
+                          {t('purchase.receiptModal.confirmReceipt')} <Check className="w-3 h-3" />
+                        </button>
+                      )
+                    }
+                    return (
+                      <button onClick={() => {
+                        setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
+                        loadPendingItems(order.id)
+                        openModal('receipt', 'create')
+                      }}
+                        className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
+                        {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
+                      </button>
+                    )
+                  })()}
                   {/* RECEIVED → สร้างใบแจ้งหนี้ */}
                   {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
                     <button onClick={() => {
@@ -2551,22 +2737,28 @@ const Purchase = () => {
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.invoices.headers.piNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-2">{t('purchase.invoices.headers.piNumber')}</span><span className="col-span-2">{t('purchase.common.supplier')}</span>
               <span className="col-span-2">{t('purchase.invoices.headers.poReference')}</span><span className="col-span-2">{t('purchase.invoices.headers.dueDate')}</span>
               <span className="col-span-1">{t('purchase.common.status')}</span>
-              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-1"></span>
+              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-2"></span>
             </div>
             {paginated.map((invoice, i) => (
               <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
                 <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{invoice.pi_number}</p>
-                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
+                <p className="col-span-2 text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
                 <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{invoice.po_number}</p>
                 <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-danger' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
                 <div className="col-span-1"><StatusBadge status={invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} /></div>
                 <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-danger' : 'text-[var(--fg-4)]'}`}>
                   {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
                 </p>
-                <div className="col-span-1 flex justify-end gap-1">
+                <div className="col-span-2 flex justify-end gap-1">
+                  {/* พิมพ์ใบแจ้งหนี้ — มุมมองการ์ดมีปุ่มนี้อยู่แล้ว แต่มุมมองรายการไม่มี
+                      ทั้งที่ printDocument() รองรับชนิด 'pi' มาตั้งแต่แรก */}
+                  <button onClick={() => handlePrint('pi', invoice.id)} title={t('purchase.actions.printA4')}
+                    className="p-1 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
                   {invoice.payment_status !== 'PAID' && invoice.status !== 'CANCELLED' && (
                     <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
                       className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title={t('purchase.actions.pay')}>
@@ -2928,7 +3120,7 @@ const Purchase = () => {
                   disabled={modalMode === 'view'}
                   onChange={(id, mat) => updateRequestItemFields(index, {
                     material_id: id,
-                    unit: mat?.unit || item.unit,
+                    unit: item.unit || mat?.unit,
                     description: mat ? mat.name : ''
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
@@ -2936,6 +3128,7 @@ const Purchase = () => {
                       material_id: newItem.id,
                       description: newItem.name,
                       unit: newItem.unit,
+                      estimated_unit_price: newItem.unitCost || item.estimated_unit_price,
                     }),
                     { name: q }
                   ) : undefined}
@@ -2956,17 +3149,16 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
-                  <select
+                  <UnitPicker
                     value={item.unit || ''}
-                    onChange={e => updateRequestItem(index, 'unit', e.target.value)}
+                    onChange={u => updateRequestItem(index, 'unit', u)}
+                    materialId={item.material_id || null}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
-                  >
-                    <option value="">{t('purchase.common.selectUnit')}</option>
-                    {availableUnits.map(u => (
-                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                    ))}
-                  </select>
+                    size="sm"
+                    placeholder={t('purchase.common.selectUnit')}
+                    baseUnit={materials.find(m => m.id === item.material_id)?.baseUnit}
+                    restrict="strict"
+                  />
                 </div>
                 <div className="col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.requestModal.estimatedUnitPrice')}</label>
@@ -3129,7 +3321,7 @@ const Purchase = () => {
                   onChange={(id, mat) => updateOrderItemFields(index, {
                     material_id: id,
                     description: mat ? mat.name : '',
-                    unit: mat ? mat.unit : item.unit,
+                    unit: item.unit || mat?.unit,
                     unit_price: mat?.unitCost && item.unit_price === 0 ? mat.unitCost : item.unit_price,
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
@@ -3137,6 +3329,8 @@ const Purchase = () => {
                       updateOrderItemFields(index, {
                         material_id: newItem.id,
                         description: newItem.name,
+                        unit: newItem.unit,
+                        unit_price: newItem.unitCost && item.unit_price === 0 ? newItem.unitCost : item.unit_price,
                       })
                     },
                     { name: q }
@@ -3157,15 +3351,16 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
-                  <select
+                  <UnitPicker
                     value={item.unit || ''}
-                    onChange={e => updateOrderItem(index, 'unit', e.target.value)}
+                    onChange={u => updateOrderItem(index, 'unit', u)}
+                    materialId={item.material_id || null}
                     disabled={modalMode === 'view'}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50"
-                  >
-                    <option value="">{t('purchase.common.selectUnit')}</option>
-                    {availableUnits.map(u => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
-                  </select>
+                    size="sm"
+                    placeholder={t('purchase.common.selectUnit')}
+                    baseUnit={materials.find(m => m.id === item.material_id)?.baseUnit}
+                    restrict="strict"
+                  />
                 </div>
                 <div className="col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.orderModal.unitPrice')}</label>
@@ -3363,7 +3558,7 @@ const Purchase = () => {
                       <p className="text-sm font-semibold text-[var(--fg-1)] truncate">{item.description || item.material_name || item.material_id}</p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">
                         {t('purchase.receiptModal.unitPriceLabel')} <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
-                        {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {item.unit}</span>}
+                        {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {unitLabelFor(item.unit)}</span>}
                       </p>
                     </div>
                     {/* Progress bar: already received vs ordered */}
@@ -3382,12 +3577,12 @@ const Purchase = () => {
                   {/* ── Qty inputs ── */}
                   <div className="grid grid-cols-3 gap-2">
                     {([
-                      { label: t('purchase.receiptModal.receivedQty'), key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
-                      { label: `${t('purchase.receiptModal.acceptedQty')} <Check className="w-4 h-4" />`, key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
-                      { label: `${t('purchase.receiptModal.rejectedQty')} <X className="w-4 h-4" />`, key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
-                    ] as const).map(f => (
+                      { label: t('purchase.receiptModal.receivedQty'), icon: null, key: 'received_qty' as const, color: 'border-blue-500/50 focus:border-blue-400' },
+                      { label: t('purchase.receiptModal.acceptedQty'), icon: Check, key: 'accepted_qty' as const, color: 'border-success/50 focus:border-success' },
+                      { label: t('purchase.receiptModal.rejectedQty'), icon: X, key: 'rejected_qty' as const, color: 'border-danger/50 focus:border-red-400' },
+                    ]).map(f => (
                       <div key={f.key}>
-                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{f.label}</label>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 flex items-center gap-1">{f.label} {f.icon && <f.icon className="w-3.5 h-3.5" />}</label>
                         <input type="number" min="0" step="0.01" value={item[f.key]}
                           onChange={e => updateItem(index, f.key, parseFloat(e.target.value) || 0)}
                           className={`w-full px-2 py-2 bg-[var(--surface)] border ${f.color} rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none`} />
@@ -3470,7 +3665,15 @@ const Purchase = () => {
     const selectedPO     = orders.find(o => o.id === invoiceForm.purchase_order_id)
     const selectedGRs    = invoiceForm.goods_receipt_ids.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
     const linkedPR       = selectedPO?.linked_pr_id ? requests.find(r => r.id === selectedPO.linked_pr_id) : null
-    const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED')
+    // A PO drops out of the picker once every CONFIRMED GR it has is already invoiced
+    // (or, for GR-less POs, once it already has one non-cancelled invoice) — otherwise
+    // the same PO/GR could be selected and invoiced again.
+    const poHasInvoiceableTarget = (order: PurchaseOrder) => {
+      const confirmedGRs = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED')
+      if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
+      return !invoices.some(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
+    }
+    const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED' && !r.invoiced_at)
     const supplierDetail = selectedPO ? suppliers.find(s => s.id === selectedPO.supplier_id) : null
     // In view mode use the invoice's own stored amounts; in create mode derive from selected PO
     const subtotal = isView ? invoiceForm._subtotal : (selectedPO?.subtotal ?? 0)
@@ -3537,7 +3740,7 @@ const Purchase = () => {
         ) : (
         <Field label={t('purchase.invoiceModal.po')} required>
           <POSearchInput
-            orders={orders.filter(o => !['CANCELLED', 'DRAFT'].includes(o.status))}
+            orders={orders.filter(o => !['CANCELLED', 'DRAFT'].includes(o.status) && (o.id === invoiceForm.purchase_order_id || poHasInvoiceableTarget(o)))}
             value={invoiceForm.purchase_order_id}
             emptyMessage={t('purchase.invoiceModal.noEligiblePO')}
             onChange={id => {
@@ -3804,7 +4007,7 @@ const Purchase = () => {
           {paymentForm.amount > 0 && (
             <JournalPreview entries={[
               { dr: true,  account: t('purchase.journal.accountsPayable'),   label: t('purchase.journal.reducePayable'), amount: paymentForm.amount },
-              { dr: false, account: t('purchase.journal.bankDeposit'),    label: t('purchase.journal.actualTransfer'),    amount: netPay },
+              { dr: false, account: paymentForm.payment_method === 'CASH' ? t('purchase.journal.cash') : t('purchase.journal.bankDeposit'), label: t('purchase.journal.actualTransfer'),    amount: netPay },
               ...(paymentForm.withholding_tax > 0 ? [
                 { dr: false as const, account: t('purchase.journal.withholdingTaxPayable'), label: t('purchase.journal.whtRemitted'), amount: paymentForm.withholding_tax }
               ] : [])
@@ -3901,7 +4104,7 @@ const Purchase = () => {
               <MaterialSearchInput materials={materials} value={item.material_id}
                 onChange={(id) => {
                   const mat = materials.find(m => m.id === id)
-                  updateReturnItemFields(index, { material_id: id, unit: mat?.unit || '' })
+                  updateReturnItemFields(index, { material_id: id, unit: item.unit || mat?.unit || '' })
                 }} />
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
@@ -3912,16 +4115,15 @@ const Purchase = () => {
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
-                  <select
+                  <UnitPicker
                     value={item.unit || ''}
-                    onChange={e => updateReturnItem(index, 'unit', e.target.value)}
-                    className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-                  >
-                    <option value="">{t('purchase.common.selectUnit')}</option>
-                    {availableUnits.map(u => (
-                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                    ))}
-                  </select>
+                    onChange={u => updateReturnItem(index, 'unit', u)}
+                    materialId={item.material_id || null}
+                    size="sm"
+                    placeholder={t('purchase.common.selectUnit')}
+                    baseUnit={materials.find(m => m.id === item.material_id)?.baseUnit}
+                    restrict="strict"
+                  />
                 </div>
                 <div className="col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unitPrice')}</label>
@@ -3999,20 +4201,21 @@ const Purchase = () => {
   }
 
   // ─── Main render ──────────────────────────────────────────────────
-  const pendingCounts = {
-    requests: requests.filter(r => r.status === 'PENDING').length,
-    orders: orders.filter(o => o.status === 'CONFIRMED' || o.status === 'PARTIAL').length,
-    invoices: invoices.filter(i => i.payment_status === 'UNPAID' || i.payment_status === 'OVERDUE').length,
-  }
-
+  // Tab badge numbers now come from the server (GET /purchase/badge-counts,
+  // fetched on mount + refreshed after mutations — see fetchBadgeCounts above),
+  // replacing the old client-only `pendingCounts` derivation. That version only
+  // covered 3 of the 6 tabs and its orders criteria (status === 'CONFIRMED' ||
+  // 'PARTIAL') didn't match any status purchase_orders actually uses in this DB
+  // (real values are DRAFT/SUBMITTED/APPROVED/PARTIAL/RECEIVED/CANCELLED), so
+  // the Orders badge was silently stuck at 0.
   const tabs = [
     { id: 'overview',  label: t('purchase.tabs.overview'),    icon: TrendingUp, badge: 0 },
-    { id: 'requests',  label: t('purchase.tabs.requests'),  icon: FileText,   badge: pendingCounts.requests },
-    { id: 'orders',    label: t('purchase.tabs.orders'), icon: ShoppingCart, badge: pendingCounts.orders },
-    { id: 'receipts',  label: t('purchase.tabs.receipts'),  icon: Package,    badge: 0 },
-    { id: 'invoices',  label: t('purchase.tabs.invoices'),   icon: Receipt,    badge: pendingCounts.invoices },
-    { id: 'payments',  label: t('purchase.tabs.payments'),   icon: CreditCard, badge: 0 },
-    { id: 'returns',   label: t('purchase.tabs.returns'),  icon: RotateCcw,  badge: 0 },
+    { id: 'requests',  label: t('purchase.tabs.requests'),  icon: FileText,   badge: badgeCounts.requests },
+    { id: 'orders',    label: t('purchase.tabs.orders'), icon: ShoppingCart, badge: badgeCounts.orders },
+    { id: 'receipts',  label: t('purchase.tabs.receipts'),  icon: Package,    badge: badgeCounts.receipts },
+    { id: 'invoices',  label: t('purchase.tabs.invoices'),   icon: Receipt,    badge: badgeCounts.invoices },
+    { id: 'payments',  label: t('purchase.tabs.payments'),   icon: CreditCard, badge: badgeCounts.payments },
+    { id: 'returns',   label: t('purchase.tabs.returns'),  icon: RotateCcw,  badge: badgeCounts.returns },
   ]
 
   return (

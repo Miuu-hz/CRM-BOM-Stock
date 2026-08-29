@@ -12,6 +12,7 @@ import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
 import { useModalClose } from '../hooks/useModalClose'
 import { useTranslation } from 'react-i18next'
+import { unitLabel } from '../hooks/useUnits'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -1807,7 +1808,7 @@ function FavouritesDonutTab({ products }: { products: any[] }) {
           <div key={i} className="rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-3 py-2.5">
             <p className="text-[11px] text-[var(--fg-4)] mb-0.5">{ch.label}</p>
             <p className="text-lg font-bold text-[var(--fg-1)] leading-none">
-              {ch.value}{ch.unit && <span className="text-xs font-medium text-[var(--fg-4)] ml-1">{ch.unit}</span>}
+              {ch.value}{ch.unit && <span className="text-xs font-medium text-[var(--fg-4)] ml-1">{unitLabel(ch.unit)}</span>}
             </p>
           </div>
         ))}

@@ -6,9 +6,8 @@
   "login": {
     "title": "Phopy",
     "emailLabel": "Email / Username",
-    "emailPlaceholder": "admin@example.com or BB-pillow",
+    "emailPlaceholder": "admin@example.com",
     "passwordLabel": "Password",
-    "rememberMe": "Remember me",
     "forgotPassword": "Forgot Password?",
     "submit": "Sign In",
     "loading": "Signing in...",
@@ -231,6 +230,7 @@
       "productLabel": "Product Name *",
       "productPlaceholder": "Product to manufacture",
       "quantityLabel": "Quantity to Produce *",
+      "unitLabel": "Unit",
       "priorityLabel": "Priority",
       "dueDateLabel": "Due Date",
       "assignedToLabel": "Assigned To",
@@ -897,6 +897,7 @@
       "paymentTermsNet60": "NET 60 days",
       "itemsTitle": "Items",
       "itemDescriptionPlaceholder": "Description",
+      "unitPrice": "Unit price",
       "subtotal": "Subtotal",
       "discount": "Discount (THB)",
       "tax": "Tax (%)"
@@ -917,6 +918,7 @@
       "receivedByPlaceholder": "Employee name",
       "doNo": "Delivery note no. (DO)",
       "doNoPlaceholder": "e.g. DO-2026-001",
+      "notesPlaceholder": "Additional notes (optional)",
       "itemsTitle": "Items to receive",
       "unitPriceLabel": "Unit price:",
       "receivedSoFar": "Received {{already}}/{{ordered}} {{unit}}",
@@ -1006,7 +1008,8 @@
       "goodsValue": "Goods value",
       "vat": "VAT",
       "total": "Total",
-      "bankDeposit": "1100 Bank Deposit",
+      "bankDeposit": "1102 Bank Deposit",
+      "cash": "1101 Cash",
       "withholdingTaxPayable": "2180 WHT Payable",
       "reducePayable": "Reduce payable",
       "actualTransfer": "Actual transfer",
@@ -1082,7 +1085,17 @@
       "initialQty": "Initial quantity",
       "location": "Location",
       "locationPlaceholder": "e.g. Main Warehouse, A-12",
-      "save": "Save to Stock"
+      "save": "Save to Stock",
+      "packaging": {
+        "toggle": "This item is bought in packs/cases (has a sub-unit)",
+        "displayUnit": "Purchase / packaging unit",
+        "baseUnit": "Smallest unit",
+        "suggested": "Filled in from the international rate ({{factor}}) — you can override it",
+        "effect": "Stock will be held in {{base}} and {{display}} will be opened automatically when needed",
+        "needUnits": "Please choose both the purchase unit and the smallest unit",
+        "sameUnit": "The purchase unit and the smallest unit must differ",
+        "needFactor": "Enter how many sub-units are in one pack (greater than 0)"
+      }
     }
   },
   "sales": {
@@ -1352,7 +1365,22 @@
       "shiftOpen": "Open",
       "totalSales": "Total sales",
       "shiftHistory": "Shift history",
-      "confirmReceivePayment": "Record payment"
+      "confirmReceivePayment": "Record payment",
+      "cashMovementButton": "Cash in/out",
+      "cashMovementTitle": "Record cash in/out",
+      "cashIn": "Cash in",
+      "paidOut": "Paid out",
+      "cashMovementAmount": "Amount",
+      "cashMovementReason": "Reason",
+      "cashMovementAccount": "Account",
+      "cashMovementSelectAccount": "Select account",
+      "cashMovementSubmit": "Save",
+      "cashMovementSuccess": "Cash movement recorded",
+      "cashMovementFailed": "Failed to record cash movement",
+      "cashMovementsInShift": "Cash movements this shift",
+      "cashMovementsEmpty": "No cash movements in this shift yet",
+      "cashMovementsTotal": "Cash movements total",
+      "shiftNotOpenError": "Please open a shift before accepting payment"
     },
     "validation": {
       "cancelReason": "Please specify cancellation reason",
@@ -1508,7 +1536,15 @@
       "selectInvoice": "-- Select invoice --",
       "dateLabel": "Credit date",
       "reasonLabel": "Reason",
-      "reasonPlaceholder": "Enter credit note reason..."
+      "reasonPlaceholder": "Enter credit note reason...",
+      "modeLabel": "Credit note type",
+      "modeReturn": "Return goods",
+      "modeDiscount": "Discount/price adjustment",
+      "returnItemsLabel": "Select returned items",
+      "returnQty": "Return qty",
+      "soldQty": "Sold",
+      "noReturnItems": "No items found on this invoice",
+      "selectReturnItems": "Please select at least 1 returned item"
     },
     "creditNoteStatus": {
       "draft": "Draft",
@@ -1922,6 +1958,16 @@
       "loadTreeFailed": "Unable to load BOM Tree data."
     },
     "confirmDelete": "Are you sure you want to delete the BOM for \"{{name}}\"?",
+    "common": {
+      "costPerUnitTooltip": "Cost per 1 unit of output",
+      "costPerUnitLabel": "Cost per unit of output",
+      "unitLabel": "Unit"
+    },
+    "simulation": {
+      "perUnitImpact": "Per Unit Impact",
+      "perBatchImpact": "Per batch impact (yields {{qty}} {{unit}})",
+      "for100Units": "For 100 Units"
+    },
     "stats": {
       "totalBOMs": "Total BOMs",
       "semiFinishedBOMs": "Semi-finished BOMs",
@@ -1958,7 +2004,7 @@
       "version": "Version",
       "items": "Items",
       "status": "Status",
-      "totalCost": "Total Cost",
+      "totalCost": "Cost / Unit",
       "actions": "Actions"
     },
     "itemsTable": {
@@ -1979,7 +2025,8 @@
       "noItems": "No materials",
       "usedIn": "Used in: {{name}}",
       "lastUpdated": "Last updated",
-      "totalProductionCost": "Total production cost"
+      "totalProductionCost": "Cost per unit",
+      "outputBadge": "Yields {{qty}} {{unit}} per batch"
     },
     "typeBadge": {
       "finished": "Finished",
@@ -2104,14 +2151,20 @@
       "version": "Version",
       "status": "Status",
       "bomType": "BOM Type",
-      "items": "Materials / Child BOM"
+      "items": "Materials / Child BOM",
+      "outputQty": "Output per batch",
+      "outputUnit": "Output unit"
     },
     "placeholders": {
       "product": "Select finished / in-process product...",
       "version": "e.g., v1.0, v2.1",
       "searchMaterial": "Search materials...",
       "selectChildBOM": "Select Semi-finished BOM...",
-      "quantity": "Quantity"
+      "quantity": "Quantity",
+      "outputUnit": "Select output unit"
+    },
+    "hints": {
+      "outputSummary": "This BOM produces {{qty}} {{unit}} per batch of materials issued"
     },
     "status": {
       "draft": "Draft",
@@ -2288,6 +2341,7 @@
         "accountTitle": "Account Info",
         "tenantCode": "Organization Code",
         "accountType": "Account Type",
+        "subscriptionPlan": "Subscription Plan",
         "masterAccount": "Master Account",
         "standardAccount": "Standard Account",
         "masterPrivilegesTitle": "Master Account Privileges",
@@ -2309,6 +2363,20 @@
       "subconStockWidget": {
         "toggleLabel": "Show subcontractor stock value",
         "toggleSub": "When enabled, a summary card for materials held at subcontractors appears on the Stock page. Click it to see the breakdown by subcontractor."
+      },
+      "allowNegativeStock": {
+        "title": "Allow selling/issuing past zero stock",
+        "toggleLabel": "Allow negative product/material stock",
+        "toggleSub": "Default (off): the system blocks immediately when product or material is insufficient. When enabled, stock is allowed to go negative and the action proceeds — use with caution",
+        "scopeTitle": "Affects these 3 places:",
+        "scopePos": "POS cashier — payment can proceed even if BOM materials or the product itself are short",
+        "scopeSalesOrder": "Sales orders — confirming can proceed even if product stock is short",
+        "scopeWorkOrder": "Work orders — starting production can proceed even if BOM materials are short"
+      },
+      "requirePosShift": {
+        "title": "Require an open shift before POS sales",
+        "toggleLabel": "Require an open shift to accept payment",
+        "toggleSub": "Default (off): sales work without opening a shift, same as before. When enabled, the POS rejects payment until a shift is opened"
       },
       "userManagement": {
         "title": "Child Users",
@@ -2847,6 +2915,57 @@
         "deleteFailed": "Delete failed",
         "pathCheckFailed": "Failed to check conversion path",
         "aiSuggestFailed": "Failed to get AI suggestion"
+      },
+      "sectionStandard": {
+        "title": "Standard rules (system-wide)",
+        "desc": "These rules apply to EVERY product. Best for units with a truly fixed ratio, e.g. 1 kg = 1000 g.",
+        "riskyNotice": "{{count}} rule(s) worth reviewing — they use a packaging unit (pack/box/case) or cross unit categories, which usually differ per product. Consider moving them to per-product rules."
+      },
+      "sectionSpecial": {
+        "title": "Special units per product",
+        "desc": "A per-product rule always beats the system-wide rule. Use it when the same unit means different amounts per product, e.g. 1 pack of eggs = 30 eggs but 1 pack of snacks = 12 pcs.",
+        "productCount": "{{count}} products",
+        "addForProduct": "Add rule for this product"
+      },
+      "scope": {
+        "builtIn": "Universal standard",
+        "global": "System-wide",
+        "material": "Product-specific"
+      },
+      "category": {
+        "weight": "weight",
+        "volume": "volume",
+        "length": "length",
+        "area": "area",
+        "count": "count",
+        "container": "packaging"
+      },
+      "badge": {
+        "crossCategory": "Cross-category",
+        "crossCategoryTip": "Converts {{from}} to {{to}} — only correct for certain products.",
+        "packagingUnit": "Should be per product",
+        "packagingUnitTip": "\"{{unit}}\" is a packaging unit that usually differs per product. {{count}} product(s) currently use it and are all affected by this rule.",
+        "overriddenBy": "Overridden by {{count}}",
+        "overridesGlobal": "Overrides system-wide ({{factor}} {{unit}})",
+        "overridesGlobalTip": "A product-specific rule always beats the system-wide rule — this value is used."
+      },
+      "warn": {
+        "packagingTitle": "\"{{unit}}\" usually means a different amount per product",
+        "packagingBody": "e.g. 1 pack of eggs = 30 eggs but 1 pack of soda = 12 bottles. With no product selected this rule applies to every product using this unit. Binding it to a specific product is recommended.",
+        "packagingAction": "Pick a product",
+        "crossCategoryTitle": "This rule crosses unit categories",
+        "crossCategoryBody": "Converting {{from}} to {{to}} depends on each product’s density / pack size. As a system-wide rule it lets every product hop between categories."
+      },
+      "human": {
+        "sentence": "1 {{from}} = {{factor}} {{to}}"
+      },
+      "conflict": {
+        "title": "Conflicting rule",
+        "derived": "Derived from existing rules",
+        "incoming": "Value about to be saved",
+        "hint": "If the new value is right, remove or fix the rule that produces the old one instead. Saving over it leaves the data contradicting itself, and the answer will differ depending on which unit you ask for.",
+        "cancel": "Go back and fix",
+        "override": "Save anyway"
       }
     },
     "approval": {
@@ -2970,6 +3089,47 @@
         "delete": "Delete User",
         "deleting": "Deleting..."
       }
+    }
+  },
+  "unitPicker": {
+    "placeholder": "Select unit",
+    "searchPlaceholder": "Search unit… (Thai / English)",
+    "noResults": "No matching unit",
+    "loading": "Loading units…",
+    "groupMaterialSpecial": "Special units for this item",
+    "groupTenantSpecial": "Company-wide special units",
+    "groupCount": "Count",
+    "groupWeight": "Weight",
+    "groupVolume": "Volume",
+    "groupLength": "Length",
+    "groupArea": "Area",
+    "groupOther": "Other",
+    "groupReachable": "Units usable for this item",
+    "badgeMaterial": "This item only",
+    "badgeTenant": "Company-wide",
+    "unreachableRowHint": "No conversion rate to {{base}} yet",
+    "unreachableHint": "This unit has no conversion rate to {{base}} yet —",
+    "unreachableHintLink": "set it up in Settings → Unit Conversions",
+    "subUnitToggle": "This item is bought by pack/case",
+    "subUnitToggleHint": "Tick if the purchase unit differs from the unit you actually use",
+    "displayUnitLabel": "Purchase / packing unit",
+    "baseUnitLabel": "Smallest unit",
+    "factorPrefix": "1 {{display}} =",
+    "factorSuffix": "{{base}}",
+    "factorFromStandard": "Filled from the standard rate — you can override it",
+    "subUnitHelp": "Stock will be kept in {{base}} and each {{display}} unpacked automatically when needed",
+    "errSubUnitIncomplete": "Please choose the packing unit, the smallest unit and enter the quantity",
+    "errFactorPositive": "Quantity per pack must be greater than 0",
+    "errSameUnit": "Packing unit and smallest unit must be different",
+    "warnConversionFailed": "Item created, but the sub-unit rule failed — set it up in Settings → Unit Conversions"
+  },
+  "stock": {
+    "unpack": {
+      "totalHint": "Everything on hand, converted fully to the base unit — includes stock still sealed inside unopened packs.",
+      "looseHint": "Loose stock already unpacked. Ready to pick and use right away.",
+      "sealedHint": "Unopened packs/cases, counted in the packing unit. Click to unpack.",
+      "totalInline": "Total {{value}} {{unit}}",
+      "totalUnchangedHint": "The grand total stays the same at {{value}} {{unit}} — this just moves stock from sealed packs to loose, it doesn't add anything new."
     }
   }
 }

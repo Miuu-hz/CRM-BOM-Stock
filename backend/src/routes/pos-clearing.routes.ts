@@ -114,6 +114,16 @@ router.get('/clearing/pending-bills', (req, res) => {
 // Create transfer (End of Day close)
 router.post('/clearing/transfer', (req, res) => {
   try {
+    // ponytail: ปิดฟีเจอร์นี้ไว้ก่อน (ยังไม่เคยถูกใช้จริง — pos_clearing_transfers ว่างเปล่า)
+    // เหตุผล: ขาขาย POS ลง Dr เงินสด/ธนาคาร ตรงๆ ตอนปิดบิลอยู่แล้ว (pos-accounting.service.ts)
+    // การโอน clearing จะ Dr เงินสด/ธนาคาร ซ้ำอีกรอบ แล้ว Cr 1180 ที่ไม่เคยถูก Dr จากที่ไหนเลย
+    // ผลคือเงินสดเบิ้ลและ 1180 ติดลบ
+    // ทางแก้ระยะยาว: เปลี่ยนขาขายให้ลง Dr 1180 (undeposited funds) แล้วให้ clearing ย้าย
+    // 1180 -> เงินสด/ธนาคาร ตามดีไซน์ 2 ขั้นเดิม — เป็น redesign ที่ต้องให้ user ตัดสินใจก่อน
+    return res.status(503).json({
+      success: false,
+      message: 'ฟีเจอร์นำเงินเข้าบัญชี (POS Clearing Transfer) ยังปิดใช้งานอยู่ เพราะยอดขาย POS ถูกบันทึกเข้าบัญชีเงินสด/ธนาคารทันทีตอนปิดบิลแล้ว การโอนซ้ำจะทำให้เงินสดถูกบันทึกซ้ำซ้อน'
+    })
     const tenantId = (req as any).user!.tenantId
     const userId = (req as any).user!.userId
     const { 

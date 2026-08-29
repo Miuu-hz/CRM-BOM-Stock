@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { normalizeUnit } from '../services/unitConversion.service'
 
 const router = Router()
 const MAX_IMPORT_ROWS = 5_000
@@ -243,7 +244,7 @@ router.post('/stock', async (req: Request, res: Response) => {
             row.name,
             category,
             row.quantity || 0,
-            row.unit || 'PCS',
+            normalizeUnit(row.unit || 'pcs'),
             row.min_stock || 0,
             row.max_stock || 1000,
             row.location || 'MAIN',

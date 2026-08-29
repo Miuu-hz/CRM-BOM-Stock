@@ -91,7 +91,15 @@ const KDS: React.FC = () => {
     } catch {}
   }
 
+  const stopNotificationSound = () => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.pause()
+    audio.currentTime = 0
+  }
+
   const handleStatus = async (ticketId: string, status: 'IN_PROGRESS' | 'DONE') => {
+    stopNotificationSound()
     try {
       await kdsService.updateTicketStatus(ticketId, status)
       if (status === 'DONE') {

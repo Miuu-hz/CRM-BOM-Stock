@@ -144,15 +144,19 @@ router.post('/bills', (req, res) => {
     const billNumber = generateBillNumber(tenantId)
     const defaultDisplayName = display_name || `บิล ${billNumber.split('-')[2]}`
 
+    // Tag the bill with the currently open shift (if any) so shift-close can sum
+    // sales by shift_id instead of guessing from a time range. NULL if no shift open.
+    const openShift = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN' LIMIT 1`).get(tenantId) as any
+
     db.prepare(`
       INSERT INTO pos_running_bills (
         id, tenant_id, bill_number, display_name, customer_name, customer_phone,
-        customer_id, status, opened_at, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
+        customer_id, status, opened_at, notes, created_by, shift_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
     `).run(
       id, tenantId, billNumber, defaultDisplayName,
       resolvedCustomerName, resolvedCustomerPhone, customer_id || null,
-      now(), notes || null, userId
+      now(), notes || null, userId, openShift?.id || null
     )
     
     res.json({ 
@@ -417,7 +421,18 @@ router.post('/bills/:id/pay', async (req, res) => {
     if (!payment_method) {
       return res.status(400).json({ success: false, message: 'Payment method required' })
     }
-    
+
+    // Guard: บังคับเปิดกะก่อนรับชำระเงิน — ปิดโดย default (require_pos_shift = 0)
+    // เพื่อไม่ให้ร้านที่ขายโดยไม่เปิดกะมาตลอดขายไม่ได้ทันที (ดู company_settings.allow_negative_stock
+    // สำหรับแพทเทิร์น toggle เดียวกัน)
+    const posSetting = db.prepare(`SELECT require_pos_shift FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any
+    if (posSetting && posSetting.require_pos_shift === 1) {
+      const openShift = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN' LIMIT 1`).get(tenantId)
+      if (!openShift) {
+        return res.status(403).json({ success: false, code: 'SHIFT_NOT_OPEN', message: 'กรุณาเปิดกะก่อนรับชำระเงิน' })
+      }
+    }
+
     // Get bill with items
     const billStmt = db.prepare(`
       SELECT b.*, COUNT(bi.id) as item_count

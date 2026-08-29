@@ -12,6 +12,7 @@ import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOf
 import toast from 'react-hot-toast'
 import { phopyBoardApi, PhopyBoardData } from '../../services/phopyBoard'
 import PhopyBoardExtended from './PhopyBoardExtended'
+import { unitLabel } from '../../hooks/useUnits'
 
 type PeriodPreset = 'month' | 'quarter' | 'year' | 'custom'
 
@@ -359,7 +360,7 @@ export default function PhopyBoard() {
                       <AlertTriangle className="w-4 h-4 text-[color:var(--warning,#f59e0b)] flex-none" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-[var(--fg-1)] truncate">{s.name}</p>
-                        <p className="text-xs text-[var(--fg-3)]">คงเหลือ {s.quantity} {s.unit} · min {s.minStock}</p>
+                        <p className="text-xs text-[var(--fg-3)]">คงเหลือ {s.quantity} {unitLabel(s.unit)} · min {s.minStock}</p>
                       </div>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.quantity <= 0 ? 'bg-[var(--danger-soft)] text-[color:var(--danger)]' : 'bg-[var(--warning)]/10 text-[color:var(--warning,#f59e0b)]'}`}>
                         {s.quantity <= 0 ? 'หมด' : `${s.daysRemaining}d`}

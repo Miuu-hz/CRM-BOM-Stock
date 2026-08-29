@@ -29,6 +29,9 @@ import subcontractService, { Subcontract } from '../services/subcontract'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
+import { UnitPicker } from '../components/common/UnitPicker'
+import { unitLabel } from '../hooks/useUnits'
+import { normalizeUnit } from '../utils/unitNormalize'
 
 const STATUS_STYLES: Record<string, { color: string; icon: any }> = {
   DRAFT: { color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)] border-[var(--border-strong)]', icon: FileText },
@@ -220,7 +223,7 @@ function WorkOrders() {
                           {statusConf.label}
                         </span>
                       </td>
-                      <td><span className="text-[var(--fg-3)]">{wo.completed_qty}/{wo.quantity}</span></td>
+                      <td><span className="text-[var(--fg-3)]">{wo.completed_qty}/{wo.quantity} {wo.unit ? unitLabel(wo.unit) : ''}</span></td>
                       <td>
                         <div className="w-24">
                           <div className="flex justify-between text-xs mb-1">
@@ -311,6 +314,9 @@ function CreateWOModal({ open, onClose, onSave }: {
   useModalClose(onClose)
   const [productName, setProductName] = useState('')
   const [quantity, setQuantity] = useState(1)
+  // หน่วยของจำนวนผลิต (R2-UI) — default ตามหน่วยของสินค้าจาก BOM ที่เลือก, ผู้ใช้แก้เองได้
+  const [unit, setUnit] = useState('')
+  const [unitTouched, setUnitTouched] = useState(false)
   const [priority, setPriority] = useState('NORMAL')
   const [dueDate, setDueDate] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
@@ -357,8 +363,18 @@ function CreateWOModal({ open, onClose, onSave }: {
       setDueDate(''); setAssignedTo(''); setNotes('')
       setMaterials([]); setSelectedBomId(''); setManualMode(false)
       setStockMap({}); setCreatingPR(false)
+      setUnit(''); setUnitTouched(false)
     }
   }, [open])
+
+  // default หน่วยตามหน่วยของสินค้าที่ผูกกับ BOM ที่เลือก (ยังไม่แก้เอง) — backend ยังไม่ส่ง
+  // หน่วยของสินค้ามากับ /bom ตอนนี้ จึงรองรับไว้แบบ optional chaining รอ field จาก backend
+  useEffect(() => {
+    if (unitTouched) return
+    const bom = boms.find((b: any) => b.id === selectedBomId) as any
+    const bomUnit = bom?.product_unit || bom?.base_unit || bom?.unit
+    if (bomUnit) setUnit(normalizeUnit(bomUnit))
+  }, [selectedBomId, unitTouched, boms])
 
   const loadStockForMaterials = async (mats: { materialId?: string; unit: string }[]) => {
     const ids = mats.filter(m => m.materialId).map(m => m.materialId!)
@@ -455,6 +471,8 @@ function CreateWOModal({ open, onClose, onSave }: {
       await workOrderService.create({
         bomId: selectedBomId || undefined,
         productName, quantity, priority,
+        // ไม่ส่งเลยถ้ายังไม่ได้เลือก/ยังไม่ default ได้ — backend จะ fallback เป็นหน่วยของสินค้าจาก BOM เอง
+        unit: unit || undefined,
         dueDate: dueDate || undefined,
         assignedTo, notes,
         materials: validMaterials.length > 0 ? validMaterials : undefined,
@@ -551,8 +569,8 @@ function CreateWOModal({ open, onClose, onSave }: {
                   </p>
 
                   <div className="space-y-3">
-                    {/* Product + Qty side by side */}
-                    <div className="grid grid-cols-3 gap-3">
+                    {/* Product + Qty + Unit */}
+                    <div className="grid grid-cols-4 gap-3">
                       <div className="col-span-2">
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.productLabel')}</label>
                         <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
@@ -575,6 +593,14 @@ function CreateWOModal({ open, onClose, onSave }: {
                           <button type="button" onClick={() => handleQuantityChange(quantity + 1)}
                             className="w-8 h-9 flex items-center justify-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] shrink-0">+</button>
                         </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.unitLabel')}</label>
+                        <UnitPicker
+                          value={unit}
+                          onChange={(u) => { setUnit(u); setUnitTouched(true) }}
+                          placeholder={t('workOrders.create.unitPlaceholder')}
+                        />
                       </div>
                     </div>
 
@@ -673,8 +699,8 @@ function CreateWOModal({ open, onClose, onSave }: {
                             {mat.materialId && (() => {
                               if (stockChecking) return <Loader2 key="spin" className="w-3 h-3 animate-spin text-[var(--fg-4)] shrink-0" />
                               if (!ss || ss.type === 'unknown') return <span key="unk" className="text-xs text-[var(--fg-4)] shrink-0 w-16 text-right">?</span>
-                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium"><Check className="w-3 h-3 inline" /> {ss.stockQty} {ss.unit}</span>
-                              if (ss.type === 'short') return <span key="sh" className="text-xs text-danger shrink-0 w-16 text-right font-semibold">-{ss.shortage} {ss.unit}</span>
+                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium"><Check className="w-3 h-3 inline" /> {ss.stockQty} {unitLabel(ss.unit)}</span>
+                              if (ss.type === 'short') return <span key="sh" className="text-xs text-danger shrink-0 w-16 text-right font-semibold">-{ss.shortage} {unitLabel(ss.unit)}</span>
                               return <span key="mm" className="text-xs text-warning shrink-0 w-16 text-right">{ss.stockQty} {ss.stockUnit}</span>
                             })()}
                             <button type="button" onClick={() => setMaterials(materials.filter((_, i) => i !== idx))}
@@ -825,7 +851,7 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
             <div className="bg-[var(--surface-2)] p-4 rounded-lg">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[var(--fg-3)] text-sm">{t('workOrders.detail.productionProgress')}</span>
-                <span className="text-[var(--fg-2)] font-semibold">{wo.completed_qty} / {wo.quantity} {t('workOrders.detail.units')} ({progress}%)</span>
+                <span className="text-[var(--fg-2)] font-semibold">{wo.completed_qty} / {wo.quantity} {wo.unit ? unitLabel(wo.unit) : t('workOrders.detail.units')} ({progress}%)</span>
               </div>
               <div className="h-3 bg-[var(--bg)] rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${
@@ -1377,7 +1403,7 @@ function IssueMaterialsModal({ contract, onClose, onSaved }: {
                         className="phopy-input flex-1 text-sm">
                         <option value="">{t('workOrders.subcontract.selectItem')}</option>
                         {stockItems.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.quantity} {s.unit})</option>
+                          <option key={s.id} value={s.id}>{s.name} ({s.quantity} {unitLabel(s.unit)})</option>
                         ))}
                       </select>
                       <input type="number" min="0" step="0.01" value={row.quantity || ''}
@@ -1516,7 +1542,7 @@ function ReceiveGoodsModal({ contract, onClose, onSaved }: {
                         {materialRows.map((r, i) => (
                           <tr key={r.stock_item_id} className="border-b border-[var(--border)] last:border-0">
                             <td className="py-1.5 pr-2 text-[var(--fg-1)]">{r.item_name}</td>
-                            <td className="py-1.5 pr-2 text-[var(--fg-2)]">{r.outstanding} {r.unit}</td>
+                            <td className="py-1.5 pr-2 text-[var(--fg-2)]">{r.outstanding} {unitLabel(r.unit)}</td>
                             <td className="py-1.5 pr-2">
                               <input type="number" min="0" value={r.consumed_qty || ''} onChange={(e) => updateMaterial(i, { consumed_qty: Number(e.target.value) })} className="phopy-input w-20 text-xs" />
                             </td>
@@ -1625,7 +1651,7 @@ function ReconcileModal({ contract, onClose }: { contract: Subcontract | null; o
                             {data.materials.map((m: any) => (
                               <tr key={m.stock_item_id} className="border-b border-[var(--border)] last:border-0">
                                 <td className="py-1.5 pr-3 text-[var(--fg-1)]">{m.item_name}</td>
-                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.issued_qty} {m.unit}</td>
+                                <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.issued_qty} {unitLabel(m.unit)}</td>
                                 <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.consumed_qty}</td>
                                 <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.returned_qty}</td>
                                 <td className="py-1.5 pr-3 text-[var(--fg-2)]">{m.shortage_qty}</td>

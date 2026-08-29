@@ -15,12 +15,21 @@ export interface StockItem {
   saleUnit?: string
   displayUnit?: string
   displayQuantity?: number
+  /** Base units contained in one pack (display unit); null when not derivable. */
+  packFactor?: number | null
+  /** quantity + sealed packs converted to base units. */
+  availableTotal?: number
+  canUnpack?: boolean
   minStock: number
   maxStock: number
   location: string
   isPosEnabled?: boolean
   unitCost?: number
   unitPrice?: number
+  /** ราคาที่ซื้อมา ต่อ 1 purchaseUnit — ช่องที่ผู้ใช้กรอก (unitCost คำนวณจากค่านี้โดย backend) */
+  purchasePrice?: number
+  /** หน่วยที่ซื้อมา; ไม่ระบุ = ใช้ baseUnit */
+  purchaseUnit?: string
   imageUrl?: string
   status: string
   createdAt: string
@@ -79,6 +88,8 @@ export interface CreateStockInput {
   isPosEnabled?: boolean
   unitCost?: number
   unitPrice?: number
+  purchasePrice?: number
+  purchaseUnit?: string
 }
 
 export interface UpdateStockInput {
@@ -95,6 +106,8 @@ export interface UpdateStockInput {
   isPosEnabled?: boolean
   unitCost?: number
   unitPrice?: number
+  purchasePrice?: number
+  purchaseUnit?: string
 }
 
 export interface StockMovementInput {
@@ -131,8 +144,13 @@ function mapStockItem(item: any): StockItem {
     saleUnit: item.sale_unit || item.saleUnit,
     displayUnit: item.display_unit || item.displayUnit,
     displayQuantity: item.display_quantity !== undefined ? item.display_quantity : item.displayQuantity,
+    packFactor: item.pack_factor !== undefined ? item.pack_factor : item.packFactor,
+    availableTotal: item.available_total !== undefined ? item.available_total : item.availableTotal,
+    canUnpack: item.can_unpack !== undefined ? item.can_unpack : item.canUnpack,
     unitCost: item.unit_cost !== undefined ? item.unit_cost : item.unitCost,
     unitPrice: item.unit_price !== undefined ? item.unit_price : item.unitPrice,
+    purchasePrice: item.purchase_price !== undefined ? item.purchase_price : item.purchasePrice,
+    purchaseUnit: item.purchase_unit || item.purchaseUnit,
     imageUrl: item.image_url || item.imageUrl,
     isPosEnabled: item.is_pos_enabled !== undefined ? item.is_pos_enabled : item.isPosEnabled,
     createdAt: item.created_at || item.createdAt,
@@ -140,6 +158,18 @@ function mapStockItem(item: any): StockItem {
     movements: item.movements?.map(mapStockMovement),
   }
   return mapped
+}
+
+export interface UnpackResult {
+  id: string
+  quantity: number
+  sealed_qty: number
+  unpackedPacks: number
+  packFactor: number
+  baseUnit: string
+  baseLabel: string
+  displayUnit: string
+  displayLabel: string
 }
 
 export const stockService = {
@@ -194,6 +224,13 @@ export const stockService = {
   },
 
   // Record stock movement
+  // Open sealed packs by hand. Production and delivery unpack automatically,
+  // but nothing let a human open a pack on purpose, so stock sat unusable.
+  unpack: async (id: string, packs: number): Promise<UnpackResult> => {
+    const response = await api.post<any>(`/stock/${id}/unpack`, { packs })
+    return response.data.data
+  },
+
   recordMovement: async (input: StockMovementInput): Promise<StockItem> => {
     const response = await api.post<any>('/stock/movement', input)
     if (!response.data?.data) {

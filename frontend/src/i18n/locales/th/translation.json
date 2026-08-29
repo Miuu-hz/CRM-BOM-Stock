@@ -6,9 +6,8 @@
   "login": {
     "title": "Phopy",
     "emailLabel": "Email / Username",
-    "emailPlaceholder": "admin@example.com หรือ BB-pillow",
+    "emailPlaceholder": "admin@example.com",
     "passwordLabel": "Password",
-    "rememberMe": "Remember me",
     "forgotPassword": "Forgot Password?",
     "submit": "เข้าสู่ระบบ",
     "loading": "กำลังเข้าสู่ระบบ...",
@@ -254,7 +253,8 @@
       "semiFinished": "กึ่งสำเร็จรูป",
       "prReason": "ขาดวัตถุดิบสำหรับผลิต: {{name}} จำนวน {{quantity}} หน่วย",
       "prCreated": "สร้าง Purchase Request สำเร็จ — {{count}} รายการ",
-      "prFailed": "ไม่สามารถสร้าง PR ได้"
+      "prFailed": "ไม่สามารถสร้าง PR ได้",
+      "unitLabel": "หน่วย"
     },
     "detail": {
       "productionProgress": "ความคืบหน้าการผลิต",
@@ -898,6 +898,7 @@
       "paymentTermsNet60": "NET 60 วัน",
       "itemsTitle": "รายการสินค้า",
       "itemDescriptionPlaceholder": "รายละเอียดเพิ่มเติม",
+      "unitPrice": "ราคา/หน่วย",
       "subtotal": "ก่อนหักส่วนลด",
       "discount": "ส่วนลด (บาท)",
       "tax": "ภาษี (%)"
@@ -918,6 +919,7 @@
       "receivedByPlaceholder": "ชื่อพนักงานที่รับ",
       "doNo": "เลขที่ใบส่งของ (DO No.)",
       "doNoPlaceholder": "เช่น DO-2026-001",
+      "notesPlaceholder": "หมายเหตุเพิ่มเติม (ถ้ามี)",
       "itemsTitle": "รายการสินค้าที่ต้องรับ",
       "unitPriceLabel": "ราคา/หน่วย:",
       "receivedSoFar": "รับแล้ว {{already}}/{{ordered}} {{unit}}",
@@ -1007,7 +1009,8 @@
       "goodsValue": "มูลค่าสินค้า",
       "vat": "VAT",
       "total": "ยอดรวม",
-      "bankDeposit": "1100 เงินฝากธนาคาร",
+      "bankDeposit": "1102 เงินฝากธนาคาร",
+      "cash": "1101 เงินสด",
       "withholdingTaxPayable": "2180 ภาษีหัก ณ ที่จ่าย",
       "reducePayable": "ลดยอดเจ้าหนี้",
       "actualTransfer": "ยอดโอนจริง",
@@ -1083,7 +1086,17 @@
       "initialQty": "จำนวนเริ่มต้น",
       "location": "สถานที่เก็บ",
       "locationPlaceholder": "เช่น คลังหลัก, A-12",
-      "save": "บันทึกเข้า Stock"
+      "save": "บันทึกเข้า Stock",
+      "packaging": {
+        "toggle": "สินค้านี้ซื้อเป็นแพ็ค/ลัง (มีหน่วยย่อย)",
+        "displayUnit": "หน่วยที่ซื้อ/บรรจุ",
+        "baseUnit": "หน่วยย่อยสุด",
+        "suggested": "ระบบเติมให้จากมาตราสากล ({{factor}}) แก้ทับได้",
+        "effect": "ระบบจะเก็บสต็อกเป็น {{base}} และแกะ {{display}} ให้อัตโนมัติเมื่อต้องใช้",
+        "needUnits": "กรุณาเลือกทั้งหน่วยที่ซื้อและหน่วยย่อยสุด",
+        "sameUnit": "หน่วยที่ซื้อกับหน่วยย่อยสุดต้องไม่ใช่หน่วยเดียวกัน",
+        "needFactor": "กรุณากรอกจำนวนหน่วยย่อยต่อ 1 หน่วยบรรจุ ให้มากกว่า 0"
+      }
     }
   },
   "sales": {
@@ -1353,7 +1366,22 @@
       "shiftOpen": "กำลังเปิด",
       "totalSales": "ยอดขายรวม",
       "shiftHistory": "ประวัติกะ",
-      "confirmReceivePayment": "บันทึกรับเงิน"
+      "confirmReceivePayment": "บันทึกรับเงิน",
+      "cashMovementButton": "เงินเข้า/ออกลิ้นชัก",
+      "cashMovementTitle": "บันทึกเงินเข้า/ออกลิ้นชัก",
+      "cashIn": "เงินเข้า",
+      "paidOut": "เงินออก (จ่าย)",
+      "cashMovementAmount": "จำนวนเงิน",
+      "cashMovementReason": "เหตุผล",
+      "cashMovementAccount": "บัญชี",
+      "cashMovementSelectAccount": "เลือกบัญชี",
+      "cashMovementSubmit": "บันทึกรายการ",
+      "cashMovementSuccess": "บันทึกเงินเข้า/ออกลิ้นชักสำเร็จ",
+      "cashMovementFailed": "บันทึกเงินเข้า/ออกลิ้นชักไม่สำเร็จ",
+      "cashMovementsInShift": "รายการเงินเข้า/ออกในกะนี้",
+      "cashMovementsEmpty": "ยังไม่มีรายการเงินเข้า/ออกในกะนี้",
+      "cashMovementsTotal": "รวมเงินเข้า/ออก",
+      "shiftNotOpenError": "กรุณาเปิดกะก่อนรับชำระเงิน"
     },
     "validation": {
       "cancelReason": "กรุณาระบุสาเหตุการยกเลิก",
@@ -1509,7 +1537,15 @@
       "selectInvoice": "-- เลือกใบแจ้งหนี้ --",
       "dateLabel": "วันที่ลดหนี้",
       "reasonLabel": "เหตุผล",
-      "reasonPlaceholder": "ระบุเหตุผลการลดหนี้..."
+      "reasonPlaceholder": "ระบุเหตุผลการลดหนี้...",
+      "modeLabel": "ประเภทใบลดหนี้",
+      "modeReturn": "รับคืนสินค้า",
+      "modeDiscount": "ลดราคา/ส่วนลด",
+      "returnItemsLabel": "เลือกสินค้าที่รับคืน",
+      "returnQty": "จำนวนที่คืน",
+      "soldQty": "ขายไป",
+      "noReturnItems": "ไม่พบรายการสินค้าในใบแจ้งหนี้นี้",
+      "selectReturnItems": "กรุณาเลือกสินค้าที่รับคืนอย่างน้อย 1 รายการ"
     },
     "creditNoteStatus": {
       "draft": "ร่าง",
@@ -1959,7 +1995,7 @@
       "version": "เวอร์ชัน",
       "items": "รายการ",
       "status": "สถานะ",
-      "totalCost": "ต้นทุนรวม",
+      "totalCost": "ต้นทุน/หน่วย",
       "actions": "การดำเนินการ"
     },
     "itemsTable": {
@@ -1980,7 +2016,8 @@
       "noItems": "ไม่มีรายการวัตถุดิบ",
       "usedIn": "ใช้ใน: {{name}}",
       "lastUpdated": "อัปเดตล่าสุด",
-      "totalProductionCost": "ต้นทุนผลิตรวม"
+      "totalProductionCost": "ต้นทุนต่อหน่วย",
+      "outputBadge": "ผลิตได้ {{qty}} {{unit}} ต่อชุด"
     },
     "typeBadge": {
       "finished": "สำเร็จรูป",
@@ -2087,6 +2124,16 @@
           "adjustFailed": "Failed to adjust stock"
         }
       }
+    },
+    "common": {
+      "costPerUnitTooltip": "ต้นทุนต่อผลผลิต 1 หน่วย",
+      "costPerUnitLabel": "ต้นทุนต่อหน่วยผลผลิต",
+      "unitLabel": "หน่วย"
+    },
+    "simulation": {
+      "perUnitImpact": "ผลกระทบต่อหน่วย",
+      "perBatchImpact": "ผลกระทบต่อชุดผลิต (ได้ {{qty}} {{unit}})",
+      "for100Units": "สำหรับ 100 หน่วย"
     }
   },
   "bomModal": {
@@ -2105,14 +2152,17 @@
       "version": "เวอร์ชัน",
       "status": "สถานะ",
       "bomType": "ประเภท BOM",
-      "items": "รายการวัตถุดิบ / Child BOM"
+      "items": "รายการวัตถุดิบ / Child BOM",
+      "outputQty": "ผลผลิตต่อ 1 ชุด",
+      "outputUnit": "หน่วยผลผลิต"
     },
     "placeholders": {
       "product": "เลือกสินค้าสำเร็จรูป / ระหว่างผลิต...",
       "version": "เช่น v1.0, v2.1",
       "searchMaterial": "ค้นหาวัตถุดิบ...",
       "selectChildBOM": "เลือก Semi-finished BOM...",
-      "quantity": "จำนวน"
+      "quantity": "จำนวน",
+      "outputUnit": "เลือกหน่วยผลผลิต"
     },
     "status": {
       "draft": "ฉบับร่าง",
@@ -2194,6 +2244,9 @@
       "semiFinishedGoods": "กึ่งสำเร็จรูป",
       "subMaterial": "วัสดุย่อย",
       "intangible": "ไม่มีตัวตน"
+    },
+    "hints": {
+      "outputSummary": "BOM ชุดนี้ผลิตได้ {{qty}} {{unit}} ต่อการเบิกวัตถุดิบ 1 ชุด"
     }
   },
   "settings": {
@@ -2289,6 +2342,7 @@
         "accountTitle": "ข้อมูลบัญชี",
         "tenantCode": "รหัสองค์กร",
         "accountType": "ประเภทบัญชี",
+        "subscriptionPlan": "แพ็กเกจสมาชิก",
         "masterAccount": "Master Account",
         "standardAccount": "Standard Account",
         "masterPrivilegesTitle": "สิทธิ์ Master Account",
@@ -2310,6 +2364,20 @@
       "subconStockWidget": {
         "toggleLabel": "แสดงมูลค่าสต็อกที่ผู้รับเหมาช่วง",
         "toggleSub": "เมื่อเปิดใช้งาน จะมีการ์ดสรุปมูลค่าวัตถุดิบที่ค้างอยู่ที่ผู้รับเหมาช่วงในหน้าสต็อก คลิกเพื่อดูรายละเอียดแยกตามผู้รับเหมา"
+      },
+      "allowNegativeStock": {
+        "title": "อนุญาตขาย/เบิกแม้สต็อกไม่พอ",
+        "toggleLabel": "อนุญาตขายสินค้า/เบิกวัตถุดิบติดลบ",
+        "toggleSub": "ค่าเริ่มต้น (ปิด) ระบบจะบล็อกทันทีถ้าสินค้าหรือวัตถุดิบไม่พอ เมื่อเปิดใช้งาน จะยอมให้สต็อกติดลบและดำเนินการต่อได้ — ใช้ด้วยความระมัดระวัง",
+        "scopeTitle": "มีผลกับ 3 จุดนี้:",
+        "scopePos": "หน้าแคชเชียร์ (POS) — จ่ายเงินได้แม้วัตถุดิบตาม BOM หรือตัวสินค้าเองไม่พอ",
+        "scopeSalesOrder": "ใบสั่งขาย — ยืนยันใบสั่งขายได้แม้สต็อกสินค้าไม่พอ",
+        "scopeWorkOrder": "ใบสั่งผลิต — เริ่มผลิตได้แม้วัตถุดิบตาม BOM ไม่พอ"
+      },
+      "requirePosShift": {
+        "title": "บังคับเปิดกะก่อนขายหน้า POS",
+        "toggleLabel": "ต้องเปิดกะก่อนจึงจะรับชำระเงินได้",
+        "toggleSub": "ค่าเริ่มต้น (ปิด) ขายได้โดยไม่ต้องเปิดกะเหมือนเดิม เมื่อเปิดใช้งาน ระบบจะปฏิเสธการรับชำระเงินที่หน้า POS ถ้ายังไม่ได้เปิดกะ"
       },
       "userManagement": {
         "title": "รายชื่อผู้ใช้งานในสายงาน",
@@ -2848,6 +2916,57 @@
         "deleteFailed": "ลบไม่สำเร็จ",
         "pathCheckFailed": "ตรวจสอบเส้นทางไม่สำเร็จ",
         "aiSuggestFailed": "ขอคำแนะนำ AI ไม่สำเร็จ"
+      },
+      "sectionStandard": {
+        "title": "กฎมาตรฐาน (ทั้งระบบ)",
+        "desc": "กฎเหล่านี้ใช้กับ \"ทุกสินค้า\" ในระบบ เหมาะกับหน่วยที่มีค่าคงที่จริง ๆ เช่น 1 กก. = 1000 กรัม",
+        "riskyNotice": "มี {{count}} กฎที่ควรตรวจสอบ — เป็นหน่วยบรรจุ (แพ็ค/กล่อง/ลัง) หรือข้ามหมวดหน่วย ซึ่งมักต่างกันไปตามสินค้า แนะนำให้ย้ายไปเป็นกฎเฉพาะสินค้า"
+      },
+      "sectionSpecial": {
+        "title": "หน่วยพิเศษรายสินค้า",
+        "desc": "กฎเฉพาะสินค้าจะชนะกฎทั้งระบบเสมอ ใช้เมื่อหน่วยเดียวกันมีค่าต่างกันในแต่ละสินค้า เช่น 1 แพ็คไข่ = 30 ฟอง แต่ 1 แพ็คขนม = 12 ชิ้น",
+        "productCount": "{{count}} สินค้า",
+        "addForProduct": "เพิ่มกฎให้สินค้านี้"
+      },
+      "scope": {
+        "builtIn": "มาตรฐานสากล",
+        "global": "ทั้งระบบ",
+        "material": "เฉพาะสินค้า"
+      },
+      "category": {
+        "weight": "น้ำหนัก",
+        "volume": "ปริมาตร",
+        "length": "ความยาว",
+        "area": "พื้นที่",
+        "count": "หน่วยนับ",
+        "container": "หน่วยบรรจุ"
+      },
+      "badge": {
+        "crossCategory": "ข้ามหมวดหน่วย",
+        "crossCategoryTip": "แปลงจาก{{from}}ไป{{to}} — ค่าที่ได้จะถูกต้องเฉพาะสินค้าบางชนิดเท่านั้น",
+        "packagingUnit": "ควรผูกกับสินค้า",
+        "packagingUnitTip": "\"{{unit}}\" เป็นหน่วยบรรจุที่มักต่างกันไปตามสินค้า ตอนนี้มีสินค้า {{count}} รายการที่ใช้หน่วยนี้และได้รับผลจากกฎนี้ทั้งหมด",
+        "overriddenBy": "ถูกแทนที่ {{count}} สินค้า",
+        "overridesGlobal": "แทนกฎทั้งระบบ ({{factor}} {{unit}})",
+        "overridesGlobalTip": "กฎเฉพาะสินค้าชนะกฎทั้งระบบเสมอ ระบบจะใช้ค่านี้"
+      },
+      "warn": {
+        "packagingTitle": "\"{{unit}}\" เป็นหน่วยนับที่มักต่างกันไปตามสินค้า",
+        "packagingBody": "เช่น 1 แพ็คไข่ = 30 ฟอง แต่ 1 แพ็คน้ำอัดลม = 12 ขวด ถ้าไม่เลือกสินค้า กฎนี้จะใช้กับทุกสินค้าที่ใช้หน่วยนี้ แนะนำให้ผูกกับสินค้าที่ระบุ",
+        "packagingAction": "เลือกสินค้าที่ต้องการ",
+        "crossCategoryTitle": "กฎนี้ข้ามหมวดหน่วย",
+        "crossCategoryBody": "กำลังแปลงจาก{{from}}ไป{{to}} ซึ่งขึ้นกับความหนาแน่น/ขนาดบรรจุของสินค้าแต่ละตัว ถ้าตั้งเป็นกฎทั้งระบบ สินค้าทุกตัวจะแปลงข้ามหมวดได้หมด"
+      },
+      "human": {
+        "sentence": "1 {{from}} = {{factor}} {{to}}"
+      },
+      "conflict": {
+        "title": "กฎขัดกัน",
+        "derived": "ระบบคำนวณได้จากกฎที่มีอยู่",
+        "incoming": "ค่าที่กำลังจะบันทึก",
+        "hint": "ถ้าค่าใหม่ถูก ให้ไปลบ/แก้กฎเดิมที่ทำให้ได้ค่าเก่าแทน การบันทึกทับจะทำให้ข้อมูลขัดกันเอง แล้วผลลัพธ์จะต่างกันไปตามหน่วยที่ถาม",
+        "cancel": "กลับไปแก้",
+        "override": "บันทึกทับอยู่ดี"
       }
     },
     "approval": {
@@ -2971,6 +3090,47 @@
         "delete": "ลบผู้ใช้",
         "deleting": "กำลังลบ..."
       }
+    }
+  },
+  "unitPicker": {
+    "placeholder": "เลือกหน่วย",
+    "searchPlaceholder": "ค้นหาหน่วย… (ไทย / อังกฤษ)",
+    "noResults": "ไม่พบหน่วยที่ค้นหา",
+    "loading": "กำลังโหลดหน่วย…",
+    "groupMaterialSpecial": "หน่วยพิเศษของสินค้านี้",
+    "groupTenantSpecial": "หน่วยพิเศษทั้งระบบ",
+    "groupCount": "นับจำนวน",
+    "groupWeight": "น้ำหนัก",
+    "groupVolume": "ปริมาตร",
+    "groupLength": "ความยาว",
+    "groupArea": "พื้นที่",
+    "groupOther": "อื่น ๆ",
+    "badgeMaterial": "เฉพาะสินค้านี้",
+    "badgeTenant": "ทั้งระบบ",
+    "subUnitToggle": "สินค้านี้ซื้อเป็นแพ็ค/ลัง",
+    "subUnitToggleHint": "ติ๊กถ้าหน่วยที่ซื้อกับหน่วยที่ใช้จริงไม่เหมือนกัน",
+    "displayUnitLabel": "หน่วยที่ซื้อ/บรรจุ",
+    "baseUnitLabel": "หน่วยย่อยสุด",
+    "factorPrefix": "1 {{display}} =",
+    "factorSuffix": "{{base}}",
+    "factorFromStandard": "เติมให้จากมาตราสากล — แก้ทับได้",
+    "subUnitHelp": "ระบบจะเก็บสต็อกเป็น{{base}} และแกะ{{display}}ให้อัตโนมัติเมื่อต้องใช้",
+    "errSubUnitIncomplete": "กรุณาเลือกหน่วยบรรจุ หน่วยย่อย และใส่จำนวนให้ครบ",
+    "errFactorPositive": "จำนวนหน่วยย่อยต้องมากกว่า 0",
+    "errSameUnit": "หน่วยบรรจุกับหน่วยย่อยต้องไม่ใช่หน่วยเดียวกัน",
+    "warnConversionFailed": "สร้างสินค้าแล้ว แต่ตั้งหน่วยย่อยไม่สำเร็จ — ไปตั้งเองได้ที่ ตั้งค่า → การแปลงหน่วย",
+    "groupReachable": "หน่วยที่ใช้กับสินค้านี้ได้",
+    "unreachableRowHint": "ยังไม่มีอัตราแปลงเป็น{{base}}",
+    "unreachableHint": "หน่วยนี้ยังไม่มีอัตราแปลงเป็น{{base}} —",
+    "unreachableHintLink": "ตั้งค่าที่ ตั้งค่า → การแปลงหน่วย"
+  },
+  "stock": {
+    "unpack": {
+      "totalHint": "จำนวนทั้งหมดที่มี แปลงเป็นหน่วยย่อยที่สุดแล้ว รวมของที่ยังอยู่ในแพ็คที่ไม่ได้แกะด้วย",
+      "looseHint": "ของหลวมที่แกะออกจากแพ็คแล้ว หยิบใช้ได้ทันที",
+      "sealedHint": "แพ็ค/ลังที่ยังไม่แกะ นับเป็นหน่วยบรรจุ กดเพื่อแกะออกมาใช้",
+      "totalInline": "รวมทั้งหมด {{value}} {{unit}}",
+      "totalUnchangedHint": "ยอดรวมทั้งหมดยังเท่าเดิมที่ {{value}} {{unit}} — แค่ย้ายจากแพ็คมาเป็นของหลวม ไม่ได้เพิ่มของใหม่"
     }
   }
 }

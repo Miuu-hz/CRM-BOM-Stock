@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import {
 
   Package,
+  PackageOpen,
 
   Search,
 
@@ -83,6 +84,8 @@ import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
 
 import UnitChainEditor from '../components/common/UnitChainEditor'
+import { UnitPicker } from '../components/common/UnitPicker'
+import { unitLabel } from '../hooks/useUnits'
 
 import { useModalClose } from '../hooks/useModalClose'
 
@@ -90,9 +93,28 @@ import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '
 
 import { normalizeUnit } from '../utils/unitNormalize'
 
+import { useTranslation } from 'react-i18next'
 
 
-type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'unitCost' | 'unitPrice' | 'location' | 'status'
+
+/**
+ * Stock that is actually usable: loose quantity plus whatever is still sealed
+ * inside unopened packs. Judging stock levels on `quantity` alone reported a
+ * full shelf as running out, because receiving in pack units parks the goods
+ * in sealed_qty until something opens them.
+ *
+ * The backend sends availableTotal; the local fallback keeps this page honest
+ * against a backend that predates that field.
+ */
+function availableOf(item: StockItem): number {
+  if (typeof item.availableTotal === 'number') return item.availableTotal
+  const packFactor = item.packFactor
+  const sealed = item.sealedQty ?? 0
+  if (packFactor && sealed > 0) return item.quantity + sealed * packFactor
+  return item.quantity
+}
+
+type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'purchasePrice' | 'unitPrice' | 'location' | 'status'
 
 
 
@@ -116,7 +138,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
 
   minmax: 'Min/Max',
 
-  unitCost: 'ต้นทุน/หน่วยซื้อ',
+  purchasePrice: 'ราคาที่ซื้อมา',
 
   unitPrice: 'ราคาขาย/หน่วยฐาน',
 
@@ -136,7 +158,7 @@ function getDefaultCols(): Record<ColumnKey, boolean> {
 
   if (saved) return JSON.parse(saved)
 
-  return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, unitCost: true, unitPrice: true, location: false, status: true }
+  return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, purchasePrice: true, unitPrice: true, location: false, status: true }
 
 }
 
@@ -145,6 +167,8 @@ function getDefaultCols(): Record<ColumnKey, boolean> {
 function Stock() {
 
   const navigate = useNavigate()
+
+  const { t } = useTranslation()
 
   const [stockItems, setStockItems] = useState<StockItem[]>([])
 
@@ -283,6 +307,9 @@ function Stock() {
 
 
   // Add New Item Modal
+  // Unpack Modal — open sealed packs by hand
+  const [unpackModal, setUnpackModal] = useState<{ open: boolean; item: StockItem | null }>({ open: false, item: null })
+
 
   const [showAddModal, setShowAddModal] = useState(false)
 
@@ -365,16 +392,20 @@ function Stock() {
   const getItemStatus = (item: StockItem): 'adequate' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' => {
 
     const hasSealed = (item.sealedQty ?? 0) > 0
+    const available = availableOf(item)
 
     if (item.quantity === 0 && !hasSealed) return 'out'
 
-    if (item.quantity === 0 && hasSealed) return 'sealed'
+    // Loose stock is gone (or below the reorder point) but unopened packs still
+    // cover it: that is a "go open a pack" state, not the red out-of-stock one.
+    if (hasSealed && item.quantity <= 0) return 'sealed'
+    if (hasSealed && item.quantity <= item.minStock && available > item.minStock) return 'sealed'
 
-    if (item.quantity <= item.minStock * 0.3) return 'critical'
+    if (available <= item.minStock * 0.3) return 'critical'
 
-    if (item.quantity <= item.minStock) return 'low'
+    if (available <= item.minStock) return 'low'
 
-    if (item.maxStock > 0 && item.quantity >= item.maxStock) return 'overstock'
+    if (item.maxStock > 0 && available >= item.maxStock) return 'overstock'
 
     return 'adequate'
 
@@ -424,7 +455,7 @@ function Stock() {
 
       case 'displayUnit': aVal = a.displayUnit || a.unit || ''; bVal = b.displayUnit || b.unit || ''; break
 
-      case 'unitCost': aVal = a.unitCost ?? 0; bVal = b.unitCost ?? 0; break
+      case 'purchasePrice': aVal = a.purchasePrice ?? 0; bVal = b.purchasePrice ?? 0; break
 
       case 'unitPrice': aVal = a.unitPrice ?? 0; bVal = b.unitPrice ?? 0; break
 
@@ -514,7 +545,9 @@ function Stock() {
 
       'Max Stock': item.maxStock,
 
-      'ต้นทุน/หน่วยซื้อ (฿)': item.unitCost ?? 0,
+      'ราคาที่ซื้อมา (฿)': item.purchasePrice ?? 0,
+
+      'หน่วยที่ซื้อ': unitLabel(item.purchaseUnit || item.baseUnit || item.unit || ''),
 
       'ราคาขาย/หน่วยฐาน (฿)': item.unitPrice ?? 0,
 
@@ -1152,17 +1185,17 @@ function Stock() {
 
                 {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
 
-                {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} hint={t('stock.unpack.looseHint')} />}
 
                 {visibleCols.baseUnit && <SortTh label="หน่วยฐาน" colKey="baseUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
 
-                {visibleCols.displayQty && <SortTh label="จำนวนบรรจุ" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.displayQty && <SortTh label="จำนวนบรรจุ" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} hint={t('stock.unpack.sealedHint')} />}
 
                 {visibleCols.displayUnit && <SortTh label="หน่วยบรรจุ" colKey="displayUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
 
                 {visibleCols.minmax && <th>Min / Max</th>}
 
-                {visibleCols.unitCost && <SortTh label="ต้นทุน/หน่วย" colKey="unitCost" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
+                {visibleCols.purchasePrice && <SortTh label="ราคาที่ซื้อมา" colKey="purchasePrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
 
                 {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
 
@@ -1196,7 +1229,7 @@ function Stock() {
 
                   const status = getItemStatus(item)
 
-                  const cost = item.unitCost ?? 0
+                  const purchasePrice = item.purchasePrice ?? 0
 
                   const price = item.unitPrice ?? 0
 
@@ -1299,24 +1332,43 @@ function Stock() {
 
                           <div className="flex flex-col gap-0.5">
 
-                            {/* จำนวนสต็อกหลัก = หน่วยฐาน */}
+                            {/* แกะแล้ว พร้อมใช้ทันที = หน่วยฐาน */}
 
-                            <span className={`font-semibold ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
+                            <span
+                              className={`font-semibold ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}
+                              title={t('stock.unpack.looseHint')}
+                            >
 
-                              {item.quantity} {item.baseUnit || item.unit}
+                              {item.quantity} {unitLabel(item.baseUnit || item.unit)}
 
                             </span>
 
-                            {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info */}
+                            {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info + ยอดรวมทั้งหมด */}
 
                             {(item.sealedQty ?? 0) > 0 && (
-
-                              <span className="text-xs text-amber-500/80">
-
-                                ยังไม่แกะ {item.sealedQty} {item.displayUnit || item.unit}
-
-                              </span>
-
+                              <>
+                                {item.canUnpack ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setUnpackModal({ open: true, item }) }}
+                                    className="text-xs text-[var(--warning)] hover:underline text-left flex items-center gap-1"
+                                    title="แกะแพ็คเพื่อนำมาใช้"
+                                  >
+                                    <PackageOpen className="w-3 h-3 shrink-0" />
+                                    ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-[var(--warning)]" title="ยังตั้งหน่วยบรรจุไม่ครบ จึงแกะแพ็คไม่ได้">
+                                    ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
+                                  </span>
+                                )}
+                                <span
+                                  className="text-[10px] text-[var(--fg-4)]"
+                                  title={t('stock.unpack.totalHint')}
+                                >
+                                  {t('stock.unpack.totalInline', { value: availableOf(item), unit: unitLabel(item.baseUnit || item.unit) })}
+                                </span>
+                              </>
                             )}
 
                           </div>
@@ -1329,7 +1381,7 @@ function Stock() {
 
                         <td>
 
-                          <span className="text-[var(--fg-2)] text-sm">{item.baseUnit || item.unit}</span>
+                          <span className="text-[var(--fg-2)] text-sm">{unitLabel(item.baseUnit || item.unit)}</span>
 
                         </td>
 
@@ -1341,7 +1393,7 @@ function Stock() {
 
                           <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-[var(--fg-4)]' : 'text-[var(--primary)]'}`}>
 
-                            {item.sealedQty ?? 0} {item.displayUnit || item.unit}
+                            {item.sealedQty ?? 0} {unitLabel(item.displayUnit || item.unit)}
 
                           </span>
 
@@ -1353,7 +1405,7 @@ function Stock() {
 
                         <td>
 
-                          <span className="text-[var(--fg-2)] text-sm">{item.displayUnit || item.unit}</span>
+                          <span className="text-[var(--fg-2)] text-sm">{unitLabel(item.displayUnit || item.unit)}</span>
 
                         </td>
 
@@ -1369,13 +1421,13 @@ function Stock() {
 
                       )}
 
-                      {visibleCols.unitCost && (
+                      {visibleCols.purchasePrice && (
 
                         <td>
 
                           <span className="text-amber-400 text-sm font-medium">
 
-                            {cost ? `฿${Number(cost).toLocaleString()}/${item.displayUnit || item.unit || 'หน่วย'}` : '-'}
+                            {purchasePrice ? `฿${Number(purchasePrice).toLocaleString()}/${unitLabel(item.purchaseUnit || item.baseUnit || item.unit || 'หน่วย')}` : '-'}
 
                           </span>
 
@@ -1389,7 +1441,7 @@ function Stock() {
 
                           <span className="text-success text-sm font-medium">
 
-                            {price ? `฿${Number(price).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}` : '-'}
+                            {price ? `฿${Number(price).toLocaleString()}/${unitLabel(item.baseUnit || item.unit || 'หน่วย')}` : '-'}
 
                           </span>
 
@@ -1648,6 +1700,10 @@ function Stock() {
         item={detailModal.item}
 
         onClose={() => setDetailModal({ open: false, item: null })}
+        onUnpack={(it) => {
+          setDetailModal({ open: false, item: null })
+          setUnpackModal({ open: true, item: it })
+        }}
 
       />
 
@@ -1729,6 +1785,14 @@ function Stock() {
 
 
 
+      {/* Unpack Modal */}
+      <UnpackModal
+        open={unpackModal.open}
+        item={unpackModal.item}
+        onClose={() => setUnpackModal({ open: false, item: null })}
+        onSaved={loadData}
+      />
+
       {/* Import Modal */}
 
       <ImportModal
@@ -1751,11 +1815,156 @@ function Stock() {
 
 
 
+// Unpack Modal — release the contents of N sealed packs into loose stock.
+// Shows the resulting split before committing, because "open 2 packs" means
+// nothing to the user unless they can see it is 60 eggs.
+function UnpackModal({ open, item, onClose, onSaved }: {
+  open: boolean
+  item: StockItem | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  useModalClose(onClose)
+  const { t } = useTranslation()
+  const [packs, setPacks] = useState(1)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { if (open) setPacks(1) }, [open, item?.id])
+
+  if (!open || !item) return null
+
+  const sealed = item.sealedQty ?? 0
+  const factor = item.packFactor ?? 0
+  const baseUnit = item.baseUnit || item.unit
+  const displayUnit = item.displayUnit || item.unit
+  const gained = packs * factor
+  const valid = Number.isInteger(packs) && packs > 0 && packs <= sealed && factor > 0
+
+  const submit = async () => {
+    if (!valid || saving) return
+    setSaving(true)
+    try {
+      const res = await stockService.unpack(item.id, packs)
+      toast.success(`แกะ ${res.unpackedPacks} ${res.displayLabel} → ได้ ${res.unpackedPacks * res.packFactor} ${res.baseLabel}`)
+      onSaved()
+      onClose()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'แกะแพ็คไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="phopy-card w-full max-w-md animate-scaleIn"
+      >
+        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PackageOpen className="w-5 h-5 text-[var(--primary)]" />
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">แกะแพ็ค</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <p className="font-medium text-[var(--fg-1)]">{item.name}</p>
+            <p className="text-xs text-[var(--fg-3)] font-mono">{item.sku}</p>
+          </div>
+
+          <div className="text-sm text-[var(--fg-3)]">
+            1 {displayUnit} = <span className="text-[var(--fg-1)] font-semibold">{factor}</span> {baseUnit}
+            <span className="mx-2 text-[var(--border)]">|</span>
+            ยังไม่แกะ <span className="text-[var(--fg-1)] font-semibold">{sealed}</span> {displayUnit}
+          </div>
+
+          <div>
+            <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนแพ็คที่จะแกะ</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPacks(p => Math.max(1, p - 1))}
+                disabled={packs <= 1}
+                className="w-9 h-9 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--bg)] disabled:opacity-40 transition-colors"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={sealed}
+                value={packs}
+                onChange={(e) => setPacks(Math.floor(Number(e.target.value) || 0))}
+                className="flex-1 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)] text-center"
+              />
+              <button
+                type="button"
+                onClick={() => setPacks(p => Math.min(sealed, p + 1))}
+                disabled={packs >= sealed}
+                className="w-9 h-9 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--bg)] disabled:opacity-40 transition-colors"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-[var(--surface-2)] border border-[var(--border)] p-3 space-y-1 text-sm">
+            <p className="text-[var(--fg-2)]">
+              แกะ {packs} {displayUnit} →{" "}
+              <span className="text-[var(--primary)] font-semibold">ได้ {gained} {baseUnit}</span>
+            </p>
+            <p className="text-xs text-[var(--fg-3)]">
+              คงเหลือในแพ็ค {sealed - packs} {displayUnit} · แกะแล้วรวม {item.quantity + gained} {baseUnit}
+            </p>
+            <p className="text-xs text-[var(--fg-4)]" title={t('stock.unpack.totalHint')}>
+              {t('stock.unpack.totalUnchangedHint', { value: availableOf(item), unit: baseUnit })}
+            </p>
+          </div>
+
+          {!valid && (
+            <p className="text-xs text-[var(--danger)]">
+              {factor <= 0
+                ? 'ยังไม่ได้ตั้งอัตราแปลงหน่วยของสินค้านี้'
+                : `จำนวนแพ็คต้องเป็นจำนวนเต็ม 1–${sealed}`}
+            </p>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-[var(--border)] flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)] transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={submit}
+            disabled={!valid || saving}
+            className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            แกะแพ็ค
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Detail Modal Component
 
 function DetailModal({
 
   open,
+  onUnpack,
 
   item,
 
@@ -1764,6 +1973,7 @@ function DetailModal({
 }: {
 
   open: boolean
+  onUnpack?: (item: StockItem) => void
 
   item: StockItem | null
 
@@ -1772,6 +1982,7 @@ function DetailModal({
 }) {
 
   useModalClose(onClose)
+  const { t } = useTranslation()
 
   if (!open || !item) return null
 
@@ -1847,11 +2058,11 @@ function DetailModal({
 
             <div>
 
-              <p className="text-sm text-[var(--fg-3)] mb-1">Current Stock (Base)</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1" title={t('stock.unpack.looseHint')}>Current Stock (Base)</p>
 
               <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
 
-                {item.quantity} {item.baseUnit || item.unit}
+                {item.quantity} {unitLabel(item.baseUnit || item.unit)}
 
                 {item.quantity === 0 && (
 
@@ -1866,9 +2077,31 @@ function DetailModal({
               </p>
 
               {(item.sealedQty ?? 0) > 0 && (
-
-                <p className="text-xs text-amber-500/80">ยังไม่แกะ {item.sealedQty} {item.displayUnit || item.unit}</p>
-
+                <div className="mt-1 space-y-1">
+                  <p className="text-xs text-[var(--warning)]" title={t('stock.unpack.sealedHint')}>
+                    ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
+                    {item.packFactor ? ` × ${item.packFactor} ${unitLabel(item.baseUnit || item.unit)} = ${(item.sealedQty ?? 0) * item.packFactor} ${unitLabel(item.baseUnit || item.unit)}` : ''}
+                  </p>
+                  {item.packFactor ? (
+                    <p className="text-xs text-[var(--fg-3)]" title={t('stock.unpack.totalHint')}>
+                      รวมใช้ได้ {availableOf(item)} {unitLabel(item.baseUnit || item.unit)} = แกะแล้ว {item.quantity} + ในแพ็ค {(item.sealedQty ?? 0) * item.packFactor}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[var(--danger)]">
+                      ยังไม่ได้ตั้งอัตราแปลงหน่วย {unitLabel(item.displayUnit || item.unit)} → {unitLabel(item.baseUnit || item.unit)} ระบบจึงแกะแพ็คให้อัตโนมัติไม่ได้
+                    </p>
+                  )}
+                  {item.canUnpack && onUnpack && (
+                    <button
+                      type="button"
+                      onClick={() => onUnpack(item)}
+                      className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
+                    >
+                      <PackageOpen className="w-3.5 h-3.5" />
+                      แกะแพ็ค
+                    </button>
+                  )}
+                </div>
               )}
 
             </div>
@@ -1877,7 +2110,7 @@ function DetailModal({
 
               <p className="text-sm text-[var(--fg-3)] mb-1">หน่วยฐาน (Base)</p>
 
-              <p className="text-[var(--fg-2)]">{item.baseUnit || item.unit} {item.baseUnit && item.baseUnit !== item.unit ? `(หน่วยเดิม: ${item.unit})` : ''}</p>
+              <p className="text-[var(--fg-2)]">{unitLabel(item.baseUnit || item.unit)} {item.baseUnit && item.baseUnit !== item.unit ? `(หน่วยเดิม: ${unitLabel(item.unit)})` : ''}</p>
 
             </div>
 
@@ -1885,7 +2118,7 @@ function DetailModal({
 
               <p className="text-sm text-[var(--fg-3)] mb-1">หน่วยบรรจุ (Packaging)</p>
 
-              <p className="text-[var(--fg-2)]">{item.displayUnit || '-'}</p>
+              <p className="text-[var(--fg-2)]">{unitLabel(item.displayUnit || '-')}</p>
 
             </div>
 
@@ -1893,7 +2126,7 @@ function DetailModal({
 
               <p className="text-sm text-[var(--fg-3)] mb-1">Min Stock</p>
 
-              <p className="text-[var(--fg-2)]">{item.minStock} {item.baseUnit || item.unit}</p>
+              <p className="text-[var(--fg-2)]">{item.minStock} {unitLabel(item.baseUnit || item.unit)}</p>
 
             </div>
 
@@ -1901,19 +2134,19 @@ function DetailModal({
 
               <p className="text-sm text-[var(--fg-3)] mb-1">Max Stock</p>
 
-              <p className="text-[var(--fg-2)]">{item.maxStock} {item.baseUnit || item.unit}</p>
+              <p className="text-[var(--fg-2)]">{item.maxStock} {unitLabel(item.baseUnit || item.unit)}</p>
 
             </div>
 
             <div>
 
-              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วยซื้อ ({item.displayUnit || item.unit})</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาที่ซื้อมา</p>
 
               <p className="text-amber-400 font-semibold">
 
-                {item.unitCost
+                {item.purchasePrice
 
-                  ? `฿${Number(item.unitCost).toLocaleString()}/${item.displayUnit || item.unit || 'หน่วย'}`
+                  ? `฿${Number(item.purchasePrice).toLocaleString()}/${unitLabel(item.purchaseUnit || item.baseUnit || item.unit || 'หน่วย')}`
 
                   : 'ไม่ระบุ'}
 
@@ -1923,13 +2156,13 @@ function DetailModal({
 
             <div>
 
-              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาขาย/หน่วยฐาน ({item.baseUnit || item.unit})</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ราคาขาย/หน่วยฐาน ({unitLabel(item.baseUnit || item.unit)})</p>
 
               <p className="text-success font-semibold">
 
                 {item.unitPrice
 
-                  ? `฿${Number(item.unitPrice).toLocaleString()}/${item.baseUnit || item.unit || 'หน่วย'}`
+                  ? `฿${Number(item.unitPrice).toLocaleString()}/${unitLabel(item.baseUnit || item.unit || 'หน่วย')}`
 
                   : 'ไม่ระบุ'}
 
@@ -2045,17 +2278,17 @@ function DetailModal({
 
                         }`}>
 
-                          {movement.type === 'IN' ? `+${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
+                          {movement.type === 'IN' ? `+${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}` :
 
-                           movement.type === 'OUT' ? `-${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}` :
+                           movement.type === 'OUT' ? `-${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}` :
 
                            movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
 
-                           `${movement.quantity} ${movement.movementUnit || item.baseUnit || item.unit}`}
+                           `${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}`}
 
                           {movement.movementQuantity !== undefined && movement.movementQuantity !== movement.quantity && movement.movementUnit && (
 
-                            <span className="text-xs text-[var(--fg-4)] ml-1">(นับ {movement.movementQuantity} {movement.movementUnit})</span>
+                            <span className="text-xs text-[var(--fg-4)] ml-1">(นับ {movement.movementQuantity} {unitLabel(movement.movementUnit)})</span>
 
                           )}
 
@@ -2173,7 +2406,9 @@ export function EditModal({
 
     isPosEnabled: false,
 
-    unitCost: 0,
+    purchasePrice: 0,
+
+    purchaseUnit: '',
 
     unitPrice: 0,
 
@@ -2337,7 +2572,9 @@ export function EditModal({
 
         isPosEnabled: !!item.isPosEnabled,
 
-        unitCost: item.unitCost ?? 0,
+        purchasePrice: item.purchasePrice ?? 0,
+
+        purchaseUnit: item.purchaseUnit || item.displayUnit || item.baseUnit || item.unit || '',
 
         unitPrice: item.unitPrice ?? 0,
 
@@ -2511,7 +2748,7 @@ export function EditModal({
 
       console.error('Failed to update stock item:', err)
 
-      toast.error('บันทึกไม่สำเร็จ กรุณาลองใหม่')
+      toast.error((err as any)?.response?.data?.message || 'บันทึกไม่สำเร็จ กรุณาลองใหม่')
 
     } finally {
 
@@ -2759,31 +2996,53 @@ export function EditModal({
 
                       <label className="block text-xs text-[var(--fg-3)] mb-1.5">
 
-                        ราคาต้นทุน/หน่วยซื้อ (฿)
-
-                        <span className="ml-1 text-amber-400/70">ต่อ {formData.displayUnit || formData.unit || 'หน่วยที่ซื้อ'}</span>
+                        ราคาที่ซื้อมา (฿)
 
                       </label>
 
-                      <input
+                      <div className="flex gap-1.5">
 
-                        type="number"
+                        <input
 
-                        value={formData.unitCost}
+                          type="number"
 
-                        onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                          value={formData.purchasePrice}
 
-                        onFocus={(e) => e.target.select()}
+                          onChange={(e) => setFormData({ ...formData, purchasePrice: parseFloat(e.target.value) || 0 })}
 
-                        className="phopy-input w-full"
+                          onFocus={(e) => e.target.select()}
 
-                        min="0"
+                          className="phopy-input flex-1 min-w-0"
 
-                        step="0.01"
+                          min="0"
 
-                        placeholder="0.00"
+                          step="0.01"
 
-                      />
+                          placeholder="0.00"
+
+                        />
+
+                        <div className="w-24 shrink-0">
+
+                          <UnitPicker
+
+                            value={formData.purchaseUnit}
+
+                            onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
+
+                            materialId={item?.id}
+
+                            baseUnit={formData.baseUnit || formData.unit}
+
+                            restrict="warn"
+
+                            size="sm"
+
+                          />
+
+                        </div>
+
+                      </div>
 
                     </div>
 
@@ -2793,7 +3052,7 @@ export function EditModal({
 
                         ราคาขาย/หน่วยฐาน (฿)
 
-                        <span className="ml-1 text-success/70">ต่อ {formData.baseUnit || formData.unit || 'หน่วยฐาน'}</span>
+                        <span className="ml-1 text-success/70">ต่อ {unitLabel(formData.baseUnit || formData.unit || 'หน่วยฐาน')}</span>
 
                       </label>
 
@@ -2969,39 +3228,9 @@ export function EditModal({
 
                 <>
 
-                  {/* Unit (legacy) */}
-
-                  <div>
-
-                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยสินค้า (Legacy)</label>
-
-                    <select
-
-                      value={formData.unit}
-
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-
-                      className="phopy-input w-full"
-
-                    >
-
-                      {formData.unit && !availableUnits.find(u => u.value === formData.unit) && (
-
-                        <option value={formData.unit}>{formData.unit}</option>
-
-                      )}
-
-                      {availableUnits.map((u) => (
-
-                        <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-
-                      ))}
-
-                    </select>
-
-                    <p className="text-xs text-[var(--fg-4)] mt-1">เพิ่มหน่วยได้ใน Settings → Unit Conversions</p>
-
-                  </div>
+                  {/* ช่อง "หน่วยสินค้า (Legacy)" ถูกเอาออกแล้ว — คอลัมน์ stock_items.unit เป็นของเก่า
+    ก่อนมีระบบหน่วย ตอนนี้ backend sync ให้เท่ากับ base_unit อัตโนมัติทุกครั้งที่บันทึก
+    การเปิดช่องนี้ให้แก้ทำให้ค่าถูกเขียนทับสวนทางกับหน่วยฐานจนสต็อกคิดผิด */}
 
 
 
@@ -3027,7 +3256,7 @@ export function EditModal({
 
                       >
 
-                        <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                        <option value="">{unitLabel(formData.unit || 'เลือกหน่วยฐาน')}</option>
 
                         {availableUnits.map((u) => (
 
@@ -3059,7 +3288,7 @@ export function EditModal({
 
                       >
 
-                        <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
+                        <option value="">{unitLabel(formData.unit || 'เลือกหน่วยบรรจุ')}</option>
 
                         {availableUnits.map((u) => (
 
@@ -3585,7 +3814,7 @@ function MovementModal({
 
     if (exceedsStock) {
 
-      toast.error(`Cannot take out more than available stock (${selectedItem?.quantity} ${selectedItem?.baseUnit || selectedItem?.unit})`)
+      toast.error(`Cannot take out more than available stock (${selectedItem?.quantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit)})`)
 
       return
 
@@ -3649,7 +3878,7 @@ function MovementModal({
 
       id: stockItem.id,
 
-      label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${stockItem.unit}`,
+      label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${unitLabel(stockItem.unit)}`,
 
       searchText: `${stockItem.name} ${stockItem.sku}`,
 
@@ -3805,9 +4034,9 @@ function MovementModal({
 
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
 
-                    ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
+                    ? `${selectedItem.displayQuantity} ${unitLabel(selectedItem.displayUnit || selectedItem.unit)}`
 
-                    : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
+                    : `${selectedItem.quantity} ${unitLabel(selectedItem.baseUnit || selectedItem.unit)}`}
 
                   {selectedItem.quantity === 0 && (
 
@@ -3829,7 +4058,7 @@ function MovementModal({
 
                   <span></span>
 
-                  <span>{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
+                  <span>{selectedItem.quantity} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
 
                 </div>
 
@@ -3953,7 +4182,7 @@ function MovementModal({
 
             <p className="text-danger text-sm mt-1">
 
-              Cannot exceed available stock ({selectedItem?.quantity} {selectedItem?.baseUnit || selectedItem?.unit})
+              Cannot exceed available stock ({selectedItem?.quantity} {unitLabel(selectedItem?.baseUnit || selectedItem?.unit)})
 
             </p>
 
@@ -4015,7 +4244,7 @@ function MovementModal({
 
               <label className="block text-sm text-[var(--fg-3)] mb-2">
 
-                อัปเดตราคาต้นทุน/หน่วยซื้อ (฿) <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
+                อัปเดตราคาต้นทุน/หน่วยฐาน (฿) <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
 
               </label>
 
@@ -4382,6 +4611,7 @@ function SortTh({
   sortDir,
 
   onSort,
+  hint,
 
 }: {
 
@@ -4394,6 +4624,8 @@ function SortTh({
   sortDir: 'asc' | 'desc'
 
   onSort: (key: ColumnKey) => void
+  /** Optional tooltip clarifying an ambiguous column (e.g. loose qty vs. sealed packs). */
+  hint?: string
 
 }) {
 
@@ -4406,6 +4638,7 @@ function SortTh({
       onClick={() => onSort(colKey)}
 
       className="cursor-pointer select-none hover:text-[var(--primary)] transition-colors"
+      title={hint}
 
     >
 
@@ -4571,7 +4804,7 @@ function AdjustModal({
 
         unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
 
-        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${baseQuantity} ${selectedItem?.baseUnit || selectedItem?.unit || ''} (นับได้ ${physicalCount} ${unit})`,
+        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${baseQuantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit || '')} (นับได้ ${physicalCount} ${unit})`,
 
       })
 
@@ -4661,7 +4894,7 @@ function AdjustModal({
 
                 id: si.id,
 
-                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${si.baseUnit || si.unit}`,
+                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${unitLabel(si.baseUnit || si.unit)}`,
 
                 searchText: `${si.name} ${si.sku}`,
 
@@ -4689,13 +4922,13 @@ function AdjustModal({
 
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
 
-                    ? `${selectedItem.displayQuantity} ${selectedItem.displayUnit || selectedItem.unit}`
+                    ? `${selectedItem.displayQuantity} ${unitLabel(selectedItem.displayUnit || selectedItem.unit)}`
 
-                    : `${selectedItem.quantity} ${selectedItem.baseUnit || selectedItem.unit}`}
+                    : `${selectedItem.quantity} ${unitLabel(selectedItem.baseUnit || selectedItem.unit)}`}
 
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
 
-                    <span className="block text-xs text-[var(--fg-4)] text-right">{selectedItem.quantity} {selectedItem.baseUnit || selectedItem.unit}</span>
+                    <span className="block text-xs text-[var(--fg-4)] text-right">{selectedItem.quantity} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
 
                   )}
 
@@ -4775,7 +5008,7 @@ function AdjustModal({
 
                   <span className={`font-bold text-lg ${diff > 0 ? 'text-success' : 'text-danger'}`}>
 
-                    {diff > 0 ? '+' : ''}{diff} {selectedItem.baseUnit || selectedItem.unit}
+                    {diff > 0 ? '+' : ''}{diff} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}
 
                   </span>
 
@@ -4911,7 +5144,9 @@ function AddStockModal({
 
     isPosEnabled: false,
 
-    unitCost: 0,
+    purchasePrice: 0,
+
+    purchaseUnit: '',
 
     unitPrice: 0,
 
@@ -4979,7 +5214,9 @@ function AddStockModal({
 
         isPosEnabled: formData.isPosEnabled,
 
-        unitCost: formData.unitCost || undefined,
+        purchasePrice: formData.purchasePrice || undefined,
+
+        purchaseUnit: formData.purchaseUnit || undefined,
 
         unitPrice: formData.unitPrice || undefined,
 
@@ -5015,17 +5252,19 @@ function AddStockModal({
 
         isPosEnabled: false,
 
-        unitCost: 0,
+        purchasePrice: 0,
+
+        purchaseUnit: '',
 
         unitPrice: 0,
 
       })
 
-    } catch (err) {
+    } catch (err: any) {
 
       console.error('Failed to create stock item:', err)
 
-      toast.error('Failed to create stock item')
+      toast.error(err?.response?.data?.message || 'Failed to create stock item')
 
     } finally {
 
@@ -5249,7 +5488,7 @@ function AddStockModal({
 
                   >
 
-                    <option value="">{formData.unit || 'เลือกหน่วยฐาน'}</option>
+                    <option value="">{unitLabel(formData.unit || 'เลือกหน่วยฐาน')}</option>
 
                     {availableUnits.map((u) => (
 
@@ -5277,7 +5516,7 @@ function AddStockModal({
 
                   >
 
-                    <option value="">{formData.unit || 'เลือกหน่วยบรรจุ'}</option>
+                    <option value="">{unitLabel(formData.unit || 'เลือกหน่วยบรรจุ')}</option>
 
                     {availableUnits.map((u) => (
 
@@ -5319,27 +5558,49 @@ function AddStockModal({
 
                 <div>
 
-                  <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาต้นทุน/หน่วยซื้อ (฿)</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาที่ซื้อมา (฿)</label>
 
-                  <input
+                  <div className="flex gap-1.5">
 
-                    type="number"
+                    <input
 
-                    value={formData.unitCost}
+                      type="number"
 
-                    onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                      value={formData.purchasePrice}
 
-                    onFocus={(e) => e.target.select()}
+                      onChange={(e) => setFormData({ ...formData, purchasePrice: parseFloat(e.target.value) || 0 })}
 
-                    className="phopy-input w-full"
+                      onFocus={(e) => e.target.select()}
 
-                    min="0"
+                      className="phopy-input flex-1 min-w-0"
 
-                    step="0.01"
+                      min="0"
 
-                    placeholder="0.00"
+                      step="0.01"
 
-                  />
+                      placeholder="0.00"
+
+                    />
+
+                    <div className="w-24 shrink-0">
+
+                      <UnitPicker
+
+                        value={formData.purchaseUnit}
+
+                        onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
+
+                        baseUnit={formData.baseUnit || formData.unit}
+
+                        restrict="warn"
+
+                        size="sm"
+
+                      />
+
+                    </div>
+
+                  </div>
 
                 </div>
 

@@ -212,6 +212,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // downstream documents are still active so a cancel here can never leave
     // stock/AP without a matching reversal.
     if (status === 'CANCELLED') {
+      if (!['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER'].includes(req.user!.role)) {
+        return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบสั่งซื้อ — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER' })
+      }
       const activeGR = db.prepare(
         "SELECT id, gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED'"
       ).get(tenantId, req.params.id) as any

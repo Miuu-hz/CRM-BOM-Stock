@@ -1,5 +1,6 @@
 import db from '../db/sqlite'
 import { convertQuantityBidirectional, autoUnpackIfNeeded } from './unitConversion.service'
+import { roundQty } from '../utils/qty'
 
 // Helper: Generate ID (24-char hex)
 const generateId = () => {
@@ -123,6 +124,8 @@ class POSStockService {
         )
         if (conversion) {
           quantityUsedInBase = conversion.converted
+        } else {
+          console.warn(`[qty] POS stock check: no conversion ${ingredientUnit} → ${stockBaseUnit} for stock item ${ing.stock_item_id}; availability is unreliable`)
         }
       }
 
@@ -173,11 +176,14 @@ class POSStockService {
 
     try {
       // Check tenant setting: pos_bom_deduct (default ON)
-      const setting = db.prepare('SELECT pos_bom_deduct FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const setting = db.prepare('SELECT pos_bom_deduct, allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
       const bomDeductEnabled = !setting || setting.pos_bom_deduct !== 0
       if (!bomDeductEnabled) {
         return { success: true, deductions: [], errors: [] }
       }
+      // When enabled, oversell is allowed: still deduct (stock/quantity can go
+      // negative) instead of blocking payment for missing product/material.
+      const allowNegativeStock = !!setting && setting.allow_negative_stock === 1
 
       // Get bill details
       const billStmt = db.prepare(`
@@ -192,10 +198,18 @@ class POSStockService {
       }
 
       // Get all items with menu config (including bom_id and product_id)
+      // เพิ่ม pmc.sale_unit + si.base_unit/si.unit ของ product เอง เพราะเคสเมนูไม่มีสูตร
+      // (ingredients ว่าง) ด้านล่างต้องใช้ค่าจริงเหล่านี้ ไม่งั้น fallback 'pcs' จะบังคับ
+      // ปลายทางผิดหน่วยเงียบๆ — bug เดิม: pos_bill_items ไม่มีคอลัมน์ sale_unit เลย (bi.*
+      // ไม่มีติดมา) และ pmc.sale_unit ก็ไม่เคยถูก select ทำให้ item.sale_unit เป็น
+      // undefined เสมอ โดยไม่มี error ใดๆ เตือน
       const itemsStmt = db.prepare(`
-        SELECT bi.*, pmc.id as menu_config_id, pmc.bom_id, pmc.product_id
+        SELECT bi.*, pmc.id as menu_config_id, pmc.bom_id, pmc.product_id,
+               pmc.sale_unit as menu_sale_unit,
+               si.base_unit as product_base_unit, si.unit as product_stock_unit
         FROM pos_bill_items bi
         JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+        LEFT JOIN stock_items si ON pmc.product_id = si.id AND pmc.tenant_id = si.tenant_id
         WHERE bi.bill_id = ? AND bi.tenant_id = ?
       `)
       const items = itemsStmt.all(billId, tenantId) as any[]
@@ -236,9 +250,19 @@ class POSStockService {
             ingredients = ingStmt.all(item.pos_menu_id, tenantId) as any[]
           }
 
-          const saleUnit = item.sale_unit || null
+          // เมนูไม่มีสูตร (ไม่มี BOM/pos_menu_ingredients) → ตัดสต็อกตรงจาก product เอง
+          // ต้องแนบ stock_base_unit/stock_unit จริงมาด้วย ไม่งั้นบรรทัด stockBaseUnit
+          // ด้านล่างจะ fallback ไปเป็น 'pcs' เสมอ ทำให้แปลงหน่วยผิดเป้าหมายเงียบๆ เมื่อ
+          // base_unit จริงไม่ใช่ pcs (เช่น ML สำหรับวิปครีม ING-WPC)
+          const saleUnit = item.menu_sale_unit || null
           if (ingredients.length === 0 && item.product_id) {
-            ingredients = [{ stock_item_id: item.product_id, quantity_used: 1, unit_id: saleUnit }]
+            ingredients = [{
+              stock_item_id: item.product_id,
+              quantity_used: 1,
+              unit_id: saleUnit,
+              stock_base_unit: item.product_base_unit || null,
+              stock_unit: item.product_stock_unit || null
+            }]
           }
 
           for (const ing of ingredients) {
@@ -256,6 +280,21 @@ class POSStockService {
               )
               if (conversion) {
                 deductQtyInBase = conversion.converted
+              } else {
+                const s = db.prepare('SELECT id, name FROM stock_items WHERE id = ?').get(ing.stock_item_id) as any
+                issues.push({
+                  type: 'UNIT_CONVERSION_MISSING',
+                  itemName: item.product_name || 'Unknown',
+                  stockItemId: ing.stock_item_id,
+                  stockItemName: s?.name || 'Unknown',
+                  need: deductQtyInBase,
+                  have: 0,
+                  unit: stockBaseUnit,
+                  action: 'SET_UNIT_CONVERSION',
+                  link: '/settings/unit-conversion',
+                  message: `ไม่พบการแปลงหน่วย ${ingredientUnit} → ${stockBaseUnit} สำหรับ "${s?.name || ing.stock_item_id}" กรุณาตั้งค่า Unit Conversion ก่อน (ยังไม่ได้ตัดสต็อกรายการนี้)`
+                })
+                continue
               }
             }
 
@@ -265,28 +304,57 @@ class POSStockService {
             if (stock && stock.quantity < deductQtyInBase && (stock.sealed_qty ?? 0) > 0) {
               const unpackResult = autoUnpackIfNeeded(stock, deductQtyInBase, tenantId)
               if (unpackResult && unpackResult.unpackedPacks > 0) {
+                // roundQty กันเศษ floating-point ตอน packFactor เป็นทศนิยม (หน่วยต่อเนื่อง)
+                const gained = roundQty(unpackResult.packFactor * unpackResult.unpackedPacks)
                 const unpackUpdate = db.prepare(`
-                  UPDATE stock_items 
+                  UPDATE stock_items
                   SET quantity = quantity + ?, sealed_qty = sealed_qty - ?, updated_at = ?
                   WHERE id = ? AND tenant_id = ?
                 `)
-                unpackUpdate.run(unpackResult.packFactor * unpackResult.unpackedPacks, unpackResult.unpackedPacks, now(), ing.stock_item_id, tenantId)
+                unpackUpdate.run(gained, unpackResult.unpackedPacks, now(), ing.stock_item_id, tenantId)
+                // บันทึก UNPACK movement ให้ตรงกับจุดอื่น (เดิมจุดนี้ไม่ได้บันทึกเลย ทำให้
+                // ยอดแกะแพ็คของ POS หายไปจากรายงาน stock_movements)
+                db.prepare(`
+                  INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_by, created_at)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                  generateId(), tenantId, ing.stock_item_id, gained, stock.display_unit || null, unpackResult.unpackedPacks,
+                  bill.bill_number, `แกะอัตโนมัติ (POS) ${unpackResult.unpackedPacks} ${stock.display_unit || ''} → ${gained} ${stockBaseUnit}`,
+                  userId, now()
+                )
                 stock = stockStmt.get(ing.stock_item_id) as any
               }
             }
 
-            if (!stock || stock.quantity < deductQtyInBase) {
+            if (!stock) {
               const issue = {
                 type: 'INSUFFICIENT_STOCK',
                 itemName: item.product_name || 'Unknown',
-                stockItemId: stock?.id || ing.stock_item_id,
-                stockItemName: stock?.name || 'Unknown',
+                stockItemId: ing.stock_item_id,
+                stockItemName: 'Unknown',
                 need: deductQtyInBase,
-                have: stock?.quantity || 0,
+                have: 0,
                 unit: stockBaseUnit,
                 action: 'RESTOCK',
-                link: stock?.id ? `/stock/${stock.id}/edit` : null,
-                message: `${stock?.name || 'Unknown'} ไม่พอ (ต้องการ ${deductQtyInBase} ${stockBaseUnit} มี ${stock?.quantity || 0} ${stock?.base_unit || stock?.unit || stockBaseUnit})`
+                link: null,
+                message: `ไม่พบรายการสต็อกนี้ในระบบ (ยังไม่ได้ตัดสต็อกรายการนี้)`
+              }
+              issues.push(issue)
+              continue
+            }
+
+            if (stock.quantity < deductQtyInBase && !allowNegativeStock) {
+              const issue = {
+                type: 'INSUFFICIENT_STOCK',
+                itemName: item.product_name || 'Unknown',
+                stockItemId: stock.id,
+                stockItemName: stock.name || 'Unknown',
+                need: deductQtyInBase,
+                have: stock.quantity || 0,
+                unit: stockBaseUnit,
+                action: 'RESTOCK',
+                link: `/stock/${stock.id}/edit`,
+                message: `${stock.name || 'Unknown'} ไม่พอ (ต้องการ ${deductQtyInBase} ${stockBaseUnit} มี ${stock.quantity || 0} ${stock.base_unit || stock.unit || stockBaseUnit})`
               }
               issues.push(issue)
               continue
@@ -393,7 +461,7 @@ class POSStockService {
 
       // Get all deductions for this bill
       const deductionsStmt = db.prepare(`
-        SELECT psd.*, bi.bill_number, bi.product_name
+        SELECT psd.*, bi.product_name
         FROM pos_stock_deductions psd
         JOIN pos_bill_items bi ON psd.bill_item_id = bi.id
         WHERE bi.bill_id = ? AND psd.returned = 0
@@ -574,6 +642,8 @@ class POSStockService {
         )
         if (conversion) {
           quantityUsedInBase = conversion.converted
+        } else {
+          console.warn(`[qty] POS canMake: no conversion ${ingredientUnit} → ${stockBaseUnit} for stock item ${ing.stock_item_id}; result is unreliable`)
         }
       }
       

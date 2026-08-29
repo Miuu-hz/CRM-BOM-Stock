@@ -13,7 +13,8 @@ import bankAccountsService, { getCachedDefaultBankAccount } from '../services/ba
 import { normalizeUnit } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
-import { useUnits } from '../hooks/useUnits'
+import { UnitPicker } from '../components/common/UnitPicker'
+import { unitLabel } from '../hooks/useUnits'
 
 // Types
 interface SalesSummary {
@@ -160,6 +161,8 @@ interface POSShift {
     total_revenue: number
     cash_revenue: number
     bank_revenue: number
+    cash_in?: number
+    paid_out?: number
   }
 }
 
@@ -284,6 +287,10 @@ const Sales = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
+  // Tab-strip badge counts — fetched from the DB directly (not derived from whichever
+  // tab's list happens to be loaded), so a category shows its real outstanding count
+  // even if the user has never opened that tab yet this session.
+  const [badgeCounts, setBadgeCounts] = useState({ quotations: 0, orders: 0, deliveryOrders: 0, invoices: 0, backorders: 0 })
 
   // POS shift modals
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -307,8 +314,19 @@ const Sales = () => {
   // — mirrors how Stock.tsx primes getCachedCompanySettings() on mount.
   useEffect(() => { bankAccountsService.list().catch(() => {}) }, [])
 
+  const fetchBadgeCounts = async () => {
+    try {
+      const { data } = await api.get('/sales/badge-counts')
+      if (data.success) setBadgeCounts(data.data)
+    } catch (error) {
+      console.error('Fetch sales badge counts error:', error)
+    }
+  }
+  useEffect(() => { fetchBadgeCounts() }, [])
+
   useEffect(() => {
     setCurrentPage(1)
+    fetchBadgeCounts()
     if (activeTab === 'overview') {
       fetchSummary()
     } else if (activeTab === 'quotations') {
@@ -624,10 +642,7 @@ const Sales = () => {
   )
 
   // ── Pending counts for tab badges ──────────────────────────────────────────
-  const pendingQuotations = quotations.filter(q => q.status === 'DRAFT' || q.status === 'SENT').length
-  const pendingOrders     = salesOrders.filter(o => o.status === 'PROCESSING' || o.status === 'READY').length
-  const pendingInvoices   = invoices.filter(i => i.payment_status === 'UNPAID' || i.payment_status === 'OVERDUE').length
-  const pendingBackorders = backorders.filter(b => b.status === 'PENDING').length
+  // pending* tab-badge counts now come from badgeCounts (fetched from DB directly, see above)
 
   // ── Overview ──────────────────────────────────────────────────────────────
   const OverviewContent = () => (
@@ -1287,7 +1302,7 @@ const Sales = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((inv, i) => {
               const isOverdue = inv.payment_status === 'OVERDUE'
-              const isUnpaid  = inv.payment_status === 'UNPAID' || isOverdue
+              const isUnpaid  = (inv.payment_status === 'UNPAID' || isOverdue) && inv.status !== 'CANCELLED'
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -1714,16 +1729,16 @@ const Sales = () => {
   )
 
   // ── Tab definitions ────────────────────────────────────────────────────────
-  const pendingDeliveryOrders = deliveryOrders.filter(d => d.status === 'DRAFT' || d.status === 'READY').length
+
 
   const tabs = [
     { id: 'overview',        label: t('sales.tabs.overview2'),       icon: TrendingUp,     badge: 0 },
-    { id: 'quotations',      label: t('sales.docType.quotation'),   icon: FileText,       badge: pendingQuotations },
-    { id: 'orders',          label: t('sales.docType.salesOrder'),    icon: ShoppingCart,   badge: pendingOrders },
-    { id: 'delivery-orders', label: t('sales.docType.deliveryOrder'),    icon: Package,        badge: pendingDeliveryOrders },
-    { id: 'invoices',        label: t('sales.docType.invoice'),   icon: Receipt,        badge: pendingInvoices },
+    { id: 'quotations',      label: t('sales.docType.quotation'),   icon: FileText,       badge: badgeCounts.quotations },
+    { id: 'orders',          label: t('sales.docType.salesOrder'),    icon: ShoppingCart,   badge: badgeCounts.orders },
+    { id: 'delivery-orders', label: t('sales.docType.deliveryOrder'),    icon: Package,        badge: badgeCounts.deliveryOrders },
+    { id: 'invoices',        label: t('sales.docType.invoice'),   icon: Receipt,        badge: badgeCounts.invoices },
     { id: 'credit-notes',    label: t('sales.docType.creditNote'),     icon: RotateCcw,      badge: 0 },
-    { id: 'backorders',      label: t('sales.tabs.backorders2'),       icon: Package,        badge: pendingBackorders },
+    { id: 'backorders',      label: t('sales.tabs.backorders2'),       icon: Package,        badge: badgeCounts.backorders },
     { id: 'templates',       label: t('sales.tabs.templates2'),       icon: LayoutTemplate, badge: 0 },
     { id: 'pos-daily',       label: t('sales.tabs.posShifts'),    icon: Store,          badge: 0 },
   ]
@@ -1823,11 +1838,19 @@ const Sales = () => {
   const CloseShiftModal = ({ shift, onClose }: { shift: POSShift; onClose: () => void }) => {
     const live = shift.live
     const cashRevenue = live?.cash_revenue || 0
-    const expectedCash = (shift.opening_cash || 0) + cashRevenue
+    const cashIn = live?.cash_in || 0
+    const paidOut = live?.paid_out || 0
+    const expectedCash = (shift.opening_cash || 0) + cashRevenue + cashIn - paidOut
     const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
     const [notes, setNotes] = useState('')
     const [saving, setSaving] = useState(false)
+    const [movements, setMovements] = useState<Array<{ id: string; type: 'PAID_OUT' | 'CASH_IN'; amount: number; reason?: string; created_at: string }>>([])
     const diff = (parseFloat(closingCash) || 0) - expectedCash
+    useEffect(() => {
+      api.get(`/sales/pos-shifts/${shift.id}/cash-movements`)
+        .then(({ data }) => { if (data.success) setMovements(data.data) })
+        .catch(() => {})
+    }, [])
     const handleClose = async () => {
       setSaving(true)
       try {
@@ -1874,10 +1897,35 @@ const Sales = () => {
               <div className="flex justify-between text-[var(--fg-3)]">
                 <span>{t('sales.pos.cashSales')}</span><span>{fmt(cashRevenue)}</span>
               </div>
+              {cashIn > 0 && (
+                <div className="flex justify-between text-success">
+                  <span>+ {t('sales.pos.cashIn')}</span><span>{fmt(cashIn)}</span>
+                </div>
+              )}
+              {paidOut > 0 && (
+                <div className="flex justify-between text-danger">
+                  <span>− {t('sales.pos.paidOut')}</span><span>{fmt(paidOut)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-2 mt-2">
                 <span>{t('sales.pos.expectedCash')}</span><span>{fmt(expectedCash)}</span>
               </div>
             </div>
+            {movements.length > 0 && (
+              <div className="p-3 bg-[var(--bg)] rounded-lg">
+                <p className="text-xs font-medium text-[var(--fg-3)] mb-2">{t('sales.pos.cashMovementsInShift')}</p>
+                <div className="space-y-1.5">
+                  {movements.map(m => (
+                    <div key={m.id} className="flex justify-between items-center text-xs">
+                      <span className={m.type === 'CASH_IN' ? 'text-success' : 'text-danger'}>
+                        {m.type === 'CASH_IN' ? '+' : '−'} {m.reason || (m.type === 'CASH_IN' ? t('sales.pos.cashIn') : t('sales.pos.paidOut'))}
+                      </span>
+                      <span className="text-[var(--fg-2)]">{fmt(m.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <Field label={t('sales.pos.countCash')}>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
@@ -2485,23 +2533,23 @@ function ProductSearch({ value, products, onSelect, onClear }: {
   )
 }
 
-function UnitSelectForRow({ productId, value, onChange }: {
+function UnitSelectForRow({ productId, value, onChange, baseUnit }: {
   productId?: string
   value: string
   onChange: (unit: string) => void
+  /** หน่วยฐาน/หน่วยสต็อกของสินค้าที่เลือกไว้ในบรรทัดนี้ — ใช้กรอง/เตือนหน่วยที่แปลงไม่ถึง */
+  baseUnit?: string
 }) {
   const { t } = useTranslation()
-  const { units, loading } = useUnits(productId || null)
   return (
-    <select
+    <UnitPicker
       value={value || ''}
-      onChange={e => onChange(e.target.value)}
-      className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-    >
-      <option value="">{t('sales.common.selectUnit')}</option>
-      {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-      {loading && <option disabled>{t('sales.common.loading')}</option>}
-    </select>
+      onChange={onChange}
+      materialId={productId || null}
+      baseUnit={baseUnit}
+      size="sm"
+      placeholder={t('sales.common.selectUnit')}
+    />
   )
 }
 
@@ -2530,7 +2578,9 @@ function LineItemsEditor({
           <Plus className="w-3.5 h-3.5" /> {t('sales.itemEditor.addItem')}
         </button>
       </div>
-      {items.map((item, i) => (
+      {items.map((item, i) => {
+        const selectedProduct = products.find(p => p.id === item.productId)
+        return (
         <div key={i} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-5">
@@ -2538,7 +2588,13 @@ function LineItemsEditor({
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
-                onSelect={p => update(i, { productId: p.id, productName: p.name, unit: normalizeUnit(p.unit || ''), unitPrice: p.sell_price || 0 })}
+                onSelect={p => update(i, {
+                  productId: p.id,
+                  productName: p.name,
+                  // ค่าเริ่มต้นหน่วย: หน่วยที่ตั้งไว้ให้ขาย (sale_unit) ก่อน แล้วค่อย fallback ไปหน่วยฐาน/หน่วยสินค้า
+                  unit: normalizeUnit(p.sale_unit || p.base_unit || p.unit || ''),
+                  unitPrice: p.sell_price || 0,
+                })}
 onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
@@ -2554,6 +2610,7 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
                 productId={item.productId}
                 value={item.unit}
                 onChange={u => update(i, { unit: u })}
+                baseUnit={selectedProduct?.base_unit || selectedProduct?.unit}
               />
             </div>
             <div className="col-span-2">
@@ -2582,7 +2639,8 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
             </span>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -3088,6 +3146,10 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   salesOrder: SalesOrder; onClose: () => void; onRefresh: () => void; onCreateInvoice: () => void; companyName?: string
 }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  // Cancel reverses stock + journal for CONFIRMED+ orders — gate behind ADMIN/MANAGER/MASTER
+  // same as other irreversible accounting actions elsewhere in the app.
+  const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
   useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3242,7 +3304,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               {t('sales.actions.createInvoice')}
             </button>
           )}
-          {!['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (
+          {canCancelDoc && !['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (
             <button onClick={() => updateStatus('CANCELLED')} disabled={updating}
               className="py-2 px-3 text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] disabled:opacity-50">
               {t('sales.common.cancel')}
@@ -3306,6 +3368,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const handleRecordPayment = async () => {
     const amount = parseFloat(payAmount)
     if (!amount || amount <= 0) { toast.error(t('sales.validation.amountRequired')); return }
+    if (amount > invoice.balance_amount) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
     setSaving(true)
     try {
       await salesService.recordPayment(invoice.id, {
@@ -3447,7 +3510,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                         <p className="text-[var(--fg-1)] font-medium">{it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
                         {it.product_code && <p className="text-xs text-[var(--fg-4)] font-mono">{it.product_code}</p>}
                       </div>
-                      <p className="col-span-2 text-center text-[var(--fg-2)]">{it.quantity} {it.unit || ''}</p>
+                      <p className="col-span-2 text-center text-[var(--fg-2)]">{it.quantity} {unitLabel(it.unit || '')}</p>
                       <p className="col-span-2 text-right text-[var(--fg-2)]">{fmt(it.unit_price)}</p>
                       <p className="col-span-1 text-right text-[var(--fg-4)] text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
                       <p className="col-span-2 text-right text-[var(--fg-1)] font-semibold">{fmt(it.total_price)}</p>
@@ -3668,6 +3731,17 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 }
 
 // ─── Create Credit Note Modal ─────────────────────────────────────────────────
+interface CNReturnLine {
+  invoiceItemId: string
+  productId?: string
+  productName: string
+  productCode?: string
+  maxQty: number
+  unitPrice: number
+  checked: boolean
+  qty: number
+}
+
 function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
   useModalClose(onClose)
@@ -3676,6 +3750,14 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   const [reason, setReason] = useState('')
   const [creditDate, setCreditDate] = useState(new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState(false)
+  // ponytail: two modes share one modal instead of two components — the only
+  // difference is whether line items are collected/sent, so a boolean + the
+  // existing header fields cover it without duplicating the invoice-picker/date/reason UI.
+  const [mode, setMode] = useState<'DISCOUNT' | 'RETURN'>('DISCOUNT')
+  const [returnLines, setReturnLines] = useState<CNReturnLine[]>([])
+  const [loadingLines, setLoadingLines] = useState(false)
+
+  const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
 
   useEffect(() => {
     api.get('/sales/invoices').then(({ data }) => {
@@ -3684,16 +3766,55 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
     }).catch(() => {})
   }, [])
 
+  // โหมด "รับคืนสินค้า" — ดึงรายการสินค้าของใบแจ้งหนี้ที่เลือก (reuse GET /sales/invoices/:id
+  // ที่มีอยู่แล้ว แทนที่จะสร้าง endpoint ใหม่) จำนวนสูงสุดที่คืนได้ผูกกับ quantity ที่ขายจริง
+  // ส่วนกันคืนเกินยอดที่เคยออกใบลดหนี้ไปแล้ว backend เป็นผู้ตัดสินสุดท้าย (มี alreadyCredited อยู่แล้ว)
+  useEffect(() => {
+    if (mode !== 'RETURN' || !invoiceId) { setReturnLines([]); return }
+    setLoadingLines(true)
+    salesService.getInvoice(invoiceId).then(r => {
+      const items = (r.data?.items || []) as any[]
+      setReturnLines(items.map(it => ({
+        invoiceItemId: it.id,
+        productId: it.product_id || undefined,
+        productName: it.product_name || t('sales.common.itemNumberPrefix'),
+        productCode: it.product_code,
+        maxQty: Number(it.quantity) || 0,
+        unitPrice: Number(it.unit_price) || 0,
+        checked: false,
+        qty: Number(it.quantity) || 0,
+      })))
+    }).catch(() => setReturnLines([])).finally(() => setLoadingLines(false))
+  }, [mode, invoiceId])
+
+  const toggleLine = (idx: number) => {
+    setReturnLines(lines => lines.map((l, i) => i === idx ? { ...l, checked: !l.checked } : l))
+  }
+  const setLineQty = (idx: number, qty: number) => {
+    setReturnLines(lines => lines.map((l, i) => i === idx ? { ...l, qty: Math.max(0, Math.min(qty, l.maxQty)) } : l))
+  }
+
+  const selectedLines = returnLines.filter(l => l.checked && l.qty > 0)
+  const returnSubtotal = selectedLines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
+  const returnTax = returnSubtotal * 0.07
+  const returnTotal = returnSubtotal + returnTax
+
   const handleSave = async () => {
     if (!invoiceId) { toast.error(t('sales.validation.selectInvoice')); return }
     if (!reason.trim()) { toast.error(t('sales.validation.creditReason')); return }
+    if (mode === 'RETURN' && selectedLines.length === 0) { toast.error(t('sales.creditNoteModal.selectReturnItems')); return }
     setSaving(true)
     try {
-      await api.post('/sales/credit-notes', { invoiceId, reason, creditDate })
+      await salesService.createCreditNote({
+        invoiceId, reason, creditDate,
+        items: mode === 'RETURN'
+          ? selectedLines.map(l => ({ invoiceItemId: l.invoiceItemId, productId: l.productId, quantity: l.qty, unitPrice: l.unitPrice }))
+          : undefined,
+      })
       toast.success(t('sales.toast.creditNoteCreated'))
       onSaved()
-    } catch {
-      toast.error(t('sales.toast.creditNoteCreateFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.creditNoteCreateFailed'))
     } finally {
       setSaving(false)
     }
@@ -3703,7 +3824,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
     <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        className={`bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full flex flex-col ${mode === 'RETURN' ? 'max-w-2xl' : 'max-w-lg'}`} style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <RotateCcw className="w-5 h-5 text-warning" /> {t('sales.creditNoteModal.title')}
@@ -3714,6 +3835,21 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
         </div>
 
         <div className="overflow-y-auto p-5 space-y-4">
+          {/* Mode toggle */}
+          <div>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.modeLabel')}</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setMode('RETURN')}
+                className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors ${mode === 'RETURN' ? 'bg-warning/10 border-warning text-warning' : 'bg-[var(--bg)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+                {t('sales.creditNoteModal.modeReturn')}
+              </button>
+              <button type="button" onClick={() => setMode('DISCOUNT')}
+                className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors ${mode === 'DISCOUNT' ? 'bg-warning/10 border-warning text-warning' : 'bg-[var(--bg)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+                {t('sales.creditNoteModal.modeDiscount')}
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.invoiceLabel')}</label>
             <select value={invoiceId} onChange={e => setInvoiceId(e.target.value)}
@@ -3726,6 +3862,55 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
               ))}
             </select>
           </div>
+
+          {/* Return-mode item picker — mirrors the invoice items table style used in
+              InvoiceDetailModal (grid-cols-12 rows), with a checkbox + capped qty input added. */}
+          {mode === 'RETURN' && invoiceId && (
+            <div>
+              <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.returnItemsLabel')}</label>
+              {loadingLines ? (
+                <div className="text-center py-6 text-[var(--fg-4)] text-sm">{t('sales.common.loading')}</div>
+              ) : returnLines.length === 0 ? (
+                <div className="text-center py-6 text-[var(--fg-4)] text-sm">{t('sales.creditNoteModal.noReturnItems')}</div>
+              ) : (
+                <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+                    <span className="col-span-1"></span>
+                    <span className="col-span-5">{t('sales.common.product')}</span>
+                    <span className="col-span-3 text-center">{t('sales.creditNoteModal.returnQty')}</span>
+                    <span className="col-span-3 text-right">{t('sales.common.lineTotal')}</span>
+                  </div>
+                  {returnLines.map((l, i) => (
+                    <div key={l.invoiceItemId} className={`grid grid-cols-12 px-3 py-2.5 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
+                      <div className="col-span-1">
+                        <button type="button" onClick={() => toggleLine(i)}
+                          className={`w-5 h-5 rounded border flex items-center justify-center ${l.checked ? 'bg-warning border-warning text-white' : 'border-[var(--border)] text-transparent'}`}>
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="col-span-5">
+                        <p className="text-[var(--fg-1)] font-medium">{l.productName}</p>
+                        <p className="text-xs text-[var(--fg-4)]">{t('sales.creditNoteModal.soldQty')}: {l.maxQty}</p>
+                      </div>
+                      <div className="col-span-3 flex justify-center">
+                        <input type="number" min={0} max={l.maxQty} step="any" disabled={!l.checked}
+                          value={l.qty} onChange={e => setLineQty(i, parseFloat(e.target.value) || 0)}
+                          className="w-20 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo disabled:opacity-40" />
+                      </div>
+                      <p className="col-span-3 text-right text-[var(--fg-1)] font-semibold">{fmt(l.checked ? l.qty * l.unitPrice : 0)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selectedLines.length > 0 && (
+                <div className="mt-3 bg-[var(--surface-2)] rounded-xl p-3 space-y-1 text-sm">
+                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.subtotal')}</span><span>{fmt(returnSubtotal)}</span></div>
+                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.tax')} 7%</span><span>{fmt(returnTax)}</span></div>
+                  <div className="flex justify-between text-[var(--fg-1)] font-bold border-t border-[var(--border)]/50 pt-1"><span>{t('sales.common.total')}</span><span className="text-warning">{fmt(returnTotal)}</span></div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.dateLabel')}</label>

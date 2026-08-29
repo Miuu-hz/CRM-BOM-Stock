@@ -241,19 +241,23 @@ export default function POSClearing() {
         </motion.div>
       </div>
 
-      {/* CTA */}
+      {/* ponytail: ปิดปุ่ม "นำเงินเข้าบัญชี" ไว้ก่อน — backend POST /pos/clearing/transfer ตอบ 503
+          เพราะขาขาย POS ลง Dr เงินสด/ธนาคาร ตรงๆ ตอนปิดบิลอยู่แล้ว การโอนซ้ำจะบันทึกเงินสดซ้ำซ้อน
+          หน้านี้เหลือไว้ดูยอดอย่างเดียว จนกว่าจะตัดสินใจย้ายขาขายไปลง 1180 (undeposited funds) */}
       {pendingTotal > 0 && (
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
-          onClick={() => setShowModal(true)}
-          className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold rounded-xl text-lg shadow-lg"
-        >
-          <ArrowDownToLine className="w-5 h-5" />
-          นำเงิน {fmt(pendingTotal)} เข้าบัญชี
-        </motion.button>
+        <div className="w-full flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm">
+          <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-[var(--fg-1)]">
+              ปิดใช้งานชั่วคราว: นำเงิน {fmt(pendingTotal)} เข้าบัญชี
+            </p>
+            <p className="text-[var(--fg-3)] mt-1 leading-relaxed">
+              ยอดขาย POS ถูกบันทึกเข้าบัญชีเงินสด/เงินฝากธนาคารทันทีตอนปิดบิลอยู่แล้ว
+              การกดนำเงินเข้าบัญชีอีกครั้งจะทำให้เงินสดถูกบันทึกซ้ำซ้อน
+              หน้านี้จึงใช้ดูยอดได้อย่างเดียวจนกว่าจะปรับผังบัญชีฝั่งขาย
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Pending Bills */}

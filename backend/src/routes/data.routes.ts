@@ -98,8 +98,14 @@ router.get('/materials', (req: Request, res: Response) => {
         id,
         sku as code,
         name,
-        unit,
+        -- หน้า BOM ใช้ค่านี้เป็นปลายทางแปลงหน่วยแล้วคูณกับ unit_cost ซึ่งเป็นราคาต่อ base_unit
+        -- ถ้าคืนคอลัมน์ unit (ของเก่า) ที่ไม่ตรงกับ base_unit ต้นทุนจะผิดเป็นพันเท่า
+        COALESCE(base_unit, unit) as unit,
+        base_unit,
+        display_unit,
         unit_cost,
+        purchase_price,
+        purchase_unit,
         category,
         quantity as current_stock,
         min_stock,

@@ -104,6 +104,13 @@ function Sidebar({ mode }: SidebarProps) {
   const [sysStats, setSysStats] = useState({ activeOrders: 0, lowStock: 0, pendingPO: 0 })
 
   const [pendingApprovals, setPendingApprovals] = useState(0)
+  // Total outstanding count across the whole Purchase category (requests + orders +
+  // receipts + invoices + returns — see backend GET /purchase/badge-counts for the
+  // per-tab counting rules). Only fetched when the user can actually see the menu.
+  const [pendingPurchase, setPendingPurchase] = useState(0)
+  // Total outstanding count across the whole Sales category — mirrors pendingPurchase
+  // above (see backend GET /sales/badge-counts for the per-tab counting rules).
+  const [pendingSales, setPendingSales] = useState(0)
   const [kanbanModalOpen, setKanbanModalOpen] = useState(false)
   const [kanbanLoading, setKanbanLoading] = useState(false)
   const [kanbanError, setKanbanError] = useState<string | null>(null)
@@ -164,6 +171,46 @@ function Sidebar({ mode }: SidebarProps) {
     const interval = setInterval(load, 60_000)
     return () => clearInterval(interval)
   }, [])
+
+  // Purchase category badge — separate effect (own interval) so a slow/failed
+  // purchase endpoint never blocks the unrelated stats above, and so it can be
+  // skipped entirely for roles that can't see the Purchase menu at all.
+  useEffect(() => {
+    if (!canViewMenu(user?.role, '/purchase')) {
+      setPendingPurchase(0)
+      return
+    }
+    const loadPurchaseBadge = async () => {
+      try {
+        const res = await api.get('/purchase/badge-counts')
+        setPendingPurchase(res.data?.data?.total ?? 0)
+      } catch (err) {
+        // Silent — a missing badge is not worth interrupting the user with a toast.
+      }
+    }
+    loadPurchaseBadge()
+    const interval = setInterval(loadPurchaseBadge, 60_000)
+    return () => clearInterval(interval)
+  }, [user?.role])
+
+  // Sales category badge — same pattern as the Purchase badge above.
+  useEffect(() => {
+    if (!canViewMenu(user?.role, '/sales')) {
+      setPendingSales(0)
+      return
+    }
+    const loadSalesBadge = async () => {
+      try {
+        const res = await api.get('/sales/badge-counts')
+        setPendingSales(res.data?.data?.total ?? 0)
+      } catch (err) {
+        // Silent — a missing badge is not worth interrupting the user with a toast.
+      }
+    }
+    loadSalesBadge()
+    const interval = setInterval(loadSalesBadge, 60_000)
+    return () => clearInterval(interval)
+  }, [user?.role])
 
   return (
     <aside
@@ -411,6 +458,16 @@ function Sidebar({ mode }: SidebarProps) {
                     {item.path === '/approvals' && pendingApprovals > 0 && (
                       <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
                         {pendingApprovals}
+                      </span>
+                    )}
+                    {item.path === '/purchase' && pendingPurchase > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
+                        {pendingPurchase}
+                      </span>
+                    )}
+                    {item.path === '/sales' && pendingSales > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
+                        {pendingSales}
                       </span>
                     )}
                   </>

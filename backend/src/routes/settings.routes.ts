@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
 import { authenticate } from '../middleware/auth.middleware'
+import { getSubscription } from '../services/subscription.service'
 
 const router = Router()
 router.use(authenticate)
@@ -10,7 +11,17 @@ router.get('/company', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const row = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any
-    res.json({ success: true, data: row || { tenant_id: tenantId } })
+    const sub = getSubscription(tenantId)
+    res.json({
+      success: true,
+      data: {
+        ...(row || { tenant_id: tenantId }),
+        subscription_plan_code: sub.planCode,
+        subscription_plan_name: sub.planName,
+        subscription_status: sub.status,
+        subscription_period_end: sub.currentPeriodEnd,
+      },
+    })
   } catch (error) {
     console.error('Error fetching company settings:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch company settings' })
@@ -24,8 +35,15 @@ router.put('/company', (req, res) => {
     const {
       name, address, phone, email, tax_id, logo_base64, pos_bom_deduct,
       pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
-      qc_gate_enabled, show_subcon_stock_widget
+      qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift
     } = req.body
+
+    if (allow_negative_stock !== undefined || require_pos_shift !== undefined) {
+      const callerRole = (req as any).user!.role
+      if (callerRole !== 'ADMIN' && callerRole !== 'MASTER') {
+        return res.status(403).json({ success: false, message: 'เฉพาะ Master และ Admin เท่านั้นที่เปลี่ยนการตั้งค่านี้ได้' })
+      }
+    }
 
     // Get existing settings to merge partial updates
     const existing = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any || {}
@@ -49,14 +67,20 @@ router.put('/company', (req, res) => {
     const mergedShowSubconStockWidget = show_subcon_stock_widget !== undefined
       ? (show_subcon_stock_widget === false || show_subcon_stock_widget === 0 ? 0 : 1)
       : (existing.show_subcon_stock_widget === 0 ? 0 : 1)
+    const mergedAllowNegativeStock = allow_negative_stock !== undefined
+      ? (allow_negative_stock ? 1 : 0)
+      : (existing.allow_negative_stock === 1 ? 1 : 0)
+    const mergedRequirePosShift = require_pos_shift !== undefined
+      ? (require_pos_shift ? 1 : 0)
+      : (existing.require_pos_shift === 1 ? 1 : 0)
 
     db.prepare(`
       INSERT INTO company_settings (
         tenant_id, name, address, phone, email, tax_id, logo_base64,
         pos_bom_deduct, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
-        qc_gate_enabled, show_subcon_stock_widget, updated_at
+        qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(tenant_id) DO UPDATE SET
         name              = excluded.name,
         address           = excluded.address,
@@ -71,11 +95,13 @@ router.put('/company', (req, res) => {
         pos_service_rate  = excluded.pos_service_rate,
         qc_gate_enabled   = excluded.qc_gate_enabled,
         show_subcon_stock_widget = excluded.show_subcon_stock_widget,
+        allow_negative_stock = excluded.allow_negative_stock,
+        require_pos_shift = excluded.require_pos_shift,
         updated_at        = datetime('now')
     `).run(
       tenantId, mergedName, mergedAddress, mergedPhone, mergedEmail, mergedTaxId, mergedLogo,
       mergedBomDeduct, mergedVatEnabled, mergedVatRate, mergedServiceEnabled, mergedServiceRate,
-      mergedQcGateEnabled, mergedShowSubconStockWidget
+      mergedQcGateEnabled, mergedShowSubconStockWidget, mergedAllowNegativeStock, mergedRequirePosShift
     )
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)

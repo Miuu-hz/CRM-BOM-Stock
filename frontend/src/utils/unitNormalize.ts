@@ -18,12 +18,50 @@ export const UNIT_NAME_MAP: Record<string, string> = {
   'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
   'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
   'กุรอส': 'gross',
+  // เพิ่มใหม่ — พบใน stock_items จริง
+  'ถัง': 'tank', 'สไลซ์': 'slice', 'หน่วย': 'unit',
+}
+
+/**
+ * Canonical code map — รวมรหัสที่สะกดต่างกันแต่หมายถึงหน่วยเดียวกัน
+ * ให้เหลือรหัสเดียว เพื่อไม่ให้ dropdown มีรายการซ้ำ
+ * (frontend มี map ของตัวเอง คนละไฟล์กับ backend — ต้อง sync กันด้วยมือ)
+ */
+export const UNIT_CODE_CANONICAL: Record<string, string> = {
+  ltr: 'l', litre: 'l', liter: 'l', lt: 'l',
+  slices: 'slice',
+  pieces: 'pcs', pc: 'pcs', piece_s: 'pcs',
+  grams: 'g', gram: 'g',
+  kgs: 'kg', kilogram: 'kg', kilograms: 'kg',
+  mls: 'ml', millilitre: 'ml', milliliter: 'ml',
+  packs: 'pack', pkt: 'pack',
+  boxes: 'box',
+  bottles: 'bottle',
+  bags: 'bag',
+  sachets: 'sachet',
+  sets: 'set',
+  sheets: 'sheet',
+  rolls: 'roll',
+  eggs: 'egg',
+  tanks: 'tank',
+}
+
+/** ทำให้รหัสหน่วยเป็นรูปแบบมาตรฐานเดียว เช่น ltr -> l, slices -> slice */
+export function canonicalUnitCode(code: string): string {
+  if (!code) return code
+  const c = code.toLowerCase().trim()
+  return UNIT_CODE_CANONICAL[c] || c
 }
 
 export function normalizeUnit(unit: string): string {
   if (!unit) return unit
   const u = unit.toLowerCase().trim()
+  // รูปแบบ "แพ็ค (pack)" -> เอาเฉพาะรหัสในวงเล็บ
   const match = u.match(/\(([^)]+)\)$/)
-  if (match) return match[1].trim()
-  return UNIT_NAME_MAP[u] || u
+  if (match) return canonicalUnitCode(match[1].trim())
+  // ชื่อไทย -> รหัส (ใช้ค่าดั้งเดิม เพราะ toLowerCase ไม่กระทบภาษาไทย
+  // แต่ key บางตัวเป็นอังกฤษ เช่น 'cc' จึงลองทั้งสองแบบ)
+  const mapped = UNIT_NAME_MAP[unit.trim()] || UNIT_NAME_MAP[u]
+  if (mapped) return canonicalUnitCode(mapped)
+  return canonicalUnitCode(u)
 }

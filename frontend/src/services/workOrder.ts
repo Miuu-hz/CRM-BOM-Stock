@@ -6,6 +6,8 @@ export interface WorkOrder {
   bom_id: string | null
   product_name: string
   quantity: number
+  /** หน่วยของ quantity/completed_qty (R2-UI) — ไม่มีค่า = ใช้หน่วยของสินค้า (WO เก่าก่อน field นี้จะไม่มีค่านี้) */
+  unit?: string
   completed_qty: number
   scrap_qty: number
   status: string

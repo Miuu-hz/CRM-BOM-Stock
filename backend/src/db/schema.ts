@@ -120,6 +120,8 @@ export function applySchema(db: any): void {
       status TEXT DEFAULT 'DRAFT',
       level INTEGER DEFAULT 0,     -- ← ระดับความลึก (0=Finished Good, 1=Semi-finished, etc.)
       is_semi_finished BOOLEAN DEFAULT 0,  -- ← เป็น Semi-finished product หรือไม่
+      output_qty REAL DEFAULT 1,   -- ← BOM ใบนี้ผลิตได้กี่หน่วย (ต่อ 1 ชุดของ bom_items)
+      output_unit TEXT,            -- ← หน่วยของผลผลิต (NULL = ใช้ base_unit ของ product)
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES stock_items(id),
@@ -159,7 +161,14 @@ export function applySchema(db: any): void {
       base_unit TEXT,                    -- หน่วยย่อยสุด (ขวด, pcs, g, ml)
       sale_unit TEXT,                    -- หน่วยที่ใช้ขาย (default = base_unit)
       display_unit TEXT,                 -- หน่วยแสดงผลคลัง (ลัง, กล่อง, ถุง)
-      unit_cost REAL DEFAULT 0,
+      unit_cost REAL DEFAULT 0,          -- ราคาต่อ "หน่วยฐาน" (base_unit) เสมอ ไม่ใช่ราคาต่อหน่วยที่ซื้อ/แสดงผล
+                                          -- (PO/movement unit ต้องหารด้วย factor ก่อนเซ็ตค่านี้ — ดู
+                                          -- priceToBaseUnitCost() ใน purchase.routes.ts / mcp/tools/purchase.ts / stock.routes.ts)
+                                          -- ตั้งแต่ purchase_price/purchase_unit ถูกเพิ่มเข้ามา unit_cost กลายเป็นค่าที่
+                                          -- คำนวณมาจาก 2 คอลัมน์นั้นเสมอ (unit_cost = purchase_price / factor(purchase_unit→base_unit))
+      purchase_price REAL,               -- ราคาที่ซื้อมาจริง ต่อ 1 purchase_unit — สิ่งที่เจ้าของร้านรู้ (เช่น "1 แพ็คไข่ 133 บาท")
+                                          -- NULL = ยังไม่เคยกรอกแบบนี้ (ของเก่าก่อนมี field นี้)
+      purchase_unit TEXT,                -- หน่วยที่ซื้อมา เช่น pack, case, sachet — NULL = ใช้ base_unit ตรงๆ (ไม่ต้องแปลง)
       min_stock INTEGER DEFAULT 0,
       max_stock INTEGER DEFAULT 1000,
       location TEXT NOT NULL,
@@ -327,6 +336,7 @@ export function applySchema(db: any): void {
       scrap_qty INTEGER DEFAULT 0,
       status TEXT DEFAULT 'DRAFT',
       priority TEXT DEFAULT 'NORMAL',
+      unit TEXT,                   -- ← หน่วยที่กรอกใน WO (NULL = หน่วยของสินค้า)
       start_date TEXT,
       due_date TEXT,
       completed_date TEXT,
@@ -603,14 +613,13 @@ export function applySchema(db: any): void {
       tenant_id TEXT,
       credit_note_id TEXT NOT NULL,
       invoice_item_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
+      product_id TEXT,
       quantity REAL DEFAULT 0,
       unit_price REAL DEFAULT 0,
       reason TEXT,
       total_price REAL DEFAULT 0,
       FOREIGN KEY (credit_note_id) REFERENCES credit_notes(id) ON DELETE CASCADE,
-      FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id),
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id)
     );
 
     -- ==================== WITHHOLDING TAX ====================

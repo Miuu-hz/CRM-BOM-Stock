@@ -2,8 +2,24 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
-import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove } from './shared'
+// Math.floor() ทำลายจำนวนที่เป็นทศนิยม: รับ 500 g ของของที่หน่วยฐานเป็น kg แปลงได้ 0.5
+// แล้ว floor(0.5) = 0 → สต็อกไม่เพิ่มเลยโดยไม่มีใครรู้ (route หลักแก้ไปแล้ว ที่นี่ตกหล่น)
+import { roundQty, roundPackQty } from '../../utils/qty'
+
+// stock_items.unit_cost MUST always be the price per 1 BASE UNIT (stock_items.base_unit),
+// never per the unit the PO/GR line was written in — mirrors priceToBaseUnitCost() in
+// purchase.routes.ts (same rationale: quantity is forced into base_unit, so price must be
+// divided by the same from-unit→base_unit factor or cost silently multiplies by the
+// pack/kg factor wherever base_unit differs from the purchased unit).
+function priceToBaseUnitCost(pricePerPurchasedUnit: number, factor: number, context: string): number {
+  if (!Number.isFinite(factor) || factor <= 0) {
+    console.warn(`[unit_cost] invalid conversion factor (${factor}) for ${context} — keeping price un-converted to avoid corrupting cost`)
+    return pricePerPurchasedUnit
+  }
+  return pricePerPurchasedUnit / factor
+}
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -146,51 +162,47 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       `).run(id, tenantId, poNumber, supplierId, now, subtotal, subtotal,
         `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`, now, now)
 
-      // ── Auto-match stock items + insert PO items ─────────────────────────────
+      // ── Insert PO items — free text only, MCP never binds material_id ──────────
+      // Owner decision 2026-08-18: the old LIKE '%desc%' LIMIT 1 auto-match (no ORDER BY,
+      // no category filter) matched menu dishes (category='finished') to raw-ingredient
+      // bill lines — e.g. "ข้าวโพด" (corn) matched "สลัดทูน่าข้าวโพด" (tuna-corn salad) —
+      // and silently auto-created junk stock_items when nothing matched. A human now binds
+      // material_id later in the web UI. We still look up a candidate for the response
+      // (reporting only, never written to material_id).
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items
           (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
       `)
 
-      const dateStr = now.slice(0, 10).replace(/-/g, '')
-      let skuSeq = (db.prepare(`SELECT COUNT(*) as c FROM stock_items WHERE tenant_id = ? AND sku LIKE 'RAW-${dateStr}%'`).get(tenantId) as any).c
+      const findSuggestion = db.prepare(`
+        SELECT id, name, sku, COALESCE(base_unit, unit) AS unit FROM stock_items
+        WHERE tenant_id = ? AND status = 'ACTIVE'
+          AND category IN ('raw','RAW_MATERIAL','material','wip')
+          AND name LIKE ?
+        ORDER BY CASE WHEN name = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END, length(name)
+        LIMIT 1
+      `)
 
-      const resultItems: { description: string; matched: boolean; materialId: string; unit: string }[] = []
+      const resultItems: { description: string; unit: string; suggestedMatch: { id: string; name: string; sku: string; unit: string } | null }[] = []
       for (const item of items) {
-        const found = db.prepare(
-          `SELECT id, name, sku, unit FROM stock_items WHERE tenant_id = ? AND name LIKE ? LIMIT 1`
-        ).get(tenantId, `%${item.description}%`) as any
-
-        let materialId: string
-        let resolvedUnit = normalizeUnit(item.unit || 'pcs')
-
-        if (found) {
-          materialId = found.id
-          resolvedUnit = normalizeUnit(item.unit) || found.unit || 'pcs'
-        } else {
-          skuSeq++
-          const sku = `RAW-${dateStr}-${String(skuSeq).padStart(3, '0')}`
-          const siId = randomUUID().replace(/-/g, '').substring(0, 25)
-          db.prepare(`
-            INSERT INTO stock_items
-              (id, tenant_id, sku, name, category, unit, location, status, quantity, unit_cost, min_stock, max_stock, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'raw', ?, 'ไม่ระบุ', 'ACTIVE', 0, ?, 0, 1000, ?, ?)
-          `).run(siId, tenantId, sku, item.description, resolvedUnit, resolveUnitPrice(item), now, now)
-          materialId = siId
-        }
+        const suggestion = findSuggestion.get(tenantId, `%${item.description}%`, item.description, `${item.description}%`) as any
+        const resolvedUnit = normalizeUnit(item.unit || 'pcs')
 
         const itemUnitPrice = resolveUnitPrice(item)
         const itemLineTotal = resolveLineTotal(item)
         insertItem.run(
           randomUUID().replace(/-/g, '').substring(0, 25),
-          tenantId, id, materialId, item.description, item.quantity,
+          tenantId, id, null, item.description, item.quantity,
           resolvedUnit, itemUnitPrice, itemLineTotal
         )
-        resultItems.push({ description: item.description, matched: !!found, materialId, unit: resolvedUnit })
+        resultItems.push({
+          description: item.description,
+          unit: resolvedUnit,
+          suggestedMatch: suggestion ? { id: suggestion.id, name: suggestion.name, sku: suggestion.sku, unit: suggestion.unit } : null,
+        })
       }
 
-      const newItems = resultItems.filter(r => !r.matched).length
       const billTotalMismatch = billTotal != null && Math.abs(subtotal - billTotal) / Math.max(billTotal, 1) > 0.05
       return ok({
         poNumber,
@@ -203,9 +215,9 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         supplier: supplierId ? { id: supplierId, name: supplier_hint, isNew: supplierCreated } : null,
         items: resultItems,
         message: [
-          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()})`,
+          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()}) — ยังไม่ได้ผูกวัตถุดิบ`,
+          `กรุณาเปิด PO นี้ใน ERP web เพื่อผูกวัตถุดิบและตรวจสอบหน่วยก่อน submit`,
           supplierCreated ? `— สร้าง Supplier "${supplier_hint}" ใหม่` : '',
-          newItems > 0 ? `— สร้าง stock item ใหม่ ${newItems} รายการ` : '',
           billTotalMismatch ? `⚠️ ยอดรวมที่คำนวณ ฿${subtotal.toLocaleString()} ต่างจากยอดในบิล ฿${billTotal!.toLocaleString()} — กรุณาตรวจสอบ` : '',
         ].filter(Boolean).join(' '),
         supplier_hint: supplier_hint ?? null,
@@ -270,6 +282,12 @@ PR ต้องมีสถานะ APPROVED ก่อน
       }
       if (pr.status !== 'APPROVED') {
         return ok({ success: false, message: `PR ต้องมีสถานะ APPROVED ก่อน (ปัจจุบัน: ${pr.status})` })
+      }
+
+      // supplier_id มาจาก LLM โดยตรง — ต้องยืนยันว่าเป็นของ tenant นี้ก่อนเขียนลง PO
+      const supplier = db.prepare('SELECT id FROM suppliers WHERE id = ? AND tenant_id = ?').get(supplier_id, tenantId) as any
+      if (!supplier) {
+        return ok({ success: false, message: `ไม่พบ supplier: ${supplier_id}` })
       }
 
       const prItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(pr.id) as any[]
@@ -529,14 +547,31 @@ items ถ้าส่งมาจะแทนที่รายการทั�
               let movementNotes = `Received from purchase`
 
               if (stockItem) {
-                const stockUnit = normalizeUnit(stockItem.unit || '')
+                // stock_items.quantity is always stored in base_unit — see
+                // purchase.routes.ts confirm/cancel handlers for the full rationale
+                // (~23 items in this tenant have unit != base_unit from an old migration).
+                const stockUnit = normalizeUnit(stockItem.base_unit || stockItem.unit || '')
                 const displayUnit = normalizeUnit(stockItem.display_unit || '')
-                const poItem = db.prepare('SELECT unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+                const poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
                 const poUnit = normalizeUnit(poItem?.unit || '')
+                // unit_cost must ALWAYS be price per base unit (stockUnit), never per the PO's
+                // purchased unit — see priceToBaseUnitCost() above for the full rationale.
+                const unitPrice = poItem?.unit_price || 0
 
-                if (poUnit && displayUnit && poUnit === displayUnit) {
-                  db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, updated_at = ? WHERE id = ?')
-                    .run(Math.floor(item.accepted_qty), now, stockItem.id)
+                // Same guard as purchase.routes.ts: only park in sealed_qty if display_unit
+                // is a real unopened pack (differs from base_unit) that can later be
+                // unpacked back out — otherwise it gets stuck in sealed_qty forever.
+                const displayToBaseChain = (!!displayUnit && displayUnit !== stockUnit)
+                  ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
+                  : null
+                const canUnpackDisplay = !!displayToBaseChain
+                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
+                  const sealedCostFactor = displayToBaseChain?.factor ?? 1
+                  const sealedUnitCost = unitPrice
+                    ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
+                    : stockItem.unit_cost
+                  db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
+                    .run(roundPackQty(Number(item.accepted_qty), `GR ${gr.gr_number} sealed`), sealedUnitCost, now, stockItem.id)
                   movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit}`
                 } else if (poUnit && poUnit !== stockUnit) {
                   const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
@@ -545,17 +580,21 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                   }
                   stockQty = converted.converted
                   movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockUnit})`
-                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
-                    .run(Math.floor(stockQty), now, stockItem.id)
+                  const newUnitCost = unitPrice
+                    ? priceToBaseUnitCost(unitPrice, converted.factor, `${poUnit}→${stockUnit} (material ${item.material_id})`)
+                    : stockItem.unit_cost
+                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
+                    .run(roundQty(stockQty), newUnitCost, now, stockItem.id)
                 } else {
-                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ?')
-                    .run(Math.floor(stockQty), now, stockItem.id)
+                  const newUnitCost = unitPrice ? unitPrice : stockItem.unit_cost
+                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
+                    .run(roundQty(stockQty), newUnitCost, now, stockItem.id)
                 }
 
                 db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                   VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)`)
                   .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItem.id,
-                    Math.floor(stockQty), `GR: ${gr.gr_number}`, movementNotes, now, userId)
+                    roundQty(stockQty), `GR: ${gr.gr_number}`, movementNotes, now, userId)
               }
 
               db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')

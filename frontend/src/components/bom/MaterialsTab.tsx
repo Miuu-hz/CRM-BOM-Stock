@@ -20,6 +20,7 @@ import {
   Tag,
 } from 'lucide-react'
 import materialsService, { Material, MaterialStats, CreateMaterialInput, MaterialCategory } from '../../services/materials'
+import { unitLabel } from '../../hooks/useUnits'
 
 function MaterialsTab() {
   const { t } = useTranslation()
@@ -262,7 +263,7 @@ function MaterialsTab() {
                       {material.categoryName || t('bom.materialsTab.uncategorized')}
                     </span>
                   </td>
-                  <td className="text-[var(--fg-3)]">{material.unit}</td>
+                  <td className="text-[var(--fg-3)]">{unitLabel(material.unit)}</td>
                   <td className="text-[var(--fg-3)]">฿{Number(material.unitCost).toLocaleString()}</td>
                   <td>
                     <div className="flex items-center gap-2">
@@ -717,7 +718,7 @@ function StockAdjustModal({
                   {type === 'IN'
                     ? (material.currentStock || 0) + quantity
                     : (material.currentStock || 0) - quantity}{' '}
-                  {material.unit}
+                  {unitLabel(material.unit)}
                 </p>
               </div>
             )}

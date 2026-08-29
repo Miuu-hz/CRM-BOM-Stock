@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Factory, Search, Loader2, Package, TrendingUp, Users } from 'lucide-react'
 
 import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
+import { unitLabel } from '../hooks/useUnits'
 
 function StatBox({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
   return (
@@ -157,7 +158,7 @@ function SubconStock() {
                       <tr key={row.id} className="border-b border-[var(--border)] last:border-0">
                         <td className="py-2 px-5 text-[var(--fg-2)]">{row.item_name}</td>
                         <td className="py-2 px-5 text-[var(--fg-2)]">
-                          {row.quantity.toLocaleString()} {row.unit}
+                          {row.quantity.toLocaleString()} {unitLabel(row.unit)}
                         </td>
                         <td className="py-2 px-5 text-[var(--fg-2)]">฿{row.total_value.toLocaleString()}</td>
                       </tr>

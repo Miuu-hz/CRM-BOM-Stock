@@ -1,7 +1,8 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { getOrCreateAccount } from './accounting.service'
-import { resolveBankAccountGL } from '../config/accountCodes'
+import { resolveBankAccountGL, ACC, ACC_META } from '../config/accountCodes'
+import { convertQuantityBidirectional, normalizeUnit } from './unitConversion.service'
 import type { POSBill, POSPayment } from '../types'
 
 const now = () => new Date().toISOString()
@@ -17,11 +18,19 @@ interface POSBillItem {
 interface BomCostItem {
   quantity: number
   unit_cost: number
+  material_id: string | null
+  ingredient_unit: string | null
+  stock_base_unit: string | null
+  stock_unit: string | null
 }
 
 interface PosMenuIngredient {
   quantity_used: number
   unit_cost: number
+  stock_item_id: string | null
+  unit_id: string | null
+  stock_base_unit: string | null
+  stock_unit: string | null
 }
 
 interface CogsItem {
@@ -61,6 +70,34 @@ class POSAccountingService {
   }
 
   /**
+   * แปลงจำนวนตามสูตร (BOM/เมนู) ให้เป็นหน่วยฐาน (base_unit) ของวัตถุดิบก่อนคูณกับ
+   * unit_cost — unit_cost เก็บเป็น "ต่อ 1 หน่วยฐาน" เสมอ แต่จำนวนในสูตรอาจเขียนด้วย
+   * หน่วยอื่น (เช่น สูตรเขียน 0.03 l แต่ base_unit ของวัตถุดิบเป็น ml) ถ้าแปลงไม่ได้
+   * (ไม่มี conversion rate) ห้าม throw เพราะเส้นทางนี้ใช้ตอนปิดบิล/ปิดกะ — แค่ warn แล้ว
+   * ใช้ตัวเลขเดิม (ไม่แปลง) ไปก่อน เหมือน pattern ใน bom.routes.ts:calculateBOMCost
+   */
+  private toBaseQty(
+    qty: number,
+    recipeUnit: string | null | undefined,
+    stockBaseUnit: string | null | undefined,
+    tenantId: string,
+    materialId: string | null | undefined,
+    context: string
+  ): number {
+    const fromUnit = recipeUnit || stockBaseUnit || ''
+    const toUnit = stockBaseUnit || fromUnit
+    if (!fromUnit || !toUnit || normalizeUnit(fromUnit) === normalizeUnit(toUnit)) {
+      return qty
+    }
+    const result = convertQuantityBidirectional(qty, fromUnit, toUnit, tenantId, materialId || undefined)
+    if (result) {
+      return result.converted
+    }
+    console.warn(`[qty] POS COGS: no conversion ${fromUnit} → ${toUnit} for stock item ${materialId}; ${context} cost uses the unconverted quantity and is unreliable`)
+    return qty
+  }
+
+  /**
    * Calculate COGS from bill items using BOM
    */
   private async calculateCOGS(billId: string, tenantId: string): Promise<{
@@ -92,7 +129,11 @@ class POSAccountingService {
         const bomItemsStmt = db.prepare(`
           SELECT
             bi.quantity,
-            si.unit_cost
+            bi.unit as ingredient_unit,
+            bi.material_id,
+            si.unit_cost,
+            si.base_unit as stock_base_unit,
+            si.unit as stock_unit
           FROM bom_items bi
           JOIN stock_items si ON bi.material_id = si.id
           WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
@@ -100,14 +141,26 @@ class POSAccountingService {
         const bomItems = bomItemsStmt.all(item.bom_id, tenantId) as BomCostItem[]
 
         for (const bomItem of bomItems) {
-          itemCost += (bomItem.quantity * bomItem.unit_cost)
+          const qty = this.toBaseQty(
+            bomItem.quantity,
+            bomItem.ingredient_unit,
+            bomItem.stock_base_unit || bomItem.stock_unit,
+            tenantId,
+            bomItem.material_id,
+            `bill ${billId} bom ${item.bom_id} material ${bomItem.material_id}`
+          )
+          itemCost += (qty * bomItem.unit_cost)
         }
       } else {
         // Fallback: use pos_menu_ingredients
         const ingStmt = db.prepare(`
           SELECT
             pmi.quantity_used,
-            si.unit_cost
+            pmi.unit_id,
+            pmi.stock_item_id,
+            si.unit_cost,
+            si.base_unit as stock_base_unit,
+            si.unit as stock_unit
           FROM pos_menu_ingredients pmi
           JOIN stock_items si ON pmi.stock_item_id = si.id
           WHERE pmi.pos_menu_id = ? AND pmi.tenant_id = ?
@@ -115,7 +168,15 @@ class POSAccountingService {
         const ingredients = ingStmt.all(item.pos_menu_id, tenantId) as PosMenuIngredient[]
 
         for (const ing of ingredients) {
-          itemCost += (ing.quantity_used * ing.unit_cost)
+          const qty = this.toBaseQty(
+            ing.quantity_used,
+            ing.unit_id,
+            ing.stock_base_unit || ing.stock_unit,
+            tenantId,
+            ing.stock_item_id,
+            `bill ${billId} menu ${item.pos_menu_id} stock item ${ing.stock_item_id}`
+          )
+          itemCost += (qty * ing.unit_cost)
         }
       }
 
@@ -184,9 +245,9 @@ class POSAccountingService {
       // CASH/BANK account by payment method.
       const line1Id = generateId()
       const linkedAccountId = resolveBankAccountGL(tenantId, payment.bank_account_id)
-      const cashAccountCode = payment.payment_method === 'CASH' ? '1101' : '1102'
-      const cashAccountName = payment.payment_method === 'CASH' ? 'เงินสด' : 'เงินฝากธนาคาร'
-      const cashAccountId = linkedAccountId || getOrCreateAccount(tenantId, cashAccountCode, cashAccountName, 'ASSET', 'CURRENT_ASSET')
+      const cashAccountCode = payment.payment_method === 'CASH' ? ACC.CASH : ACC.BANK
+      const cashAccountMeta = ACC_META[cashAccountCode]!
+      const cashAccountId = linkedAccountId || getOrCreateAccount(tenantId, cashAccountCode, cashAccountMeta.name, cashAccountMeta.type, cashAccountMeta.category, cashAccountMeta.normalBalance)
 
       const lineStmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
@@ -204,7 +265,7 @@ class POSAccountingService {
 
       // Line 2: Credit Sales Revenue
       const line2Id = generateId()
-      const revenueAccountId = getOrCreateAccount(tenantId, '4100', 'รายได้จากการขาย', 'REVENUE', 'OPERATING_REVENUE')
+      const revenueAccountId = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, ACC_META[ACC.REVENUE_PRODUCT]!.name, ACC_META[ACC.REVENUE_PRODUCT]!.type, ACC_META[ACC.REVENUE_PRODUCT]!.category, ACC_META[ACC.REVENUE_PRODUCT]!.normalBalance)
       const line2Stmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
         VALUES (?, ?, ?, ?, 2, ?, 0, ?)
@@ -222,7 +283,7 @@ class POSAccountingService {
       // Line 3: Credit VAT Output (if > 0)
       if (bill.tax_amount > 0) {
         const line3Id = generateId()
-        const vatAccountId = getOrCreateAccount(tenantId, '2150', 'ภาษีขาย', 'LIABILITY', 'CURRENT_LIABILITY')
+        const vatAccountId = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, ACC_META[ACC.OUTPUT_VAT]!.name, ACC_META[ACC.OUTPUT_VAT]!.type, ACC_META[ACC.OUTPUT_VAT]!.category, ACC_META[ACC.OUTPUT_VAT]!.normalBalance)
         const line3Stmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 3, ?, 0, ?)
@@ -267,7 +328,7 @@ class POSAccountingService {
 
         // COGS Line 1: Debit COGS
         const cogsLine1Id = generateId()
-        const cogsAccountId = getOrCreateAccount(tenantId, '5100', 'ต้นทุนขาย', 'EXPENSE', 'OPERATING_EXPENSE')
+        const cogsAccountId = getOrCreateAccount(tenantId, ACC.COGS_PRODUCT, ACC_META[ACC.COGS_PRODUCT]!.name, ACC_META[ACC.COGS_PRODUCT]!.type, ACC_META[ACC.COGS_PRODUCT]!.category, ACC_META[ACC.COGS_PRODUCT]!.normalBalance)
         const cogsLineStmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 1, ?, ?, 0)
@@ -284,7 +345,7 @@ class POSAccountingService {
 
         // COGS Line 2: Credit Inventory
         const cogsLine2Id = generateId()
-        const inventoryAccountId = getOrCreateAccount(tenantId, '1160', 'สินค้าคงคลัง', 'ASSET', 'CURRENT_ASSET')
+        const inventoryAccountId = getOrCreateAccount(tenantId, ACC.INVENTORY, ACC_META[ACC.INVENTORY]!.name, ACC_META[ACC.INVENTORY]!.type, ACC_META[ACC.INVENTORY]!.category, ACC_META[ACC.INVENTORY]!.normalBalance)
         const cogsLine2Stmt = db.prepare(`
           INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, 2, ?, 0, ?)
@@ -301,8 +362,8 @@ class POSAccountingService {
 
         // Update balances for COGS
         await this.updateAccountBalances(tenantId, today, [
-          { accountCode: '5100', debit: cogs.totalCost, credit: 0 },
-          { accountCode: '1160', debit: 0, credit: cogs.totalCost }
+          { accountCode: ACC.COGS_PRODUCT, debit: cogs.totalCost, credit: 0 },
+          { accountCode: ACC.INVENTORY, debit: 0, credit: cogs.totalCost }
         ])
       }
 
@@ -335,8 +396,8 @@ class POSAccountingService {
       // 4. Update Account Balances for Revenue
       await this.updateAccountBalances(tenantId, today, [
         { accountCode: cashAccountCode, debit: bill.total_amount, credit: 0 },
-        { accountCode: '4100', debit: 0, credit: totalRevenue },
-        { accountCode: '2150', debit: 0, credit: bill.tax_amount }
+        { accountCode: ACC.REVENUE_PRODUCT, debit: 0, credit: totalRevenue },
+        { accountCode: ACC.OUTPUT_VAT, debit: 0, credit: bill.tax_amount }
       ])
 
       return {
@@ -365,16 +426,49 @@ class POSAccountingService {
     const errors: string[] = []
 
     try {
+      // กันลงซ้ำ: ถ้ามี entry POS_CANCEL ของบิลนี้อยู่แล้ว ไม่สร้างซ้ำ
+      const existingCancel = db.prepare(`
+        SELECT id FROM journal_entries
+        WHERE tenant_id = ? AND reference_type = 'POS_CANCEL' AND reference_id = ?
+      `).get(tenantId, bill.id) as { id: string } | undefined
+      if (existingCancel) {
+        return { success: true, journalEntryId: existingCancel.id, errors: [] }
+      }
+
+      // ponytail: mirror ของเดิมด้วยการสลับ debit<->credit ของ journal เดิม (POS_SALE +
+      // POS_COGS) ของบิลนี้ทั้งหมด แทนการ re-derive VAT/COGS/บัญชีเงินสด-ธนาคารเอง — ได้
+      // mirror image ที่ถูกต้องเสมอ (รวม sub-account ธนาคารที่ resolveBankAccountGL ผูกไว้
+      // ตอนขาย) แม้ recordSale จะเปลี่ยน logic ในอนาคต — เหมือน void ใน pos.routes.ts —
+      // ยกเว้นบรรทัด REVENUE_PRODUCT (4101) ที่ให้ลงเป็น SALES_RETURN (4302) แทน เพื่อโชว์
+      // เป็น contra-revenue ตามที่นักบัญชีต้องการอ่านง่าย
+      const saleLines = db.prepare(`
+        SELECT jl.account_id, jl.debit, jl.credit
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE je.tenant_id = ? AND je.reference_id = ?
+          AND je.reference_type IN ('POS_SALE', 'POS_COGS')
+        ORDER BY je.reference_type DESC, jl.line_number
+      `).all(tenantId, bill.id) as Array<{ account_id: string; debit: number; credit: number }>
+
+      if (saleLines.length === 0) {
+        // บิลเก่าที่ไม่เคยลงบัญชี — ไม่มีอะไรให้กลับ อย่าสร้าง entry ปลอม
+        console.warn(`[pos-cancel] bill ${bill.id} has no POS_SALE/POS_COGS journal; skipping reversal entry`)
+        return { success: true, errors: [] }
+      }
+
+      const revenueAccountId = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, ACC_META[ACC.REVENUE_PRODUCT]!.name, ACC_META[ACC.REVENUE_PRODUCT]!.type, ACC_META[ACC.REVENUE_PRODUCT]!.category, ACC_META[ACC.REVENUE_PRODUCT]!.normalBalance)
+      const salesReturnAccountId = getOrCreateAccount(tenantId, ACC.SALES_RETURN, ACC_META[ACC.SALES_RETURN]!.name, ACC_META[ACC.SALES_RETURN]!.type, ACC_META[ACC.SALES_RETURN]!.category, ACC_META[ACC.SALES_RETURN]!.normalBalance)
+
+      const reversalTotal = saleLines.reduce((s, l) => s + (l.debit || 0), 0)
       const entryNumber = this.generateEntryNumber(tenantId)
       const entryId = generateId()
       const today = now().split('T')[0]
 
-      // Insert reversal journal entry
       const entryStmt = db.prepare(`
         INSERT INTO journal_entries (
           id, tenant_id, entry_number, date, reference_type, reference_id,
           description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
+        ) VALUES (?, ?, ?, ?, 'POS_CANCEL', ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
       `)
 
       entryStmt.run(
@@ -382,49 +476,53 @@ class POSAccountingService {
         tenantId,
         entryNumber,
         today,
-        'POS_CANCEL',
         bill.id,
         `ยกเลิกบิล - ${bill.bill_number} (${bill.display_name})${reason ? ': ' + reason : ''}`,
-        bill.total_amount,
-        bill.total_amount,
+        reversalTotal,
+        reversalTotal,
         userId,
         now()
       )
 
-      // Reverse entries (opposite of sale)
-      // Line 1: Credit Cash/Bank (reverse of debit)
-      const line1Id = generateId()
-      const cashAccountId = getOrCreateAccount(tenantId, '1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
-      const lineStmt = db.prepare(`
+      const insertLine = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-        VALUES (?, ?, ?, ?, 1, ?, 0, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
-      lineStmt.run(
-        line1Id,
-        tenantId,
-        entryId,
-        cashAccountId,
-        `คืนเงินยกเลิกบิล ${bill.bill_number}`,
-        bill.total_amount
-      )
+      // อัปเดต account_balances ด้วย account_id ตรงๆ (บัญชีเงินสด/ธนาคารอาจเป็น sub-account
+      // ที่ผูกกับ bank_accounts จึงหาด้วย code ไม่ได้ — เหมือน void ใน pos.routes.ts)
+      const balYear = parseInt(today.split('-')[0])
+      const balPeriod = parseInt(today.split('-')[1])
+      const updateBal = (accountId: string, debit: number, credit: number) => {
+        const existingBal = db.prepare(`
+          SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
+        `).get(accountId, balYear, balPeriod)
+        if (existingBal) {
+          db.prepare(`
+            UPDATE account_balances
+            SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
+                ending_balance = ending_balance + ? - ?
+            WHERE account_id = ? AND fiscal_year = ? AND period = ?
+          `).run(debit, credit, debit, credit, accountId, balYear, balPeriod)
+        } else {
+          db.prepare(`
+            INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+          `).run(generateId(), tenantId, accountId, balYear, balPeriod, debit, credit, debit - credit)
+        }
+      }
 
-      // Line 2: Debit Sales Returns
-      const line2Id = generateId()
-      const salesReturnAccountId = getOrCreateAccount(tenantId, '4200', 'รายได้คืน', 'REVENUE', 'OPERATING_REVENUE')
-      const line2Stmt = db.prepare(`
-        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-        VALUES (?, ?, ?, ?, 2, ?, ?, 0)
-      `)
-
-      line2Stmt.run(
-        line2Id,
-        tenantId,
-        entryId,
-        salesReturnAccountId,
-        `รายได้คืนจากการยกเลิก ${bill.bill_number}`,
-        bill.total_amount
-      )
+      saleLines.forEach((l, i) => {
+        const debit = l.credit || 0
+        const credit = l.debit || 0
+        // บรรทัดรายได้ (4101) ให้ลงเป็นรับคืนสินค้า (4302) แทน ไม่ใช่ Dr กลับ 4101 ตรงๆ
+        const accountId = l.account_id === revenueAccountId ? salesReturnAccountId : l.account_id
+        insertLine.run(
+          generateId(), tenantId, entryId, accountId, i + 1,
+          `กลับรายการยกเลิกบิล ${bill.bill_number}`, debit, credit
+        )
+        updateBal(accountId, debit, credit)
+      })
 
       return {
         success: true,
