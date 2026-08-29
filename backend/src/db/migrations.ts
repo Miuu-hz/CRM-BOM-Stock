@@ -574,6 +574,19 @@ export function runMigrations(db: any): void {
     "ALTER TABLE purchase_request_items ADD COLUMN unit_price REAL",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 
+  // Migration: schema drift — คอลัมน์ที่เคย ALTER ด้วยมือบน production แต่ไม่เคยเข้าระบบ
+  // migration และไม่มีใน schema.ts ด้วย auth.middleware.ts อ่าน users.departments /
+  // users.custom_permissions และ purchaseOrder.routes.ts เขียน purchase_orders.approved_at /
+  // rejection_reason ดังนั้น DB ที่ migrate ขึ้นมาใหม่จะไม่มีคอลัมน์เหล่านี้ ทำให้ทุก request
+  // ที่ผ่าน authenticate ตอบ 401 และ approve/reject PO พัง (พบตอน agent1 เขียน test suite)
+  ;[
+    "ALTER TABLE users ADD COLUMN departments TEXT",
+    "ALTER TABLE users ADD COLUMN custom_permissions TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN approved_at TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN rejection_reason TEXT",
+  ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
+  console.log('✅ Migration: schema drift columns (users/purchase_orders) ready')
+
   console.log('✅ Migration: purchase_requests LINE columns ready')
 
   // Migration: LINE group mappings — track LINE groups per tenant for push notifications
