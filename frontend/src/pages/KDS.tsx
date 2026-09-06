@@ -98,13 +98,19 @@ const KDS: React.FC = () => {
     audio.currentTime = 0
   }
 
+  const handleUserTap = () => {
+    stopNotificationSound()
+    unlockAudio()
+  }
+
   const handleStatus = async (ticketId: string, status: 'IN_PROGRESS' | 'DONE') => {
     stopNotificationSound()
     try {
       await kdsService.updateTicketStatus(ticketId, status)
       if (status === 'DONE') {
         setTickets(prev => prev.filter(t => t.id !== ticketId))
-        lastCount.current -= 1
+        // ponytail: fetchTickets is the only writer of lastCount. Decrementing here
+        // double-counts when a poll lands during the await above.
       } else {
         setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status } : t))
       }
@@ -129,7 +135,7 @@ const KDS: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[var(--bg)] text-[var(--fg-2)]" onClick={unlockAudio}>
+    <div className="flex flex-col h-full bg-[var(--bg)] text-[var(--fg-2)]" onClick={handleUserTap}>
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
