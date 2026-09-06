@@ -544,9 +544,9 @@ Phase 3 — Higher Risk · Architecture Change
 - ครบ 3 ช่องทาง: หน้าร้าน (POS) / ขายส่ง / ออนไลน์ + การ์ด "กำไรขาดทุนตามหน่วยธุรกิจ" ใหม่ + relabel ยอดซื้อ PO ว่า "ไม่ใช่ COGS จริง" คู่กับการ์ด Ledger COGS
 
 **พบระหว่างทาง (ยังไม่แก้):**
-- `sales.routes.ts` (2,477 บรรทัด) เป็นโค้ดตายไม่ได้ mount — candidate ลบทิ้งรอบ refactor ถัดไป
+- `sales.routes.ts` (2,477 บรรทัด) เป็นโค้ดตายไม่ได้ mount — candidate ลบทิ้งรอบ refactor ถัดไป — ✅ **ลบไปแล้ว** (ไฟล์ไม่มีอยู่ในระบบแล้ว ณ 2026-09-06)
 - JE จาก POS ต้อง post/approve ก่อนถึงเข้าตัวเลข ledger บน board (พฤติกรรมเดิมของระบบ ไม่ได้เกิดจากงานวันนี้) — ช่อง Retail ใน Zone 1 เห็นยอดทันทีเพราะอ่านจากบิลตรง แต่ P&L ต้องรอ post
-- Backup ทุกอย่างอยู่บนเซิร์ฟเวอร์ (`.bak2/.bak3/.bak4` + `dev.db.bak-*`) — ใช้งานจริงสักพักแล้วค่อยลบ
+- Backup ทุกอย่างอยู่บนเซิร์ฟเวอร์ (`.bak2/.bak3/.bak4` + `dev.db.bak-*`) — ใช้งานจริงสักพักแล้วค่อยลบ — ✅ **ลบแล้ว 2026-09-06** (136 ไฟล์ .bak, 26 ตัวหลุดขึ้น git ไปแล้ว) ดู session log ล่างสุด
 
 ---
 
@@ -579,3 +579,25 @@ Phase 3 — Higher Risk · Architecture Change
 *เกณฑ์ตัดสินใจกลับมาแก้จริงจัง:* เริ่มมี complaint ว่าเว็บค้างเป็นพักๆ โดยไม่มี error ชัดเจน, หรือจำนวน concurrent AI session เพิ่มขึ้นจนเห็น query time ใน log ยาวขึ้นชัดเจน
 
 **อัปเดตเพิ่ม:** ตรวจ `sales.routes.ts` endpoint-by-endpoint เทียบกับ `routes/sales/*` แล้ว — migrate ครบ 47/48 (จุดเดียวที่ path เปลี่ยนคือ `from-template` แต่ไม่มีใครเรียกทั้งเก่า/ใหม่อยู่แล้ว) เช็คแล้วว่า unit conversion engine (`services/unitConversion.service.ts` + ตาราง `unit_conversions` 39 กฎ + `sealed_qty` auto-unpack) ไม่ได้อยู่ในไฟล์นี้ ไม่กระทบ และ `deductStockForSO` เวอร์ชันใหม่ใน `shared.ts` ดีกว่าเดิม (ห่อ transaction + throw เมื่อสต็อกไม่พอ แทน silent clamp) — **ลบ `backend/src/routes/sales.routes.ts` แล้ว** ยืนยัน `tsc --noEmit` ผ่านสะอาด
+
+---
+
+## 📅 Session Log — 6 กันยายน 2026 (KDS เสียงไม่หยุด + purge dead code)
+
+**สิ่งที่ทำ:**
+- แก้บั๊ก KDS เสียงแจ้งเตือนไม่ยอมหยุด (`frontend/src/pages/KDS.tsx`) — 2 ต้นเหตุ:
+  1. `handleStatus` สั่ง `lastCount.current -= 1` ทั้งที่ `fetchTickets` เป็นคนเขียนค่านี้อยู่แล้วทุกรอบ พอ poll (ทุก 3 วิ) วิ่งมาถึงระหว่าง `await updateTicketStatus` ค่าจะถูกลดสองรอบ → ต่ำกว่าจำนวน ticket จริง → poll ถัดไปตีความว่า มีออร์เดอร์ใหม่ แล้วเล่นเสียงซ้ำ ยิ่งกดเร็วยิ่งเพี้ยนสะสมจนดังไม่หยุด ลบบรรทัดนั้นทิ้ง ให้ poll เป็นเจ้าของค่าคนเดียว
+  2. `stopNotificationSound()` ถูกเรียกเฉพาะในปุ่ม รับงาน/เสร็จแล้ว ส่วน div ที่ครอบทั้งหน้าเรียก `unlockAudio` ซึ่งไม่หยุดเสียง → กดที่การ์ดหรือรายการอาหารเสียงไม่หยุด แก้เป็น `handleUserTap` ที่ stop + unlock
+- ลบ dead code: `backend/src/db/sqlite-multitenant.ts` (เปิด `dev.db` ตัวเดียวกันแล้วสั่ง `CREATE TABLE tenants` ตอน import — ไม่มีไฟล์ไหน import มันเลย เป็นระเบิดเวลาที่ถ้าเผลอ import จะสร้าง 20+ ตารางลง production DB ทันที), `backend/public/` (11 ไฟล์ 5.4MB build เก่า ไม่มี `express.static` ชี้มา — ที่เสิร์ฟจริงคือ `frontend/dist` กับ `/uploads`), `backend/prisma/dev.db` (0 bytes)
+- ลบไฟล์ `.bak` ทั้งหมด **136 ไฟล์** — 26 ตัว track อยู่ใน git (public repo) ลบด้วย `git rm`, อีก 110 ตัว untracked ลบด้วย `find -delete` รวมที่หายจาก git 15,522 บรรทัด
+- อุดรูรั่ว `.gitignore` — เดิมมี `*.bak`, `*.bak.*`, `*.bak-*` แต่ **ไม่ครอบ `.bak2/.bak3/.bak4`** ซึ่งเป็นรูปแบบที่ session log 20 ก.ค. บันทึกว่าใช้เอง → 9 ไฟล์หลุดขึ้น git ทางนี้ (อีก 17 ตัว commit ไปก่อนกฎถูกเพิ่ม ซึ่ง gitignore ไม่มีผลย้อนหลัง) เพิ่ม `*.bak[0-9]*`
+
+**ตรวจแล้วปลอดภัย:**
+- `.env` และ `.env.bak.*` **ไม่เคย** ถูก track และไม่เคยอยู่ใน git history
+- สแกน 26 ไฟล์ .bak ที่เคยหลุดขึ้น public repo หา hardcoded credential — ไม่พบ (`mcp/server.ts.bak` ใช้ parameterized SQL `WHERE mcp_api_key = ?` ทั้งหมด)
+
+**พบระหว่างทาง (ยังไม่แก้):**
+- ไฟล์ที่ลบไป **ยังอยู่ใน git history** ของ public repo — `.git` = 5.9MB ตัดสินใจไม่ rewrite history เพราะไม่คุ้มกับการที่ commit hash เปลี่ยนทั้ง repo
+- เหลือซาก 3 ไฟล์ที่ pattern รอบนี้ไม่ครอบ: `translation.json.pre-prdelete` (×2), `translation.json.CLOBBERED-en-20260808` — gitignore ครอบอยู่แล้ว ไม่หลุด git แค่รก
+- `/root/.claude/file-history/` ใน LXC 100 โต 6.6MB — backup ของ Claude Code เอง คนละระบบกับ `.bak` ลบได้
+- DB ยืนยันเป็นไฟล์เดียว `backend/dev.db` (3.6MB, 119 ตาราง) + `-wal`/`-shm` ไม่มี `ATTACH` ที่ไหนในโค้ด

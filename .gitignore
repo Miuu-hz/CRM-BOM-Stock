@@ -78,6 +78,7 @@ backend/backups/
 # Backup / scratch artifacts from agent runs
 *.bak
 *.bak.*
+*.bak[0-9]*
 *.pre-*
 *.CLOBBERED-*
 tmp_*.js
