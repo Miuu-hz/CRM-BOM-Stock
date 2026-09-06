@@ -58,16 +58,16 @@
 |--------|--------|------------|
 | **MRP** | 🚧 | Material Requirements Planning |
 | **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
-| **POS KDS** | 🚧 | Kitchen Display System for POS queue |
+| ~~**POS KDS**~~ | ✅ | ใช้งาน production แล้ว (ticket-based, polling 3 วิ, เสียง+notification) — ย้ายขึ้นหัวข้อพร้อมใช้งานได้ |
 | **Sales Journal Preview** | 🚧 | Dr/Cr preview + เลือก account ก่อนบันทึก (3 จุด: Invoice/Receipt/CreditNote) |
 
 ### ❌ ยังไม่มี (Planned)
 
 | โมดูล | ความสำคัญ | รายละเอียด |
 |--------|-----------|---------|
-| **RBAC** | 🟠 ปานกลาง | Role-Based Access Control |
-| **Credit Note** | 🟠 ปานกลาง | ใบลดหนี้ (คืนสินค้าบางส่วน, ไม่ใช่ยกเลิกทั้งบิล) |
-| **Financial Statements** | 🟠 ปานกลาง | งบดุล auto-generate (P&L แยกหน่วยธุรกิจมีแล้วบน Phopy Board) |
+| **RBAC** | 🚧 บางส่วน | มีแล้ว: `services/rbac.service.ts`, `PermissionSettings.tsx`, `user_approval_permissions`, role gate ใน MCP tools — ยังไม่ครบทุกหน้า |
+| ~~**Credit Note**~~ | ✅ | มีแล้ว `routes/sales/creditNotes.ts` mount ที่ `/api/sales/credit-notes` |
+| **Financial Statements** | 🚧 บางส่วน | มี route งบดุลแล้ว + P&L แยกหน่วยธุรกิจบน Phopy Board — ยังไม่ auto-generate เต็มรูปแบบ |
 | **QMS** | 🟡 ต่ำ | Quality Management System |
 | **Capacity Planning** | 🟡 ต่ำ | Production capacity planning |
 
@@ -382,9 +382,9 @@ sales_orders → work_orders
 
 ### 📋 Phase 5: Remaining Advanced Features (PLANNED)
 - [ ] MRP (Material Requirements Planning)
-- [ ] RBAC (Role-Based Access Control)
-- [ ] Credit Note (ใบลดหนี้)
-- [ ] Financial Statements — งบดุล auto-generate
+- [x] RBAC — มีโครงแล้ว (rbac.service + PermissionSettings + approval permissions) ยังไม่ครอบทุกหน้า
+- [x] Credit Note (ใบลดหนี้) — เสร็จแล้ว
+- [~] Financial Statements — มี route งบดุลแล้ว ยังไม่ auto-generate เต็มรูป
 - [ ] UI เลือกสกุลเงินในฟอร์ม Sales/Purchase (รอ refactor ไฟล์ 3,800+ บรรทัด)
 - [ ] Organic vs Paid Analytics (รอไฟล์ยอดขายรวมจาก Shopee/Lazada)
 - [ ] Advanced Reports & Dashboard
@@ -514,14 +514,14 @@ npm run install:all   — npm install ทั้ง backend + frontend
 
 Phase 2 — Medium Risk · High Impact
 #	ปัญหา	ไฟล์	Risk	Impact
-2.1	679 onClick elements ไม่มี cursor-pointer — ผู้ใช้ไม่รู้ว่ากดได้	ทุกไฟล์	🟡 Medium	High — UX พื้นฐาน
+2.1	~1,019 onClick ไม่มี cursor-pointer (วัดใหม่ 2026-09-06: onClick 1,105 จุด / cursor-pointer 86) — เดิมจด 679 ช่องว่างโตขึ้นเท่าตัว	ทุกไฟล์	🟡 Medium	High — UX พื้นฐาน
 2.2	Mobile sidebar ไม่ใช่ overlay — sidebar 280px ดัน content เหลือ ~95px บนจอเล็ก	Layout.tsx	🟡 Medium	High — mobile unusable
-2.3	aria-label มีแค่ 8 จุดใน app ทั้งหมด — ต้องเพิ่มให้ icon buttons ทุกหน้า	ทุกหน้า	🟡 Medium	Medium — accessibility
+2.3	aria-label มี 26 จุด (วัดใหม่ 2026-09-06, เดิม 8) — ยังครอบแค่ ~2% ของ onClick 1,105 จุด	ทุกหน้า	🟡 Medium	Medium — accessibility
 2.4	Status badge py-1 (~8px) เล็กกว่า 44px minimum touch target	index.css:114	🟡 Medium	Medium — mobile tap accuracy
 Phase 3 — Higher Risk · Architecture Change
 #	ปัญหา	ไฟล์	Risk	Impact
 3.1	Sidebar ไม่มี mobile breakpoint logic — ควรเปิดเป็น overlay บน < lg และปิดอัตโนมัติหลัง navigate	Layout.tsx + Sidebar.tsx	🔴 High	High — mobile experience
-3.2	Z-index ไม่มีระบบ — มี z-[9999], z-[60], z-50, z-40 ปนกัน ทำให้ modal ซ้อน modal ผิดพลาดได้	App.tsx, BOMModal.tsx	🔴 High	Medium — modal stacking bugs
+3.2	Z-index ไม่มีระบบ — z-[9999] หายแล้ว แต่ยังปน z-10/z-30/z-40/z-50/z-[60]/z-[100] (วัดใหม่ 2026-09-06) modal ซ้อน modal ยังผิดพลาดได้	App.tsx, BOMModal.tsx	🔴 High	Medium — modal stacking bugs
 3.3	Background glow effects ใช้ animate-pulse-slow infinite บน Layout.tsx:32-33 — รันตลอดทุกหน้า	Layout.tsx	🟡 Medium	Low — battery/CP
 
 
@@ -595,6 +595,17 @@ Phase 3 — Higher Risk · Architecture Change
 **ตรวจแล้วปลอดภัย:**
 - `.env` และ `.env.bak.*` **ไม่เคย** ถูก track และไม่เคยอยู่ใน git history
 - สแกน 26 ไฟล์ .bak ที่เคยหลุดขึ้น public repo หา hardcoded credential — ไม่พบ (`mcp/server.ts.bak` ใช้ parameterized SQL `WHERE mcp_api_key = ?` ทั้งหมด)
+
+**สำรวจโค้ดทั้ง repo (2026-09-06):**
+- ขนาดรวม **232 ไฟล์ / 98,158 บรรทัด** (.ts + .tsx ใน backend/src + frontend/src)
+- **28 ไฟล์เกิน 800 บรรทัด** ซึ่งเป็นเพดานที่ตั้งไว้เอง — หนักสุด `Stock.tsx` 5,836, `Purchase.tsx` 4,307, `Sales.tsx` 4,190, `CRM.tsx` 2,286, `Cashier.tsx` 2,125, `Marketing.tsx` 2,040 ฝั่ง backend หนักสุด `purchase.routes.ts` 1,973, `db/schema.ts` 1,922, `db/migrations.ts` 1,775 — นี่คือสาเหตุที่งาน multi-currency UI ค้าง (ต้อง refactor ไฟล์ 4,000+ บรรทัดก่อน)
+- **ไม่มี orphan route** — ตรวจทุกไฟล์ใน `routes/` เทียบกับ `index.ts` แล้ว ทั้ง 13 ไฟล์ใน `routes/sales/` mount ผ่าน `sales/index.ts` → `/api/sales` ครบ (อย่าเห็นว่าไม่มีชื่อใน index.ts แล้วสรุปว่าตาย — เคยเกือบพลาดตรงนี้)
+- **console.log ค้าง 134 จุดใน 13 ไฟล์** — 104 จุดอยู่ใน `db/migrations.ts` (เป็น progress log ของ migration ตั้งใจไว้ ไม่ต้องแก้) เหลือ ~30 จุดกระจายใน `import.routes.ts` (8), `ImportModal.tsx` (4), `index.ts` (3), `backup.scheduler.ts` (3) ที่ควรเก็บกวาด
+
+**⚠️ พบปัญหา repo ที่ต้องแก้ด้วยมือบน GitHub:**
+- **default branch ของ repo ยังเป็น `claude/crm-bom-stock-webapp-AZaaM`** (branch เก่าที่ AI สร้างไว้) ทั้งที่ trunk จริงคือ `ui` — repo นี้เป็น **public** ใครเปิด github.com/Miuu-hz/CRM-BOM-Stock จะเห็นโค้ดเก่าเป็นหน้าแรก ไม่ใช่ของที่ใช้จริง
+- `main` ค้างอยู่ที่ 2026-05-12 (`58c5949`) ขณะที่ `ui` = 2026-09-06 (`aba3124`) — ห่างกัน ~4 เดือน
+- แก้ได้ที่ GitHub → Settings → Branches → Default branch → เปลี่ยนเป็น `ui` แล้วลบ branch `claude/*` ทิ้ง (ทำผ่าน git ไม่ได้ ต้องกดบนเว็บหรือ `gh repo edit --default-branch ui`)
 
 **พบระหว่างทาง (ยังไม่แก้):**
 - ไฟล์ที่ลบไป **ยังอยู่ใน git history** ของ public repo — `.git` = 5.9MB ตัดสินใจไม่ rewrite history เพราะไม่คุ้มกับการที่ commit hash เปลี่ยนทั้ง repo
