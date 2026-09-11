@@ -36,8 +36,9 @@ import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import { accountsApi, type Account } from '../services/accounting'
 import { stockService } from '../services/stock'
-import { printDocument } from '../utils/purchasePrint'
+import { printBill } from '../utils/printBill'
 import toast from 'react-hot-toast'
+import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { useModalClose } from '../hooks/useModalClose'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
@@ -1812,7 +1813,7 @@ const Purchase = () => {
     setModalData(null)
   }
 
-  // ── print helper: adds company info then delegates to purchasePrint utility
+  // ── print helper: adds company info then delegates to the shared bill template
   const handlePrint = async (type: 'pr' | 'po' | 'gr' | 'pi' | 'payment' | 'return', id: string, format: 'a4' | 'thermal' = 'a4') => {
     const endpointMap: Record<string, string> = {
       pr: `/purchase/requests/${id}`,
@@ -1825,7 +1826,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get(endpointMap[type])
       const doc = data?.data || data
-      printDocument(type, { ...doc, _company: user?.name || t('purchase.common.companyFallback') }, format)
+      printBill(type, { ...doc, _company: user?.name || t('purchase.common.companyFallback') }, format)
     } catch { toast.error(t('purchase.error.loadPrintData')) }
   }
 
@@ -2754,7 +2755,7 @@ const Purchase = () => {
                 </p>
                 <div className="col-span-2 flex justify-end gap-1">
                   {/* พิมพ์ใบแจ้งหนี้ — มุมมองการ์ดมีปุ่มนี้อยู่แล้ว แต่มุมมองรายการไม่มี
-                      ทั้งที่ printDocument() รองรับชนิด 'pi' มาตั้งแต่แรก */}
+                      ทั้งที่ printBill() รองรับชนิด 'pi' มาตั้งแต่แรก */}
                   <button onClick={() => handlePrint('pi', invoice.id)} title={t('purchase.actions.printA4')}
                     className="p-1 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
                     <Printer className="w-3.5 h-3.5" />
@@ -3890,6 +3891,11 @@ const Purchase = () => {
           <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
+
+          {/* Slip attachments — only meaningful once the payment row exists (view mode) */}
+          {modalMode === 'view' && modalData?.id && (
+            <PaymentAttachments refType="SUPPLIER_PAYMENT" refId={modalData.id} />
+          )}
 
           {/* Supplier */}
           <div>

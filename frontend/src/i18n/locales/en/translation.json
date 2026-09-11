@@ -102,7 +102,9 @@
       "cancel": "Cancel",
       "error": "Could not access Phopy Board. Please try again.",
       "popupBlocked": "Your browser blocked the new tab. Please allow pop-ups for this site and try again."
-    }
+    },
+    "receivables": "Receivables / Payables",
+    "receivablesDesc": "Track outstanding balances and debt aging"
   },
   "dashboard": {
     "title": "Executive Dashboard",
@@ -122,6 +124,7 @@
     "today": "Today",
     "7days": "7 days",
     "30days": "30 days",
+    "over30days": "Over 30 days",
     "year": "This year",
     "noItems": "No items",
     "dueUnknown": "Not specified",
@@ -141,7 +144,18 @@
     "criticalStock": "Critical Stock",
     "remaining": "Remaining {{quantity}} {{unit}}",
     "overdueInvoices": "Overdue Invoices",
-    "receivable": "Receivable {{amount}}"
+    "receivable": "Receivable {{amount}}",
+    "stageQuoting": "Quoting",
+    "stageAwaiting": "Awaiting PO",
+    "stageWon": "PO received",
+    "stageLost": "Lost",
+    "winRate": "{{percent}}% win",
+    "pipelineUnlinked": "{{direct}} of {{total}} sales orders were opened directly without a linked quotation, so the pipeline above reads lower than reality.",
+    "cashJourney": "Where the money is",
+    "wfOrdered": "Ordered",
+    "wfInvoiced": "Invoiced",
+    "wfCollected": "Collected",
+    "wfOutstanding": "Outstanding"
   },
   "header": {
     "searchPlaceholder": "Search orders, customers, products... (Ctrl+K)",
@@ -1577,6 +1591,15 @@
     "statusBadge": {
       "outOfStock": "Out of stock (have {{count}} pcs)",
       "pendingDelivery": "Pending {{count}}"
+    },
+    "dealTimeline": {
+      "title": "Document trail for this deal",
+      "quotation": "Quotation",
+      "salesOrder": "Sales order",
+      "delivery": "Delivery",
+      "invoice": "Invoice",
+      "receipt": "Collected",
+      "outstanding": "{{amount}} still uncollected — this deal is not closed"
     }
   },
   "crm": {
@@ -1792,7 +1815,11 @@
       "create": "Create",
       "update": "Update",
       "createCustomer": "Create Customer",
-      "updateCustomer": "Update Customer"
+      "updateCustomer": "Update Customer",
+      "taxId": "Tax ID",
+      "taxIdPlaceholder": "13 digits",
+      "address": "Address",
+      "addressPlaceholder": "Street, district, province"
     },
     "suppliers": {
       "stats": {
@@ -2273,7 +2300,8 @@
         "approval": "Approval",
         "docNumbering": "Document Numbering",
         "currency": "Currency",
-        "bankAccounts": "Bank Accounts / Payment QR"
+        "bankAccounts": "Bank Accounts / Payment QR",
+        "documents": "Document Settings"
       },
       "groups": {
         "system": "System",
@@ -3089,6 +3117,67 @@
         "delete": "Delete User",
         "deleting": "Deleting..."
       }
+    },
+    "documents": {
+      "title": "Document / Paper Settings",
+      "subtitle": "Control the logo, paper size, columns and footer used across printed sales & purchase documents.",
+      "loadError": "Could not load saved settings — showing system defaults. Edit and save to create your settings.",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveSuccess": "Document settings saved",
+      "saveError": "Save failed",
+      "groups": {
+        "brand": "Logo & Brand",
+        "paper": "Paper & Size",
+        "columns": "Table Columns",
+        "footer": "Document Footer"
+      },
+      "brand": {
+        "logoLabel": "Current logo",
+        "logoHint": "Change the logo from the \"General\" tab",
+        "freePlanUpgrade": "Upgrade your plan to use your own logo on documents",
+        "tagline": "Tagline under company name",
+        "taglinePlaceholder": "e.g. Quality you can trust",
+        "color": "Document accent color",
+        "invalidColor": "Accent color must be a valid hex code, e.g. #5b5bd6"
+      },
+      "paper": {
+        "defaultPaper": "Default paper size per document type",
+        "margin": "Margin (mm)",
+        "fontSize": "Font size (pt)",
+        "invalidMargin": "Margin must be between 5 and 30 mm",
+        "invalidFontSize": "Font size must be between 8 and 16 pt"
+      },
+      "columns": {
+        "discount": "Discount",
+        "vat": "Line-item VAT",
+        "wht": "Withholding tax",
+        "sku": "SKU under product name"
+      },
+      "footer": {
+        "showBankInfo": "Show bank account info",
+        "showPaymentQr": "Show payment QR",
+        "defaultBankAccount": "Default bank account",
+        "autoBankAccount": "(auto — use primary account)",
+        "noBankAccount": "No bank accounts yet — add one in the Bank Accounts tab",
+        "signatureSlots": "Signature slots",
+        "addSlot": "Add slot"
+      },
+      "docTypes": {
+        "qt": "Quotation",
+        "so": "Sales Order",
+        "inv": "Invoice / Tax Invoice",
+        "dn": "Delivery Note",
+        "rc": "Receipt",
+        "cn": "Credit Note",
+        "pr": "Purchase Request",
+        "po": "Purchase Order",
+        "gr": "Goods Receipt",
+        "pi": "Purchase Tax Invoice",
+        "payment": "Payment Voucher",
+        "return": "Return Note",
+        "wo": "Work Order"
+      }
     }
   },
   "unitPicker": {
@@ -3131,5 +3220,66 @@
       "totalInline": "Total {{value}} {{unit}}",
       "totalUnchangedHint": "The grand total stays the same at {{value}} {{unit}} — this just moves stock from sealed packs to loose, it doesn't add anything new."
     }
+  },
+  "receivables": {
+    "title": "Receivables / Payables",
+    "asOf": "As of {{date}}",
+    "ar": "Receivable",
+    "ap": "Payable",
+    "refresh": "Refresh",
+    "totalReceivable": "Total receivable",
+    "totalPayable": "Total payable",
+    "overdue": "Overdue",
+    "oldest": "Oldest",
+    "days": "days",
+    "balance": "Balance",
+    "docsAcrossParties": "{{docs}} documents across {{parties}} parties",
+    "overdueShare": "{{percent}}% of outstanding ({{count}} documents)",
+    "overdueWarning": "{{percent}}% of the outstanding balance is already past due. Chase it before it turns into bad debt.",
+    "bucket": {
+      "current": "Not yet due",
+      "d1_30": "1-30 days",
+      "d31_60": "31-60 days",
+      "d61_90": "61-90 days",
+      "d90plus": "90+ days"
+    },
+    "byCustomer": "By customer",
+    "bySupplier": "By supplier",
+    "customer": "Customer",
+    "supplier": "Supplier",
+    "docCount": "{{count}} documents",
+    "daysOverdue": "{{days}}d overdue",
+    "notDue": "Not due",
+    "arDoc": "Receivable document",
+    "empty": "Nothing outstanding",
+    "loadFailed": "Failed to load data",
+    "collectionTitle": "Invoiced vs collected",
+    "collectionGap": "{{amount}} still uncollected over the last {{months}} months",
+    "invoiced": "Invoiced",
+    "collected": "Collected",
+    "dun": "Chase",
+    "dunTitle": "Collection message",
+    "dunSubject": "Outstanding balance - {{name}}",
+    "overdueAmount": "Overdue amount",
+    "copy": "Copy message",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "sendEmail": "Send email",
+    "close": "Close",
+    "noContact": "This party has no email or phone on file — add one from the CRM page."
+  },
+  "attachments": {
+    "title": "Attachments",
+    "hasEvidence": "Payment evidence attached",
+    "add": "Add file",
+    "uploading": "Uploading...",
+    "none": "No attachments yet",
+    "fileTooLarge": "File too large (max 10MB)",
+    "uploadSuccess": "File uploaded",
+    "uploadFailed": "Upload failed",
+    "deleteSuccess": "Attachment deleted",
+    "deleteFailed": "Delete failed",
+    "confirmDelete": "Delete this attachment?",
+    "openFailed": "Failed to open file"
   }
 }

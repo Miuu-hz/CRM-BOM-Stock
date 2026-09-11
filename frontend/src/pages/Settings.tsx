@@ -35,6 +35,7 @@ import {
   Hash,
   Coins,
   Landmark,
+  FileText,
 } from 'lucide-react'
 import POSMenuSettings from './settings/POSMenuSettings'
 import CurrencySettings from './settings/CurrencySettings'
@@ -48,6 +49,7 @@ import PermissionSettings from './settings/PermissionSettings'
 import AdminUserManagement from './settings/AdminUserManagement'
 import ApprovalSettings from './settings/ApprovalSettings'
 import DocumentNumberSettings from './settings/DocumentNumberSettings'
+import DocumentSettings from './settings/DocumentSettings'
 import MCPSettings from './settings/MCPSettings'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
@@ -67,8 +69,8 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'currency' | 'bank-accounts' | 'mcp'
-  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'llm', 'backup', 'permissions', 'approval', 'doc-numbering', 'currency', 'bank-accounts', 'mcp']
+  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
+  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'llm', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
   // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get('tab') as SettingsTab | null
@@ -123,6 +125,7 @@ export default function SettingsPage() {
               { id: 'units' as const, icon: ArrowLeftRight, label: t('settings.settingsPage.tabs.units'), show: true },
               { id: 'material-categories' as const, icon: Tag, label: t('settings.settingsPage.tabs.materialCategories'), show: isAdmin || isMaster },
               { id: 'doc-numbering' as const, icon: Hash, label: t('settings.settingsPage.tabs.docNumbering'), show: isAdmin || isMaster },
+              { id: 'documents' as const, icon: FileText, label: t('settings.settingsPage.tabs.documents'), show: isAdmin || isMaster },
               { id: 'currency' as const, icon: Coins, label: t('settings.settingsPage.tabs.currency'), show: isAdmin || isMaster },
             ],
           },
@@ -238,6 +241,8 @@ export default function SettingsPage() {
         {activeTab === 'approval' && (isAdmin || isMaster) && <ApprovalSettings />}
 
         {activeTab === 'doc-numbering' && (isAdmin || isMaster) && <DocumentNumberSettings />}
+
+        {activeTab === 'documents' && (isAdmin || isMaster) && <DocumentSettings />}
 
         {activeTab === 'currency' && (isAdmin || isMaster) && <CurrencySettings />}
       </div>

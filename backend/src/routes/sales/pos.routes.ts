@@ -598,7 +598,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     let journalEntryId: string | null = null
     if (Math.abs(cashDifference) > 0.005) {
       const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
-      const overShortAccountId = getOrCreateAccount(tenantId, '5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+      const overShortAccountId = getOrCreateAccount(tenantId, ACC.CASH_OVER_SHORT)
       const desc = `ปิดกะ ${shift.shift_number} — ${cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'} ${Math.abs(cashDifference).toFixed(2)} บาท`
       journalEntryId = cashDifference < 0
         // เงินขาด: Dr 5901 / Cr เงินสด

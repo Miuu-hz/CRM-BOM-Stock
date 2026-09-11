@@ -26,6 +26,8 @@ interface Customer {
   email: string
   phone: string
   city: string
+  address: string
+  taxId: string
   creditLimit: number
   status: 'ACTIVE' | 'INACTIVE'
   totalOrders: number
@@ -219,6 +221,8 @@ function CRM() {
         ...c,
         totalOrders: c.total_orders ?? c.totalOrders ?? 0,
         totalRevenue: c.total_revenue ?? c.totalRevenue ?? 0,
+        address: c.address ?? '',
+        taxId: c.tax_id ?? c.taxId ?? '',
         creditLimit: c.credit_limit ?? c.creditLimit ?? 0,
         creditUsed: c.credit_used ?? c.creditUsed ?? 0,
         contactName: c.contact_name ?? c.contactName ?? '',
@@ -683,7 +687,7 @@ function CustomerModal({ open, customer, onClose, onSave }: {
   useModalClose(onClose)
   const [form, setForm] = useState({
     code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
-    city: '', creditLimit: 0, status: 'ACTIVE'
+    city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE'
   })
   const [saving, setSaving] = useState(false)
 
@@ -692,11 +696,11 @@ function CustomerModal({ open, customer, onClose, onSave }: {
       setForm({
         code: customer.code, name: customer.name, type: customer.type,
         contactName: customer.contactName, email: customer.email, phone: customer.phone,
-        city: customer.city, creditLimit: customer.creditLimit, status: customer.status
+        city: customer.city, address: customer.address ?? '', taxId: customer.taxId ?? '', creditLimit: customer.creditLimit, status: customer.status
       })
     } else {
       setForm({ code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
-        city: '', creditLimit: 0, status: 'ACTIVE' })
+        city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE' })
     }
   }, [customer, open])
 
@@ -803,10 +807,25 @@ function CustomerModal({ open, customer, onClose, onSave }: {
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.creditLimit')}</label>
-                <input type="number" value={form.creditLimit}
-                  onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
-                  className="phopy-input w-full" min="0" placeholder="0" />
+                <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.address')}</label>
+                <textarea value={form.address} rows={2}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  className="phopy-input w-full" placeholder={t('crm.modal.addressPlaceholder')} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.taxId')}</label>
+                  <input type="text" value={form.taxId} inputMode="numeric" maxLength={13}
+                    onChange={(e) => setForm({ ...form, taxId: e.target.value.replace(/\D/g, '') })}
+                    className="phopy-input w-full" placeholder={t('crm.modal.taxIdPlaceholder')} />
+                </div>
+                <div>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.creditLimit')}</label>
+                  <input type="number" value={form.creditLimit}
+                    onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
+                    className="phopy-input w-full" min="0" placeholder="0" />
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4">

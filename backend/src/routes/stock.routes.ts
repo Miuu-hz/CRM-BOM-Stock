@@ -10,6 +10,7 @@ import fs from 'fs'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUnitDisplayName } from '../services/unitConversion.service'
 import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
+import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
 
 // Multer config: store in uploads/stock-images/
@@ -56,14 +57,6 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
-function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
-  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
-  if (existing) return existing.id
-  const id = generateId()
-  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
-  return id
-}
 
 /**
  * Base units contained in one display (pack) unit — e.g. 30 for a pack of eggs.
@@ -649,7 +642,7 @@ router.post('/movement', async (req: Request, res: Response) => {
 
             if (diffValue > 0) {
               // Adjust up: Dr Inventory / Cr Other Income
-              const incomeAccId = getOrCreateAccount(tenantId, '4203', 'รายได้อื่น', 'REVENUE', 'OTHER_REVENUE', 'CREDIT')
+              const incomeAccId = getOrCreateAccount(tenantId, ACC.OTHER_REVENUE)
               db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
                 .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
@@ -659,7 +652,7 @@ router.post('/movement', async (req: Request, res: Response) => {
                 .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
             } else {
               // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
-              const adjExpAccId = getOrCreateAccount(tenantId, '5901', 'ค่าใช้จ่ายปรับปรุงสต็อก', 'EXPENSE', 'OTHER_EXPENSE', 'DEBIT')
+              const adjExpAccId = getOrCreateAccount(tenantId, ACC.STOCK_ADJUSTMENT)
               const absValue = Math.abs(diffValue)
               db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
