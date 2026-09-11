@@ -123,10 +123,11 @@ function syncVatInputFromPurchaseInvoices(tenantId: string) {
 
 function syncVatOutputFromPosBills(tenantId: string) {
   const rows = db.prepare(
-    `SELECT id, bill_number, opened_at, closed_at, subtotal, tax_amount, total_amount, tax_rate,
-            customer_name, display_name
-     FROM pos_running_bills
-     WHERE tenant_id = ? AND status = 'PAID' AND tax_amount > 0`
+    `SELECT b.id, b.bill_number, b.opened_at, b.closed_at, b.subtotal, b.tax_amount, b.total_amount, b.tax_rate,
+            b.customer_name, b.display_name, b.customer_id, c.tax_id as customer_tax_id
+     FROM pos_running_bills b
+     LEFT JOIN customers c ON b.customer_id = c.id
+     WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.tax_amount > 0`
   ).all(tenantId) as any[]
 
   for (const bill of rows) {
@@ -137,11 +138,13 @@ function syncVatOutputFromPosBills(tenantId: string) {
     db.prepare(
       `INSERT INTO tax_transactions (
          id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
-         partner_name, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
-       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'POS_BILL', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
+       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'POS_BILL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
     ).run(
       generateId(), tenantId, periodId, bill.id, bill.bill_number, docDate,
+      bill.customer_id ?? null,
       bill.customer_name || bill.display_name || 'ลูกค้าเงินสด',
+      bill.customer_tax_id ?? null,
       `ภาษีขายจากบิล POS ${bill.bill_number}`,
       bill.subtotal ?? 0, bill.tax_amount ?? 0, bill.total_amount ?? 0, bill.tax_rate || 7
     )
@@ -153,7 +156,7 @@ function syncVatOutputFromPosBills(tenantId: string) {
 function syncVatOutputFromSalesInvoices(tenantId: string) {
   const rows = db.prepare(
     `SELECT i.id, i.invoice_number, i.invoice_date, i.subtotal, i.tax_amount, i.total_amount, i.tax_rate,
-            c.name as customer_name
+            i.customer_id, c.name as customer_name, c.tax_id as customer_tax_id
      FROM invoices i
      LEFT JOIN customers c ON i.customer_id = c.id
      WHERE i.tenant_id = ? AND i.status != 'CANCELLED' AND i.tax_amount > 0`
@@ -167,11 +170,13 @@ function syncVatOutputFromSalesInvoices(tenantId: string) {
     db.prepare(
       `INSERT INTO tax_transactions (
          id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
-         partner_name, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
-       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'SALES_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
+       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'SALES_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
     ).run(
       generateId(), tenantId, periodId, inv.id, inv.invoice_number, docDate,
+      inv.customer_id ?? null,
       inv.customer_name || 'ลูกค้า',
+      inv.customer_tax_id ?? null,
       `ภาษีขายจากใบแจ้งหนี้ ${inv.invoice_number}`,
       inv.subtotal ?? 0, inv.tax_amount ?? 0, inv.total_amount ?? 0, inv.tax_rate || 7
     )

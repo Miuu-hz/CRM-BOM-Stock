@@ -384,7 +384,11 @@ class POSAccountingService {
         bill.bill_number,
         today,
         bill.customer_name || 'ลูกค้าทั่วไป',
-        null, // party_tax_id
+        // ฝั่งซื้อใส่ supplier tax_id มาตลอด (purchase.routes.ts) ฝั่งขายเคยใส่ null แข็งๆ
+        (bill.customer_id
+          ? ((db.prepare('SELECT tax_id FROM customers WHERE id = ? AND tenant_id = ?')
+              .get(bill.customer_id, tenantId) as any)?.tax_id ?? null)
+          : null), // party_tax_id
         totalRevenue,
         bill.tax_rate || 0,
         bill.tax_amount,

@@ -41,7 +41,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const salesOrder = db.prepare(`
-      SELECT so.*, c.name as customer_name, c.code as customer_code, c.email as customer_email, c.phone as customer_phone,
+      SELECT so.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone,
         q.quotation_number
       FROM sales_orders so
       LEFT JOIN customers c ON so.customer_id = c.id

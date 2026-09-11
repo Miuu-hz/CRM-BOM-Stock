@@ -1092,6 +1092,22 @@ export function runMigrations(db: any): void {
     console.error('⚠️ document_number_formats migration error:', e)
   }
 
+  // Migration: document settings for print layout (Settings -> ตั้งค่าหน้ากระดาษ/เอกสาร). One JSON blob per
+  // tenant so the Settings page can read/write it whole and add new keys later without
+  // a migration (see GET/PUT /api/settings/documents in settings.routes.ts).
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS document_settings (
+        tenant_id TEXT PRIMARY KEY,
+        settings_json TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    console.log('✅ Migration: document_settings table ready')
+  } catch (e) {
+    console.error('⚠️ document_settings migration error:', e)
+  }
+
   // Migration: QC ↔ Work Order integration (Phase 1)
   // Links qc_inspections to a work_order and tracks inspected/passed/rejected qty
   // so work order completion can be gated on QC results and use QC-verified quantities.
@@ -1771,5 +1787,7 @@ export function runMigrations(db: any): void {
     "ALTER TABLE invoices ADD COLUMN foreign_amount REAL",
     "ALTER TABLE journal_entries ADD COLUMN is_closing_entry INTEGER DEFAULT 0",
     "ALTER TABLE tax_transactions ADD COLUMN wht_form TEXT",
+    // เลขประจำตัวผู้เสียภาษีของลูกค้า — จำเป็นตอนออกใบกำกับภาษี แต่เดิมมีแค่ฝั่ง suppliers
+    "ALTER TABLE customers ADD COLUMN tax_id TEXT",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 }

@@ -6,6 +6,7 @@ import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
 import { roundQty, roundPackQty } from '../utils/qty'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
+import { getOrCreateAccount } from '../services/accounting.service'
 import { updateAccountBalance } from './sales/shared'
 
 const router = Router()
@@ -87,15 +88,6 @@ function generateEntryNumber(tenantId: string, date: string): string {
   return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
 }
 
-function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
-  const existing = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(code, tenantId) as any
-  if (existing) return existing.id
-  const id = generateId()
-  const now = new Date().toISOString()
-  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tenantId, code, name, type, category, normalBalance, now, now)
-  return id
-}
 
 // ============================================
 // CANCELLATION REVERSAL HELPERS (accounting + stock)
@@ -1049,7 +1041,7 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const invoice = db.prepare(`
-      SELECT pi.*, s.name as supplier_name, s.code as supplier_code,
+      SELECT pi.*, s.name as supplier_name, s.code as supplier_code, s.tax_id as supplier_tax_id,
         po.po_number, gr.gr_number
       FROM purchase_invoices pi
       LEFT JOIN suppliers s ON pi.supplier_id = s.id

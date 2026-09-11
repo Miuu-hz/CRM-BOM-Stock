@@ -88,7 +88,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const po = db.prepare(`
-      SELECT po.*, s.name as supplier_name, s.code as supplier_code, s.email as supplier_email, s.phone as supplier_phone
+      SELECT po.*, s.name as supplier_name, s.code as supplier_code, s.email as supplier_email, s.phone as supplier_phone,
+        s.tax_id as supplier_tax_id
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
       WHERE po.id = ? AND po.tenant_id = ?

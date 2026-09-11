@@ -84,6 +84,8 @@ export interface POSBill {
   bill_number: string
   display_name: string
   customer_name?: string | null
+  // ผูกกับลูกค้าจริงเมื่อบิลถูกระบุชื่อ — ใช้ดึงเลขภาษีผู้ซื้อลงใบกำกับภาษี
+  customer_id?: string | null
   subtotal: number
   service_charge_amount: number
   tax_rate?: number

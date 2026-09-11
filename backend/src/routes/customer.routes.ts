@@ -96,7 +96,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, type, contactName, email, phone, city, creditLimit = 0 } = req.body
+    const { code, name, type, contactName, email, phone, city, address, taxId, creditLimit = 0 } = req.body
     
     // Validation
     if (!code || !name || !type || !contactName || !phone) {
@@ -115,9 +115,9 @@ router.post('/', (req: Request, res: Response) => {
     const now = new Date().toISOString()
     
     db.prepare(`
-      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, credit_limit, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, code, name, type, contactName, email || '', phone, city || '', creditLimit, now, now)
+      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, credit_limit, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+    `).run(id, tenantId, code, name, type, contactName, email || '', phone, city || '', address || null, taxId || null, creditLimit, now, now)
     
     res.status(201).json({
       success: true,
@@ -135,7 +135,7 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, contactName, email, phone, city, creditLimit, status } = req.body
+    const { name, contactName, email, phone, city, address, taxId, creditLimit, status } = req.body
     
     // Check if customer exists and belongs to this tenant
     const existing = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?')
@@ -154,11 +154,13 @@ router.put('/:id', (req: Request, res: Response) => {
           email = COALESCE(?, email),
           phone = COALESCE(?, phone),
           city = COALESCE(?, city),
+          address = COALESCE(?, address),
+          tax_id = COALESCE(?, tax_id),
           credit_limit = COALESCE(?, credit_limit),
           status = COALESCE(?, status),
           updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, contactName, email, phone, city, creditLimit, status, now, id, tenantId)
+    `).run(name, contactName, email, phone, city, address, taxId, creditLimit, status, now, id, tenantId)
     
     res.json({ success: true, message: 'อัปเดตลูกค้าสำเร็จ' })
   } catch (error) {

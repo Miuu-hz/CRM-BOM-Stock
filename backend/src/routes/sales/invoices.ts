@@ -49,7 +49,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const invoice = db.prepare(`
-      SELECT i.*, c.name as customer_name, c.code as customer_code, c.email as customer_email, c.phone as customer_phone,
+      SELECT i.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone,
         c.address as customer_address, so.so_number
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
@@ -128,7 +128,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Get sales order details
     const salesOrder = db.prepare(`
-      SELECT so.*, c.id as customer_id, c.name as customer_name
+      SELECT so.*, c.id as customer_id, c.name as customer_name, c.tax_id as customer_tax_id
       FROM sales_orders so
       JOIN customers c ON so.customer_id = c.id
       WHERE so.id = ? AND so.tenant_id = ?
@@ -175,7 +175,7 @@ router.post('/', async (req: Request, res: Response) => {
           INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
         `).run(generateId(), tenantId, 'INVOICE', id, invoiceNumber, now.substring(0, 10),
-          salesOrder.customer_name || '', null,
+          salesOrder.customer_name || '', salesOrder.customer_tax_id || null,
           salesOrder.subtotal, salesOrder.tax_rate || 7, salesOrder.tax_amount, salesOrder.total_amount, now)
       }
     })

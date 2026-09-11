@@ -30,6 +30,7 @@ export function applySchema(db: any): void {
       phone TEXT NOT NULL,
       address TEXT,
       city TEXT NOT NULL,
+      tax_id TEXT,
       credit_limit REAL DEFAULT 0,
       status TEXT DEFAULT 'ACTIVE',
       tenant_id TEXT,
@@ -1796,6 +1797,23 @@ export function applySchema(db: any): void {
       file_size INTEGER,
       created_at TEXT NOT NULL
     );
+
+    -- Phase 2a: unified attachment storage for payment/receipt evidence across
+    -- receipts, supplier_payments, pos_payments and invoices. invoice_attachments
+    -- (above) stays as-is for now — Sales.tsx still calls its dedicated endpoint;
+    -- see attachments.routes.ts ATTACHMENT_SOURCES for how both are served.
+    CREATE TABLE IF NOT EXISTS payment_attachments (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      ref_type TEXT NOT NULL CHECK(ref_type IN ('RECEIPT', 'SUPPLIER_PAYMENT', 'POS_PAYMENT', 'INVOICE')),
+      ref_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_size INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_attachments_ref ON payment_attachments(tenant_id, ref_type, ref_id);
 
     CREATE TABLE IF NOT EXISTS loyalty_transactions (
       id TEXT PRIMARY KEY,
