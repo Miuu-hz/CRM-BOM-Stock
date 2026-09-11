@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import db from '../db/sqlite'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getSubscription } from '../services/subscription.service'
 
 const router = Router()
@@ -168,6 +169,121 @@ router.post('/document-formats', (req, res) => {
   } catch (error) {
     console.error('Save document formats error:', error)
     res.status(500).json({ success: false, message: 'Failed to save formats' })
+  }
+})
+
+
+// ─── Document Settings (ตั้งค่าหน้ากระดาษ/เอกสาร) ───────────────────
+// เก็บเป็น JSON ก้อนเดียวต่อ tenant (ดู document_settings ใน migrations.ts) เพราะหน้า
+// Settings อ่าน/เขียนทั้งก้อน ไม่ query รายฟิลด์ และเพิ่ม key ใหม่ทีหลังได้โดยไม่ต้อง migrate.
+const DEFAULT_DOCUMENT_SETTINGS = {
+  brandColor: '#5b5bd6',
+  companyTagline: '',
+  defaultPaper: {
+    qt: 'A4', so: 'A4', inv: 'A4', dn: 'A4', rc: 'THERMAL', cn: 'A4',
+    po: 'A4', pr: 'A4', gr: 'A4', pi: 'A4', payment: 'A4', return: 'A4', wo: 'A4',
+  },
+  marginMm: 13,
+  fontSizePt: 12,
+  columns: { discount: true, vat: true, wht: false, sku: true },
+  showBankInfo: true,
+  showPaymentQr: true,
+  defaultBankAccountId: null as string | null,
+  signatureSlots: ['ผู้ออกเอกสาร (ผู้ขาย)', 'ผู้อนุมัติ (ผู้ขาย)', 'ผู้รับเอกสาร (ลูกค้า)', 'ตราประทับ (ลูกค้า)'],
+  footerNotes: {} as Record<string, string>,
+}
+
+const PaperSizeSchema = z.enum(['A4', 'A5', 'THERMAL'])
+const DOC_TYPES = ['qt', 'so', 'inv', 'dn', 'rc', 'cn', 'po', 'pr', 'gr', 'pi', 'payment', 'return', 'wo'] as const
+const DefaultPaperSchema = z.object(
+  Object.fromEntries(DOC_TYPES.map(k => [k, PaperSizeSchema.optional()]))
+).partial()
+
+const DocumentSettingsSchema = z.object({
+  brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'brandColor ต้องเป็น hex เช่น #5b5bd6').optional(),
+  companyTagline: z.string().max(500).optional(),
+  defaultPaper: DefaultPaperSchema.optional(),
+  marginMm: z.number().min(5).max(30).optional(),
+  fontSizePt: z.number().min(8).max(16).optional(),
+  columns: z.object({
+    discount: z.boolean().optional(),
+    vat: z.boolean().optional(),
+    wht: z.boolean().optional(),
+    sku: z.boolean().optional(),
+  }).partial().optional(),
+  showBankInfo: z.boolean().optional(),
+  showPaymentQr: z.boolean().optional(),
+  defaultBankAccountId: z.string().nullable().optional(),
+  signatureSlots: z.array(z.string().max(40)).max(4).optional(),
+  footerNotes: z.record(z.string(), z.string().max(500)).optional(),
+})
+
+// Merge `override` onto `base`: known nested objects (defaultPaper/columns/footerNotes) merge
+// key-by-key so a partial update doesn't wipe sibling keys; everything else overrides wholesale.
+function mergeDocumentSettings(base: typeof DEFAULT_DOCUMENT_SETTINGS, override: Record<string, any>) {
+  const merged: any = { ...base, ...override }
+  if (override.defaultPaper) merged.defaultPaper = { ...base.defaultPaper, ...override.defaultPaper }
+  if (override.columns) merged.columns = { ...base.columns, ...override.columns }
+  if (override.footerNotes) merged.footerNotes = { ...base.footerNotes, ...override.footerNotes }
+  return merged
+}
+
+function loadDocumentSettings(tenantId: string) {
+  const row = db.prepare('SELECT settings_json FROM document_settings WHERE tenant_id = ?').get(tenantId) as any
+  const saved = row ? JSON.parse(row.settings_json) : {}
+  return mergeDocumentSettings(DEFAULT_DOCUMENT_SETTINGS, saved)
+}
+
+// GET /api/settings/documents
+router.get('/documents', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const settings = loadDocumentSettings(tenantId)
+
+    const company = db.prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+    const subRow = db.prepare('SELECT plan_code FROM tenant_subscriptions WHERE tenant_id = ?').get(tenantId) as any
+    const isFreePlan = !subRow || subRow.plan_code === 'free'
+
+    res.json({
+      success: true,
+      data: {
+        ...settings,
+        branding: {
+          logoBase64: company?.logo_base64 || null,
+          isFreePlan,
+        },
+      },
+    })
+  } catch (error) {
+    console.error('Error fetching document settings:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch document settings' })
+  }
+})
+
+// PUT /api/settings/documents — เฉพาะ ADMIN/MASTER
+router.put('/documents', requireRole('ADMIN', 'MASTER'), (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const parsed = DocumentSettingsSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return void res.status(400).json({ success: false, message: parsed.error.issues[0].message })
+    }
+
+    const existing = loadDocumentSettings(tenantId)
+    const merged = mergeDocumentSettings(existing, parsed.data)
+
+    db.prepare(`
+      INSERT INTO document_settings (tenant_id, settings_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(tenant_id) DO UPDATE SET
+        settings_json = excluded.settings_json,
+        updated_at    = excluded.updated_at
+    `).run(tenantId, JSON.stringify(merged))
+
+    res.json({ success: true, data: merged })
+  } catch (error) {
+    console.error('Error saving document settings:', error)
+    res.status(500).json({ success: false, message: 'Failed to save document settings' })
   }
 })
 

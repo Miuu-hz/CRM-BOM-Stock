@@ -34,7 +34,7 @@ export function getCachedBankAccounts(): BankAccount[] {
   }
 }
 
-// Used by print templates (salesPrint.ts / purchasePrint.ts) — mirrors
+// Used by the shared bill template (utils/printBill.ts) — mirrors
 // getCachedCompanySettings()'s sync-read pattern so print call sites don't
 // need to await a network call.
 export function getCachedDefaultBankAccount(): BankAccount | undefined {
