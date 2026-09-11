@@ -24,3 +24,7 @@ uploads/
 # Logs
 logs/
 *.log
+
+test.db
+test.db-shm
+test.db-wal

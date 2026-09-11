@@ -111,8 +111,18 @@ const UNIT_NAME_MAP: Record<string, string> = {
   'มล.': 'ml', 'จาน': 'plate', 'ถาด': 'tray', 'ลูก': 'piece',
   'ฟอง': 'egg', 'รายการ': 'item', 'สกู๊ป': 'scoop',
   'ถัง': 'tank', 'สไลซ์': 'slice',
+  // ลักษณนามไทยที่เพิ่มสำหรับโรงงานเครื่องนอน
+  'ใบ': 'bai', 'ผืน': 'phuen', 'รอบ': 'rob', 'ปิ๊บ': 'pip',
+  // ลักษณนามที่เจ้าของสั่งให้ยุบเป็น "ชิ้น" ทั้งหมด เพราะแยกแล้วไม่ได้ใช้ประโยชน์
+  // (ฟูก=หลัง, ปลอก/เบาะ=ตัว, เตียง/อะไหล่=อัน, ใยอัด=ก้อน, เชือก=มัด)
+  'หลัง': 'pcs', 'ตัว': 'pcs', 'อัน': 'pcs', 'ก้อน': 'pcs', 'มัด': 'pcs',
   // spelling variants ที่พบบ่อย
   'กุรอส': 'gross',
+  // พนักงานลงหน่วยผิดบ่อย — จับให้ตรงหน่วยจริงตั้งแต่ normalize ไม่ต้องไล่แก้ทีหลัง
+  'โล': 'kg', 'กิโลฯ': 'kg',
+  'ชื้น': 'pcs',
+  'ปี๊บ': 'pip', 'ปี๊ป': 'pip', 'ปิ๊ป': 'pip',
+  'มวน': 'roll', 'ม้วนผ้า': 'roll',
   // ---- alias ภาษาอังกฤษ (วางท้ายสุด เพื่อไม่ให้ชนะ label ภาษาไทยตอน reverse lookup) ----
   'ltr': 'l', 'litre': 'l', 'liter': 'l', 'liters': 'l', 'litres': 'l',
   'slices': 'slice', 'pieces': 'piece', 'tanks': 'tank',
@@ -133,6 +143,9 @@ const UNIT_LABELS: Record<string, string> = {
   tube: 'หลอด', tablet: 'เม็ด', glass: 'แก้ว', tsp: 'ช้อนชา', tbsp: 'ช้อนโต๊ะ',
   plate: 'จาน', tray: 'ถาด', piece: 'ลูก', egg: 'ฟอง', item: 'รายการ',
   scoop: 'สกู๊ป', tank: 'ถัง', slice: 'สไลซ์',
+  // ลักษณนามไทย (โรงงานเครื่องนอน): ถุง/หมอน=ใบ, ผ้าห่ม/ผ้าปู=ผืน, กาว=ปิ๊บ, ค่าขนส่ง=รอบ
+  // หลัง/ตัว/อัน/ก้อน/มัด ไม่ได้แยกเป็น code — ยุบเป็น pcs (ชิ้น) ทั้งหมด ดู UNIT_NAME_MAP
+  bai: 'ใบ', phuen: 'ผืน', rob: 'รอบ', pip: 'ปิ๊บ',
   // generic fallback that some products carry instead of a real unit
   unit: 'หน่วย',
 }
@@ -152,6 +165,7 @@ const UNIT_LABELS_EN: Record<string, string> = {
   tube: 'tube', tablet: 'tablet', glass: 'glass', tsp: 'teaspoon', tbsp: 'tablespoon',
   plate: 'plate', tray: 'tray', piece: 'unit', egg: 'egg', item: 'item',
   scoop: 'scoop', tank: 'tank', slice: 'slice',
+  bai: 'bai (unit)', phuen: 'phuen (sheet)', rob: 'rob (round)', pip: 'pip (tin)',
   unit: 'unit',
 }
 
@@ -206,6 +220,8 @@ const UNIT_CATEGORIES: Record<string, string[]> = {
     'dozen', 'pcs', 'gross', 'pair', 'box', 'pack', 'set', 'roll', 'sheet',
     'bottle', 'bag', 'sachet', 'case', 'can', 'tube', 'tablet', 'glass',
     'plate', 'tray', 'piece', 'egg', 'item', 'scoop', 'tank', 'slice', 'unit',
+    // ลักษณนามไทยที่ไม่มีคำอังกฤษตรงตัว — ใช้ทับศัพท์เป็น code เพื่อไม่ให้ชนของเดิม
+    'bai', 'phuen', 'rob', 'pip',
   ],
 }
 

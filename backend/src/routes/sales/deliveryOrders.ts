@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
+import { isServiceItem } from '../../services/stockItem.service'
 import { roundQty } from '../../utils/qty'
 
 const router = Router()
@@ -151,7 +152,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
           // Deduct stock (with unit conversion)
           const stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId) as any
-          if (stockItem) {
+          if (stockItem && !isServiceItem(stockItem)) {   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
             const soItem = db.prepare('SELECT unit FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
             const soUnit = soItem?.unit || ''
             // stock_items.quantity is stored in base_unit, not the legacy `unit` column —

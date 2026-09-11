@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
+import { isServiceItem } from '../../services/stockItem.service'
 import { ok } from './shared'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
@@ -27,7 +28,8 @@ const deductStockForSO = (tenantId: string, soId: string, soNumber: string, user
     let qty = Number(item.quantity || 0)
     if (qty <= 0) continue
 
-    const stockItem = db.prepare('SELECT unit, base_unit FROM stock_items WHERE id = ?').get(stockItemId) as any
+    const stockItem = db.prepare('SELECT unit, base_unit, category FROM stock_items WHERE id = ?').get(stockItemId) as any
+    if (isServiceItem(stockItem)) continue   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
     const soUnit = item.unit || ''
     // stock_items.quantity is stored in base_unit — the legacy `unit` column can differ
     // (23/456 items today, e.g. shrimp: unit=kg, base_unit=g) and using it here silently

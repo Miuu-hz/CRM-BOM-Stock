@@ -8,6 +8,13 @@ import path from 'path'
 export default defineConfig({
   test: {
     environment: 'node',
+    // ต้องตั้งผ่าน test.env เท่านั้น — ตั้งใน vitest.setup.ts ไม่ทัน เพราะ import ถูก hoist
+    // ทำให้ db/connection.ts อ่าน dbPath ไปก่อนที่ statement แรกของ setup จะรัน
+    //
+    // ก่อนหน้านี้ suite นี้วิ่งใส่ backend/dev.db ตัวจริง: ALTER TABLE ลง production
+    // ตามที่ vitest.setup.ts เตือนไว้ และเทสต์ที่ INSERT company_settings/users ทิ้งขยะ
+    // ค้างไว้จริง (เจอ 4 tenant + 32 users ค้างเมื่อ 2026-09-09)
+    env: { SQLITE_DB_PATH: path.resolve(__dirname, 'test.db') },
     setupFiles: [path.resolve(__dirname, 'vitest.setup.ts')],
     fileParallelism: false,
     isolate: false,

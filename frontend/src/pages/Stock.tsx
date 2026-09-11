@@ -947,6 +947,10 @@ function Stock() {
 
                 <FilterButton label="สินค้าสำเร็จรูป" active={selectedCategory === 'finished'} onClick={() => handleCategoryChange('finished')} />
 
+                <FilterButton label="บริการ" active={selectedCategory === 'service'} onClick={() => handleCategoryChange('service')} />
+
+                <FilterButton label="วัสดุ/อื่นๆ" active={selectedCategory === 'material'} onClick={() => handleCategoryChange('material')} />
+
               </div>
 
             </div>
@@ -4474,13 +4478,17 @@ function FilterButton({
 
 // Map any category value (Thai or English) to a display group
 
-function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'material' {
+function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'service' | 'material' {
 
   const raw = ['[วัตถุดิบ]', '[วัสดุย่อย]', 'raw', 'raw material']
 
   const wip = ['[สินค้ากึ่งสำเร็จรูป]', 'wip', 'semi-finished']
 
   const finished = ['[สินค้าสำเร็จรูป]', '[สินค้า]', '[สินค้าไม่มีตัวตน]', 'finished', 'finish']
+
+  // ค่าขนส่ง/ค่าแพ็ค — ขายได้แต่ไม่มีของ ไม่ถูกตัดสต็อก (services/stockItem.service.ts)
+
+  const service = ['service', 'บริการ']
 
   const c = category.toLowerCase()
 
@@ -4489,6 +4497,8 @@ function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'mater
   if (wip.includes(c)) return 'wip'
 
   if (finished.includes(c)) return 'finished'
+
+  if (service.includes(c)) return 'service'
 
   return 'material'
 
@@ -4505,6 +4515,8 @@ function CategoryBadge({ category }: { category: string }) {
     wip:      { label: 'กึ่งสำเร็จรูป', color: 'text-warning bg-[var(--warning-soft)] border-warning/30' },
 
     finished: { label: 'สินค้าสำเร็จรูป', color: 'text-success bg-[var(--success-soft)] border-success/30' },
+
+    service:  { label: 'บริการ',        color: 'text-cyan-400 bg-cyan-500/20 border-cyan-500/30' },
 
     material: { label: 'วัสดุ/อื่นๆ',   color: 'text-purple-400 bg-purple-500/20 border-purple-500/30' },
 

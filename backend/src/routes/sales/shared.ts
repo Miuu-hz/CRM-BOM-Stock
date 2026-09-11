@@ -9,7 +9,7 @@ import path from 'path'
 import fs from 'fs'
 
 // ─── Invoice Attachments Setup ────────────────────────────────────────────────
-export const invoiceUploadDir = path.join(__dirname, '..', '..', 'uploads', 'invoice-attachments')
+export const invoiceUploadDir = path.join(__dirname, '..', '..', '..', 'storage', 'payment-attachments')
 if (!fs.existsSync(invoiceUploadDir)) fs.mkdirSync(invoiceUploadDir, { recursive: true })
 
 const invoiceStorage = multer.diskStorage({
@@ -43,14 +43,11 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 
 // ─── Accounting helpers ────────────────────────────────────────────────────────
 
-export function getOrCreateAccount(tenantId: string, code: string, name: string, type: string, category: string, normalBalance: string): string {
-  const existing = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(tenantId, code) as any
-  if (existing) return existing.id
-  const id = generateId()
-  db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system, level)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0)`).run(id, tenantId, code, name, type, category, normalBalance)
-  return id
-}
+// ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
+// กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
+import { getOrCreateAccount } from '../../services/accounting.service'
+import { isServiceItem } from '../../services/stockItem.service'
+export { getOrCreateAccount }
 
 export function updateAccountBalance(tenantId: string, accountId: string, debit: number, credit: number) {
   const now = new Date()
@@ -211,6 +208,7 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
       // Re-read stock inside the transaction so the deduction is atomic
       const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
       if (!stockItem) continue
+      if (isServiceItem(stockItem)) continue   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
 
       const soUnit = item.unit || ''
       // stock_items.quantity is always stored in base_unit — `unit` is the legacy
@@ -286,6 +284,7 @@ export function restoreStockForSO(tenantId: string, soId: string, soNumber: stri
       // Re-read stock inside the transaction so the restoration is atomic
       const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
       if (!stockItem) continue
+      if (isServiceItem(stockItem)) continue   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
 
       const soUnit = item.unit || ''
       // Must mirror deductStockForSO's target-unit choice exactly (base_unit first,

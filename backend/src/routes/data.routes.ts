@@ -115,7 +115,8 @@ router.get('/materials', (req: Request, res: Response) => {
         updated_at
       FROM stock_items
       WHERE tenant_id = ?
-        AND category NOT IN ('[สินค้า]', '[สินค้าสำเร็จรูป]', 'finished', 'FINISHED')
+        -- SERVICE = ค่าขนส่ง/ค่าแพ็ค ไม่ใช่ของที่จับต้องได้ ห้ามหลุดเข้าไปเป็นวัตถุดิบใน BOM
+        AND category NOT IN ('[สินค้า]', '[สินค้าสำเร็จรูป]', 'finished', 'FINISHED', 'SERVICE')
       ORDER BY name ASC
     `).all(tenantId) as any[]
 
