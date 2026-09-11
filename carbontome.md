@@ -612,3 +612,164 @@ Phase 3 — Higher Risk · Architecture Change
 - เหลือซาก 3 ไฟล์ที่ pattern รอบนี้ไม่ครอบ: `translation.json.pre-prdelete` (×2), `translation.json.CLOBBERED-en-20260808` — gitignore ครอบอยู่แล้ว ไม่หลุด git แค่รก
 - `/root/.claude/file-history/` ใน LXC 100 โต 6.6MB — backup ของ Claude Code เอง คนละระบบกับ `.bak` ลบได้
 - DB ยืนยันเป็นไฟล์เดียว `backend/dev.db` (3.6MB, 119 ตาราง) + `-wal`/`-shm` ไม่มี `ATTACH` ที่ไหนในโค้ด
+
+---
+
+## 📅 Session Log — 8 กันยายน 2026 (ตรวจก่อนนำเข้าข้อมูล หจก.เอฟแอนด์บี เบดดิ้ง)
+
+**บริบท:** เตรียม import master data สินค้า/ลูกค้าจาก Excel (export จากโปรแกรมบัญชีเดิม) เข้า tenant โรงงานหมอน ตรวจสภาพปลายทาง + ตัวนำเข้าก่อนลงมือ ยังไม่ได้ import จริง
+
+**ยืนยัน tenant ปลายทาง:**
+- โรงงานหมอนตัวจริง = `tenant_msqy2xbn` (`หจก.เอฟแอนด์บี เบดดิ้ง`, tax 0463565001158) admin `bbpillowth@gmail.com` — **ว่างเปล่า** (stock_items / materials / customers / suppliers / boms / unit_conversions = 0 ทั้งหมด) แผน enterprise ACTIVE ถึง 2027-08-13
+- `tenant_bb_pillow` = **Kids House Cafe** (ร้านอาหาร) มีข้อมูลจริง 474 stock_items / 228 boms / 5 users — ชื่อ tenant_id หลอก **ห้ามยัดข้อมูลหมอนลงตัวนี้**
+
+**🔴 บั๊ก/ข้อจำกัดของ `POST /import/stock` (`backend/src/routes/import.routes.ts`) — ยังไม่แก้:**
+1. `quantity: z.coerce.number().int().min(0)` — `.int()` ทำให้ทศนิยม **ตกทั้งแถว** (ไม่ปัดให้ Zod ตีตกเลย) ผ้าที่นับเป็นเมตร/ใยที่นับเป็น กก. มีทศนิยมเป็นปกติ → พังทั้งชุด และ `.min(0)` ตีตกยอดติดลบ (ไฟล์ต้นทางมี 263 ตัว)
+2. **ราคาหายเงียบ** — `ImportModal.tsx` map `ราคาขาย → sale_price`, `ราคาซื้อ → purchase_price` ส่งขึ้นมาจริง แต่ `StockRowSchema` เป็น Zod strip mode ตัดทิ้ง และ `INSERT INTO stock_items` ไม่มีคอลัมน์ราคาเลย → ต้นทุน/ราคาขาย = 0 ทุกตัวหลัง import โดยไม่มี error เตือน
+3. **ไม่ตั้งหน่วยซื้อ/หน่วยฐาน** — INSERT ไม่มี `base_unit` / `purchase_unit` / `sale_unit` → ระบบแปลงหน่วย (ม้วน→เมตร, ก้อน→กก., กก.→ใบ) ใช้ไม่ได้หลัง import ต้องตามใส่ทีหลังเอง
+4. **SKU ซ้ำถูกเปลี่ยนชื่อเป็นรหัสมั่วแล้วแทรกเพิ่ม ไม่ใช่ skip** — `if (!sku || existingSkus.has(sku)) sku = generateSKU(category, existingCount + i)` ทำให้รัน import ซ้ำรอบสอง = ได้สินค้าซ้ำทั้งชุดพร้อม SKU ขยะแบบ `FA-0001` (โอกาสชน generateSKU ต่ำ เลยไม่โดน guard บรรทัดถัดไป) **ไม่มีโหมด upsert/แก้ทับ** import ได้ทางเดียวคือ insert
+5. ไม่มี role gate — `router.use(authenticate)` อย่างเดียว USER ธรรมดา import ได้
+
+**🟡 สภาพ tenant `tenant_msqy2xbn` ที่ต้องเก็บกวาดก่อนใช้จริง:**
+- **ผังบัญชีมีแค่ 2 บัญชี** (`1101 เงินสด`, `4200 รายได้คืน` ทั้งคู่ `is_system=1` สร้าง 2026-08-15) เทียบกับ tenant อื่นที่มี 90-92 บัญชี → เกิดจาก auto-create ตอน POS_CANCEL ไม่ใช่การ seed ผังบัญชีจริง งบการเงิน/GL ใช้ไม่ได้จนกว่าจะ seed
+- journal ค้าง 1 ใบ `JV-2026-000001` `reference_type=POS_CANCEL` **total_debit = total_credit = 0** (ซากบั๊ก POS cancel เดิม) + `pos_running_bills` ค้าง 2 บิลทดสอบ + เลขรัน `POS_BILL` = 150826
+- `allow_negative_stock = 0` — ถ้า import ยอดยกมาเป็น 0 แล้วเปิดขาย/สั่งผลิต ระบบจะบล็อกทันที ต้องตัดสินใจก่อนว่าจะนับสต็อกจริงหรือเปิด flag ชั่วคราว
+
+**📌 โครงสร้างที่ต้องจำ (ชื่อคอลัมน์หลอก):**
+- `bom_items.material_id` → ชี้ **`stock_items.id`** ไม่ใช่ `materials.id` (ตรวจจริง 829/829 แถว resolve เข้า stock_items, เข้า materials 0 แถว)
+- `boms.product_id` → ชี้ `stock_items.id` (233/233)
+- แปลว่า **วัตถุดิบและสินค้าสำเร็จอยู่ใน `stock_items` ตารางเดียว** ตาราง `materials` ไม่ได้ถูกใช้ทำ BOM เลย ตัวแยกคือคอลัมน์ `category`
+- `normalizeUnit()` แปลงได้: `เมตร→m` `ม้วน→roll` `กก./กิโลกรัม→kg` `หลา→yard` `ชิ้น→pcs` `ชุด→set` `โหล→dozen` `ถุง→bag` / **ไม่มีใน map** (เก็บเป็นไทยตามเดิม): `ใบ` `ก้อน` `ผืน` `อัน` `เส้น` — ไม่ถึงกับพัง แต่ conversion มาตรฐานไม่ทำงาน ต้องตั้ง `unit_conversions` รายตัวอยู่ดี (1 ม้วนยาวไม่เท่ากันในแต่ละผ้า)
+
+**ทางเลือกที่เสนอไว้ (ยังไม่ตัดสิน):** (A) เขียนสคริปต์ node ยัด `stock_items` ตรงเข้า DB ครั้งเดียวให้ครบทั้ง sku/หน่วย/ราคา + สร้าง `unit_conversions` เลย (backup ก่อน) หรือ (B) แก้ `import.routes.ts` ทั้ง 5 ข้อข้างบนแล้ว build+restart ค่อยใช้หน้าเว็บ
+
+### ✅ แก้แล้วในวันเดียวกัน — ผังบัญชี auto-gen + ยุบ getOrCreateAccount 6 สำเนา
+
+**ต้นเหตุ:** `DEFAULT_CHART_OF_ACCOUNTS` (90 รายการ) ถูกขังอยู่ใน `routes/accounts.routes.ts` เรียกได้ทางเดียวคือปุ่มใน UI → `provisionTenant()` ไม่เคย seed ผังบัญชี → tenant ใหม่เกิดมามี 0 บัญชี → ธุรกรรมแรกไป `getOrCreateAccount()` ปั้นบัญชีกำพร้าทิ้งไว้ (level 0 ไม่มี parent) → `POST /accounts/init` ตีกลับ 400 `"already initialized"` เพราะ `existingCount > 0` **และ**หน้า `ChartOfAccounts.tsx` แสดงปุ่ม "สร้างผังบัญชี" เฉพาะตอน `accounts.length === 0` (บรรทัด 528) → ล็อก 2 ชั้น ไม่มีทางออกผ่าน UI เลย
+
+**สิ่งที่ทำ:**
+- **ไฟล์ใหม่ `backend/src/config/chartOfAccounts.ts`** — ย้ายผังบัญชีออกจาก route มาเป็น config กลาง + เพิ่ม 3 รหัสที่โค้ดเรียกใช้จริงแต่ไม่เคยอยู่ในผัง (`1180` ลูกหนี้การค้า-POS, `5901` เงินขาด/เงินเกิน, `5902` ค่าใช้จ่ายปรับปรุงสต็อก) → **93 รายการ** พร้อมฟังก์ชัน `seedChartOfAccounts(tenantId)` แบบ **idempotent** (ใส่เฉพาะรหัสที่ขาด ไม่แตะชื่อที่ผู้ใช้แก้เอง ไม่แตะบัญชีย่อยธนาคาร `1102-NN`) และรอบสองซ่อม `parent_id`/`level` ให้บัญชีกำพร้าที่ถูกปั้นสดไว้ก่อน
+- `provisioning.ts` เรียก `seedChartOfAccounts()` ต่อท้ายการสร้าง user → **tenant ใหม่ได้ผังครบตั้งแต่วินาทีแรก** (ต้นเหตุจริง)
+- `POST /accounts/init` เลิกตีกลับ 400 → เรียก seeder ตรงๆ เติมเฉพาะที่ขาด กดซ้ำได้ปลอดภัย (โค้ด route จาก 455 → 295 บรรทัด)
+- `backfillChartOfAccounts()` รันตอน server start ใน `index.ts` — **ไม่ใส่ใน `migrations.ts` เพราะ `db/sqlite.ts` เรียก `runMigrations(db)` ก่อนบรรทัด `export default db`** ถ้า import chartOfAccounts จากในนั้นจะได้ `db` เป็น `undefined` (วงกลม import) กับดักตัวนี้จำไว้
+- **ยุบ `getOrCreateAccount` ที่ก๊อปกัน 6 สำเนาเหลือ 1** (`services/accounting.service.ts`) — ลบสำเนาใน `purchase.routes.ts`, `stock.routes.ts`, `sales/shared.ts` (ตัวหลัง re-export ต่อให้ `sales/index.ts` + `sales/creditNotes.ts` ไม่ต้องแก้) และ closure `getAccountId()` ใน `pos-clearing.routes.ts`
+- **บั๊กที่เจอตอนยุบ:** closure ใน `pos-clearing.routes.ts` ตั้ง `normal_balance = type === 'ASSET' ? 'DEBIT' : 'CREDIT'` → บัญชี `5901` ซึ่งเป็น EXPENSE ได้ normal_balance เป็น **CREDIT** (ผิดด้าน) และ category หยาบกว่าผังจริง
+- **บั๊กชื่อบัญชีชนกัน:** `5901` ถูกเรียกด้วย 2 ชื่อ — `'เงินขาด/เงินเกิน'` (pos-clearing, pos.routes) กับ `'ค่าใช้จ่ายปรับปรุงสต็อก'` (stock.routes) ใครมาก่อนได้ชื่อนั้น แยกให้เป็น `5901` = เงินขาด/เงินเกิน, `5902` = ปรับปรุงสต็อก แล้วให้ทุก call site อ่านชื่อจาก `ACC_META` ที่เดียว (เพิ่ม `ACC.POS_CLEARING/OTHER_REVENUE/CASH_OVER_SHORT/STOCK_ADJUSTMENT`)
+- เทสต์ใหม่ `config/chartOfAccounts.test.ts` 5 เคส — รวมเคสกันบัญชีกำพร้าเกิดใหม่: **ทุกรหัสใน `ACC`/`ACC_META` ต้องมีอยู่ในผัง** ถ้าใครเพิ่มรหัสใหม่แล้วลืมใส่ในผัง เทสต์จะแดงทันที
+
+**ผลหลัง deploy (`npm run build` + `pm2 restart crm-backend`, ทั้ง `tsc --noEmit` และ vitest 33/33 ผ่าน):**
+```
+tenant_msqy2xbn    2 → 94 บัญชี   (seeded 92)
+tenant_bb_pillow  92 → 95 บัญชี   (seeded 3)
+Testshop          90 → 93 บัญชี   (seeded 3)
+บัญชี level 0 ที่มี parent (รูปแบบผิด): 0 แถวทั้ง DB
+```
+backup: `backend/dev.db.bak-coa-20260908` (ผ่าน SQLite backup API ไม่ใช่ cp) + ซอร์สเดิมที่ `/tmp/coa-backup-20260908/`
+
+**ยังเหลือ (ตั้งใจไม่แก้):**
+- บัญชีกำพร้า `4100 รายได้จากการขาย` / `4200 รายได้คืน` ยังอยู่ — โค้ดที่ปั้นมันถูกลบไปแล้วตอน POS overhaul 26 ส.ค. แต่ตัวบัญชีมี journal_lines อ้างถึงจริง (bb_pillow 1 + 24 บรรทัด, msqy2xbn 1 บรรทัด) **ห้ามลบ** ถ้าจะเก็บกวาดต้อง reclass เข้า `4101`/`4302` แล้วย้าย journal_lines ซึ่งเป็นการแก้ ledger ต้องคุยก่อน
+- หน้า `ChartOfAccounts.tsx` ยังไม่มีปุ่ม "ซ่อม/เติมผังบัญชี" ในมุมมองปกติ (ปุ่มโผล่เฉพาะตอน 0 บัญชี) — ตอนนี้ backfill ตอน boot ครอบให้แล้วเลยไม่จำเป็น ถ้าอยากได้ปุ่มค่อยเพิ่ม
+
+---
+
+## 📅 Session Log — 9-10 กันยายน 2026 (นำเข้า master data หจก.เอฟแอนด์บี เบดดิ้ง สำเร็จ)
+
+**นำเข้าจริงแล้ว 2026-09-10** เข้า `tenant_msqy2xbn` จาก `สรุปพร้อมนำเข้า-ERP.xlsx` (4 ชีต)
+```
+สินค้า      0 -> 1,024    finished 744 · wip 249+2 INACTIVE · raw 27 · SERVICE 2
+กฎแปลงหน่วย  0 ->    62    กฎกลาง 2 + เฉพาะสินค้า 60
+ลูกค้า      0 ->   381    (มีเลขภาษี 124)
+ผู้ขาย      0 ->    51    (มีเลขภาษี 36)
+FK เสียหาย: 78 -> 78 (ไม่เพิ่ม, ของเดิมทั้งหมด)
+```
+สคริปต์: `/tmp/build_import_plan.py` (อ่าน Excel → `import_plan.json`) + `/tmp/apply_import.js` (เขียน DB, transaction เดียว, มีด่านกัน tenant ไม่ว่าง)
+backup: `dev.db.bak-preimport-20260910` และ `dev.db.bak-import-20260910`
+
+**กติกาข้อมูลที่เจ้าของยืนยัน (สำคัญกว่าตัวเลข):**
+- **หน่วยซื้อ = หน่วยใหญ่ที่ยังไม่แกะ / หน่วยนับ = หน่วยย่อยหลังแกะ ถ้าสองอันไม่ตรงกัน = มีการแกะ = ต้องมีกฎแปลงเสมอ**
+- ผ้า 1 ม้วน = **100 หลา** (= 91.44 เมตร) ต้นทุนในไฟล์คือ **ราคาต่อม้วน** → 1,700/ม้วน = 17 ฿/หลา = 18.59 ฿/เมตร
+- **`ใบ` กับ `ชิ้น` คืออันเดียวกัน** ยุบเป็น `pcs` หมด (เดิมแยกเป็น 240/75 รายการ)
+- `หลัง/ตัว/อัน/ก้อน/มัด` ยุบเป็น `ชิ้น` ด้วย — ยุบที่ `normalizeUnit()` ไม่ใช่ตอน import ใครพิมพ์ที่ไหนก็แปลงให้
+- **wip = "วัตถุดิบแต่ขายได้"** (ผ้า/ใย/ถุง) ไม่ใช่ความหมาย WIP มาตรฐาน — **ปลอกหมอน = finished** ไม่ใช่ wip
+- ใย POLY ซื้อเป็น **กก.** ไม่ใช่ ก้อน (ตามบิลจริง) → ซื้อ=นับ ไม่ต้องแปลง
+- สต็อกยกมาในไฟล์ **ใช้ไม่ได้** ทุกตัว (263 ตัวติดลบ) → import เป็น 0 หมด รอนับจริง
+- min_stock/max_stock = 0 ทั้งหมด (ยังไม่มีข้อมูลจุดสั่งซื้อ)
+
+**⚠️ กับดักต้นทุนที่เกือบพลาด:** คอลัมน์ "ต้นทุน/หน่วย" ในไฟล์ **ปนกัน 2 ความหมาย** บางแถวเป็นราคาต่อหน่วยนับ (ถูก) บางแถวเป็นราคาต่อหน่วยซื้อ (ต้องหาร) ถ้าหารทั้งกระดานจะได้กระสอบใบละ 2 สตางค์ ถ้าไม่หารเลยจะได้ผ้าเมตรละ 1,700 บาท **วิธีแยก: เอาสต็อกยกมา × ต้นทุน เทียบกับมูลค่ายกมาในไฟล์** ถ้าตรง = ราคาต่อหน่วยนับอยู่แล้ว (B-001/B-003/BAG-64*50cm/D-001 ทั้ง 4 ตัวเข้าเกณฑ์นี้ ไม่หาร) สุดท้ายหาร 78 ไม่หาร 19
+- BAG-011001 / BAG-20*30 ราคาลงเป็น "ต่อลูก" (2,100-2,200) ทั้งที่เพื่อนในตระกูลเป็น "ต่อโล" (55-105) ต่างกัน 30 เท่าพอดี = 1 ลูก 30 โล → เปลี่ยนหน่วยซื้อเป็นลูกแล้วหาร 30 เพิ่ม
+
+**กฎแปลงหน่วย 2 ชั้น (แนวคิดเจ้าของ: สินค้าพิเศษ = พิเศษใหญ่→พิเศษเล็ก / ปกติ = สากล→พิเศษเล็ก):**
+- engine มี **3 ชั้นเท่านั้น**: `material_id = ?` (priority 0) > `material_id IS NULL` (1) > `STANDARD_CONVERSIONS` (2) — **ไม่มีชั้น "หมวด/category"** และ `is_global` ไม่ใช่ชั้น มันคือธงล็อกไม่ให้แก้
+- ใช้ชั้น tenant เป็นชั้นหมวดแทน → **262 กฎ เหลือ 62** (ลด 76%)
+  - กฎกลาง: `roll→yard = 100` (ครอบผ้า 183 ตัว), `piece→kg = 30` (ครอบถุง 19 ตัว)
+  - กฎเฉพาะสินค้า 60: `kg→pcs` 25 กฎ, `bag→sheet` 17 กฎ, อื่นๆ 18
+- **ห้ามยกกฎที่ "เลขบังเอิญตรงกัน"** เช่น `kg→pcs=36` ซ้ำ 4 ตัว แต่ถุงขนาดอื่นใช้ 14/30/31 — ยกขึ้นกฎกลางจะทับผิดตัวทันที
+- ทดสอบกับ engine จริงผ่าน 5/5 รวมเคสยาก: Elastic-001 มีกฎเฉพาะ `roll→m=40` **ชนะ**กฎกลาง (1 hop < 2 hops), BAG-40*60 มี `piece→kg=25` **ชนะ**กฎกลาง 30
+
+**โค้ดที่แก้รอบนี้ (deploy แล้วทั้งหมด, tsc ผ่าน, vitest 37/37):**
+- `unitConversion.service.ts` — เพิ่มหน่วยไทย `bai/phuen/rob/pip` (ภายหลัง `bai` ถูกยุบเป็น pcs) + ดักคำสะกดผิด `โล→kg`, `ชื้น→pcs`, `ปี๊บ/ปี๊ป→pip`, `มวน→roll` + ยุบ `หลัง/ตัว/อัน/ก้อน/มัด→pcs`
+  - **สำคัญ: รายการหน่วยที่ผู้ใช้เลือกได้มาจาก `UNIT_LABELS` + `UNIT_CATEGORIES` + `STANDARD_CONVERSIONS` เท่านั้น** หน่วยที่ไม่อยู่ในนั้นเลือกไม่ได้เลยแม้ `normalizeUnit()` จะรับ
+- **ไฟล์ใหม่ `services/stockItem.service.ts`** — `isServiceItem()` กันค่าขนส่ง/ค่าแพ็คไม่ให้ถูกตัดสต็อก ใส่ guard 4 จุด: `deductStockForSO`, `restoreStockForSO` (`routes/sales/shared.ts`), `routes/sales/deliveryOrders.ts`, และ**สำเนาใน `mcp/tools/sales.ts`** — ถ้าไม่กัน ยืนยันบิลจะฟ้อง `Insufficient stock` เพราะ tenant นี้ `allow_negative_stock = 0`
+  - เทสต์ `routes/sales/serviceItem.test.ts` 4 เคส รวมเคสกัน guard เผลอปิดการเช็คสต็อกทั้งระบบ
+  - ERP **มีช่องส่วนลดอยู่แล้ว** (`discount_amount` หัวบิล + `discount_percent` รายบรรทัด) แต่**ไม่มีช่องค่าขนส่ง/ค่าแพ็ค** เลยต้องทำเป็นสินค้าบริการ
+- **`customers.tax_id`** — เดิมมีแค่ใน `suppliers` เพิ่มครบวง: `db/schema.ts` + `db/migrations.ts` (ALTER) + `customer.routes.ts` (POST/PUT รับ `taxId`, GET ใช้ `SELECT c.*` อยู่แล้ว) + `pages/CRM.tsx` (interface/state/ช่องกรอก 13 หลัก) + i18n ไทย/อังกฤษ
+  - **ยังเหลือ:** `customers.address` มีคอลัมน์และ import เขียนลงแล้ว แต่ `customer.routes.ts` ไม่รับ/ไม่แก้ และ CRM UI ไม่มีช่อง — ที่อยู่ลูกค้า 351 รายจึงแก้ผ่านเว็บไม่ได้
+
+**🔴 เจอบั๊กใหญ่ระหว่างทาง: test suite วิ่งใส่ `dev.db` ตัวจริงมาตลอด**
+- `db/connection.ts` รองรับ `SQLITE_DB_PATH` อยู่แล้ว (คอมเมนต์บอกชัดว่ามีไว้ให้ test) แต่**ไม่เคยมีใครตั้ง** — `vitest.setup.ts` จึง `ALTER TABLE` ลง production ทุกครั้งที่รันเทสต์ ตามที่คอมเมนต์ในไฟล์นั้นเตือนไว้เอง
+- เทสต์ที่ `INSERT company_settings`/`users` ไม่มี cleanup → ทิ้งขยะค้าง **4 tenant + 32 users + stock_items/pos bills** และ backfill ผังบัญชีไปหว่านให้อีก 372 แถว
+- **แก้:** ตั้ง `env: { SQLITE_DB_PATH: .../test.db }` ใน `vitest.config.ts` — **ต้องตั้งที่ `test.env` เท่านั้น** ตั้งใน `vitest.setup.ts` ไม่ทันเพราะ import ถูก hoist ทำให้ `connection.ts` อ่าน path ไปก่อน statement แรกจะรัน ยืนยันด้วย md5: รันเทสต์ 37 ตัวแล้ว `dev.db` ไม่ถูกแตะ
+- เก็บกวาดขยะ 432 แถวแล้ว (`/tmp/clean_junk.js` มีโหมด dry-run + guard กัน tenant จริง) และเพิ่มเงื่อนไข `WHERE EXISTS (users)` ใน `backfillChartOfAccounts()` กันหว่านให้ tenant ไร้ผู้ใช้
+
+**ยังค้าง (ไม่บล็อกการใช้งาน):**
+- 8 สินค้ายังไม่มีอัตราแปลง: `B-002`*, `BAG-20*60`, `BAG-30*40`, `BAG-001003` (กก.→ชิ้น), `BAG-001004`* (ลูก→ชิ้น), `P00237` คิ้วฟูก, `P00249` พลาสติกห่อฟูก (ม้วน→เมตร) — *= ตั้ง INACTIVE แล้ว ระบบจะเตือนตอนซื้อ ไม่พังเงียบ
+- `FIB-001006-2300` มีหมายเหตุ "ทำที่นอนฟูกได้ 5 ตัว" = ข้อมูลผลผลิต (BOM) ไม่ใช่กฎแปลงหน่วย
+- ราคาขายว่าง 753/1024 · ต้นทุนว่าง 927/1024 — เติมทีหลังตอนซื้อ-ขายจริง
+- หมวดย่อย 12 หมวดของ Excel (ผ้า/หมอน/ที่นอน/ปลอก...) ไม่ได้เก็บเป็นฟิลด์ เพราะ `category` ถูกใช้เป็นตัวกรอง raw/wip/finished ในหน้าสต็อก — อ่านจาก prefix ของ SKU แทน (ดู skill `bedding-sku`)
+- `SERVICE` ตกกลุ่ม `material` ("วัสดุ/อื่นๆ") ในหน้าสต็อก เพราะ `getCategoryGroup()` ไม่รู้จัก — ยังไม่ได้เพิ่มปุ่มกรอง "บริการ"
+
+### ✅ 2026-09-11 — Template เอกสารกลาง + แท็บตั้งค่าเอกสาร + ล้าง/sync รายงานภาษีขายใหม่
+
+**1. รวมตัวพิมพ์เอกสาร 2 ชุดเป็น template กลางตัวเดียว**
+```
+ลบ  utils/salesPrint.ts (695) + utils/purchasePrint.ts (797) = 1,492 บรรทัด
+    17 ฟังก์ชัน template เขียนมือแยกกัน + CSS ก๊อป 2 ชุด
+ได้ utils/printBill.ts (185) + components/bill/UnifiedBillTemplate (props ล้วน)
+    + billStyles.ts (CSS แหล่งเดียว) · BillType 6 -> 13 ชนิด
+```
+- `printBill(type, data, format)` ใช้ลายเซ็นเดิม → หน้า Sales/Purchase/Cashier แก้แค่ import (8 จุด)
+- เรนเดอร์ด้วย `renderToStaticMarkup` แล้วเปิดหน้าต่างพิมพ์ — **UnifiedBillTemplate ต้องเป็น props ล้วน** ห้ามมี `useBill()`/`useEffect`/`window` ตอน render ไม่งั้นพิมพ์ออกมาหน้าขาว (effect ไม่รันใน static render)
+- CSS ฝังมากับ output เอง (`<style>{BILL_CSS}</style>`) ตัวห่อจึงไม่ต้องรู้จัก CSS
+- React escape ให้เองแล้ว → ตัด `deepEscape()` ของเดิมทิ้งได้
+
+**2. ปิดช่องว่างเลขภาษีที่เจอจาก audit**
+- `customers.tax_id` เพิ่มครบวง (schema + migration + POST/PUT + ฟอร์ม CRM + i18n) — เดิมมีแค่ `suppliers`
+- `customers.address` ต่อสายให้แก้ผ่านเว็บได้ (คอลัมน์มีอยู่ แต่ API ไม่รับ/UI ไม่มีช่อง ที่อยู่ 351 รายเลยมองไม่เห็น)
+- **endpoint รายละเอียด qt/so/inv ไม่เคย `SELECT c.tax_id, c.address` เลย** → เติมแล้วทั้ง 3 จุด (ของเดิม template อ้าง `customer_address` อยู่แต่ช่องว่างมาตลอด)
+- `purchaseOrder.routes.ts` / `purchase.routes.ts` ไม่เคย `SELECT s.tax_id` ทั้งที่ `purchasePrint.ts:295,454` มีช่องแสดงรออยู่ → เติม 2 บรรทัด
+- `vat_entries.party_tax_id` ฝั่งขาย hardcode `null` ทั้งใน `sales/invoices.ts` และ `pos-accounting.service.ts` (ฝั่งซื้อทำถูกมาตลอด) → ดึงจาก customer จริง
+- `tax_transactions` VAT_OUTPUT ไม่มีคอลัมน์ `partner_id`/`partner_tax_id` ใน INSERT เลย → เติมทั้ง POS_BILL และ SALES_INVOICE
+
+**3. แท็บ "ตั้งค่าเอกสาร/หน้ากระดาษ" ใน Settings**
+- ตาราง `document_settings(tenant_id PK, settings_json, updated_at)` — เก็บ JSON ก้อนเดียว เพิ่ม field ใหม่ได้โดยไม่ต้อง migrate
+- `GET/PUT /api/settings/documents` · PUT มี `requireRole('ADMIN','MASTER')` · zod validate · **merge รายคีย์** (ส่ง `defaultPaper.inv` อย่างเดียวต้องไม่ล้าง `qt`)
+- `GET` คืน `branding.isFreePlan` จาก `tenant_subscriptions.plan_code` → แพ็กฟรีบังคับใช้โลโก้ Phopy (`/brand/phopy-mark.png`) เปลี่ยนเองไม่ได้
+- `printBill` ดึงค่านี้มาใช้จริง (cache + `invalidateDocumentSettings()`)
+
+**4. ล้าง VAT_OUTPUT แล้ว sync ใหม่** (ระบบยังไม่ขึ้นใช้จริง เจ้าของเลือกทางนี้แทนการ UPDATE ย้อนหลัง)
+```
+Testshop  VAT_OUTPUT  289 -> 332   ตรงกับใบแจ้งหนี้ต้นทาง 332 พอดี
+bb_pillow VAT_INPUT     4 -> 5     ตรงกับ PI ต้นทาง 5 พอดี
+```
+- **289 ไม่ใช่ตัวเลขที่ถูก** — `syncTaxData()` เป็น lazy รันตอนเปิดหน้า `/tax/dashboard` หรือ `/tax/periods` เท่านั้น ใบที่ออกหลังจากนั้นยังไม่เคยเข้ารายงาน การ resync เลยปิดช่องว่าง 43 ใบไปด้วย
+- `partner_tax_id` ยังเป็น 0 ในสอง tenant นั้นเพราะ **ลูกค้าไม่มีเลขภาษีเลย** (Testshop 0/12, bb_pillow 0/1 — ข้อมูลสร้างก่อนมีคอลัมน์) ไม่ใช่โค้ดพัง — หลักฐานว่ากลไกทำงานคือฝั่งซื้อ `VAT_INPUT 5 แถว มีเลขภาษี 3`
+- `tenant_msqy2xbn` มีลูกค้าที่มีเลขภาษี 124/381 แต่ยังไม่ได้ออกบิล พอออกใบแรกเลขภาษีจะติดไปเอง
+- backup: `dev.db.bak-vatresync-20260911`
+
+**5. กับดักที่เจอระหว่างทาง**
+- `formatCurrency(amount: number)` พังเมื่อข้อมูลไม่ครบ → เอกสารพิมพ์ออกมาหน้าขาว แก้ให้ตกไป `0.00`
+- `BillType` เดิมขาด **INVOICE และ CREDIT_NOTE** ซึ่งเป็นใบที่กฎหมายบังคับเลขภาษีผู้ซื้อ — ถ้าสลับไปใช้ทั้งที่ยังขาดจะพิมพ์ใบกำกับภาษีไม่ได้เลย
+- ใบเสนอราคาตั้ง `showBuyerTaxId: false` ไม่ตรงกับตัวอย่างที่เจ้าของอนุมัติ → เปิดให้ตรง
+- **มีเซสชันอื่นแก้ repo เดียวกันขนานอยู่** (ฟีเจอร์แนบสลิปโอนเงิน: `PaymentAttachments.tsx`, `AuthImage.tsx`, `Purchase.tsx`, `JournalEntries.tsx`) — ตรวจ `git status` ก่อน build เสมอ อย่าเหมาว่าเป็นงานของ agent ตัวเอง
+
+**skill ใหม่:** `~/.claude/skills/erp-data-import/SKILL.md` — playbook นำเข้าข้อมูลลูกค้า 8 เฟส + กับดักที่เจอจริง

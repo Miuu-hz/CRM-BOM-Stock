@@ -221,6 +221,13 @@ export const journalApi = {
   // Auto-generate from Sales
   generateFromSales: (orderId: string) => 
     api.post('/journal/auto/sales', { orderId }),
+
+  // Phase 3: bulk evidence-slip counts for the accounting list — one request
+  // for every visible row instead of one attachments call per row. refs are
+  // "TYPE:ID" tokens (journal reference_type or native attachment ref_type);
+  // see backend attachments.routes.ts GET /counts for the mapping table.
+  getAttachmentCounts: (refs: string[]) =>
+    api.get('/attachments/counts', { params: { refs: refs.join(',') } }),
 }
 
 // ==================== REPORTS API ====================

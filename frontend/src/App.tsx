@@ -14,6 +14,7 @@ import SubconStock from './pages/SubconStock'
 import Calculator from './pages/Calculator'
 import Marketing from './pages/Marketing'
 import Sales from './pages/Sales'
+import Receivables from './pages/Receivables'
 import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
@@ -65,6 +66,7 @@ function AppContent() {
         <Route path="/calculator" element={<Calculator />} />
         <Route path="/marketing" element={<Marketing />} />
         <Route path="/sales" element={<Sales />} />
+        <Route path="/receivables" element={<Guard path="/receivables"><Receivables /></Guard>} />
         <Route path="/purchase" element={<Purchase />} />
         <Route path="/work-orders" element={<WorkOrders />} />
         <Route path="/qc" element={<QC />} />

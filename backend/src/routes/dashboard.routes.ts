@@ -8,6 +8,37 @@ const router = Router()
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
 
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+
+// ยอดขาย/ต้นทุนขายจริง — คำนวณจาก journal_lines (ledger) แบบเดียวกับ
+// GET /reports/profit-loss ทุกประการ (type=REVENUE / EXPENSE+category=COGS,
+// is_posted=1, level>=1) เพื่อให้ Dashboard กับหน้า P&L Report ไม่มีวันเลขไม่ตรงกัน
+// อีก — เดิม Dashboard คำนวณจาก orders/invoices/purchase_orders คนละตารางกัน 3 จุด
+// (บั๊ก B1/B2/B4) ส่วน journal ครอบคลุมทั้งใบแจ้งหนี้ (reference_type=INVOICE) และ
+// ขาย POS ที่ผ่านบัญชีจริง (reference_type=POS_SALE) โดยไม่นับซ้ำ เพราะ POS ไม่ได้
+// สร้างแถวใน invoices/orders เลย (ตรวจโค้ด sales/pos.routes.ts แล้ว)
+// startDate/endDate เป็นรูปแบบ 'YYYY-MM-DD' ตรงกับ journal_entries.date เป๊ะ (ไม่มีเวลา)
+function getLedgerTotals(tenantId: string, startDate: string, endDate: string): { revenue: number; cogs: number } {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN
+        CASE WHEN a.normal_balance = 'DEBIT' THEN jl.debit - jl.credit ELSE jl.credit - jl.debit END
+      ELSE 0 END), 0) as revenue,
+      COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category = 'COGS' THEN
+        CASE WHEN a.normal_balance = 'DEBIT' THEN jl.debit - jl.credit ELSE jl.credit - jl.debit END
+      ELSE 0 END), 0) as cogs
+    FROM journal_lines jl
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    JOIN accounts a ON jl.account_id = a.id
+    WHERE a.tenant_id = ? AND jl.tenant_id = ? AND je.tenant_id = ?
+      AND a.is_active = 1 AND a.level >= 1
+      AND je.is_posted = 1
+      AND je.date >= ? AND je.date <= ?
+  `).get(tenantId, tenantId, tenantId, startDate, endDate) as any
+  return { revenue: row.revenue || 0, cogs: row.cogs || 0 }
+}
+
 // Get dashboard statistics
 router.get('/stats', async (req: Request, res: Response) => {
   try {
@@ -33,17 +64,13 @@ router.get('/stats', async (req: Request, res: Response) => {
       SELECT COUNT(*) as count FROM stock_items WHERE tenant_id = ?
     `).get(tenantId) as any).count
 
-    // Calculate monthly revenue (current month) for this tenant
-    const currentMonth = new Date().getMonth()
-    const currentYear = new Date().getFullYear()
-    const monthlyRevenue = db.prepare(`
-      SELECT COALESCE(SUM(o.total_amount), 0) as revenue
-      FROM orders o
-      JOIN customers c ON o.customer_id = c.id
-      WHERE c.tenant_id = ? 
-        AND strftime('%m', o.order_date) = ?
-        AND strftime('%Y', o.order_date) = ?
-    `).get(tenantId, String(currentMonth + 1).padStart(2, '0'), String(currentYear)) as any
+    // Calculate monthly revenue (current calendar month) for this tenant —
+    // ledger-based (see getLedgerTotals), same source as /revenue and /charts below.
+    const now = new Date()
+    const monthStart = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const monthEnd = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(lastDay)}`
+    const monthlyRevenue = getLedgerTotals(tenantId, monthStart, monthEnd).revenue
 
     res.json({
       success: true,
@@ -51,7 +78,7 @@ router.get('/stats', async (req: Request, res: Response) => {
         totalCustomers: customerStats.active_customers || 0,
         activeOrders: activeOrders || 0,
         stockItems: stockItems || 0,
-        monthlyRevenue: monthlyRevenue?.revenue || 0,
+        monthlyRevenue: monthlyRevenue || 0,
       },
     })
   } catch (error) {
@@ -102,20 +129,25 @@ router.get('/charts', async (req: Request, res: Response) => {
     for (let i = 5; i >= 0; i--) {
       const d = new Date()
       d.setMonth(d.getMonth() - i)
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const mm = pad2(d.getMonth() + 1)
       const yyyy = String(d.getFullYear())
       const label = d.toLocaleString('th-TH', { month: 'short', year: '2-digit' })
 
-      const row = db.prepare(`
-        SELECT COALESCE(SUM(o.total_amount), 0) as revenue, COUNT(*) as orders
+      // รายได้: ledger-based (เดียวกับ /stats, /revenue) — ตรงกับ P&L Report เสมอ
+      const revenue = getLedgerTotals(tenantId, `${yyyy}-${mm}-01`, `${yyyy}-${mm}-${pad2(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())}`).revenue
+
+      // จำนวนออเดอร์: ยังนับจากตาราง orders (legacy) เหมือนเดิม — เป็นตัวนับ
+      // เอกสารไม่ใช่ตัวเลขการเงิน จึงไม่อยู่ในสโคปของบั๊กรายได้ไม่ตรงกัน
+      const orderCount = (db.prepare(`
+        SELECT COUNT(*) as orders
         FROM orders o
         JOIN customers c ON o.customer_id = c.id
         WHERE c.tenant_id = ?
           AND strftime('%m', o.order_date) = ?
           AND strftime('%Y', o.order_date) = ?
-      `).get(tenantId, mm, yyyy) as any
+      `).get(tenantId, mm, yyyy) as any).orders
 
-      months.push({ month: `${yyyy}-${mm}`, label, revenue: row.revenue || 0, orders: row.orders || 0 })
+      months.push({ month: `${yyyy}-${mm}`, label, revenue, orders: orderCount || 0 })
     }
 
     res.json({ success: true, data: months })
@@ -168,57 +200,45 @@ router.get('/revenue', async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'month'
 
     const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
 
-    // Build date range strings for current and previous period
+    // ช่วงเวลาปัจจุบัน (offset=0) และช่วงเทียบก่อนหน้า (offset=1) — ต้อง "ยาวเท่ากันเสมอ"
+    // ทั้งสองฝั่ง ไม่งั้น % เปลี่ยนแปลงจะเพี้ยน (บั๊ก B3 เดิม: 'month' เทียบเดือนปฏิทิน
+    // ปัจจุบันที่ยังไม่จบกับเดือนก่อนที่จบเต็มเดือน). ป้ายบนหน้าเว็บคือ
+    // วันนี้/7 วัน/30 วัน/ปีนี้ ดังนั้น 'week'/'month' ต้องเป็น rolling window ย้อนหลังจริง
+    // ไม่ใช่สัปดาห์/เดือนปฏิทิน — ตรงกับสิ่งที่ผู้ใช้เห็นบนแท็บ
     const getRange = (offset: number): { start: string; end: string } => {
-      const d = new Date(now)
       if (period === 'day') {
-        d.setDate(d.getDate() - offset)
-        const s = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
-        return { start: s + 'T00:00:00', end: s + 'T23:59:59' }
+        const d = new Date(now); d.setDate(d.getDate() - offset)
+        const s = ymd(d)
+        return { start: s, end: s }
       } else if (period === 'week') {
-        const day = d.getDay() || 7
-        d.setDate(d.getDate() - day + 1 - offset * 7)
-        const start = new Date(d)
-        const end = new Date(d); end.setDate(end.getDate() + 6)
-        return {
-          start: `${start.getFullYear()}-${pad(start.getMonth()+1)}-${pad(start.getDate())}T00:00:00`,
-          end: `${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())}T23:59:59`
-        }
+        // 7 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 7 วันก่อนหน้านั้น (ยาวเท่ากัน)
+        const end = new Date(now); end.setDate(end.getDate() - offset * 7)
+        const start = new Date(end); start.setDate(start.getDate() - 6)
+        return { start: ymd(start), end: ymd(end) }
       } else if (period === 'month') {
-        const y = offset === 0 ? d.getFullYear() : (d.getMonth() === 0 ? d.getFullYear()-1 : d.getFullYear())
-        const m = offset === 0 ? d.getMonth() : (d.getMonth() === 0 ? 11 : d.getMonth() - 1)
-        const lastDay = new Date(y, m+1, 0).getDate()
-        return {
-          start: `${y}-${pad(m+1)}-01T00:00:00`,
-          end: `${y}-${pad(m+1)}-${pad(lastDay)}T23:59:59`
-        }
-      } else { // year
-        const y = d.getFullYear() - offset
-        return { start: `${y}-01-01T00:00:00`, end: `${y}-12-31T23:59:59` }
+        // 30 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 30 วันก่อนหน้านั้น (ยาวเท่ากัน)
+        const end = new Date(now); end.setDate(end.getDate() - offset * 30)
+        const start = new Date(end); start.setDate(start.getDate() - 29)
+        return { start: ymd(start), end: ymd(end) }
+      } else { // year: year-to-date เทียบกับช่วงเดียวกันของปีก่อน (ไม่ใช่ทั้งปีเต็ม)
+        const y = now.getFullYear() - offset
+        const start = new Date(y, 0, 1)
+        const end = new Date(y, now.getMonth(), now.getDate())
+        return { start: ymd(start), end: ymd(end) }
       }
     }
 
     const cur = getRange(0)
     const prev = getRange(1)
 
-    const revenueQuery = `
-      SELECT COALESCE(SUM(i.total_amount), 0) as revenue
-      FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE c.tenant_id = ? AND i.status NOT IN ('CANCELLED','DRAFT')
-        AND i.invoice_date >= ? AND i.invoice_date <= ?`
-
-    const costQuery = `
-      SELECT COALESCE(SUM(po.total_amount), 0) as cost
-      FROM purchase_orders po
-      WHERE po.tenant_id = ? AND po.status = 'RECEIVED'
-        AND po.received_date >= ? AND po.received_date <= ?`
-
-    const curRev  = (db.prepare(revenueQuery).get(tenantId, cur.start, cur.end) as any).revenue
-    const prevRev = (db.prepare(revenueQuery).get(tenantId, prev.start, prev.end) as any).revenue
-    const curCost  = (db.prepare(costQuery).get(tenantId, cur.start, cur.end) as any).cost
-    const prevCost = (db.prepare(costQuery).get(tenantId, prev.start, prev.end) as any).cost
+    // รายได้/ต้นทุนขาย: ledger-based (getLedgerTotals) — เดียวกับ /reports/profit-loss
+    // เป๊ะ แก้บั๊ก B1 (ต้นทุนขายเดิมเอายอด PO ที่รับของมาใช้ผิด) และ B2 (ไม่นับ POS)
+    // ไปพร้อมกัน เพราะ ledger รวมทั้งใบแจ้งหนี้และ POS ที่ผ่านบัญชีจริงอยู่แล้ว
+    const curTotals  = getLedgerTotals(tenantId, cur.start, cur.end)
+    const prevTotals = getLedgerTotals(tenantId, prev.start, prev.end)
+    const curRev = curTotals.revenue, prevRev = prevTotals.revenue
+    const curCost = curTotals.cogs, prevCost = prevTotals.cogs
 
     const revenueChange = prevRev > 0 ? ((curRev - prevRev) / prevRev) * 100 : null
     const curGross = curRev - curCost
@@ -265,23 +285,33 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
       ORDER BY i.due_date ASC
     `).all(tenantId) as any[]
 
-    // AP: purchase orders not fully received
+    // AP: หนี้การค้าจริงจาก purchase_invoices ที่ยังค้างจ่าย
+    // (เดิมใช้ purchase_orders ซึ่งเป็นแค่ใบสั่งซื้อ ยังไม่ใช่ภาระหนี้ และนับยอดเต็มใบ
+    //  ทั้งที่รับของ/จ่ายบางส่วนไปแล้ว ทำให้ AP สูงเกินจริง)
     const apRows = db.prepare(`
-      SELECT po.id, po.po_number as doc_number,
-        po.expected_date as due_date, po.total_amount as amount,
+      SELECT pi.id, pi.pi_number as doc_number,
+        pi.due_date, pi.balance_amount as amount,
         s.name as party_name
-      FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id
-      WHERE po.tenant_id = ? AND po.status IN ('APPROVED','ORDERED','PARTIAL')
-      ORDER BY po.expected_date ASC
+      FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id
+      WHERE pi.tenant_id = ?
+        AND pi.status NOT IN ('CANCELLED','DRAFT')
+        AND pi.payment_status <> 'PAID'
+        AND pi.balance_amount > 0
+      ORDER BY pi.due_date ASC
     `).all(tenantId) as any[]
 
+    // เอกสารที่ไม่ได้ระบุ due_date ถือว่า "ต้องจ่าย/เก็บวันนี้" ตามนโยบายที่เจ้าของ
+    // ระบบเลือกเอง (ซ่อนไว้ผู้ใช้จะลืม ต้องโชว์ขึ้นมาเลย) — แต่ต้องติด dueUnspecified=true
+    // ไปกับแถวเสมอ เพื่อให้ UI แยกแยะจาก due_date ที่ตรงกับวันนี้จริงๆ ห้ามลบ flag นี้
+    // ไม่งั้นจะกลายเป็นข้อมูลเท็จบนเอกสารการเงิน ใช้ร่วมกันทั้ง AR/AP เพราะ classify()
+    // เป็นฟังก์ชันร่วม (ดูสั่งงานแก้บั๊ก 2026-09-09: หนี้ due_date ว่างหายจากทุกแท็บ)
     const classify = (rows: any[]) => {
       const groups: Record<string, any[]> = { overdue: [], today: [], week: [], month: [], later: [] }
       let total = 0
       for (const r of rows) {
         const due = r.due_date ? r.due_date.slice(0, 10) : null
         total += r.amount || 0
-        if (!due)               { groups.later.push(r); continue }
+        if (!due)               { groups.today.push({ ...r, dueUnspecified: true }); continue }
         if (due < todayStr)     { groups.overdue.push(r) }
         else if (due === todayStr) { groups.today.push(r) }
         else if (due <= week7Str)  { groups.week.push(r) }
@@ -289,7 +319,16 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
         else                       { groups.later.push(r) }
       }
       const sum = (arr: any[]) => arr.reduce((s, r) => s + (r.amount||0), 0)
-      return { ...groups, total, weekTotal: sum(groups.overdue)+sum(groups.today)+sum(groups.week), monthTotal: sum(groups.overdue)+sum(groups.today)+sum(groups.week)+sum(groups.month) }
+      // later = ครบกำหนดเกิน 30 วันข้างหน้าจริง (ไม่ใช่ due_date ว่างอีกต่อไป) —
+      // total ยังนับรวมทุกกลุ่มเหมือนเดิม ดังนั้น total ต้อง = ผลบวกทุกแท็บที่ UI แสดง
+      // (overdue+today+week+month+later) เสมอ มิฉะนั้นยอดหัวมุมจะไม่ตรงกับที่ผู้ใช้กดดูทีละแท็บ
+      return {
+        ...groups,
+        total,
+        weekTotal: sum(groups.overdue)+sum(groups.today)+sum(groups.week),
+        monthTotal: sum(groups.overdue)+sum(groups.today)+sum(groups.week)+sum(groups.month),
+        laterTotal: sum(groups.later),
+      }
     }
 
     const ar = classify(arRows)
@@ -383,6 +422,129 @@ router.get('/top-customers', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Dashboard top-customers error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch top customers' })
+  }
+})
+
+// ใบเสนอราคาที่ถือว่า "แพ้" แล้ว — ไม่นับรวมในไปป์ไลน์ที่ยังเปิดอยู่
+const LOST_QUOTATION_STATUSES = new Set(['REJECTED', 'EXPIRED', 'CANCELLED'])
+const PIPELINE_MONTHS = 6
+
+// GET /dashboard/pipeline — ไปป์ไลน์การขายที่เดินตามสายเอกสารจริง
+//
+// ต่างจาก /funnel เดิมที่นับ QT / SO / INV แยกกันคนละ query แล้วเอามาวางซ้อนกัน
+// เป็นรูปกรวย ทั้งที่ไม่ได้ผูกกันจริง endpoint นี้ไล่ตาม quotation_id จริง
+// จึงบอกได้ว่าใบเสนอราคาใบไหนกลายเป็นออเดอร์ และมี SO เท่าไรที่ข้ามใบเสนอราคาไปเลย
+router.get('/pipeline', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+
+    const quotations = db.prepare(`
+      SELECT q.id, q.status, q.total_amount,
+        EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id) AS has_so
+      FROM quotations q WHERE q.tenant_id = ?
+    `).all(tenantId) as any[]
+
+    const stages = {
+      quoting:  { count: 0, value: 0 }, // ยื่นไปแล้ว ยังไม่รู้ผล
+      awaiting: { count: 0, value: 0 }, // ลูกค้าตอบรับแล้ว แต่ยังไม่เปิดออเดอร์
+      won:      { count: 0, value: 0 }, // มีใบสั่งขายผูกแล้ว
+      lost:     { count: 0, value: 0 }, // ปฏิเสธ / หมดอายุ
+    }
+
+    for (const q of quotations) {
+      const key = q.has_so
+        ? 'won'
+        : LOST_QUOTATION_STATUSES.has(q.status)
+          ? 'lost'
+          : q.status === 'ACCEPTED'
+            ? 'awaiting'
+            : 'quoting'
+      stages[key as keyof typeof stages].count += 1
+      stages[key as keyof typeof stages].value += q.total_amount || 0
+    }
+
+    const decided = stages.won.count + stages.lost.count
+    const winRate = decided > 0 ? (stages.won.count / decided) * 100 : null
+
+    // ออเดอร์ที่เปิดตรงโดยไม่ผ่านใบเสนอราคา ทำให้ไปป์ไลน์อ่านต่ำกว่าความจริง
+    // จึงรายงานออกมาตรง ๆ แทนที่จะซ่อนไว้
+    const linkage = db.prepare(`
+      SELECT COUNT(*) AS soTotal,
+        COALESCE(SUM(CASE WHEN quotation_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS soFromQuotation
+      FROM sales_orders WHERE tenant_id = ? AND status <> 'CANCELLED'
+    `).get(tenantId) as any
+
+    // เงินไหลถึงไหนแล้ว: รับออเดอร์ → วางบิล → เก็บเงินได้จริง
+    const ordered = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) AS value
+      FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId) as any
+
+    const billing = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) AS invoiced,
+             COALESCE(SUM(paid_amount), 0) AS collected,
+             COALESCE(SUM(balance_amount), 0) AS outstanding
+      FROM invoices WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId) as any
+
+    const orderedByMonth = db.prepare(`
+      SELECT substr(order_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
+      FROM sales_orders
+      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND order_date IS NOT NULL
+      GROUP BY month
+    `).all(tenantId) as any[]
+
+    const invoicedByMonth = db.prepare(`
+      SELECT substr(invoice_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
+      FROM invoices
+      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND invoice_date IS NOT NULL
+      GROUP BY month
+    `).all(tenantId) as any[]
+
+    const orderedMap = new Map(orderedByMonth.map(r => [r.month, r.value]))
+    const invoicedMap = new Map(invoicedByMonth.map(r => [r.month, r.value]))
+
+    const anchor = new Date()
+    anchor.setDate(1)
+    const monthly: any[] = []
+    for (let back = PIPELINE_MONTHS - 1; back >= 0; back--) {
+      const cursor = new Date(anchor)
+      cursor.setMonth(anchor.getMonth() - back)
+      const month = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+      monthly.push({
+        month,
+        ordered: orderedMap.get(month) || 0,
+        invoiced: invoicedMap.get(month) || 0,
+      })
+    }
+
+    const soTotal = linkage.soTotal || 0
+    const soFromQuotation = linkage.soFromQuotation || 0
+
+    res.json({
+      success: true,
+      data: {
+        stages,
+        winRate,
+        openPipelineValue: stages.quoting.value + stages.awaiting.value,
+        linkage: {
+          soTotal,
+          soFromQuotation,
+          soDirect: soTotal - soFromQuotation,
+          linkedPercent: soTotal > 0 ? (soFromQuotation / soTotal) * 100 : 0,
+        },
+        waterfall: {
+          ordered: ordered.value || 0,
+          invoiced: billing.invoiced || 0,
+          collected: billing.collected || 0,
+          outstanding: billing.outstanding || 0,
+        },
+        monthly,
+      },
+    })
+  } catch (error) {
+    console.error('Dashboard pipeline error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch pipeline' })
   }
 })
 

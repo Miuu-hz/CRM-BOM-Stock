@@ -52,6 +52,7 @@ Thumbs.db
 
 # Uploads
 backend/uploads/
+backend/storage/
 
 # Testing
 coverage/

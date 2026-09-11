@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, TrendingDown, RefreshCw, DollarSign, BarChart2,
   ArrowDownCircle, ArrowUpCircle, Package, Truck, Users, AlertTriangle,
-  FileText, ShoppingBag, Receipt, ChevronRight,
+  FileText, ChevronRight, Wallet,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -24,10 +24,19 @@ interface RevenueData {
   grossChangePercent: number | null
   grossMargin: number
 }
-interface CFItem { id: string; party_name: string; doc_number: string; amount: number; due_date: string }
-interface CFGroup { overdue: CFItem[]; today: CFItem[]; week: CFItem[]; month: CFItem[]; later: CFItem[]; total: number; weekTotal: number; monthTotal: number }
+interface CFItem { id: string; party_name: string; doc_number: string; amount: number; due_date: string; dueUnspecified?: boolean }
+interface CFGroup { overdue: CFItem[]; today: CFItem[]; week: CFItem[]; month: CFItem[]; later: CFItem[]; total: number; weekTotal: number; monthTotal: number; laterTotal: number }
 interface Cashflow { ar: CFGroup; ap: CFGroup; netCashflow: { week: number; month: number } }
 interface Funnel { quotations: { count: number; value: number }; salesOrders: { count: number; value: number }; invoices: { count: number; value: number }; pendingDelivery: { count: number; value: number } }
+interface Stage { count: number; value: number }
+interface Pipeline {
+  stages: { quoting: Stage; awaiting: Stage; won: Stage; lost: Stage }
+  winRate: number | null
+  openPipelineValue: number
+  linkage: { soTotal: number; soFromQuotation: number; soDirect: number; linkedPercent: number }
+  waterfall: { ordered: number; invoiced: number; collected: number; outstanding: number }
+  monthly: { month: string; ordered: number; invoiced: number }[]
+}
 interface TopCustomer { id: string; name: string; revenue: number; invoice_count: number }
 interface LowStock { id: string; name: string; quantity: number; min_stock: number; unit: string }
 
@@ -66,8 +75,8 @@ function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`bg-[var(--border)]/30 rounded animate-pulse ${className}`} />
 }
 
-function CFPanel({ titleKey, icon: Icon, items, tab, setTab, total, color, t }: {
-  titleKey: string; icon: any; items: CFItem[]; tab: CFTab; setTab: (t: CFTab) => void; total: number; color: string; t: (key: string, options?: any) => string
+function CFPanel({ titleKey, icon: Icon, items, counts, tab, setTab, total, color, t }: {
+  titleKey: string; icon: any; items: CFItem[]; counts: Record<CFTab, number>; tab: CFTab; setTab: (t: CFTab) => void; total: number; color: string; t: (key: string, options?: any) => string
 }) {
   const tabs: { key: CFTab; labelKey: string }[] = [
     { key: 'overdue', labelKey: 'dashboard.overdue' },
@@ -100,8 +109,12 @@ function CFPanel({ titleKey, icon: Icon, items, tab, setTab, total, color, t }: 
             }`}
           >
             {t(tabItem.labelKey)}
-            {tabItem.key === 'overdue' && items.length > 0 && (
-              <span className="ml-1 bg-[var(--danger)] text-white rounded-full px-1 text-[10px]">{items.length}</span>
+            {counts[tabItem.key] > 0 && (
+              <span className={`ml-1 rounded-full px-1 text-[10px] ${
+                tabItem.key === 'overdue'
+                  ? 'bg-[var(--danger)] text-white'
+                  : 'bg-[var(--danger)]/10 text-[var(--danger)]'
+              }`}>{counts[tabItem.key]}</span>
             )}
           </button>
         ))}
@@ -118,7 +131,7 @@ function CFPanel({ titleKey, icon: Icon, items, tab, setTab, total, color, t }: 
             </div>
             <div className="text-right flex-shrink-0">
               <p className={`text-sm font-bold ${color}`}>{fmt(item.amount)}</p>
-              {item.due_date && <DueDateBadge dateStr={item.due_date} t={t} />}
+              {(item.due_date || item.dueUnspecified) && <DueDateBadge dateStr={item.due_date} dueUnspecified={item.dueUnspecified} t={t} />}
             </div>
           </div>
         ))}
@@ -127,7 +140,8 @@ function CFPanel({ titleKey, icon: Icon, items, tab, setTab, total, color, t }: 
   )
 }
 
-function DueDateBadge({ dateStr, t }: { dateStr: string; t: (key: string, options?: any) => string }) {
+function DueDateBadge({ dateStr, dueUnspecified, t }: { dateStr: string; dueUnspecified?: boolean; t: (key: string, options?: any) => string }) {
+  if (dueUnspecified) return <span className="text-[var(--fg-4)] text-xs font-semibold">{t('dashboard.dueUnknown')}</span>
   const d = daysLeft(dateStr)
   if (d === null) return <span className="text-[var(--fg-4)] text-xs">{t('dashboard.dueUnknown')}</span>
   if (d < 0) return <span className="text-xs text-danger font-bold">{t('dashboard.overdueDays', { days: Math.abs(d) })}</span>
@@ -146,6 +160,7 @@ export default function Dashboard() {
   const [revenue, setRevenue] = useState<RevenueData | null>(null)
   const [cashflow, setCashflow] = useState<Cashflow | null>(null)
   const [funnel, setFunnel] = useState<Funnel | null>(null)
+  const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
   const [lowStock, setLowStock] = useState<LowStock[]>([])
   const [loading, setLoading] = useState(true)
@@ -168,13 +183,15 @@ export default function Dashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [cf, fn, ls] = await Promise.all([
+      const [cf, fn, pl, ls] = await Promise.all([
         api.get('/dashboard/cashflow-forecast'),
         api.get('/dashboard/funnel'),
+        api.get('/dashboard/pipeline'),
         api.get('/dashboard/low-stock'),
       ])
       setCashflow(cf.data.data)
       setFunnel(fn.data.data)
+      setPipeline(pl.data.data)
       setLowStock(ls.data.data)
       setLastUpdated(new Date())
     } catch {}
@@ -185,20 +202,46 @@ export default function Dashboard() {
   useEffect(() => { loadRevenue(period) }, [period, loadRevenue])
 
   const cf = cashflow
-  const arItems = cf?.ar[arTab] ?? []
-  const apItems = cf?.ap[apTab] ?? []
+  // แท็บช่วงเวลาเป็นแบบสะสม ให้ตรงกับป้าย ("7 วัน" = ภายใน 7 วัน ไม่ใช่เฉพาะวันที่ 2-7)
+  // และตรงกับ weekTotal/monthTotal ที่ backend คิดแบบสะสมอยู่แล้ว
+  // เกินกำหนด/เกิน 30 วัน เป็นสถานะเฉพาะ ไม่สะสม
+  // แต่ละแท็บแยกขาดจากกัน ใบหนึ่งอยู่ได้ช่องเดียว (union ไม่ซ้ำ)
+  // ช่อง later (ครบกำหนดเกิน 30 วันข้างหน้า) ยุบรวมเข้า "30 วัน" เพราะตัดปุ่มนั้นออกแล้ว
+  // — ยุบแทนที่จะทิ้ง ไม่งั้นเงินก้อนนั้นจะไม่โผล่ที่แท็บไหนเลยเหมือนบั๊กเดิม
+  const cfItems = (g: CFGroup | undefined, tab: CFTab): CFItem[] =>
+    !g ? [] : tab === 'month' ? [...g.month, ...g.later] : g[tab]
+  const cfCounts = (g: CFGroup | undefined): Record<CFTab, number> => ({
+    overdue: g?.overdue.length ?? 0,
+    today:   g?.today.length ?? 0,
+    week:    g?.week.length ?? 0,
+    month:   (g?.month.length ?? 0) + (g?.later.length ?? 0),
+  })
+  const arItems = cfItems(cf?.ar, arTab)
+  const apItems = cfItems(cf?.ap, apTab)
+  const arCounts = cfCounts(cf?.ar)
+  const apCounts = cfCounts(cf?.ap)
 
   const container = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.06 } } }
   const item = { hidden: { y: 12, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', damping: 20 } } }
 
   const periodLabel = t(PERIOD_KEYS[period])
 
-  const funnelRows = funnel ? [
-    { labelKey: 'dashboard.quotation', data: funnel.quotations, icon: FileText, color: 'bg-purple-500', textColor: 'text-purple-400' },
-    { labelKey: 'dashboard.salesOrder', data: funnel.salesOrders, icon: ShoppingBag, color: 'bg-phopy-indigo', textColor: 'text-[var(--primary)]' },
-    { labelKey: 'dashboard.invoice', data: funnel.invoices, icon: Receipt, color: 'bg-yellow-500', textColor: 'text-warning' },
-    { labelKey: 'dashboard.pendingDelivery', data: funnel.pendingDelivery, icon: Truck, color: 'bg-orange-500', textColor: 'text-warning' },
+  // ขั้นของใบเสนอราคา เรียงตามลำดับที่ดีลเดินจริง — แพ้ไว้ท้ายสุดเพราะเป็นปลายทาง
+  const pipelineRows = pipeline ? [
+    { key: 'quoting',  labelKey: 'dashboard.stageQuoting',  data: pipeline.stages.quoting,  color: 'var(--info)' },
+    { key: 'awaiting', labelKey: 'dashboard.stageAwaiting', data: pipeline.stages.awaiting, color: 'var(--warning)' },
+    { key: 'won',      labelKey: 'dashboard.stageWon',      data: pipeline.stages.won,      color: 'var(--success)' },
+    { key: 'lost',     labelKey: 'dashboard.stageLost',     data: pipeline.stages.lost,     color: 'var(--fg-4)' },
   ] : []
+  const pipelineMaxCount = Math.max(1, ...pipelineRows.map(r => r.data.count))
+
+  const waterfallRows = pipeline ? [
+    { labelKey: 'dashboard.wfOrdered',     value: pipeline.waterfall.ordered,     color: 'var(--primary)' },
+    { labelKey: 'dashboard.wfInvoiced',    value: pipeline.waterfall.invoiced,    color: 'var(--info)' },
+    { labelKey: 'dashboard.wfCollected',   value: pipeline.waterfall.collected,   color: 'var(--success)' },
+    { labelKey: 'dashboard.wfOutstanding', value: pipeline.waterfall.outstanding, color: 'var(--danger)' },
+  ] : []
+  const waterfallMax = Math.max(1, ...waterfallRows.map(r => r.value))
 
   return (
     <motion.div variants={container} initial="hidden" animate="visible" className="space-y-5">
@@ -304,6 +347,7 @@ export default function Dashboard() {
                 titleKey="dashboard.cashIn"
                 icon={ArrowDownCircle}
                 items={arItems}
+                counts={arCounts}
                 tab={arTab}
                 setTab={setArTab}
                 total={cf?.ar.total ?? 0}
@@ -314,6 +358,7 @@ export default function Dashboard() {
                 titleKey="dashboard.cashOut"
                 icon={ArrowUpCircle}
                 items={apItems}
+                counts={apCounts}
                 tab={apTab}
                 setTab={setApTab}
                 total={cf?.ap.total ?? 0}
@@ -325,35 +370,90 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Section 3: Sales Funnel + Top Customers */}
-      <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Sales Funnel */}
-        <div className="phopy-card p-5">
+      {/* Section 2b: เงินไหลถึงไหนแล้ว — รับออเดอร์แล้วยังไม่ใช่เก็บเงินได้ */}
+      <motion.div variants={item}>
+        <button
+          onClick={() => navigate('/receivables')}
+          className="phopy-card p-5 w-full text-left cursor-pointer hover:border-[var(--primary)]/40 border border-transparent transition-colors group"
+        >
           <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.salesPipeline')}</h3>
+            <Wallet className="w-4 h-4 text-[var(--primary)]" />
+            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.cashJourney')}</h3>
+            <ChevronRight className="w-4 h-4 text-[var(--fg-4)] ml-auto group-hover:text-[var(--primary)] transition-colors" />
           </div>
-          {loading || !funnel ? (
-            <div className="space-y-3">{Array(4).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
+          {loading || !pipeline ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-16" />)}
+            </div>
           ) : (
-            <div className="space-y-3">
-              {funnelRows.map(({ labelKey, data, color, textColor }) => (
-                <div key={labelKey} className="flex items-center gap-3">
-                  <div className="w-32 flex-shrink-0">
-                    <p className="text-xs text-[var(--fg-3)]">{t(labelKey)}</p>
-                    <p className={`text-sm font-bold ${textColor}`}>{fmt(data.value)}</p>
-                  </div>
-                  <div className="flex-1 h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${color} rounded-full flex items-center justify-end pr-2 transition-all`}
-                      style={{ width: `${Math.min((data.count / Math.max(funnel.quotations.count, 1)) * 100, 100)}%`, minWidth: data.count > 0 ? '2rem' : '0' }}
-                    >
-                      <span className="text-white text-xs font-bold">{data.count}</span>
-                    </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
+              {waterfallRows.map(({ labelKey, value, color }) => (
+                <div key={labelKey}>
+                  <p className="text-xs text-[var(--fg-4)]">{t(labelKey)}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-0.5" style={{ color }}>{fmt(value)}</p>
+                  <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden mt-2">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${(value / waterfallMax) * 100}%`, background: color }} />
                   </div>
                 </div>
               ))}
             </div>
+          )}
+        </button>
+      </motion.div>
+
+      {/* Section 3: Sales Funnel + Top Customers */}
+      <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Quotation pipeline — ไล่ตาม quotation_id จริง ไม่ใช่กรวยที่นับแยกกัน */}
+        <div className="phopy-card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText className="w-4 h-4 text-[var(--primary)]" />
+            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.salesPipeline')}</h3>
+            {pipeline && pipeline.winRate !== null && (
+              <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
+                {t('dashboard.winRate', { percent: pipeline.winRate.toFixed(0) })}
+              </span>
+            )}
+          </div>
+          {loading || !pipeline ? (
+            <div className="space-y-3">{Array(4).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {pipelineRows.map(({ key, labelKey, data, color }) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <div className="w-28 flex-shrink-0">
+                      <p className="text-xs text-[var(--fg-3)]">{t(labelKey)}</p>
+                      <p className="text-sm font-bold tabular-nums" style={{ color }}>{fmt(data.value)}</p>
+                    </div>
+                    <div className="flex-1 h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full flex items-center justify-end pr-2 transition-all"
+                        style={{
+                          width: `${(data.count / pipelineMaxCount) * 100}%`,
+                          minWidth: data.count > 0 ? '2rem' : '0',
+                          background: color,
+                        }}
+                      >
+                        {data.count > 0 && <span className="text-white text-xs font-bold tabular-nums">{data.count}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ออเดอร์ที่เปิดตรงไม่ผ่านใบเสนอราคา ทำให้ไปป์ไลน์ข้างบนอ่านต่ำกว่าความจริง */}
+              {pipeline.linkage.soDirect > 0 && (
+                <div className="flex items-start gap-2 mt-4 p-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/20">
+                  <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-warning leading-relaxed">
+                    {t('dashboard.pipelineUnlinked', {
+                      direct: pipeline.linkage.soDirect,
+                      total: pipeline.linkage.soTotal,
+                    })}
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -439,7 +539,7 @@ export default function Dashboard() {
 
         {/* Overdue Invoices */}
         <button
-          onClick={() => navigate('/sales')}
+          onClick={() => navigate('/receivables')}
           className="phopy-card p-4 border border-danger/20 text-left cursor-pointer hover:border-danger/50 transition-colors group"
           aria-label={t('dashboard.overdueInvoices')}
         >

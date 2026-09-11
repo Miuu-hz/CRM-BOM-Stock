@@ -26,6 +26,7 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/purchase': ALL_ROLES,
   '/calculator': ALL_ROLES,
   '/sales': ALL_ROLES,
+  '/receivables': NOT_USER, // ยอดหนี้ของลูกค้า/ซัพพลายเออร์ทั้งบริษัท — แคบกว่าเมนูขายทั่วไป
   '/marketing': ALL_ROLES,
   '/tax': ALL_ROLES,
   '/accounting': ALL_ROLES,
