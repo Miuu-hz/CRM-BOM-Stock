@@ -1,7 +1,7 @@
 // ============================================================
 // Standard Thai Chart of Account Codes
 // Shared across all modules to prevent duplicate / mismatched accounts
-// Must stay in sync with DEFAULT_CHART_OF_ACCOUNTS in accounts.routes.ts
+// Must stay in sync with DEFAULT_CHART_OF_ACCOUNTS in config/chartOfAccounts.ts
 // ============================================================
 
 export const ACC = {
@@ -53,6 +53,12 @@ export const ACC = {
 
   // Operating Expenses (examples)
   DEPRECIATION:      '5201',
+
+  // เดิมเป็น string ดิบตาม call site จนชื่อบัญชีขึ้นกับว่าธุรกรรมไหนเกิดก่อน
+  POS_CLEARING:      '1180',  // ลูกหนี้การค้า-POS (พักเงินก่อนนำเข้าบัญชี)
+  OTHER_REVENUE:     '4203',
+  CASH_OVER_SHORT:   '5901',  // เงินขาด/เงินเกินจากการปิดกะ/นำเงินเข้า
+  STOCK_ADJUSTMENT:  '5902',  // ค่าใช้จ่ายปรับปรุงสต็อก (แยกจาก 5901)
 } as const
 
 import type { AccountType, NormalBalance } from '../types'
@@ -92,6 +98,11 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.SUBCON_LABOR]:     { name: 'ค่าจ้างเหมาช่วง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
 
   [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
+
+  [ACC.POS_CLEARING]:     { name: 'ลูกหนี้การค้า-POS', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
+  [ACC.OTHER_REVENUE]:    { name: 'รายได้อื่น', type: 'REVENUE', category: 'OTHER', normalBalance: 'CREDIT' },
+  [ACC.CASH_OVER_SHORT]:  { name: 'เงินขาด/เงินเกิน', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
+  [ACC.STOCK_ADJUSTMENT]: { name: 'ค่าใช้จ่ายปรับปรุงสต็อก', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
 }
 
 // ============================================================

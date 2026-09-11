@@ -9,6 +9,7 @@
 
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/sqlite'
+import { seedChartOfAccounts } from '../config/chartOfAccounts'
 
 // คืนค่าว่างได้ถ้าชื่อไม่เหลือตัวอักษร ASCII เลย (เช่นชื่อไทยล้วน) — ผู้เรียกตัดสินเองว่าจะใช้อะไรแทน
 export function slugify(text: string): string {
@@ -74,6 +75,10 @@ export function provisionTenant(input: ProvisionInput): ProvisionResult {
     `INSERT INTO users (id, email, password, name, role, tenant_id, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'ADMIN', ?, 'active', ?, ?)`,
   ).run(userId, input.adminEmail, input.adminPasswordHash, input.adminName, tenantId, now, now)
+
+  // ผังบัญชีมาตรฐาน 93 รายการ — ต้องมาพร้อม tenant ตั้งแต่วินาทีแรก ไม่งั้นธุรกรรมแรก
+  // จะไปปั้นบัญชีกำพร้าทิ้งไว้เอง แล้ว /accounts/init จะตันเพราะเห็นว่ามีบัญชีแล้ว
+  seedChartOfAccounts(tenantId)
 
   return { tenantId, userId }
 }

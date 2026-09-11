@@ -2,6 +2,8 @@ import { Router } from 'express'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { authenticate } from '../middleware/auth.middleware'
+import { ACC } from '../config/accountCodes'
+import { getOrCreateAccount } from '../services/accounting.service'
 
 const router = Router()
 
@@ -310,21 +312,6 @@ function createTransferJournalEntries(
   billsTotal: number,
   reference?: string
 ) {
-  const getAccountId = (code: string, name: string, type: string, category: string) => {
-    const stmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-    let account = stmt.get(code, tenantId) as any
-    
-    if (!account) {
-      const newId = generateId()
-      const createStmt = db.prepare(`
-        INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active, is_system)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
-      `)
-      createStmt.run(newId, tenantId, code, name, type, category, type === 'ASSET' ? 'DEBIT' : 'CREDIT')
-      return newId
-    }
-    return account.id
-  }
   
   const enteredTotal = cashAmount + bankAmount
   const difference = enteredTotal - billsTotal  // + = over, - = short
@@ -361,25 +348,25 @@ function createTransferJournalEntries(
 
   // Dr. Cash (entered)
   if (cashAmount > 0) {
-    const id = getAccountId('1101', 'เงินสด', 'ASSET', 'CURRENT_ASSET')
+    const id = getOrCreateAccount(tenantId, ACC.CASH)
     insertLine(id, lineNumber++, 'เงินสดจาก POS', cashAmount, 0)
   }
   // Dr. Bank (entered)
   if (bankAmount > 0) {
-    const id = getAccountId('1102', 'เงินฝากธนาคาร', 'ASSET', 'CURRENT_ASSET')
+    const id = getOrCreateAccount(tenantId, ACC.BANK)
     insertLine(id, lineNumber++, 'เงินโอน/ธนาคารจาก POS', bankAmount, 0)
   }
   // Dr. 5901 if short (entered < bills)
   if (difference < -0.01) {
-    const id = getAccountId('5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+    const id = getOrCreateAccount(tenantId, ACC.CASH_OVER_SHORT)
     insertLine(id, lineNumber++, 'เงินขาดจาก POS Clearing', Math.abs(difference), 0)
   }
   // Cr. Clearing (billsTotal — full clearing amount)
-  const clearingId = getAccountId('1180', 'ลูกหนี้การค้า-POS', 'ASSET', 'CURRENT_ASSET')
+  const clearingId = getOrCreateAccount(tenantId, ACC.POS_CLEARING)
   insertLine(clearingId, lineNumber++, 'โอนยอดจาก Clearing', 0, billsTotal)
   // Cr. 5901 if over (entered > bills)
   if (difference > 0.01) {
-    const id = getAccountId('5901', 'เงินขาด/เงินเกิน', 'EXPENSE', 'OTHER_EXPENSE')
+    const id = getOrCreateAccount(tenantId, ACC.CASH_OVER_SHORT)
     insertLine(id, lineNumber++, 'เงินเกินจาก POS Clearing', 0, difference)
   }
 

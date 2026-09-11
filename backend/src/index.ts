@@ -36,6 +36,7 @@ import { Sentry, sentryEnabled } from './config/sentry'
 
 
 import './db/sqlite'
+import { backfillChartOfAccounts } from './config/chartOfAccounts'
 
 
 
@@ -63,6 +64,7 @@ import stockRoutes from './routes/stock.routes'
 
 
 import dashboardRoutes from './routes/dashboard.routes'
+import receivablesRoutes from './routes/receivables.routes'
 
 
 import calculatorRoutes from './routes/calculator.routes'
@@ -93,6 +95,7 @@ import activityRoutes from './routes/activity.routes'
 
 
 import salesRoutes from './routes/sales'
+import attachmentsRoutes from './routes/attachments.routes'
 
 
 import approvalRoutes from './routes/approval.routes'
@@ -444,6 +447,10 @@ app.use('/api/customer-recommendations', authenticate, subscriptionGate('crm'))
 app.use('/api/activities', authenticate, subscriptionGate('crm'))
 app.use('/api/orders', authenticate, subscriptionGate('sales'))
 app.use('/api/sales', authenticate, subscriptionGate('sales'))
+// gate per ref_type (RECEIPT/INVOICE=sales, SUPPLIER_PAYMENT=purchase, POS_PAYMENT=pos)
+// handled inside attachments.routes.ts itself — a single static feature here
+// would block e.g. purchase-only tenants from attaching supplier payment slips.
+app.use('/api/attachments', authenticate)
 app.use('/api/stock', authenticate, subscriptionGate('stock'))
 app.use('/api/materials', authenticate, subscriptionGate('stock'))
 app.use('/api/purchase', authenticate, subscriptionGate('purchase'))
@@ -470,6 +477,7 @@ app.use('/api/llm-providers', authenticate, subscriptionGate('ai'))
 app.use('/api/analytics', authenticate, subscriptionGate('ai'))
 app.use('/api/reports', authenticate, subscriptionGate('reports'))
 app.use('/api/dashboard', authenticate, subscriptionGate('reports'))
+app.use('/api/receivables', authenticate, subscriptionGate('reports'))
 // expiry-only (ไม่ผูก feature) — mount ธุรกิจที่ไม่มี feature เฉพาะ
 app.use('/api/users', authenticate, subscriptionGate())
 app.use('/api/settings', authenticate, subscriptionGate())
@@ -499,6 +507,7 @@ app.use('/api/stock', stockRoutes)
 
 
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/receivables', receivablesRoutes)
 
 
 app.use('/api/calculator', calculatorRoutes)
@@ -529,6 +538,9 @@ app.use('/api/activities', activityRoutes)
 
 
 app.use('/api/sales', salesRoutes)
+
+
+app.use('/api/attachments', attachmentsRoutes)
 
 
 app.use('/api/approval', approvalRoutes)
@@ -688,6 +700,11 @@ app.listen(PORT, () => {
 
   console.log(`🌐 API URL: http://localhost:${PORT}/api`)
 
+
+  // เติมผังบัญชีที่ขาดให้ทุก tenant — อยู่ตรงนี้ไม่ใช่ใน migrations.ts เพราะ
+  // db/sqlite.ts เรียก runMigrations() ก่อนบรรทัด `export default db` การ import
+  // chartOfAccounts (ซึ่ง import db) จากในนั้นจะได้ db เป็น undefined (วงกลม import)
+  backfillChartOfAccounts()
 
   startWorker()
 
