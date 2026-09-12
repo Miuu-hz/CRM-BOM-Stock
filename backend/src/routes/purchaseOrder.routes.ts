@@ -309,6 +309,28 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
+    // ล็อกแข็ง: ใบที่รับของแล้วหรือวางบิลแล้ว แก้ไม่ได้ไม่ว่าใครหรือหมวดอนุมัติจะเปิดหรือปิด
+    // เพราะการแก้ราคา/จำนวนย้อนหลังทำให้ใบรับของกับบัญชีเจ้าหนี้ไม่ตรงกับใบสั่งซื้ออีกต่อไป
+    // (ต้องยกเลิกใบรับของ/ใบแจ้งหนี้ก่อน ซึ่งมีเส้นทางของมันอยู่แล้ว)
+    const blockingGr = db.prepare(
+      "SELECT gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' LIMIT 1"
+    ).get(tenantId, req.params.id) as any
+    if (blockingGr) {
+      return res.status(400).json({
+        success: false,
+        message: `แก้ไขไม่ได้ — ใบสั่งซื้อ ${existing.po_number} มีใบรับสินค้า ${blockingGr.gr_number} อ้างอิงอยู่ กรุณายกเลิกใบรับสินค้าก่อน`,
+      })
+    }
+    const blockingInvoice = db.prepare(
+      "SELECT pi_number FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' LIMIT 1"
+    ).get(tenantId, req.params.id) as any
+    if (blockingInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: `แก้ไขไม่ได้ — ใบสั่งซื้อ ${existing.po_number} มีใบแจ้งหนี้ ${blockingInvoice.pi_number} อ้างอิงอยู่ กรุณายกเลิกใบแจ้งหนี้ก่อน`,
+      })
+    }
+
     // หมวด "แก้ไขเอกสารที่ออกไปแล้ว" — เดิมเป็นโหมด "ปลดล็อกแล้วแก้เอง" ตอนนี้เปลี่ยนเป็น
     // draft เหมือนหมวดปรับสต็อก/ยกเลิกบิล POS: พนักงานกด save ตามปกติ ระบบเก็บ payload
     // (ค่าที่เสนอ + before snapshot ของจริงตอนนี้) ไว้รอเจ้าของกดอนุมัติค่อยรันจริง

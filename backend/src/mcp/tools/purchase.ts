@@ -6,7 +6,7 @@ import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from
 import { ok, checkApprovalPermission, checkCanApprove } from './shared'
 // Math.floor() ทำลายจำนวนที่เป็นทศนิยม: รับ 500 g ของของที่หน่วยฐานเป็น kg แปลงได้ 0.5
 // แล้ว floor(0.5) = 0 → สต็อกไม่เพิ่มเลยโดยไม่มีใครรู้ (route หลักแก้ไปแล้ว ที่นี่ตกหล่น)
-import { roundQty, roundPackQty } from '../../utils/qty'
+import { roundQty, roundPackQty, isWholeQty } from '../../utils/qty'
 
 // stock_items.unit_cost MUST always be the price per 1 BASE UNIT (stock_items.base_unit),
 // never per the unit the PO/GR line was written in — mirrors priceToBaseUnitCost() in
@@ -565,7 +565,9 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                   ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
                   : null
                 const canUnpackDisplay = !!displayToBaseChain
-                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
+                // เงื่อนไขเดียวกับ purchase.routes.ts: เศษไม่ใช่แพ็ค ต้องแปลงเป็นหน่วยฐาน
+                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay
+                    && isWholeQty(Number(item.accepted_qty))) {
                   const sealedCostFactor = displayToBaseChain?.factor ?? 1
                   const sealedUnitCost = unitPrice
                     ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)

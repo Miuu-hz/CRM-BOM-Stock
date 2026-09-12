@@ -4,7 +4,7 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
-import { roundQty, roundPackQty } from '../utils/qty'
+import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { updateAccountBalance } from './sales/shared'
@@ -213,7 +213,8 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
       // AND a real display->base conversion path exists.
       const canUnpackDisplay = !!displayUnit && displayUnit !== stockUnit
         && !!findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
-      if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
+      // ต้องใช้เงื่อนไขเดียวกับตอนยืนยันเป๊ะ ๆ ไม่งั้นยกเลิกแล้วคืนของคนละก้อนกับที่รับเข้า
+      if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay && isWholeQty(Number(item.accepted_qty))) {
         addToSealed = true
         sealedQty = roundPackQty(Number(item.accepted_qty), `GR ${gr.gr_number} cancel`)
         stockQty = 0
@@ -812,7 +813,10 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
             : null
           const canUnpackDisplay = !!displayToBaseChain
-          if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
+          // จำนวนที่เป็นเศษ = ไม่ใช่แพ็คที่ยังไม่แกะ แต่เป็นน้ำหนัก/ปริมาณ
+          // (รับอกไก่ 1.285 kg ไม่ใช่ "1 แพ็ค") ต้องแปลงเป็นหน่วยฐานแทน ไม่งั้นโดนปัดทิ้ง
+          const wholePacks = isWholeQty(Number(item.accepted_qty))
+          if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay && wholePacks) {
             addToSealed = true
             movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit} (ยังไม่แกะ)`
           } else if (stockItem && poUnit && poUnit !== stockUnit) {
