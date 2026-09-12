@@ -469,4 +469,63 @@ export const BILL_CSS = `
 .bill-thermal .wo-summary-card { padding: 7px 9px; border-radius: 5px; border-width: 1px; }
 .bill-thermal .wo-summary-value { font-size: 15px; }
 .bill-thermal .wo-col-stock, .bill-thermal .wo-col-issued { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   THERMAL 80mm — ความเข้ม
+   เครื่องพิมพ์ความร้อนไม่มีเฉดเทา มันจิ้มจุดหรือไม่จิ้มเท่านั้น สีเทาในธีม
+   (#7b8394 / #aaaaaa / #bbbbbb / #999999 …) จึงออกมาเป็นจุดห่าง ๆ = จาง
+   บล็อกนี้บังคับทุกอย่างในใบเสร็จให้เป็นดำสนิทและหนาขึ้น
+   ใช้เฉพาะ .bill-thermal — ใบ A4/A5 ที่พิมพ์เลเซอร์ยังใช้เฉดเทาตามเดิม
+═══════════════════════════════════════════════════════════════ */
+.bill-thermal,
+.bill-thermal * {
+  color: #000000 !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ตัวอักษรหนาขึ้นทั้งใบ — หัวใจของความ "เข้ม" บนเครื่องความร้อน */
+.bill-thermal { font-size: 12px; font-weight: 600; line-height: 1.5; }
+.bill-thermal .receipt-name { font-weight: 900; font-size: 15px; letter-spacing: 0.2px; }
+.bill-thermal .receipt-row { font-weight: 600; }
+.bill-thermal .receipt-item { font-weight: 700; margin-bottom: 6px; }
+.bill-thermal .receipt-free-tag { font-weight: 600; font-size: 10px; }
+
+/* ยอดรวม: หนาสุด + ถมเส้นขอบตัวอักษรอีกนิดให้ตัวเลขอ่านชัดตั้งแต่เมตรแรก */
+.bill-thermal .receipt-total-row {
+  font-weight: 900;
+  font-size: 16px;
+  -webkit-text-stroke: 0.3px #000000;
+  border-top: 2px solid #000000;
+  border-bottom: 2px solid #000000;
+  padding: 4px 0;
+  margin: 6px 0;
+}
+
+/* เส้นคั่น: จุดไข่ปลาสีเทาอ่อนแทบไม่ติดกระดาษ เปลี่ยนเป็นเส้นทึบดำ */
+.bill-thermal .receipt-divider {
+  border-top: 1.5px solid #000000;
+  margin: 8px 0;
+}
+
+/* กล่องวิธีชำระเงิน: พื้นเทาอ่อนไม่ติดกระดาษความร้อน ใช้กรอบดำแทน */
+.bill-thermal .receipt-pay {
+  background: transparent !important;
+  border: 1.5px solid #000000;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* กรอบ QR ให้เห็นจริง */
+.bill-thermal .receipt-qr-placeholder {
+  border: 2px solid #000000;
+  font-weight: 700;
+}
+
+/* หน้าจอพรีวิวยังมีเงาได้ แต่ตอนพิมพ์ต้องไม่มีอะไรมากวน */
+@media print {
+  .bill-thermal { box-shadow: none !important; }
+}
 `
