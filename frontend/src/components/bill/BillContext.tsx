@@ -435,6 +435,8 @@ export interface BillData {
   // เพิ่มเติม
   notes?: string
   qrCode?: string
+  /** QR ลิงก์ดูใบเสร็จออนไลน์ — แยกจาก qrCode ที่เป็น QR โอนเงินของร้าน */
+  receiptQrCode?: string
 
   // สถานะ (WO เพิ่ม PLANNED | IN_PROGRESS | ON_HOLD)
   status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD'

@@ -356,7 +356,9 @@ export default function Cashier() {
     const serviceAmt = billing.serviceEnabled ? Math.round(subtotal * billing.serviceRate / 100) : 0
     const vatAmt = billing.vatEnabled ? Math.round(subtotal * billing.vatRate / 100) : 0
     const total = subtotal + serviceAmt + vatAmt - discountAmt
-    const bank = method === 'QR_CODE' ? getCachedDefaultBankAccount() : undefined
+    // แนบบัญชีหลักเสมอ ไม่ใช่เฉพาะตอนจ่ายด้วย QR — ลูกค้าที่จ่ายสดก็ยังต้องเห็น
+    // เลขบัญชี/QR ไว้โอนรอบหน้า และหน้าตั้งค่าก็โฆษณาไว้ว่า "แสดงบนเอกสารขายและ POS"
+    const bank = getCachedDefaultBankAccount()
     return {
       ...bill,
       service_charge_amount: serviceAmt,

@@ -537,7 +537,13 @@ export const BILL_CSS = `
 }
 
 .bill-thermal .receipt-qr-placeholder { border: 3px solid #000000; font-weight: 800; }
-.bill-thermal .receipt-qr { width: 120px; height: 120px; }
+/* QR 2 ตัวเรียงข้างกัน (โอนเงิน + ดูใบเสร็จ) — มีตัวเดียวก็อยู่กลางเอง */
+.receipt-qr-pair { display: flex; justify-content: center; gap: 8px; margin-top: 6px; }
+.receipt-qr-cell { text-align: center; }
+.receipt-qr-label { font-size: 10px; margin-top: 2px; }
+.bill-thermal .receipt-qr { width: 126px; height: 126px; margin: 0 auto; }
+.bill-thermal .receipt-qr-label { font-size: 11px; font-weight: 800; }
+.bill-thermal .receipt-qr-pair { gap: 6px; }
 .bill-thermal .receipt-logo { width: 40px; height: 40px; }
 
 @media print {

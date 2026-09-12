@@ -147,7 +147,10 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     bankAccountNumber: d._bankAccountNumber || undefined,
     notes: d.notes || d.reason || undefined,
     status: (d.status || 'CONFIRMED') as BillData['status'],
-    qrCode: safeImage(d._bankQrImage || d.receipt_qr) || undefined,
+    // QR โอนเงินของร้าน (อัปโหลดที่ Settings → บัญชีธนาคาร / QR รับเงิน)
+    qrCode: safeImage(d._bankQrImage) || undefined,
+    // QR ลิงก์ดูใบเสร็จออนไลน์ — คนละตัว คนละหน้าที่ พิมพ์คู่กันได้
+    receiptQrCode: safeImage(d.receipt_qr) || undefined,
     createdBy: String(d.created_by || d.requester_name || d.received_by || ''),
     createdAt: String(d.created_at || ''),
   }
