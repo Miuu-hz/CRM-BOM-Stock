@@ -565,16 +565,18 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                   ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
                   : null
                 const canUnpackDisplay = !!displayToBaseChain
-                // เงื่อนไขเดียวกับ purchase.routes.ts: เศษไม่ใช่แพ็ค ต้องแปลงเป็นหน่วยฐาน
-                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay
-                    && isWholeQty(Number(item.accepted_qty))) {
+                // เงื่อนไขเดียวกับ purchase.routes.ts: แยกแพ็คเต็มออกจากเศษ
+                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
                   const sealedCostFactor = displayToBaseChain?.factor ?? 1
                   const sealedUnitCost = unitPrice
                     ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
                     : stockItem.unit_cost
-                  db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
-                    .run(roundPackQty(Number(item.accepted_qty), `GR ${gr.gr_number} sealed`), sealedUnitCost, now, stockItem.id)
-                  movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit}`
+                  const mcpPacks = Math.floor(Number(item.accepted_qty) + 1e-9)
+                  const mcpRemainder = roundQty((Number(item.accepted_qty) - mcpPacks) * sealedCostFactor)
+                  db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
+                    .run(mcpPacks, mcpRemainder, sealedUnitCost, now, stockItem.id)
+                  stockQty = mcpRemainder
+                  movementNotes = `Received ${item.accepted_qty} ${poUnit}: sealed ${mcpPacks} + เศษ ${mcpRemainder}`
                 } else if (poUnit && poUnit !== stockUnit) {
                   const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
                   if (!converted) {

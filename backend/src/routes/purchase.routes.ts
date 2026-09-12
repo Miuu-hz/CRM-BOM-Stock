@@ -5,6 +5,9 @@ import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
 import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
+
+// กันเลขทศนิยมลอยตัว (2.9999999 ต้องนับเป็น 3 แพ็ค ไม่ใช่ 2)
+const PACK_EPS = 1e-9
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { updateAccountBalance } from './sales/shared'
@@ -194,7 +197,8 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
     if (hasSnapshot) {
       stockQty = roundQty(Number(item.stock_qty) || 0)
       sealedQty = roundPackQty(Number(item.stock_sealed_qty) || 0, `GR ${gr.gr_number} cancel`)
-      addToSealed = sealedQty > 0 && stockQty === 0
+      // ใบเดียวอาจมีทั้งแพ็คเต็มและเศษ ต้องคืนทั้งคู่ (ค่าที่ไม่ได้ใช้เป็น 0 อยู่แล้ว)
+      addToSealed = sealedQty > 0
       if (item.stock_item_id) {
         const recorded = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.stock_item_id, tenantId) as any
         if (recorded) stockItem = recorded
@@ -213,11 +217,13 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
       // AND a real display->base conversion path exists.
       const canUnpackDisplay = !!displayUnit && displayUnit !== stockUnit
         && !!findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
-      // ต้องใช้เงื่อนไขเดียวกับตอนยืนยันเป๊ะ ๆ ไม่งั้นยกเลิกแล้วคืนของคนละก้อนกับที่รับเข้า
-      if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay && isWholeQty(Number(item.accepted_qty))) {
+      // ต้องแยกส่วนแบบเดียวกับตอนยืนยันเป๊ะ ๆ ไม่งั้นยกเลิกแล้วคืนของคนละก้อนกับที่รับเข้า
+      if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
         addToSealed = true
-        sealedQty = roundPackQty(Number(item.accepted_qty), `GR ${gr.gr_number} cancel`)
-        stockQty = 0
+        const chain = findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
+        const packFactor = chain?.factor ?? 1
+        sealedQty = Math.floor(Number(item.accepted_qty) + PACK_EPS)
+        stockQty = roundQty((Number(item.accepted_qty) - sealedQty) * packFactor)
       } else if (poUnit && poUnit !== stockUnit) {
         const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
         if (!converted) {
@@ -234,8 +240,9 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
       // unit = COALESCE(base_unit, unit): opportunistically keep the legacy `unit` column
       // synced to base_unit on every write so it can never drift again (see "เลิกใช้ unit
       // legacy" task) — this update doesn't touch unit_cost, only quantity/sealed_qty.
-      db.prepare('UPDATE stock_items SET sealed_qty = MAX(0, COALESCE(sealed_qty, 0) - ?), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(sealedQty, now, stockItem.id, tenantId)
+      // หักทั้งแพ็คเต็มและเศษ เพราะใบเดียวอาจรับเข้ามาทั้งสองแบบ
+      db.prepare('UPDATE stock_items SET sealed_qty = MAX(0, COALESCE(sealed_qty, 0) - ?), quantity = quantity - ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(sealedQty, stockQty, now, stockItem.id, tenantId)
     } else {
       db.prepare('UPDATE stock_items SET quantity = quantity - ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(stockQty, now, stockItem.id, tenantId)
@@ -244,7 +251,8 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
     db.prepare(`
       INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
       VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
-    `).run(generateId(), tenantId, stockItem.id, addToSealed ? sealedQty : stockQty, `GR-CANCEL: ${gr.gr_number}`,
+    `).run(generateId(), tenantId, stockItem.id,
+      addToSealed ? roundQty(sealedQty * (Number(item.stock_factor) || 1) + stockQty) : stockQty, `GR-CANCEL: ${gr.gr_number}`,
       `Reversed on cancellation of goods receipt ${gr.gr_number}`, now, userId)
 
     // Clear the snapshot so a re-confirm / re-cancel cycle cannot double-reverse.
@@ -801,6 +809,7 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
           // stock_items.quantity is always stored in base_unit — targeting the legacy
           // `unit` column here silently applied the wrong conversion for the ~23 items
           // where `unit` != `base_unit`. Fall back to `unit` only when base_unit is empty.
+          let sealedPacks = 0
           const stockUnit = normalizeUnit(stockItem?.base_unit || stockItem?.unit || '')
           const displayUnit = normalizeUnit(stockItem?.display_unit || '')
 
@@ -813,12 +822,20 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
             : null
           const canUnpackDisplay = !!displayToBaseChain
-          // จำนวนที่เป็นเศษ = ไม่ใช่แพ็คที่ยังไม่แกะ แต่เป็นน้ำหนัก/ปริมาณ
-          // (รับอกไก่ 1.285 kg ไม่ใช่ "1 แพ็ค") ต้องแปลงเป็นหน่วยฐานแทน ไม่งั้นโดนปัดทิ้ง
-          const wholePacks = isWholeQty(Number(item.accepted_qty))
-          if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay && wholePacks) {
+          if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
             addToSealed = true
-            movementNotes = `Received as sealed ${poUnit}: ${item.accepted_qty} ${poUnit} (ยังไม่แกะ)`
+            // แยกเป็น "แพ็คเต็มที่ยังไม่แกะ" + "เศษที่แปลงเป็นหน่วยฐานแล้ว"
+            // เดิมปัดเศษเป็นจำนวนแพ็คเต็ม ทำให้รับ 1.285 kg กลายเป็น 1 kg (หาย 285 g)
+            // และรับ 1.6 kg กลายเป็น 2 kg (เกิน 400 g)
+            const packFactor = displayToBaseChain?.factor ?? 1
+            sealedPacks = Math.floor(Number(item.accepted_qty) + PACK_EPS)
+            stockQty = roundQty((Number(item.accepted_qty) - sealedPacks) * packFactor)
+            appliedFactor = packFactor
+            movementNotes = sealedPacks > 0 && stockQty > 0
+              ? `Received ${item.accepted_qty} ${poUnit}: sealed ${sealedPacks} ${poUnit} (ยังไม่แกะ) + เศษ ${stockQty} ${stockUnit}`
+              : sealedPacks > 0
+                ? `Received as sealed ${poUnit}: ${sealedPacks} ${poUnit} (ยังไม่แกะ)`
+                : `Received ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit} (ไม่ถึงหนึ่งแพ็ค)`
           } else if (stockItem && poUnit && poUnit !== stockUnit) {
             // Unit conversion: PO unit → Stock base unit
             const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
@@ -843,8 +860,8 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
               const sealedUnitCost = unitPrice
                 ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
                 : stockItem.unit_cost
-              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(roundPackQty(Number(item.accepted_qty), `GR ${gr.gr_number} sealed ${poUnit}`), sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
+              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
+                .run(sealedPacks, stockQty, sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
             } else {
               // Update quantity + unit_cost (latest purchase price, converted to price-per-
               // base-unit using the same factor that converted the quantity above — see
@@ -895,7 +912,9 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
             db.prepare(`
               INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
               VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id, addToSealed ? roundPackQty(Number(item.accepted_qty)) : stockQty, `GR: ${gr.gr_number}`,
+            `).run(generateId(), tenantId, stockItem.id,
+              // stock_movements.quantity เป็นหน่วยฐานเสมอตาม schema — แพ็คที่ยังไม่แกะก็ต้องคูณ factor
+              addToSealed ? roundQty(sealedPacks * appliedFactor + stockQty) : stockQty, `GR: ${gr.gr_number}`,
               movementNotes, now, req.user!.userId)
 
             // Persist exactly what hit stock. Cancellation reads these back instead of
@@ -906,8 +925,8 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
                 SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?
                 WHERE id = ?`).run(
                 stockItem.id,
-                addToSealed ? 0 : stockQty,
-                addToSealed ? roundPackQty(Number(item.accepted_qty)) : 0,
+                stockQty,
+                addToSealed ? sealedPacks : 0,
                 appliedFactor,
                 item.id
               )
