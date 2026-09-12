@@ -8,10 +8,11 @@ import "./i18n"
 import "./index.css"
 import { ThemeProvider } from "./contexts/ThemeContext"
 import { LanguageProvider } from "./contexts/LanguageContext"
-import { registerSW } from "./registerSW"
+import { registerSW, watchForNewBuild } from "./registerSW"
 import { MotionConfig } from "framer-motion"
 
 registerSW()
+watchForNewBuild()
 
 const queryClient = new QueryClient({
   defaultOptions: {

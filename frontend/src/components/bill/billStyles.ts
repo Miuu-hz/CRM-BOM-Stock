@@ -471,61 +471,78 @@ export const BILL_CSS = `
 .bill-thermal .wo-col-stock, .bill-thermal .wo-col-issued { display: none; }
 
 /* ═══════════════════════════════════════════════════════════════
-   THERMAL 80mm — ความเข้ม
-   เครื่องพิมพ์ความร้อนไม่มีเฉดเทา มันจิ้มจุดหรือไม่จิ้มเท่านั้น สีเทาในธีม
-   (#7b8394 / #aaaaaa / #bbbbbb / #999999 …) จึงออกมาเป็นจุดห่าง ๆ = จาง
-   บล็อกนี้บังคับทุกอย่างในใบเสร็จให้เป็นดำสนิทและหนาขึ้น
-   ใช้เฉพาะ .bill-thermal — ใบ A4/A5 ที่พิมพ์เลเซอร์ยังใช้เฉดเทาตามเดิม
+   THERMAL 80mm — ความเข้ม (รอบ 2: พิมพ์จริงแล้วยังจาง)
+   เครื่องพิมพ์ความร้อนจิ้มจุดหรือไม่จิ้มเท่านั้น ไม่มีเฉดเทา
+   ตัวอักษรบางหรือสีเทาจะถูก dither เป็นจุดห่าง ๆ = อ่านแทบไม่ออก
+   วิธีที่ได้ผลจริงคือ "เพิ่มจำนวนพิกเซลดำต่อตัวอักษร":
+     ดำสนิท + ตัวหนา + ตัวใหญ่ขึ้น + ปิด anti-alias + เต็มหน้ากระดาษ
+   ใช้เฉพาะ .bill-thermal — A4/A5 ที่พิมพ์เลเซอร์ไม่กระทบ
 ═══════════════════════════════════════════════════════════════ */
 .bill-thermal,
 .bill-thermal * {
   color: #000000 !important;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  /* ปิด anti-alias: ขอบตัวอักษรแบบไล่เฉดเทาคือสิ่งที่ถูก dither จนจาง */
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
 }
 
-/* ตัวอักษรหนาขึ้นทั้งใบ — หัวใจของความ "เข้ม" บนเครื่องความร้อน */
-.bill-thermal { font-size: 12px; font-weight: 600; line-height: 1.5; }
-.bill-thermal .receipt-name { font-weight: 900; font-size: 15px; letter-spacing: 0.2px; }
-.bill-thermal .receipt-row { font-weight: 600; }
-.bill-thermal .receipt-item { font-weight: 700; margin-bottom: 6px; }
-.bill-thermal .receipt-free-tag { font-weight: 600; font-size: 10px; }
+/* ใช้พื้นที่กระดาษให้เต็ม — ยิ่งตัวใหญ่ ยิ่งมีพิกเซลดำต่อตัวอักษรมาก */
+.bill-thermal {
+  padding: 3mm 2mm;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: 0.1px;
+}
 
-/* ยอดรวม: หนาสุด + ถมเส้นขอบตัวอักษรอีกนิดให้ตัวเลขอ่านชัดตั้งแต่เมตรแรก */
+/* ถมตัวอักษรให้หนาขึ้นอีกด้วยเงาทับตำแหน่งเดิม — ได้ผลกับ print pipeline
+   ที่ไม่สน -webkit-text-stroke (ใช้ทั้งคู่เพื่อกินทุกเบราว์เซอร์) */
+.bill-thermal * {
+  text-shadow: 0 0 0.01px #000000;
+  -webkit-text-stroke: 0.28px #000000;
+}
+
+.bill-thermal .receipt-name { font-weight: 900; font-size: 17px; letter-spacing: 0.3px; }
+.bill-thermal .receipt-row { font-weight: 700; }
+.bill-thermal .receipt-item { font-weight: 800; margin-bottom: 6px; }
+.bill-thermal .receipt-free-tag { font-weight: 700; font-size: 11px; }
+
 .bill-thermal .receipt-total-row {
   font-weight: 900;
-  font-size: 16px;
-  -webkit-text-stroke: 0.3px #000000;
-  border-top: 2px solid #000000;
-  border-bottom: 2px solid #000000;
-  padding: 4px 0;
-  margin: 6px 0;
+  font-size: 18px;
+  -webkit-text-stroke: 0.55px #000000;
+  border-top: 3px solid #000000;
+  border-bottom: 3px solid #000000;
+  padding: 5px 0;
+  margin: 7px 0;
 }
 
-/* เส้นคั่น: จุดไข่ปลาสีเทาอ่อนแทบไม่ติดกระดาษ เปลี่ยนเป็นเส้นทึบดำ */
+/* เส้นคั่น: จุดไข่ปลาสีเทาแทบไม่ติดกระดาษ ใช้เส้นทึบดำหนา */
 .bill-thermal .receipt-divider {
-  border-top: 1.5px solid #000000;
+  border-top: 2.5px solid #000000;
   margin: 8px 0;
 }
 
-/* กล่องวิธีชำระเงิน: พื้นเทาอ่อนไม่ติดกระดาษความร้อน ใช้กรอบดำแทน */
+/* กล่องวิธีชำระเงิน: พื้นเทาอ่อนไม่ติดกระดาษความร้อน ใช้กรอบดำหนาแทน */
 .bill-thermal .receipt-pay {
   background: transparent !important;
-  border: 1.5px solid #000000;
-  border-radius: 4px;
+  border: 2.5px solid #000000;
+  border-radius: 3px;
   padding: 6px 8px;
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-/* กรอบ QR ให้เห็นจริง */
-.bill-thermal .receipt-qr-placeholder {
-  border: 2px solid #000000;
-  font-weight: 700;
-}
+.bill-thermal .receipt-qr-placeholder { border: 3px solid #000000; font-weight: 800; }
+.bill-thermal .receipt-qr { width: 120px; height: 120px; }
+.bill-thermal .receipt-logo { width: 40px; height: 40px; }
 
-/* หน้าจอพรีวิวยังมีเงาได้ แต่ตอนพิมพ์ต้องไม่มีอะไรมากวน */
 @media print {
   .bill-thermal { box-shadow: none !important; }
+  /* ขอบกระดาษแคบสุดที่เครื่องยอมรับ ให้เนื้อหากว้างที่สุด */
+  @page { size: 80mm auto; margin: 1.5mm; }
 }
 `
