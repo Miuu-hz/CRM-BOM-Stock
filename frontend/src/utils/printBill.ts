@@ -16,6 +16,7 @@ import type { BillBranding, BillDocumentSettings } from '../components/bill/Unif
 import { BILL_CONFIGS } from '../components/bill/BillContext'
 import type { BillType, BillData, BillItem, BillParty } from '../components/bill/BillContext'
 import api from '../services/api'
+import { getCachedCompanySettings } from '../services/companySettings.service'
 
 export type PrintDocType =
   | 'qt' | 'so' | 'inv' | 'rc' | 'cn'
@@ -96,11 +97,14 @@ function toItems(raw: any[]): BillItem[] {
 
 function sellerOf(d: any): BillParty {
   // POS ส่งมาเป็น _shop* ส่วนเอกสารอื่นส่ง _company*
+  // ถ้าทั้งคู่ว่าง (ร้านยังไม่ได้กรอก "ตั้งค่าร้าน" ใน POS) ให้ใช้ข้อมูลบริษัทจริง
+  // จาก company_settings ที่แคชไว้ แทนที่จะพิมพ์ขีด "-" โดด ๆ ออกมาบนหัวบิล
+  const co = getCachedCompanySettings()
   return {
-    name: String(d._company || d._shopName || '-'),
-    address: String(d._companyAddress || d._shopAddress || ''),
-    taxId: String(d._companyTax || d._shopTaxId || ''),
-    tel: String(d._companyPhone || d._shopPhone || ''),
+    name: String(d._company || d._shopName || co.name || ''),
+    address: String(d._companyAddress || d._shopAddress || co.address || ''),
+    taxId: String(d._companyTax || d._shopTaxId || co.tax_id || ''),
+    tel: String(d._companyPhone || d._shopPhone || co.phone || ''),
     branch: d._companyBranch || undefined,
   }
 }

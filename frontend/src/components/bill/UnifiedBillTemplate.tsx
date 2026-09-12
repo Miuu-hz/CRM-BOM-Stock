@@ -236,7 +236,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
             <>
               <div className="receipt-center">
                 <BrandLogo branding={branding} sellerName={data.seller.name} themeColor={themeColor} thermal />
-                <div className="receipt-name">{data.seller.name}</div>
+                {data.seller.name && <div className="receipt-name">{data.seller.name}</div>}
                 {branding?.isFreePlan && <div className="bill-free-tag receipt-free-tag">ออกโดยระบบ Phopy ERP</div>}
                 {data.seller.address && <div>{data.seller.address}</div>}
                 {data.seller.taxId && <div>เลขภาษี {data.seller.taxId}</div>}
