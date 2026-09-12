@@ -231,8 +231,11 @@ export const stockService = {
     return response.data.data
   },
 
-  recordMovement: async (input: StockMovementInput): Promise<StockItem> => {
+  recordMovement: async (input: StockMovementInput): Promise<any> => {
     const response = await api.post<any>('/stock/movement', input)
+    // ติดด่านอนุมัติ: ไม่มี data กลับมาเพราะสต็อกยังไม่ถูกแตะ — ส่ง body ต่อให้หน้าเว็บ
+    // เด้ง popup เอง (เดิมตกเข้าเงื่อนไขล่างแล้วกลายเป็น error ดิบให้ผู้ใช้เห็น)
+    if (response.data?.pending_approval) return response.data
     if (!response.data?.data) {
       throw new Error('Failed to record movement')
     }

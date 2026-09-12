@@ -26,6 +26,7 @@ interface UserPermission {
   can_approve_unlimited: number
   approval_limit: number
   is_master_approver: number
+  can_bypass: number
 }
 
 interface TenantUser {
@@ -64,8 +65,10 @@ export default function ApprovalSettings() {
     can_approve_unlimited: false,
     approval_limit: 0,
     is_master_approver: false,
+    can_bypass: false,
   })
 
+  const [togglingCategory, setTogglingCategory] = useState<string | null>(null)
   const [savingSetting, setSavingSetting] = useState(false)
   const [savingPerm, setSavingPerm]       = useState(false)
 
@@ -75,7 +78,39 @@ export default function ApprovalSettings() {
     { value: 'sales_order',       label: t('settings.approval.modules.salesOrder') },
     { value: 'work_orders',       label: t('settings.approval.modules.workOrder') },
     { value: 'stock_adjustments', label: t('settings.approval.modules.stockAdjustment') },
+    { value: 'stock_adjust',      label: t('settings.approval.modules.stockChange') },
+    { value: 'pos_void',          label: t('settings.approval.modules.posVoid') },
+    { value: 'doc_edit',          label: t('settings.approval.modules.docEdit') },
   ]
+
+  // หมวดที่เปิด/ปิดได้ด้วยสวิตช์เดียว — เขียนผ่าน POST /approval/settings เดิม (upsert อยู่แล้ว)
+  // role USER เพราะ ADMIN/MASTER ข้ามด่านเสมอ และระบบจริงมีแค่ 2 role นี้
+  const QUICK_CATEGORIES = [
+    { value: 'stock_adjust', icon: '📦', label: t('settings.approval.modules.stockChange'), hint: t('settings.approval.quick.stockChangeHint') },
+    { value: 'pos_void',     icon: '🧾', label: t('settings.approval.modules.posVoid'),     hint: t('settings.approval.quick.posVoidHint') },
+    { value: 'doc_edit',     icon: '✏️', label: t('settings.approval.modules.docEdit'),     hint: t('settings.approval.quick.docEditHint') },
+  ]
+
+  const isCategoryOn = (category: string) =>
+    settings.some(s => s.module_type === category && s.role === 'USER' && s.approval_required === 1)
+
+  const toggleCategory = async (category: string, on: boolean) => {
+    setTogglingCategory(category)
+    try {
+      await api.post('/approval/settings', {
+        role: 'USER',
+        moduleType: category,
+        approvalRequired: on,
+        autoApproveThreshold: 0,
+      })
+      toast.success(on ? t('settings.approval.quick.turnedOn') : t('settings.approval.quick.turnedOff'))
+      await load()
+    } catch {
+      toast.error(t('settings.approval.quick.saveFailed'))
+    } finally {
+      setTogglingCategory(null)
+    }
+  }
 
   const ROLES = [
     { value: 'MANAGER',   label: t('settings.approval.roles.manager'),   color: 'bg-green-500/15 text-green-400' },
@@ -147,6 +182,7 @@ export default function ApprovalSettings() {
         canApproveUnlimited: permForm.can_approve_unlimited,
         approvalLimit: permForm.approval_limit,
         isMasterApprover: permForm.is_master_approver,
+        canBypass: permForm.can_bypass,
       })
       toast.success(t('settings.approval.toasts.savePermSuccess'))
       setShowPermForm(false)
@@ -157,6 +193,7 @@ export default function ApprovalSettings() {
         can_approve_unlimited: false,
         approval_limit: 0,
         is_master_approver: false,
+        can_bypass: false,
       })
       await load()
     } catch (e: any) {
@@ -211,6 +248,43 @@ export default function ApprovalSettings() {
         <div className="text-sm text-[var(--fg-2)]">
           <p className="font-semibold text-[var(--fg-1)] mb-1">{t('settings.approval.info.masterAdminAuto')}</p>
           <p>{t('settings.approval.info.roleScope')}</p>
+        </div>
+      </div>
+
+      {/* หมวดที่ต้องขออนุมัติ — สวิตช์เดียวจบ ไม่ต้องกรอกฟอร์ม */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-[var(--border)]">
+          <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
+          <h3 className="font-semibold text-[var(--fg-1)]">{t('settings.approval.quick.title')}</h3>
+        </div>
+        <div className="divide-y divide-[var(--border)]">
+          {QUICK_CATEGORIES.map(cat => {
+            const on = isCategoryOn(cat.value)
+            const busy = togglingCategory === cat.value
+            return (
+              <div key={cat.value} className="flex items-center gap-4 px-5 py-4">
+                <span className="text-xl leading-none" aria-hidden>{cat.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm text-[var(--fg-1)]">{cat.label}</p>
+                  <p className="text-xs text-[var(--fg-3)] mt-0.5">{cat.hint}</p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={on}
+                  aria-label={cat.label}
+                  disabled={busy}
+                  onClick={() => toggleCategory(cat.value, !on)}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
+                    on ? 'bg-[var(--primary)]' : 'bg-[var(--surface-2)] border border-[var(--border)]'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                    on ? 'left-[22px]' : 'left-0.5'
+                  }`} />
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -465,6 +539,19 @@ export default function ApprovalSettings() {
                   />
                   <span className="text-sm text-[var(--fg-2)]">{t('settings.approval.labels.masterApprover')}</span>
                 </label>
+                {/* ponytail: reuse the same checkbox pattern as unlimited/masterApprover above */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={permForm.can_bypass}
+                    onChange={e => setPermForm(f => ({ ...f, can_bypass: e.target.checked }))}
+                    className="w-4 h-4 accent-[var(--warning)]"
+                  />
+                  <span className="text-sm text-[var(--fg-2)]">{t('settings.approval.labels.canBypass')}</span>
+                </label>
+                {permForm.can_bypass && (
+                  <p className="text-xs text-[var(--fg-4)] pl-6 -mt-1">{t('settings.approval.labels.canBypassHint')}</p>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-3">
@@ -520,6 +607,14 @@ export default function ApprovalSettings() {
                           {p.is_master_approver === 1 && (
                             <span className="px-2 py-0.5 bg-purple-500/15 text-purple-400 text-xs rounded-full font-medium">
                               {t('settings.approval.badge.level2')}
+                            </span>
+                          )}
+                          {p.can_bypass === 1 && (
+                            <span
+                              className="px-2 py-0.5 bg-[var(--warning)]/15 text-[var(--warning)] text-xs rounded-full font-medium"
+                              title={t('settings.approval.labels.canBypassHint')}
+                            >
+                              {t('settings.approval.badge.bypass')}
                             </span>
                           )}
                           {p.can_approve_unlimited === 1 ? (

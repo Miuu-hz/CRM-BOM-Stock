@@ -12,6 +12,8 @@ import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
+import { applyStockMovement, priceToBaseUnitCost, StockMovementError } from '../services/stockMovement.service'
+import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -39,19 +41,6 @@ const router = Router()
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
 
-// stock_items.unit_cost MUST always be the price per 1 BASE UNIT (stock_items.base_unit),
-// never per whatever unit a movement/receipt happened to be entered in — mirrors
-// priceToBaseUnitCost() in purchase.routes.ts / mcp/tools/purchase.ts (same file family,
-// duplicated locally rather than shared to avoid new cross-module coupling).
-//   unit_cost = pricePerEnteredUnit / factor
-// where factor = how many base units are in 1 entered unit.
-function priceToBaseUnitCost(pricePerEnteredUnit: number, factor: number, context: string): number {
-  if (!Number.isFinite(factor) || factor <= 0) {
-    console.warn(`[unit_cost] invalid conversion factor (${factor}) for ${context} — keeping price un-converted to avoid corrupting cost`)
-    return pricePerEnteredUnit
-  }
-  return pricePerEnteredUnit / factor
-}
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
@@ -519,175 +508,78 @@ router.post('/movement', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { stockItemId, type, quantity, unit, reference, notes, unitCost } = req.body
-    const createdBy = req.user!.email
 
     if (!stockItemId || !type || quantity === undefined || quantity === null) {
       return res.status(400).json({ success: false, message: 'Missing required fields' })
     }
 
-    const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+    // ประตูอนุมัติ: ถ้าหมวด "ปรับ/เปลี่ยนสต็อก" ถูกเปิดไว้สำหรับ role นี้ ให้เก็บคำขอไว้
+    // แล้วยังไม่ขยับของ — จะขยับจริงตอนเจ้าของกดอนุมัติใน executeApprovedAction()
+    const item = db.prepare('SELECT name, quantity, unit, base_unit FROM stock_items WHERE id = ? AND tenant_id = ?')
+      .get(stockItemId, tenantId) as any
     if (!item) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
 
-    const baseUnit = item.base_unit || item.unit
-    // Legacy `unit` fallback only kicks in when the caller omits `unit` in the request AND
-    // base_unit itself hasn't been backfilled yet — otherwise this defaulted straight to the
-    // legacy `unit` column even when it disagreed with base_unit (same class of bug as the
-    // GR-confirm handlers in purchase.routes.ts).
-    const movementUnit = unit || item.base_unit || item.unit
-    let convertedQuantity = Number(quantity)
-    // Base units per 1 `movementUnit` — also reused below to convert unitCost (which the
-    // caller enters per movementUnit, same as quantity) into price-per-base-unit. Stays 1
-    // when movementUnit already equals baseUnit, i.e. price is already per base unit — this
-    // is also what happens when the caller doesn't send `unit` at all (see priceToBaseUnitCost
-    // call below): no conversion, treated as already base-unit price.
-    let qtyConversionFactor = 1
+    // ข้อความในลิสต์แจ้งเตือน/ประวัติ ต้องอ่านจบในบรรทัดเดียว: ของอะไร จากเท่าไหร่เป็นเท่าไหร่ เพราะอะไร
+    // (ชื่อคนทำไม่ต้องใส่ซ้ำ — หน้าเว็บโชว์ requester_name คู่กับข้อความอยู่แล้ว)
+    const qtyText = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 4 })
+    const currentQty = Number(item.quantity) || 0
+    const entered = Number(quantity) || 0
+    const baseUnit = item.base_unit || item.unit || ''
+    const enteredUnit = unit || baseUnit
+    // เทียบตัวเลขก่อน/หลังได้เฉพาะตอนหน่วยตรงกัน ไม่งั้นต้องแปลงหน่วยก่อนซึ่งยังไม่เกิดตอนนี้
+    const sameUnit = String(enteredUnit) === String(baseUnit)
+    const reason = String(notes || reference || '').trim()
 
-    // Convert movement unit to base unit if different
-    if (movementUnit !== baseUnit) {
-      const conversion = convertQuantityBidirectional(Number(quantity), movementUnit, baseUnit, tenantId, stockItemId)
-      if (!conversion) {
-        return res.status(400).json({
-          success: false,
-          message: `ไม่พบการแปลงหน่วยจาก "${movementUnit}" เป็น "${baseUnit}" กรุณาตั้งค่าการแปลงหน่วยใน Settings > การแปลงหน่วย`,
-        })
-      }
-      convertedQuantity = conversion.converted
-      qtyConversionFactor = conversion.factor
+    let whatChanged: string
+    if (type === 'ADJUST') {
+      whatChanged = sameUnit
+        ? `สินค้า ${item.name} ถูกปรับ ${qtyText(currentQty)} เป็น ${qtyText(entered)} ${baseUnit}`
+        : `สินค้า ${item.name} ถูกปรับเป็น ${qtyText(entered)} ${enteredUnit}`
+    } else if (type === 'IN') {
+      whatChanged = sameUnit
+        ? `สินค้า ${item.name} รับเข้า ${qtyText(entered)} ${baseUnit} (${qtyText(currentQty)} → ${qtyText(currentQty + entered)})`
+        : `สินค้า ${item.name} รับเข้า ${qtyText(entered)} ${enteredUnit}`
+    } else {
+      whatChanged = sameUnit
+        ? `สินค้า ${item.name} ตัดออก ${qtyText(entered)} ${baseUnit} (${qtyText(currentQty)} → ${qtyText(currentQty - entered)})`
+        : `สินค้า ${item.name} ตัดออก ${qtyText(entered)} ${enteredUnit}`
+    }
+    const stockDescription = reason ? `${whatChanged} เนื่องจาก ${reason}` : whatChanged
+    const gateArgs = {
+      tenantId,
+      user: req.user! as any,
+      category: 'stock_adjust' as const,
+      refType: 'stock_items',
+      refId: stockItemId,
+      description: stockDescription,
+      payload: { stockItemId, type, quantity, unit, reference, notes, unitCost },
+    }
+    const pending = gateOrCreate(gateArgs)
+    if (pending) {
+      return res.status(202).json({
+        success: true,
+        pending_approval: true,
+        request_number: pending.request_number,
+        message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) สต๊อกจะเปลี่ยนเมื่อผู้อนุมัติยืนยัน`,
+      })
     }
 
-    const now = new Date().toISOString()
-
-    // ponytail: read-modify-write stock + movement + journal must be atomic.
-    let updatedItem: any
-    const recordMovement = db.transaction(() => {
-      const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
-      if (!currentItem) {
-        throw new Error('STOCK_ITEM_NOT_FOUND')
-      }
-
-      let newQuantity = currentItem.quantity
-      let newSealedQty = currentItem.sealed_qty ?? 0
-
-      if (type === 'IN') {
-        newQuantity += convertedQuantity
-      } else if (type === 'OUT') {
-        // auto-unpack ถ้า quantity ไม่พอ แต่มี sealed_qty
-        if (currentItem.quantity < convertedQuantity) {
-          const unpack = autoUnpackIfNeeded(currentItem, convertedQuantity, tenantId)
-          if (!unpack) {
-            throw new Error('INSUFFICIENT_STOCK')
-          }
-          // บันทึก unpack movement
-          if (unpack.unpackedPacks > 0) {
-            // quantity ของ stock_movements ต้องเป็น base unit เสมอ (ตาม schema comment)
-            // เดิมบันทึก unpack.unpackedPacks (จำนวนแพ็ค) ตรงๆ ซึ่งผิดหน่วย — ทำให้รายงาน/
-            // reconcile ที่รวม quantity ของ movement ต่างชนิดกันปนหน่วยแพ็คกับหน่วยฐานเข้าด้วยกัน
-            // ใส่ movement_unit/movement_quantity ไว้ด้วยเพื่อให้ตรงกับแกะแพ็คด้วยมือ (POST /:id/unpack)
-            const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
-            db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItemId,
-              gained,
-              currentItem.display_unit || null,
-              unpack.unpackedPacks,
-              reference || 'AUTO',
-              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${currentItem.display_unit} → ${gained} ${baseUnit}`,
-              now, createdBy)
-            db.prepare('UPDATE stock_items SET sealed_qty = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-              .run(unpack.sealed_qty, now, stockItemId, tenantId)
-            newSealedQty = unpack.sealed_qty
-            newQuantity = unpack.quantity
-          }
-        }
-        if (newQuantity < convertedQuantity) {
-          throw new Error('INSUFFICIENT_STOCK')
-        }
-        newQuantity -= convertedQuantity
-      } else if (type === 'ADJUST') {
-        newQuantity = convertedQuantity
-      }
-
-      if (type === 'IN' && unitCost !== undefined && unitCost !== null) {
-        // unit_cost must be price per base_unit — caller enters unitCost per movementUnit
-        // (the same unit `quantity` was entered in), so divide by the identical factor that
-        // converted quantity → base_unit above. See priceToBaseUnitCost() for rationale.
-        const newUnitCost = priceToBaseUnitCost(Number(unitCost), qtyConversionFactor, `movement ${movementUnit}→${baseUnit} (stock item ${stockItemId})`)
-        db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(newQuantity, newUnitCost, now, stockItemId, tenantId)
-      } else {
-        db.prepare('UPDATE stock_items SET quantity = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?').run(newQuantity, now, stockItemId, tenantId)
-      }
-
-      const movementId = generateId()
-      db.prepare(`
-        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
-
-      // Auto-journal for ADJUST stock movements
-      if (type === 'ADJUST') {
-        const oldQty = currentItem.quantity || 0
-        const diffQty = newQuantity - oldQty
-        const itemUnitCost = Number(currentItem.unit_cost || 0)
-        const diffValue = diffQty * itemUnitCost
-        if (Math.abs(diffValue) > 0.01) {
-          try {
-            const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
-            const yr = new Date().getFullYear()
-            const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
-            const entryId = generateId()
-
-            if (diffValue > 0) {
-              // Adjust up: Dr Inventory / Cr Other Income
-              const incomeAccId = getOrCreateAccount(tenantId, ACC.OTHER_REVENUE)
-              db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-                .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
-              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-                .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
-              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-                .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
-            } else {
-              // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
-              const adjExpAccId = getOrCreateAccount(tenantId, ACC.STOCK_ADJUSTMENT)
-              const absValue = Math.abs(diffValue)
-              db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-                .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${currentItem.name}`, absValue, absValue, createdBy, now, now)
-              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-                .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${currentItem.name}`, absValue)
-              db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-                .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${currentItem.name}`, absValue)
-            }
-          } catch (journalErr) {
-            console.error('⚠️ Stock adjust journal error:', journalErr)
-          }
-        }
-      }
-
-      updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
+    const updatedItem = applyStockMovement(tenantId, req.user!.email, {
+      stockItemId, type, quantity, unit, reference, notes, unitCost,
     })
-
-    try {
-      recordMovement()
-    } catch (err: any) {
-      if (err.message === 'STOCK_ITEM_NOT_FOUND') {
-        return res.status(404).json({ success: false, message: 'Stock item not found' })
-      }
-      if (err.message === 'INSUFFICIENT_STOCK') {
-        return res.status(400).json({ success: false, message: 'Insufficient stock' })
-      }
-      throw err
-    }
+    recordAutoAction(gateArgs)
 
     res.json({
       success: true,
       data: enrichStockItem(updatedItem, tenantId),
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof StockMovementError) {
+      const status = error.code === 'STOCK_ITEM_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Record movement error:', error)
     res.status(500).json({ success: false, message: 'Failed to record movement' })
   }

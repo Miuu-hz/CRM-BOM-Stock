@@ -103,7 +103,9 @@ function Sidebar({ mode }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const [tenantOpen, setTenantOpen] = useState(false)
-  const [sysStats, setSysStats] = useState({ activeOrders: 0, lowStock: 0, pendingPO: 0 })
+  // Stock items at or below their reorder point. Source: GET /stock/stats,
+  // which is pack-aware and uncapped (unlike /dashboard/low-stock, capped at 8).
+  const [stockAlerts, setStockAlerts] = useState(0)
 
   const [pendingApprovals, setPendingApprovals] = useState(0)
   // Total outstanding count across the whole Purchase category (requests + orders +
@@ -118,6 +120,15 @@ function Sidebar({ mode }: SidebarProps) {
   const [kanbanError, setKanbanError] = useState<string | null>(null)
   const isRail = mode === 'rail'
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MASTER'
+
+  // One badge per menu path — adding a badge means adding a key here, not
+  // another copy of the same <span> in the nav loop below.
+  const badgeCounts: Record<string, number> = {
+    '/approvals': pendingApprovals,
+    '/purchase': pendingPurchase,
+    '/sales': pendingSales,
+    '/stock': stockAlerts,
+  }
 
   const confirmKanbanSso = async () => {
     // Open the tab synchronously, still inside the click's user-gesture
@@ -153,17 +164,11 @@ function Sidebar({ mode }: SidebarProps) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [stats, stock, po, approvals] = await Promise.all([
-          api.get('/dashboard/stats'),
-          api.get('/dashboard/low-stock'),
-          api.get('/purchase-orders?status=PENDING').catch(() => ({ data: { data: [] } })),
+        const [stock, approvals] = await Promise.all([
+          api.get('/stock/stats').catch(() => ({ data: { data: {} } })),
           api.get('/approval/pending').catch(() => ({ data: { data: [] } })),
         ])
-        setSysStats({
-          activeOrders: stats.data.data?.activeOrders ?? 0,
-          lowStock: Array.isArray(stock.data.data) ? stock.data.data.length : 0,
-          pendingPO: Array.isArray(po.data.data) ? po.data.data.length : 0,
-        })
+        setStockAlerts(stock.data.data?.lowStockCount ?? 0)
         setPendingApprovals(Array.isArray(approvals.data.data) ? approvals.data.data.length : 0)
       } catch (err: any) {
         console.error('Sidebar stats load error:', err)
@@ -457,19 +462,9 @@ function Sidebar({ mode }: SidebarProps) {
                       </p>
                       {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
                     </div>
-                    {item.path === '/approvals' && pendingApprovals > 0 && (
+                    {(badgeCounts[item.path] ?? 0) > 0 && (
                       <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
-                        {pendingApprovals}
-                      </span>
-                    )}
-                    {item.path === '/purchase' && pendingPurchase > 0 && (
-                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
-                        {pendingPurchase}
-                      </span>
-                    )}
-                    {item.path === '/sales' && pendingSales > 0 && (
-                      <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
-                        {pendingSales}
+                        {badgeCounts[item.path]}
                       </span>
                     )}
                   </>
@@ -478,30 +473,6 @@ function Sidebar({ mode }: SidebarProps) {
             )
           })}
         </div>
-
-        {/* System Stats — full mode only */}
-        {!isRail && (
-          <div className="mt-6 mx-2 p-4 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-4 h-4 text-success" />
-              <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sidebar.systemStatus.title')}</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-3)]">{t('sidebar.systemStatus.activeOrders')}</span>
-                <span className="text-success font-semibold">{sysStats.activeOrders}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-3)]">{t('sidebar.systemStatus.lowStock')}</span>
-                <span className="text-warning font-semibold">{sysStats.lowStock}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-[var(--fg-3)]">{t('sidebar.systemStatus.pendingPO')}</span>
-                <span className="text-[var(--primary)] font-semibold">{sysStats.pendingPO}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* Bottom */}

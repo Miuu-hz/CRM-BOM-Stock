@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../services/approvalGate.service'
+import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 
@@ -299,51 +301,47 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { supplierId, expectedDate, notes, items, taxRate } = req.body
-    const now = new Date().toISOString()
 
     // Check PO exists and belongs to tenant
-    const existing = db.prepare('SELECT id FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = db.prepare('SELECT id, status, po_number FROM purchase_orders WHERE id = ? AND tenant_id = ?')
+      .get(req.params.id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
-    let subtotal = 0
-    if (items && items.length > 0) {
-      subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
-    }
-    const tax = taxRate || 0
-    const taxAmount = subtotal * (tax / 100)
-    const totalAmount = subtotal + taxAmount
-
-    const transaction = db.transaction(() => {
-      db.prepare(`
-        UPDATE purchase_orders SET supplier_id = COALESCE(?, supplier_id), expected_date = ?,
-        subtotal = ?, tax_rate = ?, tax_amount = ?, total_amount = ?, notes = COALESCE(?, notes), updated_at = ?
-        WHERE id = ? AND tenant_id = ?
-      `).run(supplierId, expectedDate || null, subtotal, tax, taxAmount, totalAmount, notes, now, req.params.id, tenantId)
-
-      if (items) {
-        db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(req.params.id)
-        const insertItem = db.prepare(`
-          INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-            quantity, unit, unit_price, total_price, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        for (const item of items) {
-          insertItem.run(
-            generateId(), tenantId, req.params.id, item.materialId || null, item.description || '',
-            item.quantity, item.unit || '', item.unitPrice, item.quantity * item.unitPrice,
-            item.notes || ''
-          )
-        }
+    // หมวด "แก้ไขเอกสารที่ออกไปแล้ว" — เดิมเป็นโหมด "ปลดล็อกแล้วแก้เอง" ตอนนี้เปลี่ยนเป็น
+    // draft เหมือนหมวดปรับสต็อก/ยกเลิกบิล POS: พนักงานกด save ตามปกติ ระบบเก็บ payload
+    // (ค่าที่เสนอ + before snapshot ของจริงตอนนี้) ไว้รอเจ้าของกดอนุมัติค่อยรันจริง
+    // (DRAFT ยังแก้ได้อิสระเหมือนเดิม — ใบยังไม่ออกไปไหน)
+    let gateArgs: CreateRequestArgs | null = null
+    if (existing.status !== 'DRAFT') {
+      const before = {
+        header: db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId),
+        items: db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id),
       }
-    })
+      gateArgs = {
+        tenantId,
+        user: req.user! as any,
+        category: 'doc_edit',
+        refType: 'purchase_orders',
+        refId: req.params.id,
+        description: `แก้ไขใบสั่งซื้อ ${existing.po_number}`,
+        payload: { before, update: { supplierId, expectedDate, notes, items, taxRate } },
+      }
+      const pending = gateOrCreate(gateArgs)
+      if (pending) {
+        return res.status(202).json({
+          success: true,
+          pending_approval: true,
+          request_number: pending.request_number,
+          message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) ใบสั่งซื้อจะถูกแก้ไขเมื่อผู้อนุมัติยืนยัน`,
+        })
+      }
+    }
 
-    transaction()
-
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id)
-    res.json({ success: true, data: { ...po, items: poItems } })
+    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate })
+    if (gateArgs) recordAutoAction(gateArgs)
+    res.json({ success: true, data: result })
   } catch (error) {
     console.error('Update PO error:', error)
     res.status(500).json({ success: false, message: 'Failed to update purchase order' })

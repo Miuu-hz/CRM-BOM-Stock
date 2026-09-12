@@ -38,6 +38,7 @@ import { accountsApi, type Account } from '../services/accounting'
 import { stockService } from '../services/stock'
 import { printBill } from '../utils/printBill'
 import toast from 'react-hot-toast'
+import { useApprovalGate } from '../components/common/ApprovalGate'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { useModalClose } from '../hooks/useModalClose'
 import { UnitPicker } from '../components/common/UnitPicker'
@@ -1006,6 +1007,7 @@ const Purchase = () => {
   const [modalOpen, setModalOpen] = useState<string | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
   const [modalData, setModalData] = useState<any>(null)
+  const approvalGate = useApprovalGate()
   const [formLoading, setFormLoading] = useState(false)
 
   // Convert PR → PO modal
@@ -1454,7 +1456,10 @@ const Purchase = () => {
         closeModal()
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.requestUpdateFailed')) }
-    } catch { toast.error(t('purchase.error.generic')) }
+    } catch (err: any) {
+      // ติดด่าน "แก้เอกสารที่ออกไปแล้ว" → popup ขออนุมัติ ไม่ใช่ข้อความ error
+      if (!approvalGate.handleError(err)) toast.error(t('purchase.error.generic'))
+    }
     finally { setFormLoading(false) }
   }
 
@@ -4226,6 +4231,8 @@ const Purchase = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {approvalGate.modal}
+
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex justify-between items-start">

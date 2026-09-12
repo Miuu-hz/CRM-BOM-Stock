@@ -1789,5 +1789,12 @@ export function runMigrations(db: any): void {
     "ALTER TABLE tax_transactions ADD COLUMN wht_form TEXT",
     // เลขประจำตัวผู้เสียภาษีของลูกค้า — จำเป็นตอนออกใบกำกับภาษี แต่เดิมมีแค่ฝั่ง suppliers
     "ALTER TABLE customers ADD COLUMN tax_id TEXT",
+    // ระบบอนุมัติ: payload = args ของ action ที่รอรันหลังอนุมัติ (โหมด "อนุมัติแล้วทำให้เลย"),
+    // consumed_at/expires_at = สิทธิ์ปลดล็อกให้แก้เอกสาร ใช้ได้ครั้งเดียวและมีอายุ
+    "ALTER TABLE approval_requests ADD COLUMN payload TEXT",
+    "ALTER TABLE approval_requests ADD COLUMN consumed_at TEXT",
+    "ALTER TABLE approval_requests ADD COLUMN expires_at TEXT",
+    // สิทธิ์ "ทำเลยไม่ต้องขออนุมัติ" ที่ admin มอบให้เป็นรายคน/รายหมวด (ดู approvalGate.service.ts hasBypass)
+    "ALTER TABLE user_approval_permissions ADD COLUMN can_bypass INTEGER DEFAULT 0",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 }

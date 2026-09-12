@@ -70,6 +70,7 @@ import {
 import * as XLSX from 'xlsx'
 
 import toast from 'react-hot-toast'
+import { useApprovalGate } from '../components/common/ApprovalGate'
 
 import api from '../services/api'
 
@@ -266,6 +267,8 @@ function Stock() {
 
   // Adjust modal
 
+  const approvalGate = useApprovalGate()
+
   const [adjustModal, setAdjustModal] = useState<{ open: boolean; item: StockItem | null }>({
 
     open: false,
@@ -389,7 +392,7 @@ function Stock() {
 
 
 
-  const getItemStatus = (item: StockItem): 'adequate' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' => {
+  const getItemStatus = (item: StockItem): 'adequate' | 'nearLow' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' => {
 
     const hasSealed = (item.sealedQty ?? 0) > 0
     const available = availableOf(item)
@@ -404,6 +407,11 @@ function Stock() {
     if (available <= item.minStock * 0.3) return 'critical'
 
     if (available <= item.minStock) return 'low'
+
+    // Early warning: still above the reorder point, but close enough that an
+    // order placed today arrives before the shelf is empty.
+    // ponytail: fixed 1.5x. Make it a company setting if lead times differ per product.
+    if (item.minStock > 0 && available <= item.minStock * 1.5) return 'nearLow'
 
     if (item.maxStock > 0 && available >= item.maxStock) return 'overstock'
 
@@ -980,6 +988,8 @@ function Stock() {
                 <FilterButton label="วิกฤต" active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
 
                 <FilterButton label="ต่ำ" active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
+
+                <FilterButton label="ใกล้หมด" active={selectedStatus === 'nearLow'} onClick={() => handleStatusChange('nearLow')} />
 
                 <FilterButton label="เกิน" active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
 
@@ -1731,6 +1741,8 @@ function Stock() {
 
       {/* Movement Modal */}
 
+      {approvalGate.modal}
+
       <MovementModal
 
         open={movementModal.open}
@@ -1744,6 +1756,8 @@ function Stock() {
         onClose={() => setMovementModal({ open: false, type: 'IN', item: null })}
 
         onSave={loadData}
+
+        onPending={approvalGate.handleResponse}
 
         setShowAddModal={setShowAddModal}
 
@@ -1764,6 +1778,8 @@ function Stock() {
         onClose={() => setAdjustModal({ open: false, item: null })}
 
         onSave={loadData}
+
+        onPending={approvalGate.handleResponse}
 
       />
 
@@ -3690,6 +3706,8 @@ function MovementModal({
 
   onSave,
 
+  onPending,
+
   setShowAddModal,
 
 }: {
@@ -3705,6 +3723,8 @@ function MovementModal({
   onClose: () => void
 
   onSave: () => void
+
+  onPending?: (data: any) => boolean
 
   setShowAddModal: (show: boolean) => void
 
@@ -3830,7 +3850,7 @@ function MovementModal({
 
     try {
 
-      await stockService.recordMovement({
+      const moveResult = await stockService.recordMovement({
 
         stockItemId: selectedItemId,
 
@@ -3847,6 +3867,10 @@ function MovementModal({
         unitCost: unitCost !== '' ? unitCost : undefined,
 
       })
+
+      // ติดด่านอนุมัติ: ยังไม่มีอะไรเปลี่ยน แค่แจ้งผู้ใช้ว่าส่งคำขอแล้ว
+
+      if (onPending?.(moveResult)) { onClose(); return }
 
       onSave()
 
@@ -4540,15 +4564,23 @@ function StatusBadge({ status }: { status: string }) {
 
     adequate: {
 
-      label: 'Adequate',
+      label: 'ปกติ',
 
       className: 'bg-[var(--success-soft)] text-success border-success/30',
 
     },
 
+    nearLow: {
+
+      label: 'ใกล้หมด',
+
+      className: 'bg-transparent text-warning border-warning/60',
+
+    },
+
     low: {
 
-      label: 'Low',
+      label: 'สต๊อกต่ำ',
 
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
 
@@ -4556,7 +4588,7 @@ function StatusBadge({ status }: { status: string }) {
 
     critical: {
 
-      label: 'Critical',
+      label: 'วิกฤต',
 
       className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
 
@@ -4564,7 +4596,7 @@ function StatusBadge({ status }: { status: string }) {
 
     overstock: {
 
-      label: 'Overstock',
+      label: 'สต๊อกเกิน',
 
       className: 'bg-[var(--primary-soft)] text-[var(--primary)] border-[var(--primary)]/30',
 
@@ -4572,7 +4604,7 @@ function StatusBadge({ status }: { status: string }) {
 
     out: {
 
-      label: 'Out of Stock',
+      label: 'หมด',
 
       className: 'bg-[var(--danger)] text-white border-transparent',
 
@@ -4692,6 +4724,8 @@ function AdjustModal({
 
   onSave,
 
+  onPending,
+
 }: {
 
   open: boolean
@@ -4703,6 +4737,8 @@ function AdjustModal({
   onClose: () => void
 
   onSave: () => void
+
+  onPending?: (data: any) => boolean
 
 }) {
 
@@ -4806,7 +4842,7 @@ function AdjustModal({
 
     try {
 
-      await stockService.recordMovement({
+      const moveResult = await stockService.recordMovement({
 
         stockItemId: selectedItemId,
 
@@ -4819,6 +4855,10 @@ function AdjustModal({
         notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${baseQuantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit || '')} (นับได้ ${physicalCount} ${unit})`,
 
       })
+
+      // ติดด่านอนุมัติ: ยังไม่มีอะไรเปลี่ยน แค่แจ้งผู้ใช้ว่าส่งคำขอแล้ว
+
+      if (onPending?.(moveResult)) { onClose(); return }
 
       onSave()
 

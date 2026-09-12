@@ -89,12 +89,6 @@
     "approvals": "Approvals",
     "kanban": "Phopy Kanban",
     "kanbanDesc": "Task board",
-    "systemStatus": {
-      "title": "System Status",
-      "activeOrders": "Active Orders",
-      "lowStock": "Low Stock",
-      "pendingPO": "Pending PO"
-    },
     "kanbanSso": {
       "title": "Access Phopy Board",
       "confirm": "Sign in to Phopy Board as {{email}} for {{tenant}}?",
@@ -3022,7 +3016,9 @@
         "limitHint": "0 = use default",
         "unlimited": "Unlimited amount",
         "masterApprover": "Master Approver (Level 2)",
-        "autoApproveIfBelow": "Auto-approve if below"
+        "autoApproveIfBelow": "Auto-approve if below",
+        "canBypass": "Bypass approval",
+        "canBypassHint": "Can act immediately without waiting for approval, but it is still logged in approval history."
       },
       "placeholders": {
         "thresholdCheckEveryTime": "0 = check every time",
@@ -3038,7 +3034,8 @@
         "notRequired": "Not required",
         "unlimited": "Unlimited",
         "maxLimit": "Max {{amount}}",
-        "level2": "Level 2"
+        "level2": "Level 2",
+        "bypass": "No approval needed"
       },
       "empty": {
         "noConditions": "No conditions yet — click \"Add Condition\" to start",
@@ -3050,7 +3047,10 @@
         "purchaseOrder": "Purchase Order (PO)",
         "salesOrder": "Sales Order (SO)",
         "workOrder": "Work Order",
-        "stockAdjustment": "Stock Adjustment"
+        "stockAdjustment": "Stock Adjustment",
+        "stockChange": "Stock Changes",
+        "posVoid": "POS Void / Refund",
+        "docEdit": "Edit Issued Documents"
       },
       "roles": {
         "manager": "Manager",
@@ -3067,6 +3067,15 @@
         "savePermSuccess": "Approver permission saved",
         "revokeSuccess": "Permission revoked",
         "revokeFailed": "Failed to revoke permission"
+      },
+      "quick": {
+        "title": "Categories requiring approval",
+        "stockChangeHint": "Stock in, stock out and adjustments wait for an approver before anything moves",
+        "posVoidHint": "Cancelling a POS bill waits for approval before stock and accounting are reversed",
+        "docEditHint": "Issued purchase orders need an approved unlock before they can be edited (single use, 30 minutes)",
+        "turnedOn": "Approval enabled for this category",
+        "turnedOff": "Approval disabled for this category",
+        "saveFailed": "Could not save"
       }
     },
     "userManagement": {

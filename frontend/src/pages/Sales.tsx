@@ -12,6 +12,7 @@ import { getCachedCompanySettings } from '../services/companySettings.service'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { normalizeUnit } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
+import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
@@ -1966,11 +1967,14 @@ const Sales = () => {
   const VoidBillModal = ({ bill, onClose }: { bill: POSPendingBill; onClose: () => void }) => {
     const [reason, setReason] = useState('')
     const [saving, setSaving] = useState(false)
+    const approvalGate = useApprovalGate()
     const handleVoid = async () => {
       if (!reason.trim()) { toast.error(t('sales.validation.cancelReason')); return }
       try {
         setSaving(true)
         const res = await posService.voidBill(bill.id, reason)
+        // ติดด่านอนุมัติ: บิลยังไม่ถูกยกเลิก — เปิด popup ค้างบนโมดัลเดิม ไม่ปิดหน้าต่าง
+        if (approvalGate.handleResponse(res)) { setSaving(false); return }
         if (res.success) {
           toast.success(`${t('sales.actions.voidBill')} ${bill.bill_number} ${t('sales.common.success')}`)
           fetchPOSDailySales()
@@ -1983,6 +1987,7 @@ const Sales = () => {
     }
     return (
       <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        {approvalGate.modal}
         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
           className="bg-[var(--surface)] border border-danger/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
           <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">

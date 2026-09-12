@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils} from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useApprovalGate } from '../components/common/ApprovalGate'
 import posService from '../services/pos.service'
 import posBillService from '../services/pos-bill.service'
 import kdsService from '../services/kds.service'
@@ -422,13 +423,17 @@ export default function Cashier() {
     }
   }
 
+  const approvalGate = useApprovalGate()
+
   // Cancel bill
   const cancelBill = async () => {
     if (!currentBill) return
     if (!confirm('ยกเลิกบิลนี้? สต็อกจะถูกคืน')) return
 
     try {
-      await posBillService.cancelBill(currentBill.id, { reason: 'Cancelled by cashier' })
+      const res = await posBillService.cancelBill(currentBill.id, { reason: 'Cancelled by cashier' })
+      // ติดด่านอนุมัติ: บิลยังไม่ถูกยกเลิก จึงไม่ปิดบิลทิ้งและไม่ขึ้นข้อความว่าสำเร็จ
+      if (approvalGate.handleResponse(res)) return
       toast.success('ยกเลิกบิลแล้ว')
       setCurrentBill(null)
       setView('bills')
@@ -470,6 +475,8 @@ export default function Cashier() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
+      {approvalGate.modal}
+
       {/* Header */}
       <div className="bg-[var(--surface)] border-b border-[var(--border)] px-6 py-4">
         <div className="flex items-center justify-between">

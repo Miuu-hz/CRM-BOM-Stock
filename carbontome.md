@@ -773,3 +773,117 @@ bb_pillow VAT_INPUT     4 -> 5     ตรงกับ PI ต้นทาง 5 �
 - **มีเซสชันอื่นแก้ repo เดียวกันขนานอยู่** (ฟีเจอร์แนบสลิปโอนเงิน: `PaymentAttachments.tsx`, `AuthImage.tsx`, `Purchase.tsx`, `JournalEntries.tsx`) — ตรวจ `git status` ก่อน build เสมอ อย่าเหมาว่าเป็นงานของ agent ตัวเอง
 
 **skill ใหม่:** `~/.claude/skills/erp-data-import/SKILL.md` — playbook นำเข้าข้อมูลลูกค้า 8 เฟส + กับดักที่เจอจริง
+
+---
+
+## 📅 Session Log — 12 กันยายน 2026 (เปิดใช้ระบบอนุมัติจริง + ประวัติการเคลื่อนไหว)
+
+### 0. งานแถมตอนต้นเซสชัน
+- **kanban.phopy.net หน้าขาว** — ไม่ใช่ service ล่ม (`systemctl active`, `curl localhost:1337` = 200 ตลอด) แต่มีคน build วันที่ 6 ก.ย. แล้วอัปเดต `views/index.ejs` ให้ชี้ asset hash ใหม่ **แต่ลืม `cp -r client/dist/* server/public/`** → HTML 200 แต่ JS bundle 404 ส่วน LINE ยังทำงานเพราะมาจาก BFF (LXC 105) คนละตัว
+- **Sidebar ERP** — ลบบล็อก "สถานะระบบ" ทิ้ง ย้ายเป็น badge ท้ายเมนูคลังสินค้า (`/stock/stats` → `lowStockCount`, pack-aware และไม่มีเพดาน ต่างจาก `/dashboard/low-stock` ที่ติด `.slice(0,8)`) + ยุบ `<span>` badge 3 ก้อนที่ copy กันเหลือ map เดียว
+  - เจอบั๊ก: `/purchase-orders?status=PENDING` — **backend ไม่เคยอ่าน query param** คืน PO ทุกใบ (24) มาให้นับ ป้ายบอก "รอดำเนินการ" แต่รวม RECEIVED 15 + CANCELLED 2 ด้วย แก้โดยเปลี่ยนไปใช้ `/purchase-orders/stats` ที่มี `draftOrders`+`pendingOrders` อยู่แล้ว
+- **สถานะสต็อกมีแต่ "Adequate"** — ไม่ใช่บั๊ก แต่ไม่มีช่วงเตือนล่วงหน้าจริง เพิ่มสถานะ `nearLow` (`available <= min_stock * 1.5`) + ปุ่มกรอง + แปลป้ายสถานะเป็นไทยทั้งชุด (เดิม hardcode อังกฤษทั้งที่หน้าอื่นเป็นไทย) → ของ 22 ตัวใน Testshop: ปกติ 14 → ปกติ 8 + **ใกล้หมด 6** ที่เมื่อก่อนเงียบสนิท
+
+### 1. ระบบอนุมัติเคยตายสนิท — 3 บั๊กที่ทำให้ไม่มีใครได้ใช้
+ตาราง `approval_settings` / `approval_requests` / `approval_logs` / `user_approval_permissions`
++ หน้า ApprovalInbox **มีมาตั้งแต่แรก** แต่ทั้งระบบมีคำขอสะสม 1 ใบ และเป็นของ tenant อื่น
+
+| # | ที่ | อาการ |
+|---|-----|-------|
+| 1 | `approval.routes.ts` `GET /pending` | คืน `[]` ทันทีถ้าผู้เรียกไม่มีแถวใน `user_approval_permissions` — ตารางนั้น **ว่าง 0 แถวทุก tenant** → เจ้าของบริษัทไม่เคยเห็นคำขอ |
+| 2 | `ApprovalInbox.tsx` ส่ง `level: 1` ตายตัว แต่โค้ดรัน action เฉพาะ `level === 2` | กดอนุมัติแล้ว**ค้าง PENDING ตลอดกาล** |
+| 3 | `PUT /requests/:id/decision` | เช็คสิทธิ์จากตารางว่างเดียวกัน → ADMIN โดน 403 |
+
+แก้: ADMIN/MASTER เป็นผู้อนุมัติโดยปริยาย (`isBlanketApprover`) · อนุมัติครั้งเดียวถือเป็นครั้งสุดท้ายเสมอ · สิทธิ์ใช้ `canApprove()`
+
+### 2. จุดที่เอามาใส่ด่าน — เดิม**ไม่มี role check เลยสักจุด**
+```
+POST /stock/movement                    ← ปุ่มรับเข้า/ตัดออก/ปรับสต๊อก ทั้ง 3
+POST /pos/bills/:id/cancel
+POST /sales/pos-running-bills/:id/void
+PUT  /purchase-orders/:id               ← ไม่เช็คแม้แต่สถานะ (SELECT id อย่างเดียว)
+```
+`grep -c requireRole routes/stock.routes.ts` = **0** — พนักงานคนไหนก็ปรับสต็อก/ยกเลิกบิลที่จ่ายเงินแล้วได้
+
+PO ยังเป็นรูเดียวที่เหลือของ "แก้เอกสารที่ออกไปแล้ว" — SO/ใบเสนอราคา/PR ล็อกด้วยสถานะอยู่แล้ว
+ส่วนใบแจ้งหนี้/ใบเสร็จ/ใบส่งของ **ไม่มี route แก้เนื้อหาเลย** (มีแค่เปลี่ยนสถานะ)
+
+### 3. ออกแบบผิดรอบแรก แล้วเจ้าของแก้ให้ (สำคัญ)
+รอบแรกทำโหมด **"ขอปลดล็อกก่อนแล้วค่อยแก้"** — ผิดตั้งแต่แนวคิด เพราะผู้บริหารต้องเห็นว่าจะเปลี่ยนอะไร*ก่อน*เซ็น ไม่ใช่เซ็นเช็คเปล่า
+```
+ตอนนี้: แก้ได้เลยตามปกติ → กดบันทึก = ส่ง "ร่าง" เข้าคิว (payload เก็บ {before, update})
+        → ผู้บริหารเปิดดู diff → กดยืนยัน → applyPurchaseOrderUpdate() เขียนทับให้
+```
+`consumeUnlock()` / `POST /approval/request-unlock` ลบทิ้งแล้ว (คอลัมน์ `expires_at` ยังอยู่เฉย ๆ)
+
+**กับดักที่เจอตอนทำโหมดปลดล็อก (เผื่อรื้อกลับมาใช้):** `executeApprovedAction` เซ็ตสถานะเป็น `EXECUTED` ทับ `APPROVED` ทำให้ตัวหาสิทธิ์ปลดล็อก (หาเฉพาะ APPROVED) มองไม่เห็น
+
+### 4. สิทธิ์ยกเว้น — ต่อกับระบบสิทธิ์เดิมของเจ้าของ
+`hasBypass()` ใน `services/approvalGate.service.ts` ปล่อยผ่านถ้าอย่างใดอย่างหนึ่ง:
+- **(ก)** `user_approval_permissions.can_bypass = 1` รายคนรายหมวด (ติ๊กในหน้าตั้งค่าการอนุมัติ)
+- **(ข)** `can(role, departments, resource, 'approve', customPermissions)` จาก `services/rbac.service.ts`
+  = **ระบบสิทธิ์ที่เจ้าของเขียนไว้เองก่อนหน้านี้** (`pages/settings/PermissionSettings.tsx` →
+  `users.departments` / `users.custom_permissions`) แมป `stock_adjust→stock`, `pos_void→orders`, `doc_edit→purchase`
+
+ทั้งสองทาง**ยังเขียนแถว `status='AUTO'`** ลง `approval_requests` เป็นประวัติ (ADMIN/MASTER ด้วย) → โผล่ในลิสต์ความเคลื่อนไหวแต่ไม่มีปุ่มให้กด
+
+⚠️ **sub-agent ที่ทำ backend ไม่ได้ต่อข้อ (ข) ให้** ต้องมาต่อเอง — เจ้าของเป็นคนถามเองว่าระบบสิทธิ์ 2 ชุดเชื่อมกันหรือยัง ถ้าไม่ถามคงหลุด
+
+### 5. ประวัติ / ลิสต์ความเคลื่อนไหว
+- `GET /approval/history?from&to&moduleType&status&requesterId&limit&offset` → `{data, total, limit, offset}` — non-admin เห็นเฉพาะแถวตัวเอง
+- `GET /approval/requests/:id/detail` → แถว + `payload` + `before` ให้ UI ทำ diff
+- หน้า ApprovalInbox 3 แท็บ (รออนุมัติจากฉัน / คำขอของฉัน / ประวัติทั้งหมด) + preset วันที่ (วันนี้/7วัน/30วัน/กำหนดเอง) + แบ่งหน้า
+
+**compare mode (เจ้าของเลือกแบบนี้):** ใบสั่งซื้อที่ขอแก้ → วาด**ใบเดียว** (ฉบับหลังอนุมัติ) แล้วมาร์กจุดที่ต่างในตัวเอกสาร ⟨ค่าเดิมขีดฆ่า → ค่าใหม่ตัวหนา⟩ พื้นเหลือง · แถวเพิ่มพื้นเขียว · แถวลบพื้นแดง + แถบสรุป "มี N จุดที่เปลี่ยน / ยอดรวม ±฿X" ข้างบน
+→ `components/approval/PurchaseOrderCompare.tsx`
+- **ต้อง normalize ก่อนเทียบ** ฝั่งเก่าเป็นแถวดิบจาก DB (`material_id`/`unit_price`) ฝั่งใหม่เป็น body จากหน้าจัดซื้อ (`materialId`/`unitPrice`) · จับคู่รายการด้วย material_id ไม่มีค่อยใช้ชื่อ → แยกได้ว่า แก้/เพิ่ม/ลบ
+- ปรับสต็อก/ยกเลิกบิล POS **ไม่เข้า compare mode** เพราะเป็น "การกระทำ" ไม่มีเอกสารเดิมให้เทียบ
+
+**ข้อความในลิสต์ต้องอ่านจบในบรรทัดเดียว** (เจ้าของสั่ง) — ประกอบตอนสร้างคำขอ เก็บใน `description`:
+```
+สินค้า ผ้าสปันบอนด์ ถูกปรับ 20 เป็น 40 ชิ้น เนื่องจาก นับสต๊อกประจำเดือน
+สินค้า ใยสังเคราะห์ รับเข้า 25 ชิ้น (100 → 125) เนื่องจาก รับของจากซัพ
+บิล POS-0042 ยอด ฿1,250 ขอยกเลิก เนื่องจาก ลูกค้าเปลี่ยนใจ
+```
+- **ไม่ยัดชื่อคนทำในข้อความ** — `requester_name` เป็นคอลัมน์แยกและหน้าเว็บโชว์คู่กันอยู่แล้ว (มีเทสต์กันไว้)
+- **ถ้าหน่วยที่กรอกไม่ตรงหน่วยฐาน จะไม่โชว์ "จาก X เป็น Y"** เพราะตัวเลขคนละหน่วยเทียบกันไม่ได้ → โชว์ "ถูกปรับเป็น 40 ลัง" แทน
+
+### 6. Refactor ที่จำเป็น (เพราะ executor ต้องรัน action เดิมซ้ำ ห้าม copy ตรรกะ)
+- **`services/stockMovement.service.ts`** ← ยกทั้งก้อนออกจาก `stock.routes.ts POST /movement` (รวม `priceToBaseUnitCost` ที่ route import กลับไปใช้)
+- **`services/purchaseOrderUpdate.service.ts`** ← ยกออกจาก `purchaseOrder.routes.ts PUT /:id`
+- **`services/posBillCancel.service.ts`** ← cancel/void ใช้ร่วมกัน
+  ⚠️ **เปลี่ยนพฤติกรรมบัญชีของ void โดยตั้งใจ**: เดิม void เขียน journal reversal เองในไฟล์ route (สลับ debit/credit บน `4101` ตรง ๆ, **ไม่มี guard กันลงซ้ำ**, อัปเดตสถานะบิลเป็น VOID *ก่อน* คืนสต็อก → พังกลางคันแล้ว retry ไม่ได้เพราะด่าน `status==='PAID'` ไม่ผ่านแล้ว) ตอนนี้เรียก `recordCancelledSale()` เหมือน cancel → เด้งรายได้ไป `SALES_RETURN (4302)` และได้ idempotency guard มาด้วย
+- **`components/common/ApprovalGate.tsx`** — `useApprovalGate()` คืน `{ modal, handleResponse, handleError }` ใช้ที่ Stock / Purchase / Cashier / Sales
+  **ผู้ใช้ต้องเห็น popup ภาษาไทยเสมอ ห้ามโชว์ status code หรือ error ดิบ** (เจ้าของสั่งชัด)
+  - `services/stock.ts` `recordMovement()` เดิมโยน `Error('Failed to record movement')` เมื่อไม่มี `data.data` — ซึ่งคือเคส 202 พอดี ต้องปล่อย body ผ่านก่อน
+
+### 7. เรื่องขนาดโค้ด (คุยแล้วยังไม่ลงมือ)
+เจ้าของเสนอทำ template library ให้หน้าใหญ่ ๆ ดึงไปใช้ วัดของจริงแล้ว:
+```
+frontend/pages รวม 33,791 บรรทัด — Stock 5,888 · Purchase 4,320 · Sales 4,130
+ของที่ชื่อซ้ำกันข้ามไฟล์: 1,047 บรรทัด
+  StatCard 6 ที่ · StatusBadge 5 ที่ · DetailModal 2 ที่ · ModalShell/Field/TabButton/JournalPreview/Skeleton 2 ที่
+Purchase.tsx ไฟล์เดียวมี *SearchInput ที่ทำงานเหมือนกัน 5 ตัว 323 บรรทัด
+```
+→ รวมแล้วลดได้ราว **4%** ของหน้าเว็บทั้งระบบ **ประโยชน์จริงคือ UI ตรงกันทุกหน้า** (ตอนนี้คำว่า "สถานะ" หน้าตาไม่เหมือนกัน 5 แบบ) ไม่ใช่จำนวนบรรทัด
+ลำดับที่คุ้ม: StatusBadge → StatCard → SearchInput → ModalShell · **`DetailModal` ชื่อซ้ำแต่คนละเรื่อง อย่ารวม**
+
+**`OrderModal` ใน Purchase.tsx import ไม่ได้** เพราะประกาศไว้*ข้างใน* `const Purchase` (บรรทัด 3214) ไม่ได้ export และ **ไม่รับ prop เลย** — หยิบ `orderForm`/`modalMode`/handlers จาก closure รอบตัว (14 ตัว) ถ้าจะทำให้ import ได้ต้องยกออกมาระดับบนสุด + ใส่พารามิเตอร์ + ย้าย helper ระดับ module อีก 6 ตัว (`ModalShell`/`Field`/`inputCls`/3 `*SearchInput`) ไปไฟล์กลางด้วย ไม่งั้น import วน
+→ **เจ้าของตัดสินใจไม่ทำ** เลือกทำ compare mode แทน (คุ้มกว่า)
+
+### 8. สถานะสุดท้าย
+```
+เทสต์ 14 ไฟล์ 99 เทสต์ผ่าน · tsc --noEmit สะอาดทั้ง backend/frontend · build+deploy ครบ
+ไฟล์เทสต์ใหม่: services/{approvalGate.service,bypassLink}.test.ts
+              routes/{approval.routes,stockApproval,posApproval,docEditApproval,requestDescription}.test.ts
+backup: /root/approval-backup-20260912/ · DB: /root/dev.db.bak-20260912
+```
+**⚠️ `npm test` พัง** — script ชี้ `../node_modules/.bin/vitest` ที่ไม่มีอยู่ ใช้ `./node_modules/.bin/vitest run`
+
+**ยังไม่ได้ทำ:**
+- แจ้งเตือน LINE ตอนมีคำขอ/อนุมัติ (เจ้าของพักไว้เอง — ต้นแบบ `lineBotService.notifyPRStatus()`)
+- `POST /stock/:id/unpack` ยังไม่ติดด่าน
+- อนุมัติ 2 ระดับ (คอลัมน์ `approver_2_*` ยังอยู่ ปิดใช้)
+- คืนแต้ม loyalty ตอนยกเลิกบิล POS — ช่องว่างเดิม ไม่เกี่ยวกับการอนุมัติ
+- ตรรกะอนุมัติที่ copy กันอยู่ 3 ชุดเดิม (`purchase-request.routes.ts`, `sales/salesOrders.ts`, `mcp/tools/shared.ts`) ยังไม่ย้ายมาใช้ประตูกลาง
+- **ยังไม่เคยเห็นหน้าจริงด้วยตา** — ต้องล็อกอินเป็น role `USER` ซึ่ง Testshop ยังไม่มี (มี ADMIN คนเดียวที่ข้ามทุกด่าน)

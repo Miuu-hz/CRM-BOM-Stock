@@ -4,6 +4,10 @@ import { deductStockForSO } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
+import { canApprove as canApproveRequests } from '../services/approvalGate.service'
+import { applyStockMovement, StockMovementError } from '../services/stockMovement.service'
+import { cancelPosBill } from '../services/posBillCancel.service'
+import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 
 const router = Router()
 
@@ -122,8 +126,8 @@ router.get('/permissions', async (req: Request, res: Response) => {
 router.post('/permissions', requireRole('MASTER', 'ADMIN'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { userId, moduleType, canApprove, canApproveUnlimited, approvalLimit, isMasterApprover } = req.body
-    
+    const { userId, moduleType, canApprove, canApproveUnlimited, approvalLimit, isMasterApprover, canBypass } = req.body
+
     if (!userId || !moduleType) {
       return res.status(400).json({ success: false, message: 'User ID and module type are required' })
     }
@@ -132,16 +136,17 @@ router.post('/permissions', requireRole('MASTER', 'ADMIN'), async (req: Request,
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_approve_unlimited, approval_limit, is_master_approver, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_approve_unlimited, approval_limit, is_master_approver, can_bypass, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, user_id, module_type) DO UPDATE SET
         can_approve = excluded.can_approve,
         can_approve_unlimited = excluded.can_approve_unlimited,
         approval_limit = excluded.approval_limit,
         is_master_approver = excluded.is_master_approver,
+        can_bypass = excluded.can_bypass,
         updated_at = excluded.updated_at
-    `).run(id, tenantId, userId, moduleType, canApprove ? 1 : 0, canApproveUnlimited ? 1 : 0, 
-      approvalLimit || 0, isMasterApprover ? 1 : 0, req.user!.userId, now, now)
+    `).run(id, tenantId, userId, moduleType, canApprove ? 1 : 0, canApproveUnlimited ? 1 : 0,
+      approvalLimit || 0, isMasterApprover ? 1 : 0, canBypass ? 1 : 0, req.user!.userId, now, now)
 
     const permission = db.prepare('SELECT * FROM user_approval_permissions WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.json({ success: true, data: permission, message: 'Permission granted' })
@@ -246,15 +251,18 @@ router.get('/pending', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const userId = req.user!.userId
     
-    // Get modules that user can approve
-    const userPerms = db.prepare(`
+    // ADMIN/MASTER อนุมัติได้ทุกหมวดโดยไม่ต้องมีแถวใน user_approval_permissions
+    // (ตารางนั้นว่างเปล่าทุก tenant — เดิมเจ้าของบริษัทจึงไม่เคยเห็นคำขอสักใบ)
+    const isBlanketApprover = req.user!.role === 'ADMIN' || req.user!.role === 'MASTER'
+
+    const userPerms = isBlanketApprover ? [] : db.prepare(`
       SELECT module_type FROM user_approval_permissions
       WHERE tenant_id = ? AND user_id = ? AND can_approve = 1
     `).all(tenantId, userId) as any[]
 
-    const moduleTypes = userPerms.map(p => p.module_type)
-    
-    if (moduleTypes.length === 0) {
+    const moduleTypes = userPerms.map((p: any) => p.module_type)
+
+    if (!isBlanketApprover && moduleTypes.length === 0) {
       return res.json({ success: true, data: [] })
     }
 
@@ -270,11 +278,11 @@ router.get('/pending', async (req: Request, res: Response) => {
           ELSE ar.reference_id
         END as reference_number
       FROM approval_requests ar
-      WHERE ar.tenant_id = ? 
-        AND ar.module_type IN (${placeholders})
+      WHERE ar.tenant_id = ?
+        ${isBlanketApprover ? '' : `AND ar.module_type IN (${placeholders})`}
         AND ar.status = 'PENDING'
       ORDER BY ar.created_at DESC
-    `).all(tenantId, ...moduleTypes)
+    `).all(tenantId, ...(isBlanketApprover ? [] : moduleTypes))
 
     res.json({ success: true, data: requests })
   } catch (error) {
@@ -299,6 +307,83 @@ router.get('/my-requests', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get my requests error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch my requests' })
+  }
+})
+
+// GET ประวัติ/log การอนุมัติทั้งหมด (รวม AUTO) — ใช้ทำหน้า activity log
+// ADMIN/MASTER เห็นทั้ง tenant, คนอื่นเห็นแค่คำขอของตัวเอง
+router.get('/history', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const isPrivileged = req.user!.role === 'ADMIN' || req.user!.role === 'MASTER'
+    const { from, to, moduleType, status, requesterId } = req.query as Record<string, string | undefined>
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200)
+    const offset = parseInt(req.query.offset as string) || 0
+
+    const where: string[] = ['ar.tenant_id = ?']
+    const params: any[] = [tenantId]
+    if (!isPrivileged) { where.push('ar.requester_id = ?'); params.push(req.user!.userId) }
+    if (from) { where.push('ar.created_at >= ?'); params.push(from) }
+    if (to) { where.push('ar.created_at <= ?'); params.push(to) }
+    if (moduleType) { where.push('ar.module_type = ?'); params.push(moduleType) }
+    if (status) { where.push('ar.status = ?'); params.push(status) }
+    if (requesterId) { where.push('ar.requester_id = ?'); params.push(requesterId) }
+    const whereSql = where.join(' AND ')
+
+    const total = (db.prepare(`SELECT COUNT(*) c FROM approval_requests ar WHERE ${whereSql}`).get(...params) as any).c
+
+    const data = db.prepare(`
+      SELECT ar.id, ar.request_number, ar.module_type, ar.reference_type, ar.reference_id,
+        ar.requester_id, ar.requester_name, ar.requester_role, ar.amount, ar.description, ar.status,
+        ar.created_at, ar.updated_at,
+        COALESCE(ar.approver_2_name, ar.approver_1_name, ar.final_executor_name) as approver_name,
+        COALESCE(ar.approver_2_at, ar.approver_1_at, ar.executed_at) as decided_at
+      FROM approval_requests ar
+      WHERE ${whereSql}
+      ORDER BY ar.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset)
+
+    res.json({ success: true, data, total, limit, offset })
+  } catch (error) {
+    console.error('Get approval history error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch history' })
+  }
+})
+
+// GET รายละเอียดคำขอเดียว พร้อม payload/before ที่แกะ JSON ให้แล้ว — ใช้ทำหน้า diff ก่อน/หลัง
+router.get('/requests/:id/detail', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const isPrivileged = req.user!.role === 'ADMIN' || req.user!.role === 'MASTER'
+
+    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?')
+      .get(req.params.id, tenantId) as any
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Approval request not found' })
+    }
+    if (!isPrivileged && request.requester_id !== req.user!.userId) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ดูคำขอนี้' })
+    }
+
+    // doc_edit เก็บ payload เป็น { before, update } เพื่อให้ผู้อนุมัติเทียบก่อน/หลังได้
+    // หมวดอื่น (stock_adjust/pos_void) payload คือ args ของ action ล้วนๆ ไม่มี before
+    let payload: any = null
+    let before: any = null
+    if (request.payload) {
+      const stored = JSON.parse(request.payload)
+      if (stored && typeof stored === 'object' && 'update' in stored && 'before' in stored) {
+        payload = stored.update
+        before = stored.before
+      } else {
+        payload = stored
+      }
+    }
+
+    res.json({ success: true, data: { ...request, payload, before } })
+  } catch (error) {
+    console.error('Get approval detail error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch request detail' })
   }
 })
 
@@ -412,19 +497,27 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: `Request is already ${request.status}` })
     }
 
-    // Check if user has permission to approve this module
-    const userPerm = db.prepare(`
-      SELECT * FROM user_approval_permissions
-      WHERE tenant_id = ? AND user_id = ? AND module_type = ?
-    `).get(tenantId, req.user!.userId, request.module_type) as any
-
-    if (!userPerm || userPerm.can_approve !== 1) {
-      return res.status(403).json({ success: false, message: 'You do not have approval permission for this module' })
+    // ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน
+    if (!canApproveRequests(tenantId, req.user! as any)) {
+      return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์อนุมัติรายการนี้' })
     }
 
     const now = new Date().toISOString()
-    const isMasterApprover = userPerm.is_master_approver === 1
-    const approvalLevel = level || (isMasterApprover ? 2 : 1)
+    // BUG เดิม: UI ส่ง level 1 ตายตัว แต่โค้ดรัน action จริงเฉพาะ level 2 → กดอนุมัติแล้ว
+    // คำขอค้าง PENDING ตลอดกาล. ตอนนี้การอนุมัติของผู้มีสิทธิ์ถือเป็นครั้งสุดท้ายเสมอ
+    // (คอลัมน์ approver_2_* ยังอยู่ เผื่อเปิดใช้อนุมัติ 2 ระดับทีหลัง)
+    const approvalLevel: number = 2
+
+    // ยกเลิกบิล POS ต้องเรียก service แบบ async จึงทำก่อนเปิดทรานแซกชัน (db.transaction เป็น sync)
+    // ลำดับนี้ตั้งใจ: ถ้า service พัง คำขอยังเป็น PENDING กดอนุมัติซ้ำได้
+    // (ทั้งคืนสต็อกและกลับรายการบัญชีมี guard กันทำซ้ำในตัวเองอยู่แล้ว)
+    if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills') {
+      const posPayload = request.payload ? JSON.parse(request.payload) : null
+      if (posPayload) {
+        await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
+          posPayload.reason, posPayload.finalStatus)
+      }
+    }
 
     const transaction = db.transaction(() => {
       if (approvalLevel === 1) {
@@ -463,7 +556,8 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
         `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email,
           req.user!.role, comment || '', decision, now)
 
-        // If approved, execute the action
+        // If approved, execute the action (โหมด "ปลดล็อกแล้วแก้เอง" ถูกถอดออกแล้ว —
+        // ทุกหมวดตอนนี้เป็น draft แบบเดียวกัน: อนุมัติ = ระบบรัน action ให้ทันที)
         if (decision === 'APPROVED') {
           executeApprovedAction(request, req.user!.userId, req.user!.email, now)
         } else {
@@ -478,6 +572,13 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: `Request ${decision.toLowerCase()}` })
   } catch (error) {
+    if (error instanceof StockMovementError) {
+      // ทรานแซกชัน rollback ไปแล้ว คำขอจึงยังเป็น PENDING ให้ลองใหม่ได้
+      return res.status(400).json({
+        success: false,
+        message: `อนุมัติไม่สำเร็จ: ${error.message}`,
+      })
+    }
     console.error('Approval decision error:', error)
     res.status(500).json({ success: false, message: 'Failed to process decision' })
   }
@@ -509,6 +610,20 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     db.prepare("UPDATE sales_orders SET status = 'CONFIRMED', approved_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(executorId, now, request.reference_id, request.tenant_id)
     try { deductStockForSO(request.tenant_id, request.reference_id, '') } catch(e) { console.error('deductStock on approval:', e) }
+  } else if (request.reference_type === 'purchase_orders') {
+    // หมวด "แก้ไขเอกสารที่ออกไปแล้ว": payload เก็บเป็น { before, update } ตอนสร้างคำขอ
+    // ใช้ service เดียวกับที่ PUT /purchase-orders/:id เรียกตอนไม่ต้องขออนุมัติ — ไม่มีตรรกะซ้ำสองชุด
+    const stored = request.payload ? JSON.parse(request.payload) : null
+    if (stored?.update) {
+      applyPurchaseOrderUpdate(request.tenant_id, request.reference_id, stored.update)
+    }
+  } else if (request.reference_type === 'stock_items') {
+    // หมวด "ปรับ/เปลี่ยนสต็อก": args ที่พนักงานกดไว้ถูกเก็บใน payload ตอนสร้างคำขอ
+    // แล้วรันด้วย service ตัวเดียวกับที่ POST /stock/movement ใช้ — ไม่มีตรรกะซ้ำสองชุด
+    const payload = request.payload ? JSON.parse(request.payload) : null
+    if (payload) {
+      applyStockMovement(request.tenant_id, request.requester_name, payload)
+    }
   } else if (request.reference_type === 'stock_adjustments') {
     // Stock adjustment approved - execute the adjustment
     const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any

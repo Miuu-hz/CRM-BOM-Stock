@@ -2,6 +2,8 @@ import { Router } from 'express'
 import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
+import { cancelPosBill } from '../services/posBillCancel.service'
+import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { authenticate } from '../middleware/auth.middleware'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../utils/receiptToken'
@@ -594,27 +596,30 @@ router.post('/bills/:id/cancel', async (req, res) => {
     if ((bill as any).status === 'CANCELLED') {
       return res.status(400).json({ success: false, message: 'Bill already cancelled' })
     }
-    
-    // 1. Return stock using service
-    const stockResult = await posStockService.returnStockOnCancel(id, tenantId, userId, reason)
-    
-    if (!stockResult.success) {
-      console.warn('Stock return warnings:', stockResult.errors)
+
+    // ประตูอนุมัติ: หมวด "ปิดบิล POS / คืนเงิน"
+    const gateArgs = {
+      tenantId,
+      user: (req as any).user,
+      category: 'pos_void' as const,
+      refType: 'pos_running_bills',
+      refId: id,
+      amount: (bill as any).total_amount || 0,
+      description: `บิล ${(bill as any).bill_number} ยอด ฿${((bill as any).total_amount || 0).toLocaleString()} ขอยกเลิก${reason ? ` เนื่องจาก ${reason}` : ''}`,
+      payload: { billId: id, reason, finalStatus: 'CANCELLED' },
     }
-    
-    // 2. Record accounting reversal
-    const accountingResult = await posAccountingService.recordCancelledSale(
-      bill as any, tenantId, userId, reason
-    )
-    
-    // 3. Update bill status
-    const updateBill = db.prepare(`
-      UPDATE pos_running_bills 
-      SET status = 'CANCELLED', closed_at = ?, closed_by = ?, notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
-      WHERE id = ? AND tenant_id = ?
-    `)
-    updateBill.run(now(), userId, (bill as any).notes, reason || 'No reason', id, tenantId)
-    
+    const pending = gateOrCreate(gateArgs)
+    if (pending) {
+      return res.status(202).json({
+        success: true,
+        pending_approval: true,
+        request_number: pending.request_number,
+        message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) บิลจะถูกยกเลิกเมื่อผู้อนุมัติยืนยัน`,
+      })
+    }
+
+    const { stockResult, accountingResult } = await cancelPosBill(tenantId, userId, id, reason, 'CANCELLED')
+    recordAutoAction(gateArgs)
     res.json({ 
       success: true, 
       message: 'Bill cancelled successfully',

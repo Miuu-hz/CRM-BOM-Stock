@@ -5,6 +5,8 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { ACC } from '../../config/accountCodes'
 import { getOrCreateAccount } from '../../services/accounting.service'
+import { cancelPosBill } from '../../services/posBillCancel.service'
+import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.service'
 import posStockService from '../../services/pos-stock.service'
 
 const router = Router()
@@ -737,104 +739,43 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
       return res.status(400).json({ success: false, message: 'บิลนี้นำเงินเข้าบัญชีแล้ว ไม่สามารถยกเลิกได้' })
     }
 
-    const nowStr = new Date().toISOString()
-    const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
-
-    db.prepare(`
-      UPDATE pos_running_bills
-      SET status = 'VOID', notes = TRIM(COALESCE(notes, '') || ' ' || ?)
-      WHERE id = ? AND tenant_id = ?
-    `).run(voidNote, id, tenantId)
-
-    // คืนสต็อกกลับ (ใบขายคืน = สต็อกเพิ่ม) — ใช้ฟังก์ชันร่วมกับ CANCEL ใน
-    // pos-stock.service.ts กันคืนซ้ำด้วย pos_stock_deductions.returned เอง
-    const stockReturnResult = await posStockService.returnStockOnCancel(id, tenantId, userId, reason)
-    if (!stockReturnResult.success) {
-      console.warn(`[pos-void] stock return warnings for bill ${id}:`, stockReturnResult.errors)
+    // ประตูอนุมัติ: หมวด "ปิดบิล POS / คืนเงิน"
+    const gateArgs = {
+      tenantId,
+      user: req.user as any,
+      category: 'pos_void' as const,
+      refType: 'pos_running_bills',
+      refId: id,
+      amount: bill.total_amount || 0,
+      description: `บิลที่ชำระแล้ว ${bill.bill_number} ยอด ฿${(bill.total_amount || 0).toLocaleString()} ขอยกเลิก${reason ? ` เนื่องจาก ${reason}` : ''}`,
+      payload: { billId: id, reason, finalStatus: 'VOID' },
     }
-
-    // ponytail: กลับรายการด้วยการสลับ debit<->credit ของ journal เดิม (POS_SALE + POS_COGS)
-    // ของบิลนี้ทั้งหมด แทนการ re-derive VAT/COGS/บัญชีเงินสด-ธนาคารเอง — ได้ mirror image
-    // เป๊ะเสมอ แม้ขาขายใน pos-accounting.service.ts จะเปลี่ยน logic ในอนาคต
-    const saleLines = db.prepare(`
-      SELECT jl.account_id, jl.debit, jl.credit
-      FROM journal_lines jl
-      JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE je.tenant_id = ? AND je.reference_id = ?
-        AND je.reference_type IN ('POS_SALE', 'POS_COGS')
-      ORDER BY je.reference_type DESC, jl.line_number
-    `).all(tenantId, id) as Array<{ account_id: string; debit: number; credit: number }>
-
-    const date = nowStr.split('T')[0]
-
-    if (saleLines.length === 0) {
-      // บิลเก่าที่ไม่เคยลงบัญชี — ไม่มีอะไรให้กลับ อย่าสร้าง entry ปลอม
-      console.warn(`[pos-void] bill ${id} has no POS_SALE/POS_COGS journal; skipping reversal entry`)
-      return res.json({
+    const pending = gateOrCreate(gateArgs)
+    if (pending) {
+      return res.status(202).json({
         success: true,
-        message: `ยกเลิกบิล ${bill.bill_number} สำเร็จ (ไม่พบรายการบัญชีเดิม จึงไม่มีการกลับรายการ)`,
-        data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote, reversed: false }
+        pending_approval: true,
+        request_number: pending.request_number,
+        message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) บิลจะถูกยกเลิกเมื่อผู้อนุมัติยืนยัน`,
       })
     }
 
-    const reversalTotal = saleLines.reduce((s, l) => s + (l.debit || 0), 0)
-    const year = new Date().getFullYear()
-    const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 6)
-    const entryId = generateId()
-
-    db.prepare(`
-      INSERT INTO journal_entries (
-        id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, is_auto_generated, created_by, created_at, business_unit
-      ) VALUES (?, ?, ?, ?, 'POS_VOID', ?, ?, ?, ?, 1, ?, ?, 'RETAIL')
-    `).run(
-      entryId, tenantId, entryNumber, date, id,
-      `ยกเลิกบิล ${bill.bill_number}${reason ? ' - ' + reason : ''}`,
-      reversalTotal, reversalTotal, userId, nowStr
-    )
-
-    const insertLine = db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    // อัปเดต account_balances ด้วย account_id ตรงๆ (บัญชีเงินสด/ธนาคารอาจเป็น sub-account
-    // ที่ผูกกับ bank_accounts จึงหาด้วย code ไม่ได้)
-    const balYear = parseInt(date.split('-')[0])
-    const balPeriod = parseInt(date.split('-')[1])
-    const updateBal = (accountId: string, debit: number, credit: number) => {
-      const existing = db.prepare(`
-        SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `).get(accountId, balYear, balPeriod)
-      if (existing) {
-        db.prepare(`
-          UPDATE account_balances
-          SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
-              ending_balance = ending_balance + ? - ?
-          WHERE account_id = ? AND fiscal_year = ? AND period = ?
-        `).run(debit, credit, debit, credit, accountId, balYear, balPeriod)
-      } else {
-        db.prepare(`
-          INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-        `).run(generateId(), tenantId, accountId, balYear, balPeriod, debit, credit, debit - credit)
-      }
-    }
-
-    saleLines.forEach((l, i) => {
-      const debit = l.credit || 0
-      const credit = l.debit || 0
-      insertLine.run(
-        generateId(), tenantId, entryId, l.account_id, i + 1,
-        `กลับรายการยกเลิกบิล ${bill.bill_number}`, debit, credit
-      )
-      updateBal(l.account_id, debit, credit)
-    })
+    // ใช้เส้นทางเดียวกับ POST /pos/bills/:id/cancel — เดิมไฟล์นี้เขียน journal reversal เอง
+    // ด้วยผังบัญชีคนละชุด (สลับ debit/credit บน 4101 แทนการเด้งไป 4302) ไม่มี guard กันลงซ้ำ
+    // และอัปเดตสถานะบิลก่อนคืนสต็อก ทำให้พังกลางคันแล้ว retry ไม่ได้
+    const { stockResult } = await cancelPosBill(tenantId, userId, id, reason, 'VOID')
+    recordAutoAction(gateArgs)
 
     res.json({
       success: true,
       message: `ยกเลิกบิล ${bill.bill_number} สำเร็จ`,
-      data: { bill_id: id, bill_number: bill.bill_number, amount: bill.total_amount, void_note: voidNote, stock_returns: stockReturnResult.returns.length }
+      data: {
+        bill_id: id,
+        bill_number: bill.bill_number,
+        amount: bill.total_amount,
+        void_note: reason ? `[VOID] ${reason}` : '[VOID]',
+        stock_returns: stockResult.returns.length,
+      },
     })
   } catch (error) {
     console.error('Void bill error:', error)
