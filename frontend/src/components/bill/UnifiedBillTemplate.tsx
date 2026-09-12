@@ -97,6 +97,16 @@ function formatThaiDate(dateStr: string): string {
   return `${day.toString().padStart(2, '0')} ${month} ${year}`
 }
 
+/** วันที่ + เวลา — ใบเสร็จหน้าร้านต้องรู้ว่าขายกี่โมง ไม่ใช่แค่วันไหน */
+function formatThaiDateTime(dateStr: string): string {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return '-'
+  const hh = date.getHours().toString().padStart(2, '0')
+  const mm = date.getMinutes().toString().padStart(2, '0')
+  return `${formatThaiDate(dateStr)} ${hh}:${mm}`
+}
+
 function initialsOf(name: string): string {
   const letters = name
     .split(/\s+/)
@@ -236,7 +246,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               <div className="receipt-center"><b>{config.title.th}</b></div>
               <div className="receipt-divider" />
               <div className="receipt-row"><span>เลขที่</span><span>{data.docNumber}</span></div>
-              <div className="receipt-row"><span>วันที่</span><span>{formatThaiDate(data.docDate)}</span></div>
+              <div className="receipt-row"><span>วันที่</span><span>{formatThaiDateTime(data.docDate)}</span></div>
               {data.buyer?.name && <div className="receipt-row"><span>{config.labels.buyer}</span><span>{data.buyer.name}</span></div>}
               {config.fields.showBuyerTaxId && data.buyer.taxId && (
                 <div className="receipt-row"><span>เลขภาษี</span><span>{data.buyer.taxId}</span></div>

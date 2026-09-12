@@ -127,7 +127,9 @@ export function toBillData(type: PrintDocType, d: any): BillData {
   return {
     id: String(d.id ?? ''),
     docNumber: pick(d, spec.number) || '-',
-    docDate: pick(d, spec.date),
+    // ใบเสร็จหน้าร้านไม่มีฟิลด์วันที่ติดมากับบิล (ช่อง "วันที่" เลยพิมพ์ออกมาเป็น "-")
+    // เจ้าของยืนยันว่าใช้ "เวลาที่กดพิมพ์" ได้ ไม่ต้องเป็นเวลาที่ออกเลขบิล
+    docDate: pick(d, spec.date) || (type === 'pos' ? new Date().toISOString() : ''),
     refNumber: pick(d, spec.ref) || undefined,
     dueDate: pick(d, spec.due) || undefined,
     seller: sellerOf(d),
