@@ -546,9 +546,38 @@ export const BILL_CSS = `
 .bill-thermal .receipt-qr-pair { gap: 6px; }
 .bill-thermal .receipt-logo { width: 40px; height: 40px; }
 
+/* ── หน้ากระดาษแยกตามชนิดเอกสาร ────────────────────────────────────────
+   @page ธรรมดาไม่ผูกกับ class ตัวที่ประกาศท้ายสุดชนะทุกงานพิมพ์ ถ้าตั้ง
+   80mm ไว้ลอย ๆ ใบ A4/A5 จะถูกลากไปพิมพ์บนกระดาษ 80mm ด้วย
+   จึงต้องตั้งชื่อหน้าแล้วผูกกับ .bill-* ทีละชนิด
+   ── */
+/* ── เอกสารยาวข้ามหน้า ─────────────────────────────────────────────────
+   ไม่เคยมีกฎ page-break เลย ใบแจ้งหนี้ที่รายการเกินหนึ่งหน้าจึงถูกตัดกลางแถว
+   และหัวตารางหายตั้งแต่หน้าสอง (อ่านไม่ออกว่าคอลัมน์ไหนคืออะไร)
+   ── */
 @media print {
-  .bill-thermal { box-shadow: none !important; }
-  /* ขอบกระดาษแคบสุดที่เครื่องยอมรับ ให้เนื้อหากว้างที่สุด */
-  @page { size: 80mm auto; margin: 1.5mm; }
+  /* หัวตารางซ้ำทุกหน้า — มาตรฐานของเอกสารที่มีรายการยาว */
+  .bill-items-table thead,
+  .wo-materials-table thead { display: table-header-group; }
+  /* ห้ามตัดกลางแถวสินค้า */
+  .bill-items-table tr,
+  .wo-materials-table tr { break-inside: avoid; page-break-inside: avoid; }
+  /* ก้อนสรุปยอด/ช่องจ่ายเงิน/ช่องเซ็น ต้องอยู่ครบก้อน ไม่ใช่หัวอยู่หน้าหนึ่งท้ายอยู่อีกหน้า */
+  .bill-summary-section,
+  .bill-pay-section,
+  .bill-signatures,
+  .wo-summary-grid { break-inside: avoid; page-break-inside: avoid; }
+  /* หัวเอกสารต้องไม่ค้างท้ายหน้าโดยไม่มีเนื้อหาตาม */
+  .bill-header { break-after: avoid; page-break-after: avoid; }
+}
+
+@page a4page    { size: A4 portrait; margin: 7mm; }
+@page a5page    { size: A5 portrait; margin: 6mm; }
+@page thermal80 { size: 80mm auto;   margin: 2mm; }
+
+@media print {
+  .bill-a4      { page: a4page; }
+  .bill-a5      { page: a5page; width: 100%; max-width: 148mm; padding: 10mm; }
+  .bill-thermal { page: thermal80; box-shadow: none !important; }
 }
 `

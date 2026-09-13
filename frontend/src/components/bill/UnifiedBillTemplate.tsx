@@ -316,7 +316,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                 <div className="bill-brand">
                   <BrandLogo branding={branding} sellerName={data.seller.name} themeColor={themeColor} />
                   <div className="bill-brand-text">
-                    <div className="bill-brand-name">{data.seller.name}</div>
+                    {data.seller.name && <div className="bill-brand-name">{data.seller.name}</div>}
                     {branding?.isFreePlan && <div className="bill-free-tag">ใช้โลโก้ Phopy — อัปเกรดเพื่อใส่โลโก้ตัวเอง</div>}
                   </div>
                 </div>
@@ -339,7 +339,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               {/* Head grid — ผู้ขาย | ลูกค้า/คู่ค้า | ข้อมูลเอกสาร */}
               <section className="bill-head-grid">
                 <div className="bill-party-col">
-                  <div className="party-row"><span className="k">ผู้ขาย :</span><span className="nm">{data.seller.name}</span></div>
+                  {data.seller.name && <div className="party-row"><span className="k">ผู้ขาย :</span><span className="nm">{data.seller.name}</span></div>}
                   {data.seller.address && <div className="party-row"><span className="k">ที่อยู่ :</span><span>{data.seller.address}</span></div>}
                   {data.seller.taxId && (
                     <div className="party-row"><span className="k">เลขภาษี :</span><span>{data.seller.taxId}{data.seller.branch && ` (${data.seller.branch})`}</span></div>
@@ -611,8 +611,8 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                       </div>
                       {showQr && (
                         <div className="bill-pay-qr">
-                          {data.qrCode
-                            ? <img src={data.qrCode} alt="QR ชำระเงิน" />
+                          {(data.qrCode || data.receiptQrCode)
+                            ? <img src={data.qrCode || data.receiptQrCode} alt="QR ชำระเงิน" />
                             : <div className="qr-box">QR</div>}
                           <p className="pay-qr-cap">สแกนเพื่อโอนเงิน</p>
                         </div>
