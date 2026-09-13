@@ -169,6 +169,7 @@ router.get('/', async (req: Request, res: Response) => {
     
     const creditNotes = db.prepare(`
       SELECT cn.*, c.name as customer_name, c.code as customer_code,
+        c.tax_id as customer_tax_id, c.address as customer_address,
         i.invoice_number
       FROM credit_notes cn
       LEFT JOIN customers c ON cn.customer_id = c.id

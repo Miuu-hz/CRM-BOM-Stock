@@ -80,6 +80,8 @@ interface Invoice {
   invoice_number: string
   customer_name: string
   customer_code: string
+  customer_tax_id?: string
+  customer_address?: string
   so_number: string
   invoice_date: string
   due_date: string
@@ -3406,6 +3408,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
       ...r,
       customer_name: invoice.customer_name,
       customer_code: invoice.customer_code,
+      // ใบเสร็จ/ใบกำกับภาษีอย่างย่อต้องมีเลขภาษีผู้ซื้อ ข้อมูลมีอยู่แล้วในใบแจ้งหนี้
+      // แต่เดิม copy มาแค่ชื่อกับรหัส เลขภาษีเลยหายไปทุกใบ
+      customer_tax_id: invoice.customer_tax_id,
+      customer_address: invoice.customer_address,
       invoice_number: invoice.invoice_number,
       so_number: invoice.so_number,
       _company: co.name || companyName || '-',

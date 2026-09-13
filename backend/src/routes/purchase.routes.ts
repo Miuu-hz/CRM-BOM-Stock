@@ -634,6 +634,7 @@ router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
     
     const receipt = db.prepare(`
       SELECT gr.*, s.name as supplier_name, s.code as supplier_code, s.email as supplier_email,
+        s.tax_id as supplier_tax_id, s.address as supplier_address, s.phone as supplier_phone,
         po.po_number
       FROM goods_receipts gr
       LEFT JOIN suppliers s ON gr.supplier_id = s.id

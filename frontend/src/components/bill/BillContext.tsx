@@ -250,7 +250,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
     docPrefix: 'GR',
     fields: {
       showBuyerCode: true,
-      showBuyerTaxId: false,
+      showBuyerTaxId: true,   // เจ้าของขอให้โชว์เลขภาษีผู้ขายบนใบรับสินค้า
       showRefNumber: true,    // อ้างอิงใบสั่งซื้อ
       showDueDate: false,
       showPaymentTerms: false,
