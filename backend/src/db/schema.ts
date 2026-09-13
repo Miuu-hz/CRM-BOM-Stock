@@ -484,12 +484,14 @@ export function applySchema(db: any): void {
       tenant_id TEXT,
       delivery_order_id TEXT NOT NULL,
       sales_order_item_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
+      -- product_id ว่างได้และไม่ผูก products: ของที่ขายจริงอยู่ในตาราง stock_items
+      -- และแถวขาย 661/685 แถวมี product_id เป็น NULL ตัวสินค้าหาเอาจาก
+      -- sales_order_item_id -> sales_order_items.stock_item_id แทน (โรคเดียวกับ credit_note_items)
+      product_id TEXT,
       quantity REAL DEFAULT 0,
       notes TEXT,
       FOREIGN KEY (delivery_order_id) REFERENCES delivery_orders(id) ON DELETE CASCADE,
-      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id),
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id)
     );
 
     -- ใบแจ้งหนี้/ใบกำกับภาษี (Invoices)

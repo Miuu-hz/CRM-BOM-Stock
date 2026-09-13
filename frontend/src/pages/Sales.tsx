@@ -521,6 +521,9 @@ const Sales = () => {
       await salesService.updateSOStatus(id, status)
       toast.success(t('sales.toast.statusUpdated'))
       fetchSalesOrders()
+      // กด "ส่งของแล้ว" แล้ว backend ออกใบส่งของให้อัตโนมัติ ต้องโหลดมาใหม่
+      // ไม่งั้นป้าย "DO ×n" ในแถวคำสั่งขายจะยังไม่ขึ้นจนกว่าจะเข้าแท็บใบส่งของ
+      if (status === 'DELIVERED' || status === 'COMPLETED') fetchDeliveryOrders()
     } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
   }
 

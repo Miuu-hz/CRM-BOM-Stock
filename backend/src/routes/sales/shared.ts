@@ -432,3 +432,69 @@ export function voidReceipt(tenantId: string, receipt: any): void {
 }
 
 export { isValidImageFile, sanitizeFilename }
+
+/**
+ * สต็อกของคำสั่งขายใบนี้ถูกตัดไปแล้วหรือยัง
+ *
+ * ดูจากหลักฐานจริงคือ stock_movements ที่ deductStockForSO เขียนไว้ ไม่ใช่เดาจาก
+ * สถานะของ SO — สถานะถูกแก้มือได้หลายทาง (เช่น POST /delivery-orders ดัน SO เป็น
+ * PARTIAL ทั้งที่ยังไม่เคยยืนยัน) แต่รายการเคลื่อนไหวโกหกไม่ได้
+ */
+export function soStockAlreadyDeducted(tenantId: string, soNumber: string): boolean {
+  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
+    .get(tenantId, `SO: ${soNumber}`)
+}
+
+/**
+ * ออกใบส่งของจากคำสั่งขาย — เอาเฉพาะของที่ยังค้างส่ง (quantity - delivered_qty)
+ *
+ * ตั้งสถานะเริ่มต้นเป็น SHIPPED ไม่ใช่ DELIVERED โดยตั้งใจ: สต็อกถูกตัดไปตั้งแต่
+ * ยืนยัน SO แล้ว การให้คนรับของกดยืนยัน DELIVERED เองจึงเป็นขั้นที่เหลือไว้ให้
+ * หน้างานกด และ delivered_qty ก็ไปอัปเดตที่นั่นที่เดียว (PUT /:id/status)
+ *
+ * คืน null เมื่อมีใบที่ยังไม่ถูกยกเลิกอยู่แล้ว หรือไม่มีของค้างส่ง — เรียกซ้ำได้ปลอดภัย
+ */
+export function createDeliveryOrderForSO(
+  tenantId: string,
+  soId: string,
+  opts: { createdBy?: string; status?: string; notes?: string } = {}
+): { id: string; do_number: string } | null {
+  const so = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(soId, tenantId) as any
+  if (!so) return null
+
+  const existing = db.prepare("SELECT id FROM delivery_orders WHERE tenant_id = ? AND sales_order_id = ? AND status != 'CANCELLED' LIMIT 1")
+    .get(tenantId, soId)
+  if (existing) return null
+
+  const items = (db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[])
+    .map(i => ({ ...i, remaining: roundQty(Number(i.quantity || 0) - Number(i.delivered_qty || 0)) }))
+    .filter(i => i.remaining > 0)
+  if (items.length === 0) return null
+
+  // sales_orders ไม่มีที่อยู่จัดส่งของตัวเอง ใช้ที่อยู่ลูกค้าเป็นค่าเริ่มต้นให้แก้ทีหลังได้
+  const cust = db.prepare('SELECT address FROM customers WHERE id = ?').get(so.customer_id) as any
+
+  const id = generateId()
+  const doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5)
+  const now = new Date().toISOString()
+
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO delivery_orders (id, tenant_id, do_number, sales_order_id, customer_id, delivery_date,
+        delivery_address, driver_name, vehicle_plate, status, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?)
+    `).run(id, tenantId, doNumber, soId, so.customer_id, so.delivery_date || now,
+      cust?.address || '', opts.status || 'SHIPPED', opts.notes || '', opts.createdBy || 'system', now, now)
+
+    const insertItem = db.prepare(`
+      INSERT INTO delivery_order_items (id, tenant_id, delivery_order_id, sales_order_item_id, product_id, quantity, notes)
+      VALUES (?, ?, ?, ?, ?, ?, '')
+    `)
+    for (const it of items) {
+      // product_id ว่างได้ ตัวสินค้าจริงตามไปจาก sales_order_item_id -> stock_item_id
+      insertItem.run(generateId(), tenantId, id, it.id, it.product_id || null, it.remaining)
+    }
+  })()
+
+  return { id, do_number: doNumber }
+}

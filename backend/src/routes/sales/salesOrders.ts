@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, restoreStockForSO } from './shared'
+import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO } from './shared'
 
 const router = Router()
 
@@ -331,6 +331,22 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       .run(status, now, req.params.id, tenantId)
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+
+    // กดสถานะ "ส่งของแล้ว" ต้องมีใบส่งของออกมาให้ลูกค้าเซ็นรับ ไม่ใช่แค่เปลี่ยนสีแถบสถานะ
+    // เดิมใบส่งของไม่มีทางเกิดเลย (ไม่มีหน้าไหนเรียก POST /delivery-orders ด้วยซ้ำ)
+    // ทั้งระบบจึงมีใบส่งของ 0 ใบ ทั้งที่มี SO ส่งของแล้ว 307 ใบ และป้าย "DO ×n"
+    // ในหน้าคำสั่งขายก็ไม่เคยขึ้น
+    if ((status === 'DELIVERED' || status === 'COMPLETED') && salesOrder) {
+      try {
+        createDeliveryOrderForSO(tenantId, salesOrder.id, {
+          createdBy: req.user!.userId,
+          notes: `ออกอัตโนมัติเมื่อคำสั่งขาย ${salesOrder.so_number} เปลี่ยนเป็น${status === 'COMPLETED' ? 'เสร็จสิ้น' : 'ส่งของแล้ว'}`,
+        })
+      } catch (e) {
+        // ออกใบไม่สำเร็จต้องไม่ทำให้การเปลี่ยนสถานะล้มไปด้วย สถานะสำคัญกว่าตัวเอกสาร
+        console.error('auto delivery order failed:', e)
+      }
+    }
 
     // ตัด stock เมื่อยืนยัน SO
     if (status === 'CONFIRMED' && salesOrder) {

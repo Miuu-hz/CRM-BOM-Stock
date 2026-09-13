@@ -1779,6 +1779,53 @@ export function runMigrations(db: any): void {
     try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
   }
 
+  // Migration: delivery_order_items.product_id NOT NULL + FK — โรคเดียวกับ credit_note_items
+  // ข้างบนเป๊ะ ๆ ประกาศไว้ว่า NOT NULL REFERENCES products(id) แต่สายขายจริงไม่เคยใส่
+  // products.id ลงไปเลย (sales_order_items.product_id เป็น NULL 661/685 แถว, products
+  // เป็นแค่แคตตาล็อกลอย 12 แถว) ผลคือสร้างใบส่งของแล้วเด้ง "FOREIGN KEY constraint failed"
+  // ทุกครั้ง ทั้งระบบจึงมีใบส่งของ 0 ใบ ตัวสินค้าหาจาก sales_order_item_id ->
+  // sales_order_items.stock_item_id อยู่แล้ว ไม่มีใครพึ่ง FK ตัวนี้
+  try {
+    const doiCols = db.prepare(`PRAGMA table_info(delivery_order_items)`).all() as any[]
+    const productIdCol = doiCols.find((c: any) => c.name === 'product_id')
+    if (productIdCol && productIdCol.notnull === 1) {
+      db.exec(`PRAGMA foreign_keys=OFF`)
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE delivery_order_items_new (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            delivery_order_id TEXT NOT NULL,
+            sales_order_item_id TEXT NOT NULL,
+            product_id TEXT,
+            quantity REAL DEFAULT 0,
+            notes TEXT,
+            FOREIGN KEY (delivery_order_id) REFERENCES delivery_orders(id) ON DELETE CASCADE,
+            FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO delivery_order_items_new (id, tenant_id, delivery_order_id, sales_order_item_id, product_id, quantity, notes)
+          SELECT id, tenant_id, delivery_order_id, sales_order_item_id, product_id, quantity, notes
+          FROM delivery_order_items
+        `)
+        db.exec(`DROP TABLE delivery_order_items`)
+        db.exec(`ALTER TABLE delivery_order_items_new RENAME TO delivery_order_items`)
+      })
+      rebuild()
+      db.exec(`PRAGMA foreign_keys=ON`)
+      const violations = db.prepare(`PRAGMA foreign_key_check(delivery_order_items)`).all()
+      if (violations.length > 0) {
+        console.error('⚠️ Migration: delivery_order_items FK rebuild left orphaned rows (needs manual review):', violations)
+      } else {
+        console.log('✅ Migration: delivery_order_items.product_id is now nullable with no FK to products')
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ delivery_order_items FK rebuild migration error:', e)
+    try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
+  }
+
   // Migration: schema drift — restored 2026-08-29. Columns exist on production but
   // were missing from schema.ts, so a fresh migrate never created them.
   ;[

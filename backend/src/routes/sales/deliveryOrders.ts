@@ -4,6 +4,7 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { isServiceItem } from '../../services/stockItem.service'
 import { roundQty } from '../../utils/qty'
+import { soStockAlreadyDeducted } from './shared'
 
 const router = Router()
 
@@ -48,7 +49,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT doi.*, p.name as product_name, p.code as product_code, soi.quantity as ordered_qty
+      SELECT doi.*, COALESCE(p.name, soi.product_name) as product_name, p.code as product_code,
+        soi.quantity as ordered_qty, soi.unit
       FROM delivery_order_items doi
       LEFT JOIN sales_order_items soi ON doi.sales_order_item_id = soi.id
       LEFT JOIN products p ON doi.product_id = p.id
@@ -137,6 +139,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     const now = new Date().toISOString()
 
+    // สต็อกถูกตัดไปแล้วตั้งแต่ยืนยันคำสั่งขาย (deductStockForSO) ถ้าตัดซ้ำตรงนี้
+    // ของจะหายจากคลังสองเท่าของที่ขายจริง — เช็คจากรายการเคลื่อนไหวของ SO แม่
+    const parentSO = db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?')
+      .get(deliveryOrder.sales_order_id, tenantId) as any
+    const alreadyDeducted = !!parentSO && soStockAlreadyDeducted(tenantId, parentSO.so_number)
+
     // When delivered, deduct stock
     if (status === 'DELIVERED' && deliveryOrder.status !== 'DELIVERED') {
       const items = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ?').all(req.params.id) as any[]
@@ -151,9 +159,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             .run(item.quantity, item.sales_order_item_id)
 
           // Deduct stock (with unit conversion)
-          const stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId) as any
-          if (stockItem && !isServiceItem(stockItem)) {   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
-            const soItem = db.prepare('SELECT unit FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
+          // แถวขายส่วนใหญ่ไม่มี product_id — ของจริงอยู่ที่ sales_order_items.stock_item_id
+          const soItem = db.prepare('SELECT unit, stock_item_id FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
+          const stockItem = db.prepare('SELECT * FROM stock_items WHERE (id = ? OR product_id = ?) AND tenant_id = ?')
+            .get(soItem?.stock_item_id || null, item.product_id || null, tenantId) as any
+          // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด · ตัดไปแล้วตอนยืนยัน SO ก็ไม่ตัดซ้ำ
+          if (stockItem && !isServiceItem(stockItem) && !alreadyDeducted) {
             const soUnit = soItem?.unit || ''
             // stock_items.quantity is stored in base_unit, not the legacy `unit` column —
             // fall back to `unit` only when base_unit is empty (old rows).
