@@ -21,7 +21,7 @@ import { getCachedCompanySettings } from '../services/companySettings.service'
 export type PrintDocType =
   | 'qt' | 'so' | 'inv' | 'rc' | 'cn'
   | 'pr' | 'po' | 'gr' | 'pi' | 'payment' | 'return'
-  | 'pos' | 'wo'
+  | 'pos' | 'wo' | 'do'
 export type PrintFormat = 'a4' | 'a5' | 'thermal'
 
 // ── ตารางเดียวคุมทุกชนิดเอกสาร แทนการเขียน template แยกกันทีละใบ ──────────
@@ -41,6 +41,7 @@ interface DocSpec {
 const DOCS: Record<PrintDocType, DocSpec> = {
   qt:      { bill: 'QUOTATION',        number: ['quotation_number'], date: ['quotation_date'], due: ['expiry_date'], party: 'customer' },
   so:      { bill: 'SALE',             number: ['so_number'],        date: ['order_date'],     ref: ['quotation_number'], due: ['delivery_date'], party: 'customer' },
+  do:      { bill: 'DELIVERY',         number: ['do_number'],        date: ['delivery_date'],  ref: ['so_number'],        party: 'customer' },
   inv:     { bill: 'INVOICE',          number: ['invoice_number'],   date: ['invoice_date'],   ref: ['so_number'],        due: ['due_date'],      party: 'customer' },
   rc:      { bill: 'RECEIPT',          number: ['receipt_number'],   date: ['receipt_date'],   ref: ['invoice_number', 'so_number'], party: 'customer' },
   cn:      { bill: 'CREDIT_NOTE',      number: ['cn_number'],        date: ['credit_date'],    ref: ['invoice_number'],   party: 'customer' },

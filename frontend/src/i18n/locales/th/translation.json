@@ -1158,7 +1158,8 @@
       "overdue": "เกินกำหนด",
       "pending": "รอดำเนินการ",
       "partialPaid": "ชำระบางส่วน",
-      "delivered": "ส่งของแล้ว"
+      "delivered": "ส่งของแล้ว",
+      "shipped": "กำลังจัดส่ง"
     },
     "toast": {
       "selectSOFirst": "สร้างใบแจ้งหนี้: เลือก SO ก่อนจากหน้าคำสั่งขาย",
@@ -1259,7 +1260,8 @@
       "convertToSO": "แปลง SO",
       "createInvoice": "ออกใบแจ้งหนี้",
       "cancelInvoice": "ยกเลิกใบแจ้งหนี้",
-      "voidReceipt": "ยกเลิกรายการ"
+      "voidReceipt": "ยกเลิกรายการ",
+      "printDeliveryA4": "พิมพ์ใบส่งของ A4"
     },
     "search": {
       "quotation": "ค้นหาใบเสนอราคา...",

@@ -200,6 +200,7 @@ const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string
   CONFIRMED:  { labelKey: 'sales.status.confirmed',    bg: 'bg-cyan-500/15',    text: 'text-cyan-300' },
   PROCESSING: { labelKey: 'sales.status.processing',   bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
   READY:      { labelKey: 'sales.status.readyToShip',  bg: 'bg-purple-500/15',  text: 'text-purple-300' },
+  SHIPPED:    { labelKey: 'sales.status.shipped',      bg: 'bg-blue-500/15',    text: 'text-blue-300' },
   DELIVERED:  { labelKey: 'sales.status.delivered',    bg: 'bg-indigo-500/15',  text: 'text-indigo-300' },
   COMPLETED:  { labelKey: 'sales.status.completed',    bg: 'bg-green-600/15',   text: 'text-green-300' },
   PARTIAL:    { labelKey: 'sales.status.partialShipped', bg: 'bg-orange-500/15',  text: 'text-orange-300' },
@@ -312,6 +313,7 @@ const Sales = () => {
   const [detailInv, setDetailInv]           = useState<Invoice | null>(null)
   const [detailCN, setDetailCN]             = useState<CreditNote | null>(null)
   const [detailBO, setDetailBO]             = useState<Backorder | null>(null)
+  const [detailDO, setDetailDO]             = useState<DeliveryOrder | null>(null)
   const [convertQT, setConvertQT]           = useState<Quotation | null>(null)  // QT → SO
 
   // Prime the bank-account cache (used by print templates for the QR/payment block)
@@ -491,6 +493,7 @@ const Sales = () => {
     else if (type === t('sales.docType.invoice')) setDetailInv(item)
     else if (type === t('sales.docType.creditNote')) setDetailCN(item)
     else if (type === t('sales.docType.backorder')) setDetailBO(item)
+    else if (type === t('sales.docType.deliveryOrder')) setDetailDO(item)
     else toast(`${t('sales.viewDetails')} ${type} — ${t('sales.common.comingSoon')}`)
   }
   const handleEditQT = async (q: Quotation) => {
@@ -573,6 +576,8 @@ const Sales = () => {
       await api.put(`/sales/delivery-orders/${id}/status`, { status })
       toast.success(t('sales.toast.statusUpdated'))
       fetchDeliveryOrders()
+      // รับของแล้ว = backend เขียน delivered_qty/สถานะกลับไปที่ SO ต้องโหลดใหม่ ไม่งั้นหน้าคำสั่งขายค้างของเก่า
+      if (status === 'DELIVERED') fetchSalesOrders()
     } catch { toast.error(t('sales.toast.statusUpdateFailed')) }
   }
 
@@ -1568,6 +1573,7 @@ const Sales = () => {
     const doNextStatus: Record<string, { status: string; label: string; color: string }> = {
       DRAFT: { status: 'READY',    label: t('sales.status.readyToShip'),   color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
       READY: { status: 'SHIPPED',  label: t('sales.status.sent'),    color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
+      SHIPPED: { status: 'DELIVERED', label: t('sales.status.delivered'), color: 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20' },
     }
     return (
       <div className="space-y-3">
@@ -2286,6 +2292,14 @@ const Sales = () => {
           backorder={detailBO}
           onClose={() => setDetailBO(null)}
           onRefresh={() => fetchBackorders()}
+        />
+      )}
+      {detailDO && (
+        <DeliveryOrderDetailModal
+          deliveryOrder={detailDO}
+          onClose={() => setDetailDO(null)}
+          onRefresh={() => { fetchDeliveryOrders(); fetchSalesOrders() }}
+          companyName={tenant?.name}
         />
       )}
     </div>
@@ -4129,6 +4143,104 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
               className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
               {t('sales.actions.fulfillBackorder')}
+            </button>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
+// ─── Delivery Order Detail Modal ──────────────────────────────────────────────
+function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyName }: {
+  deliveryOrder: DeliveryOrder
+  onClose: () => void
+  onRefresh: () => void
+  companyName?: string
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [detail, setDetail] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.get(`/sales/delivery-orders/${deliveryOrder.id}`).then(({ data }) => setDetail(data.data || data)).catch(() => {})
+  }, [deliveryOrder.id])
+
+  const handlePrint = () => {
+    const co = getCachedCompanySettings()
+    // ใบส่งของไม่ใช่เอกสารเรียกเก็บเงิน — total_amount ที่ join มาจาก SO ต้องไม่ถูกพิมพ์เป็นยอดของใบนี้
+    printBill('do', { ...(detail || deliveryOrder), total_amount: 0, subtotal: 0,
+      _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '',
+      _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
+  }
+
+  // ส่งของแล้ว → ลูกค้ารับของแล้ว (backend อัปเดต delivered_qty ของ SO ที่ตรงนี้ที่เดียว)
+  const handleDeliver = async () => {
+    setSaving(true)
+    try {
+      await api.put(`/sales/delivery-orders/${deliveryOrder.id}/status`, { status: 'DELIVERED' })
+      toast.success(t('sales.toast.statusUpdated'))
+      onRefresh()
+      onClose()
+    } catch { toast.error(t('sales.toast.statusUpdateFailed')) } finally { setSaving(false) }
+  }
+
+  const items: any[] = detail?.items || []
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--fg-1)] font-mono">{deliveryOrder.do_number}</h2>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{deliveryOrder.customer_name} · SO: {deliveryOrder.so_number}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusBadge status={deliveryOrder.status} />
+            <button onClick={handlePrint} title={t('sales.actions.printDeliveryA4')}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+              <Printer className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--fg-3)]">
+            <span>{t('sales.common.deliveryDate')} <span className="text-[var(--fg-1)]">{deliveryOrder.delivery_date ? new Date(deliveryOrder.delivery_date).toLocaleDateString('th-TH') : '-'}</span></span>
+            <span className="text-right">{deliveryOrder.driver_name || detail?.driver_name || '-'} {detail?.vehicle_plate || ''}</span>
+          </div>
+          {items.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
+              {items.map((item: any, i: number) => (
+                <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
+                  <p className="text-[var(--fg-1)] font-medium">{item.product_name}</p>
+                  <div className="flex gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
+                    <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? '-'}</span></span>
+                    <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.quantity}</span> {item.unit || ''}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-[var(--fg-4)] text-sm">
+              {detail === null ? t('sales.common.loading') : t('sales.common.noData')}
+            </div>
+          )}
+        </div>
+
+        {deliveryOrder.status === 'SHIPPED' && (
+          <div className="p-5 border-t border-[var(--border)] shrink-0">
+            <button onClick={handleDeliver} disabled={saving}
+              className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              {t('sales.status.delivered')}
             </button>
           </div>
         )}

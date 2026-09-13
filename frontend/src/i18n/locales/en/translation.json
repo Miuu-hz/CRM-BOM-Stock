@@ -1157,7 +1157,8 @@
       "overdue": "Overdue",
       "pending": "Pending",
       "partialPaid": "Partial paid",
-      "delivered": "Delivered"
+      "delivered": "Delivered",
+      "shipped": "Shipped"
     },
     "toast": {
       "selectSOFirst": "Create invoice: select SO from sales orders first",
@@ -1258,7 +1259,8 @@
       "convertToSO": "Convert to SO",
       "createInvoice": "Create Invoice",
       "cancelInvoice": "Cancel Invoice",
-      "voidReceipt": "Void"
+      "voidReceipt": "Void",
+      "printDeliveryA4": "Print delivery order A4"
     },
     "search": {
       "quotation": "Search quotations...",
