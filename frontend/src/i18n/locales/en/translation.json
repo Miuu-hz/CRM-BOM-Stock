@@ -633,7 +633,8 @@
       "unpaid": "Unpaid",
       "paid": "Paid",
       "overdue": "Overdue",
-      "issued": "Issued"
+      "issued": "Issued",
+      "converted": "Converted to PO"
     },
     "priority": {
       "low": "Low",

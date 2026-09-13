@@ -1451,6 +1451,8 @@ const Purchase = () => {
         taxAmount,
         totalAmount,
       })
+      // ติดด่านอนุมัติ: PO ยังไม่ถูกแก้จริง จึงไม่ปิดโมดัลและไม่ขึ้นข้อความว่าสำเร็จ (เหมือน Cashier.tsx/Sales.tsx)
+      if (approvalGate.handleResponse(data)) return
       if (data.success) {
         toast.success(t('purchase.toast.orderUpdated'))
         closeModal()
@@ -1922,27 +1924,35 @@ const Purchase = () => {
     try {
       const { data } = await api.get(`/purchase/goods-receipts/pending-items/${poId}`)
       if (data.success) {
-        setReceiptForm(prev => ({
-          ...prev,
-          purchase_order_id: poId,
-          items: data.data.map((item: any) => ({
-            purchase_order_item_id: item.id,
-            material_id: item.material_id || '',
-            description: item.description || item.material_name || '',
-            material_name: item.material_name || '',
-            unit: normalizeUnit(item.unit) || t('purchase.common.unitFallback'),
-            unit_price: item.unit_price || 0,
-            ordered_qty: item.quantity || 0,
-            already_received_qty: item.received_qty || 0,
-            pending_qty: item.pending_qty || item.quantity || 0,
-            received_qty: item.pending_qty || item.quantity || 0, // default = รับทั้งหมด
-            accepted_qty: item.pending_qty || item.quantity || 0,
-            rejected_qty: 0,
-            lot_number: '',
-            location: '',
-            notes: '',
-          }))
-        }))
+        setReceiptForm(prev => {
+          // Bug: a PO switch fires a new request but the old one can still resolve
+          // later (network jitter) and land AFTER the newer pick — its closure captures
+          // the OLD poId, so it used to overwrite purchase_order_id back to the old PO
+          // and repopulate its items, silently reverting the user's newer selection
+          // ("old PO won't go away"). Guard: only apply a response if the form still
+          // points at the PO that request was for.
+          if (prev.purchase_order_id !== poId) return prev
+          return {
+            ...prev,
+            items: data.data.map((item: any) => ({
+              purchase_order_item_id: item.id,
+              material_id: item.material_id || '',
+              description: item.description || item.material_name || '',
+              material_name: item.material_name || '',
+              unit: normalizeUnit(item.unit) || t('purchase.common.unitFallback'),
+              unit_price: item.unit_price || 0,
+              ordered_qty: item.quantity || 0,
+              already_received_qty: item.received_qty || 0,
+              pending_qty: item.pending_qty || item.quantity || 0,
+              received_qty: item.pending_qty || item.quantity || 0, // default = รับทั้งหมด
+              accepted_qty: item.pending_qty || item.quantity || 0,
+              rejected_qty: 0,
+              lot_number: '',
+              location: '',
+              notes: '',
+            }))
+          }
+        })
       }
     } catch (error) { toast.error(t('purchase.error.loadPendingReceipts')) }
   }
@@ -1962,6 +1972,7 @@ const Purchase = () => {
       SUBMITTED: { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: t('purchase.actions.submit') },
       APPROVED:  { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: t('purchase.status.approved') },
       REJECTED:  { bg: 'bg-[var(--danger-soft)]',    text: 'text-danger',    label: t('purchase.actions.reject') },
+      CONVERTED: { bg: 'bg-[var(--success-soft)]',  text: 'text-success',  label: t('purchase.status.converted') },
       CONFIRMED: { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   label: t('purchase.actions.confirm') },
       PARTIAL:   { bg: 'bg-orange-500/15', text: 'text-warning', label: t('purchase.status.partial') },
       RECEIVED:  { bg: 'bg-green-600/15',  text: 'text-success',  label: t('purchase.status.fullyReceived') },
@@ -2283,11 +2294,27 @@ const Purchase = () => {
                       className="p-1 text-warning bg-[var(--warning-soft)] rounded" title={t('purchase.actions.edit')}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
+                    <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
+                      className="p-1 text-blue-400 bg-blue-500/10 rounded" title={t('purchase.actions.submitForApproval')}>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={() => handleDeleteRequest(req.id)}
                       className="p-1 text-danger bg-[var(--danger-soft)] rounded" title={t('purchase.actions.delete')}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </>)}
+                  {req.status === 'PENDING' && (
+                    <button onClick={() => handleSubmitRequestDirect(req.id, 'APPROVED')}
+                      className="p-1 text-success bg-[var(--success-soft)] rounded" title={t('purchase.actions.approve')}>
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {req.status === 'APPROVED' && (
+                    <button onClick={() => handleConvertRequestToOrder(req.id)}
+                      className="p-1 text-success bg-success/10 rounded" title={t('purchase.actions.convertToOrder')}>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {/* ยกเลิกได้เฉพาะใบที่ยังไม่จบเรื่อง — ที่ปฏิเสธ/ยกเลิกไปแล้วไม่ต้องโชว์ซ้ำ */}
                   {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
                     <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}
@@ -3490,7 +3517,14 @@ const Purchase = () => {
       <div className="space-y-3">
         <Field label={t('purchase.receiptModal.selectPO')} required>
           <POSearchInput
-            orders={orders.filter(o => ['SUBMITTED', 'APPROVED', 'PARTIAL'].includes(o.status))}
+            // Bug: a PO that already has a pending DRAFT GR stayed in this list forever —
+            // picking it again looked fine (items loaded) but the backend rejects a 2nd
+            // DRAFT GR for the same PO on submit ("มีใบรับสินค้าร่าง ... รออยู่"), so the
+            // create button looked dead. The card-view "รับสินค้า" button already swaps
+            // to "ยืนยันใบรับ" for such POs (see draftReceipt check above) — mirror that
+            // rule here so the dropdown can't offer the same dead end.
+            orders={orders.filter(o => ['SUBMITTED', 'APPROVED', 'PARTIAL'].includes(o.status)
+              && !receipts.some(r => r.purchase_order_id === o.id && r.status === 'DRAFT'))}
             value={receiptForm.purchase_order_id}
             onChange={id => { setReceiptForm(p => ({ ...p, purchase_order_id: id, items: [] })); if (id) loadPendingItems(id) }}
             emptyMessage={t('purchase.receiptModal.noEligiblePO')}

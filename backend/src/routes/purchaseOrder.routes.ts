@@ -247,49 +247,19 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     const now = new Date().toISOString()
     const updates: any = { status, updated_at: now }
 
-    if (status === 'RECEIVED') {
-      updates.received_date = now
-      // Auto update stock when received
-      const items = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id) as any[]
-
-      const updateStock = db.transaction(() => {
-        db.prepare("UPDATE purchase_orders SET status = ?, received_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(status, now, now, req.params.id, tenantId)
-
-        for (const item of items) {
-          if (item.material_id) {
-            // Update stock item quantity if exists
-            const stockItem = (db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId)
-              || db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId)) as any
-            if (stockItem) {
-              db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(Math.floor(item.quantity), now, stockItem.id, tenantId)
-
-              // Record movement
-              db.prepare(`
-                INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, 'system')
-              `).run(generateId(), tenantId, stockItem.id, Math.floor(item.quantity), `PO: ${req.params.id}`, `Received from PO`, now)
-            }
-          }
-          // Update received qty
-          db.prepare('UPDATE purchase_order_items SET received_qty = ? WHERE id = ? AND tenant_id = ?')
-            .run(item.quantity, item.id, tenantId)
-        }
+    // รับของต้องผ่านใบรับสินค้าเท่านั้น — สาขา RECEIVED เดิมตรงนี้เพิ่มสต็อกเองด้วย
+    // Math.floor(quantity) ดิบ ๆ ไม่แปลงหน่วย ไม่แยกแพ็คปิดผนึก ไม่เขียน snapshot ที่การยกเลิก
+    // ต้องใช้ และไม่ลงบัญชี ทำให้ PO-00007/PO-00010 (2026-07-08) เป็น RECEIVED โดยไม่มี GR
+    // ไม่มีหน้าเว็บหรือ MCP ตัวไหนเรียกแล้ว (UI ส่งแค่ SUBMITTED/APPROVED/CANCELLED,
+    // MCP update_po_status ปิด RECEIVED ไว้ใน enum) จึงปิดประตูทิ้งแทนที่จะไล่แก้ให้เท่า GR
+    if (status === 'RECEIVED' || status === 'PARTIAL') {
+      return res.status(400).json({
+        success: false,
+        message: 'รับสินค้าต้องทำผ่านใบรับสินค้า (GR) — สถานะนี้ระบบตั้งให้เองตอนยืนยันใบรับสินค้า',
       })
+    }
 
-      updateStock()
-
-      // No accounting entry here on purpose: this simple status endpoint and
-      // the goods-receipt flow (purchase.routes.ts, /goods-receipts/:id/confirm)
-      // both set purchase_orders.status = 'RECEIVED', but only the latter is
-      // actually used in practice, and the real AP/inventory entry is booked
-      // later at Purchase Invoice creation (purchase.routes.ts, POST /invoices).
-      // Posting here too would double-book the same purchase when an invoice
-      // is created afterward — see postPurchaseOrderReceived() for why it's
-      // unused, kept only as a documented reference for a future "book at
-      // receiving instead of at invoice" redesign if that's ever wanted.
-    } else {
+    {
       db.prepare("UPDATE purchase_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(status, now, req.params.id, tenantId)
     }

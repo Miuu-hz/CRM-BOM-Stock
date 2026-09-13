@@ -540,10 +540,10 @@ router.post('/requests/:id/convert-to-po', async (req: Request, res: Response) =
       // Create PO
       db.prepare(`
         INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
-          subtotal, tax_rate, tax_amount, total_amount, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(poId, tenantId, poNumber, supplierId, now, expectedDate || null,
-        subtotal, taxRate, taxAmount, totalAmount, `Created from PR: ${pr.pr_number}`, now, now)
+        subtotal, taxRate, taxAmount, totalAmount, `Created from PR: ${pr.pr_number}`, pr.id, now, now)
 
       // Create PO items
       const insertItem = db.prepare(`

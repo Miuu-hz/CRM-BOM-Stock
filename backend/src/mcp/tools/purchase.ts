@@ -545,6 +545,9 @@ items ถ้าส่งมาจะแทนที่รายการทั�
 
               let stockQty = item.accepted_qty
               let movementNotes = `Received from purchase`
+              // เก็บสิ่งที่เข้าสต็อกจริงไว้เขียน snapshot ให้เหมือน purchase.routes.ts
+              let mcpSealedPacks = 0
+              let appliedFactor = 1
 
               if (stockItem) {
                 // stock_items.quantity is always stored in base_unit — see
@@ -576,6 +579,8 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                   db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
                     .run(mcpPacks, mcpRemainder, sealedUnitCost, now, stockItem.id)
                   stockQty = mcpRemainder
+                  mcpSealedPacks = mcpPacks
+                  appliedFactor = sealedCostFactor
                   movementNotes = `Received ${item.accepted_qty} ${poUnit}: sealed ${mcpPacks} + เศษ ${mcpRemainder}`
                 } else if (poUnit && poUnit !== stockUnit) {
                   const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
@@ -583,6 +588,7 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                     throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockUnit} กรุณาตั้งค่า Unit Conversion ก่อน`)
                   }
                   stockQty = converted.converted
+                  appliedFactor = converted.factor
                   movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockUnit})`
                   const newUnitCost = unitPrice
                     ? priceToBaseUnitCost(unitPrice, converted.factor, `${poUnit}→${stockUnit} (material ${item.material_id})`)
@@ -598,7 +604,20 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                 db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
                   VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)`)
                   .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItem.id,
-                    roundQty(stockQty), `GR: ${gr.gr_number}`, movementNotes, now, userId)
+                    // stock_movements.quantity เป็นหน่วยฐานเสมอ — แพ็คที่ยังไม่แกะต้องคูณ factor
+                    // เหมือน purchase.routes.ts เดิม MCP บันทึกแค่เศษ ตัวเลขเลยหายไปทั้งแพ็ค
+                    mcpSealedPacks ? roundQty(mcpSealedPacks * appliedFactor + stockQty) : roundQty(stockQty),
+                    `GR: ${gr.gr_number}`, movementNotes, now, userId)
+
+                // snapshot ที่ REST cancel อ่านกลับตอนยกเลิก GR — ถ้าไม่เขียน การคืนสต็อก
+                // จะตกไปใช้ factor 1 (ดู purchase.routes.ts: Number(item.stock_factor) || 1)
+                try {
+                  db.prepare(`UPDATE goods_receipt_items
+                    SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?
+                    WHERE id = ?`).run(stockItem.id, roundQty(stockQty), mcpSealedPacks, appliedFactor, item.id)
+                } catch (e) {
+                  console.error('⚠️ MCP: could not record GR stock snapshot:', e)
+                }
               }
 
               db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
