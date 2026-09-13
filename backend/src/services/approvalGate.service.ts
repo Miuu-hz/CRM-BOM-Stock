@@ -90,6 +90,35 @@ export function hasBypass(tenantId: string, user: GateUser, category: GateCatego
   return can(user.role as Role, user.departments || [], resource, 'approve', user.customPermissions)
 }
 
+/**
+ * เกณฑ์ "อนุมัติ PR/PO ใบนี้ได้มั้ย" — เดิม copy อยู่ใน POST /approve ของทั้ง 2 โมดูล
+ * ส่วนปุ่มที่หน้าเว็บใช้จริง (PUT .../status) ไม่เคยเช็คอะไรเลย user ธรรมดาจึงอนุมัติเองได้
+ * คืน null = ผ่าน, คืน string = ข้อความ 403
+ */
+export function approvalDenyReason(
+  tenantId: string,
+  user: { userId: string; role: string },
+  moduleType: 'purchase_request' | 'purchase_order',
+  amount: number,
+  label: string
+): string | null {
+  if (APPROVER_ROLES.has(user.role)) return null
+
+  const setting = db.prepare(
+    'SELECT auto_approve_threshold FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?'
+  ).get(tenantId, user.role, moduleType) as any
+  if (setting && setting.auto_approve_threshold > 0 && amount <= setting.auto_approve_threshold) return null
+
+  const perm = db.prepare(
+    'SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?'
+  ).get(tenantId, user.userId, moduleType) as any
+  if (!perm || perm.can_approve !== 1) return `ไม่มีสิทธิ์อนุมัติ ${label} กรุณาติดต่อ Admin`
+  if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && amount > perm.approval_limit) {
+    return `วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ${perm.approval_limit.toLocaleString()}, ยอด ${label}: ${amount.toLocaleString()})`
+  }
+  return null
+}
+
 export interface CreateRequestArgs {
   tenantId: string
   user: GateUser

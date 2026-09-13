@@ -3772,7 +3772,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
   useEffect(() => {
     api.get('/sales/invoices').then(({ data }) => {
-      const list = (data.data || []).filter((inv: any) => inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID' || inv.status === 'PAID')
+      const list = (data.data || []).filter((inv: any) => ['ISSUED', 'PARTIAL', 'PAID', 'OVERDUE'].includes(inv.status))
       setInvoices(list)
     }).catch(() => {})
   }, [])

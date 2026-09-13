@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
-import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../services/approvalGate.service'
+import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs } from '../services/approvalGate.service'
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
@@ -209,6 +209,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
+    // อนุมัติ PO ต้องผ่านเกณฑ์เดียวกับ POST /purchase-orders/:id/approve
+    if (status === 'APPROVED') {
+      const denied = approvalDenyReason(tenantId, req.user!, 'purchase_order', po.total_amount || 0, 'PO')
+      if (denied) return res.status(403).json({ success: false, message: denied })
+    }
+
     // Cancelling a PO posts no journal of its own — the real AP/inventory entries
     // are booked at GR confirm and PI creation (see purchase.routes.ts), which now
     // have their own CANCELLED reversal logic. Block a PO cancel while those
@@ -401,20 +407,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       .get(req.params.id, tenantId) as any
     if (!po) return res.status(404).json({ success: false, message: 'PO not found or not in SUBMITTED status' })
 
-    if (role !== 'MASTER' && role !== 'ADMIN') {
-      const setting = db.prepare("SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'purchase_order'")
-        .get(tenantId, role) as any
-      const poAmount = po.total_amount || 0
-      const autoApprove = setting && setting.auto_approve_threshold > 0 && poAmount <= setting.auto_approve_threshold
-      if (!autoApprove) {
-        const perm = db.prepare("SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_order'")
-          .get(tenantId, userId) as any
-        if (!perm || perm.can_approve !== 1)
-          return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์อนุมัติ PO กรุณาติดต่อ Admin' })
-        if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && poAmount > perm.approval_limit)
-          return res.status(403).json({ success: false, message: 'วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ' + perm.approval_limit.toLocaleString() + ', ยอด PO: ' + poAmount.toLocaleString() + ')' })
-      }
-    }
+    const denied = approvalDenyReason(tenantId, req.user!, 'purchase_order', po.total_amount || 0, 'PO')
+    if (denied) return res.status(403).json({ success: false, message: denied })
 
     const now = new Date().toISOString()
     db.prepare("UPDATE purchase_orders SET status = 'APPROVED', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")

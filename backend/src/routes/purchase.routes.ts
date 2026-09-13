@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { approvalDenyReason } from '../services/approvalGate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
@@ -468,9 +469,15 @@ router.put('/requests/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
-    const existing = db.prepare('SELECT id FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Purchase request not found' })
+    }
+
+    // อนุมัติ/ปฏิเสธ = การตัดสินใจ ต้องผ่านเกณฑ์เดียวกับ POST /purchase-requests/:id/approve
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      const denied = approvalDenyReason(tenantId, req.user!, 'purchase_request', existing.total_amount || 0, 'PR')
+      if (denied) return res.status(403).json({ success: false, message: denied })
     }
 
     if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER'].includes(req.user!.role)) {

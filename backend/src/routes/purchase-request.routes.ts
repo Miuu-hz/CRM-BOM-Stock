@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { randomUUID } from 'crypto'
+import { approvalDenyReason } from '../services/approvalGate.service'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { formatDocumentNumber } from '../utils/id'
@@ -336,25 +337,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
         ).get(req.params.id, tenantId) as any
         if (!pr) return res.status(404).json({ success: false, message: 'PR not found or not pending' })
 
-        // Advanced approval permission check
-        if (role !== 'MASTER' && role !== 'ADMIN') {
-            const setting = db.prepare(
-                "SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'purchase_request'"
-            ).get(tenantId, role) as any
-            const prAmount = pr.total_amount || 0
-            const autoApprove = setting && setting.auto_approve_threshold > 0 && prAmount <= setting.auto_approve_threshold
-            if (!autoApprove) {
-                const perm = db.prepare(
-                    "SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'purchase_request'"
-                ).get(tenantId, userId) as any
-                if (!perm || perm.can_approve !== 1) {
-                    return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์อนุมัติ PR กรุณาติดต่อ Admin' })
-                }
-                if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && prAmount > perm.approval_limit) {
-                    return res.status(403).json({ success: false, message: 'วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ' + perm.approval_limit.toLocaleString() + ', ยอด PR: ' + prAmount.toLocaleString() + ')' })
-                }
-            }
-        }
+        const denied = approvalDenyReason(tenantId, req.user!, 'purchase_request', pr.total_amount || 0, 'PR')
+        if (denied) return res.status(403).json({ success: false, message: denied })
 
         const parsed = ApproveSchema.safeParse(req.body)
         if (!parsed.success) {
