@@ -176,6 +176,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('crm_token', newToken)
         localStorage.setItem('crm_user', JSON.stringify(updatedUser))
         localStorage.setItem('crm_tenant', JSON.stringify(tenantObj))
+        // แคชที่ผูกกับ tenant ต้องทิ้งก่อน reload — ไม่ได้ตั้งชื่อคีย์แยกตาม tenant
+        // ถ้าหน้าใหม่ไม่ได้ยิงโหลดทับ ชื่อบริษัท/เลขบัญชีของ tenant เดิมจะติดไป
+        // บนเอกสารของอีกบริษัท (เลขบัญชีธนาคารข้ามบริษัทคือเคสที่เสียหายที่สุด)
+        for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings']) {
+          localStorage.removeItem(k)
+        }
         // Pages fetch their data once on mount ([] deps) — reload so every
         // currently-open page refetches under the new tenant context instead
         // of silently keeping the previous tenant's data on screen.

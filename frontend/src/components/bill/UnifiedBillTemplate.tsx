@@ -610,11 +610,25 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                         <div className="pay-row"><span className="k">อ้างอิง</span><span className="v">{data.docNumber}</span></div>
                       </div>
                       {showQr && (
-                        <div className="bill-pay-qr">
-                          {(data.qrCode || data.receiptQrCode)
-                            ? <img src={data.qrCode || data.receiptQrCode} alt="QR ชำระเงิน" />
-                            : <div className="qr-box">QR</div>}
-                          <p className="pay-qr-cap">สแกนเพื่อโอนเงิน</p>
+                        <div className="bill-pay-qr-pair">
+                          {data.qrCode && (
+                            <div className="bill-pay-qr">
+                              <img src={data.qrCode} alt="QR โอนเงิน" />
+                              <p className="pay-qr-cap">สแกนเพื่อโอนเงิน</p>
+                            </div>
+                          )}
+                          {data.receiptQrCode && (
+                            <div className="bill-pay-qr">
+                              <img src={data.receiptQrCode} alt="QR ดูใบเสร็จออนไลน์" />
+                              <p className="pay-qr-cap">ดูใบเสร็จออนไลน์</p>
+                            </div>
+                          )}
+                          {!data.qrCode && !data.receiptQrCode && (
+                            <div className="bill-pay-qr">
+                              <div className="qr-box">QR</div>
+                              <p className="pay-qr-cap">สแกนเพื่อโอนเงิน</p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </section>

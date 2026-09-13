@@ -313,6 +313,9 @@ export const BILL_CSS = `
   font-size: 20px; color: #aaaaaa; margin: 0 auto; border-radius: 8px;
 }
 .pay-qr-cap { font-size: 10px; color: #7b8394; margin-top: 4px; }
+/* QR โอนเงิน + QR ดูใบเสร็จออนไลน์ วางคู่กัน (มีตัวเดียวก็อยู่กลางเอง) */
+.bill-pay-qr-pair { display: flex; justify-content: center; gap: 10px; }
+.bill-pay-qr-pair .bill-pay-qr img { width: 96px; height: 96px; }
 
 /* ═══════════════════════════════════
    NOTES / SIGNATURES
@@ -324,7 +327,8 @@ export const BILL_CSS = `
   display: grid;
   gap: 14px;
   margin-top: 10px;
-  align-items: end;
+  /* จับหัวกล่อง ไม่ใช่ก้น — ช่องแรกมีบรรทัดวันที่เกินมา ถ้าจับก้นเส้นประจะไม่ตรงกัน */
+  align-items: start;
 }
 .signature-box { text-align: center; }
 .signature-line { border-bottom: 1px dotted #aab; height: 40px; margin-bottom: 6px; }
