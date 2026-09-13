@@ -63,20 +63,21 @@ export async function cancelPosBill(
  * — แถวนี้เองคือ idempotency guard: มีแล้วไม่ทำซ้ำ (เหมือน stock/accounting ด้านบน)
  * บิลไม่มีลูกค้า หรือลูกค้าถูกลบไปแล้ว ก็แค่ไม่มีอะไรให้กลับ ไม่ throw
  *
- * หมายเหตุ: ตาราง crm_points_transactions นี้ยังไม่มีหน้าเว็บไหนอ่านออกไปแสดงผล
- * (CRM.tsx ฝั่ง frontend อ่านคนละตาราง loyalty_transactions ผ่าน /customers/:id/loyalty)
- * เลยไม่ต้องเพิ่มคำแปล type ใหม่ที่ไหน — ใช้ค่า 'CANCEL' ใหม่แยกจาก EARN/REDEEM ปกติ
- * เพื่อไม่ให้รายงานในอนาคตนับรวมการยกเลิกเป็นการแลกแต้ม/สะสมแต้มจริง
+ * เขียนลง loyalty_transactions ตารางเดียวกับที่แท็บแต้มสะสมในหน้า CRM อ่าน
+ * (ดู customer.routes.ts GET /customers/:id/loyalty) ลูกค้าจึงเห็นทั้งแต้มที่ได้จากบิล
+ * และแถวที่คืนตอนยกเลิกอยู่ในไทม์ไลน์เดียวกัน
  */
 function reverseLoyaltyPoints(bill: any, tenantId: string, userId: string) {
   try {
+    // แถว ADJUST ที่อ้าง POS_CANCEL คือ guard กันคืนซ้ำ (ตารางนี้บังคับ type ให้เป็น
+    // EARN/REDEEM/ADJUST เท่านั้น จึงแยกด้วย reference_type ไม่ใช่ด้วย type)
     const already = db.prepare(`
-      SELECT id FROM crm_points_transactions WHERE tenant_id = ? AND bill_id = ? AND type = 'CANCEL'
+      SELECT id FROM loyalty_transactions WHERE tenant_id = ? AND reference_type = 'POS_CANCEL' AND reference_id = ?
     `).get(tenantId, bill.id)
     if (already) return { success: true, skipped: true }
 
     const original = db.prepare(`
-      SELECT * FROM crm_points_transactions WHERE tenant_id = ? AND bill_id = ? AND type IN ('EARN', 'REDEEM')
+      SELECT * FROM loyalty_transactions WHERE tenant_id = ? AND reference_type = 'POS_BILL' AND reference_id = ?
     `).all(tenantId, bill.id) as any[]
     if (original.length === 0) return { success: true, skipped: true }
 
@@ -85,23 +86,21 @@ function reverseLoyaltyPoints(bill: any, tenantId: string, userId: string) {
       .get(customerId, tenantId) as any
     if (!customer) return { success: true, skipped: true } // ลูกค้าถูกลบไปแล้ว
 
-    const delta = original.reduce((sum, tx) => sum + (tx.type === 'EARN' ? -tx.points : tx.points), 0)
-    const balanceBefore = customer.loyalty_points || 0
-    const balanceAfter = Math.max(0, balanceBefore + delta)
+    // points เก็บแบบมีเครื่องหมายอยู่แล้ว (สะสม +, แลก −) กลับรายการคือใส่เครื่องหมายตรงข้าม
+    const delta = -original.reduce((sum, tx) => sum + Number(tx.points || 0), 0)
+    const balanceAfter = Math.max(0, (customer.loyalty_points || 0) + delta)
     const spentAfter = Math.max(0, (customer.total_spent || 0) - (bill.total_amount || 0))
 
-    // แถว CANCEL คือ guard กันคืนซ้ำ ถ้ามันเขียนไม่ติดหลังจากแต้มถูกปรับไปแล้ว
-    // รอบหน้าจะคืนแต้มซ้ำอีกรอบ — มัดสองคำสั่งไว้ด้วยกัน ล้มก็ล้มทั้งคู่
+    // ถ้าแถว guard เขียนไม่ติดหลังแต้มถูกปรับไปแล้ว รอบหน้าจะคืนซ้ำ — มัดไว้ด้วยกัน
     db.transaction(() => {
       db.prepare('UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?')
         .run(balanceAfter, spentAfter, customerId, tenantId)
 
       db.prepare(`
-        INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
-        VALUES (?, ?, ?, ?, 'CANCEL', ?, ?, ?, ?, ?, ?)
+        INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+        VALUES (?, ?, ?, 'ADJUST', ?, ?, 'POS_CANCEL', ?, ?, ?, ?)
       `).run(
-        generateId(), tenantId, customerId, bill.id,
-        delta, balanceBefore, balanceAfter,
+        generateId(), tenantId, customerId, delta, balanceAfter, bill.id,
         `ยกเลิกบิล ${bill.bill_number} — คืนแต้มสะสมที่เคยปรับไว้`,
         userId, new Date().toISOString()
       )

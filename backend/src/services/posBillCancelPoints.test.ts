@@ -38,23 +38,24 @@ function seedPaidBill(
 
   if (customerId) {
     const balanceBeforeRedeem = balanceAfterPayment - pointsEarned + pointsRedeemed
+    // ตารางนี้เก็บ REDEEM เป็นเลขติดลบ (ดู customer.routes.ts /loyalty/redeem)
     if (pointsRedeemed > 0) {
       db.prepare(`
-        INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
-        VALUES (?, ?, ?, ?, 'REDEEM', ?, ?, ?, 'test redeem', 'tester', datetime('now'))
-      `).run(generateId(), tenantId, customerId, billId, pointsRedeemed, balanceBeforeRedeem, balanceBeforeRedeem - pointsRedeemed)
+        INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+        VALUES (?, ?, ?, 'REDEEM', ?, ?, 'POS_BILL', ?, 'test redeem', 'tester', datetime('now'))
+      `).run(generateId(), tenantId, customerId, -pointsRedeemed, balanceBeforeRedeem - pointsRedeemed, billId)
     }
     db.prepare(`
-      INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
-      VALUES (?, ?, ?, ?, 'EARN', ?, ?, ?, 'test earn', 'tester', datetime('now'))
-    `).run(generateId(), tenantId, customerId, billId, pointsEarned, balanceBeforeRedeem - pointsRedeemed, balanceAfterPayment)
+      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+      VALUES (?, ?, ?, 'EARN', ?, ?, 'POS_BILL', ?, 'test earn', 'tester', datetime('now'))
+    `).run(generateId(), tenantId, customerId, pointsEarned, balanceAfterPayment, billId)
   }
   return billId
 }
 
 afterEach(() => {
   for (const t of tenants.splice(0)) {
-    db.prepare('DELETE FROM crm_points_transactions WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM loyalty_transactions WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM pos_stock_deductions WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM pos_bill_items WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM pos_running_bills WHERE tenant_id = ?').run(t)
@@ -79,7 +80,7 @@ describe('cancelPosBill — คืนแต้มสะสมเมื่อย�
     expect(customer.loyalty_points).toBe(50)
     expect(customer.total_spent).toBe(500)
 
-    const cancelTx = db.prepare(`SELECT * FROM crm_points_transactions WHERE bill_id = ? AND type = 'CANCEL'`).get(billId) as any
+    const cancelTx = db.prepare(`SELECT * FROM loyalty_transactions WHERE reference_id = ? AND reference_type = 'POS_CANCEL'`).get(billId) as any
     expect(cancelTx).toBeTruthy()
     expect(cancelTx.points).toBe(-10)
   })
@@ -114,7 +115,7 @@ describe('cancelPosBill — คืนแต้มสะสมเมื่อย�
     expect(after2.loyalty_points).toBe(after1.loyalty_points)
     expect(after2.total_spent).toBe(after1.total_spent)
 
-    const cancelCount = db.prepare(`SELECT COUNT(*) c FROM crm_points_transactions WHERE bill_id = ? AND type = 'CANCEL'`).get(billId) as any
+    const cancelCount = db.prepare(`SELECT COUNT(*) c FROM loyalty_transactions WHERE reference_id = ? AND reference_type = 'POS_CANCEL'`).get(billId) as any
     expect(cancelCount.c).toBe(1)
   })
 
@@ -124,7 +125,7 @@ describe('cancelPosBill — คืนแต้มสะสมเมื่อย�
 
     await expect(cancelPosBill(t, 'tester', billId, 'ไม่มีลูกค้า')).resolves.toBeTruthy()
 
-    const cancelCount = db.prepare(`SELECT COUNT(*) c FROM crm_points_transactions WHERE bill_id = ?`).get(billId) as any
+    const cancelCount = db.prepare(`SELECT COUNT(*) c FROM loyalty_transactions WHERE reference_id = ?`).get(billId) as any
     expect(cancelCount.c).toBe(0)
   })
 
@@ -132,7 +133,7 @@ describe('cancelPosBill — คืนแต้มสะสมเมื่อย�
     const t = setupTenant()
     const customerId = addCustomer(t, 10, 100)
     const billId = seedPaidBill(t, customerId, 100, 10, 0, 20)
-    // จำลองลูกค้าที่ถูกลบไปแล้วแต่ bill/crm_points_transactions เก่ายังอ้างถึง id นี้อยู่ (FK กำพร้า
+    // จำลองลูกค้าที่ถูกลบไปแล้วแต่ bill/loyalty_transactions เก่ายังอ้างถึง id นี้อยู่ (FK กำพร้า
     // แบบที่เจอจริงในโปรดักชัน — ต้องปิด FK ชั่วคราวเพื่อสร้างสถานการณ์นี้ในเทสต์)
     db.pragma('foreign_keys = OFF')
     db.prepare('DELETE FROM customers WHERE id = ?').run(customerId)

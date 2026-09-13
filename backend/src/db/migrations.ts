@@ -191,26 +191,25 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: added customer_id to pos_running_bills')
   } catch (e) { /* already exists */ }
 
+  // ทิ้งตารางแต้มชุดที่สอง — ระบบมีตารางแต้ม 2 ชุดที่ไม่รู้จักกัน: ตัวนี้ POS เขียนฝ่ายเดียว
+  // ไม่มีหน้าไหนอ่านเลย ส่วน loyalty_transactions คือตัวที่แท็บแต้มสะสมในหน้า CRM อ่านจริง
+  // (มี 332 แถว) แต้มที่ลูกค้าได้จากการซื้อหน้าร้านเลยไม่เคยโผล่ในประวัติของตัวเอง
+  // ย้าย POS ไปเขียน loyalty_transactions แล้ว เหลือตารางนี้ไว้เปล่า ๆ จะเป็นกับดักให้
+  // คนถัดไปเขียนผิดตารางอีก — ลบทิ้งเฉพาะตอนที่ไม่มีข้อมูลจริงอยู่ข้างใน
   try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS crm_points_transactions (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        customer_id TEXT NOT NULL,
-        bill_id TEXT,
-        type TEXT NOT NULL DEFAULT 'EARN',
-        points REAL NOT NULL,
-        balance_before REAL NOT NULL DEFAULT 0,
-        balance_after REAL NOT NULL DEFAULT 0,
-        description TEXT,
-        created_by TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (customer_id) REFERENCES customers(id),
-        FOREIGN KEY (bill_id) REFERENCES pos_running_bills(id)
-      )
-    `)
-    console.log('✅ Migration: crm_points_transactions table ready')
-  } catch (e) { console.error('⚠️ crm_points_transactions migration error:', e) }
+    const leftover = db.prepare(
+      "SELECT COUNT(*) c FROM sqlite_master WHERE type = 'table' AND name = 'crm_points_transactions'"
+    ).get() as any
+    if (leftover.c > 0) {
+      const rows = db.prepare('SELECT COUNT(*) c FROM crm_points_transactions').get() as any
+      if (rows.c === 0) {
+        db.exec('DROP TABLE crm_points_transactions')
+        console.log('✅ Migration: dropped unused crm_points_transactions (ใช้ loyalty_transactions ตัวเดียว)')
+      } else {
+        console.warn('⚠️ crm_points_transactions ยังมี ' + rows.c + ' แถว ไม่ลบ — ต้องย้ายข้อมูลเข้า loyalty_transactions ก่อน')
+      }
+    }
+  } catch (e) { console.error('⚠️ crm_points_transactions drop error:', e) }
 
   // Migration: add over/short tracking to pos_clearing_transfers
   try {

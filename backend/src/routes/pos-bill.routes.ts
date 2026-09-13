@@ -532,29 +532,33 @@ router.post('/bills/:id/pay', async (req, res) => {
           UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?
         `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId, tenantId)
 
+        // แต้มจาก POS เคยลงตาราง crm_points_transactions ซึ่งไม่มีหน้าไหนอ่านเลยสักที่
+        // (write-only 0 แถวในฐานจริง) ส่วนแท็บแต้มสะสมในหน้า CRM อ่าน loyalty_transactions
+        // คนละตาราง ผลคือแต้มที่ลูกค้าได้จากการซื้อหน้าร้านไม่เคยโผล่ในประวัติของตัวเอง
+        // ย้ายมาเขียนตารางเดียวกับที่ UI อ่าน · ธรรมเนียมของตารางนี้: REDEEM เก็บเป็นเลขติดลบ
+        const logPoints = db.prepare(`
+          INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'POS_BILL', ?, ?, ?, ?)
+        `)
+        const pointsBy = (req.user as any)?.email || userId
+
         if (pointsRedeemed > 0) {
-          db.prepare(`
-            INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
-            VALUES (?, ?, ?, ?, 'REDEEM', ?, ?, ?, ?, ?, ?)
-          `).run(
-            generateId(), tenantId, customerId, id,
-            pointsRedeemed, balanceBefore, Math.max(0, balanceBefore - pointsRedeemed),
+          logPoints.run(
+            generateId(), tenantId, customerId, 'REDEEM',
+            -pointsRedeemed, Math.max(0, balanceBefore - pointsRedeemed), id,
             `แลกแต้มลดราคาจากบิล ${(refreshedBill as any).bill_number}`,
-            userId, now()
+            pointsBy, now()
           )
         }
 
-        db.prepare(`
-          INSERT INTO crm_points_transactions (id, tenant_id, customer_id, bill_id, type, points, balance_before, balance_after, description, created_by, created_at)
-          VALUES (?, ?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?)
-        `).run(
-          generateId(), tenantId, customerId, id,
-          pointsEarned,
-          Math.max(0, balanceBefore - pointsRedeemed),
-          balanceAfter,
-          `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
-          userId, now()
-        )
+        if (pointsEarned > 0) {
+          logPoints.run(
+            generateId(), tenantId, customerId, 'EARN',
+            pointsEarned, balanceAfter, id,
+            `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
+            pointsBy, now()
+          )
+        }
       }
     }
 
