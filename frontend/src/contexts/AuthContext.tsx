@@ -172,7 +172,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) return
     try {
       const res = await api.get('/master/tenants', { headers: { Authorization: `Bearer ${token}` } })
-      if (res.data.success) setAllTenants(res.data.data)
+      // กันไว้ที่ต้นทาง: payload ที่ไม่ใช่ array ต้องไม่ไหลเข้า state
+      if (res.data.success) setAllTenants(Array.isArray(res.data.data) ? res.data.data : [])
     } catch { /* non-master 403 */ }
   }, [token])
 

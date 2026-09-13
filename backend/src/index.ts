@@ -632,6 +632,12 @@ app.use(express.static(frontendDist, {
 
 
 app.get('*', (_req: Request, res: Response) => {
+  // ไฟล์ static ที่หาไม่เจอ ต้องเป็น 404 ตรงไปตรงมา ห้ามตอบ index.html
+  // ไม่งั้นหน้าที่เปิดค้างไว้ขอ bundle เก่าที่ถูกลบตอน build ใหม่ จะได้ HTML
+  // กลับไปแล้วเอาไปรันเป็น JavaScript เกิด error แปลก ๆ ที่ไล่ต้นเหตุยากมาก
+  if (/^\/(assets|brand|icons|sounds)\//.test(_req.path) || /\.[a-z0-9]+$/i.test(_req.path)) {
+    return res.status(404).type('text/plain').send('Not found')
+  }
 
 
   res.sendFile(path.join(frontendDist, 'index.html'))

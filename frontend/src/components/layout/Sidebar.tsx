@@ -289,7 +289,7 @@ function Sidebar({ mode }: SidebarProps) {
           </button>
           {tenantOpen && (
             <div className="absolute left-4 right-4 top-full mt-1 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-lg overflow-hidden">
-              {allTenants.map(t => (
+              {(Array.isArray(allTenants) ? allTenants : []).map(t => (
                 <button
                   key={t.tenantId}
                   onClick={async () => {

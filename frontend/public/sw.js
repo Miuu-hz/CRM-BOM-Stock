@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phopy-erp-v2'
+const CACHE_NAME = 'phopy-erp-v3'  // ขึ้นเวอร์ชันเพื่อทิ้งแคชเก่าที่อาจมี index.html ชี้ bundle ที่ลบไปแล้ว
 const PRECACHE = ['/', '/sounds/order-voice.m4a', '/icons/icon.svg']
 
 // ── Install: pre-cache critical assets ──────────────────────────────────────
@@ -25,6 +25,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (url.origin !== self.location.origin) return  // skip cross-origin (fonts, CDN, etc.)
   if (url.pathname.startsWith('/api')) return
+  // อย่าแคชหน้า HTML — ถ้าเสิร์ฟ index.html เก่าจากแคช มันจะชี้ไป bundle เก่า
+  // ที่ถูกลบไปแล้ว เครื่องจะค้างอยู่เวอร์ชันเก่าตลอดไปแม้จะรีเฟรช
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') return
+  // คำขอเช็คเวอร์ชันของ watchForNewBuild() ต้องถึงเซิร์ฟเวอร์จริงเสมอ
+  if (url.searchParams.has('v')) return
 
   event.respondWith(
     fetch(event.request)
