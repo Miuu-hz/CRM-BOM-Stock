@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react'
 import api from '../services/api'
+import { invalidateDocumentSettings } from '../utils/printBill'
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 const WARN_BEFORE_MS  = 60 * 1000
@@ -94,6 +95,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // แคชที่ผูกกับบริษัท — เก็บใน localStorage โดยไม่ได้ใส่ tenant ไว้ในคีย์
+  // ถ้าไม่ล้าง ชื่อบริษัท/โลโก้/เลขบัญชีของบริษัทก่อนหน้าจะติดไปบนเอกสารของ
+  // บริษัทถัดไป (เจอจริง 13 ก.ย. 69: ล็อกอินเป็น หจก.เอฟแอนด์บี แต่ใบแจ้งหนี้
+  // ขึ้นชื่อและโลโก้ Kids House Cafe ที่ค้างจาก session ก่อน)
+  // เลขบัญชีธนาคารข้ามบริษัทคือเคสที่เสียหายที่สุด — ลูกค้าโอนเงินผิดร้าน
+  const clearTenantScopedCache = useCallback(() => {
+    for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings']) {
+      localStorage.removeItem(k)
+    }
+    // ตั้งค่าเอกสาร (โลโก้/ตราประทับ/คอลัมน์) ไม่ได้อยู่ใน localStorage แต่เป็นตัวแปร
+    // ระดับโมดูลใน printBill.ts ซึ่งอยู่ยาวตลอดอายุหน้าเว็บ ล็อกเอาต์แล้วล็อกอิน
+    // ใหม่โดยไม่ reload มันจะยังถือโลโก้ของบริษัทเดิมไว้ ต้องสั่งล้างด้วย
+    invalidateDocumentSettings()
+  }, [])
+
   const doLogout = useCallback(() => {
     setUser(null)
     setToken(null)
@@ -107,8 +123,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('crm_refresh_token')
     localStorage.removeItem('crm_tenant')
     localStorage.removeItem('crm_original_tenant')
+    clearTenantScopedCache()
     if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current)
-  }, [])
+  }, [clearTenantScopedCache])
 
   const extendSession = useCallback(() => resetActivity(), [resetActivity])
 
@@ -131,6 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(apiToken)
         setTenant(tenantObj)
         lastActivityRef.current = Date.now()
+        // ล้างก่อนเสมอ — เบราว์เซอร์เครื่องเดิมอาจเคยล็อกอินบริษัทอื่นค้างไว้
+        clearTenantScopedCache()
         localStorage.setItem('crm_user', JSON.stringify(apiUser))
         localStorage.setItem('crm_token', apiToken)
         if (apiRefresh) localStorage.setItem('crm_refresh_token', apiRefresh)
@@ -179,9 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // แคชที่ผูกกับ tenant ต้องทิ้งก่อน reload — ไม่ได้ตั้งชื่อคีย์แยกตาม tenant
         // ถ้าหน้าใหม่ไม่ได้ยิงโหลดทับ ชื่อบริษัท/เลขบัญชีของ tenant เดิมจะติดไป
         // บนเอกสารของอีกบริษัท (เลขบัญชีธนาคารข้ามบริษัทคือเคสที่เสียหายที่สุด)
-        for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings']) {
-          localStorage.removeItem(k)
-        }
+        clearTenantScopedCache()
         // Pages fetch their data once on mount ([] deps) — reload so every
         // currently-open page refetches under the new tenant context instead
         // of silently keeping the previous tenant's data on screen.
