@@ -139,7 +139,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       showPaymentTerms: false,
       showBankInfo: false,
       showSignatures: true,
-      showQRCode: true,
+      showQRCode: false,  // ไม่ใช่เอกสารรับเงิน ไม่ต้องมี QR โอนเงิน
     },
     labels: {
       buyer: 'ลูกค้า',
@@ -256,7 +256,7 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
       showPaymentTerms: false,
       showBankInfo: false,
       showSignatures: true,
-      showQRCode: true,
+      showQRCode: false,  // ไม่ใช่เอกสารรับเงิน ไม่ต้องมี QR โอนเงิน
     },
     labels: {
       buyer: 'ผู้ขาย',
