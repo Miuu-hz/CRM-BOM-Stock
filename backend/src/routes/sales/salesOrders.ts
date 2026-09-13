@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO } from './shared'
+import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 
 const router = Router()
@@ -338,8 +338,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       }
     }
 
-    // ตัด stock เมื่อยืนยัน SO
-    if (status === 'CONFIRMED' && salesOrder) {
+    // ตัด stock เมื่อยืนยัน SO — เดิมเช็คแค่ status === 'CONFIRMED' ไม่ดูว่าตัดไปแล้วหรือยัง
+    // ยิง PUT .../status ซ้ำ (ดับเบิลคลิก/เรียก API ซ้ำ) ตัดสต็อกซ้ำได้ทั้งที่สถานะไม่ได้
+    // เปลี่ยนจริง (เช่น ถูกยืนยันไปแล้วรอบก่อน) — เช็คจากหลักฐานจริงใน stock_movements แทน
+    if (status === 'CONFIRMED' && salesOrder && !soStockAlreadyDeducted(tenantId, salesOrder.so_number)) {
       deductStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
       if (confirmGateArgs) recordAutoAction(confirmGateArgs)
 

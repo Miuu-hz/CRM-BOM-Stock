@@ -217,6 +217,42 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         if (allDelivered) {
           db.prepare("UPDATE sales_orders SET status = 'DELIVERED', updated_at = ? WHERE id = ?")
             .run(now, deliveryOrder.sales_order_id)
+
+          // ส่งครบแล้ว — ปิดของค้างส่งที่เปิดค้างไว้สำหรับ SO นี้ (ถ้ามี) อัตโนมัติ
+          db.prepare("UPDATE backorders SET status = 'FULFILLED', updated_at = ? WHERE sales_order_id = ? AND tenant_id = ? AND status = 'PENDING'")
+            .run(now, deliveryOrder.sales_order_id, tenantId)
+        } else {
+          // ยังส่งไม่ครบ — ออกใบค้างส่งให้เองสำหรับส่วนที่เหลือ ตรงกับข้อความ UI
+          // ("ใบค้างส่งสร้างอัตโนมัติจากการส่งของบางส่วน") ไม่แตะสต็อกและไม่แตะ delivered_qty
+          // ที่นี่ — ทำไปแล้วในลูปข้างบน จุดนี้แค่บันทึกยอดคงเหลือ
+          const remainingItems = salesOrderItems.filter((item: any) => item.delivered_qty < item.quantity)
+          if (remainingItems.length > 0) {
+            const existingBO = db.prepare("SELECT id FROM backorders WHERE sales_order_id = ? AND tenant_id = ? AND status = 'PENDING'")
+              .get(deliveryOrder.sales_order_id, tenantId) as any
+
+            // ponytail: ลบ-สร้างรายการใหม่ทุกครั้งแทนการ diff ทีละแถว — ของค้างส่งมีไม่กี่รายการต่อใบ
+            const boId = existingBO ? existingBO.id : generateId()
+            if (existingBO) {
+              db.prepare('DELETE FROM backorder_items WHERE backorder_id = ?').run(boId)
+              db.prepare("UPDATE backorders SET original_do_id = ?, updated_at = ? WHERE id = ?")
+                .run(deliveryOrder.id, now, boId)
+            } else {
+              const boNumber = formatDocumentNumber('BO', tenantId, 'BACKORDER', new Date().getFullYear(), 5)
+              db.prepare(`
+                INSERT INTO backorders (id, tenant_id, bo_number, sales_order_id, original_do_id, customer_id, status, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+              `).run(boId, tenantId, boNumber, deliveryOrder.sales_order_id, deliveryOrder.id, deliveryOrder.customer_id, '', now, now)
+            }
+
+            const insertItem = db.prepare(`
+              INSERT INTO backorder_items (id, tenant_id, backorder_id, sales_order_item_id, product_id, ordered_qty, delivered_qty, remaining_qty, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `)
+            for (const item of remainingItems) {
+              insertItem.run(generateId(), tenantId, boId, item.id, item.product_id || null,
+                item.quantity, item.delivered_qty, item.quantity - item.delivered_qty, '')
+            }
+          }
         }
       })
 

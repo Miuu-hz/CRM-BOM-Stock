@@ -578,14 +578,13 @@ export function applySchema(db: any): void {
       tenant_id TEXT,
       backorder_id TEXT NOT NULL,
       sales_order_item_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
+      product_id TEXT,
       ordered_qty REAL DEFAULT 0,
       delivered_qty REAL DEFAULT 0,
       remaining_qty REAL DEFAULT 0,
       notes TEXT,
       FOREIGN KEY (backorder_id) REFERENCES backorders(id) ON DELETE CASCADE,
-      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id),
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id)
     );
 
     -- ==================== CREDIT NOTES ====================

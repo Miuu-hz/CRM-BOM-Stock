@@ -4,6 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
+import { restockCancelledWorkOrderMaterials } from '../../services/stockMovement.service'
 import { ok } from './shared'
 
 export function registerProductionTools(server: IMcpServer, tenantId: string, userId: string): void {
@@ -250,6 +251,15 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
               .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, finishedStock.id, addQty, movementUnit, movementQuantity,
                 `WO: ${wo.wo_number}`, 'Finished goods from production', now, userId)
           }
+        })()
+      } else if (status === 'CANCELLED') {
+        // เดิมยกเลิก WO ที่เบิกวัตถุดิบไปแล้ว (IN_PROGRESS) ตกเข้า else ท้ายสุด ไม่คืนสต็อกเลย
+        // ใช้ฟังก์ชันร่วมกับ workOrder.routes.ts (services/stockMovement.service.ts) กันคืนซ้ำ
+        // ด้วยหลักฐานใน stock_movements เอง ไม่ต้องพึ่ง validNext state machine ด้านบน
+        db.transaction(() => {
+          db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+            .run(status, now, wo.id, tenantId)
+          restockCancelledWorkOrderMaterials(tenantId, userId, { id: wo.id, wo_number: wo.wo_number })
         })()
       } else {
         db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")

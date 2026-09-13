@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
-import { deductStockForSO } from './sales/shared'
+import { deductStockForSO, soStockAlreadyDeducted } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
@@ -609,7 +609,14 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   } else if (request.reference_type === 'sales_orders') {
     db.prepare("UPDATE sales_orders SET status = 'CONFIRMED', approved_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(executorId, now, request.reference_id, request.tenant_id)
-    try { deductStockForSO(request.tenant_id, request.reference_id, '') } catch(e) { console.error('deductStock on approval:', e) }
+    // เดิมส่ง soNumber เป็น '' ทำให้ stock_movements บันทึก reference เป็น 'SO: ' เปล่าๆ —
+    // soStockAlreadyDeducted() (เช็คก่อนตัดซ้ำ) และ restoreStockForSO ที่อื่นในระบบต่างก็ match
+    // ด้วย 'SO: <เลขที่จริง>' ทั้งนั้น เลขว่างจึงทำให้กลไกกันตัดซ้ำ/คืนสต็อกใช้ไม่ได้กับ SO ที่ผ่านมาทางนี้
+    const soRow = db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?')
+      .get(request.reference_id, request.tenant_id) as any
+    if (soRow && !soStockAlreadyDeducted(request.tenant_id, soRow.so_number)) {
+      try { deductStockForSO(request.tenant_id, request.reference_id, soRow.so_number) } catch(e) { console.error('deductStock on approval:', e) }
+    }
   } else if (request.reference_type === 'purchase_orders') {
     // หมวด "แก้ไขเอกสารที่ออกไปแล้ว": payload เก็บเป็น { before, update } ตอนสร้างคำขอ
     // ใช้ service เดียวกับที่ PUT /purchase-orders/:id เรียกตอนไม่ต้องขออนุมัติ — ไม่มีตรรกะซ้ำสองชุด

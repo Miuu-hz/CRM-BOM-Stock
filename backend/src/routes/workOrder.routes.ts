@@ -6,6 +6,7 @@ import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { roundQty } from '../utils/qty'
+import { restockCancelledWorkOrderMaterials } from '../services/stockMovement.service'
 
 const router = Router()
 
@@ -243,7 +244,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       } catch (err: any) {
         return res.status(400).json({ success: false, message: err.message })
       }
-    } else if (status === 'COMPLETED') {
+    } else if (status === 'COMPLETED' && wo.status !== 'COMPLETED') {
+      // เดิมเช็คแค่ status === 'COMPLETED' — ยิง PUT status=COMPLETED ซ้ำ (สถานะเดิมอยู่แล้ว)
+      // ก็ไหลเข้ามาบวกสินค้าสำเร็จรูปเข้าสต็อกซ้ำทุกครั้ง เพิ่มเงื่อนไข wo.status !== 'COMPLETED'
+      // ให้เหมือนแพทเทิร์นที่ใช้กับ IN_PROGRESS ด้านบน (idempotent ตาม status เดิม)
       // QC gate: ถ้า tenant เปิดใช้งาน qc_gate_enabled ต้องมี qc_inspections ของ WO นี้อย่างน้อย 1 รายการ status = 'PASS'
       const companySettings = db.prepare('SELECT qc_gate_enabled FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
       const qcGateEnabled = Number(companySettings?.qc_gate_enabled) === 1
@@ -304,6 +308,25 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       })
       try {
         completeTransaction()
+      } catch (err: any) {
+        return res.status(400).json({ success: false, message: err.message })
+      }
+    } else if (status === 'CANCELLED') {
+      // ผลิตเสร็จแล้ว = สินค้าสำเร็จรูปเข้าสต็อกไปแล้ว ถ้าปล่อยให้ยกเลิกได้จะคืนวัตถุดิบ
+      // ทั้งที่ของสำเร็จรูปยังอยู่ = ของงอกสองต่อ (MCP บล็อกด้วย validNext อยู่แล้ว REST ไม่มี)
+      if (wo.status === 'COMPLETED') {
+        return res.status(400).json({ success: false, message: 'ยกเลิกใบสั่งผลิตที่ผลิตเสร็จแล้วไม่ได้ — สินค้าสำเร็จรูปเข้าสต็อกไปแล้ว' })
+      }
+      // เดิมยกเลิก WO ที่เบิกวัตถุดิบไปแล้ว (IN_PROGRESS) ตกมาเข้า else ท้ายสุด ไม่คืนสต็อกเลย
+      // ของหายถาวร — restockCancelledWorkOrderMaterials กันคืนซ้ำเองด้วยหลักฐานใน
+      // stock_movements (ดู services/stockMovement.service.ts) จึงยิง CANCELLED ซ้ำได้ปลอดภัย
+      const cancelTransaction = db.transaction(() => {
+        db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(status, now, req.params.id, tenantId)
+        restockCancelledWorkOrderMaterials(tenantId, 'system', { id: req.params.id, wo_number: wo.wo_number })
+      })
+      try {
+        cancelTransaction()
       } catch (err: any) {
         return res.status(400).json({ success: false, message: err.message })
       }

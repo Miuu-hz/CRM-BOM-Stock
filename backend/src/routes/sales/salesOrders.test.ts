@@ -131,3 +131,38 @@ describe('ยืนยันคำสั่งขาย (PUT /sales-orders/:id/s
     expect(reqRow.c).toBe(0)
   })
 })
+
+/**
+ * A2: เดิมบล็อกตัดสต็อกเช็คแค่ status === 'CONFIRMED' ไม่ดูสถานะเดิม — ยิง PUT .../status
+ * ซ้ำ (ดับเบิลคลิก/เรียก API ซ้ำ) ตัดสต็อกอีกรอบได้ทั้งที่ยืนยันไปแล้ว ตอนนี้การ์ดด้วย
+ * soStockAlreadyDeducted (เช็คหลักฐานจริงใน stock_movements ไม่ใช่เดาจาก status)
+ */
+describe('การ์ดกันตัดสต็อกซ้ำเมื่อยิง CONFIRMED ซ้ำ (PUT /sales-orders/:id/status)', () => {
+  it('ยิง CONFIRMED สองครั้งติดกัน → ตัดสต็อกครั้งเดียว, stock_movements มีแถวเดียว', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const soId = seedDraftSO(admin.tenantId, 1000)
+
+    const stockId = generateId()
+    db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, location, status)
+                VALUES (?, ?, ?, 'สินค้าเทสต์ A2', 'FINISHED', 50, 'pcs', 'pcs', 'MAIN', 'ACTIVE')`).run(stockId, admin.tenantId, stockId)
+    db.prepare(`INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_name, quantity, unit_price, total_price, unit)
+                VALUES (?, ?, ?, ?, 'สินค้าเทสต์ A2', 10, 100, 1000, 'pcs')`).run(generateId(), admin.tenantId, soId, stockId)
+
+    const res1 = await request(app).put(`/api/sales-orders/${soId}/status`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ status: 'CONFIRMED' })
+    expect(res1.status).toBe(200)
+
+    // ยิงซ้ำ (ดับเบิลคลิก/retry) — ต้องไม่ตัดสต็อกอีกรอบ
+    const res2 = await request(app).put(`/api/sales-orders/${soId}/status`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ status: 'CONFIRMED' })
+    expect(res2.status).toBe(200)
+
+    const movements = db.prepare("SELECT * FROM stock_movements WHERE stock_item_id = ? AND type = 'OUT'").all(stockId) as any[]
+    expect(movements, 'ต้องมีการตัดสต็อกแค่ชุดเดียว').toHaveLength(1)
+
+    const stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockId) as any
+    expect(stock.quantity, 'ลดครั้งเดียว 50 - 10 = 40 ไม่ใช่ 30').toBe(40)
+  })
+})

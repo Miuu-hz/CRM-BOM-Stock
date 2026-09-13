@@ -288,3 +288,59 @@ export function applyManualUnpack(
   doUnpack()
   return { item: updatedItem, packFactor, baseUnit, displayUnit }
 }
+
+/**
+ * เช็คว่าคืนวัตถุดิบของ WO ที่ยกเลิกแล้วเข้าสต็อกไปหรือยัง (กันคืนซ้ำ)
+ *
+ * ดูหลักฐานจริงใน stock_movements เหมือน soStockAlreadyDeducted() ใน
+ * routes/sales/shared.ts — ไม่เดาจาก work_orders.status เพราะยิง PUT status=CANCELLED
+ * ซ้ำ (สถานะเดิมอยู่แล้ว) ยังไหลลงมาถึงจุดคืนสต็อกได้ถ้าเช็คแค่สถานะ
+ */
+export function woMaterialsRestocked(tenantId: string, woNumber: string): boolean {
+  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'IN' AND reference = ? LIMIT 1")
+    .get(tenantId, `WO-CANCEL: ${woNumber}`)
+}
+
+/**
+ * คืนวัตถุดิบที่เบิกไปแล้วเข้าสต็อกตอนยกเลิก WO — ยกออกมาให้ workOrder.routes.ts
+ * และ mcp/tools/production.ts เรียกร่วมกัน (เดิมทั้งคู่ตัดสต็อกตอน IN_PROGRESS
+ * แต่ไม่มีใครคืนตอน CANCELLED เลย ของหายถาวร)
+ *
+ * อ่านจำนวนที่ต้องคืนจาก stock_movements (type='OUT', reference=`WO: <wo_number>`)
+ * แทนที่จะใช้ work_order_materials.issued_qty ตรงๆ เพราะ issued_qty เก็บเป็นหน่วย
+ * ของ WO material เอง ซึ่งอาจคนละหน่วยกับ stock_items ถ้ามีการแปลงหน่วยตอนเบิก —
+ * ส่วน stock_movements.quantity คือจำนวนจริงที่ถูกตัดออกจากสต็อกเป็นหน่วยฐานเสมอ
+ */
+export function restockCancelledWorkOrderMaterials(
+  tenantId: string,
+  createdBy: string,
+  wo: { id: string; wo_number: string }
+): void {
+  if (woMaterialsRestocked(tenantId, wo.wo_number)) return
+
+  const issued = db.prepare(`
+    SELECT stock_item_id, SUM(quantity) as total
+    FROM stock_movements
+    WHERE tenant_id = ? AND type = 'OUT' AND reference = ?
+    GROUP BY stock_item_id
+  `).all(tenantId, `WO: ${wo.wo_number}`) as { stock_item_id: string; total: number }[]
+
+  if (issued.length === 0) return
+
+  const now = new Date().toISOString()
+  const restock = db.transaction(() => {
+    for (const row of issued) {
+      const qty = roundQty(Number(row.total))
+      if (qty <= 0) continue
+      db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(qty, now, row.stock_item_id, tenantId)
+      db.prepare(`
+        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
+      `).run(generateId(), tenantId, row.stock_item_id, qty, `WO-CANCEL: ${wo.wo_number}`, 'Material returned from cancelled work order', now, createdBy)
+      db.prepare("UPDATE work_order_materials SET issued_qty = 0, status = 'PENDING' WHERE work_order_id = ? AND material_id = ?")
+        .run(wo.id, row.stock_item_id)
+    }
+  })
+  restock()
+}

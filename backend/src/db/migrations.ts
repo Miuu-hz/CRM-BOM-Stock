@@ -1825,6 +1825,52 @@ export function runMigrations(db: any): void {
     try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
   }
 
+  // Migration: backorder_items.product_id NOT NULL + FK — โรคเดียวกับ delivery_order_items
+  // (backorders ทั้งระบบมี 0 แถวเพราะ INSERT เด้ง FK เสมอ ตัวสินค้าจริงหาจาก
+  // sales_order_item_id -> sales_order_items.stock_item_id ไม่มีใครพึ่ง FK ตัวนี้)
+  try {
+    const boiCols = db.prepare(`PRAGMA table_info(backorder_items)`).all() as any[]
+    const boiProductIdCol = boiCols.find((c: any) => c.name === 'product_id')
+    if (boiProductIdCol && boiProductIdCol.notnull === 1) {
+      db.exec(`PRAGMA foreign_keys=OFF`)
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE backorder_items_new (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            backorder_id TEXT NOT NULL,
+            sales_order_item_id TEXT NOT NULL,
+            product_id TEXT,
+            ordered_qty REAL DEFAULT 0,
+            delivered_qty REAL DEFAULT 0,
+            remaining_qty REAL DEFAULT 0,
+            notes TEXT,
+            FOREIGN KEY (backorder_id) REFERENCES backorders(id) ON DELETE CASCADE,
+            FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO backorder_items_new (id, tenant_id, backorder_id, sales_order_item_id, product_id, ordered_qty, delivered_qty, remaining_qty, notes)
+          SELECT id, tenant_id, backorder_id, sales_order_item_id, product_id, ordered_qty, delivered_qty, remaining_qty, notes
+          FROM backorder_items
+        `)
+        db.exec(`DROP TABLE backorder_items`)
+        db.exec(`ALTER TABLE backorder_items_new RENAME TO backorder_items`)
+      })
+      rebuild()
+      db.exec(`PRAGMA foreign_keys=ON`)
+      const boiViolations = db.prepare(`PRAGMA foreign_key_check(backorder_items)`).all()
+      if (boiViolations.length > 0) {
+        console.error('⚠️ Migration: backorder_items FK rebuild left orphaned rows (needs manual review):', boiViolations)
+      } else {
+        console.log('✅ Migration: backorder_items.product_id is now nullable with no FK to products')
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ backorder_items FK rebuild migration error:', e)
+    try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
+  }
+
   // Migration: schema drift — restored 2026-08-29. Columns exist on production but
   // were missing from schema.ts, so a fresh migrate never created them.
   ;[

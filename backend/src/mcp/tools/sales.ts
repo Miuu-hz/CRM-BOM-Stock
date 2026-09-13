@@ -3,9 +3,9 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
-import { isServiceItem } from '../../services/stockItem.service'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { ok } from './shared'
+import { deductStockForSO, soStockAlreadyDeducted } from '../../routes/sales/shared'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
 
@@ -18,39 +18,6 @@ const findSalesOrder = (soId: string, tenantId: string): any => {
   let so = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(soId, tenantId) as any
   if (!so) so = db.prepare('SELECT * FROM sales_orders WHERE so_number = ? AND tenant_id = ?').get(soId, tenantId) as any
   return so
-}
-
-// ตัดสต็อกเมื่อยืนยัน SO — คัดลอก logic จาก sales.routes.ts (deductStockForSO)
-const deductStockForSO = (tenantId: string, soId: string, soNumber: string, userId: string): void => {
-  const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
-  for (const item of items) {
-    const stockItemId = item.stock_item_id
-    if (!stockItemId) continue
-    let qty = Number(item.quantity || 0)
-    if (qty <= 0) continue
-
-    const stockItem = db.prepare('SELECT unit, base_unit, category FROM stock_items WHERE id = ?').get(stockItemId) as any
-    if (isServiceItem(stockItem)) continue   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด
-    const soUnit = item.unit || ''
-    // stock_items.quantity is stored in base_unit — the legacy `unit` column can differ
-    // (23/456 items today, e.g. shrimp: unit=kg, base_unit=g) and using it here silently
-    // deducted the wrong amount. Fall back to `unit` only when base_unit is empty.
-    const stockUnit = stockItem?.base_unit || stockItem?.unit || ''
-    if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-      const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
-      if (converted) qty = converted.converted
-    }
-
-    const deductQty = Math.floor(qty)
-    const now = new Date().toISOString()
-    db.prepare('UPDATE stock_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ? AND tenant_id = ?')
-      .run(deductQty, now, stockItemId, tenantId)
-    db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-      VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)`).run(
-      genId(), tenantId, stockItemId, deductQty, `SO: ${soNumber}`,
-      `ขายสินค้า SO ${soNumber}${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} → ${deductQty} ${stockUnit})` : ''}`,
-      now, userId)
-  }
 }
 
 const itemSchema = z.object({
@@ -348,8 +315,22 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
       db.prepare('UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(status, now, so.id, tenantId)
 
-      if (status === 'CONFIRMED') {
-        deductStockForSO(tenantId, so.id, so.so_number, userId)
+      let stockDeducted = false
+      if (status === 'CONFIRMED' && !soStockAlreadyDeducted(tenantId, so.so_number)) {
+        try {
+          // ใช้ deductStockForSO ตัวจริงจาก routes/sales/shared (atomic, ปัดเศษ roundQty,
+          // throw เมื่อแปลงหน่วยไม่ได้/ของไม่พอ, แกะแพ็คอัตโนมัติ) — เดิม MCP มีสำเนาของตัวเอง
+          // ที่หย่อนกว่า (เงียบเมื่อแปลงหน่วยไม่ได้, floor ปัดเศษหาย, ไม่ atomic)
+          deductStockForSO(tenantId, so.id, so.so_number)
+          stockDeducted = true
+        } catch (err: any) {
+          // ตัวจริง throw แทนที่จะเงียบ — ย้อนสถานะกลับที่เดิม (so.status ยังเป็นค่าก่อนยืนยัน
+          // เพราะเช็คไปแล้วว่าต้องเป็น DRAFT ก่อนเข้ามาถึงตรงนี้) ไม่ให้ SO ค้าง CONFIRMED
+          // ทั้งที่ไม่เคยตัดสต็อกจริง
+          db.prepare('UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+            .run(so.status, new Date().toISOString(), so.id, tenantId)
+          return ok({ success: false, message: `ยืนยันไม่สำเร็จ: ${err?.message || 'ตัดสต็อกไม่ได้'}` })
+        }
         if (confirmGateArgs) recordAutoAction(confirmGateArgs)
       }
 
@@ -357,7 +338,7 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
         success: true,
         soNumber: so.so_number,
         status,
-        message: `เปลี่ยนสถานะ ${so.so_number} เป็น ${status} สำเร็จ${status === 'CONFIRMED' ? ' — ตัดสต็อกแล้ว' : ''}`,
+        message: `เปลี่ยนสถานะ ${so.so_number} เป็น ${status} สำเร็จ${stockDeducted ? ' — ตัดสต็อกแล้ว' : ''}`,
       })
     }
   )
