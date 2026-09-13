@@ -296,9 +296,9 @@ export const BILL_CSS = `
   padding: 13px 15px;
 }
 .bill-section-heading { font-weight: 700; font-size: 12px; margin-bottom: 7px; color: #1f2430; }
-.pay-row { display: grid; grid-template-columns: 78px 1fr; gap: 8px; font-size: 12px; margin-bottom: 3px; }
-.pay-row .k { color: #7b8394; }
-.pay-row .v { font-weight: 600; color: #1f2430; }
+.pay-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 3px; }
+.pay-row .k { color: #7b8394; flex: 1 1 auto; }
+.pay-row .v { font-weight: 600; color: #1f2430; flex: 0 0 auto; text-align: right; }
 .pay-row .pay-account { font-size: 15px; font-weight: 800; letter-spacing: .5px; }
 
 .bill-pay-qr { text-align: center; }
@@ -545,6 +545,54 @@ export const BILL_CSS = `
 .bill-thermal .receipt-qr-label { font-size: 11px; font-weight: 800; }
 .bill-thermal .receipt-qr-pair { gap: 6px; }
 .bill-thermal .receipt-logo { width: 40px; height: 40px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   A5 — เลย์เอาต์ทั้งใบออกแบบไว้สำหรับ A4 (210mm) ไม่เคยมีกฎย่อสำหรับ A5
+   หัวเอกสารใช้ grid 1fr 1fr 250px คอลัมน์ขวาคงที่ 66mm ทั้งที่ A5 เหลือ
+   พื้นที่แค่ 128mm ของเลยล้นขอบขวาออกไป 25 จุด (วัดจากของจริงในเบราว์เซอร์)
+   ══════════════════════════════════════════════════════════════════════ */
+.bill-a5 .bill-head-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+.bill-a5 .bill-meta-col  { grid-column: 1 / -1; }
+.bill-a5 .bill-items-table { font-size: 10.5px; }
+.bill-a5 .bill-items-table th,
+.bill-a5 .bill-items-table td { padding: 5px 6px; }
+.bill-a5 .bill-summary-section,
+.bill-a5 .bill-pay-section { gap: 10px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   หน้าต่างพิมพ์ได้รับแค่ BILL_CSS ก้อนนี้ (renderToStaticMarkup แล้วยัดเข้า
+   window.open) ไม่มี Tailwind ไม่มี reset ใด ๆ ทั้งสิ้น สองอย่างนี้จึงต้อง
+   ประกาศเองที่นี่ ไม่งั้นพังเฉพาะตอนพิมพ์ แต่ดูบนจอปกติดี:
+
+   1. box-sizing — ค่าตั้งต้นของเบราว์เซอร์คือ content-box ทำให้
+      .bill-a4 { width: 100%; padding: 13mm } กินพื้นที่ 100% + 26mm
+      ล้นขอบกระดาษ ขอบขวาเลยโดนตัดหายไปทั้งแถบ
+   2. ยูทิลิตี้ของ Tailwind ที่เทมเพลตเรียกใช้ (flex/items-center/gap/w-h ของไอคอน)
+      ถ้าไม่มี .flex แถวข้อมูลธนาคารจะกลับไปใช้ grid ของ .pay-row แล้วไอคอน
+      ไปกินช่องแรก ดันค่าตกลงบรรทัดใหม่
+   ══════════════════════════════════════════════════════════════════════ */
+.unified-bill-container,
+.unified-bill-paper,
+.unified-bill-paper *,
+.unified-bill-paper *::before,
+.unified-bill-paper *::after { box-sizing: border-box; }
+
+.unified-bill-paper .flex            { display: flex; }
+.unified-bill-paper .items-center    { align-items: center; }
+.unified-bill-paper .justify-between { justify-content: space-between; }
+.unified-bill-paper .gap-1           { gap: 4px; }
+.unified-bill-paper .gap-1\\.5         { gap: 6px; }
+.unified-bill-paper .gap-2           { gap: 8px; }
+.unified-bill-paper .w-3\\.5           { width: 14px; }
+.unified-bill-paper .h-3\\.5           { height: 14px; }
+.unified-bill-paper .w-4             { width: 16px; }
+.unified-bill-paper .h-4             { height: 16px; }
+.unified-bill-paper .w-5             { width: 20px; }
+.unified-bill-paper .h-5             { height: 20px; }
+.unified-bill-paper .mt-1            { margin-top: 4px; }
+.unified-bill-paper .text-success    { color: #16a34a; }
+/* ไอคอน lucide ไม่มีคลาสกำหนดขนาดจะกางเป็น 24px ดันเลย์เอาต์ทั้งแถว */
+.unified-bill-paper svg              { flex: 0 0 auto; }
 
 /* ── หน้ากระดาษแยกตามชนิดเอกสาร ────────────────────────────────────────
    @page ธรรมดาไม่ผูกกับ class ตัวที่ประกาศท้ายสุดชนะทุกงานพิมพ์ ถ้าตั้ง
