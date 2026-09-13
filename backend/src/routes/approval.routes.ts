@@ -5,7 +5,7 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { canApprove as canApproveRequests } from '../services/approvalGate.service'
-import { applyStockMovement, StockMovementError } from '../services/stockMovement.service'
+import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 
@@ -623,6 +623,14 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     const payload = request.payload ? JSON.parse(request.payload) : null
     if (payload) {
       applyStockMovement(request.tenant_id, request.requester_name, payload)
+    }
+  } else if (request.reference_type === 'stock_unpack') {
+    // หมวด "แกะแพ็คด้วยมือ": ผูก category เดียวกับ stock_adjust แต่ payload/ฟังก์ชันคนละตัว
+    // เพราะแกะแพ็คคือย้าย sealed_qty→quantity ไม่ใช่ IN/OUT/ADJUST ปกติ — refType แยก
+    // ('stock_unpack' vs 'stock_items') กันสับสนกับคำขอปรับสต็อกปกติของสินค้าเดียวกัน
+    const unpackPayload = request.payload ? JSON.parse(request.payload) : null
+    if (unpackPayload) {
+      applyManualUnpack(request.tenant_id, request.requester_name, unpackPayload)
     }
   } else if (request.reference_type === 'stock_adjustments') {
     // Stock adjustment approved - execute the adjustment

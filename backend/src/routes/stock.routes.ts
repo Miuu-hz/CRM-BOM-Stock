@@ -8,11 +8,11 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUnitDisplayName } from '../services/unitConversion.service'
-import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
+import { roundQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
-import { applyStockMovement, priceToBaseUnitCost, StockMovementError } from '../services/stockMovement.service'
+import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 
 // Multer config: store in uploads/stock-images/
@@ -689,79 +689,42 @@ router.post('/:id/unpack', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'จำนวนแพ็คที่จะแกะต้องเป็นจำนวนเต็มมากกว่า 0' })
     }
 
-    const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+    const item = db.prepare('SELECT name, sealed_qty, display_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
     if (!item) return res.status(404).json({ success: false, message: 'ไม่พบสินค้านี้ในคลัง' })
 
-    const baseUnit = item.base_unit || item.unit
-    const displayUnit = item.display_unit || item.unit
-
-    if (!baseUnit || !displayUnit || normalizeUnit(baseUnit) === normalizeUnit(displayUnit)) {
-      return res.status(400).json({
-        success: false,
-        message: `"${item.name}" ยังไม่ได้ตั้งหน่วยบรรจุ (เช่น แพ็ค/ลัง) ที่ต่างจากหน่วยฐาน จึงแกะแพ็คไม่ได้ — ตั้งค่าได้ที่คลังสินค้า > แก้ไขสินค้า`,
+    // ประตูอนุมัติ: แกะแพ็คคือการขยับตัวเลขสต็อก (sealed_qty → quantity) เหมือน POST /movement
+    // เป๊ะๆ จึงใช้หมวดเดียวกัน (stock_adjust) — แต่ refType แยกเป็น 'stock_unpack' เพราะ payload/
+    // ฟังก์ชันที่ executeApprovedAction ต้องเรียกตอนอนุมัติเป็นคนละตัวจาก 'stock_items' (movement)
+    // ตรวจสิทธิ์/ความถูกต้องของจำนวนแพ็คจริงเกิดตอนรัน applyManualUnpack (ตอนกดตรง หรือตอนอนุมัติ)
+    // เดียวกับที่ POST /movement ปล่อยให้ applyStockMovement เป็นคนเช็คตอน execute จริง
+    const displayUnit = item.display_unit || item.unit || ''
+    const gateArgs = {
+      tenantId,
+      user: req.user! as any,
+      category: 'stock_adjust' as const,
+      refType: 'stock_unpack',
+      refId: stockItemId,
+      description: `แกะแพ็ค ${item.name}: ${packs} ${displayUnit} (ที่ยังไม่แกะเหลือ ${item.sealed_qty || 0} ${displayUnit})`,
+      payload: { stockItemId, packs },
+    }
+    const pending = gateOrCreate(gateArgs)
+    if (pending) {
+      return res.status(202).json({
+        success: true,
+        pending_approval: true,
+        request_number: pending.request_number,
+        message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) สต๊อกจะเปลี่ยนเมื่อผู้อนุมัติยืนยัน`,
       })
     }
 
-    const packFactor = getPackFactor(item, tenantId)
-    if (packFactor === null) {
-      return res.status(400).json({
-        success: false,
-        message: `ไม่พบอัตราแปลงหน่วย "${getUnitDisplayName(displayUnit)}" → "${getUnitDisplayName(baseUnit)}" สำหรับ "${item.name}" กรุณาตั้งค่าที่ Settings > การแปลงหน่วย`,
-      })
-    }
-
-    const sealed = Number(item.sealed_qty || 0)
-    if (packs > sealed) {
-      return res.status(400).json({
-        success: false,
-        message: `มีแพ็คที่ยังไม่แกะเพียง ${sealed} ${getUnitDisplayName(displayUnit)} แกะ ${packs} ไม่ได้`,
-      })
-    }
-
-    const now = new Date().toISOString()
-    const gained = roundQty(packs * packFactor)
-    let newQuantity = 0
-    let newSealed = 0
-
-    const doUnpack = db.transaction(() => {
-      // Re-read inside the transaction: a concurrent receipt or sale may have
-      // moved sealed_qty since the check above.
-      const current = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
-      if (!current) throw new Error('STOCK_ITEM_NOT_FOUND')
-      const currentSealed = Number(current.sealed_qty || 0)
-      if (packs > currentSealed) throw new Error('SEALED_CHANGED')
-
-      newSealed = roundPackQty(currentSealed - packs, `manual unpack ${item.sku}`)
-      newQuantity = roundQty(Number(current.quantity || 0) + gained)
-
-      db.prepare('UPDATE stock_items SET quantity = ?, sealed_qty = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(newQuantity, newSealed, now, stockItemId, tenantId)
-
-      db.prepare(`
-        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-        VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
-      `).run(generateId(), tenantId, stockItemId, gained, displayUnit, packs, 'MANUAL',
-        `แกะแพ็ค: ${packs} ${getUnitDisplayName(displayUnit)} → +${gained} ${getUnitDisplayName(baseUnit)}`,
-        now, req.user!.userId)
-    })
-
-    try {
-      doUnpack()
-    } catch (e: any) {
-      if (e?.message === 'SEALED_CHANGED') {
-        return res.status(409).json({ success: false, message: 'จำนวนแพ็คเปลี่ยนไประหว่างดำเนินการ กรุณาลองใหม่' })
-      }
-      if (e?.message === 'STOCK_ITEM_NOT_FOUND') {
-        return res.status(404).json({ success: false, message: 'ไม่พบสินค้านี้ในคลัง' })
-      }
-      throw e
-    }
+    const { item: updatedItem, packFactor, baseUnit, displayUnit: resultDisplayUnit } =
+      applyManualUnpack(tenantId, req.user!.email, { stockItemId, packs })
+    recordAutoAction(gateArgs)
 
     // Re-fetch and run through the same enrichStockItem() the list/detail
     // endpoints use, so the screen can apply this response to its state
     // directly (quantity, sealed_qty, available_total, can_unpack, ...)
     // without a refetch, and never drifts from what GET /stock reports.
-    const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
     const enriched = enrichStockItem(updatedItem, tenantId)
 
     res.json({
@@ -773,11 +736,17 @@ router.post('/:id/unpack', async (req: Request, res: Response) => {
         packFactor,
         baseUnit,
         baseLabel: getUnitDisplayName(baseUnit),
-        displayUnit,
-        displayLabel: getUnitDisplayName(displayUnit),
+        displayUnit: resultDisplayUnit,
+        displayLabel: getUnitDisplayName(resultDisplayUnit),
       },
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof StockMovementError) {
+      const status = error.code === 'STOCK_ITEM_NOT_FOUND' ? 404
+        : error.code === 'SEALED_CHANGED' ? 409
+        : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Unpack stock error:', error)
     res.status(500).json({ success: false, message: 'แกะแพ็คไม่สำเร็จ' })
   }

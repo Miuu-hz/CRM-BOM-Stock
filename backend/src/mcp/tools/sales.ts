@@ -4,6 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { isServiceItem } from '../../services/stockItem.service'
+import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { ok } from './shared'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
@@ -282,37 +283,26 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
         return ok({ success: false, message: `ยืนยันได้เฉพาะ SO สถานะ DRAFT (ปัจจุบัน: ${so.status})` })
       }
 
-      // ── Approval gate: CONFIRMED transition (เลียนแบบ REST salesOrders.ts) ──────
-      // ถ้า role ต้องขออนุมัติก่อน (ไม่เข้า auto-approve threshold และไม่มีสิทธิ์อนุมัติเอง)
-      // ให้ส่งเป็นคำขออนุมัติแทนการยืนยัน+ตัดสต็อกทันที
-      if (status === 'CONFIRMED' && callerRole !== 'MASTER' && callerRole !== 'ADMIN') {
-        const setting = db.prepare(
-          `SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'sales_order'`
-        ).get(tenantId, callerRole) as any
-        const userPerm = db.prepare(
-          `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'sales_order'`
-        ).get(tenantId, userId) as any
-
+      // ── Approval gate: CONFIRMED transition ─────────────────────────────────
+      // ประตูกลางรู้จัก ADMIN/MASTER อยู่แล้ว (คืน false/true ให้เอง) ไม่ต้องกันด้วย
+      // callerRole !== 'MASTER'/'ADMIN' ซ้ำเองแบบเดิม — เก็บ gateArgs ไว้ยิง recordAutoAction
+      // หลังตัดสต็อกสำเร็จด้านล่าง ถ้าผ่านมาได้เพราะ bypass (ไม่ใช่เพราะหมวดปิดอยู่)
+      let confirmGateArgs: CreateRequestArgs | null = null
+      if (status === 'CONFIRMED') {
         const amount = so.total_amount || 0
-        const autoThreshold = setting?.auto_approve_threshold || 0
-        const withinThreshold = autoThreshold > 0 && amount <= autoThreshold
-        const userCanApprove = userPerm?.can_approve === 1
-        const needsApproval = setting?.approval_required === 1 && !withinThreshold && !userCanApprove
-
-        if (needsApproval) {
-          const now = new Date().toISOString()
-          const reqId = genId()
-          const reqNum = 'APR-SO-' + Date.now()
-
+        const gateArgs: CreateRequestArgs = {
+          tenantId,
+          user: { userId, email: callerName, role: callerRole },
+          category: 'sales_order',
+          refType: 'sales_orders',
+          refId: so.id,
+          amount,
+          description: `ขออนุมัติยืนยัน SO ${so.so_number} ยอด ฿${amount.toLocaleString()}`,
+        }
+        const pending = gateOrCreate(gateArgs)
+        if (pending) {
           db.prepare("UPDATE sales_orders SET status = 'PENDING_APPROVAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
-            .run(now, so.id, tenantId)
-
-          db.prepare(`
-            INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id,
-              requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
-            VALUES (?, ?, ?, 'sales_order', 'sales_orders', ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-          `).run(reqId, tenantId, reqNum, so.id, userId, callerName, callerRole, amount,
-            `ขออนุมัติยืนยัน SO ${so.so_number} ยอด ฿${amount.toLocaleString()}`, now, now)
+            .run(new Date().toISOString(), so.id, tenantId)
 
           return ok({
             success: true,
@@ -321,6 +311,7 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
             message: `ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน (${so.so_number})`,
           })
         }
+        confirmGateArgs = gateArgs
       }
 
       // เช็คสต็อกก่อนยืนยัน — แปลงหน่วยถ้าต่างกัน
@@ -359,6 +350,7 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
 
       if (status === 'CONFIRMED') {
         deductStockForSO(tenantId, so.id, so.so_number, userId)
+        if (confirmGateArgs) recordAutoAction(confirmGateArgs)
       }
 
       return ok({

@@ -226,8 +226,11 @@ export const stockService = {
   // Record stock movement
   // Open sealed packs by hand. Production and delivery unpack automatically,
   // but nothing let a human open a pack on purpose, so stock sat unusable.
-  unpack: async (id: string, packs: number): Promise<UnpackResult> => {
+  unpack: async (id: string, packs: number): Promise<UnpackResult | { pending_approval: true; request_number?: string; message?: string }> => {
     const response = await api.post<any>(`/stock/${id}/unpack`, { packs })
+    // ติดด่านอนุมัติ: ไม่มี data กลับมาเพราะสต็อกยังไม่ถูกแตะ — ส่ง body ต่อให้หน้าเว็บ
+    // เด้ง popup เอง (ลอกแพตเทิร์นเดียวกับ recordMovement ด้านล่าง)
+    if (response.data?.pending_approval) return response.data
     return response.data.data
   },
 

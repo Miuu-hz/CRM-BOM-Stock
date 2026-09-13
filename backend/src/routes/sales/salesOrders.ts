@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO } from './shared'
+import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 
 const router = Router()
 
@@ -217,46 +218,33 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // Snapshot the pre-transition status: needed after the UPDATE below to decide
     // whether stock was already deducted (so CANCELLED must restore it).
     const previousStatus = existing.status
+    // ตั้งไว้เฉพาะตอนเข้าเงื่อนไข "ยืนยัน SO ที่ผ่านประตูอนุมัติแบบ bypass" — ใช้บันทึกประวัติ
+    // (recordAutoAction) หลังตัดสต็อกสำเร็จด้านล่าง ไม่งั้นเป็น null คือไม่ต้องบันทึก
+    let confirmGateArgs: CreateRequestArgs | null = null
 
     if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกคำสั่งขาย — ต้องเป็น ADMIN/MANAGER/MASTER' })
     }
 
     // ── Approval gate: CONFIRMED transition ─────────────────────────────────
+    // ประตูกลาง (approvalGate.service) จัดการ ADMIN/MASTER ผ่านเสมอ + can_bypass รายคน +
+    // เกณฑ์ auto_approve_threshold ให้ครบแล้ว — ไม่ต้อง query approval_settings/
+    // user_approval_permissions เองแบบเดิม (เดิมยังตั้งเลขที่เอง 'APR-SO-'+Date.now() ด้วย)
     if (status === 'CONFIRMED' && existing.status === 'DRAFT') {
-      const userId = req.user!.userId
-
-      const setting = db.prepare(
-        "SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = 'sales_order'"
-      ).get(tenantId, req.user!.role) as any
-
-      const userPerm = db.prepare(
-        "SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = 'sales_order'"
-      ).get(tenantId, userId) as any
-
       const amount = (existing as any).total_amount || 0
-      const autoThreshold = setting?.auto_approve_threshold || 0
-      const withinThreshold = autoThreshold > 0 && amount <= autoThreshold
-      const userCanApprove = userPerm?.can_approve === 1
-      const needsApproval = setting?.approval_required === 1 && !withinThreshold && !userCanApprove
-
-      if (needsApproval) {
-        const now = new Date().toISOString()
-        const reqId = generateId()
-        const reqNum = 'APR-SO-' + Date.now()
-
+      const gateArgs: CreateRequestArgs = {
+        tenantId,
+        user: req.user! as any,
+        category: 'sales_order',
+        refType: 'sales_orders',
+        refId: req.params.id,
+        amount,
+        description: 'ขออนุมัติยืนยัน SO ' + (existing as any).so_number + ' ยอด ฿' + amount.toLocaleString(),
+      }
+      const pending = gateOrCreate(gateArgs)
+      if (pending) {
         db.prepare("UPDATE sales_orders SET status = 'PENDING_APPROVAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(now, req.params.id, tenantId)
-
-        db.prepare(`
-          INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id,
-            requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
-          VALUES (?, ?, ?, 'sales_order', 'sales_orders', ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).run(reqId, tenantId, reqNum, req.params.id,
-          userId, req.user!.email, req.user!.role,
-          amount,
-          'ขออนุมัติยืนยัน SO ' + (existing as any).so_number + ' ยอด ฿' + amount.toLocaleString(),
-          now, now)
+          .run(new Date().toISOString(), req.params.id, tenantId)
 
         return res.status(202).json({
           success: true,
@@ -264,6 +252,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           message: 'ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน (' + (existing as any).so_number + ')'
         })
       }
+      // ผ่านเพราะ bypass (ไม่ใช่เพราะหมวดปิดอยู่) — บันทึกประวัติหลังตัดสต็อกสำเร็จด้านล่าง
+      confirmGateArgs = gateArgs
     }
 
     // เช็ค stock ก่อน CONFIRMED
@@ -351,6 +341,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // ตัด stock เมื่อยืนยัน SO
     if (status === 'CONFIRMED' && salesOrder) {
       deductStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
+      if (confirmGateArgs) recordAutoAction(confirmGateArgs)
 
       // No accounting entry here on purpose: sales/invoices.ts's POST /
       // already books the real entry (Dr AR/COGS, Cr Revenue/VAT/Inventory,

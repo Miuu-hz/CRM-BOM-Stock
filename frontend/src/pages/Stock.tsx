@@ -1811,6 +1811,7 @@ function Stock() {
         item={unpackModal.item}
         onClose={() => setUnpackModal({ open: false, item: null })}
         onSaved={loadData}
+        onPending={approvalGate.handleResponse}
       />
 
       {/* Import Modal */}
@@ -1838,11 +1839,12 @@ function Stock() {
 // Unpack Modal — release the contents of N sealed packs into loose stock.
 // Shows the resulting split before committing, because "open 2 packs" means
 // nothing to the user unless they can see it is 60 eggs.
-function UnpackModal({ open, item, onClose, onSaved }: {
+function UnpackModal({ open, item, onClose, onSaved, onPending }: {
   open: boolean
   item: StockItem | null
   onClose: () => void
   onSaved: () => void
+  onPending?: (data: any) => boolean
 }) {
   useModalClose(onClose)
   const { t } = useTranslation()
@@ -1864,7 +1866,9 @@ function UnpackModal({ open, item, onClose, onSaved }: {
     if (!valid || saving) return
     setSaving(true)
     try {
-      const res = await stockService.unpack(item.id, packs)
+      const res: any = await stockService.unpack(item.id, packs)
+      // ติดด่านอนุมัติ: ยังไม่มีอะไรเปลี่ยน แค่แจ้งผู้ใช้ว่าส่งคำขอแล้ว (เหมือน AdjustModal)
+      if (onPending?.(res)) { onClose(); return }
       toast.success(`แกะ ${res.unpackedPacks} ${res.displayLabel} → ได้ ${res.unpackedPacks * res.packFactor} ${res.baseLabel}`)
       onSaved()
       onClose()

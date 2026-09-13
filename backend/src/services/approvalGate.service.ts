@@ -14,7 +14,7 @@ import { can, Role, Department } from './rbac.service'
  * คอลัมน์ consumed_at/expires_at ยังอยู่ในตาราง เผื่อใครอ้างอิงอยู่ แต่โค้ดฝั่งนี้ไม่เขียนแล้ว)
  */
 
-export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit'
+export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_order'
 
 export interface GateUser {
   userId: string
@@ -34,6 +34,9 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   stock_adjust: 'stock',
   pos_void: 'orders',
   doc_edit: 'purchase',
+  // ยืนยัน SO ก็เป็นงานขาย/ออเดอร์เหมือน pos_void — ใช้ resource 'orders' ร่วมกัน
+  // (แผนก SALES มีสิทธิ์ 'orders' อยู่แล้วใน departmentResources)
+  sales_order: 'orders',
 }
 
 /** ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน */

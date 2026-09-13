@@ -1,7 +1,7 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
-import { convertQuantityBidirectional, autoUnpackIfNeeded } from './unitConversion.service'
-import { roundQty } from '../utils/qty'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUnitDisplayName } from './unitConversion.service'
+import { roundQty, roundPackQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from './accounting.service'
 
@@ -36,7 +36,16 @@ export interface StockMovementPayload {
 
 /** ข้อผิดพลาดที่ผู้เรียกต้องแปลงเป็นข้อความให้ผู้ใช้ (ไม่ใช่ 500) */
 export class StockMovementError extends Error {
-  constructor(public code: 'STOCK_ITEM_NOT_FOUND' | 'INSUFFICIENT_STOCK' | 'NO_CONVERSION', message: string) {
+  constructor(
+    public code:
+      | 'STOCK_ITEM_NOT_FOUND'
+      | 'INSUFFICIENT_STOCK'
+      | 'NO_CONVERSION'
+      | 'NO_PACK_UNIT'
+      | 'INSUFFICIENT_SEALED'
+      | 'SEALED_CHANGED',
+    message: string
+  ) {
     super(message)
   }
 }
@@ -187,4 +196,95 @@ export function applyStockMovement(
 
   recordMovement()
   return updatedItem
+}
+
+export interface ManualUnpackPayload {
+  stockItemId: string
+  packs: number
+}
+
+export interface ManualUnpackResult {
+  item: any
+  packFactor: number
+  baseUnit: string
+  displayUnit: string
+}
+
+/**
+ * แกะแพ็คด้วยมือ: ย้าย sealed_qty (แพ็คที่ยังไม่เปิด) มาเป็น quantity (ของที่ใช้ได้จริง)
+ *
+ * ยกออกมาจาก routes/stock.routes.ts POST /:id/unpack ด้วยเหตุผลเดียวกับ applyStockMovement —
+ * ต้องเรียกได้จาก 2 ที่: route เอง (ตอนไม่ต้องขออนุมัติ) และ executeApprovedAction() ตอน
+ * เจ้าของกดอนุมัติคำขอที่พนักงานตั้งไว้ ถ้าปล่อยไว้ใน handler ต้อง copy ตรรกะไปอีกชุด
+ */
+export function applyManualUnpack(
+  tenantId: string,
+  createdBy: string,
+  payload: ManualUnpackPayload
+): ManualUnpackResult {
+  const { stockItemId, packs } = payload
+
+  const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+  if (!item) {
+    throw new StockMovementError('STOCK_ITEM_NOT_FOUND', 'ไม่พบสินค้านี้ในคลัง')
+  }
+
+  const baseUnit = item.base_unit || item.unit
+  const displayUnit = item.display_unit || item.unit
+  if (!baseUnit || !displayUnit || normalizeUnit(baseUnit) === normalizeUnit(displayUnit)) {
+    throw new StockMovementError(
+      'NO_PACK_UNIT',
+      `"${item.name}" ยังไม่ได้ตั้งหน่วยบรรจุ (เช่น แพ็ค/ลัง) ที่ต่างจากหน่วยฐาน จึงแกะแพ็คไม่ได้ — ตั้งค่าได้ที่คลังสินค้า > แก้ไขสินค้า`
+    )
+  }
+
+  const converted = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, item.id)
+  const packFactor = converted && converted.factor > 0 ? roundQty(converted.factor) : null
+  if (packFactor === null) {
+    throw new StockMovementError(
+      'NO_CONVERSION',
+      `ไม่พบอัตราแปลงหน่วย "${getUnitDisplayName(displayUnit)}" → "${getUnitDisplayName(baseUnit)}" สำหรับ "${item.name}" กรุณาตั้งค่าที่ Settings > การแปลงหน่วย`
+    )
+  }
+
+  const sealed = Number(item.sealed_qty || 0)
+  if (packs > sealed) {
+    throw new StockMovementError(
+      'INSUFFICIENT_SEALED',
+      `มีแพ็คที่ยังไม่แกะเพียง ${sealed} ${getUnitDisplayName(displayUnit)} แกะ ${packs} ไม่ได้`
+    )
+  }
+
+  const now = new Date().toISOString()
+  const gained = roundQty(packs * packFactor)
+  let updatedItem: any
+
+  const doUnpack = db.transaction(() => {
+    // Re-read inside the transaction: a concurrent receipt or sale may have
+    // moved sealed_qty since the check above.
+    const current = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+    if (!current) throw new StockMovementError('STOCK_ITEM_NOT_FOUND', 'ไม่พบสินค้านี้ในคลัง')
+    const currentSealed = Number(current.sealed_qty || 0)
+    if (packs > currentSealed) {
+      throw new StockMovementError('SEALED_CHANGED', 'จำนวนแพ็คเปลี่ยนไประหว่างดำเนินการ กรุณาลองใหม่')
+    }
+
+    const newSealed = roundPackQty(currentSealed - packs, `manual unpack ${item.sku}`)
+    const newQuantity = roundQty(Number(current.quantity || 0) + gained)
+
+    db.prepare('UPDATE stock_items SET quantity = ?, sealed_qty = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(newQuantity, newSealed, now, stockItemId, tenantId)
+
+    db.prepare(`
+      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+      VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
+    `).run(generateId(), tenantId, stockItemId, gained, displayUnit, packs, 'MANUAL',
+      `แกะแพ็ค: ${packs} ${getUnitDisplayName(displayUnit)} → +${gained} ${getUnitDisplayName(baseUnit)}`,
+      now, createdBy)
+
+    updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId)
+  })
+
+  doUnpack()
+  return { item: updatedItem, packFactor, baseUnit, displayUnit }
 }
