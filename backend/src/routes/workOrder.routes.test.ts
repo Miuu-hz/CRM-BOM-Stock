@@ -102,7 +102,11 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
     `).run(bomId, user.tenantId, finishedId)
 
     const woId = seedWO(user.tenantId, { bomId })
-    // ข้ามตรง IN_PROGRESS ไปเลย ไม่มีวัตถุดิบผูกไว้ (ไม่กระทบผลของเทสต์นี้)
+    // ต้องเดินตามลำดับสถานะ (PLANNED -> IN_PROGRESS -> COMPLETED) เหมือนปุ่มในหน้าเว็บ
+    // ไม่มีวัตถุดิบผูกไว้ ขั้น IN_PROGRESS จึงไม่ตัดอะไร (ไม่กระทบผลของเทสต์นี้)
+    await request(app).put(`/api/work-orders/${woId}/status`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ status: 'IN_PROGRESS' })
 
     const r1 = await request(app).put(`/api/work-orders/${woId}/status`)
       .set('Authorization', `Bearer ${user.token}`)

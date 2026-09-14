@@ -4,7 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
-import { restockCancelledWorkOrderMaterials } from '../../services/stockMovement.service'
+import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../../services/stockMovement.service'
 import { ok } from './shared'
 
 export function registerProductionTools(server: IMcpServer, tenantId: string, userId: string): void {
@@ -126,18 +126,9 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
       }
 
       // Enforce valid status transitions
-      const validNext: Record<string, string[]> = {
-        DRAFT:       ['PLANNED', 'CANCELLED'],
-        PLANNED:     ['IN_PROGRESS', 'CANCELLED', 'ON_HOLD'],
-        IN_PROGRESS: ['COMPLETED', 'CANCELLED', 'ON_HOLD'],
-        ON_HOLD:     ['IN_PROGRESS', 'CANCELLED'],
-        COMPLETED:   [],
-        CANCELLED:   [],
-      }
-      const allowed = validNext[wo.status] ?? []
-      if (!allowed.includes(status)) {
-        return ok({ success: false, message: `ไม่สามารถเปลี่ยนสถานะจาก ${wo.status} เป็น ${status} ได้ (อนุญาต: ${allowed.join(', ') || 'ไม่มี'})` })
-      }
+      // ลิสต์ลำดับสถานะอยู่ที่ services/stockMovement.service.ts ที่เดียว ใช้ร่วมกับ REST
+      const seqError = workOrderStatusError(wo.status, status)
+      if (seqError) return ok({ success: false, message: seqError })
 
       const now = new Date().toISOString()
       const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(wo.id) as any[]

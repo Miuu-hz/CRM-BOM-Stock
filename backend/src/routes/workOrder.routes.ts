@@ -6,7 +6,7 @@ import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { roundQty } from '../utils/qty'
-import { restockCancelledWorkOrderMaterials } from '../services/stockMovement.service'
+import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../services/stockMovement.service'
 
 const router = Router()
 
@@ -167,6 +167,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    // ตรวจลำดับสถานะด้วยลิสต์เดียวกับฝั่ง MCP — เดิม REST ยิงข้ามขั้นได้ (DRAFT -> COMPLETED
+    // = ได้สินค้าสำเร็จรูปเข้าสต็อกโดยไม่เคยเบิกวัตถุดิบ)
+    if (wo) {
+      const seqError = workOrderStatusError(wo.status, status)
+      if (seqError) return res.status(400).json({ success: false, message: seqError })
+    }
     if (!wo) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
     }

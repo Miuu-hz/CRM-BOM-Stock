@@ -1,4 +1,5 @@
 import db from '../../db/sqlite'
+import { approvalDenyReason } from '../../services/approvalGate.service'
 
 export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
 
@@ -8,44 +9,27 @@ export const ok = (data: unknown): ToolResult => ({
 
 export interface ApprovalCheckResult { allowed: boolean; message?: string }
 
-// เลียนแบบ permission check ใน REST routes (purchase-request.routes.ts, purchaseOrder.routes.ts)
-// ป้องกัน MCP tool อนุมัติเอกสารโดยข้ามวงเงิน/สิทธิ์อนุมัติที่ผู้ใช้ตั้งไว้
+/**
+ * สิทธิ์อนุมัติเอกสาร — ห่อ approvalDenyReason() ตัวเดียวกับที่ REST ใช้
+ * เดิมที่นี่เขียนเกณฑ์ซ้ำเอง (role -> auto_approve_threshold -> can_approve -> approval_limit)
+ * ซึ่งตรงกับ REST อยู่แล้ววันนี้ แต่ถ้าวันหน้าแก้ฝั่งเดียวจะหย่อนไม่เท่ากันอีก
+ * — ยุบเหลือแหล่งเดียว 2026-09-14
+ */
 export function checkApprovalPermission(
   tenantId: string, userId: string, role: string, moduleType: string, amount: number
 ): ApprovalCheckResult {
-  if (role === 'MASTER' || role === 'ADMIN') return { allowed: true }
-
-  const setting = db.prepare(
-    `SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?`
-  ).get(tenantId, role, moduleType) as any
-  const autoApprove = setting && setting.auto_approve_threshold > 0 && amount <= setting.auto_approve_threshold
-  if (autoApprove) return { allowed: true }
-
-  const perm = db.prepare(
-    `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?`
-  ).get(tenantId, userId, moduleType) as any
-  if (!perm || perm.can_approve !== 1) {
-    return { allowed: false, message: 'ไม่มีสิทธิ์อนุมัติ กรุณาติดต่อ Admin' }
-  }
-  if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && amount > perm.approval_limit) {
-    return {
-      allowed: false,
-      message: `วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ${perm.approval_limit.toLocaleString()}, ยอด: ${amount.toLocaleString()})`,
-    }
-  }
-  return { allowed: true }
+  const label = moduleType === 'purchase_order' ? 'PO' : 'PR'
+  const denied = approvalDenyReason(
+    tenantId, { userId, role },
+    moduleType as 'purchase_request' | 'purchase_order',
+    amount, label
+  )
+  return denied ? { allowed: false, message: denied } : { allowed: true }
 }
 
-// เช็คสิทธิ์แบบไม่มีวงเงิน (ใช้กับ reject ที่ REST ไม่เช็ค approval_limit)
+/** เช็คสิทธิ์แบบไม่ดูวงเงิน (ใช้กับ reject ที่ REST ไม่เช็ค approval_limit) — ส่ง amount 0 เข้าไป */
 export function checkCanApprove(tenantId: string, userId: string, role: string, moduleType: string): ApprovalCheckResult {
-  if (role === 'MASTER' || role === 'ADMIN') return { allowed: true }
-  const perm = db.prepare(
-    `SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?`
-  ).get(tenantId, userId, moduleType) as any
-  if (!perm || perm.can_approve !== 1) {
-    return { allowed: false, message: 'ไม่มีสิทธิ์ กรุณาติดต่อ Admin' }
-  }
-  return { allowed: true }
+  return checkApprovalPermission(tenantId, userId, role, moduleType, 0)
 }
 
 // ── DB-Anchored Token Intersection ────────────────────────────────────────────

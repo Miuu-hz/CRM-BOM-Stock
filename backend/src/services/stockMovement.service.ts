@@ -290,6 +290,28 @@ export function applyManualUnpack(
 }
 
 /**
+ * ลำดับสถานะของใบสั่งผลิตที่อนุญาต — เดิมมีอยู่ใน mcp/tools/production.ts ฝั่งเดียว
+ * ส่วน REST (workOrder.routes.ts) ตรวจแค่ว่าเป็นค่าที่รู้จักไหม ยิงข้ามขั้นได้ เช่น
+ * DRAFT -> COMPLETED (ได้สินค้าสำเร็จรูปโดยไม่เคยเบิกวัตถุดิบ) — ย้ายมาไว้ที่เดียว 2026-09-14
+ */
+export const WORK_ORDER_NEXT_STATUS: Record<string, string[]> = {
+  DRAFT:       ['PLANNED', 'CANCELLED'],
+  PLANNED:     ['IN_PROGRESS', 'CANCELLED', 'ON_HOLD'],
+  IN_PROGRESS: ['COMPLETED', 'CANCELLED', 'ON_HOLD'],
+  ON_HOLD:     ['IN_PROGRESS', 'CANCELLED'],
+  COMPLETED:   [],
+  CANCELLED:   [],
+}
+
+/** คืนข้อความบอกเหตุถ้าเปลี่ยนสถานะนี้ไม่ได้ / คืน null ถ้าเปลี่ยนได้ */
+export function workOrderStatusError(from: string, to: string): string | null {
+  if (from === to) return null
+  const allowed = WORK_ORDER_NEXT_STATUS[from] ?? []
+  if (allowed.includes(to)) return null
+  return `ไม่สามารถเปลี่ยนสถานะจาก ${from} เป็น ${to} ได้ (อนุญาต: ${allowed.join(', ') || 'ไม่มี'})`
+}
+
+/**
  * เช็คว่าคืนวัตถุดิบของ WO ที่ยกเลิกแล้วเข้าสต็อกไปหรือยัง (กันคืนซ้ำ)
  *
  * ดูหลักฐานจริงใน stock_movements เหมือน soStockAlreadyDeducted() ใน
