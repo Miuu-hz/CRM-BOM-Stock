@@ -813,9 +813,11 @@ export function applySchema(db: any): void {
       quantity REAL DEFAULT 0,
       unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
+      -- ไม่มี FK ของ material_id โดยตั้งใจ: คอลัมน์นี้ชี้ได้ทั้ง stock_items(id) และ materials(id)
+      -- (ดูการ resolve ที่ services/goodsReceipt.service.ts: id = ? OR material_id = ?)
+      -- FK เดิมชี้ materials อย่างเดียว ทำให้เขียนค่าจริงไม่ได้เลยสักแถว
       FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE CASCADE,
-      FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id),
-      FOREIGN KEY (material_id) REFERENCES materials(id)
+      FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id)
     );
 
     -- ==================== SUPPLIER PAYMENTS ====================

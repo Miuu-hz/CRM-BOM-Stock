@@ -158,15 +158,9 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
       `)
       for (const item of items) {
         const total = item.quantity * item.unitPrice
-        // schema bug (pre-existing, not caused by this change): purchase_invoice_items.material_id
-        // has FK -> materials(id), but every material_id flowing through PO/GR/stock lines (incl.
-        // item.materialId here) is a stock_items(id) -- the two id spaces never overlap (checked:
-        // 0 rows). Writing it would violate the FK on every insert. Existing REST rows already have
-        // material_id NULL on 100% of rows for the same reason, and the read-back join in GET
-        // /invoices/:id already joins pii.material_id against stock_items (not materials), so this
-        // column's real FK is simply wrong -- leave NULL until that's migrated; item identity is
-        // still recoverable via purchase_order_item_id.
-        insertItem.run(generateId(), tenantId, id, item.poItemId || null, null,
+        // FK ผิดตาราง (ชี้ materials ทั้งที่ค่าจริงเป็น stock_items) ถูก migrate ออกแล้ว 2026-09-14
+        // จึงเขียนค่าจริงได้ — GET /invoices/:id join คอลัมน์นี้กับ stock_items อยู่แล้ว
+        insertItem.run(generateId(), tenantId, id, item.poItemId || null, item.materialId || null,
           item.quantity, item.unitPrice, total)
       }
     }

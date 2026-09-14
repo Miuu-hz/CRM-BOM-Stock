@@ -1,4 +1,45 @@
 export function runMigrations(db: any): void {
+  // purchase_invoice_items.material_id: FK ชี้ materials(id) แต่ค่าจริงเป็น stock_items(id)
+  // เขียนค่าจริงลงไม่ได้เลยสักแถว (FK เด้ง) จนต้องปล่อย NULL ทุกแถว — โรคเดียวกับ
+  // delivery_order_items / backorder_items · คอลัมน์นี้เป็น polymorphic ต้องไม่มี FK
+  try {
+    const piiSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_invoice_items'").get() as any)?.sql || ''
+    if (piiSql.includes('REFERENCES materials(id)')) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      const rebuild = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE purchase_invoice_items_new (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            purchase_invoice_id TEXT NOT NULL,
+            purchase_order_item_id TEXT NOT NULL,
+            material_id TEXT,
+            quantity REAL DEFAULT 0,
+            unit_price REAL DEFAULT 0,
+            total_price REAL DEFAULT 0,
+            FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE CASCADE,
+            FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO purchase_invoice_items_new (id, tenant_id, purchase_invoice_id, purchase_order_item_id, material_id, quantity, unit_price, total_price)
+          SELECT id, tenant_id, purchase_invoice_id, purchase_order_item_id, material_id, quantity, unit_price, total_price
+          FROM purchase_invoice_items
+        `)
+        db.exec('DROP TABLE purchase_invoice_items')
+        db.exec('ALTER TABLE purchase_invoice_items_new RENAME TO purchase_invoice_items')
+      })
+      rebuild()
+      db.exec('PRAGMA foreign_keys=ON')
+      const left = db.prepare('PRAGMA foreign_key_check(purchase_invoice_items)').all() as any[]
+      if (left.length > 0) console.error('⚠️ purchase_invoice_items rebuild เหลือ FK กำพร้า:', left)
+      else console.log('✅ Migration: purchase_invoice_items.material_id ไม่มี FK ผิดตารางแล้ว')
+    }
+  } catch (e) {
+    console.error('⚠️ purchase_invoice_items FK migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
+
   // customers.code เคยเป็น UNIQUE ทั้งระบบ — บริษัทหนึ่งจองรหัสไว้ อีกบริษัทใช้รหัสนั้นไม่ได้
   // (เจอตอนให้ AI สร้างลูกค้าใหม่: tenant ที่สองชนทันทีเพราะตัวนับเลขเป็นราย tenant)
   // ต้องเป็น UNIQUE(tenant_id, code) — ข้อมูลลูกค้าเป็นของใครของมัน ไม่แชร์ข้ามบริษัท
