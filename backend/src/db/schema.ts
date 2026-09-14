@@ -22,7 +22,7 @@ export function applySchema(db: any): void {
     -- ==================== CUSTOMERS ====================
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
       contact_name TEXT NOT NULL,

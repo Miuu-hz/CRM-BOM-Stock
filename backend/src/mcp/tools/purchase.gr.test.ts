@@ -180,17 +180,22 @@ describe('MCP convert_pr_to_po — ผูก linked_pr_id + เลข PO ใช�
   })
 })
 
-describe('MCP create_goods_receipt — บรรทัดที่ยังไม่ผูกวัตถุดิบ รับของไม่ได้ (กันใบรับของผี)', () => {
-  it('PO ที่ยังไม่ผูก material_id → ปฏิเสธ พร้อมบอกให้ไปผูกก่อน', async () => {
+describe('MCP create_goods_receipt — ของที่ไม่ต้องนับสต็อก รับได้แต่ต้องเตือน', () => {
+  it('PO ที่ยังไม่ผูก material_id → รับของได้ แต่มีคำเตือนว่าจะไม่เพิ่มสต็อก', async () => {
     const tenantId = 'tn-unbound-' + Date.now()
     const poId = seedPo(tenantId, [{ description: 'ข้าวสาร', qty: 10, unbound: true }])
     const { server, tools } = fakeServer()
     registerPurchaseTools(server, tenantId, 'u1', 'tester', 'ADMIN')
 
     const res = parseOk(await tools.create_goods_receipt({ po_id: poId }))
-    expect(res.success).toBe(false)
-    expect(res.message).toContain('bind_document_item')
-    expect(db.prepare('SELECT COUNT(*) c FROM goods_receipts WHERE purchase_order_id = ?').get(poId)).toMatchObject({ c: 0 })
+    expect(res.success).toBe(true)
+    expect(res.warning).toContain('จะไม่ถูกเพิ่มเข้าสต็อก')
+    expect(res.warning).toContain('ข้าวสาร')
+    expect(db.prepare('SELECT COUNT(*) c FROM goods_receipts WHERE purchase_order_id = ?').get(poId)).toMatchObject({ c: 1 })
+
+    // ยืนยันแล้วต้องบอกกลับมาว่าบรรทัดไหนไม่ได้เข้าสต็อก ไม่ใช่เงียบ
+    const confirmed = parseOk(await tools.confirm_goods_receipt({ gr_id: res.grNumber }))
+    expect(confirmed.success).toBe(true)
   })
 })
 

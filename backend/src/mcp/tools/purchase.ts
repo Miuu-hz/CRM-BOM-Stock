@@ -645,20 +645,13 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         }
       }
 
-      // บรรทัดที่ material_id ว่าง = ยืนยันรับของแล้วของไม่เข้าสต็อก แต่ received_qty ขึ้น
-      // และ PO กลายเป็น RECEIVED = ใบรับของผี (เคสเดียวกับ PO-00007) ต้องผูกให้ครบก่อน
-      const unboundLines = lines.filter(l => !l.materialId)
-      if (unboundLines.length > 0) {
-        const names = unboundLines.map(l => {
-          const poi = db.prepare('SELECT description FROM purchase_order_items WHERE id = ?').get(l.poItemId) as any
-          return poi?.description || l.poItemId
-        })
-        return ok({
-          success: false,
-          message: `รับของไม่ได้ — มี ${unboundLines.length} รายการใน ${po.po_number} ที่ยังไม่ได้ผูกกับสินค้าในสต็อก: ${names.join(', ')} · ดูตัวเลือกและผูกด้วย bind_document_item(doc="${po.po_number}") ก่อน`,
-          unboundItems: names,
-        })
-      }
+      // บรรทัดที่ไม่ได้ผูกวัตถุดิบ = ของที่ไม่ต้องนับสต็อก (ปากกา เครื่องเขียน ค่าบริการ)
+      // เจ้าของสั่งว่าไม่ต้องบังคับผูก — รับของได้ตามปกติ แค่ต้องเตือนให้ชัดว่าจะไม่เพิ่มสต็อก
+      // (ต่างจากฝั่งขายที่บังคับผูกทุกบรรทัด เพราะขายแล้วต้องตัดของจริงเสมอ)
+      const unboundNames = lines.filter(l => !l.materialId).map(l => {
+        const poi = db.prepare('SELECT description FROM purchase_order_items WHERE id = ?').get(l.poItemId) as any
+        return poi?.description || l.poItemId
+      })
 
       try {
         const receipt = createGoodsReceipt(tenantId, callerName, {
@@ -675,6 +668,9 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
           poNumber: po.po_number,
           itemCount: lines.length,
           items: linesMeta.map((m, i) => ({ description: m.description, receivedQty: lines[i].receivedQty, unit: m.unit })),
+          warning: unboundNames.length > 0
+            ? `⚠️ ${unboundNames.length} รายการนี้จะไม่ถูกเพิ่มเข้าสต็อกเพราะยังไม่ได้ผูกกับสินค้า: ${unboundNames.join(', ')} — ถ้าเป็นของที่ต้องนับสต็อกให้ผูกด้วย bind_document_item(doc="${po.po_number}") ก่อนยืนยัน`
+            : undefined,
           message: `สร้างใบรับสินค้า ${receipt.gr_number} จาก ${po.po_number} แล้ว (${lines.length} รายการ) — ใช้ confirm_goods_receipt(gr_id="${receipt.gr_number}") เพื่อยืนยันและอัปเดตสต็อก`,
         })
       } catch (error: any) {

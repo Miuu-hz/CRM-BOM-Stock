@@ -1,4 +1,58 @@
 export function runMigrations(db: any): void {
+  // customers.code เคยเป็น UNIQUE ทั้งระบบ — บริษัทหนึ่งจองรหัสไว้ อีกบริษัทใช้รหัสนั้นไม่ได้
+  // (เจอตอนให้ AI สร้างลูกค้าใหม่: tenant ที่สองชนทันทีเพราะตัวนับเลขเป็นราย tenant)
+  // ต้องเป็น UNIQUE(tenant_id, code) — ข้อมูลลูกค้าเป็นของใครของมัน ไม่แชร์ข้ามบริษัท
+  try {
+    const custSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get() as any)?.sql || ''
+    if (custSql.includes('code TEXT UNIQUE')) {
+      const dupes = db.prepare(`
+        SELECT tenant_id, code, COUNT(*) n FROM customers GROUP BY tenant_id, code HAVING n > 1
+      `).all() as any[]
+      if (dupes.length > 0) {
+        console.error('⚠️ customers: มีรหัสซ้ำภายใน tenant เดียวกัน ข้ามการ rebuild:', dupes)
+      } else {
+        db.exec('PRAGMA foreign_keys=OFF')
+        const cols = (db.prepare('PRAGMA table_info(customers)').all() as any[]).map((c: any) => c.name)
+        const colList = cols.join(', ')
+        const rebuild = db.transaction(() => {
+          db.exec(`
+            CREATE TABLE customers_new (
+              id TEXT PRIMARY KEY,
+              code TEXT NOT NULL,
+              name TEXT NOT NULL,
+              type TEXT NOT NULL,
+              contact_name TEXT NOT NULL,
+              email TEXT NOT NULL,
+              phone TEXT NOT NULL,
+              address TEXT,
+              city TEXT NOT NULL,
+              credit_limit REAL DEFAULT 0,
+              status TEXT DEFAULT 'ACTIVE',
+              tenant_id TEXT,
+              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              loyalty_points REAL DEFAULT 0,
+              total_spent REAL DEFAULT 0,
+              tax_id TEXT,
+              UNIQUE(tenant_id, code)
+            )
+          `)
+          db.exec(`INSERT INTO customers_new (${colList}) SELECT ${colList} FROM customers`)
+          db.exec('DROP TABLE customers')
+          db.exec('ALTER TABLE customers_new RENAME TO customers')
+        })
+        rebuild()
+        db.exec('PRAGMA foreign_keys=ON')
+        const left = db.prepare('PRAGMA foreign_key_check(customers)').all() as any[]
+        if (left.length > 0) console.error('⚠️ customers rebuild เหลือ FK กำพร้า:', left)
+        else console.log('✅ Migration: customers.code เป็น UNIQUE(tenant_id, code) แล้ว')
+      }
+    }
+  } catch (e) {
+    console.error('⚠️ customers UNIQUE migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
+
   // supplier_payments.status — ยกเลิกการจ่ายเงินต้องเป็น soft-cancel ไม่ใช่ DELETE
   // (เดิมลบแถวทิ้ง ทำให้ journal ที่ reference_id ชี้มาที่แถวนั้นกลายเป็นกำพร้า ตามรอยไม่ได้)
   try {

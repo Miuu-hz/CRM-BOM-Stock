@@ -1547,7 +1547,14 @@ const Purchase = () => {
     try {
       const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`)
       if (data.success) {
-        toast.success(t('purchase.toast.receiptConfirmed'))
+        // รายการที่ไม่ได้ผูกกับสินค้าในคลัง (ของที่ไม่ต้องนับสต็อก เช่น ปากกา) จะไม่ถูกเพิ่มสต็อก
+        // รับของได้ตามปกติ แต่ต้องเตือนให้เห็นชัด ไม่ใช่เงียบ ๆ แล้วให้ไปงงตอนนับของ
+        const skipped: string[] = data.skippedLines || []
+        if (skipped.length > 0) {
+          toast(data.message, { icon: '⚠️', duration: 8000 })
+        } else {
+          toast.success(t('purchase.toast.receiptConfirmed'))
+        }
         fetchReceipts()
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.receiptConfirmFailed')) }

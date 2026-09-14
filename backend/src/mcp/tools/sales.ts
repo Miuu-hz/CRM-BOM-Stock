@@ -84,11 +84,11 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
       let customerCreated = false
       if (!customer) {
         const cusId = genId()
-        // customers.code เป็น UNIQUE ข้ามทุก tenant (ไม่ใช่ UNIQUE(tenant_id, code))
-        // ตัวนับเอกสารเป็นราย tenant เลขจึงชนกับ tenant อื่นได้ ต้องวนหาเลขที่ว่างจริง
+        // รหัสลูกค้า unique ต่อ tenant (migration 2026-09-14) — ยังวนกันเหนียวเผื่อรหัสซ้ำ
+        // จากข้อมูลที่ import เข้ามาเอง ไม่ได้ออกด้วยตัวนับ
         let cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
-        const codeTaken = db.prepare('SELECT 1 FROM customers WHERE code = ?')
-        for (let i = 0; i < 50 && codeTaken.get(cusCode); i++) {
+        const codeTaken = db.prepare('SELECT 1 FROM customers WHERE tenant_id = ? AND code = ?')
+        for (let i = 0; i < 50 && codeTaken.get(tenantId, cusCode); i++) {
           cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
         }
         db.prepare(`

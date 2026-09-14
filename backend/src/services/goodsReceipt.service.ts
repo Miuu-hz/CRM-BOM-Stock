@@ -346,5 +346,14 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
     }
   })()
 
-  return db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(gr.id, tenantId)
+  const confirmed = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(gr.id, tenantId) as any
+  // บรรทัดที่ไม่ได้ผูกวัตถุดิบจะไม่ถูกเพิ่มเข้าสต็อก (ของที่ไม่ต้องนับสต็อก เช่น ปากกา)
+  // เดิมข้ามไปเงียบ ๆ ตอนนี้บอกกลับไปให้ผู้เรียกเตือนผู้ใช้ได้
+  const skippedLines = (db.prepare(`
+    SELECT COALESCE(poi.description, 'ไม่ทราบชื่อ') as description
+    FROM goods_receipt_items gri
+    LEFT JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
+    WHERE gri.goods_receipt_id = ? AND (gri.material_id IS NULL OR gri.material_id = '')
+  `).all(gr.id) as any[]).map(r => r.description)
+  return { ...confirmed, skippedLines }
 }

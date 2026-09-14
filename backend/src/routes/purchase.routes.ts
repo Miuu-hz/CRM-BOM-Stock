@@ -721,8 +721,16 @@ router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
 router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id)
-    res.json({ success: true, data: receipt, message: 'Goods receipt confirmed and stock updated' })
+    const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id) as any
+    const skipped: string[] = receipt.skippedLines || []
+    res.json({
+      success: true,
+      data: receipt,
+      skippedLines: skipped,
+      message: skipped.length > 0
+        ? `ยืนยันรับสินค้าแล้ว — แต่ ${skipped.length} รายการไม่ได้เพิ่มเข้าสต็อก เพราะไม่ได้ผูกกับสินค้าในคลัง: ${skipped.join(', ')}`
+        : 'Goods receipt confirmed and stock updated',
+    })
   } catch (error: any) {
     if (error instanceof GoodsReceiptError) {
       const status = error.code === 'GR_NOT_FOUND' ? 404 : 400
