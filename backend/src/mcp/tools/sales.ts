@@ -4,7 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
-import { ok } from './shared'
+import { ok, matchStockItem as matchStock, bindingRow } from './shared'
 import { deductStockForSO, restoreStockForSO, soStockAlreadyDeducted, createDeliveryOrderForSO, STOCK_DEDUCTED_STATUSES } from '../../routes/sales/shared'
 import { formatDocumentNumber } from '../../utils/id'
 
@@ -27,17 +27,6 @@ const itemSchema = z.object({
 type SalesItem = z.infer<typeof itemSchema>
 
 // จับคู่รายการขายกับ stock item — เมนู/สินค้าสำเร็จรูปมาก่อน
-const matchStockItem = (tenantId: string, description: string): any =>
-  db.prepare(`
-    SELECT id, name, unit, quantity FROM stock_items
-    WHERE tenant_id = ? AND name LIKE ? AND status = 'ACTIVE'
-    ORDER BY
-      CASE WHEN name = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END,
-      CASE WHEN category IN ('finished','FINISHED') THEN 0 ELSE 1 END,
-      length(name)
-    LIMIT 1
-  `).get(tenantId, `%${description}%`, description, `${description}%`) as any
-
 const computeTotals = (items: SalesItem[], discountAmount: number, taxRate: number) => {
   const subtotal = items.reduce((s, i) => s + i.quantity * i.unitPrice * (1 - (i.discountPercent ?? 0) / 100), 0)
   const afterDiscount = subtotal - discountAmount
@@ -45,18 +34,22 @@ const computeTotals = (items: SalesItem[], discountAmount: number, taxRate: numb
   return { subtotal, taxAmount, totalAmount: afterDiscount + taxAmount }
 }
 
-const insertSoItems = (tenantId: string, soId: string, items: SalesItem[]): { description: string; matched: boolean; unit: string }[] => {
+const insertSoItems = (tenantId: string, soId: string, items: SalesItem[]): any[] => {
   const ins = db.prepare(`
     INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, '')
   `)
-  const results: { description: string; matched: boolean; unit: string }[] = []
+  const results: any[] = []
+  let lineNo = 0
   for (const item of items) {
-    const found = matchStockItem(tenantId, item.description)
-    const unit = item.unit || found?.unit || 'pcs'
+    lineNo++
+    // ผูกให้เฉพาะชื่อตรงเป๊ะ — ไม่ตรงเป๊ะปล่อยว่างไว้ให้คนเลือกด้วย bind_document_item
+    // (กติกาเดียวกับสายซื้อตั้งแต่เคส "ข้าวโพด" → "สลัดทูน่าข้าวโพด")
+    const match = matchStock(tenantId, item.description)
+    const unit = item.unit || match.exact?.unit || 'pcs'
     const lineTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent ?? 0) / 100)
-    ins.run(genId(), tenantId, soId, found?.id ?? null, item.description, item.quantity, unit, item.unitPrice, item.discountPercent ?? 0, lineTotal)
-    results.push({ description: item.description, matched: !!found, unit })
+    ins.run(genId(), tenantId, soId, match.exact?.id ?? null, item.description, item.quantity, unit, item.unitPrice, item.discountPercent ?? 0, lineTotal)
+    results.push({ บรรทัดที่: lineNo, ...bindingRow(item.description, match, unit), จำนวน: item.quantity, ราคาต่อหน่วย: item.unitPrice })
   }
   return results
 }
@@ -91,7 +84,13 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
       let customerCreated = false
       if (!customer) {
         const cusId = genId()
-        const cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
+        // customers.code เป็น UNIQUE ข้ามทุก tenant (ไม่ใช่ UNIQUE(tenant_id, code))
+        // ตัวนับเอกสารเป็นราย tenant เลขจึงชนกับ tenant อื่นได้ ต้องวนหาเลขที่ว่างจริง
+        let cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
+        const codeTaken = db.prepare('SELECT 1 FROM customers WHERE code = ?')
+        for (let i = 0; i < 50 && codeTaken.get(cusCode); i++) {
+          cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
+        }
         db.prepare(`
           INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, credit_limit, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, 'RETAIL', ?, '', '', '', 0, 'ACTIVE', ?, ?)
@@ -115,7 +114,7 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
         resultItems = insertSoItems(tenantId, id, items)
       })()
 
-      const unmatched = resultItems.filter(r => !r.matched)
+      const unmatched = resultItems.filter((r: any) => !r.ผูกกับสินค้า)
       return ok({
         soNumber,
         soId: id,
@@ -127,8 +126,10 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
         message: [
           `สร้างใบสั่งขาย ${soNumber} แล้ว (${items.length} รายการ มูลค่า ฿${totalAmount.toLocaleString()})`,
           customerCreated ? `— สร้างลูกค้า "${customer.name}" ใหม่` : '',
-          unmatched.length > 0 ? `⚠️ ${unmatched.length} รายการไม่ตรงกับสต็อก (${unmatched.map(u => u.description).join(', ')}) — จะไม่ถูกตัดสต็อกตอนยืนยัน` : '',
-          'ยืนยันด้วย update_sales_order_status(status="CONFIRMED") เพื่อตัดสต็อก',
+          unmatched.length > 0
+            ? `⚠️ ยังยืนยันไม่ได้ — มี ${unmatched.length} รายการที่ยังไม่ได้ผูกกับสินค้าในสต็อก (${unmatched.map((u: any) => u.รายการที่สั่ง).join(', ')}) กรุณาให้ผู้ใช้เลือกจาก "ตัวเลือก" ในตาราง แล้วผูกด้วย bind_document_item(doc="${soNumber}", line=<บรรทัดที่>, stock_item_id="...")`
+            : 'ผูกสินค้าครบทุกบรรทัดแล้ว — ยืนยันด้วย update_sales_order_status(status="CONFIRMED") เพื่อตัดสต็อก',
+          'แสดงตาราง items ให้ผู้ใช้ตรวจก่อนเสมอ ห้ามยืนยันเองโดยไม่ถาม',
         ].filter(Boolean).join(' '),
       })
     }
@@ -316,6 +317,21 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
           const details = shortItems.map((it: any) =>
             `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} ${it.unit || ''} มีในสต็อก ${it.stock_qty ?? 0} ${it.stock_unit || ''}`).join(', ')
           return ok({ success: false, message: `สต็อกไม่เพียงพอ: ${details}` })
+        }
+      }
+
+      // ยืนยัน = ตัดสต็อก บรรทัดที่ยังไม่ผูกสินค้าจะถูกข้ามเงียบ ๆ (ของไม่ออกจากคลังแต่บิลบอกว่าขายแล้ว)
+      // จึงต้องบล็อกไว้ก่อน ให้ไปผูกด้วย bind_document_item ให้ครบก่อน
+      if (status === 'CONFIRMED') {
+        const unbound = db.prepare(
+          'SELECT rowid, product_name FROM sales_order_items WHERE sales_order_id = ? AND (stock_item_id IS NULL OR stock_item_id = \'\')'
+        ).all(so.id) as any[]
+        if (unbound.length > 0) {
+          return ok({
+            success: false,
+            message: `ยืนยันไม่ได้ — ยังมี ${unbound.length} รายการที่ไม่ได้ผูกกับสินค้าในสต็อก: ${unbound.map(u => u.product_name).join(', ')} · ผูกให้ครบด้วย bind_document_item ก่อน`,
+            unboundItems: unbound.map(u => u.product_name),
+          })
         }
       }
 

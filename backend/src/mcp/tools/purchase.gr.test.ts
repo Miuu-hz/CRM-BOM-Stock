@@ -25,7 +25,7 @@ function parseOk(res: any): any {
   return JSON.parse(res.content[0].text)
 }
 
-function seedPo(tenantId: string, lines: { description: string; qty: number }[]) {
+function seedPo(tenantId: string, lines: { description: string; qty: number; unbound?: boolean }[]) {
   const supplierId = generateId()
   db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, 'Sup', 'C')")
     .run(supplierId, tenantId, supplierId)
@@ -36,10 +36,20 @@ function seedPo(tenantId: string, lines: { description: string; qty: number }[])
     VALUES (?, ?, ?, ?, 'APPROVED', 100, 0, 100, ?, ?)
   `).run(poId, tenantId, 'PO-' + poId.slice(0, 6), supplierId, now, now)
   for (const line of lines) {
+    // ตั้งแต่ 2026-09-14 บรรทัดที่ยังไม่ผูกวัตถุดิบจะรับของไม่ได้ (กันใบรับของผี)
+    // seed จึงต้องผูกให้เหมือน PO ที่คนกดผูกมาแล้ว ยกเว้นสั่ง unbound มาโดยเฉพาะ
+    let materialId: string | null = null
+    if (!line.unbound) {
+      materialId = generateId()
+      db.prepare(`
+        INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
+        VALUES (?, ?, ?, ?, 'raw', 0, 'pcs', 'pcs', 10, 'STOCK', 'ACTIVE')
+      `).run(materialId, tenantId, 'SKU-' + materialId.slice(0, 8), line.description)
+    }
     db.prepare(`
-      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, description, quantity, unit, unit_price, total_price, received_qty)
-      VALUES (?, ?, ?, ?, ?, 'pcs', 10, 10, 0)
-    `).run(generateId(), tenantId, poId, line.description, line.qty)
+      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, received_qty)
+      VALUES (?, ?, ?, ?, ?, ?, 'pcs', 10, 10, 0)
+    `).run(generateId(), tenantId, poId, materialId, line.description, line.qty)
   }
   return poId
 }
@@ -169,3 +179,18 @@ describe('MCP convert_pr_to_po — ผูก linked_pr_id + เลข PO ใช�
     expect(seqRow.last_number).toBe(seqNum(converted.poNumber))
   })
 })
+
+describe('MCP create_goods_receipt — บรรทัดที่ยังไม่ผูกวัตถุดิบ รับของไม่ได้ (กันใบรับของผี)', () => {
+  it('PO ที่ยังไม่ผูก material_id → ปฏิเสธ พร้อมบอกให้ไปผูกก่อน', async () => {
+    const tenantId = 'tn-unbound-' + Date.now()
+    const poId = seedPo(tenantId, [{ description: 'ข้าวสาร', qty: 10, unbound: true }])
+    const { server, tools } = fakeServer()
+    registerPurchaseTools(server, tenantId, 'u1', 'tester', 'ADMIN')
+
+    const res = parseOk(await tools.create_goods_receipt({ po_id: poId }))
+    expect(res.success).toBe(false)
+    expect(res.message).toContain('bind_document_item')
+    expect(db.prepare('SELECT COUNT(*) c FROM goods_receipts WHERE purchase_order_id = ?').get(poId)).toMatchObject({ c: 0 })
+  })
+})
+

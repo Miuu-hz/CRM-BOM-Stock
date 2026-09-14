@@ -123,3 +123,61 @@ export function tokenWhere(col: string, tokens: string[], mode: 'and' | 'or'): s
 export function tokenParams(tokens: string[]): string[] {
   return tokens.map(t => `%${t}%`)
 }
+
+// ── จับคู่สินค้าในสต็อก: ตรงเป๊ะเท่านั้นถึงผูกให้ ────────────────────────────────
+// เจ้าของสั่งไว้ 2026-08-18 (เคส "ข้าวโพด" ไปเข้า "สลัดทูน่าข้าวโพด") ว่า AI ห้ามเดาผูกเอง
+// ตั้งแต่ 2026-09-14 ใช้กติกาเดียวกันทั้งสายซื้อและสายขาย:
+//   ชื่อตรงเป๊ะ (ตัดช่องว่าง/ตัวพิมพ์) → ผูกให้เลย
+//   ไม่ตรงเป๊ะ → ไม่ผูก คืนตัวเลือกให้ผู้ใช้เลือกผ่าน bind_document_item ก่อนยืนยันเอกสาร
+export interface StockCandidate {
+  id: string
+  name: string
+  sku: string | null
+  /** หน่วยที่ใช้บนเอกสาร (คอลัมน์ unit เดิม เช่น kg) — คนละตัวกับหน่วยที่ quantity เก็บอยู่ */
+  unit: string
+  /** หน่วยฐานที่ stock_items.quantity เก็บจริง (เช่น g) */
+  baseUnit: string
+  quantity: number
+}
+export interface StockMatch {
+  exact: StockCandidate | null
+  candidates: StockCandidate[]
+}
+
+const normName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * @param rawOnly true = เอาเฉพาะวัตถุดิบ (สายซื้อ) ไม่เอาเมนูที่ขายหน้าร้าน
+ */
+export function matchStockItem(tenantId: string, description: string, rawOnly = false): StockMatch {
+  const want = normName(description)
+  if (!want) return { exact: null, candidates: [] }
+
+  const rawFilter = rawOnly ? `AND category IN ('raw','RAW_MATERIAL','material','wip')` : ''
+  const rows = db.prepare(`
+    SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity
+    FROM stock_items
+    WHERE tenant_id = ? AND status = 'ACTIVE' AND name LIKE ? ${rawFilter}
+    ORDER BY CASE WHEN name LIKE ? THEN 0 ELSE 1 END, length(name)
+    LIMIT 8
+  `).all(tenantId, `%${description.trim()}%`, `${description.trim()}%`) as StockCandidate[]
+
+  const exactRows = rows.filter(r => normName(r.name) === want)
+  // ชื่อตรงเป๊ะแต่มีมากกว่า 1 ตัว = ยังเลือกแทนคนไม่ได้ ต้องให้คนชี้
+  const exact = exactRows.length === 1 ? exactRows[0] : null
+  return { exact, candidates: rows }
+}
+
+/** แถวสำหรับโชว์เป็นตารางกลับไปให้ผู้ใช้ตรวจก่อนยืนยัน */
+export function bindingRow(description: string, match: StockMatch, unit: string) {
+  return {
+    รายการที่สั่ง: description,
+    หน่วย: unit,
+    ผูกกับสินค้า: match.exact ? match.exact.name : null,
+    คงเหลือ: match.exact ? `${match.exact.quantity} ${match.exact.baseUnit}` : null,
+    สถานะ: match.exact ? 'ผูกแล้ว (ชื่อตรงเป๊ะ)' : 'ยังไม่ผูก — ต้องเลือกก่อนยืนยัน',
+    ตัวเลือก: match.exact ? undefined : match.candidates.map(c => ({
+      stock_item_id: c.id, ชื่อ: c.name, คงเหลือ: `${c.quantity} ${c.baseUnit}`,
+    })),
+  }
+}

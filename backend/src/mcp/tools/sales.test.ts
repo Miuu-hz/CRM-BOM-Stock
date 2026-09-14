@@ -63,8 +63,8 @@ describe('MCP update_sales_order_status → ใช้ deductStockForSO ตัว
     const created = parseOk(await tools['create_sales_order']({
       items: [{ description: 'กุ้งเทสต์', quantity: 5, unitPrice: 100 }],
     }))
-    expect(created.items[0].matched).toBe(true)
-    expect(created.items[0].unit).toBe('kg')
+    expect(created.items[0]['ผูกกับสินค้า']).toBe('กุ้งเทสต์')
+    expect(created.items[0]['หน่วย']).toBe('kg')
 
     const confirmed = parseOk(await tools['update_sales_order_status']({ so_id: created.soId, status: 'CONFIRMED' }))
     expect(confirmed.success, confirmed.message).toBe(true)

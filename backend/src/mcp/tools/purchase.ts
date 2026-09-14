@@ -177,7 +177,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         LIMIT 1
       `)
 
-      const resultItems: { description: string; unit: string; suggestedMatch: { id: string; name: string; sku: string; unit: string } | null }[] = []
+      const resultItems: any[] = []
       for (const item of items) {
         const suggestion = findSuggestion.get(tenantId, `%${item.description}%`, item.description, `${item.description}%`) as any
         const resolvedUnit = normalizeUnit(item.unit || 'pcs')
@@ -193,6 +193,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
           description: item.description,
           unit: resolvedUnit,
           suggestedMatch: suggestion ? { id: suggestion.id, name: suggestion.name, sku: suggestion.sku, unit: suggestion.unit } : null,
+          สถานะ: 'ยังไม่ผูก — ผูกด้วย bind_document_item ก่อนจึงจะรับของได้',
         })
       }
 
@@ -642,6 +643,21 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
           lines.push({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })
           linesMeta.push({ description: p.description, unit: p.unit })
         }
+      }
+
+      // บรรทัดที่ material_id ว่าง = ยืนยันรับของแล้วของไม่เข้าสต็อก แต่ received_qty ขึ้น
+      // และ PO กลายเป็น RECEIVED = ใบรับของผี (เคสเดียวกับ PO-00007) ต้องผูกให้ครบก่อน
+      const unboundLines = lines.filter(l => !l.materialId)
+      if (unboundLines.length > 0) {
+        const names = unboundLines.map(l => {
+          const poi = db.prepare('SELECT description FROM purchase_order_items WHERE id = ?').get(l.poItemId) as any
+          return poi?.description || l.poItemId
+        })
+        return ok({
+          success: false,
+          message: `รับของไม่ได้ — มี ${unboundLines.length} รายการใน ${po.po_number} ที่ยังไม่ได้ผูกกับสินค้าในสต็อก: ${names.join(', ')} · ดูตัวเลือกและผูกด้วย bind_document_item(doc="${po.po_number}") ก่อน`,
+          unboundItems: names,
+        })
       }
 
       try {
