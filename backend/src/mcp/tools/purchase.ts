@@ -2,24 +2,17 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
-import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../../services/unitConversion.service'
+import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove } from './shared'
-// Math.floor() ทำลายจำนวนที่เป็นทศนิยม: รับ 500 g ของของที่หน่วยฐานเป็น kg แปลงได้ 0.5
-// แล้ว floor(0.5) = 0 → สต็อกไม่เพิ่มเลยโดยไม่มีใครรู้ (route หลักแก้ไปแล้ว ที่นี่ตกหล่น)
-import { roundQty, roundPackQty, isWholeQty } from '../../utils/qty'
-
-// stock_items.unit_cost MUST always be the price per 1 BASE UNIT (stock_items.base_unit),
-// never per the unit the PO/GR line was written in — mirrors priceToBaseUnitCost() in
-// purchase.routes.ts (same rationale: quantity is forced into base_unit, so price must be
-// divided by the same from-unit→base_unit factor or cost silently multiplies by the
-// pack/kg factor wherever base_unit differs from the purchased unit).
-function priceToBaseUnitCost(pricePerPurchasedUnit: number, factor: number, context: string): number {
-  if (!Number.isFinite(factor) || factor <= 0) {
-    console.warn(`[unit_cost] invalid conversion factor (${factor}) for ${context} — keeping price un-converted to avoid corrupting cost`)
-    return pricePerPurchasedUnit
-  }
-  return pricePerPurchasedUnit / factor
-}
+import { formatDocumentNumber } from '../../utils/id'
+import {
+  createGoodsReceipt,
+  confirmGoodsReceipt,
+  getPendingPoItems,
+  matchPendingItemByDescription,
+  GoodsReceiptError,
+  type CreateGoodsReceiptLine,
+} from '../../services/goodsReceipt.service'
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -293,8 +286,9 @@ PR ต้องมีสถานะ APPROVED ก่อน
       const prItems = db.prepare('SELECT * FROM purchase_request_items WHERE purchase_request_id = ?').all(pr.id) as any[]
       const now = new Date().toISOString()
       const poId = randomUUID().replace(/-/g, '').substring(0, 25)
-      const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as any).c
-      const poNumber = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+      // Bug #5: เดิมนับด้วย COUNT(*)+1 (ชนกับเลขที่ REST/PR อื่นออกได้ + ย้อนหลังได้หลังลบ PO)
+      // และไม่ผูก linked_pr_id เลย ตอนนี้เดินผ่านตัวนับกลางเดียวกับ REST และผูก PR ต้นทางไว้
+      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', new Date().getFullYear(), 5)
 
       let subtotal = 0
       for (const item of prItems) {
@@ -307,10 +301,10 @@ PR ต้องมีสถานะ APPROVED ก่อน
       db.transaction(() => {
         db.prepare(`
           INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
-            subtotal, tax_rate, tax_amount, total_amount, notes, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(poId, tenantId, poNumber, supplier_id, now, null, subtotal, taxRate, taxAmount, totalAmount,
-          `Created from PR: ${pr.pr_number}`, now, now)
+          `Created from PR: ${pr.pr_number}`, pr.id, now, now)
 
         const insertItem = db.prepare(`
           INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description,
@@ -516,135 +510,9 @@ items ถ้าส่งมาจะแทนที่รายการทั�
     },
     async (args) => {
       const { gr_id } = args
-
-      let gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(gr_id, tenantId) as any
-      if (!gr) {
-        gr = db.prepare('SELECT * FROM goods_receipts WHERE gr_number = ? AND tenant_id = ?').get(gr_id, tenantId) as any
-      }
-      if (!gr) {
-        return ok({ success: false, message: `ไม่พบ GR: ${gr_id}` })
-      }
-      if (gr.status === 'CONFIRMED') {
-        return ok({ success: false, message: 'GR นี้ถูกยืนยันไปแล้ว' })
-      }
-
-      const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(gr.id) as any[]
-      const now = new Date().toISOString()
-
       try {
-        db.transaction(() => {
-          db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ?")
-            .run(now, gr.id)
-
-          for (const item of items) {
-            if (item.material_id && item.accepted_qty > 0) {
-              let stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-              if (!stockItem) {
-                stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-              }
-
-              // หาของไม่เจอ = รับเข้าไม่ได้จริง ต้องหยุดทั้งใบ ไม่ใช่ข้ามรายการนี้เงียบ ๆ
-              // แล้วปล่อยให้ received_qty/สถานะ PO เดินหน้าต่อ (ฝั่ง REST สร้าง stock_items
-              // จาก materials ให้เองในกรณีนี้ ที่นี่ยังไม่มีสาขานั้น จึงให้ผู้ใช้ไปทาง REST แทน)
-              if (!stockItem) {
-                throw new Error(`ไม่พบสินค้าในสต็อกสำหรับ "${item.material_id}" — กรุณาสร้างรายการสต็อกก่อน หรือยืนยันใบรับสินค้าจากหน้าเว็บ`)
-              }
-
-              let stockQty = item.accepted_qty
-              let movementNotes = `Received from purchase`
-              // เก็บสิ่งที่เข้าสต็อกจริงไว้เขียน snapshot ให้เหมือน purchase.routes.ts
-              let mcpSealedPacks = 0
-              let appliedFactor = 1
-
-              if (stockItem) {
-                // stock_items.quantity is always stored in base_unit — see
-                // purchase.routes.ts confirm/cancel handlers for the full rationale
-                // (~23 items in this tenant have unit != base_unit from an old migration).
-                const stockUnit = normalizeUnit(stockItem.base_unit || stockItem.unit || '')
-                const displayUnit = normalizeUnit(stockItem.display_unit || '')
-                const poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
-                const poUnit = normalizeUnit(poItem?.unit || '')
-                // unit_cost must ALWAYS be price per base unit (stockUnit), never per the PO's
-                // purchased unit — see priceToBaseUnitCost() above for the full rationale.
-                const unitPrice = poItem?.unit_price || 0
-
-                // Same guard as purchase.routes.ts: only park in sealed_qty if display_unit
-                // is a real unopened pack (differs from base_unit) that can later be
-                // unpacked back out — otherwise it gets stuck in sealed_qty forever.
-                const displayToBaseChain = (!!displayUnit && displayUnit !== stockUnit)
-                  ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
-                  : null
-                const canUnpackDisplay = !!displayToBaseChain
-                // เงื่อนไขเดียวกับ purchase.routes.ts: แยกแพ็คเต็มออกจากเศษ
-                if (poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
-                  const sealedCostFactor = displayToBaseChain?.factor ?? 1
-                  const sealedUnitCost = unitPrice
-                    ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
-                    : stockItem.unit_cost
-                  const mcpPacks = Math.floor(Number(item.accepted_qty) + 1e-9)
-                  const mcpRemainder = roundQty((Number(item.accepted_qty) - mcpPacks) * sealedCostFactor)
-                  db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
-                    .run(mcpPacks, mcpRemainder, sealedUnitCost, now, stockItem.id)
-                  stockQty = mcpRemainder
-                  mcpSealedPacks = mcpPacks
-                  appliedFactor = sealedCostFactor
-                  movementNotes = `Received ${item.accepted_qty} ${poUnit}: sealed ${mcpPacks} + เศษ ${mcpRemainder}`
-                } else if (poUnit && poUnit !== stockUnit) {
-                  const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
-                  if (!converted) {
-                    throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockUnit} กรุณาตั้งค่า Unit Conversion ก่อน`)
-                  }
-                  stockQty = converted.converted
-                  appliedFactor = converted.factor
-                  movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${converted.converted.toFixed(4)} ${stockUnit})`
-                  const newUnitCost = unitPrice
-                    ? priceToBaseUnitCost(unitPrice, converted.factor, `${poUnit}→${stockUnit} (material ${item.material_id})`)
-                    : stockItem.unit_cost
-                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
-                    .run(roundQty(stockQty), newUnitCost, now, stockItem.id)
-                } else {
-                  const newUnitCost = unitPrice ? unitPrice : stockItem.unit_cost
-                  db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ?')
-                    .run(roundQty(stockQty), newUnitCost, now, stockItem.id)
-                }
-
-                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-                  VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)`)
-                  .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItem.id,
-                    // stock_movements.quantity เป็นหน่วยฐานเสมอ — แพ็คที่ยังไม่แกะต้องคูณ factor
-                    // เหมือน purchase.routes.ts เดิม MCP บันทึกแค่เศษ ตัวเลขเลยหายไปทั้งแพ็ค
-                    mcpSealedPacks ? roundQty(mcpSealedPacks * appliedFactor + stockQty) : roundQty(stockQty),
-                    `GR: ${gr.gr_number}`, movementNotes, now, userId)
-
-                // snapshot ที่ REST cancel อ่านกลับตอนยกเลิก GR — ถ้าไม่เขียน การคืนสต็อก
-                // จะตกไปใช้ factor 1 (ดู purchase.routes.ts: Number(item.stock_factor) || 1)
-                try {
-                  db.prepare(`UPDATE goods_receipt_items
-                    SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?
-                    WHERE id = ?`).run(stockItem.id, roundQty(stockQty), mcpSealedPacks, appliedFactor, item.id)
-                } catch (e) {
-                  console.error('⚠️ MCP: could not record GR stock snapshot:', e)
-                }
-              }
-
-              db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ?')
-                .run(item.accepted_qty, item.purchase_order_item_id)
-            }
-          }
-
-          // Update PO status
-          const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(gr.purchase_order_id) as any[]
-          const allReceived = poItems.every((item: any) => item.received_qty >= item.quantity)
-          if (allReceived) {
-            db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', received_date = ?, updated_at = ? WHERE id = ?")
-              .run(now, now, gr.purchase_order_id)
-          } else {
-            db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ?")
-              .run(now, gr.purchase_order_id)
-          }
-        })()
-
-        return ok({ success: true, grId: gr.id, grNumber: gr.gr_number, message: `ยืนยันรับสินค้า ${gr.gr_number} สำเร็จ` })
+        const receipt = confirmGoodsReceipt(tenantId, userId, gr_id) as any
+        return ok({ success: true, grId: receipt.id, grNumber: receipt.gr_number, message: `ยืนยันรับสินค้า ${receipt.gr_number} สำเร็จ` })
       } catch (error: any) {
         return ok({ success: false, message: error.message || 'ยืนยันรับสินค้าไม่สำเร็จ' })
       }
@@ -752,66 +620,51 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       if (po.status === 'RECEIVED') return ok({ success: false, message: `${po.po_number} รับสินค้าครบแล้ว` })
       if (po.status === 'CANCELLED') return ok({ success: false, message: `${po.po_number} ถูกยกเลิกไปแล้ว` })
 
-      const existingDraft = db.prepare(
-        "SELECT gr_number FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ? AND status = 'DRAFT'"
-      ).get(po.id, tenantId) as any
-      if (existingDraft) {
-        return ok({ success: false, message: `มีใบรับสินค้าร่าง ${existingDraft.gr_number} รออยู่ — ยืนยันด้วย confirm_goods_receipt ก่อนสร้างใหม่`, grNumber: existingDraft.gr_number })
-      }
-
-      const pendingItems = db.prepare(`
-        SELECT *, (quantity - COALESCE(received_qty, 0)) as pending_qty
-        FROM purchase_order_items
-        WHERE purchase_order_id = ? AND quantity > COALESCE(received_qty, 0)
-      `).all(po.id) as any[]
+      const pendingItems = getPendingPoItems(tenantId, po.id)
       if (pendingItems.length === 0) return ok({ success: false, message: `${po.po_number} ไม่มีรายการค้างรับ` })
 
-      // จับคู่รายการที่ผู้ใช้ระบุกับรายการค้างรับ — ถ้าไม่ระบุรับทั้งหมดเต็มจำนวน
-      const grItems: { poItem: any; receivedQty: number }[] = []
+      // Bug #2: จับคู่รายการที่ผู้ใช้ระบุกับรายการค้างรับ — ต้อง exact match เท่านั้น (ดู
+      // matchPendingItemByDescription) เดิม includes() สองทางจับ "กล่อง" เข้ากับ "กล่องของขวัญเปล่า"
+      // ผิดใบ — ถ้าไม่ระบุ items เลยรับทั้งหมดเต็มจำนวนตามเดิม
+      const lines: CreateGoodsReceiptLine[] = []
+      const linesMeta: { description: string; unit: string | null }[] = []
       if (items && items.length > 0) {
         for (const item of items) {
-          const found = pendingItems.find(p => (p.description || '').includes(item.description) || item.description.includes(p.description || ''))
+          const found = matchPendingItemByDescription(pendingItems, item.description)
           if (!found) {
             return ok({ success: false, message: `ไม่พบรายการ "${item.description}" ใน PO (รายการค้างรับ: ${pendingItems.map(p => p.description).join(', ')})` })
           }
-          grItems.push({ poItem: found, receivedQty: item.received_qty })
+          lines.push({ poItemId: found.id, materialId: found.material_id, orderedQty: found.quantity, receivedQty: item.received_qty, acceptedQty: item.received_qty })
+          linesMeta.push({ description: found.description, unit: found.unit })
         }
       } else {
-        for (const p of pendingItems) grItems.push({ poItem: p, receivedQty: p.pending_qty })
+        for (const p of pendingItems) {
+          lines.push({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })
+          linesMeta.push({ description: p.description, unit: p.unit })
+        }
       }
 
-      const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      const grCount = (db.prepare('SELECT COUNT(*) as c FROM goods_receipts WHERE tenant_id = ?').get(tenantId) as any).c
-      const grNumber = `GR-${new Date().getFullYear()}-${String(grCount + 1).padStart(5, '0')}`
-      const now = new Date().toISOString()
+      try {
+        const receipt = createGoodsReceipt(tenantId, callerName, {
+          purchaseOrderId: po.id,
+          notes,
+          deliveryNoteNo: delivery_note_no,
+          items: lines,
+        }) as any
 
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO goods_receipts (id, tenant_id, gr_number, purchase_order_id, supplier_id, receipt_date,
-            received_by, status, notes, delivery_note_no, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
-        `).run(id, tenantId, grNumber, po.id, po.supplier_id, now, callerName, notes ?? '', delivery_note_no ?? null, now, now)
-
-        const insertItem = db.prepare(`
-          INSERT INTO goods_receipt_items (id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id,
-            ordered_qty, received_qty, accepted_qty, rejected_qty, lot_number, location, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, '')
-        `)
-        for (const { poItem, receivedQty } of grItems) {
-          insertItem.run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, id,
-            poItem.id, poItem.material_id, poItem.quantity, receivedQty, receivedQty)
-        }
-      })()
-
-      return ok({
-        success: true,
-        grNumber,
-        grId: id,
-        poNumber: po.po_number,
-        itemCount: grItems.length,
-        items: grItems.map(g => ({ description: g.poItem.description, receivedQty: g.receivedQty, unit: g.poItem.unit })),
-        message: `สร้างใบรับสินค้า ${grNumber} จาก ${po.po_number} แล้ว (${grItems.length} รายการ) — ใช้ confirm_goods_receipt(gr_id="${grNumber}") เพื่อยืนยันและอัปเดตสต็อก`,
-      })
+        return ok({
+          success: true,
+          grNumber: receipt.gr_number,
+          grId: receipt.id,
+          poNumber: po.po_number,
+          itemCount: lines.length,
+          items: linesMeta.map((m, i) => ({ description: m.description, receivedQty: lines[i].receivedQty, unit: m.unit })),
+          message: `สร้างใบรับสินค้า ${receipt.gr_number} จาก ${po.po_number} แล้ว (${lines.length} รายการ) — ใช้ confirm_goods_receipt(gr_id="${receipt.gr_number}") เพื่อยืนยันและอัปเดตสต็อก`,
+        })
+      } catch (error: any) {
+        if (error instanceof GoodsReceiptError) return ok({ success: false, message: error.message })
+        return ok({ success: false, message: error.message || 'สร้างใบรับสินค้าไม่สำเร็จ' })
+      }
     }
   )
 

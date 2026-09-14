@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted } from './shared'
+import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 
 const router = Router()
@@ -10,8 +10,6 @@ const router = Router()
 // Statuses reached only after deductStockForSO() has run (i.e. SO was CONFIRMED
 // at some point and hasn't been un-confirmed back to DRAFT). Used to decide whether
 // cancelling needs to restore stock.
-const STOCK_DEDUCTED_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'PARTIAL', 'COMPLETED']
-
 // GET all sales orders
 router.get('/', async (req: Request, res: Response) => {
   try {

@@ -12,6 +12,12 @@ const PACK_EPS = 1e-9
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { updateAccountBalance } from './sales/shared'
+import {
+  createGoodsReceipt,
+  confirmGoodsReceipt,
+  GoodsReceiptError,
+  type CreateGoodsReceiptLine,
+} from '../services/goodsReceipt.service'
 
 const router = Router()
 
@@ -19,24 +25,6 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
-}
-
-// stock_items.unit_cost MUST always be the price per 1 BASE UNIT (stock_items.base_unit),
-// never per the unit the PO/GR line was written in. quantity is already forced into
-// base_unit (see stockUnit/stockQty conversion above each call site); price used to be
-// left at face value, which silently multiplied cost by the pack/kg factor wherever
-// base_unit differs from the purchased unit (e.g. shrimp bought at 215 บาท/kg with
-// base_unit=g priced stock at 215 บาท/g — 1000x too high). Convert with:
-//   unit_cost = pricePerPurchasedUnit / factor
-// where factor = how many base units are in 1 purchased unit (the same `factor` that
-// convertQuantityBidirectional()/findConversionChain() return when converting FROM the
-// purchased unit TO base_unit).
-function priceToBaseUnitCost(pricePerPurchasedUnit: number, factor: number, context: string): number {
-  if (!Number.isFinite(factor) || factor <= 0) {
-    console.warn(`[unit_cost] invalid conversion factor (${factor}) for ${context} — keeping price un-converted to avoid corrupting cost`)
-    return pricePerPurchasedUnit
-  }
-  return pricePerPurchasedUnit / factor
 }
 
 // Resolve a PR/PO line item material_id to a valid materials.id, or null.
@@ -679,72 +667,35 @@ router.post('/goods-receipts', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { purchaseOrderId, receiptDate, receivedBy, notes, items, deliveryNoteNo } = req.body
-    console.log('[GR DEBUG] body:', { purchaseOrderId, receiptDate, receivedBy, deliveryNoteNo, notes, itemCount: items?.length })
-    
+
     if (!purchaseOrderId) {
-      console.log('[GR DEBUG] 400: missing purchaseOrderId')
       return res.status(400).json({ success: false, message: 'Purchase order is required' })
     }
 
-    // Get PO details
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
-    if (!po) {
-      return res.status(404).json({ success: false, message: 'Purchase order not found' })
-    }
+    const lines: CreateGoodsReceiptLine[] | undefined = items && items.length > 0
+      ? items.map((item: any) => ({
+          poItemId: item.poItemId,
+          materialId: item.materialId || null,
+          orderedQty: item.orderedQty,
+          receivedQty: item.receivedQty,
+          acceptedQty: item.acceptedQty || item.receivedQty,
+          rejectedQty: item.rejectedQty || 0,
+          lotNumber: item.lotNumber || null,
+          location: item.location || null,
+          notes: item.notes || '',
+        }))
+      : undefined
 
-    // Block if PO already fully received
-    if (po.status === 'RECEIVED') {
-      return res.status(400).json({ success: false, message: 'ใบสั่งซื้อนี้รับสินค้าครบแล้ว' })
-    }
-
-    // Block if there is already a DRAFT GR waiting to be confirmed for this PO
-    const existingDraft = db.prepare(
-      "SELECT id, gr_number FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ? AND status = 'DRAFT'"
-    ).get(purchaseOrderId, tenantId) as any
-    if (existingDraft) {
-      return res.status(400).json({
-        success: false,
-        message: `มีใบรับสินค้าร่าง ${existingDraft.gr_number} รออยู่ — กรุณายืนยันหรือลบก่อนสร้างใหม่`,
-      })
-    }
-
-    const id = generateId()
-    const grNumber = generateNumber('GR', tenantId, 'goods_receipts')
-    const now = new Date().toISOString()
-
-    const transaction = db.transaction(() => {
-      // Create GR
-      db.prepare(`
-        INSERT INTO goods_receipts (id, tenant_id, gr_number, purchase_order_id, supplier_id, receipt_date,
-          received_by, status, notes, delivery_note_no, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
-      `).run(id, tenantId, grNumber, purchaseOrderId, po.supplier_id, receiptDate || now,
-        receivedBy || req.user!.email, notes || '', deliveryNoteNo || null, now, now)
-
-      // Create GR items
-      if (items && items.length > 0) {
-        const insertItem = db.prepare(`
-          INSERT INTO goods_receipt_items (id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id,
-            ordered_qty, received_qty, accepted_qty, rejected_qty, lot_number, location, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        for (const item of items) {
-          insertItem.run(
-            generateId(), tenantId, id, item.poItemId, item.materialId || null,
-            item.orderedQty, item.receivedQty, item.acceptedQty || item.receivedQty,
-            item.rejectedQty || 0, item.lotNumber || null, item.location || null, item.notes || ''
-          )
-        }
-      }
+    const receipt = createGoodsReceipt(tenantId, req.user!.email, {
+      purchaseOrderId, receiptDate, receivedBy, notes, deliveryNoteNo, items: lines,
     })
 
-    transaction()
-
-    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const receiptItems = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(id)
-
-    res.status(201).json({ success: true, data: { ...receipt, items: receiptItems } })
-  } catch (error) {
+    res.status(201).json({ success: true, data: receipt })
+  } catch (error: any) {
+    if (error instanceof GoodsReceiptError) {
+      const status = error.code === 'PO_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Create goods receipt error:', error)
     res.status(500).json({ success: false, message: 'Failed to create goods receipt' })
   }
@@ -771,212 +722,15 @@ router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
 router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
-    const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-    if (!gr) {
-      return res.status(404).json({ success: false, message: 'Goods receipt not found' })
-    }
-
-    if (gr.status === 'CONFIRMED') {
-      return res.status(400).json({ success: false, message: 'Goods receipt already confirmed' })
-    }
-
-    const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(req.params.id) as any[]
-    const now = new Date().toISOString()
-
-    const transaction = db.transaction(() => {
-      // Update GR status
-      db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
-        .run(now, req.params.id, tenantId)
-
-      // Update stock and PO received qty
-      for (const item of items) {
-        if (item.material_id && item.accepted_qty > 0) {
-          // Get PO item details (unit + unit_price)
-          let poItem: any
-          try {
-            poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
-          } catch (e) {
-            // Fallback if 'unit' column hasn't been migrated yet
-            poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
-          }
-          const unitPrice = poItem?.unit_price || 0
-          const poUnit = normalizeUnit(poItem?.unit || '')
-
-          // Find stock item: first by material_id (BOM flow), then directly by id (standalone stock flow)
-          let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-          if (!stockItem) {
-            stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-          }
-
-          let stockQty = roundQty(Number(item.accepted_qty))
-          let movementNotes = `Received from purchase`
-          let addToSealed = false
-          let appliedFactor = 1
-
-          // stock_items.quantity is always stored in base_unit — targeting the legacy
-          // `unit` column here silently applied the wrong conversion for the ~23 items
-          // where `unit` != `base_unit`. Fall back to `unit` only when base_unit is empty.
-          let sealedPacks = 0
-          const stockUnit = normalizeUnit(stockItem?.base_unit || stockItem?.unit || '')
-          const displayUnit = normalizeUnit(stockItem?.display_unit || '')
-
-          // ถ้า PO unit ตรงกับ display_unit → เก็บเป็น sealed_qty (ยังไม่แกะ) แต่ต้องเช็คด้วยว่า
-          // display_unit ต่างจาก base_unit จริง และแปลง display->base ได้จริง ไม่งั้นถ้า
-          // display_unit == base_unit (เช่น ทั้งคู่เป็น bottle) ของจะไปค้างเป็น sealed_qty
-          // ตลอดกาล เพราะ autoUnpackIfNeeded() มี guard เดียวกันนี้อยู่ (return null เมื่อ
-          // display==base) ทำให้แกะไม่ได้ ขายไม่ได้ (ของหายเข้ากลีบเมฆ)
-          const displayToBaseChain = (!!displayUnit && displayUnit !== stockUnit)
-            ? findConversionChain(displayUnit, stockUnit, tenantId, item.material_id)
-            : null
-          const canUnpackDisplay = !!displayToBaseChain
-          if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
-            addToSealed = true
-            // แยกเป็น "แพ็คเต็มที่ยังไม่แกะ" + "เศษที่แปลงเป็นหน่วยฐานแล้ว"
-            // เดิมปัดเศษเป็นจำนวนแพ็คเต็ม ทำให้รับ 1.285 kg กลายเป็น 1 kg (หาย 285 g)
-            // และรับ 1.6 kg กลายเป็น 2 kg (เกิน 400 g)
-            const packFactor = displayToBaseChain?.factor ?? 1
-            sealedPacks = Math.floor(Number(item.accepted_qty) + PACK_EPS)
-            stockQty = roundQty((Number(item.accepted_qty) - sealedPacks) * packFactor)
-            appliedFactor = packFactor
-            movementNotes = sealedPacks > 0 && stockQty > 0
-              ? `Received ${item.accepted_qty} ${poUnit}: sealed ${sealedPacks} ${poUnit} (ยังไม่แกะ) + เศษ ${stockQty} ${stockUnit}`
-              : sealedPacks > 0
-                ? `Received as sealed ${poUnit}: ${sealedPacks} ${poUnit} (ยังไม่แกะ)`
-                : `Received ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit} (ไม่ถึงหนึ่งแพ็ค)`
-          } else if (stockItem && poUnit && poUnit !== stockUnit) {
-            // Unit conversion: PO unit → Stock base unit
-            const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
-            if (!converted) {
-              const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
-                || stockItem.name
-                || item.material_id
-              throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockUnit} สำหรับ "${materialName}" กรุณาตั้งค่า Unit Conversion ก่อน`)
-            }
-            stockQty = roundQty(converted.converted)
-            appliedFactor = converted.factor
-            movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit}, factor: ${converted.factor})`
-          }
-
-          if (stockItem) {
-            if (addToSealed) {
-              // Sealed path stores qty in display_unit (unopened pack), but unit_cost is
-              // ALWAYS per base_unit regardless of what unit the stock quantity happens to
-              // be parked in right now — so still divide by the poUnit(=displayUnit)→base
-              // factor here, not the raw pack price.
-              const sealedCostFactor = displayToBaseChain?.factor ?? 1
-              const sealedUnitCost = unitPrice
-                ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
-                : stockItem.unit_cost
-              db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(sealedPacks, stockQty, sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
-            } else {
-              // Update quantity + unit_cost (latest purchase price, converted to price-per-
-              // base-unit using the same factor that converted the quantity above — see
-              // priceToBaseUnitCost() comment for why this division is required).
-              const newUnitCost = unitPrice
-                ? priceToBaseUnitCost(unitPrice, appliedFactor, `${poUnit || stockUnit}→${stockUnit} (material ${item.material_id})`)
-                : stockItem.unit_cost
-              db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(stockQty, newUnitCost, unitPrice || null, unitPrice ? (poUnit || stockUnit || null) : null, now, stockItem.id, tenantId)
-            }
-          } else {
-            // Create new stock item (BOM material not yet in stock). materials has only a
-            // single `unit` column (no base/display split), so that becomes this row's
-            // base_unit too — write both `unit` and `base_unit` the same to keep them in
-            // sync from creation (see "เลิกใช้ unit legacy" task).
-            const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
-            if (material) {
-              const newStockId = generateId()
-              const newItemUnit = normalizeUnit(material.unit || 'pcs')
-              // unit_cost must be price per base unit (newItemUnit), same rule as the
-              // update-existing-item branch above.
-              // NOTE: stockQty above was computed against `stockUnit` derived from the
-              // (nonexistent, since stockItem is null here) existing stock item, so it is
-              // NOT converted from poUnit to newItemUnit — that is a separate, pre-existing
-              // gap outside this fix's scope (unit_cost only per task boundaries); flagged
-              // in the report. Deliberately not touched here.
-              let newItemCostFactor = 1
-              if (poUnit && newItemUnit && poUnit !== newItemUnit) {
-                const conv = convertQuantityBidirectional(1, poUnit, newItemUnit, tenantId, item.material_id)
-                if (conv && conv.factor > 0) {
-                  newItemCostFactor = conv.factor
-                } else {
-                  console.warn(`[unit_cost] no conversion ${poUnit}→${newItemUnit} for new stock item (material ${item.material_id}); storing price un-converted`)
-                }
-              }
-              const newUnitCost = priceToBaseUnitCost(unitPrice, newItemCostFactor, `new stock item ${poUnit}→${newItemUnit} (material ${item.material_id})`)
-              db.prepare(`
-                INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, base_unit, unit_cost, location, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK', 'ACTIVE', ?, ?)
-              `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
-                stockQty, newItemUnit, newItemUnit, newUnitCost, now, now)
-              stockItem = { id: newStockId }
-            }
-          }
-
-          if (stockItem) {
-            // Record stock movement
-            db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id,
-              // stock_movements.quantity เป็นหน่วยฐานเสมอตาม schema — แพ็คที่ยังไม่แกะก็ต้องคูณ factor
-              addToSealed ? roundQty(sealedPacks * appliedFactor + stockQty) : stockQty, `GR: ${gr.gr_number}`,
-              movementNotes, now, req.user!.userId)
-
-            // Persist exactly what hit stock. Cancellation reads these back instead of
-            // re-running the conversion, so editing or deleting a unit-conversion rule
-            // after receipt can no longer make the reversal subtract a different amount.
-            try {
-              db.prepare(`UPDATE goods_receipt_items
-                SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?
-                WHERE id = ?`).run(
-                stockItem.id,
-                stockQty,
-                addToSealed ? sealedPacks : 0,
-                appliedFactor,
-                item.id
-              )
-            } catch (e) {
-              console.error('⚠️ could not record GR stock snapshot (migration pending?):', e)
-            }
-          }
-
-        }
-
-        // Update PO item received qty (in PO unit) — independent of material_id so free-text lines still count as received
-        if (item.accepted_qty > 0) {
-          db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ? AND tenant_id = ?')
-            .run(item.accepted_qty, item.purchase_order_item_id, tenantId)
-        }
-      }
-
-      // Check if PO fully received
-      const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(gr.purchase_order_id) as any[]
-      const allReceived = poItems.every((item: any) => item.received_qty >= item.quantity)
-      
-      if (allReceived) {
-        db.prepare("UPDATE purchase_orders SET status = 'RECEIVED', received_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(now, now, gr.purchase_order_id, tenantId)
-      } else {
-        db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
-          .run(now, gr.purchase_order_id, tenantId)
-      }
-    })
-
-    transaction()
-
-    const receipt = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id)
     res.json({ success: true, data: receipt, message: 'Goods receipt confirmed and stock updated' })
   } catch (error: any) {
-    console.error('Confirm goods receipt error:', error)
-    const message = error?.message || 'Failed to confirm goods receipt'
-    // Validation errors (missing unit conversion) should return 400, not 500
-    if (message.includes('ไม่พบการแปลงหน่วย') || message.includes('Unit Conversion')) {
-      return res.status(400).json({ success: false, message })
+    if (error instanceof GoodsReceiptError) {
+      const status = error.code === 'GR_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
     }
-    res.status(500).json({ success: false, message })
+    console.error('Confirm goods receipt error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to confirm goods receipt' })
   }
 })
 

@@ -5,14 +5,10 @@ import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { ok } from './shared'
-import { deductStockForSO, soStockAlreadyDeducted } from '../../routes/sales/shared'
+import { deductStockForSO, restoreStockForSO, soStockAlreadyDeducted, createDeliveryOrderForSO, STOCK_DEDUCTED_STATUSES } from '../../routes/sales/shared'
+import { formatDocumentNumber } from '../../utils/id'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
-
-const genNumber = (prefix: string, tenantId: string, table: string): string => {
-  const count = (db.prepare(`SELECT COUNT(*) as c FROM ${table} WHERE tenant_id = ?`).get(tenantId) as { c: number }).c
-  return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
-}
 
 const findSalesOrder = (soId: string, tenantId: string): any => {
   let so = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(soId, tenantId) as any
@@ -35,9 +31,12 @@ const matchStockItem = (tenantId: string, description: string): any =>
   db.prepare(`
     SELECT id, name, unit, quantity FROM stock_items
     WHERE tenant_id = ? AND name LIKE ? AND status = 'ACTIVE'
-    ORDER BY CASE WHEN category IN ('finished','FINISHED') THEN 0 ELSE 1 END
+    ORDER BY
+      CASE WHEN name = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END,
+      CASE WHEN category IN ('finished','FINISHED') THEN 0 ELSE 1 END,
+      length(name)
     LIMIT 1
-  `).get(tenantId, `%${description}%`) as any
+  `).get(tenantId, `%${description}%`, description, `${description}%`) as any
 
 const computeTotals = (items: SalesItem[], discountAmount: number, taxRate: number) => {
   const subtotal = items.reduce((s, i) => s + i.quantity * i.unitPrice * (1 - (i.discountPercent ?? 0) / 100), 0)
@@ -85,22 +84,24 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
       // ── หาหรือสร้างลูกค้า ────────────────────────────────────────────────────
       const hint = customer_hint || 'ลูกค้าทั่วไป'
       let customer = db.prepare(
-        `SELECT id, name FROM customers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1`
-      ).get(tenantId, `%${hint}%`, `%${hint}%`) as any
+        `SELECT id, name FROM customers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE'
+         ORDER BY CASE WHEN name = ? OR code = ? THEN 0 WHEN name LIKE ? OR code LIKE ? THEN 1 ELSE 2 END, length(name)
+         LIMIT 1`
+      ).get(tenantId, `%${hint}%`, `%${hint}%`, hint, hint, `${hint}%`, `${hint}%`) as any
       let customerCreated = false
       if (!customer) {
-        const cusCount = (db.prepare('SELECT COUNT(*) as c FROM customers WHERE tenant_id = ?').get(tenantId) as any).c
         const cusId = genId()
+        const cusCode = formatDocumentNumber('CUS', tenantId, 'CUSTOMER', new Date().getFullYear(), 4)
         db.prepare(`
           INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, credit_limit, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, 'RETAIL', ?, '', '', '', 0, 'ACTIVE', ?, ?)
-        `).run(cusId, tenantId, `CUS-${new Date().getFullYear()}-${String(cusCount + 1).padStart(4, '0')}`, hint, hint, now, now)
+        `).run(cusId, tenantId, cusCode, hint, hint, now, now)
         customer = { id: cusId, name: hint }
         customerCreated = true
       }
 
       const id = genId()
-      const soNumber = genNumber('SO', tenantId, 'sales_orders')
+      const soNumber = formatDocumentNumber('SO', tenantId, 'SALES_ORDER', new Date().getFullYear(), 5)
       const { subtotal, taxAmount, totalAmount } = computeTotals(items, discount_amount, tax_rate)
 
       let resultItems: { description: string; matched: boolean; unit: string }[] = []
@@ -188,8 +189,10 @@ items ถ้าส่งมาจะแทนที่รายการทั�
       let customerId: string | null = null
       if (customer_hint) {
         const cus = db.prepare(
-          `SELECT id FROM customers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1`
-        ).get(tenantId, `%${customer_hint}%`, `%${customer_hint}%`) as any
+          `SELECT id FROM customers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE'
+           ORDER BY CASE WHEN name = ? OR code = ? THEN 0 WHEN name LIKE ? OR code LIKE ? THEN 1 ELSE 2 END, length(name)
+           LIMIT 1`
+        ).get(tenantId, `%${customer_hint}%`, `%${customer_hint}%`, customer_hint, customer_hint, `${customer_hint}%`, `${customer_hint}%`) as any
         if (!cus) return ok({ success: false, message: `ไม่พบลูกค้า: ${customer_hint}` })
         customerId = cus.id
       }
@@ -242,6 +245,11 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
       const { so_id, status } = args
       const so = findSalesOrder(so_id, tenantId)
       if (!so) return ok({ success: false, message: `ไม่พบ SO: ${so_id}` })
+      // เดิมไม่เช็ค role เลย — REST (salesOrders.ts PUT /:id/status) บล็อก CANCELLED ไว้แค่
+      // ADMIN/MANAGER/MASTER อยู่แล้ว ผู้ใช้ทั่วไปยกเลิกออเดอร์ (คืนสต็อก) ผ่าน MCP ได้ไม่ควร
+      if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(callerRole)) {
+        return ok({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกคำสั่งขาย — ต้องเป็น ADMIN/MANAGER/MASTER' })
+      }
       if (so.status === status) return ok({ success: false, message: `SO อยู่ในสถานะ ${status} อยู่แล้ว` })
       if (['COMPLETED', 'CANCELLED'].includes(so.status)) {
         return ok({ success: false, message: `ไม่สามารถเปลี่ยนสถานะได้ — SO ${so.status} ไปแล้ว` })
@@ -312,6 +320,7 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
       }
 
       const now = new Date().toISOString()
+      const previousStatus = so.status
       db.prepare('UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(status, now, so.id, tenantId)
 
@@ -324,21 +333,43 @@ DELIVERED/COMPLETED = ส่งมอบ/จบงาน | CANCELLED = ยกเ
           deductStockForSO(tenantId, so.id, so.so_number)
           stockDeducted = true
         } catch (err: any) {
-          // ตัวจริง throw แทนที่จะเงียบ — ย้อนสถานะกลับที่เดิม (so.status ยังเป็นค่าก่อนยืนยัน
+          // ตัวจริง throw แทนที่จะเงียบ — ย้อนสถานะกลับที่เดิม (previousStatus คือค่าก่อนยืนยัน
           // เพราะเช็คไปแล้วว่าต้องเป็น DRAFT ก่อนเข้ามาถึงตรงนี้) ไม่ให้ SO ค้าง CONFIRMED
           // ทั้งที่ไม่เคยตัดสต็อกจริง
           db.prepare('UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-            .run(so.status, new Date().toISOString(), so.id, tenantId)
+            .run(previousStatus, new Date().toISOString(), so.id, tenantId)
           return ok({ success: false, message: `ยืนยันไม่สำเร็จ: ${err?.message || 'ตัดสต็อกไม่ได้'}` })
         }
         if (confirmGateArgs) recordAutoAction(confirmGateArgs)
+      }
+
+      // คืนสต็อกเมื่อยกเลิก SO ที่เคยตัดสต็อกไปแล้ว — REST (salesOrders.ts PUT /:id/status)
+      // ทำอยู่แล้ว แต่ MCP เดิมแค่เปลี่ยนสถานะเฉยๆ ไม่คืนสต็อก ยกเลิกผ่าน AI แล้วสต็อกค้างหาย
+      let stockRestored = false
+      if (status === 'CANCELLED' && STOCK_DEDUCTED_STATUSES.includes(previousStatus)) {
+        restoreStockForSO(tenantId, so.id, so.so_number)
+        stockRestored = true
+      }
+
+      // ออกใบส่งของอัตโนมัติเมื่อส่งของ/จบงาน — ให้ตรงกับ REST เดิม MCP ไม่เคยเรียกเลย
+      // SO ที่ยืนยัน+ส่งของผ่าน AI ทั้งเส้นจะไม่มีใบส่งของเกิดขึ้นเลยแม้แต่ใบเดียว
+      if (status === 'DELIVERED' || status === 'COMPLETED') {
+        try {
+          createDeliveryOrderForSO(tenantId, so.id, {
+            createdBy: userId,
+            notes: `ออกอัตโนมัติเมื่อคำสั่งขาย ${so.so_number} เปลี่ยนเป็น${status === 'COMPLETED' ? 'เสร็จสิ้น' : 'ส่งของแล้ว'}`,
+          })
+        } catch (e) {
+          // ออกใบไม่สำเร็จต้องไม่ทำให้การเปลี่ยนสถานะล้มไปด้วย สถานะสำคัญกว่าตัวเอกสาร
+          console.error('auto delivery order failed:', e)
+        }
       }
 
       return ok({
         success: true,
         soNumber: so.so_number,
         status,
-        message: `เปลี่ยนสถานะ ${so.so_number} เป็น ${status} สำเร็จ${stockDeducted ? ' — ตัดสต็อกแล้ว' : ''}`,
+        message: `เปลี่ยนสถานะ ${so.so_number} เป็น ${status} สำเร็จ${stockDeducted ? ' — ตัดสต็อกแล้ว' : ''}${stockRestored ? ' — คืนสต็อกแล้ว' : ''}`,
       })
     }
   )

@@ -440,6 +440,13 @@ export { isValidImageFile, sanitizeFilename }
  * สถานะของ SO — สถานะถูกแก้มือได้หลายทาง (เช่น POST /delivery-orders ดัน SO เป็น
  * PARTIAL ทั้งที่ยังไม่เคยยืนยัน) แต่รายการเคลื่อนไหวโกหกไม่ได้
  */
+/**
+ * สถานะที่ "ผ่าน deductStockForSO() มาแล้ว" — ใช้ตัดสินว่าตอนยกเลิกต้องคืนสต็อกไหม
+ * อยู่ที่นี่ที่เดียวเพราะทั้ง REST (routes/sales/salesOrders.ts) และ MCP (mcp/tools/sales.ts)
+ * ต้องใช้ลิสต์เดียวกัน — เคยเป็นสำเนา 2 ชุด ซึ่งคือต้นเหตุของบั๊ก REST/MCP ไม่เท่ากันทั้งชุด
+ */
+export const STOCK_DEDUCTED_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'PARTIAL', 'COMPLETED']
+
 export function soStockAlreadyDeducted(tenantId: string, soNumber: string): boolean {
   return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
     .get(tenantId, `SO: ${soNumber}`)
