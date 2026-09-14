@@ -106,8 +106,8 @@ export function applySchema(db: any): void {
       quantity INTEGER NOT NULL,
       unit_price REAL NOT NULL,
       total_price REAL NOT NULL,
-      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
     );
 
     -- ==================== BOMs ====================
@@ -410,8 +410,8 @@ export function applySchema(db: any): void {
       discount_percent REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
       notes TEXT,
-      FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE CASCADE
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
     );
 
     -- คำสั่งขาย (Sales Orders)
@@ -453,7 +453,7 @@ export function applySchema(db: any): void {
       total_price REAL DEFAULT 0,
       notes TEXT,
       FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(id),
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
       FOREIGN KEY (quotation_item_id) REFERENCES quotation_items(id)
     );
 
@@ -530,8 +530,8 @@ export function applySchema(db: any): void {
       unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
       FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
-      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id),
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (sales_order_item_id) REFERENCES sales_order_items(id)
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
     );
 
     -- การรับชำระเงิน (Payments/Receipts)
@@ -650,7 +650,7 @@ export function applySchema(db: any): void {
       status TEXT DEFAULT 'ACTIVE',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
       UNIQUE(tenant_id, sku)
     );
 
@@ -680,8 +680,8 @@ export function applySchema(db: any): void {
       discount_percent REAL DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
       notes TEXT,
-      FOREIGN KEY (template_id) REFERENCES quotation_templates(id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      FOREIGN KEY (template_id) REFERENCES quotation_templates(id) ON DELETE CASCADE
+      -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items
     );
 
     -- ==================== INDEXES ====================
@@ -1392,7 +1392,7 @@ export function applySchema(db: any): void {
       sale_unit TEXT,                    -- หน่วยขาย (default = base_unit ของ stock item)
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (product_id) REFERENCES stock_items(id),
       FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE SET NULL,
       FOREIGN KEY (category_id) REFERENCES pos_categories(id),
       UNIQUE(tenant_id, product_id)

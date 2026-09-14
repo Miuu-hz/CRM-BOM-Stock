@@ -1,4 +1,35 @@
 export function runMigrations(db: any): void {
+  // FK ที่ชี้ตาราง products — products เป็นแคตตาล็อกตาย 12 แถว ของจริงอยู่ที่ stock_items
+  // FK พวกนี้ทำ feature ตายเงียบมาแล้ว 4 ตาราง (credit_note_items / delivery_order_items /
+  // backorder_items / purchase_invoice_items) ล้างที่เหลือทิ้งก่อนมีคนเปิดใช้แล้วเจอหน้าเดิม
+  for (const tbl of ['order_items', 'product_variants', 'quotation_template_items']) {
+    try {
+      const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(tbl) as any)?.sql || ''
+      if (!/FOREIGN KEY\s*\(product_id\)\s*REFERENCES\s+products/i.test(cur)) continue
+
+      const newDdl = cur
+        .replace(/CREATE TABLE\s+"?\w+"?/i, `CREATE TABLE ${tbl}_new`)
+        .replace(/,?\s*FOREIGN KEY\s*\(product_id\)\s*REFERENCES\s+products\s*\([^)]*\)(\s+ON DELETE \w+)?/i, '')
+      const cols = (db.prepare(`PRAGMA table_info(${tbl})`).all() as any[]).map((c: any) => c.name).join(', ')
+
+      db.exec('PRAGMA foreign_keys=OFF')
+      const rebuild = db.transaction(() => {
+        db.exec(newDdl)
+        db.exec(`INSERT INTO ${tbl}_new (${cols}) SELECT ${cols} FROM ${tbl}`)
+        db.exec(`DROP TABLE ${tbl}`)
+        db.exec(`ALTER TABLE ${tbl}_new RENAME TO ${tbl}`)
+      })
+      rebuild()
+      db.exec('PRAGMA foreign_keys=ON')
+      const left = db.prepare(`PRAGMA foreign_key_check(${tbl})`).all() as any[]
+      if (left.length > 0) console.error(`⚠️ ${tbl} rebuild เหลือ FK กำพร้า:`, left)
+      else console.log(`✅ Migration: ${tbl}.product_id ไม่มี FK ชี้ products แล้ว`)
+    } catch (e) {
+      console.error(`⚠️ ${tbl} product_id FK migration error:`, e)
+      try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+    }
+  }
+
   // ล้าง FK ของ material_id ที่เหลือ — คอลัมน์นี้ polymorphic (stock_items หรือ materials)
   // FK ตายตัวทำให้ผูกค่าที่ถูกต้องไม่ได้ (โรคเดียวกับ purchase_invoice_items / delivery_order_items)
   // purchase_request_items ยังไม่ระเบิดเพราะค่าปัจจุบันเป็น materials id ล้วน แต่ bind_document_item
