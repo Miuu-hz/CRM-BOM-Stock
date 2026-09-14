@@ -17,6 +17,8 @@ import { registerBomTools } from './tools/bom'
 import { registerFinanceTools } from './tools/finance'
 import { registerMarketingTools } from './tools/marketing'
 import { registerBindingTools } from './tools/binding'
+import { registerPurchaseBillingTools } from './tools/purchaseBilling'
+import { registerSalesBillingTools } from './tools/salesBilling'
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
   // Resolve display name + role for audit trail and approval-permission checks
@@ -35,6 +37,8 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerFinanceTools(server, tenantId)
   registerMarketingTools(server, tenantId)
   registerBindingTools(server, tenantId)
+  registerPurchaseBillingTools(server, tenantId, userId, callerName, callerRole)
+  registerSalesBillingTools(server, tenantId, userId, callerName, callerRole)
 }
 
 export default registerTools

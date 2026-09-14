@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { approvalDenyReason } from '../services/approvalGate.service'
+import { canHandleBilling } from '../services/rbac.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
@@ -9,7 +10,7 @@ import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 
 // กันเลขทศนิยมลอยตัว (2.9999999 ต้องนับเป็น 3 แพ็ค ไม่ใช่ 2)
 const PACK_EPS = 1e-9
-import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
+import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import {
   createGoodsReceipt,
@@ -17,6 +18,11 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../services/goodsReceipt.service'
+import {
+  createPurchaseInvoice,
+  paySupplier,
+  PurchaseBillingError,
+} from '../services/purchaseBilling.service'
 
 const router = Router()
 
@@ -865,156 +871,35 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
   }
 })
 
-// POST create purchase invoice from GR
+// POST create purchase invoice from GR — logic lives in services/purchaseBilling.service.ts
+// (shared with the MCP tool create_purchase_invoice, see mcp/tools/purchaseBilling.ts)
 router.post('/invoices', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canHandleBilling(req.user!, 'purchase')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
     const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, taxRate: reqTaxRate } = req.body
-    // Support both multi-select (goodsReceiptIds array) and legacy single (goodsReceiptId)
-    const grIds: string[] = Array.isArray(goodsReceiptIds) && goodsReceiptIds.length > 0
-      ? goodsReceiptIds
-      : (goodsReceiptId ? [goodsReceiptId] : [])
-    const grIdsJson = JSON.stringify(grIds)
-    
-    if (!purchaseOrderId) {
-      return res.status(400).json({ success: false, message: 'Purchase order is required' })
-    }
 
-    // Get PO and Supplier
-    const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
-    if (!po) {
-      return res.status(404).json({ success: false, message: 'Purchase order not found' })
-    }
-    const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(po.supplier_id, tenantId) as any
-
-    // A goods receipt (or a no-GR whole-PO invoice) must not be pulled into a second
-    // invoice — previously unenforced, so the same PO/GR could be invoiced twice.
-    if (grIds.length > 0) {
-      const placeholders = grIds.map(() => '?').join(',')
-      const grRows = db.prepare(
-        `SELECT id, status, invoiced_at, purchase_order_id FROM goods_receipts WHERE tenant_id = ? AND id IN (${placeholders})`
-      ).all(tenantId, ...grIds) as any[]
-      for (const grId of grIds) {
-        const row = grRows.find((r: any) => r.id === grId)
-        if (!row || row.purchase_order_id !== purchaseOrderId) {
-          return res.status(400).json({ success: false, message: 'ใบรับสินค้าที่เลือกไม่ตรงกับใบสั่งซื้อนี้' })
-        }
-        if (row.status !== 'CONFIRMED') {
-          return res.status(400).json({ success: false, message: 'ใบรับสินค้าต้องยืนยันแล้วก่อนสร้างใบแจ้งหนี้' })
-        }
-        if (row.invoiced_at) {
-          return res.status(400).json({ success: false, message: 'ใบรับสินค้านี้ถูกใช้สร้างใบแจ้งหนี้ไปแล้ว กรุณาเลือกใบอื่นหรือยกเลิกใบแจ้งหนี้เดิมก่อน' })
-        }
-      }
-    } else {
-      const existingInvoice = db.prepare(
-        `SELECT id FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' AND (goods_receipt_ids IS NULL OR goods_receipt_ids = '[]')`
-      ).get(tenantId, purchaseOrderId) as any
-      if (existingInvoice) {
-        return res.status(400).json({ success: false, message: 'ใบสั่งซื้อนี้มีใบแจ้งหนี้อยู่แล้ว' })
-      }
-    }
-
-    const id = generateId()
-    const piNumber = generateNumber('PI', tenantId, 'purchase_invoices')
-    const now = new Date().toISOString()
-
-    // Calculate totals from items or use PO totals
-    let subtotal = 0
-    if (items && items.length > 0) {
-      subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
-    } else {
-      subtotal = po.subtotal
-    }
-    
-    const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
-    const taxAmount = subtotal * (taxRate / 100)
-    const totalAmount = subtotal + taxAmount
-
-    // Resolve accounts before transaction (auto-create if not yet in chart of accounts)
-    // drAccountId: optional override — if supplied, use it; otherwise default to 1107 สต็อกวัตถุดิบ
-    const resolvedDrAccId = drAccountId
-      ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(drAccountId, tenantId) as any)?.id ?? null
-      : null
-    const inventoryAccId = resolvedDrAccId
-      ?? getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
-    const payableAccId   = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
-    const vatAccId       = taxAmount > 0 ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : null
-    const journalId      = generateId()
-    const journalNumber  = generateEntryNumber(tenantId, invoiceDate || now)
-
-    const transaction = db.transaction(() => {
-      db.prepare(`
-        INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
-          supplier_id, goods_receipt_id, goods_receipt_ids, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount,
-          balance_amount, status, payment_status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
-      `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
-        grIds[0] || null, grIdsJson, invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount,
-        totalAmount, totalAmount, notes || '', now, now)
-
-      if (items && items.length > 0) {
-        const insertItem = db.prepare(`
-          INSERT INTO purchase_invoice_items (id, tenant_id, purchase_invoice_id, purchase_order_item_id,
-            material_id, quantity, unit_price, total_price)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        for (const item of items) {
-          const total = item.quantity * item.unitPrice
-          insertItem.run(generateId(), tenantId, id, item.poItemId, item.materialId || null,
-            item.quantity, item.unitPrice, total)
-        }
-      }
-
-      // Lock the goods receipts this invoice draws on so they can't be pulled into another one
-      if (grIds.length > 0) {
-        const markInvoiced = db.prepare('UPDATE goods_receipts SET invoiced_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-        for (const grId of grIds) markInvoiced.run(now, now, grId, tenantId)
-      }
-
-      // === POST JOURNAL ENTRY ===
-      // Dr สต็อกวัตถุดิบ (1107)   + Dr ภาษีซื้อ (1110) if VAT
-      // Cr เจ้าหนี้การค้า (2101)
-      db.prepare(`
-        INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-          description, total_debit, total_credit, notes, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(journalId, tenantId, journalNumber, (invoiceDate || now).substring(0, 10),
-        id, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, notes || null,
-        req.user!.email, now, now)
-
-      const insertLine = db.prepare(`
-        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      let lineNo = 1
-      const drAccLabel = resolvedDrAccId
-        ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
-        : 'สต็อกวัตถุดิบ'
-      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, subtotal, 0)
-      if (vatAccId && taxAmount > 0) {
-        insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
-      }
-      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
-
-      // VAT Entry (Input VAT)
-      if (taxAmount > 0) {
-        db.prepare(`
-          INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
-        `).run(generateId(), tenantId, 'PURCHASE_INVOICE', id, piNumber, (invoiceDate || now).substring(0, 10),
-          supplier?.name || '', supplier?.tax_id || null,
-          subtotal, taxRate, taxAmount, totalAmount, now)
-      }
+    const invoice = createPurchaseInvoice(tenantId, req.user!.email, {
+      purchaseOrderId,
+      goodsReceiptId,
+      goodsReceiptIds,
+      supplierInvoiceNumber,
+      invoiceDate,
+      dueDate,
+      notes,
+      items,
+      drAccountId,
+      taxRate: reqTaxRate,
     })
 
-    transaction()
-
-    const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
-
-    res.status(201).json({ success: true, data: { ...invoice, items: invoiceItems } })
-  } catch (error) {
+    res.status(201).json({ success: true, data: invoice })
+  } catch (error: any) {
+    if (error instanceof PurchaseBillingError) {
+      const status = error.code === 'PO_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Create purchase invoice error:', error)
     res.status(500).json({ success: false, message: 'Failed to create purchase invoice' })
   }
@@ -1180,102 +1065,34 @@ router.get('/payments/:id', async (req: Request, res: Response) => {
   }
 })
 
-// POST create supplier payment
+// POST create supplier payment — logic lives in services/purchaseBilling.service.ts
+// (shared with the MCP tool pay_supplier, see mcp/tools/purchaseBilling.ts)
 router.post('/payments', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canHandleBilling(req.user!, 'purchase')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
     const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes, bankAccountId } = req.body
-    
-    if (!supplierId || !amount) {
-      return res.status(400).json({ success: false, message: 'Supplier and amount are required' })
-    }
 
-    // Check invoice if provided
-    let invoice: any = null
-    if (purchaseInvoiceId) {
-      invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(purchaseInvoiceId, tenantId)
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'Purchase invoice not found' })
-      }
-      if (amount > invoice.balance_amount) {
-        return res.status(400).json({ success: false, message: 'Payment amount exceeds invoice balance' })
-      }
-    }
-
-    const id = generateId()
-    const paymentNumber = generateNumber('SP', tenantId, 'supplier_payments')
-    const now = new Date().toISOString()
-    const wht = withholdingTax || 0
-    const netAmount = amount - wht
-
-    // Resolve accounts before transaction
-    const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
-    // Dr/Cr the specific bank account's linked GL sub-account when one was selected;
-    // otherwise fall back to CASH for cash payments, BANK for everything else
-    // (was previously always CASH regardless of paymentMethod).
-    const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
-    const cashAccId = linkedAccountId || getOrCreateAccount(
-      tenantId,
-      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC.CASH : ACC.BANK,
-      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.name : ACC_META[ACC.BANK]!.name,
-      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.type : ACC_META[ACC.BANK]!.type,
-      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.category : ACC_META[ACC.BANK]!.category,
-      (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.normalBalance : ACC_META[ACC.BANK]!.normalBalance
-    )
-    const whtAccId     = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
-    const journalId    = generateId()
-    const journalNumber = generateEntryNumber(tenantId, paymentDate || now)
-
-    const transaction = db.transaction(() => {
-      // Create payment
-      db.prepare(`
-        INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id,
-          payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, bank_account_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, paymentNumber, supplierId, purchaseInvoiceId || null, paymentDate || now,
-        paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, now, now)
-
-      // Update invoice if provided
-      if (invoice) {
-        const newPaid = invoice.paid_amount + amount
-        const newBalance = invoice.total_amount - newPaid
-        let paymentStatus = 'PARTIAL'
-        if (newBalance <= 0) paymentStatus = 'PAID'
-
-        db.prepare(`
-          UPDATE purchase_invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
-          WHERE id = ? AND tenant_id = ?
-        `).run(newPaid, newBalance, paymentStatus, now, purchaseInvoiceId, tenantId)
-      }
-
-      // === POST JOURNAL ENTRY ===
-      // Dr เจ้าหนี้การค้า (2101)
-      // Cr เงินสด/ธนาคาร (1101)   + Cr ภาษีหัก ณ ที่จ่าย (2180) if WHT > 0
-      db.prepare(`
-        INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-          description, total_debit, total_credit, notes, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
-        id, `จ่ายชำระ ${paymentNumber}`, amount, amount, notes || null,
-        req.user!.email, now, now)
-
-      const insertLine = db.prepare(`
-        INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      let lineNo = 1
-      insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${paymentNumber}`, amount, 0)
-      insertLine.run(generateId(), tenantId, journalId, cashAccId, lineNo++, `จ่ายเงิน - ${paymentNumber}`, 0, netAmount)
-      if (whtAccId && wht > 0) {
-        insertLine.run(generateId(), tenantId, journalId, whtAccId, lineNo++, `ภาษีหัก ณ ที่จ่าย - ${paymentNumber}`, 0, wht)
-      }
+    const payment = paySupplier(tenantId, req.user!.email, {
+      supplierId,
+      purchaseInvoiceId,
+      paymentDate,
+      paymentMethod,
+      paymentReference,
+      amount,
+      withholdingTax,
+      notes,
+      bankAccountId,
     })
 
-    transaction()
-
-    const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: payment, message: 'Payment recorded successfully' })
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof PurchaseBillingError) {
+      const status = error.code === 'INVOICE_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Create supplier payment error:', error)
     res.status(500).json({ success: false, message: 'Failed to record payment' })
   }

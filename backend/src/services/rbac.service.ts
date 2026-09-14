@@ -1,3 +1,4 @@
+import db from '../db/sqlite'
 import { Role, Department, Resource } from '../config/roles'
 export type { Role, Department }
 
@@ -64,6 +65,41 @@ export function can(
   if (role === 'USER')      return ['read', 'write'].includes(action) && hasDepAccess
 
   return false
+}
+
+/**
+ * สิทธิ์ "แตะเงิน" — ออกใบแจ้งหนี้ / รับชำระ / จ่ายเงินผู้ขาย
+ *
+ * เดิม POST /invoices, /receipts, /purchase/invoices, /purchase/payments ไม่เช็ค role เลย
+ * (ล็อกแค่ตอนยกเลิก) ใครก็สร้างรายได้/จ่ายเงินออกได้ — เจ้าของสั่ง 2026-09-14 ให้ยึด role จริง
+ *
+ * ผ่านถ้า: ADMIN/MASTER · แผนก CEO/IT · แผนกที่ดูแลสายนั้นอยู่แล้ว (SALES→orders, PURCHASE→purchase)
+ *          หรือแผนกบัญชี (ACCOUNTING→accounting) ซึ่งเป็นคนออกบิล/ตั้งเบิกจริง
+ * ไม่ผ่าน: แผนกผลิต/QC/คลัง ที่ไม่เกี่ยวกับการเงิน
+ */
+export function canHandleBilling(
+  user: { role: string; departments?: Department[]; customPermissions?: Record<string, boolean> },
+  side: 'sales' | 'purchase'
+): boolean {
+  const role = user.role as Role
+  const depts = user.departments || []
+  const own = side === 'sales' ? 'orders' : 'purchase'
+  return can(role, depts, own, 'write', user.customPermissions)
+    || can(role, depts, 'accounting', 'write', user.customPermissions)
+}
+
+/** เวอร์ชันสำหรับ MCP ที่มีแค่ userId — โหลดแผนก/สิทธิ์รายคนจาก DB เหมือน auth middleware */
+export function canHandleBillingByUserId(
+  userId: string, role: string, side: 'sales' | 'purchase'
+): boolean {
+  let departments: Department[] = []
+  let customPermissions: Record<string, boolean> | undefined
+  try {
+    const row = db.prepare('SELECT departments, custom_permissions FROM users WHERE id = ?').get(userId) as any
+    if (row?.departments) departments = JSON.parse(row.departments)
+    if (row?.custom_permissions) customPermissions = JSON.parse(row.custom_permissions)
+  } catch { /* ไม่มีแถว (master api key) → ตกไปตัดสินด้วย role อย่างเดียว */ }
+  return canHandleBilling({ role, departments, customPermissions }, side)
 }
 
 export { departmentResources }
