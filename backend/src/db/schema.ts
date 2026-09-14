@@ -321,8 +321,7 @@ export function applySchema(db: any): void {
       received_qty REAL DEFAULT 0,
       -- unit ถูกลบออก - ดึงจาก materials แทน
       notes TEXT,
-      FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
-      FOREIGN KEY (material_id) REFERENCES materials(id)
+      FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
     );
 
     -- ==================== WORK ORDERS ====================
@@ -737,8 +736,9 @@ export function applySchema(db: any): void {
       estimated_unit_price REAL DEFAULT 0,
       estimated_total_price REAL DEFAULT 0,
       notes TEXT,
-      FOREIGN KEY (purchase_request_id) REFERENCES purchase_requests(id) ON DELETE CASCADE,
-      FOREIGN KEY (material_id) REFERENCES materials(id)
+      -- ไม่มี FK ของ material_id โดยตั้งใจ: ชี้ได้ทั้ง stock_items(id) และ materials(id)
+      -- (ดู services/goodsReceipt.service.ts และ mcp bind_document_item) FK ตายตัวทำให้ผูกไม่ได้
+      FOREIGN KEY (purchase_request_id) REFERENCES purchase_requests(id) ON DELETE CASCADE
     );
 
     -- ==================== GOODS RECEIPT (GRN) ====================
@@ -771,8 +771,7 @@ export function applySchema(db: any): void {
       rejected_qty REAL DEFAULT 0,
       notes TEXT,
       FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts(id) ON DELETE CASCADE,
-      FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id),
-      FOREIGN KEY (material_id) REFERENCES materials(id)
+      FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id)
     );
 
     -- ==================== PURCHASE INVOICE ====================
@@ -878,8 +877,9 @@ export function applySchema(db: any): void {
       reason TEXT,
       total_price REAL DEFAULT 0,
       FOREIGN KEY (purchase_return_id) REFERENCES purchase_returns(id) ON DELETE CASCADE,
-      FOREIGN KEY (goods_receipt_item_id) REFERENCES goods_receipt_items(id),
-      FOREIGN KEY (material_id) REFERENCES materials(id)
+      -- ไม่มี FK ของ material_id โดยตั้งใจ: ชี้ได้ทั้ง stock_items(id) และ materials(id)
+      -- (ดู services/goodsReceipt.service.ts และ mcp bind_document_item) FK ตายตัวทำให้ผูกไม่ได้
+      FOREIGN KEY (goods_receipt_item_id) REFERENCES goods_receipt_items(id)
     );
 
     -- ==================== ACTIVITY LOGS ====================
