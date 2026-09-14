@@ -194,7 +194,7 @@ function syncWhtFromSupplierPayments(tenantId: string) {
             s.id as supplier_id, s.name as supplier_name, s.tax_id as supplier_tax_id
      FROM supplier_payments sp
      LEFT JOIN suppliers s ON sp.supplier_id = s.id
-     WHERE sp.tenant_id = ? AND sp.withholding_tax > 0`
+     WHERE sp.tenant_id = ? AND sp.withholding_tax > 0 AND (sp.status IS NULL OR sp.status != 'CANCELLED')`
   ).all(tenantId) as any[]
 
   for (const p of rows) {

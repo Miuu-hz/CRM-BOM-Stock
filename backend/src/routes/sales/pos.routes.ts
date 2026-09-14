@@ -37,26 +37,6 @@ function postSimpleJournal(
   insertLine.run(generateId(), tenantId, entryId, debitAccountId, 1, description, amount, 0)
   insertLine.run(generateId(), tenantId, entryId, creditAccountId, 2, description, 0, amount)
 
-  const yr = parseInt(date.split('-')[0])
-  const period = parseInt(date.split('-')[1])
-  const bumpBalance = (accountId: string, debit: number, credit: number) => {
-    const existing = db.prepare(`SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?`).get(accountId, yr, period)
-    if (existing) {
-      db.prepare(`
-        UPDATE account_balances
-        SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
-            ending_balance = ending_balance + ? - ?
-        WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `).run(debit, credit, debit, credit, accountId, yr, period)
-    } else {
-      db.prepare(`
-        INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-      `).run(generateId(), tenantId, accountId, yr, period, debit, credit, debit - credit)
-    }
-  }
-  bumpBalance(debitAccountId, amount, 0)
-  bumpBalance(creditAccountId, 0, amount)
 
   return entryId
 }

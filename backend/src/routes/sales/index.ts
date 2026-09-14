@@ -8,7 +8,6 @@ export {
   createSalesJournal,
   deductStockForSO,
   getOrCreateAccount,
-  updateAccountBalance,
   isValidImageFile,
   sanitizeFilename,
 } from './shared'

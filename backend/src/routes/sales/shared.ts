@@ -49,21 +49,9 @@ import { getOrCreateAccount } from '../../services/accounting.service'
 import { isServiceItem } from '../../services/stockItem.service'
 export { getOrCreateAccount }
 
-export function updateAccountBalance(tenantId: string, accountId: string, debit: number, credit: number) {
-  const now = new Date()
-  const yr = now.getFullYear()
-  const mo = now.getMonth() + 1
-  const existing = db.prepare('SELECT id, debit_amount, credit_amount FROM account_balances WHERE tenant_id = ? AND account_id = ? AND fiscal_year = ? AND period = ?').get(tenantId, accountId, yr, mo) as any
-  if (existing) {
-    const newDebit = (existing.debit_amount || 0) + debit
-    const newCredit = (existing.credit_amount || 0) + credit
-    db.prepare('UPDATE account_balances SET debit_amount = ?, credit_amount = ?, ending_balance = ? WHERE id = ? AND tenant_id = ?')
-      .run(newDebit, newCredit, newDebit - newCredit, existing.id, tenantId)
-  } else {
-    db.prepare(`INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`).run(generateId(), tenantId, accountId, yr, mo, debit, credit, debit - credit)
-  }
-}
+// account_balances ถูกถอดออกจากระบบ 2026-09-14 — ตรวจแล้วไม่มีโค้ดไหนอ่านตารางนี้เลย
+// (งบการเงิน/ผังบัญชีรวมยอดจาก journal_lines ตรง ๆ) การคอยเขียนให้มันจึงเป็นการเลี้ยงยอดคงเหลือ
+// ชุดที่ 2 ที่ไม่มีวันตรงกับ journal — ถ้าวันไหนต้องการยอดตามงวดจริง ให้คำนวณจาก journal_lines
 
 export function createSalesJournal(
   tenantId: string, referenceType: string, referenceId: string,
@@ -155,14 +143,6 @@ export function createSalesJournal(
           .run(generateId(), tenantId, entryId, vatId, lineNum++, 'ภาษีขาย', taxAmount)
       }
 
-      updateAccountBalance(tenantId, arId, totalAmount, 0)
-      if (totalCOGS > 0) {
-        updateAccountBalance(tenantId, cogsId, totalCOGS, 0)
-        updateAccountBalance(tenantId, invId, 0, totalCOGS)
-      }
-      updateAccountBalance(tenantId, revId, 0, netRevenue)
-      if (taxAmount > 0) updateAccountBalance(tenantId, vatId, 0, taxAmount)
-
     } else if (referenceType === 'RECEIPT') {
       // DR เงินสด/ธนาคาร (บัญชีย่อยที่ผูกไว้ถ้าเลือกบัญชีธนาคาร) / CR ลูกหนี้การค้า
       const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
@@ -181,8 +161,6 @@ export function createSalesJournal(
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
         .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
 
-      updateAccountBalance(tenantId, cashAccId, totalAmount, 0)
-      updateAccountBalance(tenantId, arId, 0, totalAmount)
     }
   } catch (err) {
     console.error('⚠️ createSalesJournal error:', err)
@@ -355,10 +333,6 @@ export function reverseSalesJournal(tenantId: string, invoiceId: string, invoice
         db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(generateId(), tenantId, entryId, line.account_id, line.line_number, `กลับรายการ: ${line.description || ''}`, line.credit || 0, line.debit || 0)
-
-        // Swap debit/credit when re-applying to running balances so the
-        // original posting's effect is fully netted out.
-        updateAccountBalance(tenantId, line.account_id, line.credit || 0, line.debit || 0)
       }
     })
     tx()
@@ -400,7 +374,6 @@ export function reverseSalesJournalByRef(tenantId: string, originalRefType: stri
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(generateId(), tenantId, entryId, line.account_id, line.line_number, `กลับรายการ: ${line.description || ''}`, line.credit || 0, line.debit || 0)
-      updateAccountBalance(tenantId, line.account_id, line.credit || 0, line.debit || 0)
     }
     return true
   } catch (err) {

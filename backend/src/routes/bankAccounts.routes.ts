@@ -144,7 +144,7 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), async (req: Req
 
     const inUse = (
       (db.prepare('SELECT COUNT(*) as c FROM receipts WHERE bank_account_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any).c +
-      (db.prepare('SELECT COUNT(*) as c FROM supplier_payments WHERE bank_account_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any).c +
+      (db.prepare("SELECT COUNT(*) as c FROM supplier_payments WHERE bank_account_id = ? AND tenant_id = ? AND (status IS NULL OR status != 'CANCELLED')").get(req.params.id, tenantId) as any).c +
       (db.prepare('SELECT COUNT(*) as c FROM pos_payments WHERE bank_account_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any).c
     )
     if (inUse > 0) {

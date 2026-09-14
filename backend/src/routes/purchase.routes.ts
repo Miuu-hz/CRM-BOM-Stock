@@ -11,7 +11,6 @@ import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 const PACK_EPS = 1e-9
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
-import { updateAccountBalance } from './sales/shared'
 import {
   createGoodsReceipt,
   confirmGoodsReceipt,
@@ -847,7 +846,8 @@ router.get('/invoices/:id', async (req: Request, res: Response) => {
     `).all(req.params.id)
 
     const payments = db.prepare(`
-      SELECT * FROM supplier_payments WHERE purchase_invoice_id = ? ORDER BY payment_date DESC
+      SELECT * FROM supplier_payments WHERE purchase_invoice_id = ?
+        AND (status IS NULL OR status != 'CANCELLED') ORDER BY payment_date DESC
     `).all(req.params.id)
 
     res.json({ success: true, data: { ...invoice, items, payments } })
@@ -1028,7 +1028,10 @@ function reverseSupplierPayment(tenantId: string, payment: any, actorEmail: stri
         .run(newPaid, newBalance, paymentStatus, new Date().toISOString(), pi.id, tenantId)
     }
   }
-  db.prepare('DELETE FROM supplier_payments WHERE id = ? AND tenant_id = ?').run(payment.id, tenantId)
+  // soft-cancel: เก็บแถวไว้ให้ journal ที่กลับรายการยังตามรอยกลับมาหาใบจ่ายเงินได้
+  // (เดิม DELETE ทิ้ง บัญชียังดุลเพราะมีคู่กลับรายการ แต่ร่องรอยว่าเป็นใบไหนหายไปเลย)
+  db.prepare("UPDATE supplier_payments SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+    .run(new Date().toISOString(), payment.id, tenantId)
 }
 
 // DELETE /payments/:id — reverse (void) a supplier payment: reverses its journal
@@ -1041,6 +1044,7 @@ router.delete('/payments/:id', async (req: Request, res: Response) => {
     }
     const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
+    if (payment.status === 'CANCELLED') return res.status(400).json({ success: false, message: 'การจ่ายเงินนี้ถูกยกเลิกไปแล้ว' })
     const today = new Date().toISOString().substring(0, 10)
     db.transaction(() => { reverseSupplierPayment(tenantId, payment, req.user!.email, today) })()
     res.json({ success: true, message: 'Supplier payment reversed' })
@@ -1074,7 +1078,7 @@ router.put('/invoices/:id/status', async (req: Request, res: Response) => {
 
     const transaction = db.transaction(() => {
       // Reverse any supplier payments applied to this PI first (end-to-end cancel)
-      const pays = db.prepare('SELECT * FROM supplier_payments WHERE purchase_invoice_id = ? AND tenant_id = ?').all(pi.id, tenantId) as any[]
+      const pays = db.prepare("SELECT * FROM supplier_payments WHERE purchase_invoice_id = ? AND tenant_id = ? AND (status IS NULL OR status != 'CANCELLED')").all(pi.id, tenantId) as any[]
       for (const pay of pays) reverseSupplierPayment(tenantId, pay, req.user!.email, today)
 
       const reversalJournalId = reverseJournalEntryForReference(
@@ -1138,7 +1142,7 @@ router.get('/payments', async (req: Request, res: Response) => {
       FROM supplier_payments sp
       LEFT JOIN suppliers s ON sp.supplier_id = s.id
       LEFT JOIN purchase_invoices pi ON sp.purchase_invoice_id = pi.id
-      WHERE sp.tenant_id = ?
+      WHERE sp.tenant_id = ? AND (sp.status IS NULL OR sp.status != 'CANCELLED')
       ORDER BY sp.payment_date DESC
     `).all(tenantId)
 
@@ -1517,14 +1521,11 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
         `)
         let lineNo = 1
         insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${ret.pr_number}`, retTotal, 0)
-        updateAccountBalance(tenantId, payableAccId, retTotal, 0)
         if (retSubtotal > 0) {
           insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `สต็อกวัตถุดิบ - ${ret.pr_number}`, 0, retSubtotal)
-          updateAccountBalance(tenantId, inventoryAccId, 0, retSubtotal)
         }
         if (vatAccId && retTax > 0) {
           insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${ret.pr_number}`, 0, retTax)
-          updateAccountBalance(tenantId, vatAccId, 0, retTax)
 
           // Negative input-VAT entry so the VAT report doesn't keep claiming tax on
           // goods that went back to the supplier (same shape as the PI-cancel reversal).
@@ -1691,7 +1692,7 @@ router.get('/summary', async (req: Request, res: Response) => {
         COALESCE(SUM(amount), 0) as total_paid,
         COALESCE(SUM(withholding_tax), 0) as total_wht
       FROM supplier_payments
-      WHERE tenant_id = ?
+      WHERE tenant_id = ? AND (status IS NULL OR status != 'CANCELLED')
     `).get(tenantId) as any
 
     // Return Stats

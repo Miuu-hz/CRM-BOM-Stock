@@ -347,10 +347,11 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       // already books the real entry (Dr AR/COGS, Cr Revenue/VAT/Inventory,
       // via createSalesJournal in ./shared) when an Invoice is created for
       // this SO, and that endpoint doesn't check SO status — posting here too
-      // would double-book revenue+COGS once the SO is invoiced. See
-      // postSalesOrderConfirmed() for why it's unused, kept only as a
-      // documented reference for a future "book at confirm instead of at
-      // invoice" redesign if that's ever wanted.
+      // would double-book revenue+COGS once the SO is invoiced.
+      // (services/autoJournal.service.ts ซึ่งเคยเก็บ postSalesOrderConfirmed()/
+      // postPurchaseOrderReceived() ไว้เป็นตัวอย่าง ถูกลบทิ้งแล้ว 2026-09-14 —
+      // ไม่มีไฟล์ไหน import มันเลยสักบรรทัด และถ้าใครเอาไปต่อกับจุดยืนยัน
+      // จะกลายเป็นลงบัญชีซ้ำสองรอบทันที)
     }
 
     // คืน stock เมื่อยกเลิก SO ที่เคยตัดสต็อกไปแล้ว (previousStatus อยู่ใน STOCK_DEDUCTED_STATUSES).

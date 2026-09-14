@@ -360,11 +360,6 @@ class POSAccountingService {
           cogs.totalCost
         )
 
-        // Update balances for COGS
-        await this.updateAccountBalances(tenantId, today, [
-          { accountCode: ACC.COGS_PRODUCT, debit: cogs.totalCost, credit: 0 },
-          { accountCode: ACC.INVENTORY, debit: 0, credit: cogs.totalCost }
-        ])
       }
 
       // 3. Record VAT Entry
@@ -397,12 +392,6 @@ class POSAccountingService {
         now()
       )
 
-      // 4. Update Account Balances for Revenue
-      await this.updateAccountBalances(tenantId, today, [
-        { accountCode: cashAccountCode, debit: bill.total_amount, credit: 0 },
-        { accountCode: ACC.REVENUE_PRODUCT, debit: 0, credit: totalRevenue },
-        { accountCode: ACC.OUTPUT_VAT, debit: 0, credit: bill.tax_amount }
-      ])
 
       return {
         success: true,
@@ -493,29 +482,6 @@ class POSAccountingService {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
-      // อัปเดต account_balances ด้วย account_id ตรงๆ (บัญชีเงินสด/ธนาคารอาจเป็น sub-account
-      // ที่ผูกกับ bank_accounts จึงหาด้วย code ไม่ได้ — เหมือน void ใน pos.routes.ts)
-      const balYear = parseInt(today.split('-')[0])
-      const balPeriod = parseInt(today.split('-')[1])
-      const updateBal = (accountId: string, debit: number, credit: number) => {
-        const existingBal = db.prepare(`
-          SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
-        `).get(accountId, balYear, balPeriod)
-        if (existingBal) {
-          db.prepare(`
-            UPDATE account_balances
-            SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
-                ending_balance = ending_balance + ? - ?
-            WHERE account_id = ? AND fiscal_year = ? AND period = ?
-          `).run(debit, credit, debit, credit, accountId, balYear, balPeriod)
-        } else {
-          db.prepare(`
-            INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-          `).run(generateId(), tenantId, accountId, balYear, balPeriod, debit, credit, debit - credit)
-        }
-      }
-
       saleLines.forEach((l, i) => {
         const debit = l.credit || 0
         const credit = l.debit || 0
@@ -525,7 +491,6 @@ class POSAccountingService {
           generateId(), tenantId, entryId, accountId, i + 1,
           `กลับรายการยกเลิกบิล ${bill.bill_number}`, debit, credit
         )
-        updateBal(accountId, debit, credit)
       })
 
       return {
@@ -537,58 +502,6 @@ class POSAccountingService {
       return {
         success: false,
         errors: [(error as Error).message || 'Failed to record cancellation']
-      }
-    }
-  }
-
-  /**
-   * Update account balances (simplified)
-   */
-  private async updateAccountBalances(
-    tenantId: string,
-    date: string,
-    entries: AccountBalanceEntry[]
-  ): Promise<void> {
-    const year = parseInt(date.split('-')[0])
-    const month = parseInt(date.split('-')[1])
-
-    for (const entry of entries) {
-      if (entry.debit === 0 && entry.credit === 0) continue
-
-      // Get account ID
-      const accountStmt = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?')
-      const account = accountStmt.get(entry.accountCode, tenantId) as { id: string } | undefined
-
-      if (!account) {
-        console.warn(`Account ${entry.accountCode} not found for tenant ${tenantId}`)
-        continue
-      }
-
-      // Check if balance record exists
-      const checkStmt = db.prepare(`
-        SELECT id FROM account_balances 
-        WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `)
-      const existing = checkStmt.get(account.id, year, month)
-
-      if (existing) {
-        // Update existing
-        const updateStmt = db.prepare(`
-          UPDATE account_balances 
-          SET debit_amount = debit_amount + ?,
-              credit_amount = credit_amount + ?,
-              ending_balance = ending_balance + ? - ?
-          WHERE account_id = ? AND fiscal_year = ? AND period = ?
-        `)
-        updateStmt.run(entry.debit, entry.credit, entry.debit, entry.credit, account.id, year, month)
-      } else {
-        // Create new
-        const balanceId = generateId()
-        const insertStmt = db.prepare(`
-          INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-        `)
-        insertStmt.run(balanceId, tenantId, account.id, year, month, entry.debit, entry.credit, entry.debit - entry.credit)
       }
     }
   }

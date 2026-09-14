@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { ACC, ACC_META } from '../../config/accountCodes'
-import { getOrCreateAccount, updateAccountBalance } from './shared'
+import { getOrCreateAccount } from './shared'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
 
@@ -56,9 +56,6 @@ function postCreditNoteJournal(tenantId: string, cn: any) {
     db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
       .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
 
-    updateAccountBalance(tenantId, revId, subtotal, 0)
-    if (taxAmount > 0) updateAccountBalance(tenantId, vatId, taxAmount, 0)
-    updateAccountBalance(tenantId, arId, 0, totalAmount)
   } catch (err) {
     console.error('⚠️ postCreditNoteJournal error:', err)
     // Non-fatal — don't block the status update if journal posting fails

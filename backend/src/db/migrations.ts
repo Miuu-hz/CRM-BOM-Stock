@@ -1,4 +1,17 @@
 export function runMigrations(db: any): void {
+  // supplier_payments.status — ยกเลิกการจ่ายเงินต้องเป็น soft-cancel ไม่ใช่ DELETE
+  // (เดิมลบแถวทิ้ง ทำให้ journal ที่ reference_id ชี้มาที่แถวนั้นกลายเป็นกำพร้า ตามรอยไม่ได้)
+  try {
+    const spCols = db.prepare(`PRAGMA table_info(supplier_payments)`).all() as any[]
+    if (spCols.length > 0 && !spCols.some((c: any) => c.name === 'status')) {
+      db.exec(`ALTER TABLE supplier_payments ADD COLUMN status TEXT DEFAULT 'ACTIVE'`)
+      db.exec(`UPDATE supplier_payments SET status = 'ACTIVE' WHERE status IS NULL`)
+      console.log('✅ Migration: supplier_payments.status ready (soft-cancel)')
+    }
+  } catch (e) {
+    console.error('⚠️ supplier_payments.status migration error:', e)
+  }
+
   // ==================== MIGRATIONS ====================
   // Add bom_id column to pos_menu_configs (for existing databases)
   try {

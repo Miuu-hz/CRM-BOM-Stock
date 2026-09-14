@@ -370,37 +370,6 @@ function createTransferJournalEntries(
     insertLine(id, lineNumber++, 'เงินเกินจาก POS Clearing', 0, difference)
   }
 
-  // Update account balances
-  const updateBalance = (accountCode: string, debit: number, credit: number) => {
-    const yr = parseInt(date.split('-')[0])
-    const month = parseInt(date.split('-')[1])
-    const account = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(accountCode, tenantId) as any
-    if (!account) return
-    const existing = db.prepare(`
-      SELECT id FROM account_balances WHERE account_id = ? AND fiscal_year = ? AND period = ?
-    `).get(account.id, yr, month)
-    if (existing) {
-      db.prepare(`
-        UPDATE account_balances
-        SET debit_amount = debit_amount + ?, credit_amount = credit_amount + ?,
-            ending_balance = ending_balance + ? - ?
-        WHERE account_id = ? AND fiscal_year = ? AND period = ?
-      `).run(debit, credit, debit, credit, account.id, yr, month)
-    } else {
-      db.prepare(`
-        INSERT INTO account_balances (id, tenant_id, account_id, fiscal_year, period, beginning_balance, debit_amount, credit_amount, ending_balance)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-      `).run(generateId(), tenantId, account.id, yr, month, debit, credit, debit - credit)
-    }
-  }
-
-  updateBalance('1101', cashAmount, 0)
-  updateBalance('1102', bankAmount, 0)
-  updateBalance('1180', 0, billsTotal)
-  if (Math.abs(difference) > 0.01) {
-    // Short → Dr. 5901 (expense debit increases); Over → Cr. 5901 (expense credit decreases)
-    updateBalance('5901', difference < 0 ? Math.abs(difference) : 0, difference > 0 ? difference : 0)
-  }
 }
 
 export default router
