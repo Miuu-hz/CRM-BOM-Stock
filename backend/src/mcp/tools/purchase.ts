@@ -543,6 +543,13 @@ items ถ้าส่งมาจะแทนที่รายการทั�
                 stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
               }
 
+              // หาของไม่เจอ = รับเข้าไม่ได้จริง ต้องหยุดทั้งใบ ไม่ใช่ข้ามรายการนี้เงียบ ๆ
+              // แล้วปล่อยให้ received_qty/สถานะ PO เดินหน้าต่อ (ฝั่ง REST สร้าง stock_items
+              // จาก materials ให้เองในกรณีนี้ ที่นี่ยังไม่มีสาขานั้น จึงให้ผู้ใช้ไปทาง REST แทน)
+              if (!stockItem) {
+                throw new Error(`ไม่พบสินค้าในสต็อกสำหรับ "${item.material_id}" — กรุณาสร้างรายการสต็อกก่อน หรือยืนยันใบรับสินค้าจากหน้าเว็บ`)
+              }
+
               let stockQty = item.accepted_qty
               let movementNotes = `Received from purchase`
               // เก็บสิ่งที่เข้าสต็อกจริงไว้เขียน snapshot ให้เหมือน purchase.routes.ts
