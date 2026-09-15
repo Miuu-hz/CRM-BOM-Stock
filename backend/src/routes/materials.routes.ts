@@ -537,12 +537,30 @@ router.get('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const material = db.prepare(`
+    // วัตถุดิบตัวเดียวกันถูกอ้างด้วย id 2 แบบในระบบนี้:
+    //   materials.id      — ใช้ใน purchase_request_items, stock_items.material_id
+    //   stock_items.id    — ใช้ใน bom_items, work_order_materials, unit_conversions (ทั้งหมด)
+    // เดิม route นี้รับแต่ materials.id ถูกเรียกด้วยอีกแบบเมื่อไหร่ก็ 404 ทั้งที่ของมีอยู่จริง
+    let material = db.prepare(`
       SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
       FROM materials m
       LEFT JOIN stock_items si ON m.id = si.material_id
       WHERE m.id = ? AND m.tenant_id = ?
     `).get(req.params.id, tenantId) as any
+
+    if (!material) {
+      // ลองตีความว่าเป็น stock_items.id — ถ้ามี material ผูกอยู่ให้คืนตัวนั้น
+      // ถ้าเป็นสินค้าในคลังที่ไม่ได้ผูก material master ก็ยังคืนข้อมูลเท่าที่มีได้
+      material = db.prepare(`
+        SELECT COALESCE(m.id, si.id) as id, COALESCE(m.code, si.sku) as code,
+               COALESCE(m.name, si.name) as name, COALESCE(m.unit, si.base_unit, si.unit) as unit,
+               COALESCE(m.unit_cost, si.unit_cost) as unit_cost, m.category_id,
+               si.id as stock_id, si.quantity as stock_quantity
+        FROM stock_items si
+        LEFT JOIN materials m ON si.material_id = m.id
+        WHERE si.id = ? AND si.tenant_id = ?
+      `).get(req.params.id, tenantId) as any
+    }
 
     if (!material) {
       return res.status(404).json({
