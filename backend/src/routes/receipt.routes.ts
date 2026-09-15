@@ -162,9 +162,10 @@ function renderInvoice(res: Response, invoiceId: string, tenantId: string) {
   if (!invoice) return notFound(res)
 
   const items = db.prepare(`
-    SELECT p.name as product_name, ii.quantity, ii.unit_price, ii.total_price
+    -- ใบเสร็จเคยดึงชื่อจากตาราง products อย่างเดียว ไม่มี fallback = ไม่มีชื่อสินค้าบนใบเสร็จ
+    SELECT COALESCE(si.name, ii.product_name) as product_name, ii.quantity, ii.unit_price, ii.total_price
     FROM invoice_items ii
-    LEFT JOIN products p ON ii.product_id = p.id
+    LEFT JOIN stock_items si ON ii.stock_item_id = si.id AND si.tenant_id = ii.tenant_id
     WHERE ii.invoice_id = ?
   `).all(invoiceId) as any[]
 

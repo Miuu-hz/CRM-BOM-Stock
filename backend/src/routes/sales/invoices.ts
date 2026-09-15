@@ -64,9 +64,11 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT ii.*, p.name as product_name, p.code as product_code
+      -- ห้ามใช้ p.name as product_name เฉย ๆ: ชื่อคอลัมน์ซ้ำกับ ii.* แล้วตัวหลังทับตัวหน้า
+      -- = เอา null ไปทับชื่อสินค้าจริงในแถว (invoice_items ไม่มีคอลัมน์อื่นให้ fallback)
+      SELECT ii.*, COALESCE(si.name, ii.product_name) as product_name, si.sku as product_code
       FROM invoice_items ii
-      LEFT JOIN products p ON ii.product_id = p.id
+      LEFT JOIN stock_items si ON ii.stock_item_id = si.id AND si.tenant_id = ii.tenant_id
       WHERE ii.invoice_id = ?
     `).all(req.params.id)
 

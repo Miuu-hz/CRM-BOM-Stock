@@ -563,12 +563,16 @@ router.get('/:id', (req: Request, res: Response) => {
 
     // Get BOM usage
     material.bomItems = db.prepare(`
-      SELECT bi.*, p.name as product_name, p.code as product_code
+      SELECT bi.*, p.name as product_name, p.sku as product_code
       FROM bom_items bi
       JOIN boms b ON bi.bom_id = b.id
-      JOIN products p ON b.product_id = p.id
+      -- boms.product_id ชี้ stock_items (233/233 แถว) ไม่ใช่ products ที่เลิกใช้แล้ว
+      JOIN stock_items p ON b.product_id = p.id AND p.tenant_id = b.tenant_id
+      -- bom_items.material_id เก็บ id ของ stock_items (803/803 แถว) ไม่ใช่ id ของ materials
+      -- ส่วน route นี้ถูกเรียกด้วย materials.id จึงต้องแปลงผ่าน stock item ที่ผูกกันไว้ก่อน
+      -- ไม่งั้นต่อให้ join ถูกตารางแล้ว ก็ยังไม่มีแถวไหนแมตช์อยู่ดี
       WHERE bi.material_id = ?
-    `).all(req.params.id)
+    `).all(material.stock_id || req.params.id)
 
     res.json({
       success: true,

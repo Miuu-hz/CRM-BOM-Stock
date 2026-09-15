@@ -42,9 +42,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT qi.*, p.name as product_name, p.code as product_code
+      -- เหตุผลเดียวกับ invoices.ts: ชื่อคอลัมน์ซ้ำกับ qi.* แล้วตัวหลังทับ
+      SELECT qi.*, COALESCE(si.name, qi.product_name) as product_name, si.sku as product_code
       FROM quotation_items qi
-      LEFT JOIN products p ON qi.product_id = p.id
+      LEFT JOIN stock_items si ON qi.stock_item_id = si.id AND si.tenant_id = qi.tenant_id
       WHERE qi.quotation_id = ?
     `).all(req.params.id)
 

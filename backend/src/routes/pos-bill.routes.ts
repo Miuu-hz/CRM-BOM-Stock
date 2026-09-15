@@ -715,35 +715,24 @@ router.get('/search/gs1/:barcode', (req, res) => {
       })
     }
     
-    // Find corresponding product
-    const product = db.prepare(`
-      SELECT * FROM products 
-      WHERE code = ? AND tenant_id = ?
-    `).get(stockItem.sku, tenantId) as any
-    
-    if (!product) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'ไม่พบสินค้าในระบบ' 
-      })
-    }
-    
-    // Find POS menu config for this product
+    // เมนู POS ผูกกับ stock_items ตรง ๆ (pmc.product_id = stock_items.id)
+    // ของเดิมวิ่งผ่านตาราง products ที่เลิกใช้แล้ว (หา code = stockItem.sku) ทำให้ตอบ
+    // "ไม่พบสินค้าในระบบ" ทุกครั้ง ทั้งที่สินค้ามีอยู่จริง
     const menuConfig = db.prepare(`
-      SELECT 
+      SELECT
         pmc.*,
-        p.name as product_name,
-        p.code as product_code,
+        si.name as product_name,
+        si.sku as product_code,
         pc.name as category_name,
         pc.color as category_color
       FROM pos_menu_configs pmc
-      JOIN products p ON pmc.product_id = p.id
+      JOIN stock_items si ON pmc.product_id = si.id AND si.tenant_id = pmc.tenant_id
       LEFT JOIN pos_categories pc ON pmc.category_id = pc.id
-      WHERE pmc.product_id = ? 
-        AND pmc.tenant_id = ? 
+      WHERE pmc.product_id = ?
+        AND pmc.tenant_id = ?
         AND pmc.is_available = 1
         AND pmc.is_pos_enabled = 1
-    `).get(product.id, tenantId) as any
+    `).get(stockItem.id, tenantId) as any
     
     if (!menuConfig) {
       return res.status(404).json({ 

@@ -85,13 +85,14 @@ router.get('/', (req: Request, res: Response) => {
 
     // Search BOMs
     const boms = db.prepare(`
-      SELECT b.id, b.version, b.status, p.name as product_name, p.code as product_code
+      SELECT b.id, b.version, b.status, p.name as product_name, p.sku as product_code
       FROM boms b
-      JOIN products p ON b.product_id = p.id
+      -- boms.product_id ชี้ stock_items (233/233 แถว) ไม่ใช่ products ที่เลิกใช้แล้ว
+      JOIN stock_items p ON b.product_id = p.id AND p.tenant_id = b.tenant_id
       WHERE b.tenant_id = ? AND (
         LOWER(b.version) LIKE ? OR 
         LOWER(p.name) LIKE ? OR 
-        LOWER(p.code) LIKE ?
+        LOWER(p.sku) LIKE ?
       )
       LIMIT 5
     `).all(tenantId, searchTerm, searchTerm, searchTerm) as any[]

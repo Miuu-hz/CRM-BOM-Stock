@@ -52,10 +52,11 @@ class POSStockService {
   ): Promise<StockCheckResult> {
     // Get menu details with BOM info + sale_unit
     const menuStmt = db.prepare(`
-      SELECT pmc.*, p.name as product_name,
+      SELECT pmc.*, si.name as product_name,
              si.base_unit as stock_base_unit, si.unit as stock_unit
       FROM pos_menu_configs pmc
-      JOIN products p ON pmc.product_id = p.id
+      -- เมนู POS ผูกกับ stock_items ตรง ๆ (pmc.product_id = stock_items.id)
+      -- ของเดิม JOIN products ที่เลิกใช้แล้ว ทำให้คิวรีไม่คืนแถวเลยและ throw 'Menu not found'
       LEFT JOIN stock_items si ON pmc.product_id = si.id AND pmc.tenant_id = si.tenant_id
       WHERE pmc.id = ? AND pmc.tenant_id = ?
     `)
@@ -535,14 +536,14 @@ class POSStockService {
     const bomStmt = db.prepare(`
       SELECT 
         pmc.id as menu_id,
-        p.name as product_name,
+        mp.name as product_name,
         pmc.pos_price,
         si.id as stock_item_id,
         si.name as stock_item_name,
         si.quantity as current_stock,
         si.min_stock
       FROM pos_menu_configs pmc
-      JOIN products p ON pmc.product_id = p.id
+      JOIN stock_items mp ON pmc.product_id = mp.id AND mp.tenant_id = pmc.tenant_id
       JOIN bom_items bi ON pmc.bom_id = bi.bom_id
       JOIN stock_items si ON bi.material_id = si.id
       WHERE pmc.tenant_id = ? 
@@ -559,14 +560,14 @@ class POSStockService {
     const ingStmt = db.prepare(`
       SELECT 
         pmc.id as menu_id,
-        p.name as product_name,
+        mp.name as product_name,
         pmc.pos_price,
         si.id as stock_item_id,
         si.name as stock_item_name,
         si.quantity as current_stock,
         si.min_stock
       FROM pos_menu_configs pmc
-      JOIN products p ON pmc.product_id = p.id
+      JOIN stock_items mp ON pmc.product_id = mp.id AND mp.tenant_id = pmc.tenant_id
       JOIN pos_menu_ingredients pmi ON pmc.id = pmi.pos_menu_id
       JOIN stock_items si ON pmi.stock_item_id = si.id
       WHERE pmc.tenant_id = ? 
