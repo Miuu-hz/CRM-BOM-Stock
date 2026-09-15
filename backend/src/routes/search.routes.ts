@@ -74,9 +74,9 @@ router.get('/', (req: Request, res: Response) => {
 
     // Search materials
     const materials = db.prepare(`
-      SELECT id, code, name, unit, unit_cost
-      FROM materials
-      WHERE tenant_id = ? AND (
+      SELECT id, sku as code, name, unit, unit_cost
+      FROM stock_items
+      WHERE tenant_id = ? AND (category_id IS NOT NULL OR category IN ('raw','RAW_MATERIAL','material','wip')) AND (
         LOWER(name) LIKE ? OR 
         LOWER(code) LIKE ?
       )

@@ -28,6 +28,7 @@ export class GoodsReceiptError extends Error {
       | 'OVER_PENDING_QTY'
       | 'GR_NOT_FOUND'
       | 'NOT_DRAFT'
+      | 'UNBOUND_ITEM'
       | 'NO_CONVERSION',
     message: string
   ) {
@@ -213,11 +214,8 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         const unitPrice = poItem?.unit_price || 0
         const poUnit = normalizeUnit(poItem?.unit || '')
 
-        // หา stock item: ก่อนด้วย material_id (สาย BOM) แล้วค่อยตรงด้วย id (สาย stock ล้วน)
-        let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-        if (!stockItem) {
-          stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
-        }
+        // material_id = id ของ stock_items แล้ว ไม่ต้องลองหาสองชั้นอีก
+        const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
 
         let stockQty = roundQty(Number(item.accepted_qty))
         let movementNotes = `Received from purchase`
@@ -247,7 +245,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         } else if (stockItem && poUnit && poUnit !== stockUnit) {
           const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
           if (!converted) {
-            const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
+            const materialName = (db.prepare('SELECT name FROM stock_items WHERE id = ?').get(item.material_id) as any)?.name
               || stockItem.name
               || item.material_id
             throw new GoodsReceiptError(
@@ -278,29 +276,13 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
               .run(stockQty, newUnitCost, unitPrice || null, unitPrice ? (poUnit || stockUnit || null) : null, now, stockItem.id, tenantId)
           }
         } else {
-          // สร้าง stock item ใหม่ (BOM material ที่ยังไม่เคยเข้าสต็อก) — materials มีแค่คอลัมน์
-          // unit เดียว (ไม่มี base/display split) จึงใช้เป็น base_unit ของแถวใหม่นี้ด้วย
-          const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(item.material_id) as any
-          if (material) {
-            const newStockId = generateId()
-            const newItemUnit = normalizeUnit(material.unit || 'pcs')
-            let newItemCostFactor = 1
-            if (poUnit && newItemUnit && poUnit !== newItemUnit) {
-              const conv = convertQuantityBidirectional(1, poUnit, newItemUnit, tenantId, item.material_id)
-              if (conv && conv.factor > 0) {
-                newItemCostFactor = conv.factor
-              } else {
-                console.warn(`[unit_cost] no conversion ${poUnit}→${newItemUnit} for new stock item (material ${item.material_id}); storing price un-converted`)
-              }
-            }
-            const newUnitCost = priceToBaseUnitCost(unitPrice, newItemCostFactor, `new stock item ${poUnit}→${newItemUnit} (material ${item.material_id})`)
-            db.prepare(`
-              INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, base_unit, unit_cost, location, status, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK', 'ACTIVE', ?, ?)
-            `).run(newStockId, tenantId, material.code, material.name, 'RAW_MATERIAL', item.material_id,
-              stockQty, newItemUnit, newItemUnit, newUnitCost, now, now)
-            stockItem = { id: newStockId }
-          }
+          // ไม่มีของชิ้นนี้ในคลัง = บรรทัดนี้ยังไม่ได้ผูกกับสินค้าจริง
+          // เดิมระบบปั้นแถวใหม่ให้เองเงียบ ๆ ทำให้ของเข้าคลังผิดตัวโดยไม่มีใครรู้
+          // ตอนนี้ให้ฟ้องไปเลย แล้วไปผูกของก่อนด้วย bind_document_item
+          throw new GoodsReceiptError(
+            'UNBOUND_ITEM',
+            `รายการ "${item.description || item.material_id}" ยังไม่ได้ผูกกับสินค้าในคลัง จึงรับเข้าสต็อกไม่ได้ กรุณาผูกสินค้าให้ใบสั่งซื้อก่อน`
+          )
         }
 
         if (stockItem) {

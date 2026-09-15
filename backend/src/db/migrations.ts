@@ -30,38 +30,10 @@ export function runMigrations(db: any): void {
     }
   }
 
-  // ล้าง FK ของ material_id ที่เหลือ — คอลัมน์นี้ polymorphic (stock_items หรือ materials)
-  // FK ตายตัวทำให้ผูกค่าที่ถูกต้องไม่ได้ (โรคเดียวกับ purchase_invoice_items / delivery_order_items)
-  // purchase_request_items ยังไม่ระเบิดเพราะค่าปัจจุบันเป็น materials id ล้วน แต่ bind_document_item
-  // ผูกกับ stock_items ได้แล้ว = ระเบิดแน่นอนเมื่อมีคนใช้
-  for (const tbl of ['purchase_request_items', 'purchase_return_items', 'purchase_order_items', 'goods_receipt_items']) {
-    try {
-      const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(tbl) as any)?.sql || ''
-      if (!/FOREIGN KEY\s*\(material_id\)/i.test(cur)) continue
-
-      // สร้าง DDL ใหม่จากของเดิม: ตัดเฉพาะบรรทัด FK ของ material_id ออก เก็บคอลัมน์/FK อื่นไว้ครบ
-      const newDdl = cur
-        .replace(/CREATE TABLE\s+"?\w+"?/i, `CREATE TABLE ${tbl}_new`)
-        .replace(/,\s*FOREIGN KEY\s*\(material_id\)\s*REFERENCES\s+\w+\s*\([^)]*\)/i, '')
-      const cols = (db.prepare(`PRAGMA table_info(${tbl})`).all() as any[]).map((c: any) => c.name).join(', ')
-
-      db.exec('PRAGMA foreign_keys=OFF')
-      const rebuild = db.transaction(() => {
-        db.exec(newDdl)
-        db.exec(`INSERT INTO ${tbl}_new (${cols}) SELECT ${cols} FROM ${tbl}`)
-        db.exec(`DROP TABLE ${tbl}`)
-        db.exec(`ALTER TABLE ${tbl}_new RENAME TO ${tbl}`)
-      })
-      rebuild()
-      db.exec('PRAGMA foreign_keys=ON')
-      const left = db.prepare(`PRAGMA foreign_key_check(${tbl})`).all() as any[]
-      if (left.length > 0) console.error(`⚠️ ${tbl} rebuild เหลือ FK กำพร้า:`, left)
-      else console.log(`✅ Migration: ${tbl}.material_id ไม่มี FK ตายตัวแล้ว`)
-    } catch (e) {
-      console.error(`⚠️ ${tbl} material_id FK migration error:`, e)
-      try { db.exec('PRAGMA foreign_keys=ON') } catch {}
-    }
-  }
+  // (ลบ migration "ล้าง FK ของ material_id" ออก 2026-09-16)
+  // เหตุผลเดิม: material_id เป็น polymorphic ชี้ได้ทั้ง stock_items และ materials
+  // FK ตายตัวจึงบล็อกค่าที่ถูกต้อง — พอยุบ materials เข้ากับ stock_items แล้ว ความกำกวมหายไป
+  // FK กลับมาเป็นระบบตรวจการกรอกได้ตามเดิม (ดู migration ท้ายไฟล์)
 
   // purchase_invoice_items.material_id: FK ชี้ materials(id) แต่ค่าจริงเป็น stock_items(id)
   // เขียนค่าจริงลงไม่ได้เลยสักแถว (FK เด้ง) จนต้องปล่อย NULL ทุกแถว — โรคเดียวกับ
@@ -880,7 +852,8 @@ export function runMigrations(db: any): void {
         notes TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(tenant_id, material_id, from_unit, to_unit)
+        UNIQUE(tenant_id, material_id, from_unit, to_unit),
+        FOREIGN KEY (material_id) REFERENCES stock_items(id)
       );
       CREATE INDEX IF NOT EXISTS idx_unit_conversions_material
         ON unit_conversions(tenant_id, material_id);
@@ -891,7 +864,7 @@ export function runMigrations(db: any): void {
   // Migration: add base_unit to materials (หน่วยนับหลักที่ใช้ตัดสต็อก)
   try {
     const cols = db.prepare(`PRAGMA table_info(materials)`).all() as any[]
-    if (!cols.some((c: any) => c.name === 'base_unit')) {
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'base_unit')) {
       db.exec(`ALTER TABLE materials ADD COLUMN base_unit TEXT`)
       console.log('✅ Migration: added base_unit to materials')
     }
@@ -2061,4 +2034,83 @@ export function runMigrations(db: any): void {
     // สิทธิ์ "ทำเลยไม่ต้องขออนุมัติ" ที่ admin มอบให้เป็นรายคน/รายหมวด (ดู approvalGate.service.ts hasBypass)
     "ALTER TABLE user_approval_permissions ADD COLUMN can_bypass INTEGER DEFAULT 0",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
+
+  // ==================== ยุบ materials เข้ากับ stock_items (2026-09-16) ====================
+  // เดิมมีทะเบียนของ 2 ชุดทับกัน: วัตถุดิบ 1 ตัวถูกสร้างเป็น materials 1 แถว + stock_items 1 แถว
+  // ของชิ้นเดียวกันจึงมี id 2 แบบ แล้วโค้ดคนละเส้นอ้างคนละแบบ — join ไม่เคยแมตช์
+  // (ต้นทุน BOM เป็น 0 ทั้ง 233 ใบ, ป้าย "ใช้ใน BOM" เป็น 0 ทั้ง 42 รายการ)
+  // ตอนนี้เหลือ stock_items ชุดเดียว material_id ทุกตารางจึงชี้ stock_items(id) ได้แน่นอน
+  // และ "ใส่ FK กลับ" ได้ เพราะไม่มีความกำกวมว่าชี้ตารางไหนอีกแล้ว
+  try {
+    // 1. หมวดหมู่จาก catalog มาอยู่บน stock_items (material_categories ยังเป็น catalog กลาง)
+    try {
+      db.exec('ALTER TABLE stock_items ADD COLUMN category_id TEXT REFERENCES material_categories(id)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_items_category_id ON stock_items(category_id)')
+    } catch { /* มีคอลัมน์อยู่แล้ว */ }
+
+    // 2. ตาราง materials จะถูกลบได้ต่อเมื่อย้ายข้อมูลออกหมดแล้วเท่านั้น
+    //    (ห้ามลบข้อมูลของใครทิ้งเงียบ ๆ — ถ้ายังมีแถวค้าง ให้หยุดแล้วฟ้อง)
+    const matTable = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='materials'").get() as any
+    const matRows = matTable.n ? (db.prepare('SELECT COUNT(*) n FROM materials').get() as any).n : 0
+    if (matRows > 0) {
+      console.error(`⚠️ ตาราง materials ยังมี ${matRows} แถว — ข้ามการยุบตาราง ต้องย้ายข้อมูลไป stock_items ก่อน`)
+    } else {
+      const orphanOf = (t: string) => (db.prepare(`SELECT COUNT(*) n FROM ${t}
+        WHERE material_id IS NOT NULL AND material_id <> ''
+          AND material_id NOT IN (SELECT id FROM stock_items)`).get() as any).n
+
+      db.exec('PRAGMA foreign_keys=OFF')
+
+      // 2.1 ถอดคอลัมน์ stock_items.material_id (ชี้ตารางที่ไม่มีแล้ว)
+      const siCols = db.prepare('PRAGMA table_info(stock_items)').all() as any[]
+      if (siCols.some((c: any) => c.name === 'material_id')) {
+        const keep = siCols.filter((c: any) => c.name !== 'material_id').map((c: any) => c.name).join(', ')
+        const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='stock_items'").get() as any).sql
+        const ddl = cur
+          .replace(/CREATE TABLE\s+"?stock_items"?/i, 'CREATE TABLE stock_items_new')
+          .replace(/\n\s*material_id TEXT,?/i, '')
+          .replace(/,?\s*FOREIGN KEY\s*\(material_id\)\s*REFERENCES\s+materials\s*\([^)]*\)/i, '')
+        const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='stock_items' AND sql IS NOT NULL").all() as any[])
+          .map((r: any) => r.sql).filter((sql: string) => !/\(material_id\)/.test(sql))
+        db.transaction(() => {
+          db.exec(ddl)
+          db.exec(`INSERT INTO stock_items_new (${keep}) SELECT ${keep} FROM stock_items`)
+          db.exec('DROP TABLE stock_items')
+          db.exec('ALTER TABLE stock_items_new RENAME TO stock_items')
+          for (const sql of idx) db.exec(sql)
+        })()
+        console.log('✅ Migration: stock_items ถอดคอลัมน์ material_id แล้ว')
+      }
+
+      if (matTable.n) { db.exec('DROP TABLE materials'); console.log('✅ Migration: ลบตาราง materials แล้ว') }
+
+      // 2.2 ใส่ FK material_id -> stock_items(id) กลับคืน (ระบบตรวจการกรอก)
+      for (const tbl of ['purchase_request_items', 'purchase_order_items', 'goods_receipt_items',
+        'purchase_invoice_items', 'purchase_return_items', 'unit_conversions']) {
+        const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(tbl) as any)?.sql
+        if (!cur || /FOREIGN KEY\s*\(material_id\)/i.test(cur)) continue
+        const orphan = orphanOf(tbl)
+        if (orphan > 0) { console.error(`⚠️ ${tbl}: material_id กำพร้า ${orphan} แถว — ยังใส่ FK ไม่ได้`); continue }
+        const cols = (db.prepare(`PRAGMA table_info(${tbl})`).all() as any[]).map((c: any) => c.name).join(', ')
+        const close = cur.lastIndexOf(')')
+        const ddl = cur.slice(0, close).replace(/,\s*$/, '')
+          .replace(/CREATE TABLE\s+"?\w+"?/i, `CREATE TABLE ${tbl}_new`)
+          + ',\n  FOREIGN KEY (material_id) REFERENCES stock_items(id)\n)'
+        const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL").all(tbl) as any[]).map((r: any) => r.sql)
+        db.transaction(() => {
+          db.exec(ddl)
+          db.exec(`INSERT INTO ${tbl}_new (${cols}) SELECT ${cols} FROM ${tbl}`)
+          db.exec(`DROP TABLE ${tbl}`)
+          db.exec(`ALTER TABLE ${tbl}_new RENAME TO ${tbl}`)
+          for (const sql of idx) db.exec(sql)
+        })()
+        console.log(`✅ Migration: ${tbl}.material_id -> FK stock_items(id)`)
+      }
+
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch (e) {
+    console.error('⚠️ materials merge migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
 }

@@ -208,7 +208,7 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
           poi.unit_price as unitPrice,
           poi.total_price as totalPrice
         FROM purchase_order_items poi
-        LEFT JOIN materials m ON poi.material_id = m.id
+        LEFT JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
         WHERE poi.purchase_order_id = ?
       `).all(order.id) || []
     }
@@ -223,7 +223,7 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
         AVG(poi.unit_price) as avgUnitPrice
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      LEFT JOIN materials m ON poi.material_id = m.id
+      LEFT JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
       WHERE po.supplier_id = ? AND po.status != 'CANCELLED'
       GROUP BY poi.material_id
       ORDER BY totalQuantity DESC

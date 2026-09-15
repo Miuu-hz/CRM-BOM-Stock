@@ -122,7 +122,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     let totalValue = 0
     for (const item of stockItems) {
       if (item.material_id) {
-        const material = db.prepare('SELECT unit_cost FROM materials WHERE id = ?').get(item.material_id) as any
+        const material = db.prepare('SELECT unit_cost FROM stock_items WHERE id = ?').get(item.material_id) as any
         if (material) {
           totalValue += item.quantity * (material.unit_cost || 0)
         }
@@ -152,11 +152,12 @@ router.get('/', async (req: Request, res: Response) => {
     const stockItems = db.prepare(`
       -- ตัด product_name/product_code ทิ้ง 2026-09-15: si.product_id ว่างทั้ง 1,541 แถว
       -- คอลัมน์จึงเป็น null เสมอ และไม่มีหน้าไหนอ่าน (Stock.tsx ใช้ si.name / si.sku)
-      -- ส่วน materials ยังต่ออยู่จริง (stock_items.material_id -> materials 30 แถว)
       SELECT si.*,
-             m.name as material_name, m.code as material_code, m.unit_cost as material_unit_cost
+             si.name as material_name, si.sku as material_code, si.unit_cost as material_unit_cost,
+             mc.name as category_name
       FROM stock_items si
-      LEFT JOIN materials m ON si.material_id = m.id
+      -- วัตถุดิบกับสินค้าในคลังเป็นแถวเดียวกันแล้ว ชื่อ/รหัส/ต้นทุนอ่านจาก si ได้ตรง ๆ
+      LEFT JOIN material_categories mc ON si.category_id = mc.id
       WHERE si.tenant_id = ?
       ORDER BY si.updated_at DESC
     `).all(tenantId) as any[]
@@ -189,11 +190,12 @@ router.get('/:id', async (req: Request, res: Response) => {
     const stock = db.prepare(`
       -- ตัด product_name/product_code ทิ้ง 2026-09-15: si.product_id ว่างทั้ง 1,541 แถว
       -- คอลัมน์จึงเป็น null เสมอ และไม่มีหน้าไหนอ่าน (Stock.tsx ใช้ si.name / si.sku)
-      -- ส่วน materials ยังต่ออยู่จริง (stock_items.material_id -> materials 30 แถว)
       SELECT si.*,
-             m.name as material_name, m.code as material_code, m.unit_cost as material_unit_cost
+             si.name as material_name, si.sku as material_code, si.unit_cost as material_unit_cost,
+             mc.name as category_name
       FROM stock_items si
-      LEFT JOIN materials m ON si.material_id = m.id
+      -- วัตถุดิบกับสินค้าในคลังเป็นแถวเดียวกันแล้ว ชื่อ/รหัส/ต้นทุนอ่านจาก si ได้ตรง ๆ
+      LEFT JOIN material_categories mc ON si.category_id = mc.id
       WHERE si.id = ? AND si.tenant_id = ?
     `).get(req.params.id, tenantId) as any
 
@@ -317,7 +319,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     let currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     // Fallback: if id is a material_id, find the linked stock item
     if (!currentItem) {
-      currentItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+      currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     }
     if (!currentItem) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })

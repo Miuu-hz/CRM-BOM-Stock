@@ -67,21 +67,10 @@ export function applySchema(db: any): void {
     );
 
     -- ==================== MATERIALS ====================
-    CREATE TABLE IF NOT EXISTS materials (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT,
-      category_id TEXT,
-      code TEXT NOT NULL,
-      name TEXT NOT NULL,
-      unit TEXT NOT NULL,
-      unit_cost REAL NOT NULL,
-      min_stock INTEGER DEFAULT 0,
-      max_stock INTEGER DEFAULT 1000,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (category_id) REFERENCES material_categories(id),
-      UNIQUE(tenant_id, code)
-    );
+    -- ยุบเข้ากับ stock_items แล้ว 2026-09-16: วัตถุดิบ 1 ตัว = stock_items 1 แถว
+    -- (เดิมสร้างคู่กัน 2 แถว ทำให้ id ของของชิ้นเดียวกันมี 2 แบบ แล้วโค้ดคนละเส้นอ้างคนละแบบ
+    --  ผลคือ join ไม่เคยแมตช์ — ต้นทุน BOM เป็น 0 ทุกใบ, ป้ายใช้ใน BOM เป็น 0 ตลอด)
+    -- material_categories ยังอยู่ กลายเป็น catalog กลางที่ stock_items.category_id ชี้ถึง
 
     -- ==================== ORDERS ====================
     CREATE TABLE IF NOT EXISTS orders (
@@ -154,9 +143,9 @@ export function applySchema(db: any): void {
       sku TEXT NOT NULL,
       gs1_barcode TEXT,                  -- GS1 barcode สำหรับยิงค้นหา (optional)
       name TEXT NOT NULL,
-      category TEXT NOT NULL,
+      category TEXT NOT NULL,        -- ประเภทของ: raw / wip / finished
       product_id TEXT,
-      material_id TEXT,
+      category_id TEXT,              -- หมวดหมู่จาก catalog (material_categories) — กำหนด default_unit ตอนสร้างของใหม่
       quantity INTEGER DEFAULT 0,        -- จำนวนในหน่วยฐาน (base unit)
       unit TEXT NOT NULL,                -- หน่วยเริ่มต้นสำหรับแสดง/ธุรกรรม
       base_unit TEXT,                    -- หน่วยย่อยสุด (ขวด, pcs, g, ml)
@@ -179,7 +168,7 @@ export function applySchema(db: any): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
-      FOREIGN KEY (material_id) REFERENCES materials(id),
+      FOREIGN KEY (category_id) REFERENCES material_categories(id),
       UNIQUE(tenant_id, sku)
     );
 
@@ -319,8 +308,9 @@ export function applySchema(db: any): void {
       unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
       received_qty REAL DEFAULT 0,
-      -- unit ถูกลบออก - ดึงจาก materials แทน
+      -- unit ถูกลบออก - ดึงจากสินค้าใน stock_items แทน
       notes TEXT,
+      FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
     );
 
@@ -702,7 +692,6 @@ export function applySchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
     CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
     CREATE INDEX IF NOT EXISTS idx_receipts_invoice ON receipts(invoice_id);
-    CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category_id);
     CREATE INDEX IF NOT EXISTS idx_bom_items_material ON bom_items(material_id);
     -- ==================== PURCHASE REQUEST (PR) ====================
     CREATE TABLE IF NOT EXISTS purchase_requests (
@@ -736,8 +725,7 @@ export function applySchema(db: any): void {
       estimated_unit_price REAL DEFAULT 0,
       estimated_total_price REAL DEFAULT 0,
       notes TEXT,
-      -- ไม่มี FK ของ material_id โดยตั้งใจ: ชี้ได้ทั้ง stock_items(id) และ materials(id)
-      -- (ดู services/goodsReceipt.service.ts และ mcp bind_document_item) FK ตายตัวทำให้ผูกไม่ได้
+      FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (purchase_request_id) REFERENCES purchase_requests(id) ON DELETE CASCADE
     );
 
@@ -770,6 +758,7 @@ export function applySchema(db: any): void {
       accepted_qty REAL DEFAULT 0,
       rejected_qty REAL DEFAULT 0,
       notes TEXT,
+      FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts(id) ON DELETE CASCADE,
       FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id)
     );
@@ -812,9 +801,7 @@ export function applySchema(db: any): void {
       quantity REAL DEFAULT 0,
       unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
-      -- ไม่มี FK ของ material_id โดยตั้งใจ: คอลัมน์นี้ชี้ได้ทั้ง stock_items(id) และ materials(id)
-      -- (ดูการ resolve ที่ services/goodsReceipt.service.ts: id = ? OR material_id = ?)
-      -- FK เดิมชี้ materials อย่างเดียว ทำให้เขียนค่าจริงไม่ได้เลยสักแถว
+      FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE CASCADE,
       FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id)
     );
@@ -876,9 +863,8 @@ export function applySchema(db: any): void {
       unit_price REAL DEFAULT 0,
       reason TEXT,
       total_price REAL DEFAULT 0,
+      FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (purchase_return_id) REFERENCES purchase_returns(id) ON DELETE CASCADE,
-      -- ไม่มี FK ของ material_id โดยตั้งใจ: ชี้ได้ทั้ง stock_items(id) และ materials(id)
-      -- (ดู services/goodsReceipt.service.ts และ mcp bind_document_item) FK ตายตัวทำให้ผูกไม่ได้
       FOREIGN KEY (goods_receipt_item_id) REFERENCES goods_receipt_items(id)
     );
 
@@ -897,7 +883,6 @@ export function applySchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_boms_product ON boms(product_id);
     CREATE INDEX IF NOT EXISTS idx_bom_items_bom ON bom_items(bom_id);
-    CREATE INDEX IF NOT EXISTS idx_stock_items_material ON stock_items(material_id);
     CREATE INDEX IF NOT EXISTS idx_stock_items_product ON stock_items(product_id);
     -- index for gs1 is created down in the migration block if column exists
     -- index for is_pos_enabled is created down in the migration block if column exists

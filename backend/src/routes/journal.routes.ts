@@ -427,7 +427,7 @@ router.post('/auto/purchase-order', async (req: Request, res: Response) => {
     const items = db.prepare(`
       SELECT poi.*, m.name as material_name
       FROM purchase_order_items poi
-      JOIN materials m ON poi.material_id = m.id
+      JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
       WHERE poi.purchase_order_id = ?
     `).all(purchaseOrderId) as Record<string, unknown>[]
 

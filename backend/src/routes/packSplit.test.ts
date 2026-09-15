@@ -19,16 +19,14 @@ function seed(tenantId: string, opts: { qty: number }) {
   db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, 'Sup', 'C')")
     .run(supplierId, tenantId, supplierId)
 
+  // วัตถุดิบ = stock_items แถวเดียว (ตาราง materials ถูกยุบเข้ามาแล้ว)
   const materialId = generateId()
-  db.prepare("INSERT INTO materials (id, tenant_id, code, name, unit, unit_cost) VALUES (?, ?, ?, 'อกไก่', 'g', 0.2)")
-    .run(materialId, tenantId, 'MAT-' + materialId.slice(0, 5))
-
-  const stockId = materialId  // ให้ stock_item ผูกกับ material ตรง ๆ
+  const stockId = materialId
   db.prepare(`
-    INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, sealed_qty,
+    INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, sealed_qty,
                              unit, base_unit, display_unit, location, status, unit_cost)
-    VALUES (?, ?, ?, 'อกไก่', 'RAW', ?, 0, 0, 'g', 'g', 'kg', 'WH1', 'ACTIVE', 0.2)
-  `).run(stockId, tenantId, 'SKU-' + stockId.slice(0, 5), materialId)
+    VALUES (?, ?, ?, 'อกไก่', 'RAW', 0, 0, 'g', 'g', 'kg', 'WH1', 'ACTIVE', 0.2)
+  `).run(stockId, tenantId, 'MAT-' + stockId.slice(0, 5))
 
   const poId = generateId()
   const now = new Date().toISOString()

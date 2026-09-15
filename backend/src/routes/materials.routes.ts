@@ -126,7 +126,7 @@ router.delete('/categories/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Category not found' })
     }
 
-    const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
+    const materialCount = db.prepare('SELECT COUNT(*) as count FROM stock_items WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
     if (materialCount.count > 0) {
       return res.status(400).json({
         success: false,
@@ -147,29 +147,22 @@ router.get('/stats', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const totalMaterials = (db.prepare('SELECT COUNT(*) as count FROM materials WHERE tenant_id = ?').get(tenantId) as any).count
-
-    // Get materials with low stock
+    // วัตถุดิบเก็บอยู่ใน stock_items ตัวเดียวแล้ว ไม่มีทะเบียนซ้อนอีกชุด
     const stockItems = db.prepare(`
-      SELECT si.*, m.min_stock, m.max_stock
-      FROM stock_items si
-      JOIN materials m ON si.material_id = m.id
-      WHERE si.material_id IS NOT NULL AND si.tenant_id = ?
+      SELECT si.* FROM stock_items si
+      WHERE si.tenant_id = ? AND (si.category_id IS NOT NULL OR si.category IN ('raw','RAW_MATERIAL','material','wip'))
     `).all(tenantId) as any[]
+
+    const totalMaterials = stockItems.length
 
     const lowStockCount = stockItems.filter(
       (item) => item.quantity <= item.min_stock
     ).length
 
-    // Calculate total inventory value
-    const materials = db.prepare('SELECT id, unit_cost FROM materials WHERE tenant_id = ?').all(tenantId) as any[]
-    const totalValue = stockItems.reduce((sum, item) => {
-      const material = materials.find((m) => m.id === item.material_id)
-      if (material) {
-        return sum + item.quantity * Number(material.unit_cost)
-      }
-      return sum
-    }, 0)
+    const totalValue = stockItems.reduce(
+      (sum, item) => sum + item.quantity * Number(item.unit_cost || 0),
+      0
+    )
 
     res.json({
       success: true,
@@ -472,13 +465,15 @@ router.get('/', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const materials = db.prepare(`
-      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity,
+      SELECT si.id, si.sku as code, si.name, si.category_id,
+             COALESCE(si.base_unit, si.unit) as unit, si.unit_cost,
+             si.min_stock, si.max_stock,
+             si.id as stock_id, si.quantity as stock_quantity,
              mc.name as category_name, mc.default_unit as category_default_unit
-      FROM materials m
-      LEFT JOIN stock_items si ON m.id = si.material_id
-      LEFT JOIN material_categories mc ON m.category_id = mc.id
-      WHERE m.tenant_id = ?
-      ORDER BY m.name ASC
+      FROM stock_items si
+      LEFT JOIN material_categories mc ON si.category_id = mc.id
+      WHERE si.tenant_id = ? AND (si.category_id IS NOT NULL OR si.category IN ('raw','RAW_MATERIAL','material','wip'))
+      ORDER BY si.name ASC
     `).all(tenantId) as any[]
 
     // Enrich with stock status and convert to camelCase
@@ -537,30 +532,17 @@ router.get('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    // วัตถุดิบตัวเดียวกันถูกอ้างด้วย id 2 แบบในระบบนี้:
-    //   materials.id      — ใช้ใน purchase_request_items, stock_items.material_id
-    //   stock_items.id    — ใช้ใน bom_items, work_order_materials, unit_conversions (ทั้งหมด)
-    // เดิม route นี้รับแต่ materials.id ถูกเรียกด้วยอีกแบบเมื่อไหร่ก็ 404 ทั้งที่ของมีอยู่จริง
-    let material = db.prepare(`
-      SELECT m.*, si.id as stock_id, si.quantity as stock_quantity
-      FROM materials m
-      LEFT JOIN stock_items si ON m.id = si.material_id
-      WHERE m.id = ? AND m.tenant_id = ?
+    // id ของวัตถุดิบ = id ของ stock_items แล้ว ไม่มี id 2 แบบให้สับสนอีก
+    const material = db.prepare(`
+      SELECT si.id, si.sku as code, si.name, si.category_id,
+             COALESCE(si.base_unit, si.unit) as unit, si.unit_cost,
+             si.min_stock, si.max_stock,
+             si.id as stock_id, si.quantity as stock_quantity,
+             mc.name as category_name, mc.default_unit as category_default_unit
+      FROM stock_items si
+      LEFT JOIN material_categories mc ON si.category_id = mc.id
+      WHERE si.id = ? AND si.tenant_id = ?
     `).get(req.params.id, tenantId) as any
-
-    if (!material) {
-      // ลองตีความว่าเป็น stock_items.id — ถ้ามี material ผูกอยู่ให้คืนตัวนั้น
-      // ถ้าเป็นสินค้าในคลังที่ไม่ได้ผูก material master ก็ยังคืนข้อมูลเท่าที่มีได้
-      material = db.prepare(`
-        SELECT COALESCE(m.id, si.id) as id, COALESCE(m.code, si.sku) as code,
-               COALESCE(m.name, si.name) as name, COALESCE(m.unit, si.base_unit, si.unit) as unit,
-               COALESCE(m.unit_cost, si.unit_cost) as unit_cost, m.category_id,
-               si.id as stock_id, si.quantity as stock_quantity
-        FROM stock_items si
-        LEFT JOIN materials m ON si.material_id = m.id
-        WHERE si.id = ? AND si.tenant_id = ?
-      `).get(req.params.id, tenantId) as any
-    }
 
     if (!material) {
       return res.status(404).json({
@@ -586,11 +568,8 @@ router.get('/:id', (req: Request, res: Response) => {
       JOIN boms b ON bi.bom_id = b.id
       -- boms.product_id ชี้ stock_items (233/233 แถว) ไม่ใช่ products ที่เลิกใช้แล้ว
       JOIN stock_items p ON b.product_id = p.id AND p.tenant_id = b.tenant_id
-      -- bom_items.material_id เก็บ id ของ stock_items (803/803 แถว) ไม่ใช่ id ของ materials
-      -- ส่วน route นี้ถูกเรียกด้วย materials.id จึงต้องแปลงผ่าน stock item ที่ผูกกันไว้ก่อน
-      -- ไม่งั้นต่อให้ join ถูกตารางแล้ว ก็ยังไม่มีแถวไหนแมตช์อยู่ดี
       WHERE bi.material_id = ?
-    `).all(material.stock_id || req.params.id)
+    `).all(req.params.id)
 
     res.json({
       success: true,
@@ -630,8 +609,8 @@ router.post('/', (req: Request, res: Response) => {
     // stock_items.unit as its own unit and show up twice in the picker.
     const unit = normalizeUnit(reqUnit || category.default_unit || 'pcs')
 
-    // Check for duplicate code in materials
-    const existing = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+    // รหัสวัตถุดิบ = sku ของ stock_items (ทะเบียนเดียว ไม่สร้างของซ้อนกัน 2 แถวอีก)
+    const existing = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(code, tenantId)
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -639,51 +618,26 @@ router.post('/', (req: Request, res: Response) => {
       })
     }
 
-    // Check for duplicate SKU in stock_items
-    const existingStock = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(`STK-${code}`, tenantId)
-    if (existingStock) {
-      return res.status(400).json({
-        success: false,
-        message: 'Stock SKU already exists',
-      })
-    }
-
     const id = generateId()
     const now = new Date().toISOString()
 
-    // Create material with category
-    db.prepare(`
-      INSERT INTO materials (id, tenant_id, category_id, code, name, unit, unit_cost, min_stock, max_stock, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, tenantId, categoryId, code, name, unit, unitCost, minStock || 0, maxStock || 1000, now, now)
-
-    // Create stock item automatically so it appears in BOM dropdown
     const qty = initialStock || 0
-    const stockId = generateId()
     db.prepare(`
-      INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
+      INSERT INTO stock_items (id, tenant_id, sku, name, category, category_id, quantity, unit, base_unit, unit_cost, min_stock, max_stock, location, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
     `).run(
-      stockId, 
-      tenantId, 
-      `STK-${code}`, 
-      `Stock: ${name}`, 
-      id, 
-      qty, 
-      unit,
-      minStock || 0, 
-      maxStock || 1000, 
+      id, tenantId, code, name, categoryId, qty, unit, unit, unitCost,
+      minStock || 0, maxStock || 1000,
       qty > (minStock || 0) ? 'ADEQUATE' : (qty === 0 ? 'OUT' : 'LOW'),
-      now, 
-      now
+      now, now
     )
 
-    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    const material = db.prepare('SELECT *, sku as code FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId)
 
     res.json({
       success: true,
       message: 'Material created successfully',
-      data: { ...material, stockId },
+      data: { ...material, stockId: id },
     })
   } catch (error) {
     console.error('Create material error:', error)
@@ -697,7 +651,7 @@ router.put('/:id', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { code, name, categoryId, unitCost, minStock, maxStock } = req.body
 
-    const existing = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const existing = db.prepare('SELECT *, sku as code FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
     if (!existing) {
       return res.status(404).json({
@@ -708,7 +662,7 @@ router.put('/:id', (req: Request, res: Response) => {
 
     // Check for duplicate code (excluding current)
     if (code && code !== existing.code) {
-      const duplicate = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?').get(code, tenantId)
+      const duplicate = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(code, tenantId)
       if (duplicate) {
         return res.status(400).json({
           success: false,
@@ -733,8 +687,8 @@ router.put('/:id', (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     db.prepare(`
-      UPDATE materials SET
-        code = COALESCE(?, code),
+      UPDATE stock_items SET
+        sku = COALESCE(?, sku),
         name = COALESCE(?, name),
         category_id = COALESCE(?, category_id),
         unit = ?,
@@ -745,19 +699,7 @@ router.put('/:id', (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ?
     `).run(code, name, categoryId, newUnit, unitCost, minStock, maxStock, now, req.params.id, tenantId)
 
-    // Update related stock items (including unit from material)
-    if (minStock !== undefined || maxStock !== undefined) {
-      db.prepare(`
-        UPDATE stock_items SET
-          min_stock = COALESCE(?, min_stock),
-          max_stock = COALESCE(?, max_stock),
-          unit = ?,
-          updated_at = ?
-        WHERE material_id = ? AND tenant_id = ?
-      `).run(minStock, maxStock, newUnit, now, req.params.id, tenantId)
-    }
-
-    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const material = db.prepare('SELECT *, sku as code FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
 
     res.json({
       success: true,
@@ -775,7 +717,7 @@ router.delete('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
-    const existing = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
 
     if (!existing) {
       return res.status(404).json({
@@ -793,11 +735,7 @@ router.delete('/:id', (req: Request, res: Response) => {
       })
     }
 
-    // Delete related stock items first
-    db.prepare('DELETE FROM stock_items WHERE material_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-
-    // Delete material
-    db.prepare('DELETE FROM materials WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    db.prepare('DELETE FROM stock_items WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
 
     res.json({
       success: true,
@@ -822,37 +760,14 @@ router.post('/:id/stock', (req: Request, res: Response) => {
       })
     }
 
-    const material = db.prepare('SELECT * FROM materials WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    // วัตถุดิบกับ stock item เป็นแถวเดียวกันแล้ว ไม่ต้องหา/สร้างคู่ของมันอีก
+    const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
-    if (!material) {
+    if (!stockItem) {
       return res.status(404).json({
         success: false,
         message: 'Material not found',
       })
-    }
-
-    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-
-    // Create stock item if doesn't exist
-    if (!stockItem) {
-      const stockId = generateId()
-      const now = new Date().toISOString()
-      db.prepare(`
-        INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, unit, min_stock, max_stock, location, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, 0, ?, ?, ?, 'WAREHOUSE', 'NO_STOCK', ?, ?)
-      `).run(
-        stockId,
-        tenantId,
-        `STK-${material.code}`,
-        `Stock: ${material.name}`,
-        material.id,
-        normalizeUnit(material.unit || 'pcs'),
-        material.min_stock,
-        material.max_stock,
-        now,
-        now
-      )
-      stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockId, tenantId)
     }
 
     // ponytail: read-modify-write material stock in one transaction.
@@ -875,11 +790,11 @@ router.post('/:id/stock', (req: Request, res: Response) => {
       }
 
       let status = 'ADEQUATE'
-      if (newQuantity <= material.min_stock * 0.3) {
+      if (newQuantity <= stockItem.min_stock * 0.3) {
         status = 'CRITICAL'
-      } else if (newQuantity <= material.min_stock) {
+      } else if (newQuantity <= stockItem.min_stock) {
         status = 'LOW'
-      } else if (newQuantity >= material.max_stock) {
+      } else if (newQuantity >= stockItem.max_stock) {
         status = 'OVERSTOCK'
       }
 
@@ -914,7 +829,7 @@ router.post('/:id/stock', (req: Request, res: Response) => {
       success: true,
       message: 'Stock adjusted successfully',
       data: {
-        material,
+        material: { ...stockItem, code: stockItem.sku },
         stockItem: { ...stockItem, quantity: result.newQuantity, status: result.status },
         previousQuantity: result.previousQuantity,
         newQuantity: result.newQuantity,

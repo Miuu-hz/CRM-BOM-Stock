@@ -400,7 +400,7 @@ router.get('/extended', (req: Request, res: Response) => {
     const cogsByCat = db.prepare(`
       SELECT COALESCE(mc.name, 'ไม่ระบุหมวด') as category, COALESCE(SUM(poi.total_price), 0) as amount
       FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      LEFT JOIN materials m ON poi.material_id = m.id
+      LEFT JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
       LEFT JOIN material_categories mc ON m.category_id = mc.id
       WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
       GROUP BY mc.name ORDER BY amount DESC
@@ -450,7 +450,8 @@ router.get('/extended', (req: Request, res: Response) => {
       const bom = db.prepare("SELECT id FROM boms WHERE tenant_id = ? AND product_id = ? AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1").get(tenantId, p.id) as { id: string } | undefined
       let bomCost = 0
       if (bom) {
-        const bc = db.prepare("SELECT COALESCE(SUM(bi.quantity * m.unit_cost), 0) as cost FROM bom_items bi JOIN materials m ON bi.material_id = m.id WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'").get(bom.id) as { cost: number }
+        // bom_items.material_id เก็บ id ของ stock_items — join ตาราง materials เดิมจึงไม่เคยแมตช์ ต้นทุนเลยเป็น 0 ทุกใบ
+        const bc = db.prepare("SELECT COALESCE(SUM(bi.quantity * m.unit_cost), 0) as cost FROM bom_items bi JOIN stock_items m ON bi.material_id = m.id WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'").get(bom.id) as { cost: number }
         bomCost = Number(bc.cost) * Number(p.unitsSold)
       }
       const rev = Number(p.revenue)

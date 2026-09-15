@@ -700,10 +700,10 @@ router.get('/stock-adjustments', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const adjustments = db.prepare(`
-      SELECT sa.*, si.sku, si.name as stock_name, m.name as material_name, m.code as material_code
+      -- วัตถุดิบกับสินค้าในคลังเป็นแถวเดียวกันแล้ว ไม่ต้อง join หาชื่อจากอีกตาราง
+      SELECT sa.*, si.sku, si.name as stock_name, si.name as material_name, si.sku as material_code
       FROM stock_adjustments sa
       LEFT JOIN stock_items si ON sa.stock_item_id = si.id
-      LEFT JOIN materials m ON si.material_id = m.id
       WHERE sa.tenant_id = ?
       ORDER BY sa.created_at DESC
     `).all(tenantId)

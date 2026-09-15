@@ -23,16 +23,14 @@ function seedPoWithMaterial(tenantId: string, opts: { poUnit?: string; stockUnit
   db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, 'Sup', 'C')")
     .run(supplierId, tenantId, supplierId)
 
+  // วัตถุดิบ = stock_items แถวเดียว (ตาราง materials ถูกยุบเข้ามาแล้ว)
   const materialId = generateId()
-  db.prepare("INSERT INTO materials (id, tenant_id, code, name, unit, unit_cost) VALUES (?, ?, ?, 'วัตถุดิบทดสอบ', ?, 1)")
-    .run(materialId, tenantId, 'MAT-' + materialId.slice(0, 5), opts.stockUnit || 'pcs')
-
   const stockId = materialId
   db.prepare(`
-    INSERT INTO stock_items (id, tenant_id, sku, name, category, material_id, quantity, sealed_qty,
+    INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, sealed_qty,
                              unit, base_unit, location, status, unit_cost)
-    VALUES (?, ?, ?, 'วัตถุดิบทดสอบ', 'RAW', ?, 0, 0, ?, ?, 'WH1', 'ACTIVE', 1)
-  `).run(stockId, tenantId, 'SKU-' + stockId.slice(0, 5), materialId, opts.stockUnit || 'pcs', opts.stockUnit || 'pcs')
+    VALUES (?, ?, ?, 'วัตถุดิบทดสอบ', 'RAW', 0, 0, ?, ?, 'WH1', 'ACTIVE', 1)
+  `).run(stockId, tenantId, 'MAT-' + stockId.slice(0, 5), opts.stockUnit || 'pcs', opts.stockUnit || 'pcs')
 
   const poId = generateId()
   const now = new Date().toISOString()

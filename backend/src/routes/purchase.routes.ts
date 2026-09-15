@@ -32,25 +32,16 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
-// Resolve a PR/PO line item material_id to a valid materials.id, or null.
-// Callers (incl. the MCP) may send a real materials.id, a stock_items.id for
-// the same logical item (different id but matching code/sku), or a stale value.
-// Map it to the right material so the FK insert never fails; with no confident
-// match the item is stored as free-text (material_id null).
+// Resolve a PR/PO line item material_id to a valid stock_items.id, or null.
+// ทะเบียนของเหลือชุดเดียวแล้ว (stock_items) แต่ผู้เรียก (รวมทั้ง MCP) ยังส่งมาได้
+// หลายแบบ — id, รหัส (sku) หรือชื่อ — จึงยังต้องแปลงให้ตรงก่อนบันทึก
+// หาไม่เจอแบบมั่นใจ = เก็บเป็นข้อความอิสระ (material_id null) ไม่เดาให้
 function resolveMaterialId(tenantId: string, item: any): string | null {
-  const materialById = db.prepare('SELECT id FROM materials WHERE id = ? AND tenant_id = ?')
-  const materialByCode = db.prepare('SELECT id FROM materials WHERE code = ? AND tenant_id = ?')
-  const materialByName = db.prepare('SELECT id FROM materials WHERE name = ? AND tenant_id = ?')
+  const materialById = db.prepare('SELECT id FROM stock_items WHERE id = ? AND tenant_id = ?')
+  const materialByCode = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?')
+  const materialByName = db.prepare('SELECT id FROM stock_items WHERE name = ? AND tenant_id = ?')
   const raw = item && item.materialId ? String(item.materialId) : null
-  if (raw) {
-    if (materialById.get(raw, tenantId)) return raw
-    const stock = db.prepare('SELECT material_id, sku, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(raw, tenantId) as any
-    if (stock) {
-      if (stock.material_id && materialById.get(stock.material_id, tenantId)) return stock.material_id
-      if (stock.sku) { const m = materialByCode.get(stock.sku, tenantId) as any; if (m) return m.id }
-      if (stock.name) { const m = materialByName.get(stock.name, tenantId) as any; if (m) return m.id }
-    }
-  }
+  if (raw && materialById.get(raw, tenantId)) return raw
   const code = item && item.materialCode ? String(item.materialCode).trim() : ''
   if (code) { const m = materialByCode.get(code, tenantId) as any; if (m) return m.id }
   const desc = item && item.description ? String(item.description).trim() : ''
@@ -168,7 +159,7 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
     }
     const poUnit = normalizeUnit(poItem?.unit || '')
 
-    let stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+    let stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
     if (!stockItem) {
       stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
     }
@@ -221,7 +212,7 @@ function reverseGoodsReceiptStock(tenantId: string, gr: any, userId: string, now
       } else if (poUnit && poUnit !== stockUnit) {
         const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
         if (!converted) {
-          const materialName = (db.prepare('SELECT name FROM materials WHERE id = ?').get(item.material_id) as any)?.name
+          const materialName = (db.prepare('SELECT name FROM stock_items WHERE id = ?').get(item.material_id) as any)?.name
             || stockItem.name
             || item.material_id
           throw new Error(`ไม่พบการแปลงหน่วย ${poUnit} → ${stockUnit} สำหรับ "${materialName}" จึงยกเลิกใบรับของนี้ไม่ได้ (ถ้าตัดสต็อกด้วยตัวเลขดิบจะทำให้สต็อกผิด) กรุณาตั้งค่า Unit Conversion ${poUnit} → ${stockUnit} กลับคืนก่อน แล้วค่อยยกเลิกอีกครั้ง`)
@@ -314,9 +305,9 @@ router.get('/requests/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT pri.*, m.name as material_name, m.code as material_code
+      SELECT pri.*, m.name as material_name, m.sku as material_code
       FROM purchase_request_items pri
-      LEFT JOIN materials m ON pri.material_id = m.id
+      LEFT JOIN stock_items m ON pri.material_id = m.id AND m.tenant_id = pri.tenant_id
       WHERE pri.purchase_request_id = ?
     `).all(req.params.id)
 
@@ -1145,7 +1136,7 @@ router.get('/returns/:id', async (req: Request, res: Response) => {
     const items = db.prepare(`
       SELECT pri.*, m.name as material_name, m.code as material_code
       FROM purchase_return_items pri
-      LEFT JOIN materials m ON pri.material_id = m.id
+      LEFT JOIN stock_items m ON pri.material_id = m.id AND m.tenant_id = pri.tenant_id
       WHERE pri.purchase_return_id = ?
     `).all(req.params.id)
 
@@ -1309,7 +1300,7 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
           // real materials.id instead.
           let stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           if (!stockItem) {
-            stockItem = db.prepare('SELECT * FROM stock_items WHERE material_id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
+            stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           }
           
           if (stockItem) {
