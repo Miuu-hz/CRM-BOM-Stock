@@ -150,10 +150,12 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const stockItems = db.prepare(`
-      SELECT si.*, p.name as product_name, p.code as product_code,
+      -- ตัด product_name/product_code ทิ้ง 2026-09-15: si.product_id ว่างทั้ง 1,541 แถว
+      -- คอลัมน์จึงเป็น null เสมอ และไม่มีหน้าไหนอ่าน (Stock.tsx ใช้ si.name / si.sku)
+      -- ส่วน materials ยังต่ออยู่จริง (stock_items.material_id -> materials 30 แถว)
+      SELECT si.*,
              m.name as material_name, m.code as material_code, m.unit_cost as material_unit_cost
       FROM stock_items si
-      LEFT JOIN products p ON si.product_id = p.id
       LEFT JOIN materials m ON si.material_id = m.id
       WHERE si.tenant_id = ?
       ORDER BY si.updated_at DESC
@@ -185,10 +187,12 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const stock = db.prepare(`
-      SELECT si.*, p.name as product_name, p.code as product_code,
+      -- ตัด product_name/product_code ทิ้ง 2026-09-15: si.product_id ว่างทั้ง 1,541 แถว
+      -- คอลัมน์จึงเป็น null เสมอ และไม่มีหน้าไหนอ่าน (Stock.tsx ใช้ si.name / si.sku)
+      -- ส่วน materials ยังต่ออยู่จริง (stock_items.material_id -> materials 30 แถว)
+      SELECT si.*,
              m.name as material_name, m.code as material_code, m.unit_cost as material_unit_cost
       FROM stock_items si
-      LEFT JOIN products p ON si.product_id = p.id
       LEFT JOIN materials m ON si.material_id = m.id
       WHERE si.id = ? AND si.tenant_id = ?
     `).get(req.params.id, tenantId) as any

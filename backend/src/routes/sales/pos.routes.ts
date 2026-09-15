@@ -214,7 +214,8 @@ router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
       JOIN pos_running_bills b ON dsb.bill_id = b.id
       JOIN pos_bill_items bi ON b.id = bi.bill_id
       LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
-      LEFT JOIN products p ON pmc.product_id = p.id
+      -- เมนู POS ผูกกับ stock_items (pmc.product_id = stock_items.id) ไม่ใช่ products ที่เลิกใช้แล้ว
+      LEFT JOIN stock_items p ON pmc.product_id = p.id AND p.tenant_id = pmc.tenant_id
       WHERE dsb.daily_sales_id = ?
       GROUP BY bi.product_name
       ORDER BY total_amount DESC

@@ -10,9 +10,10 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     
     const variants = db.prepare(`
-      SELECT pv.*, p.name as product_name, p.code as product_code
+      SELECT pv.*, p.name as product_name, p.sku as product_code
       FROM product_variants pv
-      LEFT JOIN products p ON pv.product_id = p.id
+      -- product_id ชี้ stock_items ไม่ใช่ products ที่เลิกใช้แล้ว (ตาราง 0 แถว แก้ไว้ก่อนเปิดใช้)
+      LEFT JOIN stock_items p ON pv.product_id = p.id AND p.tenant_id = pv.tenant_id
       WHERE pv.tenant_id = ?
       ORDER BY pv.created_at DESC
     `).all(tenantId)

@@ -38,9 +38,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const items = db.prepare(`
-      SELECT qti.*, p.name as product_name, p.code as product_code
+      SELECT qti.*, p.name as product_name, p.sku as product_code
       FROM quotation_template_items qti
-      LEFT JOIN products p ON qti.product_id = p.id
+      -- product_id ในระบบนี้ชี้ stock_items ไม่ใช่ products ที่เลิกใช้แล้ว (ตาราง 0 แถว แก้ไว้ก่อนเปิดใช้)
+      LEFT JOIN stock_items p ON qti.product_id = p.id AND p.tenant_id = qti.tenant_id
       WHERE qti.template_id = ?
       ORDER BY qti.sort_order ASC
     `).all(req.params.id)
