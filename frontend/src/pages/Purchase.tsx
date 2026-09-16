@@ -18,6 +18,7 @@ import {
   Hash,
   Landmark,
   LayoutGrid,
+  Lock,
   LayoutList,
   Package,
   Pencil,
@@ -1113,12 +1114,54 @@ const PurchaseTrail = ({ poId }: { poId: string }) => {
   )
 }
 
+// ช่อง "ขั้นต่อไป" ของแต่ละแถว — มี 3 หน้าตาเท่านั้น
+//   ปุ่ม    = ยังทำได้ กดแล้วเปิดโมดัลสร้างเอกสารใบถัดไป (กรอกให้แล้ว แก้ได้ก่อนยืนยัน)
+//   ข้อความ = ทำไปแล้ว บอกว่าไปเป็นใบไหน กดไปดูใบนั้นได้
+//   กล่องเทา = ยังทำไม่ได้ พร้อมเหตุผล — ไม่ซ่อนให้ต้องเดา
+type NextStep =
+  | { kind: 'action'; label: string; onClick: () => void }
+  | { kind: 'done'; label: string; docNumber?: string; onClick?: () => void }
+  | { kind: 'locked'; label: string }
+
+const NextStepCell = ({ step }: { step: NextStep }) => {
+  if (step.kind === 'action') {
+    return (
+      <button onClick={step.onClick} aria-label={step.label}
+        className="flex items-center justify-center gap-1.5 w-full min-h-[40px] px-3 rounded-lg bg-phopy-indigo/10 text-[var(--primary)] border border-phopy-indigo/30 text-xs font-semibold hover:bg-phopy-indigo/15 transition-colors">
+        {step.label}
+        <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+      </button>
+    )
+  }
+  if (step.kind === 'done') {
+    const body = (
+      <span className="flex items-center justify-center gap-1.5">
+        <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
+        <span className="text-xs text-[var(--fg-3)]">{step.label}</span>
+        {step.docNumber && <span className="text-xs font-mono text-[var(--primary)]">{step.docNumber}</span>}
+      </span>
+    )
+    return step.onClick
+      ? <button onClick={step.onClick} aria-label={`${step.label} ${step.docNumber ?? ''}`}
+          className="w-full min-h-[40px] px-3 rounded-lg hover:bg-[var(--bg)] transition-colors">{body}</button>
+      : <div className="w-full min-h-[40px] px-3 flex items-center justify-center">{body}</div>
+  }
+  return (
+    <div className="flex items-center justify-center gap-1.5 w-full min-h-[40px] px-3 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border-strong)]">
+      <Lock className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
+      <span className="text-xs text-[var(--fg-3)] leading-tight">{step.label}</span>
+    </div>
+  )
+}
+
 const Purchase = () => {
   const { t } = useTranslation()
   const { user } = useAuth()
   // Cancel/void of posted documents (GR, PI, supplier payment) reverses journal + stock —
   // gate behind ADMIN/MANAGER/MASTER same as other irreversible accounting actions.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER' || user?.role === 'POWERUSER'
+  // เปิดใบสั่งซื้อจากใบขอซื้อ = ผูกพันเงินกับผู้ขาย ใช้เกณฑ์เดียวกับงานที่ย้อนยากอื่น ๆ
+  const canMakePO = canCancelDoc
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
@@ -1938,6 +1981,25 @@ const Purchase = () => {
   // กฎเดียวที่ใช้ตัดสินว่า PO ใบนี้ยังออกใบแจ้งหนี้ได้อยู่ไหม
   // เคยมี 2 ชุดแยกกัน (ตาราง PO กับ dropdown ในโมดัล) แล้วไม่ตรงกัน —
   // PO ที่ออกใบไปแล้วยังโผล่ให้เลือก พอกดก็ถูกเด้งว่าซ้ำ
+  // ขั้นต่อไปของใบขอซื้อ — กฎเดียว ใช้ได้ทั้งมุมมองตารางและการ์ด
+  const prNextStep = (req: PurchaseRequest): NextStep => {
+    if (req.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.prCancelled') }
+    if (req.status === 'REJECTED') return { kind: 'locked', label: t('purchase.nextStep.prRejected') }
+    // แปลงเป็นใบสั่งซื้อไปแล้วหรือยัง — ดูจาก PO ที่ผูกกลับมาที่ใบนี้
+    const madePO = orders.find(o => o.linked_pr_id === req.id && o.status !== 'CANCELLED')
+    if (madePO) {
+      return {
+        kind: 'done', label: t('purchase.nextStep.poCreated'), docNumber: madePO.po_number,
+        onClick: () => { setActiveTab('orders'); openModalWithDetail('order', 'view', madePO.id, madePO) },
+      }
+    }
+    if (req.status === 'APPROVED') {
+      if (!canMakePO) return { kind: 'locked', label: t('purchase.nextStep.noPermissionPO') }
+      return { kind: 'action', label: t('purchase.nextStep.createPO'), onClick: () => handleConvertRequestToOrder(req.id) }
+    }
+    return { kind: 'locked', label: t('purchase.nextStep.waitApproval') }
+  }
+
   const poHasInvoiceableTarget = (order: PurchaseOrder) => {
     const confirmedGRs = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED')
     if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
@@ -2536,12 +2598,9 @@ const Purchase = () => {
                       <Check className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  {req.status === 'APPROVED' && (
-                    <button onClick={() => handleConvertRequestToOrder(req.id)}
-                      className="p-1 text-success bg-success/10 rounded" title={t('purchase.actions.convertToOrder')}>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  {/* ขั้นต่อไป: กดแล้วเปิดโมดัลสร้างใบสั่งซื้อที่กรอกให้แล้ว
+                      พอสร้างเสร็จช่องนี้จะกลายเป็นข้อความว่าไปเป็นใบไหน */}
+                  <div className="min-w-[150px]"><NextStepCell step={prNextStep(req)} /></div>
                   {/* ยกเลิกได้เฉพาะใบที่ยังไม่จบเรื่อง — ที่ปฏิเสธ/ยกเลิกไปแล้วไม่ต้องโชว์ซ้ำ */}
                   {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
                     <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}

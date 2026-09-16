@@ -1142,6 +1142,14 @@
     "attachments": {
       "title": "Photos",
       "hint": "JPG / PNG only · max 5 MB each"
+    },
+    "nextStep": {
+      "createPO": "Create order",
+      "poCreated": "Order created",
+      "waitApproval": "Awaiting approval",
+      "prRejected": "Rejected",
+      "prCancelled": "Cancelled",
+      "noPermissionPO": "No permission to create order"
     }
   },
   "sales": {

@@ -1143,6 +1143,14 @@
     "attachments": {
       "title": "แนบรูป",
       "hint": "รับเฉพาะ .jpg .jpeg .png · ไม่เกิน 5 MB ต่อรูป"
+    },
+    "nextStep": {
+      "createPO": "สร้างใบสั่งซื้อ",
+      "poCreated": "สร้างใบสั่งซื้อแล้ว",
+      "waitApproval": "รออนุมัติก่อน",
+      "prRejected": "ใบนี้ถูกปฏิเสธ",
+      "prCancelled": "ใบนี้ถูกยกเลิก",
+      "noPermissionPO": "ไม่มีสิทธิ์เปิดใบสั่งซื้อ"
     }
   },
   "sales": {
