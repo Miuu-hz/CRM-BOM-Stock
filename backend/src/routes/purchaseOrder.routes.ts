@@ -5,6 +5,7 @@ import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs }
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
+import { z } from 'zod'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -31,6 +32,25 @@ function generateId() {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+// ดึงข้อความ error ตัวแรกจาก zod มาแปลงเป็นข้อความไทยที่บอกบรรทัดที่ผิด
+function firstItemZodError(error: z.ZodError): string {
+  const issue = error.issues[0]
+  if (typeof issue.path[0] === 'number') {
+    return `รายการที่ ${(issue.path[0] as number) + 1}: ${issue.message}`
+  }
+  return issue.message
+}
+
+// ตรวจจำนวน/ราคาต่อหน่วยของบรรทัดสินค้าในใบสั่งซื้อก่อนบันทึก — กันจำนวน/ราคาติดลบหรือ 0 หลุดเข้า DB ตรง ๆ
+// unitPrice เป็นฟิลด์บังคับ (ไม่ optional เหมือนฝั่งใบขอซื้อ) เพราะ PO ผูกเงินจริงกับผู้ขายแล้ว
+// และหน้าเว็บ/ทุกจุดที่เรียก endpoint นี้ส่ง unitPrice มาด้วยเสมอ — ราคา 0 อนุญาต (ของแถม) แต่ติดลบไม่ได้
+const PurchaseOrderItemsSchema = z.array(
+  z.object({
+    quantity: z.coerce.number({ invalid_type_error: 'จำนวนต้องเป็นตัวเลข' }).positive('จำนวนต้องมากกว่า 0'),
+    unitPrice: z.coerce.number({ invalid_type_error: 'ราคาต่อหน่วยต้องเป็นตัวเลข' }).min(0, 'ราคาต่อหน่วยต้องไม่ติดลบ'),
+  }).passthrough()
+).min(1, 'ต้องมีอย่างน้อย 1 รายการ')
 
 function generatePONumber(tenantId: string) {
   return formatDocumentNumber('PO', tenantId, 'PO', undefined, 5)
@@ -115,6 +135,12 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { supplierId, expectedDate, notes, items, taxRate, linkedPrId, currencyCode, exchangeRate } = req.body
+
+    const itemsCheck = PurchaseOrderItemsSchema.safeParse(items)
+    if (!itemsCheck.success) {
+      return res.status(400).json({ success: false, message: firstItemZodError(itemsCheck.error) })
+    }
+
     const id = generateId()
     const poNumber = generatePONumber(tenantId)
     const now = new Date().toISOString()
@@ -161,8 +187,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const insertItem = db.prepare(`
       INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-        quantity, unit, unit_price, total_price, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quantity, unit, unit_price, total_price, skip_stock, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const transaction = db.transaction(() => {
@@ -175,6 +201,9 @@ router.post('/', async (req: Request, res: Response) => {
           insertItem.run(
             generateId(), tenantId, id, item.materialId || null, item.description || '',
             item.quantity, item.unit || '', item.unitPrice, item.quantity * item.unitPrice,
+            // ของที่ตั้งใจไม่นับสต็อก (ของใช้สำนักงาน) ติ๊กมาจากหน้าเว็บ — ตัวนี้คือตัวที่ GR ใช้แยก
+            // ว่าบรรทัดที่ไม่ผูกสินค้าเป็นของที่ตั้งใจ หรือลืมผูก
+            (item.skipStock || item.skip_stock) ? 1 : 0,
             item.notes || ''
           )
         }
