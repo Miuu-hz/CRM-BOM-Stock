@@ -9,6 +9,7 @@ import {
   Banknote,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Clock,
   CreditCard,
@@ -281,6 +282,45 @@ const Field = ({ label, required, children }: { label: string; required?: boolea
 
 const inputCls = (disabled?: boolean) =>
   `w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`
+
+// ปุ่มชุดมาตรฐานของทุกโมดัลสร้างเอกสาร: "บันทึกร่าง" + "ส่งขออนุมัติ ▾" โดยทางลัด
+// "ส่งและอนุมัติเลย" อยู่ในเมนูย่อย — เทาพร้อมเหตุผลเสมอเมื่อกดไม่ได้ (ไม่ซ่อนหาย)
+const SubmitSplitButton = ({
+  primaryLabel, primaryDisabled, loading, onPrimary,
+  approveLabel, approveEnabled, approveReason, onApprove,
+  menuOpen, onToggleMenu, moreOptionsLabel,
+}: {
+  primaryLabel: string; primaryDisabled: boolean; loading: boolean; onPrimary: () => void
+  approveLabel: string; approveEnabled: boolean; approveReason: string; onApprove: () => void
+  menuOpen: boolean; onToggleMenu: () => void; moreOptionsLabel: string
+}) => (
+  <div className="relative flex items-stretch">
+    <button onClick={onPrimary} disabled={primaryDisabled}
+      className="relative z-30 flex items-center gap-2 pl-5 pr-4 min-h-[44px] bg-phopy-indigo text-white font-semibold rounded-l-xl hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
+      {loading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+      {primaryLabel}
+    </button>
+    <button type="button" onClick={onToggleMenu} disabled={primaryDisabled}
+      aria-label={moreOptionsLabel} aria-expanded={menuOpen}
+      className="relative z-30 flex items-center justify-center w-11 min-h-[44px] bg-phopy-indigo text-white rounded-r-xl border-l border-white/25 hover:bg-phopy-indigo/80 disabled:opacity-50">
+      <ChevronDown className="w-4 h-4" />
+    </button>
+    {menuOpen && (
+      <>
+        <div className="fixed inset-0 z-20" onClick={onToggleMenu} />
+        <div role="menu" className="absolute bottom-full right-0 mb-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl overflow-hidden z-30">
+          <button role="menuitem" type="button" onClick={onApprove} disabled={!approveEnabled}
+            className={`block w-full text-left px-4 py-3 transition-colors ${approveEnabled ? 'text-success hover:bg-[var(--success-soft)]' : 'text-[var(--fg-4)] cursor-not-allowed'}`}>
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <Check className="w-3.5 h-3.5" /> {approveLabel}
+            </span>
+            <p className="mt-1 ml-5 text-xs leading-snug opacity-90">{approveReason}</p>
+          </button>
+        </div>
+      </>
+    )}
+  </div>
+)
 
 const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onAddNew }: {
   materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
@@ -1218,6 +1258,51 @@ const Purchase = () => {
     else if (activeTab === 'returns') fetchReturns()
   }, [activeTab])
 
+  // ปุ่ม "ส่งและอนุมัติเลย" (split button ในโมดัลสร้างเอกสาร) ต้องเทาพร้อมบอกเหตุผลถ้าไม่มีสิทธิ์
+  // หรือยอดเกินวงเงิน — เช็คแบบ proactive ก่อนกด ไม่ใช่ปล่อยกดแล้วพังทีหลัง
+  // ADMIN/MASTER อนุมัติได้เสมอ (มิเรอร์ APPROVER_ROLES ใน backend/services/approvalGate.service.ts)
+  // role อื่นถาม GET /approval/check-required ด้วยยอดจริง เพราะมี auto_approve_threshold ที่ผูกกับยอด
+  const [submitMenuOpen, setSubmitMenuOpen] = useState(false)
+  const [selfApprove, setSelfApprove] = useState<{ allowed: boolean; loading: boolean; reason: string }>({ allowed: false, loading: false, reason: '' })
+
+  useEffect(() => {
+    const isReqCreate = modalOpen === 'request' && modalMode === 'create'
+    const isOrdCreate = modalOpen === 'order' && modalMode === 'create'
+    if (!isReqCreate && !isOrdCreate) return
+
+    if (user?.role === 'ADMIN' || user?.role === 'MASTER') {
+      setSelfApprove({ allowed: true, loading: false, reason: '' })
+      return
+    }
+
+    const moduleType = isReqCreate ? 'purchase_request' : 'purchase_order'
+    const amount = isReqCreate
+      ? requestForm.items.reduce((s, i) => s + (i.estimated_total_price || 0), 0)
+      : (() => {
+          const subtotal = orderForm.items.reduce((s, i) => s + i.total_price, 0)
+          const afterDisc = subtotal - (orderForm.discount || 0)
+          return afterDisc + afterDisc * (orderForm.tax_rate / 100)
+        })()
+
+    let cancelled = false
+    setSelfApprove(s => ({ ...s, loading: true }))
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/approval/check-required', { params: { moduleType, amount } })
+        if (cancelled) return
+        const d = data?.data
+        if (!d) { setSelfApprove({ allowed: false, loading: false, reason: t('purchase.selfApprove.checkFailed') }); return }
+        if (d.required === false) { setSelfApprove({ allowed: true, loading: false, reason: '' }); return }
+        if (!d.userCanApprove) { setSelfApprove({ allowed: false, loading: false, reason: t('purchase.selfApprove.noPermission') }); return }
+        if (!d.userWithinLimit) { setSelfApprove({ allowed: false, loading: false, reason: t('purchase.selfApprove.overLimit', { limit: formatCurrency(d.userApprovalLimit || 0) }) }); return }
+        setSelfApprove({ allowed: true, loading: false, reason: '' })
+      } catch {
+        if (!cancelled) setSelfApprove({ allowed: false, loading: false, reason: t('purchase.selfApprove.checkFailed') })
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [modalOpen, modalMode, requestForm.items, orderForm.items, orderForm.discount, orderForm.tax_rate, user?.role])
+
   const handleApiError = (error: any, defaultMsg: string) => {
     console.error('API Error:', error)
     if (error.status === 401) {
@@ -1368,7 +1453,9 @@ const Purchase = () => {
   }
 
   // CRUD
-  const handleCreateRequest = async () => {
+  // สร้างร่างแล้วเดินสถานะต่อในคลิกเดียว — ไม่ต้อง POST DRAFT ก่อนแล้วไปกดปุ่มแยกอีกที
+  // toStatus ไม่ใส่ = บันทึกร่างเฉย ๆ (พฤติกรรมเดิมของ handleCreateRequest ที่ฟังก์ชันนี้แทนที่)
+  const submitRequestFlow = async (toStatus?: 'PENDING' | 'APPROVED') => {
     setFormLoading(true)
     try {
       const items = requestForm.items.filter(i => i.material_id || i.description).map(item => ({
@@ -1376,13 +1463,20 @@ const Purchase = () => {
         estimated_total_price: item.quantity * item.estimated_unit_price
       }))
       const { data } = await api.post('/purchase/requests', { ...requestForm, items })
-      if (data.success) {
-        toast.success(t('purchase.toast.requestCreated'))
-        closeModal()
-        fetchRequests()
-      } else {
-        toast.error(data.message || t('purchase.toast.requestCreateFailed'))
+      if (!data.success) { toast.error(data.message || t('purchase.toast.requestCreateFailed')); return }
+      if (toStatus) {
+        try {
+          await api.put(`/purchase/requests/${data.data.id}/status`, { status: toStatus })
+        } catch (err: any) {
+          // ร่างสร้างสำเร็จแล้ว แค่เดินสถานะต่อไม่ได้ (เช่น ไม่มีสิทธิ์อนุมัติ) — ปิดโมดัลแล้วรีเฟรชให้เห็น
+          // ร่างที่สร้างไว้ แทนที่จะขึ้น error ทับจนดูเหมือนไม่สำเร็จเลยทั้งที่จริงสร้างไปแล้ว
+          toast.error(err?.response?.data?.message || t('purchase.error.generic'))
+          closeModal(); fetchRequests(); return
+        }
       }
+      toast.success(toStatus === 'APPROVED' ? t('purchase.toast.approved') : toStatus === 'PENDING' ? t('purchase.toast.submitted') : t('purchase.toast.requestCreated'))
+      closeModal()
+      fetchRequests()
     } catch (error: any) {
       toast.error(error.response?.data?.message || t('purchase.toast.requestCreateError'))
     } finally { setFormLoading(false) }
@@ -1492,7 +1586,9 @@ const Purchase = () => {
     } catch { toast.error(t('purchase.toast.loadRequestFailed')) }
   }
 
-  const handleCreateOrder = async () => {
+  // เหมือน submitRequestFlow แต่สำหรับใบสั่งซื้อ — PO ใช้สถานะ SUBMITTED ไม่ใช่ PENDING
+  // (แทนที่ handleCreateOrder เดิม — เรียกไม่ใส่ toStatus = พฤติกรรมเดิมของมันทุกอย่าง)
+  const submitOrderFlow = async (toStatus?: 'SUBMITTED' | 'APPROVED') => {
     setFormLoading(true)
     try {
       const items = orderForm.items.filter(i => i.material_id || i.description).map(item => ({
@@ -1518,13 +1614,21 @@ const Purchase = () => {
         taxAmount,
         totalAmount,
       })
-      if (data.success) {
-        toast.success(t('purchase.toast.orderCreated'))
-        closeModal()
-        fetchOrders()
-      } else { toast.error(data.message || t('purchase.toast.orderCreateFailed')) }
-    } catch (error) { toast.error(t('purchase.error.generic')) }
-    finally { setFormLoading(false) }
+      if (!data.success) { toast.error(data.message || t('purchase.toast.orderCreateFailed')); return }
+      if (toStatus) {
+        try {
+          await api.put(`/purchase-orders/${data.data.id}/status`, { status: toStatus })
+        } catch (err: any) {
+          toast.error(err?.response?.data?.message || t('purchase.error.generic'))
+          closeModal(); fetchOrders(); return
+        }
+      }
+      toast.success(toStatus === 'APPROVED' ? t('purchase.status.approved') : toStatus === 'SUBMITTED' ? t('purchase.status.submitted') : t('purchase.toast.orderCreated'))
+      closeModal()
+      fetchOrders()
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || t('purchase.error.generic'))
+    } finally { setFormLoading(false) }
   }
 
   const handleUpdateOrder = async () => {
@@ -1704,7 +1808,7 @@ const Purchase = () => {
         closeModal()
         fetchInvoices()
       } else { toast.error(data.message || t('purchase.toast.invoiceCreateFailed')) }
-    } catch (error) { toast.error(t('purchase.error.generic')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1763,7 +1867,7 @@ const Purchase = () => {
         fetchPayments()
         fetchInvoices()
       } else { toast.error(data.message || t('purchase.toast.paymentRecordFailed')) }
-    } catch (error) { toast.error(t('purchase.error.generic')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1797,7 +1901,7 @@ const Purchase = () => {
         closeModal()
         fetchReturns()
       } else { toast.error(data.message || t('purchase.toast.returnCreateFailed')) }
-    } catch (error) { toast.error(t('purchase.error.generic')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
     finally { setFormLoading(false) }
   }
 
@@ -1809,7 +1913,7 @@ const Purchase = () => {
         toast.success(labels[status] || t('purchase.toast.statusUpdated'))
         fetchReturns()
       } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
-    } catch { toast.error(t('purchase.error.generic')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
   }
 
   const handleDeleteReturn = async (id: string) => {
@@ -1940,6 +2044,7 @@ const Purchase = () => {
     setModalOpen(null)
     setModalMode('create')
     setModalData(null)
+    setSubmitMenuOpen(false)
   }
 
   // ── print helper: adds company info then delegates to the shared bill template
@@ -2570,7 +2675,7 @@ const Purchase = () => {
                   {/* รับของแล้ว (บางส่วนหรือครบ) ยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน
                       ซ่อนปุ่มไปเลยดีกว่าโชว์แล้วกดไปเจอ error ทุกครั้ง */}
                   {canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status) && (
-                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')}
+                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')} aria-label={t('purchase.actions.cancel')}
                       className="p-1.5 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded transition-colors">
                       <Ban className="w-3.5 h-3.5" />
                     </button>
@@ -2700,6 +2805,13 @@ const Purchase = () => {
                     className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
                     <Printer className="w-3.5 h-3.5" />
                   </button>
+                  {/* รับของแล้ว (บางส่วนหรือครบ) ยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน (เหมือนมุมมองตาราง) */}
+                  {canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status) && (
+                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')} aria-label={t('purchase.actions.cancel')}
+                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {/* DRAFT → แก้ไข + ส่งอนุมัติ + ลบ */}
                   {order.status === 'DRAFT' && (<>
                     <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
@@ -3226,13 +3338,34 @@ const Purchase = () => {
       title={modalMode === 'create' ? t('purchase.requestModal.titleCreate') : modalMode === 'edit' ? t('purchase.requestModal.titleEdit') : t('purchase.requestModal.titleView')}
       onClose={closeModal}
       footer={
-        modalMode !== 'view' ? (
+        modalMode === 'create' ? (
           <div className="flex justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
-            <button onClick={modalMode === 'create' ? handleCreateRequest : handleUpdateRequest} disabled={formLoading}
+            <button onClick={() => submitRequestFlow()} disabled={formLoading}
+              className="px-4 py-2.5 text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-xl disabled:opacity-50 text-sm font-medium min-h-[44px]">
+              {t('purchase.actions.saveDraft')}
+            </button>
+            <SubmitSplitButton
+              primaryLabel={t('purchase.actions.submitForApproval')}
+              primaryDisabled={formLoading}
+              loading={formLoading}
+              onPrimary={() => submitRequestFlow('PENDING')}
+              approveLabel={t('purchase.actions.submitAndApprove')}
+              approveEnabled={selfApprove.allowed && !formLoading}
+              approveReason={selfApprove.allowed ? t('purchase.selfApprove.readyNote') : (selfApprove.reason || t('purchase.selfApprove.checking'))}
+              onApprove={() => { setSubmitMenuOpen(false); submitRequestFlow('APPROVED') }}
+              menuOpen={submitMenuOpen}
+              onToggleMenu={() => setSubmitMenuOpen(o => !o)}
+              moreOptionsLabel={t('purchase.actions.moreSubmitOptions')}
+            />
+          </div>
+        ) : modalMode === 'edit' ? (
+          <div className="flex justify-end gap-3">
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
+            <button onClick={handleUpdateRequest} disabled={formLoading}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
               {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              {modalMode === 'create' ? t('purchase.actions.createRequest') : t('purchase.common.save')}
+              {t('purchase.common.save')}
             </button>
           </div>
         ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
@@ -3411,11 +3544,23 @@ const Purchase = () => {
         modalMode === 'create' ? (
           <div className="flex justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
-            <button onClick={handleCreateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
-              className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
-              {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-              {t('purchase.actions.createOrder')}
+            <button onClick={() => submitOrderFlow()} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
+              className="px-4 py-2.5 text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-xl disabled:opacity-50 text-sm font-medium min-h-[44px]">
+              {t('purchase.actions.saveDraft')}
             </button>
+            <SubmitSplitButton
+              primaryLabel={t('purchase.actions.submitForApproval')}
+              primaryDisabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
+              loading={formLoading}
+              onPrimary={() => submitOrderFlow('SUBMITTED')}
+              approveLabel={t('purchase.actions.submitAndApprove')}
+              approveEnabled={selfApprove.allowed && !formLoading && !!orderForm.supplier_id && orderForm.items.length > 0}
+              approveReason={selfApprove.allowed ? t('purchase.selfApprove.readyNote') : (selfApprove.reason || t('purchase.selfApprove.checking'))}
+              onApprove={() => { setSubmitMenuOpen(false); submitOrderFlow('APPROVED') }}
+              menuOpen={submitMenuOpen}
+              onToggleMenu={() => setSubmitMenuOpen(o => !o)}
+              moreOptionsLabel={t('purchase.actions.moreSubmitOptions')}
+            />
           </div>
         ) : modalMode === 'edit' ? (
           <div className="flex justify-end gap-3">
