@@ -309,6 +309,7 @@ export function applySchema(db: any): void {
       total_price REAL DEFAULT 0,
       received_qty REAL DEFAULT 0,
       -- unit ถูกลบออก - ดึงจากสินค้าใน stock_items แทน
+      skip_stock INTEGER DEFAULT 0,   -- 1 = ของที่ไม่ต้องนับสต็อก (ของใช้สำนักงาน) รับแล้วลงค่าใช้จ่ายเลย
       notes TEXT,
       FOREIGN KEY (material_id) REFERENCES stock_items(id),
       FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE

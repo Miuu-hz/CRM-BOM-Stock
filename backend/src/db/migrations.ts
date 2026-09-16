@@ -2113,4 +2113,18 @@ export function runMigrations(db: any): void {
     console.error('⚠️ materials merge migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+  // ==================== ธง skip_stock (2026-09-16) ====================
+  // บรรทัดใบสั่งซื้อที่ material_id ว่าง มี 2 ความหมายที่แยกไม่ออก:
+  // ของที่ตั้งใจไม่นับสต็อก (ปากกา) กับสินค้าจริงที่ลืมผูก — ธงนี้คือตัวแยก
+  // ของเก่าตั้งเป็น 1 ทั้งหมด เพื่อไม่ให้พฤติกรรมเดิมพัง ส่วนของใหม่ default 0 (ต้องผูกหรือติ๊กเอง)
+  for (const tbl of ['purchase_order_items', 'purchase_request_items']) {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as any[]
+      if (cols.length > 0 && !cols.some((c: any) => c.name === 'skip_stock')) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN skip_stock INTEGER DEFAULT 0`)
+        const n = db.prepare(`UPDATE ${tbl} SET skip_stock = 1 WHERE material_id IS NULL`).run().changes
+        console.log(`✅ Migration: ${tbl}.skip_stock เพิ่มแล้ว · ตั้งธงให้ของเก่า ${n} แถว`)
+      }
+    } catch (e) { console.error(`⚠️ ${tbl} skip_stock migration error:`, e) }
+  }
 }

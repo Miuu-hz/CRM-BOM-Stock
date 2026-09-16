@@ -47,9 +47,11 @@ function seedPo(tenantId: string, lines: { description: string; qty: number; unb
       `).run(materialId, tenantId, 'SKU-' + materialId.slice(0, 8), line.description)
     }
     db.prepare(`
-      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, received_qty)
-      VALUES (?, ?, ?, ?, ?, ?, 'pcs', 10, 10, 0)
-    `).run(generateId(), tenantId, poId, materialId, line.description, line.qty)
+      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, received_qty, skip_stock)
+      VALUES (?, ?, ?, ?, ?, ?, 'pcs', 10, 10, 0, ?)
+    `).run(generateId(), tenantId, poId, materialId, line.description, line.qty, materialId ? 0 : 1)
+    // บรรทัดที่ไม่ผูกสินค้าในเทสต์นี้คือ "ของที่ไม่ต้องนับสต็อก" ตามชื่อเคส จึงติดธง skip_stock ให้
+    // ถ้าไม่ติดธง ระบบจะบล็อก (ตั้งใจ) เพราะแยกไม่ออกจากสินค้าจริงที่ลืมผูก
   }
   return poId
 }

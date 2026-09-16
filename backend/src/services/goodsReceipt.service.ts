@@ -204,6 +204,22 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
       .run(now, gr.id, tenantId)
 
     for (const item of items) {
+      // บรรทัดที่ไม่ผูกสินค้ามี 2 แบบที่หน้าตาเหมือนกันในฐานข้อมูล ต้องแยกด้วยธง skip_stock
+      //   ติดธง  = ของที่ตั้งใจไม่นับสต็อก (ปากกา ของใช้สำนักงาน) → รับได้ ลงค่าใช้จ่าย ไม่เข้าคลัง
+      //   ไม่ติด = สินค้าจริงที่ลืมผูก → ต้องบล็อก ไม่งั้นจ่ายเงินแล้วของไม่เข้าระบบแบบไม่มีใครรู้
+      //   (เคยเกิดจริงที่ GR-2026-00008: ตะหลิวสเตนเลส + กล่องไอโอ2ช่อง รวม ฿318)
+      if (!item.material_id && item.accepted_qty > 0) {
+        const poLine = db.prepare('SELECT skip_stock, description FROM purchase_order_items WHERE id = ?')
+          .get(item.purchase_order_item_id) as any
+        if (!poLine?.skip_stock) {
+          throw new GoodsReceiptError(
+            'UNBOUND_ITEM',
+            `รายการ "${poLine?.description || item.purchase_order_item_id}" ยังไม่ได้ผูกกับสินค้าในคลัง จึงรับเข้าสต็อกไม่ได้ — ` +
+            'ถ้าเป็นของที่ไม่ต้องนับสต็อก (เช่น ของใช้สำนักงาน) ให้ติ๊ก "ไม่นับสต็อก" ที่บรรทัดนั้นในใบสั่งซื้อ ' +
+            'ถ้าเป็นสินค้าจริงให้ผูกสินค้าก่อน'
+          )
+        }
+      }
       if (item.material_id && item.accepted_qty > 0) {
         let poItem: any
         try {

@@ -4,7 +4,7 @@ import { deductStockForSO, soStockAlreadyDeducted } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
-import { canApprove as canApproveRequests } from '../services/approvalGate.service'
+import { approvalDenyReason, canApprove as canApproveRequests } from '../services/approvalGate.service'
 import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
@@ -189,15 +189,22 @@ router.get('/check-required', async (req: Request, res: Response) => {
       WHERE tenant_id = ? AND role = ? AND module_type = ?
     `).get(tenantId, req.user!.role, moduleType) as any
 
-    // Default: no approval required if not set
+    // ถามตัวบังคับจริงตัวเดียวกับที่ใช้ตอนกดส่ง — ห้ามคิดกฎเองซ้ำ
+    // เดิมตรงนี้ตอบว่า "ไม่ต้องขออนุมัติ" เมื่อไม่มีแถวใน approval_settings
+    // แต่ approvalDenyReason ปฏิเสธในกรณีเดียวกัน → หน้าเว็บโชว์ปุ่มให้กดแล้วกดไม่ผ่าน
+    const amtNow = parseFloat(amount as string) || 0
+    const gateModule = moduleType === 'purchase_order' ? 'purchase_order' : 'purchase_request'
+    const denied = approvalDenyReason(tenantId, req.user!, gateModule as any, amtNow, 'PR')
+
     if (!setting) {
-      return res.json({ 
-        success: true, 
-        data: { 
-          required: false, 
-          reason: 'No approval setting found for this role',
-          autoApproveThreshold: 0
-        } 
+      return res.json({
+        success: true,
+        data: {
+          required: !!denied,
+          reason: denied || 'อยู่ในสิทธิ์ที่ทำเองได้',
+          selfApproveAllowed: !denied,
+          autoApproveThreshold: 0,
+        },
       })
     }
 
@@ -228,6 +235,9 @@ router.get('/check-required', async (req: Request, res: Response) => {
       success: true,
       data: {
         required: setting.approval_required === 1,
+        // คำตัดสินจากตัวบังคับจริง — หน้าเว็บใช้ตัวนี้ตัดสินว่าจะเปิดปุ่ม "ส่งและอนุมัติเลย" ไหม
+        selfApproveAllowed: !denied,
+        denyReason: denied || null,
         autoApproveThreshold: setting.auto_approve_threshold,
         userCanApprove: userPerm?.can_approve === 1,
         userIsMasterApprover: isMasterApprover,

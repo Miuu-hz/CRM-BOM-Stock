@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express'
+import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { lineBotService } from '../services/line-bot.service'
 import { approvalDenyReason } from '../services/approvalGate.service'
-import { canHandleBilling } from '../services/rbac.service'
+import { can, canHandleBilling } from '../services/rbac.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
@@ -53,6 +55,44 @@ function resolveMaterialId(tenantId: string, item: any): string | null {
   }
   return null
 }
+
+// สิทธิ์รับสินค้าเข้าคลัง / ยืนยันคืนสินค้า (มีผลจริงต่อสต็อก+บัญชี)
+// ให้ฝ่ายจัดซื้อ (purchase) หรือฝ่ายคลัง (stock) ทำได้ — ใช้ can() ที่มีอยู่แล้วใน rbac.service
+// (ครอบคลุม ADMIN/MASTER/POWERUSER/CEO/IT ที่ can() อนุญาตอยู่แล้วในตัว) แทนการเขียน array role ตายตัว
+// เพราะงานนี้ต้องแยกตามแผนกด้วย ไม่ใช่แค่ role
+function canConfirmGoodsReceipt(user: { role: string; departments?: string[]; customPermissions?: Record<string, boolean> }): boolean {
+  const role = user.role as any
+  const depts = (user.departments || []) as any
+  return can(role, depts, 'purchase', 'write', user.customPermissions)
+    || can(role, depts, 'stock', 'write', user.customPermissions)
+}
+
+// สิทธิ์แปลงใบขอซื้อ (PR) เป็นใบสั่งซื้อ (PO) จริง — งานฝ่ายจัดซื้อ
+function canManagePurchase(user: { role: string; departments?: string[]; customPermissions?: Record<string, boolean> }): boolean {
+  const role = user.role as any
+  const depts = (user.departments || []) as any
+  return can(role, depts, 'purchase', 'write', user.customPermissions)
+}
+
+// ดึงข้อความ error ตัวแรกจาก zod มาแปลงเป็นข้อความไทยที่บอกบรรทัดที่ผิด
+function firstItemZodError(error: z.ZodError): string {
+  const issue = error.issues[0]
+  if (typeof issue.path[0] === 'number') {
+    return `รายการที่ ${(issue.path[0] as number) + 1}: ${issue.message}`
+  }
+  return issue.message
+}
+
+// ตรวจจำนวน/ราคาต่อหน่วยของบรรทัดสินค้าในใบขอซื้อก่อนบันทึก — กันจำนวน/ราคาติดลบหรือ 0 หลุดเข้า DB ตรง ๆ
+// รองรับทั้ง estimatedUnitPrice (camelCase, endpoint แก้ไข) และ estimated_unit_price (snake_case,
+// หน้าเว็บปุ่ม "สร้างใบขอซื้อ" ส่งแบบนี้จริง) ราคา 0 อนุญาต (ของแถม) แต่ติดลบไม่ได้
+const PurchaseRequestItemsSchema = z.array(
+  z.object({
+    quantity: z.coerce.number({ invalid_type_error: 'จำนวนต้องเป็นตัวเลข' }).positive('จำนวนต้องมากกว่า 0'),
+    estimatedUnitPrice: z.coerce.number({ invalid_type_error: 'ราคาต่อหน่วยต้องเป็นตัวเลข' }).min(0, 'ราคาต่อหน่วยต้องไม่ติดลบ').optional(),
+    estimated_unit_price: z.coerce.number({ invalid_type_error: 'ราคาต่อหน่วยต้องเป็นตัวเลข' }).min(0, 'ราคาต่อหน่วยต้องไม่ติดลบ').optional(),
+  }).passthrough()
+).min(1, 'ต้องมีอย่างน้อย 1 รายการ')
 
 function generateNumber(prefix: string, tenantId: string, table: string) {
   const year = new Date().getFullYear()
@@ -341,6 +381,11 @@ router.post('/requests', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { department, requiredDate, priority, notes, items } = req.body
+
+    const itemsCheck = PurchaseRequestItemsSchema.safeParse(items)
+    if (!itemsCheck.success) {
+      return res.status(400).json({ success: false, message: firstItemZodError(itemsCheck.error) })
+    }
     
     const id = generateId()
     const prNumber = generateNumber('PR', tenantId, 'purchase_requests')
@@ -481,7 +526,24 @@ router.put('/requests/:id/status', async (req: Request, res: Response) => {
       WHERE id = ? AND tenant_id = ?
     `).run(status, updates.approved_by || null, updates.approved_date || null, now, req.params.id, tenantId)
 
-    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const request = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+
+    // ตอบกลับผู้ขอทาง LINE — เดิมโค้ดนี้อยู่แต่ใน POST /purchase-requests/:id/approve|reject
+    // ซึ่งไม่มีหน้าไหนเรียกแล้ว คนสั่งซื้อผ่าน LINE bot จึงไม่เคยได้รับคำตอบกลับเลย
+    // ย้ายมาไว้เส้นทางที่หน้าเว็บใช้จริง · ล้มเหลวไม่ให้กระทบการอนุมัติ
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      try {
+        const approver = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user!.userId) as any
+        await lineBotService.notifyPRStatus(tenantId, {
+          id: request.id, prNumber: request.pr_number, supplierName: request.supplier_name || '-',
+          status, requesterLineUserId: request.requester_line_user_id,
+          sourceGroupId: request.source_group_id,
+          approverName: approver?.name || req.user!.email || 'ผู้อนุมัติ',
+          rejectionReason: request.rejection_reason || undefined,
+        })
+      } catch (e) { console.error('notifyPRStatus failed (ไม่กระทบการอนุมัติ):', e) }
+    }
+
     res.json({ success: true, data: request })
   } catch (error) {
     console.error('Update PR status error:', error)
@@ -493,6 +555,9 @@ router.put('/requests/:id/status', async (req: Request, res: Response) => {
 router.post('/requests/:id/convert-to-po', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canManagePurchase(req.user!)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์แปลงใบขอซื้อเป็นใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ หรือ ADMIN/MASTER' })
+    }
     const { supplierId, expectedDate } = req.body
     
     // Get PR
@@ -718,6 +783,9 @@ router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
 router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canConfirmGoodsReceipt(req.user!)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยืนยันรับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง หรือ ADMIN/MANAGER/MASTER/POWERUSER' })
+    }
     const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id) as any
     const skipped: string[] = receipt.skippedLines || []
     res.json({
@@ -1343,6 +1411,9 @@ router.put('/returns/:id/status', async (req: Request, res: Response) => {
     if (!allowed.includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
+    if ((status === 'APPROVED' || status === 'CANCELLED') && !['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER'].includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์อนุมัติ/ยกเลิกใบคืนสินค้า — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER' })
+    }
     const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!ret) return res.status(404).json({ success: false, message: 'Not found' })
     if (ret.status === 'CONFIRMED') return res.status(400).json({ success: false, message: 'Already confirmed' })
@@ -1360,6 +1431,9 @@ router.put('/returns/:id/status', async (req: Request, res: Response) => {
 router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canConfirmGoodsReceipt(req.user!)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยืนยันคืนสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง หรือ ADMIN/MANAGER/MASTER/POWERUSER' })
+    }
     
     const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!ret) {

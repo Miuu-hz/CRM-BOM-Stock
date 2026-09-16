@@ -366,7 +366,7 @@ app.use('/api/import', express.urlencoded({ extended: true, limit: '10mb' }))
 // Image-to-PR: base64 photo can reach ~3–4 MB — allow 5 MB for this specific path.
 
 
-app.use('/api/purchase-requests/from-image', express.json({ limit: '5mb' }))
+// (ลบแล้ว 2026-09-16: endpoint /from-image ไม่มีใครเรียก จึงไม่ต้องมี body parser ก้อนใหญ่รออยู่)
 
 
 
