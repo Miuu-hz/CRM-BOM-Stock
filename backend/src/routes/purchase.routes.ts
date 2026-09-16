@@ -942,6 +942,8 @@ router.post('/invoices', async (req: Request, res: Response) => {
 
     const invoice = createPurchaseInvoice(tenantId, req.user!.email, {
       purchaseOrderId,
+      // รวมหลายใบสั่งซื้อไว้ในบิลเดียว — service เป็นคนบังคับว่าต้องผู้ขายรายเดียวกัน
+      purchaseOrderIds: req.body.purchaseOrderIds,
       goodsReceiptId,
       goodsReceiptIds,
       supplierInvoiceNumber,

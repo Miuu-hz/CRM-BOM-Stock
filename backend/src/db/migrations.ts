@@ -2154,4 +2154,18 @@ export function runMigrations(db: any): void {
     console.error('⚠️ payment_attachments ref_type migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+  // ==================== ใบแจ้งหนี้ซื้อรวมหลาย PO (2026-09-16) ====================
+  // เดิมผูกได้ใบเดียวผ่าน purchase_order_id — ผู้ขายรายเดียวส่งของหลายใบสั่งซื้อแล้ว
+  // วางบิลรวมครั้งเดียวเป็นเรื่องปกติ · เก็บเป็น JSON array เหมือน goods_receipt_ids
+  // purchase_order_id ตัวเดิมยังอยู่ (= ใบแรกในลิสต์) เพื่อไม่ให้โค้ด/รายงานเก่าพัง
+  try {
+    const cols = db.prepare('PRAGMA table_info(purchase_invoices)').all() as any[]
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'purchase_order_ids')) {
+      db.exec('ALTER TABLE purchase_invoices ADD COLUMN purchase_order_ids TEXT')
+      const n = db.prepare(
+        `UPDATE purchase_invoices SET purchase_order_ids = '["' || purchase_order_id || '"]' WHERE purchase_order_id IS NOT NULL`
+      ).run().changes
+      console.log(`✅ Migration: purchase_invoices.purchase_order_ids เพิ่มแล้ว · เติมของเก่า ${n} แถว`)
+    }
+  } catch (e) { console.error('⚠️ purchase_order_ids migration error:', e) }
 }

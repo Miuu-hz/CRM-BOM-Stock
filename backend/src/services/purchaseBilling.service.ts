@@ -29,7 +29,9 @@ export class PurchaseBillingError extends Error {
       | 'SUPPLIER_REQUIRED'
       | 'AMOUNT_REQUIRED'
       | 'INVOICE_NOT_FOUND'
-      | 'OVER_BALANCE',
+      | 'OVER_BALANCE'
+  | 'PO_SUPPLIER_MISMATCH'
+  | 'PO_CANCELLED',
     message: string
   ) {
     super(message)
@@ -47,6 +49,8 @@ export interface CreatePurchaseInvoicePayload {
   purchaseOrderId: string
   goodsReceiptId?: string | null
   goodsReceiptIds?: string[]
+  /** รวมหลายใบสั่งซื้อไว้ในบิลเดียว — ต้องเป็นผู้ขายรายเดียวกัน */
+  purchaseOrderIds?: string[]
   supplierInvoiceNumber?: string
   invoiceDate?: string
   dueDate?: string
@@ -83,6 +87,41 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
 
   const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
   if (!po) throw new PurchaseBillingError('PO_NOT_FOUND', 'Purchase order not found')
+
+  // รวมหลายใบสั่งซื้อไว้ในบิลเดียวได้ แต่ต้องเป็นผู้ขายรายเดียวกันเท่านั้น
+  // เพราะหนี้และใบกำกับภาษีต้องแยกตามนิติบุคคล — เทียบเลขผู้เสียภาษีก่อน ไม่ใช่ชื่อร้าน
+  const extraPoIds: string[] = Array.isArray(payload.purchaseOrderIds)
+    ? payload.purchaseOrderIds.filter((x: string) => x && x !== purchaseOrderId)
+    : []
+  const allPoIds = [purchaseOrderId, ...extraPoIds]
+  let extraSubtotal = 0
+  if (extraPoIds.length > 0) {
+    const ph = extraPoIds.map(() => '?').join(',')
+    const others = db.prepare(
+      `SELECT id, po_number, supplier_id, subtotal, status FROM purchase_orders WHERE tenant_id = ? AND id IN (${ph})`
+    ).all(tenantId, ...extraPoIds) as any[]
+    if (others.length !== extraPoIds.length) {
+      throw new PurchaseBillingError('PO_NOT_FOUND', 'มีใบสั่งซื้อบางใบที่เลือกไม่พบในระบบ')
+    }
+    const taxOf = (sid: string) =>
+      ((db.prepare('SELECT tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(sid, tenantId) as any)?.tax_id || '').trim()
+    const baseTax = taxOf(po.supplier_id)
+    for (const o of others) {
+      const sameParty = baseTax && taxOf(o.supplier_id)
+        ? taxOf(o.supplier_id) === baseTax
+        : o.supplier_id === po.supplier_id
+      if (!sameParty) {
+        throw new PurchaseBillingError(
+          'PO_SUPPLIER_MISMATCH',
+          `ใบสั่งซื้อ ${o.po_number} เป็นของผู้ขายคนละราย รวมเข้าบิลเดียวกันไม่ได้ — หนี้และใบกำกับภาษีต้องแยกตามนิติบุคคล`
+        )
+      }
+      if (o.status === 'CANCELLED') {
+        throw new PurchaseBillingError('PO_CANCELLED', `ใบสั่งซื้อ ${o.po_number} ถูกยกเลิกไปแล้ว`)
+      }
+      extraSubtotal += Number(o.subtotal) || 0
+    }
+  }
   const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(po.supplier_id, tenantId) as any
 
   // กันดึง GR เดิมมาออกใบแจ้งหนี้ซ้ำ — ต้องยืนยันแล้ว, อยู่ใน PO เดียวกัน, ยังไม่ถูกใช้ออกใบไปก่อน
@@ -143,9 +182,9 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
   const now = new Date().toISOString()
 
-  const subtotal = items.length > 0
+  const subtotal = (items.length > 0
     ? items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
-    : po.subtotal
+    : po.subtotal) + extraSubtotal
 
   const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
   const taxAmount = subtotal * (taxRate / 100)
@@ -165,11 +204,11 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const transaction = db.transaction(() => {
     db.prepare(`
       INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
-        supplier_id, goods_receipt_id, goods_receipt_ids, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount,
+        supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount,
         balance_amount, status, payment_status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
     `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
-      grIds[0] || null, grIdsJson, invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount,
+      grIds[0] || null, grIdsJson, JSON.stringify(allPoIds), invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount,
       totalAmount, totalAmount, notes || '', now, now)
 
     if (items.length > 0) {

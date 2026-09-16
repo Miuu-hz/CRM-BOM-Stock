@@ -1232,6 +1232,8 @@ const Purchase = () => {
 
   const [invoiceForm, setInvoiceForm] = useState({
     purchase_order_id: '',
+    // ใบสั่งซื้อใบอื่นที่รวมเข้าบิลเดียวกัน — backend บังคับว่าต้องผู้ขายรายเดียวกัน
+    extra_po_ids: [] as string[],
     goods_receipt_ids: [] as string[],
     supplier_invoice_number: '',
     invoice_date: new Date().toISOString().split('T')[0],
@@ -1838,6 +1840,7 @@ const Purchase = () => {
     try {
       const { data } = await api.post('/purchase/invoices', {
         purchaseOrderId: invoiceForm.purchase_order_id,
+        purchaseOrderIds: [invoiceForm.purchase_order_id, ...invoiceForm.extra_po_ids],
         goodsReceiptIds: invoiceForm.goods_receipt_ids,
         supplierInvoiceNumber: invoiceForm.supplier_invoice_number,
         invoiceDate: invoiceForm.invoice_date,
@@ -2051,8 +2054,11 @@ const Purchase = () => {
       } else if (type === 'invoice') {
         let grIds: string[] = []
         try { grIds = JSON.parse(data.goods_receipt_ids || '[]') } catch { grIds = data.goods_receipt_id ? [data.goods_receipt_id] : [] }
+        let poIds: string[] = []
+        try { poIds = JSON.parse(data.purchase_order_ids || '[]') } catch { /* แถวเก่าก่อนมีคอลัมน์นี้ */ }
         setInvoiceForm({
           purchase_order_id: data.purchase_order_id || '',
+          extra_po_ids: poIds.filter((x: string) => x && x !== data.purchase_order_id),
           goods_receipt_ids: grIds,
           supplier_invoice_number: data.supplier_invoice_number || '',
           invoice_date: data.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
@@ -2096,7 +2102,7 @@ const Purchase = () => {
       setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
       setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      setInvoiceForm({ purchase_order_id: '', goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -4169,6 +4175,7 @@ const Purchase = () => {
               setInvoiceForm(p => ({
                 ...p,
                 purchase_order_id: id,
+                extra_po_ids: [],   // เปลี่ยนใบหลัก = ผู้ขายอาจเปลี่ยน ใบที่ติ๊กไว้ต้องล้าง
                 goods_receipt_ids: [],
                 tax_rate: po?.tax_rate ?? 7,
                 due_date: po?.expected_date?.split('T')[0] || '',
@@ -4177,6 +4184,50 @@ const Purchase = () => {
           />
         </Field>
         )}
+
+        {/* รวมใบสั่งซื้อใบอื่นของผู้ขายรายเดียวกัน
+            กรองอัตโนมัติจากผู้ขายของใบหลัก — ใบของเจ้าอื่นจะไม่โผล่ให้เลือกเลย
+            เทียบด้วยเลขผู้เสียภาษีก่อน (นิติบุคคลเดียวกันแม้ชื่อร้านพิมพ์ต่างกัน) */}
+        {!isView && selectedPO && (() => {
+          const baseSup = suppliers.find(x => x.id === selectedPO.supplier_id)
+          const baseTax = (baseSup?.tax_id || '').trim()
+          const sameParty = (o: PurchaseOrder) => {
+            if (o.id === selectedPO.id) return false
+            const sup = suppliers.find(x => x.id === o.supplier_id)
+            const tax = (sup?.tax_id || '').trim()
+            return baseTax && tax ? tax === baseTax : o.supplier_id === selectedPO.supplier_id
+          }
+          const mergeable = orders.filter(o => !['CANCELLED', 'DRAFT'].includes(o.status) && sameParty(o) && poHasInvoiceableTarget(o))
+          if (mergeable.length === 0) return null
+          return (
+            <Field label={t('purchase.invoiceModal.mergeMore')}>
+              <div className="border border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)]">
+                {mergeable.map(o => {
+                  const on = invoiceForm.extra_po_ids.includes(o.id)
+                  return (
+                    <button key={o.id} type="button" aria-pressed={on}
+                      onClick={() => setInvoiceForm(p => ({
+                        ...p,
+                        extra_po_ids: on ? p.extra_po_ids.filter(x => x !== o.id) : [...p.extra_po_ids, o.id],
+                      }))}
+                      className={`flex items-center justify-between gap-3 w-full min-h-[44px] px-3 py-2 border-b border-[var(--border)] last:border-b-0 text-left transition-colors ${on ? 'bg-phopy-indigo/10' : 'hover:bg-[var(--bg)]'}`}>
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <span className={`w-[18px] h-[18px] rounded-md flex items-center justify-center shrink-0 border ${on ? 'bg-phopy-indigo border-phopy-indigo' : 'bg-[var(--surface)] border-[var(--border-strong)]'}`}>
+                          {on && <Check className="w-3 h-3 text-white" />}
+                        </span>
+                        <span className="text-xs font-mono text-[var(--fg-1)] truncate">{o.po_number}</span>
+                      </span>
+                      <span className="text-xs font-mono text-[var(--fg-2)] shrink-0">{formatCurrency(o.total_amount)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-[var(--fg-4)] mt-1.5">
+                {t('purchase.invoiceModal.mergeHint', { name: selectedPO.supplier_name })}
+              </p>
+            </Field>
+          )
+        })()}
 
         {!isView && (
         <Field label={t('purchase.invoiceModal.grReference')}>
