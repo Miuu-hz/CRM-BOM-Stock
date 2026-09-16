@@ -1,4 +1,12 @@
 // Prisma Schema for CRM-BOM-Stock Management System
+//
+// ⚠️ ไฟล์นี้ไม่ใช่ตัวจริงที่ระบบใช้ตอนรัน — runtime เป็น better-sqlite3 ล้วน
+//    โครงตารางจริงอยู่ที่ src/db/schema.ts + src/db/migrations.ts (116 ตาราง มี tenant_id)
+//    ส่วนไฟล์นี้มีแค่ 17 model และไม่มี tenant_id เลย
+//
+// 🚫 ห้ามรัน `prisma migrate` / `prisma db push` ใส่ dev.db ตัวจริง
+//    มันจะสร้างตารางตามไฟล์นี้ทับของจริง (เคยมีตาราง materials ที่ยุบทิ้งไปแล้วอยู่ในนี้)
+//    ใช้ได้แค่ `prisma generate` กับ `prisma studio` สำหรับส่องข้อมูลเท่านั้น
 
 generator client {
   provider = "prisma-client-js"
@@ -109,31 +117,15 @@ model BOM {
   @@map("boms")
 }
 
-model Material {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  unit      String
-  unitCost  Decimal
-  minStock  Int
-  maxStock  Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bomItems            BOMItem[]
-  stockItems          StockItem[]
-  purchaseOrderItems  PurchaseOrderItem[]
-  workOrderMaterials  WorkOrderMaterial[]
-
-  @@map("materials")
-}
+// model Material ถูกยุบเข้ากับ StockItem แล้ว 2026-09-16 (ตาราง materials ถูก DROP)
+// วัตถุดิบ 1 ตัว = stock_items 1 แถว — material_id ทุกที่ชี้ stock_items(id)
 
 model BOMItem {
   id         String   @id @default(cuid())
   bomId      String
   bom        BOM      @relation(fields: [bomId], references: [id])
   materialId String
-  material   Material @relation(fields: [materialId], references: [id])
+  material   StockItem @relation(fields: [materialId], references: [id])
   quantity   Decimal
   unit       String
 
@@ -148,10 +140,10 @@ model StockItem {
   category   String
   productId  String?
   product    Product?      @relation(fields: [productId], references: [id])
-  materialId String?
-  material   Material?     @relation(fields: [materialId], references: [id])
+  categoryId String?       // หมวดหมู่จาก catalog (material_categories)
   quantity   Int
   unit       String
+  unitCost   Decimal       @default(0)
   minStock   Int
   maxStock   Int
   location   String
@@ -159,7 +151,10 @@ model StockItem {
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
-  movements  StockMovement[]
+  movements           StockMovement[]
+  bomItems            BOMItem[]
+  purchaseOrderItems  PurchaseOrderItem[]
+  workOrderMaterials  WorkOrderMaterial[]
 
   @@map("stock_items")
 }
@@ -232,7 +227,7 @@ model PurchaseOrderItem {
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   materialId      String
-  material        Material      @relation(fields: [materialId], references: [id])
+  material        StockItem     @relation(fields: [materialId], references: [id])
   quantity        Decimal
   unitPrice       Decimal
   totalPrice      Decimal
@@ -274,7 +269,7 @@ model WorkOrderMaterial {
   workOrderId String
   workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   materialId  String
-  material    Material  @relation(fields: [materialId], references: [id])
+  material    StockItem @relation(fields: [materialId], references: [id])
   requiredQty Decimal
   issuedQty   Decimal   @default(0) // จำนวนที่เบิกจริง
   unit        String

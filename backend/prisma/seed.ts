@@ -12,7 +12,6 @@ async function main() {
   await prisma.stockItem.deleteMany()
   await prisma.bOMItem.deleteMany()
   await prisma.bOM.deleteMany()
-  await prisma.material.deleteMany()
   await prisma.product.deleteMany()
   await prisma.customer.deleteMany()
 
@@ -92,76 +91,105 @@ async function main() {
 
   console.log('✅ Created customers:', customers.length)
 
-  // Create Materials
+  // วัตถุดิบ = stock_items แถวเดียว (ตาราง materials ถูกยุบเข้ามาแล้ว 2026-09-16)
+  // เดิม seed สร้างของคู่กัน 2 แถว ทำให้ของชิ้นเดียวกันมี id 2 แบบ
   const materials = await Promise.all([
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-001',
+        sku: 'MAT-001',
         name: 'Foam Layer',
+        category: 'RAW_MATERIAL',
+        quantity: 150,
         unit: 'kg',
         unitCost: 600,
         minStock: 500,
         maxStock: 2000,
+        location: 'Warehouse A - Zone 1',
+        status: 'CRITICAL',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-002',
+        sku: 'MAT-002',
         name: 'Spring Coils',
-        unit: 'units',
+        category: 'RAW_MATERIAL',
+        quantity: 5400,
+        unit: 'pcs',
         unitCost: 5,
         minStock: 2000,
         maxStock: 8000,
+        location: 'Warehouse A - Zone 2',
+        status: 'ADEQUATE',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-003',
+        sku: 'MAT-003',
         name: 'Fabric Cover',
-        unit: 'meters',
+        category: 'RAW_MATERIAL',
+        quantity: 0,
+        unit: 'm',
         unitCost: 250,
         minStock: 100,
         maxStock: 500,
+        location: 'Warehouse A - Zone 3',
+        status: 'OUT',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-004',
+        sku: 'MAT-004',
         name: 'Thread',
+        category: 'RAW_MATERIAL',
+        quantity: 0,
         unit: 'roll',
         unitCost: 200,
         minStock: 50,
         maxStock: 200,
+        location: 'Warehouse A - Zone 3',
+        status: 'OUT',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-005',
+        sku: 'MAT-005',
         name: 'Zipper',
-        unit: 'unit',
+        category: 'RAW_MATERIAL',
+        quantity: 0,
+        unit: 'pcs',
         unitCost: 50,
         minStock: 500,
         maxStock: 2000,
+        location: 'Warehouse A - Zone 3',
+        status: 'OUT',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-006',
+        sku: 'MAT-006',
         name: 'Memory Foam',
+        category: 'RAW_MATERIAL',
+        quantity: 0,
         unit: 'kg',
         unitCost: 800,
         minStock: 200,
         maxStock: 1000,
+        location: 'Warehouse A - Zone 1',
+        status: 'OUT',
       },
     }),
-    prisma.material.create({
+    prisma.stockItem.create({
       data: {
-        code: 'MAT-007',
+        sku: 'MAT-007',
         name: 'Cotton Cover',
-        unit: 'meters',
+        category: 'RAW_MATERIAL',
+        quantity: 0,
+        unit: 'm',
         unitCost: 200,
         minStock: 100,
         maxStock: 500,
+        location: 'Warehouse A - Zone 3',
+        status: 'OUT',
       },
     }),
   ])
@@ -279,34 +307,6 @@ async function main() {
 
   // Create Stock Items
   const stockItems = await Promise.all([
-    prisma.stockItem.create({
-      data: {
-        sku: 'RM-FOAM-001',
-        name: 'Foam Material',
-        category: 'RAW_MATERIAL',
-        materialId: materials[0].id,
-        quantity: 150,
-        unit: 'kg',
-        minStock: 500,
-        maxStock: 2000,
-        location: 'Warehouse A - Zone 1',
-        status: 'CRITICAL',
-      },
-    }),
-    prisma.stockItem.create({
-      data: {
-        sku: 'RM-SPRING-002',
-        name: 'Spring Coils',
-        category: 'RAW_MATERIAL',
-        materialId: materials[1].id,
-        quantity: 5400,
-        unit: 'units',
-        minStock: 2000,
-        maxStock: 8000,
-        location: 'Warehouse A - Zone 2',
-        status: 'ADEQUATE',
-      },
-    }),
     prisma.stockItem.create({
       data: {
         sku: 'FG-MATT-K-PREM',
