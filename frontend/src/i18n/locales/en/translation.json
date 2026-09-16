@@ -1138,6 +1138,10 @@
       "overLimit": "This amount is over your approval limit ({{limit}}) — send it to a manager instead",
       "checkFailed": "Could not check your approval permission — try opening this menu again",
       "checking": "Checking permission…"
+    },
+    "attachments": {
+      "title": "Photos",
+      "hint": "JPG / PNG only · max 5 MB each"
     }
   },
   "sales": {

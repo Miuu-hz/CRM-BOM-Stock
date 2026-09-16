@@ -32,6 +32,11 @@ const REF_TYPE_TABLES: Record<string, string> = {
   SUPPLIER_PAYMENT: 'supplier_payments',
   POS_PAYMENT: 'pos_payments',
   INVOICE: 'invoices',
+  // ฝั่งจัดซื้อ — INVOICE ด้านบนคือใบแจ้งหนี้ขาย (AR) คนละตารางกับ PURCHASE_INVOICE
+  PURCHASE_REQUEST: 'purchase_requests',
+  PURCHASE_ORDER: 'purchase_orders',
+  GOODS_RECEIPT: 'goods_receipts',
+  PURCHASE_INVOICE: 'purchase_invoices',
 }
 
 // Which subscription feature gates each ref_type. Mount in index.ts is gate-free
@@ -40,6 +45,10 @@ const REF_TYPE_TABLES: Record<string, string> = {
 const REF_TYPE_FEATURE: Record<string, string> = {
   RECEIPT: 'sales',
   INVOICE: 'sales',
+  PURCHASE_REQUEST: 'purchase',
+  PURCHASE_ORDER: 'purchase',
+  GOODS_RECEIPT: 'purchase',
+  PURCHASE_INVOICE: 'purchase',
   SUPPLIER_PAYMENT: 'purchase',
   POS_PAYMENT: 'pos',
 }

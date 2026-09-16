@@ -3372,6 +3372,17 @@ const Purchase = () => {
       }
     >
       {/* Header info row */}
+{/* แนบรูป — ใช้คอมโพเนนต์ตัวเดียวกับสลิปจ่ายเงิน รับเฉพาะไฟล์ภาพสามัญ */}
+      {modalMode === 'view' && modalData?.id && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
+            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
+          </div>
+          <PaymentAttachments refType="PURCHASE_REQUEST" refId={modalData?.id} />
+        </div>
+      )}
+
       {modalMode === 'view' && modalData?.pr_number && (
         <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
           <FileText className="w-4 h-4 text-[var(--primary)] shrink-0" />
@@ -3575,6 +3586,17 @@ const Purchase = () => {
       }
     >
       {/* PO header display when viewing */}
+{/* แนบรูป — ใช้คอมโพเนนต์ตัวเดียวกับสลิปจ่ายเงิน รับเฉพาะไฟล์ภาพสามัญ */}
+      {modalMode === 'view' && modalData?.id && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
+            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
+          </div>
+          <PaymentAttachments refType="PURCHASE_ORDER" refId={modalData?.id} />
+        </div>
+      )}
+
       {modalMode === 'view' && modalData?.po_number && (
         <>
           <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
@@ -3826,6 +3848,18 @@ const Purchase = () => {
       {/* เส้นทางเอกสารชุดเดียวกับโมดัลอื่น — เห็นทันทีว่าใบนี้เดินมาถึงไหน */}
       {receiptForm.purchase_order_id && <PurchaseTrail poId={receiptForm.purchase_order_id} />}
 
+      {/* แนบรูป — คอมโพเนนต์เดียวกับสลิปจ่ายเงิน รับเฉพาะไฟล์ภาพสามัญ */}
+      {modalMode === 'view' && modalData?.id && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
+            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
+          </div>
+          <PaymentAttachments refType="GOODS_RECEIPT" refId={modalData.id} />
+        </div>
+      )}
+
+
       {/* ── Section 1: เลือก PO ── */}
       <div className="space-y-3">
         <Field label={t('purchase.receiptModal.selectPO')} required>
@@ -4046,6 +4080,18 @@ const Purchase = () => {
       {/* เส้นทางเอกสารร่วม — ชุดเดียวกับที่โมดัลอื่นใช้ จะได้อ่านเหมือนกันทุกจุด
           (เดิมโมดัลนี้มีแถบ chain ของตัวเองคนละหน้าตากับโมดัลอื่น) */}
       {invoiceForm.purchase_order_id && <PurchaseTrail poId={invoiceForm.purchase_order_id} />}
+
+      {/* แนบรูป — คอมโพเนนต์เดียวกับสลิปจ่ายเงิน รับเฉพาะไฟล์ภาพสามัญ */}
+      {modalMode === 'view' && modalData?.id && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
+            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
+          </div>
+          <PaymentAttachments refType="PURCHASE_INVOICE" refId={modalData.id} />
+        </div>
+      )}
+
       {/* ── Section 1: PO + GR reference ── */}
       <div className="space-y-3">
         {isView ? (

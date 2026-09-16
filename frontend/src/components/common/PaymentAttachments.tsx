@@ -5,7 +5,10 @@ import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { AuthImage } from './AuthImage'
 
-export type AttachmentRefType = 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'INVOICE'
+export type AttachmentRefType =
+  | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'INVOICE'
+  // ฝั่งจัดซื้อ — INVOICE คือใบแจ้งหนี้ขาย (AR) คนละตัวกับ PURCHASE_INVOICE
+  | 'PURCHASE_REQUEST' | 'PURCHASE_ORDER' | 'GOODS_RECEIPT' | 'PURCHASE_INVOICE'
 
 interface AttachmentRow {
   id: string
