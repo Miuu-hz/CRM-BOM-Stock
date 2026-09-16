@@ -26,7 +26,6 @@ import {
   RotateCcw,
   Search,
   ShoppingCart,
-  Star,
   Trash2,
   TrendingUp,
   X,
@@ -971,6 +970,109 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
   )
 }
 
+// ─── แถบสถานะใบสั่งซื้อ ───────────────────────────────────────────────────────
+// เห็นทีเดียวว่าใบนี้เดินมาถึงไหน แบบเดียวกับ Status Flow ของใบสั่งขาย
+const PO_FLOW = ['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL', 'RECEIVED'] as const
+
+const POStatusFlow = ({ status }: { status: string }) => {
+  const { t } = useTranslation()
+  if (status === 'CANCELLED') {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--danger-soft)] border border-danger/30">
+        <Ban className="w-4 h-4 text-danger shrink-0" />
+        <span className="text-sm font-medium text-danger">{t('purchase.trail.cancelled')}</span>
+      </div>
+    )
+  }
+  // รับครบโดยไม่เคยผ่านรับบางส่วน = ข้ามขั้นนั้นไป ไม่ใช่ค้าง
+  const currentIdx = PO_FLOW.indexOf(status as any)
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto py-1">
+      {PO_FLOW.map((step, i) => {
+        const isPast = currentIdx >= 0 && i < currentIdx
+        const isCurrent = i === currentIdx
+        const skipped = step === 'PARTIAL' && status === 'RECEIVED'
+        return (
+          <div key={step} className="flex items-center gap-1 shrink-0">
+            <div className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${isCurrent ? 'bg-phopy-indigo text-white' : skipped ? 'bg-[var(--surface-2)] text-[var(--fg-4)] line-through' : isPast ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
+              {t(`purchase.trail.step.${step}`)}
+            </div>
+            {i < PO_FLOW.length - 1 && <ArrowRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── เส้นทางเอกสารของใบสั่งซื้อใบนี้ ───────────────────────────────────────────
+// ใบขอซื้อ → ใบสั่งซื้อ → รับสินค้า → ใบแจ้งหนี้ → จ่ายเงิน (+ คืนสินค้าถ้ามี)
+// ใช้ซ้ำได้ทุกโมดัลย่อย จะได้รู้ตลอดว่ากำลังยืนอยู่ตรงไหนของสาย
+const PurchaseTrail = ({ poId }: { poId: string }) => {
+  const { t } = useTranslation()
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!poId) { setLoading(false); return }
+    let alive = true
+    setLoading(true)
+    api.get(`/purchase/doc-trail/${poId}`)
+      .then(r => { if (alive) setData(r.data.data) })
+      .catch(() => { if (alive) setData(null) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [poId])
+
+  if (!poId) return null
+  if (loading) return <div className="h-24 rounded-xl bg-[var(--surface-2)] animate-pulse" />
+  if (!data) return null
+
+  const fmtB = (n: number) => `฿${Math.round(n).toLocaleString('th-TH')}`
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] p-3">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-xs font-semibold text-[var(--fg-2)]">{t('purchase.trail.title')}</p>
+        {data.summary?.outstanding > 0.01 && (
+          <p className="text-[11px] text-warning">{t('purchase.trail.outstanding', { amount: fmtB(data.summary.outstanding) })}</p>
+        )}
+      </div>
+      <div className="flex items-stretch gap-1 overflow-x-auto pb-1">
+        {data.stages.map((stage: any, i: number) => {
+          const tone = stage.done
+            ? 'border-success/30 bg-[var(--success-soft)]'
+            : stage.partial
+              ? 'border-warning/30 bg-[var(--warning-soft)]'
+              : stage.skipped
+                ? 'border-dashed border-[var(--border)] bg-transparent'
+                : 'border-[var(--border)] bg-[var(--surface-2)]'
+          const labelTone = stage.done ? 'text-success' : stage.partial ? 'text-warning' : 'text-[var(--fg-4)]'
+          return (
+            <div key={stage.key} className="flex items-center gap-1 shrink-0">
+              <div className={`min-w-[104px] rounded-lg px-2.5 py-2 border ${tone}`}>
+                <div className="flex items-center gap-1">
+                  <p className={`text-[10px] font-medium ${labelTone}`}>{t(`purchase.trail.${stage.key}`)}</p>
+                  {stage.count > 1 && (
+                    <span className="text-[9px] px-1 rounded bg-[var(--surface)] text-[var(--fg-3)] tabular-nums">×{stage.count}</span>
+                  )}
+                </div>
+                <p className="text-[11px] font-mono text-[var(--fg-2)] truncate">
+                  {stage.docNumber || (stage.skipped ? t('purchase.trail.skipped') : '—')}
+                </p>
+                {stage.amount != null && (
+                  <p className="text-[11px] font-semibold text-[var(--fg-1)] tabular-nums">{fmtB(stage.amount)}</p>
+                )}
+              </div>
+              {i < data.stages.length - 1 && <ArrowRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 const Purchase = () => {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -1737,6 +1839,10 @@ const Purchase = () => {
     if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
     return !invoices.some(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
   }
+
+  // ใบแจ้งหนี้ของ PO ใบนี้ที่ยังค้างจ่าย — ใช้ตัดสินว่าจะโชว์ปุ่ม "จ่ายเงิน" ในแถวไหม
+  const poUnpaidInvoice = (order: PurchaseOrder) =>
+    invoices.find(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED' && i.payment_status !== 'PAID')
 
   // Modal handlers
   const openModal = (type: string, mode: 'create' | 'edit' | 'view', data?: any) => {
@@ -2514,6 +2620,25 @@ const Purchase = () => {
                       {t('purchase.actions.createInvoice')}
                     </button>
                   )}
+                  {/* มีใบแจ้งหนี้แล้วแต่ยังไม่จ่าย → ให้เดินต่อได้จากตรงนี้เลย */}
+                  {(() => {
+                    const unpaid = poUnpaidInvoice(order)
+                    if (!unpaid) return null
+                    return (
+                      <button onClick={() => {
+                        setPaymentForm(p => ({
+                          ...p,
+                          supplier_id: order.supplier_id,
+                          purchase_invoice_id: unpaid.id,
+                          amount: unpaid.balance_amount || 0,
+                        }))
+                        openModal('payment', 'create')
+                      }}
+                        className="px-2 py-1.5 text-xs text-info bg-[var(--info-soft)] rounded hover:bg-[var(--info-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
+                        <Banknote className="w-3 h-3" /> {t('purchase.actions.payNow')}
+                      </button>
+                    )
+                  })()}
                 </div>
               </div>
             ))}
@@ -2635,6 +2760,25 @@ const Purchase = () => {
                       {t('purchase.actions.createInvoice')}
                     </button>
                   )}
+                  {/* มีใบแจ้งหนี้แล้วแต่ยังไม่จ่าย → ให้เดินต่อได้จากตรงนี้เลย */}
+                  {(() => {
+                    const unpaid = poUnpaidInvoice(order)
+                    if (!unpaid) return null
+                    return (
+                      <button onClick={() => {
+                        setPaymentForm(p => ({
+                          ...p,
+                          supplier_id: order.supplier_id,
+                          purchase_invoice_id: unpaid.id,
+                          amount: unpaid.balance_amount || 0,
+                        }))
+                        openModal('payment', 'create')
+                      }}
+                        className="flex-1 py-1.5 text-xs text-info bg-[var(--info-soft)] rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors flex items-center justify-center gap-1">
+                        <Banknote className="w-3 h-3" /> {t('purchase.actions.payNow')}
+                      </button>
+                    )
+                  })()}
                 </div>
               </div>
             ))}
@@ -3287,11 +3431,16 @@ const Purchase = () => {
     >
       {/* PO header display when viewing */}
       {modalMode === 'view' && modalData?.po_number && (
-        <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
-          <ShoppingCart className="w-4 h-4 text-[var(--primary)] shrink-0" />
-          <span className="text-sm font-mono text-[var(--primary)] font-semibold">{modalData.po_number}</span>
-          <span className="text-xs text-[var(--fg-3)] ml-auto">{modalData.supplier_name}</span>
-        </div>
+        <>
+          <div className="flex items-center gap-2 p-3 bg-phopy-indigo/10 border border-phopy-indigo-50 rounded-xl">
+            <ShoppingCart className="w-4 h-4 text-[var(--primary)] shrink-0" />
+            <span className="text-sm font-mono text-[var(--primary)] font-semibold">{modalData.po_number}</span>
+            <span className="text-xs text-[var(--fg-3)] ml-auto">{modalData.supplier_name}</span>
+          </div>
+          {/* อยู่ขั้นไหนแล้ว + ข้ามอะไรไป — แพทเทิร์นเดียวกับหน้าใบสั่งขาย */}
+          <POStatusFlow status={modalData.status} />
+          <PurchaseTrail poId={modalData.id} />
+        </>
       )}
 
       {/* PR Reference — create mode only */}
@@ -3529,6 +3678,9 @@ const Purchase = () => {
         </div>
       }
     >
+      {/* เส้นทางเอกสารชุดเดียวกับโมดัลอื่น — เห็นทันทีว่าใบนี้เดินมาถึงไหน */}
+      {receiptForm.purchase_order_id && <PurchaseTrail poId={receiptForm.purchase_order_id} />}
+
       {/* ── Section 1: เลือก PO ── */}
       <div className="space-y-3">
         <Field label={t('purchase.receiptModal.selectPO')} required>
@@ -3720,7 +3872,6 @@ const Purchase = () => {
     const isView         = modalMode === 'view'
     const selectedPO     = orders.find(o => o.id === invoiceForm.purchase_order_id)
     const selectedGRs    = invoiceForm.goods_receipt_ids.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
-    const linkedPR       = selectedPO?.linked_pr_id ? requests.find(r => r.id === selectedPO.linked_pr_id) : null
     const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED' && !r.invoiced_at)
     const supplierDetail = selectedPO ? suppliers.find(s => s.id === selectedPO.supplier_id) : null
     // In view mode use the invoice's own stored amounts; in create mode derive from selected PO
@@ -3747,37 +3898,9 @@ const Purchase = () => {
         ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
       }
     >
-      {/* ── Procurement Chain (Option A: PO as master) ── */}
-      {(selectedPO || (isView && invoiceForm._po_number)) && (
-        <div className="flex items-center gap-1.5 p-3 bg-[var(--bg)] rounded-xl overflow-x-auto">
-          {linkedPR && (<>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono text-[var(--fg-3)] bg-gray-500/15 px-2 py-1 rounded-lg">{linkedPR.pr_number}</span>
-              <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.pr')}</span>
-            </div>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
-          </>)}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs font-mono text-[var(--primary)] bg-phopy-indigo/15 px-2 py-1 rounded-lg font-semibold">{displayPO}</span>
-            <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.po')} <Star className="w-4 h-4 fill-current" /></span>
-          </div>
-          {selectedGRs.length > 0 && (<>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
-            <div className="flex items-center gap-1 shrink-0 flex-wrap">
-              {selectedGRs.map(gr => (
-                <span key={gr.id} className="text-xs font-mono text-success bg-success/15 px-2 py-1 rounded-lg">{gr.gr_number}</span>
-              ))}
-              <span className="text-[var(--fg-4)] text-xs">{t('purchase.chain.gr')}</span>
-            </div>
-          </>)}
-          <ChevronRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />
-          {isView
-            ? <span className="text-xs font-mono text-warning bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{invoiceForm._pi_number}</span>
-            : <span className="text-xs font-mono text-warning bg-yellow-500/15 px-2 py-1 rounded-lg shrink-0">{t('purchase.invoiceModal.invPlaceholder')}</span>
-          }
-        </div>
-      )}
-
+      {/* เส้นทางเอกสารร่วม — ชุดเดียวกับที่โมดัลอื่นใช้ จะได้อ่านเหมือนกันทุกจุด
+          (เดิมโมดัลนี้มีแถบ chain ของตัวเองคนละหน้าตากับโมดัลอื่น) */}
+      {invoiceForm.purchase_order_id && <PurchaseTrail poId={invoiceForm.purchase_order_id} />}
       {/* ── Section 1: PO + GR reference ── */}
       <div className="space-y-3">
         {isView ? (
@@ -3938,6 +4061,12 @@ const Purchase = () => {
           <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
+
+          {/* เส้นทางเอกสาร — ไล่กลับจากใบแจ้งหนี้ที่เลือกไปหาใบสั่งซื้อต้นทาง */}
+          {(() => {
+            const inv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
+            return inv?.purchase_order_id ? <PurchaseTrail poId={inv.purchase_order_id} /> : null
+          })()}
 
           {/* Slip attachments — only meaningful once the payment row exists (view mode) */}
           {modalMode === 'view' && modalData?.id && (

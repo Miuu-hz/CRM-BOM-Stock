@@ -1012,6 +1012,114 @@ router.put('/invoices/:id/status', async (req: Request, res: Response) => {
 })
 
 // ============================================
+// DOC TRAIL — เส้นทางเอกสารของใบสั่งซื้อใบเดียว
+// ใบขอซื้อ → ใบสั่งซื้อ → รับสินค้า → ใบแจ้งหนี้ → จ่ายเงิน (+ คืนสินค้าถ้ามี)
+// คู่ขนานกับ /receivables/deal-timeline/:soId ของฝั่งขาย ให้ทั้งสองฝั่งอ่านเหมือนกัน
+// ============================================
+router.get('/doc-trail/:poId', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { poId } = req.params
+
+    const po = db.prepare(`
+      SELECT po.*, s.name AS supplier_name
+      FROM purchase_orders po
+      LEFT JOIN suppliers s ON s.id = po.supplier_id
+      WHERE po.id = ? AND po.tenant_id = ?
+    `).get(poId, tenantId) as any
+    if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' })
+
+    const pr = po.linked_pr_id
+      ? db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(po.linked_pr_id, tenantId) as any
+      : null
+
+    const receipts = db.prepare(`
+      SELECT id, gr_number, receipt_date, status, invoiced_at
+      FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ?
+      ORDER BY receipt_date ASC
+    `).all(poId, tenantId) as any[]
+    const liveReceipts = receipts.filter((r: any) => r.status !== 'CANCELLED')
+
+    const invoices = db.prepare(`
+      SELECT id, pi_number, supplier_invoice_number, invoice_date, due_date,
+             total_amount, paid_amount, balance_amount, status, payment_status
+      FROM purchase_invoices WHERE purchase_order_id = ? AND tenant_id = ?
+      ORDER BY invoice_date ASC
+    `).all(poId, tenantId) as any[]
+    const liveInvoices = invoices.filter((i: any) => i.status !== 'CANCELLED')
+
+    const invIds = liveInvoices.map((i: any) => i.id)
+    const payments = invIds.length
+      ? db.prepare(`
+          SELECT id, payment_number, payment_date, amount, net_amount, payment_method, purchase_invoice_id, status
+          FROM supplier_payments
+          WHERE tenant_id = ? AND purchase_invoice_id IN (${invIds.map(() => '?').join(', ')})
+          ORDER BY payment_date ASC
+        `).all(tenantId, ...invIds) as any[]
+      : []
+    const livePayments = payments.filter((p: any) => p.status !== 'CANCELLED')
+
+    const returns = db.prepare(`
+      SELECT id, pr_number, return_date, total_amount, status
+      FROM purchase_returns WHERE purchase_order_id = ? AND tenant_id = ?
+      ORDER BY return_date ASC
+    `).all(poId, tenantId) as any[]
+
+    const sum = (rows: any[], key: string) => rows.reduce((t, r) => t + (Number(r[key]) || 0), 0)
+    const invoicedAmount = sum(liveInvoices, 'total_amount')
+    const paidAmount = sum(livePayments, 'net_amount')
+    const outstanding = sum(liveInvoices, 'balance_amount')
+
+    const stages: any[] = [
+      {
+        key: 'request', done: !!pr, docNumber: pr?.pr_number ?? null, date: pr?.request_date ?? null,
+        amount: pr?.total_amount ?? null, status: pr?.status ?? null, count: pr ? 1 : 0,
+        skipped: !pr,   // สั่งซื้อตรงโดยไม่ผ่านใบขอซื้อ = ข้ามขั้นนี้ ไม่ใช่ค้าง
+      },
+      {
+        key: 'order', done: true, docNumber: po.po_number, date: po.order_date,
+        amount: po.total_amount, status: po.status, count: 1,
+      },
+      {
+        key: 'receipt', done: liveReceipts.length > 0,
+        docNumber: liveReceipts[0]?.gr_number ?? null, date: liveReceipts[0]?.receipt_date ?? null,
+        amount: null, status: liveReceipts[0]?.status ?? null, count: liveReceipts.length,
+      },
+      {
+        key: 'invoice', done: liveInvoices.length > 0,
+        docNumber: liveInvoices[0]?.pi_number ?? null, date: liveInvoices[0]?.invoice_date ?? null,
+        amount: invoicedAmount || null, status: liveInvoices[0]?.status ?? null, count: liveInvoices.length,
+      },
+      {
+        key: 'payment', done: livePayments.length > 0 && outstanding <= 0.01,
+        partial: livePayments.length > 0 && outstanding > 0.01,
+        docNumber: livePayments[0]?.payment_number ?? null, date: livePayments[0]?.payment_date ?? null,
+        amount: paidAmount || null, status: liveInvoices[0]?.payment_status ?? null, count: livePayments.length,
+      },
+    ]
+    // คืนสินค้าเป็นทางแยก ไม่ใช่ขั้นตอนปกติ — โชว์เฉพาะตอนมีจริง
+    if (returns.length > 0) {
+      stages.push({
+        key: 'return', done: true, docNumber: returns[0].pr_number, date: returns[0].return_date,
+        amount: sum(returns, 'total_amount'), status: returns[0].status, count: returns.length,
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        stages,
+        summary: { invoicedAmount, paidAmount, outstanding, poTotal: po.total_amount },
+        supplierName: po.supplier_name,
+      },
+    })
+  } catch (error) {
+    console.error('Purchase doc trail error:', error)
+    res.status(500).json({ success: false, message: 'Failed to build document trail' })
+  }
+})
+
+// ============================================
 // SUPPLIER PAYMENTS
 // ============================================
 

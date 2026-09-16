@@ -783,7 +783,8 @@
       "approve": "Approve",
       "confirmReturn": "Confirm return",
       "edit": "Edit",
-      "delete": "Delete"
+      "delete": "Delete",
+      "payNow": "Pay now"
     },
     "requests": {
       "headers": {
@@ -1105,6 +1106,25 @@
         "needUnits": "Please choose both the purchase unit and the smallest unit",
         "sameUnit": "The purchase unit and the smallest unit must differ",
         "needFactor": "Enter how many sub-units are in one pack (greater than 0)"
+      }
+    },
+    "trail": {
+      "title": "Document trail",
+      "request": "Request",
+      "order": "Order",
+      "receipt": "Receipt",
+      "invoice": "Invoice",
+      "payment": "Payment",
+      "return": "Return",
+      "skipped": "Skipped",
+      "cancelled": "This order was cancelled",
+      "outstanding": "Outstanding {{amount}}",
+      "step": {
+        "DRAFT": "Draft",
+        "SUBMITTED": "Submitted",
+        "APPROVED": "Approved",
+        "PARTIAL": "Partial",
+        "RECEIVED": "Received"
       }
     }
   },
