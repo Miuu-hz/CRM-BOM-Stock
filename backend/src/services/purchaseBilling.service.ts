@@ -198,10 +198,10 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     // Cr เจ้าหนี้การค้า (2101)
     db.prepare(`
       INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, notes, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?)
+        description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
     `).run(journalId, tenantId, journalNumber, (invoiceDate || now).substring(0, 10),
-      id, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, notes || null,
+      id, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, now, actorEmail, notes || null,
       actorEmail, now, now)
 
     const insertLine = db.prepare(`
@@ -310,10 +310,10 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     // Cr เงินสด/ธนาคาร (1101/1102) + Cr ภาษีหัก ณ ที่จ่าย (2105) ถ้ามี WHT
     db.prepare(`
       INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, notes, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, ?, ?, ?, ?)
+        description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
     `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
-      id, `จ่ายชำระ ${paymentNumber}`, amount, amount, notes || null,
+      id, `จ่ายชำระ ${paymentNumber}`, amount, amount, now, actorEmail, notes || null,
       actorEmail, now, now)
 
     const insertLine = db.prepare(`

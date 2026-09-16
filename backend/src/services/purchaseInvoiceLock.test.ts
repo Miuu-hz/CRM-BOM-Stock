@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
-import { createPurchaseInvoice, PurchaseBillingError } from './purchaseBilling.service'
+import { createPurchaseInvoice, paySupplier, PurchaseBillingError } from './purchaseBilling.service'
 import { createGoodsReceipt, confirmGoodsReceipt } from './goodsReceipt.service'
 import { createTestUser } from '../test/testAuth'
 
@@ -95,5 +95,43 @@ describe('ใบแจ้งหนี้ซื้อ — ล็อกใบร�
     expect(() => createPurchaseInvoice(user.tenantId, user.email, {
       purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-006',
     })).toThrow(/มีใบแจ้งหนี้อยู่แล้ว/)
+  })
+})
+
+describe('journal ของใบแจ้งหนี้ซื้อ/จ่ายเงิน ต้อง is_posted = 1 (เดิมไม่ใส่คอลัมน์นี้เลย รายงานการเงินมองไม่เห็น)', () => {
+  it('ออกใบแจ้งหนี้ซื้อ → journal_entries แถวใหม่ต้อง is_posted = 1', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const { poId } = seedPoWithConfirmedGr(user.tenantId, user.email)
+
+    const inv = createPurchaseInvoice(user.tenantId, user.email, {
+      purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-POST-01',
+    }) as any
+
+    const journal = db.prepare(
+      "SELECT is_posted, is_auto_generated, posted_by FROM journal_entries WHERE reference_type = 'PURCHASE_INVOICE' AND reference_id = ?"
+    ).get(inv.id) as any
+    expect(journal).toBeTruthy()
+    expect(journal.is_posted).toBe(1)
+    expect(journal.is_auto_generated).toBe(1)
+    expect(journal.posted_by).toBe(user.email)
+  })
+
+  it('จ่ายเงินซัพพลายเออร์ → journal_entries แถวใหม่ต้อง is_posted = 1', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const { poId } = seedPoWithConfirmedGr(user.tenantId, user.email)
+    const inv = createPurchaseInvoice(user.tenantId, user.email, {
+      purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-POST-02',
+    }) as any
+
+    const payment = paySupplier(user.tenantId, user.email, {
+      supplierId: inv.supplier_id, purchaseInvoiceId: inv.id, amount: inv.total_amount,
+    }) as any
+
+    const journal = db.prepare(
+      "SELECT is_posted, is_auto_generated FROM journal_entries WHERE reference_type = 'SUPPLIER_PAYMENT' AND reference_id = ?"
+    ).get(payment.id) as any
+    expect(journal).toBeTruthy()
+    expect(journal.is_posted).toBe(1)
+    expect(journal.is_auto_generated).toBe(1)
   })
 })
