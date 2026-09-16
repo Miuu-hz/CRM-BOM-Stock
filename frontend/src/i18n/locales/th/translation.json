@@ -953,6 +953,7 @@
       "titleCreate": "สร้างใบแจ้งหนี้ผู้ขาย",
       "po": "ใบสั่งซื้อ (PO)",
       "noEligiblePO": "ไม่พบใบสั่งซื้อ (ต้องเป็นสถานะ Submitted/Approved/Received)",
+      "invPlaceholder": "ใบแจ้งหนี้ (รอสร้าง)",
       "grReference": "อ้างอิงใบรับสินค้า (GR) — เลือกได้หลายใบ",
       "supplierInvoiceNumber": "เลขที่ใบกำกับภาษีของผู้ขาย",
       "supplierInvoicePlaceholder": "เช่น TAX-INV-2026-0001 (เลขที่จากผู้ขาย)",

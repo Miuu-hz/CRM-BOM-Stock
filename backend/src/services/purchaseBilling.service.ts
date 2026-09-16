@@ -80,7 +80,6 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const grIds: string[] = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
     ? payload.goodsReceiptIds
     : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
-  const grIdsJson = JSON.stringify(grIds)
 
   const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
   if (!po) throw new PurchaseBillingError('PO_NOT_FOUND', 'Purchase order not found')
@@ -106,16 +105,39 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
       }
     }
   } else {
-    const existingInvoice = db.prepare(
-      `SELECT id FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' AND (goods_receipt_ids IS NULL OR goods_receipt_ids = '[]')`
-    ).get(tenantId, purchaseOrderId) as any
-    if (existingInvoice) throw new PurchaseBillingError('INVOICE_EXISTS_NO_GR', 'ใบสั่งซื้อนี้มีใบแจ้งหนี้อยู่แล้ว')
+    // ไม่ได้เลือกใบรับสินค้า = ออกใบแจ้งหนี้คลุมทั้ง PO
+    // ต้องล็อก GR ที่ยืนยันแล้วของ PO นั้นไปด้วย ไม่งั้น GR จะค้างสถานะ "ยังไม่ออกใบ" ตลอดไป
+    // แล้ว PO จะโผล่ในตัวเลือกสร้างใบแจ้งหนี้ทั้งที่กดไปก็ถูกเด้งว่าซ้ำ (เจอจริงที่ PO-2026-00029)
+    // ยอดยังคิดจาก PO เหมือนเดิม — id พวกนี้ใช้เพื่อล็อก/ปลดล็อกตอนยกเลิกเท่านั้น
+    const confirmedGrs = db.prepare(
+      `SELECT id, invoiced_at FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED'`
+    ).all(tenantId, purchaseOrderId) as any[]
+    const freeGrs = confirmedGrs.filter((r: any) => !r.invoiced_at)
+
+    if (freeGrs.length > 0) {
+      for (const row of freeGrs) grIds.push(row.id)
+    } else if (confirmedGrs.length > 0) {
+      // ใบรับสินค้าทุกใบของ PO นี้ถูกใช้ออกใบแจ้งหนี้ไปหมดแล้ว
+      throw new PurchaseBillingError('GR_ALREADY_INVOICED', 'ใบรับสินค้าของใบสั่งซื้อนี้ถูกใช้สร้างใบแจ้งหนี้ไปหมดแล้ว')
+    } else {
+      // PO ที่ไม่มีใบรับสินค้าเลย — กันออกใบคลุมทั้ง PO ซ้ำ
+      const existingInvoice = db.prepare(
+        `SELECT id FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED'`
+      ).get(tenantId, purchaseOrderId) as any
+      if (existingInvoice) throw new PurchaseBillingError('INVOICE_EXISTS_NO_GR', 'ใบสั่งซื้อนี้มีใบแจ้งหนี้อยู่แล้ว')
+    }
   }
 
+  // คำนวณหลัง grIds ครบแล้ว (สาย "คลุมทั้ง PO" เติม id เข้ามาทีหลัง)
+  const grIdsJson = JSON.stringify(grIds)
+
   // ลำดับ fallback ยอด/รายการ: items ที่ผู้เรียกส่งมาก่อน > derive จาก GR ที่ระบุ > ยอดทั้ง PO (ไม่มี GR)
+  const userPickedGrs = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
+    ? payload.goodsReceiptIds
+    : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
   const items = (payload.items && payload.items.length > 0)
     ? payload.items
-    : deriveItemsFromGoodsReceipts(tenantId, grIds)
+    : deriveItemsFromGoodsReceipts(tenantId, userPickedGrs)
 
   const id = generateId()
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)

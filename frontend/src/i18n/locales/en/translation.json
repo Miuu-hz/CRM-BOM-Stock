@@ -952,6 +952,7 @@
       "titleCreate": "Create Supplier Invoice",
       "po": "Purchase Order (PO)",
       "noEligiblePO": "No eligible orders (must be Submitted/Approved/Received)",
+      "invPlaceholder": "Invoice (pending)",
       "grReference": "Reference GR (multi-select)",
       "supplierInvoiceNumber": "Supplier tax invoice number",
       "supplierInvoicePlaceholder": "e.g. TAX-INV-2026-0001 (from supplier)",

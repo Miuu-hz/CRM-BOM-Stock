@@ -1729,6 +1729,15 @@ const Purchase = () => {
     } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.returnConfirmFailed')) }
   }
 
+  // กฎเดียวที่ใช้ตัดสินว่า PO ใบนี้ยังออกใบแจ้งหนี้ได้อยู่ไหม
+  // เคยมี 2 ชุดแยกกัน (ตาราง PO กับ dropdown ในโมดัล) แล้วไม่ตรงกัน —
+  // PO ที่ออกใบไปแล้วยังโผล่ให้เลือก พอกดก็ถูกเด้งว่าซ้ำ
+  const poHasInvoiceableTarget = (order: PurchaseOrder) => {
+    const confirmedGRs = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED')
+    if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
+    return !invoices.some(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
+  }
+
   // Modal handlers
   const openModal = (type: string, mode: 'create' | 'edit' | 'view', data?: any) => {
     setModalOpen(type)
@@ -2490,7 +2499,7 @@ const Purchase = () => {
                       {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
                     </button>
                   )}
-                  {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
+                  {order.status === 'RECEIVED' && poHasInvoiceableTarget(order) && (
                     <button onClick={() => {
                       setInvoiceForm(p => ({
                         ...p,
@@ -2611,7 +2620,7 @@ const Purchase = () => {
                     )
                   })()}
                   {/* RECEIVED → สร้างใบแจ้งหนี้ */}
-                  {order.status === 'RECEIVED' && invoices.filter(i => i.purchase_order_id === order.id).length === 0 && (
+                  {order.status === 'RECEIVED' && poHasInvoiceableTarget(order) && (
                     <button onClick={() => {
                       setInvoiceForm(p => ({
                         ...p,
@@ -3712,14 +3721,6 @@ const Purchase = () => {
     const selectedPO     = orders.find(o => o.id === invoiceForm.purchase_order_id)
     const selectedGRs    = invoiceForm.goods_receipt_ids.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
     const linkedPR       = selectedPO?.linked_pr_id ? requests.find(r => r.id === selectedPO.linked_pr_id) : null
-    // A PO drops out of the picker once every CONFIRMED GR it has is already invoiced
-    // (or, for GR-less POs, once it already has one non-cancelled invoice) — otherwise
-    // the same PO/GR could be selected and invoiced again.
-    const poHasInvoiceableTarget = (order: PurchaseOrder) => {
-      const confirmedGRs = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED')
-      if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
-      return !invoices.some(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
-    }
     const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED' && !r.invoiced_at)
     const supplierDetail = selectedPO ? suppliers.find(s => s.id === selectedPO.supplier_id) : null
     // In view mode use the invoice's own stored amounts; in create mode derive from selected PO
