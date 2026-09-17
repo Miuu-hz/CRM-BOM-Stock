@@ -25,6 +25,7 @@ import {
   ShoppingCart,
   Trash2,
   TrendingUp,
+  Upload,
   X,
   Zap,
 } from 'lucide-react'
@@ -1298,6 +1299,15 @@ const Purchase = () => {
   const [crAccounts, setCrAccounts] = useState<Account[]>([])
   // บัญชีธนาคาร/เงินสดที่เงินจะออก — backend รับ bankAccountId อยู่แล้ว แต่หน้าเว็บไม่เคยส่งให้
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  // สลิปที่เลือกไว้ตอนยังไม่ได้บันทึก — ใบจ่ายเงินยังไม่เกิด จึงยังไม่มี id ให้ผูกไฟล์
+  // เก็บค้างไว้ก่อน แล้วอัปโหลดทันทีหลังบันทึกสำเร็จ
+  const [slipFile, setSlipFile] = useState<File | null>(null)
+  const [slipPreview, setSlipPreview] = useState<string>('')
+  const clearSlip = () => {
+    if (slipPreview) URL.revokeObjectURL(slipPreview)
+    setSlipFile(null)
+    setSlipPreview('')
+  }
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -1366,6 +1376,9 @@ const Purchase = () => {
     _balance_amount: 0,
     _payment_status: '',
   })
+
+  // บัญชีหลักที่ตั้งไว้ในหน้าตั้งค่า — ใช้เป็นค่าเริ่มต้นเวลาเปิดบันทึกจ่ายเงิน
+  const defaultBankId = () => bankAccounts.find(b => b.is_default && b.is_active)?.id || ''
 
   const [paymentForm, setPaymentForm] = useState({
     supplier_id: '',
@@ -2030,6 +2043,18 @@ const Purchase = () => {
         notes: paymentForm.notes,
       })
       if (data.success) {
+        // ใบเพิ่งเกิด ถึงจะมี id ให้ผูกไฟล์ได้ — อัปโหลดสลิปที่เลือกค้างไว้ตรงนี้
+        // ถ้าอัปไม่ผ่านก็ไม่ย้อนการจ่ายเงิน แค่บอกให้ไปแนบซ้ำในใบ
+        const newId = data.data?.id
+        if (slipFile && newId) {
+          try {
+            const fd = new FormData()
+            fd.append('file', slipFile)
+            await api.post(`/attachments/SUPPLIER_PAYMENT/${newId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+          } catch {
+            toast.error(t('purchase.paymentModal.slipUploadFailed'))
+          }
+        }
         toast.success(t('purchase.toast.paymentRecorded'))
         closeModal()
         fetchPayments()
@@ -2419,7 +2444,7 @@ const Purchase = () => {
           amount: data.amount || 0,
           withholding_tax: data.withholding_tax || 0,
           notes: data.notes || '',
-          bank_account_id: data.bank_account_id || '',
+          bank_account_id: data.bank_account_id || defaultBankId(),
         })
       } else if (type === 'return') {
         setReturnForm({
@@ -2437,12 +2462,13 @@ const Purchase = () => {
       setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
       setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
-      setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: '' })
+      setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
 
   const closeModal = () => {
+    clearSlip()
     setModalOpen(null)
     setModalMode('create')
     setModalData(null)
@@ -4554,9 +4580,43 @@ const Purchase = () => {
             return inv?.purchase_order_id ? <PurchaseTrail poId={inv.purchase_order_id} /> : null
           })()}
 
-          {/* Slip attachments — only meaningful once the payment row exists (view mode) */}
-          {modalMode === 'view' && modalData?.id && (
+          {/* สลิปโอนเงิน — โหมดดูใช้คอมโพเนนต์กลาง ส่วนโหมดสร้างยังไม่มี id ให้ผูก
+              จึงเลือกไฟล์ค้างไว้ก่อน แล้วอัปโหลดให้เองทันทีหลังกดยืนยัน */}
+          {modalMode === 'view' && modalData?.id ? (
             <PaymentAttachments dense refType="SUPPLIER_PAYMENT" refId={modalData.id} />
+          ) : (
+            <Field label={t('purchase.paymentModal.slip')}>
+              {slipFile ? (
+                <div className="flex items-center gap-3 p-2 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                  {slipPreview
+                    ? <img src={slipPreview} alt={slipFile.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                    : <div className="w-12 h-12 rounded-lg bg-[var(--bg)] flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-[var(--fg-4)]" /></div>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-[var(--fg-1)] truncate">{slipFile.name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)]">{t('purchase.paymentModal.slipPending')}</p>
+                  </div>
+                  <button type="button" onClick={clearSlip} aria-label={t('purchase.common.cancel')}
+                    className="p-1.5 rounded-lg text-[var(--fg-4)] hover:text-danger hover:bg-[var(--danger-soft)] transition-colors shrink-0">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 h-11 rounded-xl border border-dashed border-[var(--border-strong)] text-xs text-[var(--fg-3)] cursor-pointer hover:border-phopy-indigo hover:text-[var(--primary)] transition-colors">
+                  <Upload className="w-4 h-4" />
+                  {t('purchase.paymentModal.slipPick')}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      e.target.value = ''
+                      if (!f) return
+                      if (f.size > 10 * 1024 * 1024) { toast.error(t('attachments.fileTooLarge')); return }
+                      clearSlip()
+                      setSlipFile(f)
+                      if (f.type.startsWith('image/')) setSlipPreview(URL.createObjectURL(f))
+                    }} />
+                </label>
+              )}
+            </Field>
           )}
 
           {/* Supplier */}

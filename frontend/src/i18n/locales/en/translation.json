@@ -1025,7 +1025,11 @@
       "noBankAccount": "No bank account configured — the system will book by payment method. Add one under Settings › Bank accounts",
       "accountHint": "Debit = the debt being cleared · Credit = the money actually leaving",
       "noPayableInvoice": "There are no unpaid purchase invoices right now — you can still record a payment, but it will not clear any invoice",
-      "noInvoiceForSupplier": "{{name}} has no unpaid invoices — if this is the same company under another supplier record, try that one"
+      "noInvoiceForSupplier": "{{name}} has no unpaid invoices — if this is the same company under another supplier record, try that one",
+      "slip": "Transfer slip",
+      "slipPick": "Pick a slip image (jpg / png / webp / pdf)",
+      "slipPending": "Will be attached automatically once you confirm the payment",
+      "slipUploadFailed": "Payment recorded, but the slip failed to upload — open the payment and attach it again"
     },
     "returnModal": {
       "title": "Create Return (PR-Return)",
