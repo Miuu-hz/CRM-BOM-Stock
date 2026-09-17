@@ -184,6 +184,7 @@ function Stock() {
   const [unpackModal, setUnpackModal] = useState<{ open: boolean; item: StockItem | null }>({ open: false, item: null })
 
   const [showAddModal, setShowAddModal] = useState(false)
+  const [adjLogModal, setAdjLogModal] = useState(false)
 
   // Import Modal
   const [showImportModal, setShowImportModal] = useState(false)
@@ -474,6 +475,14 @@ function Stock() {
             >
               <SlidersHorizontal className="w-4 h-4" />
               ปรับสต๊อก
+            </button>
+            <button
+              onClick={() => setAdjLogModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-[var(--fg-2)] hover:bg-[var(--bg)] transition-colors border-l border-[var(--border)]"
+              title="ทะเบียนการปรับสต็อก — ใครปรับอะไร เพราะอะไร เป็นเงินเท่าไร"
+            >
+              <History className="w-4 h-4" />
+              ทะเบียนปรับ
             </button>
           </div>
 
@@ -999,6 +1008,9 @@ function Stock() {
         onSave={loadData}
         onPending={approvalGate.handleResponse}
       />
+
+      {/* ทะเบียนการปรับสต็อก */}
+      <AdjustLogModal open={adjLogModal} onClose={() => setAdjLogModal(false)} />
 
       {/* Add New Item Modal */}
       <AddStockModal
@@ -2203,6 +2215,10 @@ function MovementModal({
   const [reference, setReference] = useState('')
   const [unitCost, setUnitCost] = useState<number | ''>('')
   const [saving, setSaving] = useState(false)
+  // ของที่กำลังจะขยับคิดเป็นเงินเท่าไร — คนกดต้องเห็นก่อน ไม่ใช่รู้ทีหลังตอนดูรายงาน
+  const [costBasis, setCostBasis] = useState<{ weightedAvg: number; basis: string } | null>(null)
+  // ตัดออกโดยไม่บอกเหตุผล = ของหายจากคลังแบบไม่มีร่องรอย
+  const [outReason, setOutReason] = useState('')
 
   useEffect(() => {
     if (item) {
@@ -2216,7 +2232,15 @@ function MovementModal({
     setNotes('')
     setReference('')
     setUnitCost('')
+    setOutReason('')
   }, [item, open])
+
+  useEffect(() => {
+    if (!open || !selectedItemId) { setCostBasis(null); return }
+    api.get('/stock/' + selectedItemId + '/cost-basis')
+      .then((r) => setCostBasis(r.data?.data ?? null))
+      .catch(() => setCostBasis(null))
+  }, [open, selectedItemId])
 
   const selectedItem = stockItems.find((i) => i.id === selectedItemId)
   const { units: availableUnits } = useUnits(selectedItem?.id)
@@ -2239,17 +2263,22 @@ function MovementModal({
     e.preventDefault()
 
     if (!selectedItemId) {
-      toast.error('Please select an item')
+      toast.error('เลือกสินค้าก่อน')
       return
     }
 
     if (isOutOfStock) {
-      toast.error('Cannot perform Stock Out - item is out of stock!')
+      toast.error('ของหมดคลังแล้ว ตัดออกไม่ได้')
       return
     }
 
     if (exceedsStock) {
-      toast.error(`Cannot take out more than available stock (${selectedItem?.quantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit)})`)
+      toast.error(`เอาออกมากกว่าของที่มีไม่ได้ — ตอนนี้เหลือ ${selectedItem?.quantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit)}`)
+      return
+    }
+
+    if (type === 'OUT' && !outReason.trim()) {
+      toast.error('บอกก่อนว่าเอาของออกไปทำอะไร — ของหายจากคลังต้องมีร่องรอย')
       return
     }
 
@@ -2260,7 +2289,8 @@ function MovementModal({
         type,
         quantity: baseQuantity,
         unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
-        notes: notes || undefined,
+        // เหตุผลนำหน้าเสมอ เพราะบรรทัดนี้คือสิ่งที่โผล่ในประวัติและในคำขออนุมัติ
+        notes: [type === 'OUT' ? outReason.trim() : '', notes.trim()].filter(Boolean).join(' · ') || undefined,
         reference: reference || undefined,
         unitCost: unitCost !== '' ? unitCost : undefined,
       })
@@ -2270,11 +2300,19 @@ function MovementModal({
       onClose()
     } catch (err) {
       console.error('Failed to record movement:', err)
-      toast.error('Failed to record movement')
+      toast.error((err as any)?.response?.data?.message || 'บันทึกรายการไม่สำเร็จ')
     } finally {
       setSaving(false)
     }
   }
+
+  const fmtQty = (n: number) => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 4 })
+  // ราคาที่ผู้ใช้เพิ่งพิมพ์ชนะค่ากลาง เพราะเป็นราคาที่กำลังจะกลายเป็นต้นทุนจริงของล็อตนี้
+  const movementValue = useMemo(() => {
+    const perBase = unitCost !== '' && Number(unitCost) > 0 ? Number(unitCost) : (costBasis?.weightedAvg || 0)
+    if (!perBase || !Number.isFinite(baseQuantity) || baseQuantity <= 0) return null
+    return baseQuantity * perBase
+  }, [unitCost, costBasis, baseQuantity])
 
   const availableItems = useMemo(
     () => type === 'OUT' ? (stockItems || []).filter((i) => i.quantity > 0) : stockItems,
@@ -2309,7 +2347,7 @@ function MovementModal({
               <ArrowDownCircle className="w-6 h-6 text-danger" />
             )}
             <h2 className="text-xl font-bold text-[var(--fg-1)]">
-              Stock {type === 'IN' ? 'In' : 'Out'}
+              {type === 'IN' ? 'รับของเข้าคลัง' : 'ตัดของออกจากคลัง'}
             </h2>
           </div>
           <button
@@ -2323,23 +2361,23 @@ function MovementModal({
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Select Item</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">เลือกสินค้า</label>
             <SearchableDropdown
               value={selectedItemId}
               onChange={setSelectedItemId}
               options={availableItemOptions}
-              placeholder="-- Select Item --"
+              placeholder="-- พิมพ์ชื่อหรือรหัสสินค้า --"
               disabled={!!item}
             />
             {type === 'OUT' && availableItems.length === 0 && (
               <p className="text-danger text-sm mt-2 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
-                No items available for Stock Out
+                ไม่มีสินค้าที่ยังเหลือให้ตัดออก
               </p>
             )}
             {type === 'IN' && (
               <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-[var(--fg-4)]">Item not found?</span>
+                <span className="text-sm text-[var(--fg-4)]">ไม่เจอสินค้าที่ต้องการ?</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -2349,7 +2387,7 @@ function MovementModal({
                   className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
-                  Create New Item
+                  เพิ่มสินค้าใหม่
                 </button>
               </div>
             )}
@@ -2358,14 +2396,14 @@ function MovementModal({
           {selectedItem && (
             <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-1">
               <div className="flex justify-between items-center">
-                <span className="text-[var(--fg-3)]">Current Stock:</span>
+                <span className="text-[var(--fg-3)]">ตอนนี้มีอยู่</span>
                 <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
                   {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
                     ? `${selectedItem.displayQuantity} ${unitLabel(selectedItem.displayUnit || selectedItem.unit)}`
                     : `${selectedItem.quantity} ${unitLabel(selectedItem.baseUnit || selectedItem.unit)}`}
                   {selectedItem.quantity === 0 && (
                     <span className="ml-2 text-xs bg-[var(--danger-soft)] text-danger px-2 py-1 rounded">
-                      OUT OF STOCK
+                      ของหมด
                     </span>
                   )}
                 </span>
@@ -2379,19 +2417,45 @@ function MovementModal({
             </div>
           )}
 
+          {selectedItem && !isOutOfStock && baseQuantity > 0 && (
+            <div className={'rounded-xl border px-4 py-3 space-y-1.5 ' + (type === 'IN' ? 'border-success/30 bg-success/5' : 'border-danger/30 bg-[var(--danger-soft)]')}>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-[var(--fg-3)]">ของจะเปลี่ยนเป็น</span>
+                <span className="font-semibold text-[var(--fg-1)]">
+                  {fmtQty(selectedItem.quantity)} → {fmtQty(type === 'IN' ? selectedItem.quantity + baseQuantity : selectedItem.quantity - baseQuantity)}
+                  <span className="text-[var(--fg-4)] font-normal"> {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
+                </span>
+              </div>
+              {movementValue !== null && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-[var(--fg-3)]">
+                    คิดเป็นเงิน
+                    <span className="text-[var(--fg-4)] text-xs"> ({costBasis && costBasis.basis !== 'fallback' ? 'ทุนเฉลี่ยถ่วงน้ำหนัก' : 'ต้นทุนที่บันทึกไว้'})</span>
+                  </span>
+                  <span className="font-semibold text-[var(--fg-1)]">
+                    ฿{movementValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-[var(--fg-4)] pt-1.5 border-t border-[var(--border)]">
+                รายการนี้ขยับเฉพาะจำนวนของ ยังไม่ลงบัญชี — ถ้าของหาย/ของเสียและต้องการให้กระทบบัญชีด้วย ให้ใช้ปุ่ม “ปรับสต๊อก”
+              </p>
+            </div>
+          )}
+
           {isOutOfStock && (
             <div className="p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-danger flex-shrink-0" />
               <div>
-                <p className="text-danger font-medium">Cannot Proceed</p>
-                <p className="text-danger/70 text-sm">This item is out of stock. Stock Out is not allowed.</p>
+                <p className="text-danger font-medium">ทำรายการนี้ไม่ได้</p>
+                <p className="text-danger/70 text-sm">สินค้านี้เหลือ 0 ในคลัง จึงตัดออกไม่ได้ — ถ้าของมีอยู่จริงให้ใช้ปุ่ม “ปรับสต๊อก” แทน</p>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">Quantity</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">จำนวน</label>
               <input
                 type="number"
                 value={quantity}
@@ -2404,7 +2468,7 @@ function MovementModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">Unit</label>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">หน่วย</label>
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
@@ -2415,7 +2479,7 @@ function MovementModal({
                   <>
                     {selectedItem.baseUnit && (
                       <option value={selectedItem.baseUnit}>
-                        {UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)
+                        {UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (หน่วยนับ)
                       </option>
                     )}
                     {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
@@ -2428,37 +2492,71 @@ function MovementModal({
                     ))}
                   </>
                 ) : (
-                  <option value="">Select item first</option>
+                  <option value="">เลือกสินค้าก่อน</option>
                 )}
               </select>
             </div>
           </div>
           {exceedsStock && (
             <p className="text-danger text-sm mt-1">
-              Cannot exceed available stock ({selectedItem?.quantity} {unitLabel(selectedItem?.baseUnit || selectedItem?.unit)})
+              เอาออกมากกว่าของที่มีไม่ได้ — ตอนนี้เหลือ {selectedItem?.quantity} {unitLabel(selectedItem?.baseUnit || selectedItem?.unit)}
             </p>
           )}
 
+          {type === 'OUT' && (
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-2">
+                เอาออกไปทำอะไร <span className="text-danger">*</span>
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {['เบิกไปใช้ในครัว', 'เบิกให้ลูกค้า', 'ของเสีย/หมดอายุ', 'ส่งคืนผู้ขาย', 'ย้ายไปสาขาอื่น'].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setOutReason(preset)}
+                    className={'px-2.5 py-1 rounded-lg text-xs border transition-colors ' + (outReason === preset
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
+                      : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)]')}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={outReason}
+                onChange={(e) => setOutReason(e.target.value)}
+                className="phopy-input w-full"
+                placeholder="กดปุ่มด้านบน หรือพิมพ์เอง"
+                disabled={isOutOfStock}
+              />
+            </div>
+          )}
+
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Reference (Optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">
+              เลขเอกสารอ้างอิง <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
+            </label>
             <input
               type="text"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               className="phopy-input w-full"
-              placeholder="e.g., PO-2024-001"
+              placeholder="เช่น PO-2026-00001 · WO-2026-00012"
               disabled={isOutOfStock}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Notes (Optional)</label>
+            <label className="block text-sm text-[var(--fg-3)] mb-2">
+              หมายเหตุเพิ่มเติม <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
+            </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="phopy-input w-full"
               rows={3}
-              placeholder="Additional notes..."
+              placeholder="รายละเอียดที่คนอ่านย้อนหลังควรรู้"
               disabled={isOutOfStock}
             />
           </div>
@@ -2487,11 +2585,11 @@ function MovementModal({
               onClick={onClose}
               className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]"
             >
-              Cancel
+              ยกเลิก
             </button>
             <button
               type="submit"
-              disabled={saving || isOutOfStock || exceedsStock || !selectedItemId}
+              disabled={saving || isOutOfStock || exceedsStock || !selectedItemId || (type === 'OUT' && !outReason.trim())}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${type === 'IN'
                 ? 'bg-success text-black hover:shadow-2-green disabled:opacity-50'
                 : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
@@ -2504,7 +2602,7 @@ function MovementModal({
               ) : (
                 <ArrowDownCircle className="w-4 h-4" />
               )}
-              Record {type === 'IN' ? 'Stock In' : 'Stock Out'}
+              {type === 'IN' ? 'บันทึกรับเข้า' : 'บันทึกตัดออก'}
             </button>
           </div>
         </form>
@@ -3046,6 +3144,166 @@ function AdjustModal({
 }
 
 // Add New Stock Item Modal
+// ทะเบียนการปรับสต็อก — เฟส 3 เขียน stock_adjustments ทุกครั้งที่ปรับ แต่ไม่เคยมีทางอ่านกลับ
+// ของที่ต้องตอบให้ได้: ใครปรับ ของอะไร จากเท่าไรเป็นเท่าไร เพราะอะไร คิดเป็นเงินเท่าไร
+function AdjustLogModal({ open, onClose, itemId }: {
+  open: boolean
+  onClose: () => void
+  itemId?: string
+}) {
+  useModalClose(onClose)
+  const [rows, setRows] = useState<any[]>([])
+  const [summary, setSummary] = useState<{ count: number; totalDown: number; totalUp: number } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [q, setQ] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    setQ('')
+    api.get('/stock/adjustments', { params: itemId ? { itemId } : {} })
+      .then((r) => {
+        setRows(r.data?.data || [])
+        setSummary(r.data?.summary || null)
+      })
+      .catch((e: any) => toast.error(e?.response?.data?.message || 'โหลดทะเบียนการปรับสต็อกไม่สำเร็จ'))
+      .finally(() => setLoading(false))
+  }, [open, itemId])
+
+  if (!open) return null
+
+  const money = (n: number) => '฿' + Math.abs(Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const qty = (n: number) => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 4 })
+  const when = (iso: string) => {
+    if (!iso) return '-'
+    const d = new Date(String(iso).replace(' ', 'T'))
+    if (isNaN(d.getTime())) return String(iso)
+    return d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) + ' ' +
+      d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  }
+  const needle = q.trim().toLowerCase()
+  const visible = needle
+    ? rows.filter((r) => [r.adjustment_number, r.item_name, r.item_sku, r.reason, r.created_by_name, r.created_by]
+        .some((v) => String(v || '').toLowerCase().includes(needle)))
+    : rows
+
+  return (
+    <div
+      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="phopy-card w-full max-w-5xl max-h-[88vh] flex flex-col animate-scaleIn"
+      >
+        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-[var(--primary)]" />
+            <div>
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">ทะเบียนการปรับสต็อก</h2>
+              <p className="text-xs text-[var(--fg-3)]">ทุกครั้งที่มีคนปรับของให้ตรงกับที่นับได้ จะมีแถวอยู่ที่นี่</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
+            <X className="w-5 h-5 text-[var(--fg-3)]" />
+          </button>
+        </div>
+
+        <div className="px-6 py-3 border-b border-[var(--border)] flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 text-[var(--fg-4)] absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="ค้นเลขที่ · ชื่อสินค้า · เหตุผล · คนปรับ"
+              className="phopy-input w-full pl-9 py-2 text-sm"
+            />
+          </div>
+          {summary && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="px-2.5 py-1.5 rounded-lg bg-[var(--bg)] text-[var(--fg-2)]">
+                {summary.count.toLocaleString('th-TH')} รายการ
+              </span>
+              <span className="px-2.5 py-1.5 rounded-lg bg-[var(--danger-soft)] text-danger">
+                ปรับลด {money(summary.totalDown)}
+              </span>
+              <span className="px-2.5 py-1.5 rounded-lg bg-[var(--success-soft)] text-success">
+                ปรับเพิ่ม {money(summary.totalUp)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-[var(--fg-3)] gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" /> กำลังโหลด...
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="text-center py-16 px-6">
+              <History className="w-10 h-10 text-[var(--fg-4)] mx-auto mb-3" />
+              <p className="text-[var(--fg-2)] font-medium">
+                {rows.length === 0 ? 'ยังไม่มีการปรับสต็อก' : 'ไม่พบรายการที่ค้นหา'}
+              </p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">
+                {rows.length === 0
+                  ? 'พอมีคนกดปรับสต๊อกให้ของตรงกับที่นับได้ รายการจะขึ้นที่นี่ทันที'
+                  : 'ลองพิมพ์คำอื่น หรือล้างช่องค้นหา'}
+              </p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-[var(--bg-2)] text-xs text-[var(--fg-3)] z-10">
+                <tr className="border-b border-[var(--border)]">
+                  <th className="text-left font-medium px-4 py-2.5">เลขที่</th>
+                  <th className="text-left font-medium px-4 py-2.5">เมื่อไร</th>
+                  <th className="text-left font-medium px-4 py-2.5">สินค้า</th>
+                  <th className="text-right font-medium px-4 py-2.5">ก่อน → หลัง</th>
+                  <th className="text-right font-medium px-4 py-2.5">ส่วนต่าง</th>
+                  <th className="text-right font-medium px-4 py-2.5">คิดเป็นเงิน</th>
+                  <th className="text-left font-medium px-4 py-2.5">เพราะอะไร</th>
+                  <th className="text-left font-medium px-4 py-2.5">ใครปรับ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((r) => {
+                  const down = Number(r.quantity_adjusted) < 0
+                  return (
+                    <tr key={r.id} className="border-b border-[var(--border)] hover:bg-[var(--bg)]">
+                      <td className="px-4 py-2.5 font-mono text-xs text-[var(--fg-2)]">{r.adjustment_number}</td>
+                      <td className="px-4 py-2.5 text-xs text-[var(--fg-3)] whitespace-nowrap">{when(r.created_at)}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="text-[var(--fg-1)]">{r.item_name || '(สินค้าถูกลบแล้ว)'}</div>
+                        {r.item_sku && <div className="text-[10px] font-mono text-[var(--fg-4)]">{r.item_sku}</div>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-xs text-[var(--fg-3)] whitespace-nowrap">
+                        {qty(r.quantity_before)} → <span className="text-[var(--fg-1)]">{qty(r.quantity_after)}</span>
+                        <span className="text-[var(--fg-4)]"> {r.base_unit || ''}</span>
+                      </td>
+                      <td className={'px-4 py-2.5 text-right font-medium whitespace-nowrap ' + (down ? 'text-danger' : 'text-success')}>
+                        {down ? '−' : '+'}{qty(Math.abs(Number(r.quantity_adjusted) || 0))}
+                      </td>
+                      <td className={'px-4 py-2.5 text-right whitespace-nowrap ' + (down ? 'text-danger' : 'text-success')}>
+                        {money(r.total_value)}
+                      </td>
+                      <td className="px-4 py-2.5 text-[var(--fg-2)]">{r.reason || '-'}</td>
+                      <td className="px-4 py-2.5 text-xs text-[var(--fg-3)]">{r.created_by_name || r.created_by || '-'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="px-6 py-3 border-t border-[var(--border)] text-[10px] text-[var(--fg-4)]">
+          มูลค่าตีด้วยทุนเฉลี่ยถ่วงน้ำหนัก ณ ตอนที่ปรับ · ตัวเลขนี้คือยอดเดียวกับที่ลงบัญชีในสมุดรายวัน
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AddStockModal({
   open,
   onClose,

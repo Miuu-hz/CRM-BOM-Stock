@@ -146,6 +146,47 @@ router.get('/stats', async (req: Request, res: Response) => {
 })
 
 // Get all stock items
+// ทะเบียนการปรับสต็อก — เฟส 3 เขียน stock_adjustments ทุกครั้งที่ปรับ แต่ไม่มีทางอ่านกลับเลย
+// ต้องประกาศไว้เหนือ '/:id' ไม่งั้น express จับคำว่า adjustments เป็น id
+router.get('/adjustments', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const itemId = req.query.itemId ? String(req.query.itemId) : ''
+    const from = req.query.from ? String(req.query.from) : ''
+    const to = req.query.to ? String(req.query.to) : ''
+    const limit = Math.min(Number(req.query.limit) || 200, 500)
+
+    const where: string[] = ['a.tenant_id = ?']
+    const args: any[] = [tenantId]
+    if (itemId) { where.push('a.stock_item_id = ?'); args.push(itemId) }
+    if (from) { where.push('a.created_at >= ?'); args.push(from) }
+    if (to) { where.push('a.created_at <= ?'); args.push(to + ' 23:59:59') }
+
+    const rows = db.prepare(`
+      SELECT a.id, a.adjustment_number, a.adjustment_type, a.quantity_before, a.quantity_after,
+             a.quantity_adjusted, a.unit_cost, a.total_value, a.reason, a.status, a.notes,
+             a.created_by, a.created_at, a.stock_item_id,
+             si.name as item_name, si.sku as item_sku,
+             COALESCE(si.base_unit, si.unit) as base_unit,
+             u.name as created_by_name
+      FROM stock_adjustments a
+      LEFT JOIN stock_items si ON si.id = a.stock_item_id
+      LEFT JOIN users u ON u.email = a.created_by AND u.tenant_id = a.tenant_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY a.created_at DESC
+      LIMIT ?
+    `).all(...args, limit)
+
+    const totalDown = rows.reduce((sum: number, r: any) => sum + (r.quantity_adjusted < 0 ? Number(r.total_value) || 0 : 0), 0)
+    const totalUp = rows.reduce((sum: number, r: any) => sum + (r.quantity_adjusted >= 0 ? Number(r.total_value) || 0 : 0), 0)
+
+    res.json({ success: true, data: rows, summary: { count: rows.length, totalDown, totalUp } })
+  } catch (error: any) {
+    console.error('List stock adjustments error:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -522,7 +563,7 @@ router.post('/movement', async (req: Request, res: Response) => {
 
     // ประตูอนุมัติ: ถ้าหมวด "ปรับ/เปลี่ยนสต็อก" ถูกเปิดไว้สำหรับ role นี้ ให้เก็บคำขอไว้
     // แล้วยังไม่ขยับของ — จะขยับจริงตอนเจ้าของกดอนุมัติใน executeApprovedAction()
-    const item = db.prepare('SELECT name, quantity, unit, base_unit FROM stock_items WHERE id = ? AND tenant_id = ?')
+    const item = db.prepare('SELECT name, quantity, unit, base_unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?')
       .get(stockItemId, tenantId) as any
     if (!item) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
@@ -554,10 +595,30 @@ router.post('/movement', async (req: Request, res: Response) => {
         : `สินค้า ${item.name} ตัดออก ${qtyText(entered)} ${enteredUnit}`
     }
     const stockDescription = reason ? `${whatChanged} เนื่องจาก ${reason}` : whatChanged
+    // มูลค่าของที่จะขยับ — ประตูอนุมัติเอาตัวเลขนี้ไปเทียบกับ auto_approve_threshold
+    // เดิมไม่เคยส่งเลย amount จึงเป็น 0 ตลอด แปลว่าตั้งวงเงินไว้เท่าไรการปรับสต็อกก็ผ่านหมด
+    const gateAmount = (() => {
+      try {
+        const cb = getCostBasis(tenantId, stockItemId)
+        const costPerBase = cb.weightedAvg || Number(item.unit_cost || 0)
+        let qtyInBase = entered
+        if (!sameUnit) {
+          const conv = convertQuantityBidirectional(entered, String(enteredUnit), String(baseUnit), tenantId, stockItemId)
+          // แปลงหน่วยไม่ได้ = ตีมูลค่าไม่ได้ ปล่อย 0 ให้ตกไปตามกฎ approval_required ปกติ
+          if (!conv) return 0
+          qtyInBase = conv.converted
+        }
+        const delta = type === 'ADJUST' ? qtyInBase - currentQty : qtyInBase
+        return Math.abs(delta * costPerBase)
+      } catch {
+        return 0
+      }
+    })()
     const gateArgs = {
       tenantId,
       user: req.user! as any,
       category: 'stock_adjust' as const,
+      amount: gateAmount,
       refType: 'stock_items',
       refId: stockItemId,
       description: stockDescription,
