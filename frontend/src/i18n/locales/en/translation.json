@@ -860,7 +860,8 @@
         "number": "Number",
         "poReference": "PO Ref",
         "reason": "Reason",
-        "amount": "Amount"
+        "amount": "Amount",
+        "date": "Return date"
       }
     },
     "paymentMethod": {
@@ -1139,7 +1140,8 @@
         "PARTIAL": "Partial",
         "RECEIVED": "Received"
       },
-      "noOrderYet": "No purchase order yet, so there is no document trail to show"
+      "noOrderYet": "No purchase order yet, so there is no document trail to show",
+      "noTrail": "No source document found, so there is no trail to show"
     },
     "selfApprove": {
       "readyNote": "Skips the waiting-for-approval step because you can approve this yourself — recorded as approved by you",
@@ -1164,7 +1166,11 @@
       "cycleClosed": "Cycle complete",
       "confirmReceipt": "Confirm receipt",
       "stockedIn": "Stocked in",
-      "fullyPaid": "Fully paid"
+      "fullyPaid": "Fully paid",
+      "posted": "Posted to ledger",
+      "notPosted": "Not posted to ledger",
+      "confirmReturn": "Confirm return",
+      "returned": "Returned"
     },
     "header": {
       "waiting": "{{count}} waiting for you"
@@ -1192,6 +1198,16 @@
         "draft": "Draft",
         "billed": "Billed",
         "paid": "Paid"
+      },
+      "pay": {
+        "paid": "Paid",
+        "posted": "Posted"
+      },
+      "ret": {
+        "draft": "Draft",
+        "confirmed": "Returned",
+        "submitted": "Submitted",
+        "approved": "Approved"
       }
     }
   },

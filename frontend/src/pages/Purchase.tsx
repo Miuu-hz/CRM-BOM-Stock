@@ -6,25 +6,19 @@ import {
   AlertTriangle,
   ArrowRight,
   Ban,
-  Banknote,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock,
   CreditCard,
-  DollarSign,
   FileText,
-  Hash,
-  Landmark,
   LayoutGrid,
   Lock,
   MoreHorizontal,
   LayoutList,
   Package,
-  Pencil,
   Plus,
-  Printer,
   Receipt,
   RotateCcw,
   Search,
@@ -1183,6 +1177,7 @@ const RowMenu = ({ items, label }: { items: RowMenuItem[]; label: string }) => {
 //   เขียว = ผ่านแล้ว · น้ำเงิน = อยู่ตรงนี้ · เทา = ยังไม่ถึง · เทาจาง = ข้ามขั้นนั้นไป
 // ใบที่ถูกยกเลิก/ปฏิเสธไม่วาดขีด เพราะมันไม่ได้อยู่บนสายแล้ว — ขึ้นป้ายแดงแทน
 type StageView = { stages: string[]; idx: number; skipped?: number[]; dead?: string }
+type TrailKind = 'pr' | 'po' | 'gr' | 'inv' | 'pay' | 'ret'
 
 const StagePips = ({ view }: { view: StageView }) => {
   if (view.dead) {
@@ -1399,7 +1394,8 @@ const Purchase = () => {
     else if (activeTab === 'orders') fetchOrders()
     else if (activeTab === 'receipts') fetchReceipts()
     else if (activeTab === 'invoices') fetchInvoices()
-    else if (activeTab === 'payments') fetchPayments()
+    // ต้องโหลดใบแจ้งหนี้ด้วย เพราะใบจ่ายเงินชี้ไปที่ใบแจ้งหนี้ ไม่ได้ชี้ใบสั่งซื้อตรง ๆ
+    else if (activeTab === 'payments') { fetchPayments(); fetchInvoices() }
     else if (activeTab === 'returns') fetchReturns()
   }, [activeTab])
 
@@ -2260,25 +2256,57 @@ const Purchase = () => {
   // กล่องเส้นทางเอกสารที่กางออกมาใต้แถว — เรียกเป็นฟังก์ชัน ไม่ใช่ <Component/>
   // เพราะถ้าเป็นคอมโพเนนต์ที่ประกาศในนี้ มันจะ remount ทุกครั้งที่ re-render
   // แล้ว PurchaseTrail จะยิง API ซ้ำไม่หยุด
-  const expandedTrail = (kind: 'pr' | 'po' | 'gr' | 'inv', row: any) => {
+  const expandedTrail = (kind: TrailKind, row: any) => {
     const poId = trailPoId(kind, row)
     return (
       <div className="px-4 pb-4 pt-1 bg-[var(--surface-2)]/40 border-b border-[var(--border)]/20" onClick={e => e.stopPropagation()}>
         {poId ? <PurchaseTrail poId={poId} /> : (
           <div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[var(--border-strong)]">
             <AlertCircle className="w-3.5 h-3.5 text-[var(--fg-4)] shrink-0" />
-            <span className="text-xs text-[var(--fg-3)]">{t('purchase.trail.noOrderYet')}</span>
+            <span className="text-xs text-[var(--fg-3)]">{t(kind === 'pr' ? 'purchase.trail.noOrderYet' : 'purchase.trail.noTrail')}</span>
           </div>
         )}
       </div>
     )
   }
 
+  // ใบจ่ายเงินเป็นปลายทาง ไม่มีขั้นต่อไป — แต่ยังต้องบอกได้ว่าลงบัญชีแล้วหรือยัง
+  // (เคยมีเคสใบแจ้งหนี้ไม่ post journal แล้วเงินหายจากงบไปเฉย ๆ ช่องนี้จะจับได้ตั้งแต่ตาราง)
+  const payNextStep = (p: SupplierPayment): NextStep =>
+    p.journal_entry_number
+      ? { kind: 'done', label: t('purchase.nextStep.posted'), docNumber: p.journal_entry_number }
+      : { kind: 'locked', label: t('purchase.nextStep.notPosted') }
+
+  const payStageView = (p: SupplierPayment): StageView => ({
+    stages: [t('purchase.stage.pay.paid'), t('purchase.stage.pay.posted')],
+    idx: p.journal_entry_number ? 1 : 0,
+  })
+
+  // ใบคืนสินค้าเดินทีละขั้นเหมือนใบสั่งซื้อ: ร่าง -> ส่งอนุมัติ -> อนุมัติ -> ยืนยันคืนของ
+  // (ยืนยันคืนของคือขั้นที่ตัดสต็อกจริง จึงแยกออกจากการอนุมัติ)
+  const retNextStep = (r: PurchaseReturn): NextStep => {
+    if (r.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.cancelled') }
+    if (r.status === 'DRAFT') return { kind: 'action', label: t('purchase.actions.submitForApproval'), onClick: () => handleUpdateReturnStatus(r.id, 'SUBMITTED') }
+    if (r.status === 'SUBMITTED') return { kind: 'action', label: t('purchase.actions.approve'), onClick: () => handleUpdateReturnStatus(r.id, 'APPROVED') }
+    if (r.status === 'APPROVED') return { kind: 'action', label: t('purchase.nextStep.confirmReturn'), onClick: () => handleConfirmReturn(r.id) }
+    return { kind: 'done', label: t('purchase.nextStep.returned') }
+  }
+
+  const RET_FLOW = ['DRAFT', 'SUBMITTED', 'APPROVED', 'CONFIRMED']
+  const retStageView = (r: PurchaseReturn): StageView => {
+    const stages = [t('purchase.stage.ret.draft'), t('purchase.stage.ret.submitted'), t('purchase.stage.ret.approved'), t('purchase.stage.ret.confirmed')]
+    if (r.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
+    const idx = RET_FLOW.indexOf(r.status)
+    return { stages, idx: idx < 0 ? 0 : idx }
+  }
+
   // ใบสั่งซื้อที่เป็นต้นสายของเอกสารใบนี้ — ใช้เปิดกล่องเส้นทางเอกสาร
   // ใบขอซื้อที่ยังไม่ได้แปลงเป็น PO จะไม่มีต้นสาย → คืน null แล้วไม่ยิง API เปล่า
-  const trailPoId = (kind: 'pr' | 'po' | 'gr' | 'inv', row: any): string | null => {
+  const trailPoId = (kind: TrailKind, row: any): string | null => {
     if (kind === 'po') return row.id
-    if (kind === 'gr' || kind === 'inv') return row.purchase_order_id || null
+    if (kind === 'gr' || kind === 'inv' || kind === 'ret') return row.purchase_order_id || null
+    // ใบจ่ายเงินชี้ใบแจ้งหนี้ ต้องเด้งอีกทอดถึงจะถึงใบสั่งซื้อ
+    if (kind === 'pay') return invoices.find(i => i.id === row.purchase_invoice_id)?.purchase_order_id || null
     return orders.find(o => o.linked_pr_id === row.id && o.status !== 'CANCELLED')?.id || null
   }
 
@@ -2868,6 +2896,7 @@ const Purchase = () => {
                   <div className="col-span-1" onClick={e => e.stopPropagation()}>
                     <RowMenu label={t('purchase.rowMenu.more')} items={[
                       { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('request', 'view', req.id, req) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('pr', req.id) },
                       ...(req.status === 'DRAFT' ? [
                         { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('request', 'edit', req.id, req) },
                         { label: t('purchase.actions.delete'), onClick: () => handleDeleteRequest(req.id), danger: true },
@@ -2906,47 +2935,21 @@ const Purchase = () => {
                   </div>
                   <p className="font-bold text-[var(--fg-1)] text-sm">{formatCurrency(req.total_amount)}</p>
                 </div>
-                <div className="flex gap-2 mt-auto pt-3 mt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModalWithDetail('request', 'view', req.id, req)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('pr', req.id)} title={t('purchase.actions.printA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
-                    <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {req.status === 'DRAFT' && (<>
-                    <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
-                      className="flex-1 py-1.5 text-xs text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] transition-colors">
-                      {t('purchase.actions.edit')}
-                    </button>
-                    <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
-                      className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      {t('purchase.actions.submitForApproval')}
-                    </button>
-                    <button onClick={() => handleDeleteRequest(req.id)}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>)}
-                  {req.status === 'PENDING' && (
-                    <button onClick={() => handleSubmitRequestDirect(req.id, 'APPROVED')}
-                      className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
-                    </button>
-                  )}
-                  {req.status === 'APPROVED' && (
-                    <button onClick={() => handleConvertRequestToOrder(req.id)}
-                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      {t('purchase.actions.convertToOrder')} <ArrowRight className="w-3 h-3" />
-                    </button>
-                  )}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={prStageView(req)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={prNextStep(req)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('request', 'view', req.id, req) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('pr', req.id) },
+                      ...(req.status === 'DRAFT' ? [
+                        { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('request', 'edit', req.id, req) },
+                        { label: t('purchase.actions.delete'), onClick: () => handleDeleteRequest(req.id), danger: true },
+                      ] : []),
+                      ...(canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status)
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelRequest(req.id, req.pr_number), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -3065,102 +3068,21 @@ const Purchase = () => {
                   ) : null })()}
                 </div>
                 <p className="font-bold text-[var(--fg-1)] text-sm mt-2 text-right">{formatCurrency(order.total_amount)}</p>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModalWithDetail('order', 'view', order.id, order)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('po', order.id)}
-                    title={t('purchase.actions.printOrderA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {/* รับของแล้ว (บางส่วนหรือครบ) ยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน (เหมือนมุมมองตาราง) */}
-                  {canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status) && (
-                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')} aria-label={t('purchase.actions.cancel')}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {/* DRAFT → แก้ไข + ส่งอนุมัติ + ลบ */}
-                  {order.status === 'DRAFT' && (<>
-                    <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
-                      className="px-2.5 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] transition-colors" title={t('purchase.actions.edit')}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
-                      className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      {t('purchase.actions.submitForApproval')}
-                    </button>
-                    <button onClick={() => handleDeleteOrder(order.id)}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>)}
-                  {/* SUBMITTED → อนุมัติ */}
-                  {order.status === 'SUBMITTED' && (
-                    <button onClick={() => handleUpdateOrderStatus(order.id, 'APPROVED')}
-                      className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
-                    </button>
-                  )}
-                  {/* APPROVED / PARTIAL → รับสินค้า (หรือยืนยันร่างที่ค้างอยู่) */}
-                  {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (() => {
-                    const draftReceipt = receipts.find(r => r.purchase_order_id === order.id && r.status === 'DRAFT')
-                    if (draftReceipt) {
-                      return (
-                        <button onClick={() => openModalWithDetail('receipt', 'view', draftReceipt.id, draftReceipt)}
-                          className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                          {t('purchase.receiptModal.confirmReceipt')} <Check className="w-3 h-3" />
-                        </button>
-                      )
-                    }
-                    return (
-                      <button onClick={() => {
-                        setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
-                        loadPendingItems(order.id)
-                        openModal('receipt', 'create')
-                      }}
-                        className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                        {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
-                      </button>
-                    )
-                  })()}
-                  {/* RECEIVED → สร้างใบแจ้งหนี้ */}
-                  {order.status === 'RECEIVED' && poHasInvoiceableTarget(order) && (
-                    <button onClick={() => {
-                      setInvoiceForm(p => ({
-                        ...p,
-                        purchase_order_id: order.id,
-                        goods_receipt_ids: [],
-                        tax_rate: order.tax_rate ?? 7,
-                        due_date: order.expected_date?.split('T')[0] || '',
-                      }))
-                      openModal('invoice', 'create')
-                    }}
-                      className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      {t('purchase.actions.createInvoice')}
-                    </button>
-                  )}
-                  {/* มีใบแจ้งหนี้แล้วแต่ยังไม่จ่าย → ให้เดินต่อได้จากตรงนี้เลย */}
-                  {(() => {
-                    const unpaid = poUnpaidInvoice(order)
-                    if (!unpaid) return null
-                    return (
-                      <button onClick={() => {
-                        setPaymentForm(p => ({
-                          ...p,
-                          supplier_id: order.supplier_id,
-                          purchase_invoice_id: unpaid.id,
-                          amount: unpaid.balance_amount || 0,
-                        }))
-                        openModal('payment', 'create')
-                      }}
-                        className="flex-1 py-1.5 text-xs text-info bg-[var(--info-soft)] rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                        <Banknote className="w-3 h-3" /> {t('purchase.actions.payNow')}
-                      </button>
-                    )
-                  })()}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={poStageView(order)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={poNextStep(order)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('order', 'view', order.id, order) },
+                      { label: t('purchase.actions.printOrderA4'), onClick: () => handlePrint('po', order.id) },
+                      ...(order.status === 'DRAFT' ? [
+                        { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('order', 'edit', order.id, order) },
+                        { label: t('purchase.actions.delete'), onClick: () => handleDeleteOrder(order.id), danger: true },
+                      ] : []),
+                      ...(canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status)
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelOrder(order.id, order.po_number), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -3243,35 +3165,20 @@ const Purchase = () => {
                 {receipt.journal_entry_number && (
                   <p className="text-xs text-[var(--primary)]/70 mt-1">{t('purchase.common.journalEntry', { number: receipt.journal_entry_number })}</p>
                 )}
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title={t('purchase.actions.printA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title={t('purchase.actions.printThermal')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded-lg transition-colors text-xs leading-none">
-                    <Receipt className="w-4 h-4 inline" />
-                  </button>
-                  {receipt.status === 'DRAFT' && (<>
-                    <button onClick={() => handleConfirmReceipt(receipt.id)}
-                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.confirm')}
-                    </button>
-                    <button onClick={() => handleDeleteReceipt(receipt.id)}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>)}
-                  {receipt.status === 'CONFIRMED' && canCancelDoc && (
-                    <button onClick={() => handleCancelReceipt(receipt.id)}
-                      className="flex-1 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Ban className="w-3 h-3" /> {t('purchase.actions.cancel')}
-                    </button>
-                  )}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={grStageView(receipt)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={grNextStep(receipt)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('receipt', 'view', receipt.id, receipt) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('gr', receipt.id, 'a4') },
+                      { label: t('purchase.actions.printThermal'), onClick: () => handlePrint('gr', receipt.id, 'thermal') },
+                      ...(receipt.status === 'DRAFT'
+                        ? [{ label: t('purchase.actions.delete'), onClick: () => handleDeleteReceipt(receipt.id), danger: true }] : []),
+                      ...(receipt.status === 'CONFIRMED' && canCancelDoc
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelReceipt(receipt.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -3360,27 +3267,17 @@ const Purchase = () => {
                     <span className="text-sm font-bold text-danger">{t('purchase.invoices.card.balanceAmount', { amount: formatCurrency(invoice.balance_amount) })}</span>
                   )}
                 </div>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('pi', invoice.id)} title={t('purchase.actions.printA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {invoice.payment_status !== 'PAID' && invoice.status !== 'CANCELLED' && (
-                    <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
-                      className="flex-1 py-1.5 text-xs text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <DollarSign className="w-3 h-3" /> {t('purchase.actions.pay')}
-                    </button>
-                  )}
-                  {invoice.status !== 'CANCELLED' && canCancelDoc && (
-                    <button onClick={() => handleCancelInvoice(invoice.id)}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors flex items-center justify-center gap-1" title={t('purchase.actions.cancel')}>
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={invStageView(invoice)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={invNextStep(invoice)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('invoice', 'view', invoice.id, invoice) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('pi', invoice.id) },
+                      ...(invoice.status !== 'CANCELLED' && canCancelDoc
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelInvoice(invoice.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -3400,46 +3297,53 @@ const Purchase = () => {
     const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard') }
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        {/* ใบจ่ายเงินเป็นปลายทาง ไม่มีอะไรค้างให้ทำ จึงไม่มีชิปกรอง — โครงแถบเหมือนแท็บอื่น */}
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.paymentsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('payment', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createPayment')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.payments')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.payments.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.payments.headers.method')}</span><span className="col-span-1">{t('purchase.payments.headers.date')}</span>
-              <span className="col-span-2">{t('purchase.payments.headers.journal')}</span>
+              <span className="col-span-1">{t('purchase.payments.headers.date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
               <span className="col-span-1 text-right">{t('purchase.payments.headers.amount')}</span>
-              <span className="col-span-1"></span>
+              <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((payment, i) => (
-              <div key={payment.id} onClick={() => openModal('payment', 'view', payment)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{payment.payment_number}</p>
-                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{payment.supplier_name}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs">{methodLabel[payment.payment_method] || payment.payment_method}</p>
-                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
-                <p className="col-span-2 text-[var(--primary)]/70 text-xs font-mono truncate">{payment.journal_entry_number || '-'}</p>
-                <p className="col-span-1 text-right text-success font-bold text-xs">{formatCurrency(payment.amount)}</p>
-                <div className="col-span-1 flex justify-end" onClick={e => e.stopPropagation()}>
-                  {canCancelDoc && (
-                    <button onClick={() => handleVoidPayment(payment.id)} title={t('purchase.actions.void')}
-                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+              <div key={payment.id}>
+                <div onClick={() => setOpenRow(openRow === payment.id ? null : payment.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === payment.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === payment.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModal('payment', 'view', payment) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{payment.payment_number}</button>
+                  </div>
+                  <div className="col-span-3 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{payment.supplier_name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] truncate">
+                      {methodLabel[payment.payment_method] || payment.payment_method}
+                      {payment.pi_number ? ` · ${payment.pi_number}` : ''}
+                    </p>
+                  </div>
+                  <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(payment.payment_date)}</p>
+                  <div className="col-span-2"><StagePips view={payStageView(payment)} /></div>
+                  <p className="col-span-1 text-right text-success font-bold text-xs tabular-nums">{formatCurrency(payment.amount)}</p>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={payNextStep(payment)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModal('payment', 'view', payment) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('payment', payment.id) },
+                      ...(canCancelDoc ? [{ label: t('purchase.actions.void'), onClick: () => handleVoidPayment(payment.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
+                {openRow === payment.id && expandedTrail('pay', payment)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(payment => (
@@ -3459,21 +3363,16 @@ const Purchase = () => {
                 {payment.journal_entry_number && (
                   <p className="text-xs text-[var(--primary)]/70 mt-1">{t('purchase.common.journalEntry', { number: payment.journal_entry_number })}</p>
                 )}
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModal('payment', 'view', payment)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('payment', payment.id)} title={t('purchase.actions.printA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {canCancelDoc && (
-                    <button onClick={() => handleVoidPayment(payment.id)} title={t('purchase.actions.void')}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={payStageView(payment)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={payNextStep(payment)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModal('payment', 'view', payment) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('payment', payment.id) },
+                      ...(canCancelDoc ? [{ label: t('purchase.actions.void'), onClick: () => handleVoidPayment(payment.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -3485,7 +3384,7 @@ const Purchase = () => {
   }
 
   const ReturnsContent = () => {
-    const filtered = returns.filter(r =>
+    const filtered = returns.filter(r => passesRowFilter(retNextStep(r), false) &&
       r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -3497,43 +3396,53 @@ const Purchase = () => {
     }
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.returnsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          {rowFilterChips(false)}
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('return', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createReturn')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.returns')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.returns.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.returns.headers.poReference')}</span><span className="col-span-2">{t('purchase.returns.headers.reason')}</span>
-              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span><span className="col-span-1"></span>
+              <span className="col-span-1">{t('purchase.returns.headers.date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span>
+              <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((ret, i) => (
-              <div key={ret.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{ret.pr_number}</p>
-                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{ret.supplier_name}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{ret.po_number}</p>
-                <p className="col-span-2 text-warning/80 text-xs">{reasonLabel[ret.reason] || ret.reason}</p>
-                <div className="col-span-1"><StatusBadge status={ret.status} /></div>
-                <p className="col-span-1 text-right text-danger font-bold text-xs">{formatCurrency(ret.total_amount)}</p>
-                <div className="col-span-1 flex justify-end gap-1">
-                  {ret.status === 'DRAFT' && (
-                    <button onClick={() => handleDeleteReturn(ret.id)} title={t('purchase.actions.delete')}
-                      className="p-1 text-danger bg-[var(--danger-soft)] rounded">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+              <div key={ret.id}>
+                <div onClick={() => setOpenRow(openRow === ret.id ? null : ret.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === ret.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === ret.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModal('return', 'view', ret) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{ret.pr_number}</button>
+                  </div>
+                  <div className="col-span-3 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{ret.supplier_name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] truncate">
+                      <span className="font-mono">{ret.po_number}</span>
+                      {ret.reason ? ` · ${reasonLabel[ret.reason] || ret.reason}` : ''}
+                    </p>
+                  </div>
+                  <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(ret.return_date)}</p>
+                  <div className="col-span-2"><StagePips view={retStageView(ret)} /></div>
+                  <p className="col-span-1 text-right text-danger font-bold text-xs tabular-nums">{formatCurrency(ret.total_amount)}</p>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={retNextStep(ret)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModal('return', 'view', ret) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('return', ret.id) },
+                      ...(ret.status === 'DRAFT' ? [{ label: t('purchase.actions.delete'), onClick: () => handleDeleteReturn(ret.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
+                {openRow === ret.id && expandedTrail('ret', ret)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(ret => (
@@ -3548,37 +3457,16 @@ const Purchase = () => {
                 </div>
                 <p className="text-xs text-warning/80 mt-1">{reasonLabel[ret.reason] || ret.reason}</p>
                 <p className="font-bold text-danger text-sm mt-2 text-right">{formatCurrency(ret.total_amount)}</p>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]/40">
-                  <button onClick={() => openModalWithDetail('return', 'view', ret.id, ret)}
-                    className="flex-1 py-1.5 text-xs text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    {t('purchase.actions.viewDetails')}
-                  </button>
-                  <button onClick={() => handlePrint('return', ret.id)} title={t('purchase.actions.printA4')}
-                    className="px-2.5 py-1.5 text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-lg transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {ret.status === 'DRAFT' && (<>
-                    <button onClick={() => handleUpdateReturnStatus(ret.id, 'SUBMITTED')}
-                      className="flex-1 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] font-medium transition-colors">
-                      {t('purchase.actions.submitForApproval')}
-                    </button>
-                    <button onClick={() => handleDeleteReturn(ret.id)}
-                      className="px-2.5 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>)}
-                  {ret.status === 'SUBMITTED' && (
-                    <button onClick={() => handleUpdateReturnStatus(ret.id, 'APPROVED')}
-                      className="flex-1 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded-lg hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
-                    </button>
-                  )}
-                  {ret.status === 'APPROVED' && (
-                    <button onClick={() => handleConfirmReturn(ret.id)}
-                      className="flex-1 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)] font-medium transition-colors flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.confirmReturn')}
-                    </button>
-                  )}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]/40 space-y-2">
+                  <StagePips view={retStageView(ret)} />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0"><NextStepCell step={retNextStep(ret)} /></div>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModal('return', 'view', ret) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('return', ret.id) },
+                      ...(ret.status === 'DRAFT' ? [{ label: t('purchase.actions.delete'), onClick: () => handleDeleteReturn(ret.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
