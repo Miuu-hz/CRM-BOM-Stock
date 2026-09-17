@@ -2,30 +2,43 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
-import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
-import { roundQty } from '../../utils/qty'
 import { ok } from './shared'
+import { applyStockMovement, movementGateAmount } from '../../services/stockMovement.service'
+import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 
-export function registerStockTools(server: IMcpServer, tenantId: string, userId: string): void {
+export function registerStockTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 7. record_stock_movement ────────────────────────────────────────────────
   server.tool(
     'record_stock_movement',
-    `บันทึกการเคลื่อนไหวสต็อก (รับเข้า/เบิกออก/ปรับยอด) / Record stock movement IN, OUT, or ADJUST.
-ใช้เมื่อผู้ใช้ต้องการรับสินค้าเข้าคลัง เบิกใช้ หรือปรับยอดสต็อก
-ตัวอย่าง: "รับหมูสับเข้า 10 กก." → record_stock_movement(stock_item_id="...", type="IN", quantity=10, unit="kg", notes="รับจากซัพพลายเออร์ A")
-"เบิกหมูสับไปทำกะเพรา 2 กก." → record_stock_movement(stock_item_id="...", type="OUT", quantity=2, unit="kg")
-ระบบจะแปลงหน่วยอัตโนมัติและทำ auto-unpack ถ้าจำเป็น`,
+    `ปรับยอดสต็อกให้ตรงกับของที่นับได้จริง / Adjust stock quantity to the counted amount.
+ใช้เมื่อนับของแล้วไม่ตรงกับในระบบ เช่น ของเสีย ของหาย นับผิดรอบก่อน
+ตัวอย่าง: "นับหมูสับได้ 8 กก. แต่ระบบว่ามี 10" → record_stock_movement(stock_item_id="...", quantity=8, unit="kg", adjust_reason="ของเสีย/หมดอายุ")
+quantity คือ "ยอดหลังปรับ" ไม่ใช่ส่วนต่าง · ระบบแปลงหน่วยให้อัตโนมัติ
+ลงบัญชีและเข้าทะเบียนการปรับสต็อกให้ครบ และผ่านประตูอนุมัติเหมือนหน้าเว็บ
+
+รับของเข้าคลังให้ทำผ่านใบสั่งซื้อ/ใบรับสินค้า · ตัดของออกให้ทำผ่านใบขายหรือใบสั่งผลิต
+เครื่องมือนี้ทำ 2 อย่างนั้นไม่ได้แล้ว เพราะของจะขยับโดยบัญชีไม่ขยับตาม`,
     {
       stock_item_id: z.string().describe('ID ของ stock item (หรือใช้ sku ถ้าระบุ sku)'),
-      type: z.enum(['IN', 'OUT', 'ADJUST']).describe('ประเภท: IN=รับเข้า, OUT=เบิกออก, ADJUST=ปรับยอด'),
-      quantity: z.number().describe('จำนวน (ในหน่วยที่ระบุ)'),
+      type: z.enum(['IN', 'OUT', 'ADJUST']).optional().describe('รองรับเฉพาะ ADJUST (ปรับยอด) — IN/OUT ถูกปิดแล้ว'),
+      quantity: z.number().describe('ยอดสต็อกหลังปรับ (ในหน่วยที่ระบุ) ไม่ใช่ส่วนต่าง'),
+      adjust_reason: z.string().optional().describe('เหตุผล: ของเสีย/หมดอายุ · ของหาย · แตก/ชำรุด · นับผิดรอบก่อน · รับเพิ่มไม่ผ่านใบ · เบิกใช้ไม่ได้บันทึก'),
       unit: z.string().optional().describe('หน่วย (ถ้าไม่ระบุจะใช้หน่วยของ stock item)'),
       reference: z.string().optional().describe('เลขที่อ้างอิง เช่น PO-2024-00001'),
       notes: z.string().optional().describe('หมายเหตุ'),
-      unit_cost: z.number().optional().describe('ราคาต่อหน่วย (ใช้กับ type=IN เท่านั้น)'),
+
     },
     async (args) => {
-      const { stock_item_id, type, quantity, unit, reference, notes, unit_cost } = args
+      const { stock_item_id, type, quantity, unit, reference, notes, adjust_reason } = args
+
+      // ของเข้าจริงมีทางของมันคือใบรับสินค้า ของออกจริงมาจากขาย/ผลิต
+      // ปล่อยให้ MCP ยิง IN/OUT ได้ = ประตูหลังที่ขยับของโดยบัญชีไม่ขยับ (ปุ่มบนเว็บถูกลบไปแล้วด้วยเหตุผลเดียวกัน)
+      if (type && type !== 'ADJUST') {
+        return ok({
+          success: false,
+          message: 'เครื่องมือนี้ปรับยอดสต็อกได้อย่างเดียว — รับของเข้าให้ทำผ่านใบสั่งซื้อ/ใบรับสินค้า ตัดของออกให้ทำผ่านใบขายหรือใบสั่งผลิต',
+        })
+      }
 
       // Find stock item by ID or SKU
       let item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stock_item_id, tenantId) as any
@@ -38,83 +51,51 @@ export function registerStockTools(server: IMcpServer, tenantId: string, userId:
 
       const stockItemId = item.id
       const baseUnit = item.base_unit || item.unit
-      const movementUnit = unit || item.unit
-      let convertedQuantity = Number(quantity)
+      const movementUnit = unit || baseUnit
 
-      // Convert movement unit to base unit if different
-      if (movementUnit !== baseUnit) {
-        const conversion = convertQuantityBidirectional(Number(quantity), movementUnit, baseUnit, tenantId, stockItemId)
-        if (!conversion) {
-          return ok({
-            success: false,
-            message: `ไม่พบการแปลงหน่วยจาก "${movementUnit}" เป็น "${baseUnit}" กรุณาตั้งค่าการแปลงหน่วยใน Settings > การแปลงหน่วย`,
-          })
-        }
-        convertedQuantity = conversion.converted
+      // ประตูอนุมัติตัวเดียวกับหน้าเว็บ — เกินวงเงินของ role นี้ต้องรอคนอนุมัติ ของยังไม่ขยับ
+      const gateArgs: CreateRequestArgs = {
+        tenantId,
+        user: { userId, email: callerName, role: callerRole },
+        category: 'stock_adjust',
+        refType: 'stock_items',
+        refId: stockItemId,
+        amount: movementGateAmount(tenantId, item, 'ADJUST', Number(quantity), movementUnit),
+        description: `ปรับยอด ${item.name} เป็น ${quantity} ${movementUnit}${adjust_reason ? ' เนื่องจาก ' + adjust_reason : ''}`,
+        payload: { stockItemId, type: 'ADJUST', quantity, unit: movementUnit, reference, notes, adjustReason: adjust_reason },
+      }
+      const pending = gateOrCreate(gateArgs)
+      if (pending) {
+        return ok({
+          success: true,
+          pending_approval: true,
+          request_number: pending.request_number,
+          message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) สต็อกจะเปลี่ยนเมื่อผู้อนุมัติยืนยัน`,
+        })
       }
 
-      if (type === 'ADJUST' && convertedQuantity < 0) {
-        return ok({ success: false, message: 'ปรับยอดสต็อกไม่ได้ — ค่าต้องไม่ติดลบ' })
+      try {
+        // service กลางตัวเดียวกับหน้าเว็บ — ลง journal + เขียนทะเบียนการปรับสต็อกให้ในตัว
+        // (ของเดิมตรงนี้ UPDATE quantity + INSERT stock_movements เอง บัญชีจึงไม่เคยขยับตาม)
+        const updated = applyStockMovement(tenantId, callerName || userId, {
+          stockItemId,
+          type: 'ADJUST',
+          quantity: Number(quantity),
+          unit: movementUnit,
+          reference,
+          notes,
+          adjustReason: adjust_reason,
+        })
+        recordAutoAction(gateArgs)
+        return ok({
+          success: true,
+          type: 'ADJUST',
+          stockItem: { id: stockItemId, name: item.name, sku: item.sku, quantity: updated.quantity, unit: baseUnit },
+          message: `ปรับยอด ${item.name} เป็น ${updated.quantity} ${baseUnit} สำเร็จ`,
+        })
+      } catch (e: any) {
+        return ok({ success: false, message: e?.message || 'ปรับยอดสต็อกไม่สำเร็จ' })
       }
-
-      let newQuantity = item.quantity
-      let newSealedQty = item.sealed_qty ?? 0
-      const now = new Date().toISOString()
-
-      if (type === 'IN') {
-        newQuantity += convertedQuantity
-      } else if (type === 'OUT') {
-        // auto-unpack if quantity insufficient but sealed_qty available
-        if (item.quantity < convertedQuantity && (item.sealed_qty ?? 0) > 0) {
-          const unpack = autoUnpackIfNeeded(item, convertedQuantity, tenantId)
-          if (unpack && unpack.unpackedPacks > 0) {
-            // quantity ต้องเป็น base unit เสมอ (ไม่ใช่จำนวนแพ็ค) — ดู stock.routes.ts /:id/unpack
-            const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
-            db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              randomUUID().replace(/-/g, '').substring(0, 25), tenantId, stockItemId,
-              gained, item.display_unit || null, unpack.unpackedPacks, reference || 'AUTO',
-              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${item.display_unit || ''} → ${gained} ${baseUnit}`, now, userId
-            )
-            db.prepare('UPDATE stock_items SET sealed_qty = ?, updated_at = ? WHERE id = ?')
-              .run(unpack.sealed_qty, now, stockItemId)
-            newSealedQty = unpack.sealed_qty
-            newQuantity = unpack.quantity
-            item.quantity = unpack.quantity
-          }
-        }
-        if (newQuantity < convertedQuantity) {
-          return ok({ success: false, message: 'สต็อกไม่พอสำหรับเบิกออก' })
-        }
-        newQuantity -= convertedQuantity
-      } else if (type === 'ADJUST') {
-        newQuantity = convertedQuantity
-      }
-
-      if (type === 'IN' && unit_cost !== undefined && unit_cost !== null) {
-        db.prepare('UPDATE stock_items SET quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ?')
-          .run(newQuantity, Number(unit_cost), now, stockItemId)
-      } else {
-        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ?')
-          .run(newQuantity, now, stockItemId)
-      }
-
-      const movementId = randomUUID().replace(/-/g, '').substring(0, 25)
-      db.prepare(`
-        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, userId)
-
-      const updatedItem = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(stockItemId)
-      return ok({
-        success: true,
-        movementId,
-        type,
-        stockItem: { id: stockItemId, name: item.name, sku: item.sku, quantity: newQuantity, unit: baseUnit },
-        message: `บันทึก${type === 'IN' ? 'รับเข้า' : type === 'OUT' ? 'เบิกออก' : 'ปรับยอด'} ${quantity} ${movementUnit} สำเร็จ`,
-      })
     }
   )
 

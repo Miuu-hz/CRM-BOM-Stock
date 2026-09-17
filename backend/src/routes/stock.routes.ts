@@ -12,7 +12,7 @@ import { roundQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
-import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, StockMovementError } from '../services/stockMovement.service'
+import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
 
@@ -597,23 +597,7 @@ router.post('/movement', async (req: Request, res: Response) => {
     const stockDescription = reason ? `${whatChanged} เนื่องจาก ${reason}` : whatChanged
     // มูลค่าของที่จะขยับ — ประตูอนุมัติเอาตัวเลขนี้ไปเทียบกับ auto_approve_threshold
     // เดิมไม่เคยส่งเลย amount จึงเป็น 0 ตลอด แปลว่าตั้งวงเงินไว้เท่าไรการปรับสต็อกก็ผ่านหมด
-    const gateAmount = (() => {
-      try {
-        const cb = getCostBasis(tenantId, stockItemId)
-        const costPerBase = cb.weightedAvg || Number(item.unit_cost || 0)
-        let qtyInBase = entered
-        if (!sameUnit) {
-          const conv = convertQuantityBidirectional(entered, String(enteredUnit), String(baseUnit), tenantId, stockItemId)
-          // แปลงหน่วยไม่ได้ = ตีมูลค่าไม่ได้ ปล่อย 0 ให้ตกไปตามกฎ approval_required ปกติ
-          if (!conv) return 0
-          qtyInBase = conv.converted
-        }
-        const delta = type === 'ADJUST' ? qtyInBase - currentQty : qtyInBase
-        return Math.abs(delta * costPerBase)
-      } catch {
-        return 0
-      }
-    })()
+    const gateAmount = movementGateAmount(tenantId, { ...item, id: stockItemId }, type, entered, String(enteredUnit))
     const gateArgs = {
       tenantId,
       user: req.user! as any,

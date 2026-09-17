@@ -56,6 +56,34 @@ export class StockMovementError extends Error {
 }
 
 /**
+ * มูลค่าของที่กำลังจะขยับ — ประตูอนุมัติเอาไปเทียบกับ auto_approve_threshold
+ * ต้องเป็นตัวเลขตัวเดียวกับที่ใช้ลงบัญชี ไม่งั้นวงเงินกับงบพูดคนละเรื่อง
+ * ตีมูลค่าไม่ได้ (แปลงหน่วยไม่ออก/ไม่มีต้นทุน) คืน 0 แล้วปล่อยให้ตกไปตามกฎ approval_required ปกติ
+ */
+export function movementGateAmount(
+  tenantId: string,
+  item: { id: string; quantity?: number; unit_cost?: number; base_unit?: string; unit?: string },
+  type: 'IN' | 'OUT' | 'ADJUST',
+  quantity: number,
+  unit?: string
+): number {
+  try {
+    const baseUnit = item.base_unit || item.unit || ''
+    const costPerBase = getCostBasis(tenantId, item.id).weightedAvg || Number(item.unit_cost || 0)
+    let qtyInBase = Number(quantity) || 0
+    if (unit && String(unit) !== String(baseUnit)) {
+      const conv = convertQuantityBidirectional(qtyInBase, String(unit), String(baseUnit), tenantId, item.id)
+      if (!conv) return 0
+      qtyInBase = conv.converted
+    }
+    const delta = type === 'ADJUST' ? qtyInBase - (Number(item.quantity) || 0) : qtyInBase
+    return Math.abs(delta * costPerBase)
+  } catch {
+    return 0
+  }
+}
+
+/**
  * ขยับสต็อก + บันทึก stock_movements + ลง journal (เฉพาะ ADJUST) ในทรานแซกชันเดียว
  * คืน stock_items แถวที่อัปเดตแล้ว (ยังไม่ enrich — ผู้เรียกจัดการเอง)
  */

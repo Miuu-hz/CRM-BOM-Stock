@@ -31,7 +31,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerSummaryTools(server, tenantId)
   registerPurchaseTools(server, tenantId, userId, callerName, callerRole)
   registerSalesTools(server, tenantId, userId, callerName, callerRole)
-  registerStockTools(server, tenantId, userId)
+  registerStockTools(server, tenantId, userId, callerName, callerRole)
   registerProductionTools(server, tenantId, userId)
   registerBomTools(server, tenantId)
   registerFinanceTools(server, tenantId)
