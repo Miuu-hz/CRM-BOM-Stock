@@ -1191,6 +1191,7 @@ const RowMenu = ({ items, label }: { items: RowMenuItem[]; label: string }) => {
 // แถบ "ไปถึงไหนแล้ว" — ขีดสั้น ๆ บอกว่าใบนี้เดินมาถึงขั้นไหนของสาย
 //   เขียว = ผ่านแล้ว · น้ำเงิน = อยู่ตรงนี้ · เทา = ยังไม่ถึง · เทาจาง = ข้ามขั้นนั้นไป
 // ใบที่ถูกยกเลิก/ปฏิเสธไม่วาดขีด เพราะมันไม่ได้อยู่บนสายแล้ว — ขึ้นป้ายแดงแทน
+const SKIP_NOTE = 'ข้ามขั้นนี้ไป'
 type StageView = { stages: string[]; idx: number; skipped?: number[]; dead?: string }
 type TrailKind = 'pr' | 'po' | 'gr' | 'inv' | 'pay' | 'ret'
 
@@ -1206,12 +1207,17 @@ const StagePips = ({ view }: { view: StageView }) => {
   return (
     <div>
       <div className="flex items-center gap-[3px] mb-1">
-        {view.stages.map((_, i) => (
-          <span key={i} className={`w-[15px] h-1 rounded-sm shrink-0 ${
-            view.skipped?.includes(i) ? 'bg-[var(--border)] opacity-40'
-              : i < view.idx ? 'bg-success'
-                : i === view.idx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
-        ))}
+        {view.stages.map((label, i) => {
+          const skipped = view.skipped?.includes(i)
+          // ขั้นที่ข้าม = เขียวจาง ไม่ใช่เทาเลือน ไม่งั้นอ่านเป็นหลอดหาย
+          const tone = skipped ? 'bg-success/35'
+            : i < view.idx ? 'bg-success'
+              : i === view.idx ? 'bg-phopy-indigo' : 'bg-[var(--border-strong)]'
+          return (
+            <span key={i} title={skipped ? `${label} — ${SKIP_NOTE}` : label}
+              className={`w-[15px] h-1 rounded-sm shrink-0 ${tone}`} />
+          )
+        })}
       </div>
       <span className={`text-[11px] font-medium ${view.idx >= last ? 'text-success' : 'text-[var(--primary)]'}`}>
         {view.stages[view.idx] ?? view.stages[last]}
@@ -2270,7 +2276,11 @@ const Purchase = () => {
     if (order.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
     const idx = PO_FLOW.indexOf(order.status as any)
     // รับครบโดยไม่เคยผ่าน "รับบางส่วน" = ข้ามขั้นนั้นไป ไม่ใช่ค้างอยู่
-    return { stages, idx: idx < 0 ? 0 : idx, skipped: order.status === 'RECEIVED' ? [3] : undefined }
+    // ใบที่ทยอยรับหลายรอบผ่านขั้นนั้นมาจริง จึงไม่ควรโดนมาร์กว่าข้าม
+    // ดูจากจำนวนใบรับสินค้าที่ยืนยันแล้ว มากกว่า 1 ใบ = เคยอยู่สถานะรับบางส่วนแน่นอน
+    const grCount = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED').length
+    const skippedPartial = order.status === 'RECEIVED' && grCount <= 1
+    return { stages, idx: idx < 0 ? 0 : idx, skipped: skippedPartial ? [3] : undefined }
   }
 
   const grStageView = (receipt: GoodsReceipt): StageView => {
