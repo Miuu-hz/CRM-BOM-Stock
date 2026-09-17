@@ -742,7 +742,7 @@ router.post('/:id/unpack', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'จำนวนแพ็คที่จะแกะต้องเป็นจำนวนเต็มมากกว่า 0' })
     }
 
-    const item = db.prepare('SELECT name, sealed_qty, display_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+    const item = db.prepare('SELECT id, name, sealed_qty, display_unit, unit, base_unit, quantity, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
     if (!item) return res.status(404).json({ success: false, message: 'ไม่พบสินค้านี้ในคลัง' })
 
     // ประตูอนุมัติ: แกะแพ็คคือการขยับตัวเลขสต็อก (sealed_qty → quantity) เหมือน POST /movement
@@ -757,6 +757,8 @@ router.post('/:id/unpack', async (req: Request, res: Response) => {
       category: 'stock_adjust' as const,
       refType: 'stock_unpack',
       refId: stockItemId,
+      // มูลค่าของในแพ็คที่กำลังจะแกะ — ไม่ส่งไปประตูจะเทียบวงเงินกับ 0 แล้วผ่านทุกใบ
+      amount: movementGateAmount(tenantId, item, 'OUT', packs, displayUnit),
       description: `แกะแพ็ค ${item.name}: ${packs} ${displayUnit} (ที่ยังไม่แกะเหลือ ${item.sealed_qty || 0} ${displayUnit})`,
       payload: { stockItemId, packs },
     }

@@ -346,13 +346,27 @@ router.put('/:id', async (req: Request, res: Response) => {
         header: db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId),
         items: db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id),
       }
+      // มูลค่าที่ประตูอนุมัติใช้เทียบวงเงิน — เอา "มากสุดของก่อน/หลัง"
+      // เทียบยอดเดิมอย่างเดียวไม่พอ: แก้ใบ ฿100 ให้กลายเป็น ฿100,000 ต้องถูกคุมด้วยยอดใหม่
+      // สูตรเดียวกับ applyPurchaseOrderUpdate (subtotal + subtotal * taxRate/100)
+      const beforeHeader = before.header as any
+      const proposedSubtotal = Array.isArray(items)
+        ? items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0)
+        : Number(beforeHeader?.subtotal || 0)
+      const proposedTax = Number(taxRate ?? beforeHeader?.tax_rate ?? 0) || 0
+      const editAmount = Math.max(
+        Number(beforeHeader?.total_amount || 0),
+        proposedSubtotal + proposedSubtotal * (proposedTax / 100)
+      )
+
       gateArgs = {
         tenantId,
         user: req.user! as any,
         category: 'doc_edit',
         refType: 'purchase_orders',
         refId: req.params.id,
-        description: `แก้ไขใบสั่งซื้อ ${existing.po_number}`,
+        amount: editAmount,
+        description: `แก้ไขใบสั่งซื้อ ${existing.po_number} (ยอด ฿${editAmount.toLocaleString('th-TH', { maximumFractionDigits: 2 })})`,
         payload: { before, update: { supplierId, expectedDate, notes, items, taxRate } },
       }
       const pending = gateOrCreate(gateArgs)
