@@ -1795,7 +1795,7 @@ export function applySchema(db: any): void {
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
       ref_type TEXT NOT NULL CHECK(ref_type IN ('RECEIPT', 'SUPPLIER_PAYMENT', 'POS_PAYMENT', 'INVOICE',
-        'PURCHASE_REQUEST', 'PURCHASE_ORDER', 'GOODS_RECEIPT', 'PURCHASE_INVOICE')),
+        'PURCHASE_REQUEST', 'PURCHASE_ORDER', 'GOODS_RECEIPT', 'PURCHASE_INVOICE', 'STOCK_ADJUSTMENT')),
       ref_id TEXT NOT NULL,
       file_path TEXT NOT NULL,
       original_name TEXT NOT NULL,

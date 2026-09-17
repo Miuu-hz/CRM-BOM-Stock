@@ -2168,4 +2168,31 @@ export function runMigrations(db: any): void {
       console.log(`✅ Migration: purchase_invoices.purchase_order_ids เพิ่มแล้ว · เติมของเก่า ${n} แถว`)
     }
   } catch (e) { console.error('⚠️ purchase_order_ids migration error:', e) }
+  // ==================== แนบรูปในใบปรับสต็อก (2026-09-18) ====================
+  // CHECK เดิมไม่รับ STOCK_ADJUSTMENT ทำให้แนบรูปของจริงตอนนับไม่ได้
+  // SQLite แก้ CHECK ตรง ๆ ไม่ได้ ต้อง rebuild ตาราง (สูตรเดียวกับรอบเอกสารจัดซื้อ)
+  try {
+    const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='payment_attachments'").get() as any)?.sql || ''
+    if (cur && !cur.includes('STOCK_ADJUSTMENT')) {
+      const cols = (db.prepare('PRAGMA table_info(payment_attachments)').all() as any[]).map((c: any) => c.name).join(', ')
+      const ddl = cur
+        .replace(/CREATE TABLE\s+"?payment_attachments"?/i, 'CREATE TABLE payment_attachments_new')
+        .replace(/CHECK\s*\(\s*ref_type\s+IN\s*\([^)]*\)\s*\)/i,
+          "CHECK(ref_type IN ('RECEIPT','SUPPLIER_PAYMENT','POS_PAYMENT','INVOICE','PURCHASE_REQUEST','PURCHASE_ORDER','GOODS_RECEIPT','PURCHASE_INVOICE','STOCK_ADJUSTMENT'))")
+      const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='payment_attachments' AND sql IS NOT NULL").all() as any[]).map((r: any) => r.sql)
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(ddl)
+        db.exec(`INSERT INTO payment_attachments_new (${cols}) SELECT ${cols} FROM payment_attachments`)
+        db.exec('DROP TABLE payment_attachments')
+        db.exec('ALTER TABLE payment_attachments_new RENAME TO payment_attachments')
+        for (const sql of idx) db.exec(sql)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+      console.log('✅ Migration: payment_attachments รองรับใบปรับสต็อกแล้ว')
+    }
+  } catch (e) {
+    console.error('⚠️ payment_attachments STOCK_ADJUSTMENT migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
 }

@@ -2703,6 +2703,18 @@ function SortTh({
 }
 
 // Stock Adjustment Modal
+// หัวข้อบอกขั้นตอนในโมดัลปรับสต็อก — ต้องอยู่ระดับไฟล์
+// ถ้าประกาศในตัว component มันจะเป็นคอมโพเนนต์ตัวใหม่ทุก render แล้ว React ถอด-ประกอบใหม่ทุกครั้ง
+const AdjustStep = ({ n, title, hint }: { n: number; title: string; hint?: string }) => (
+  <div className="flex items-baseline gap-2.5">
+    <span className="shrink-0 w-5 h-5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] text-[11px] font-bold flex items-center justify-center">{n}</span>
+    <div className="min-w-0">
+      <h3 className="text-sm font-semibold text-[var(--fg-1)] leading-tight">{title}</h3>
+      {hint && <p className="text-xs text-[var(--fg-4)] mt-0.5">{hint}</p>}
+    </div>
+  </div>
+)
+
 function AdjustModal({
   open,
   item,
@@ -2727,6 +2739,10 @@ function AdjustModal({
   const [saving, setSaving] = useState(false)
   const [costBasis, setCostBasis] = useState<any>(null)
   const [showSources, setShowSources] = useState(false)
+  // รูปของจริงตอนนับ — ใบยังไม่เกิดตอนกรอก จึงเก็บไฟล์ค้างไว้ก่อน
+  // แล้วอัปโหลดผูกกับทะเบียนที่เพิ่งสร้างหลังบันทึกสำเร็จ (แนวเดียวกับสลิปจ่ายเงิน)
+  const [shots, setShots] = useState<Array<{ file: File; url: string }>>([])
+  const clearShots = () => { shots.forEach(s => URL.revokeObjectURL(s.url)); setShots([]) }
 
   const selectedItem = stockItems.find(i => i.id === selectedItemId)
   const { units: availableUnits } = useUnits(selectedItem?.id)
@@ -2744,6 +2760,7 @@ function AdjustModal({
     setReason('')
     setNotes('')
     setShowSources(false)
+    clearShots()
   }, [item, open])
 
   useEffect(() => {
@@ -2795,6 +2812,12 @@ function AdjustModal({
   const visibleReasons = REASONS.filter(([, , dir]) =>
     diff === 0 ? dir === 'any' : diff > 0 ? dir !== 'down' : dir !== 'up')
 
+  // แก้จำนวนจนทิศทางกลับด้าน เหตุผลที่เลือกไว้อาจใช้ไม่ได้แล้ว ต้องล้างทิ้ง
+  // ไม่งั้นส่งเหตุผล "ของหาย" ไปกับการปรับ "เพิ่ม" ได้ แล้วเงินไปลงบัญชีผิดฝั่ง
+  useEffect(() => {
+    if (reason && !visibleReasons.some(([label]) => label === reason)) setReason('')
+  }, [diff])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedItemId) { toast.error('กรุณาเลือกสินค้า'); return }
@@ -2813,7 +2836,26 @@ function AdjustModal({
         adjustReason: reason,
         notes: notes || (reason + ': ' + systemQty + ' → ' + baseQuantity + ' ' + baseUnitLabel),
       })
-      if (onPending?.(moveResult)) { onClose(); return }
+      if (onPending?.(moveResult)) {
+        // ติดด่านอนุมัติ = ทะเบียนยังไม่เกิด จึงยังไม่มี id ให้ผูกไฟล์
+        if (shots.length > 0) toast('รูปยังแนบไม่ได้จนกว่าจะมีคนอนุมัติ — เปิดใบแล้วแนบได้ทีหลัง')
+        onClose(); return
+      }
+      // ทะเบียนเพิ่งเกิด ถึงจะมี id ให้ผูกไฟล์
+      // อัปไม่ผ่านก็ไม่ย้อนการปรับสต็อก ของขยับไปแล้วจริง แค่บอกให้ไปแนบซ้ำ
+      const adjId = (moveResult as any)?.adjustmentId
+      if (shots.length > 0 && adjId) {
+        try {
+          for (const sh of shots) {
+            const fd = new FormData()
+            fd.append('file', sh.file)
+            await api.post('/attachments/STOCK_ADJUSTMENT/' + adjId, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+          }
+        } catch {
+          toast.error('ปรับสต็อกแล้ว แต่แนบรูปไม่สำเร็จ')
+        }
+      }
+      clearShots()
       onSave()
       onClose()
       toast.success('ปรับสต๊อกเรียบร้อย')
@@ -2826,15 +2868,6 @@ function AdjustModal({
 
   if (!open) return null
 
-  const Step = ({ n, title, hint }: { n: number; title: string; hint?: string }) => (
-    <div className="flex items-baseline gap-2.5">
-      <span className="shrink-0 w-5 h-5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] text-[11px] font-bold flex items-center justify-center">{n}</span>
-      <div className="min-w-0">
-        <h3 className="text-sm font-semibold text-[var(--fg-1)] leading-tight">{title}</h3>
-        {hint && <p className="text-xs text-[var(--fg-4)] mt-0.5">{hint}</p>}
-      </div>
-    </div>
-  )
 
   return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn" onClick={onClose}>
@@ -2848,7 +2881,7 @@ function AdjustModal({
 
         <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-5 flex-1">
           <div className="space-y-2">
-            <Step n={1} title="นับสินค้าตัวไหน" />
+            <AdjustStep n={1} title="นับสินค้าตัวไหน" />
             {item ? (
               <div className="px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
                 <p className="text-sm font-medium text-[var(--fg-1)]">{selectedItem?.name}</p>
@@ -2866,7 +2899,7 @@ function AdjustModal({
 
           {selectedItem && (
             <div className="space-y-2">
-              <Step n={2} title="เทียบตัวเลข" hint="ระบบจำได้เท่าไร เทียบกับที่นับได้จริง" />
+              <AdjustStep n={2} title="เทียบตัวเลข" hint="ระบบจำได้เท่าไร เทียบกับที่นับได้จริง" />
               <div className="grid grid-cols-2 gap-3">
                 <div className="px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
                   <p className="text-xs text-[var(--fg-4)]">ระบบบอกว่ามี</p>
@@ -2924,7 +2957,7 @@ function AdjustModal({
 
           {selectedItem && !countInvalid && diff !== 0 && (
             <div className="space-y-2">
-              <Step n={3} title="ทำไมถึงไม่ตรง" hint="เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีตัวไหน" />
+              <AdjustStep n={3} title="ทำไมถึงไม่ตรง" hint="เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีตัวไหน" />
               <div className="grid grid-cols-2 gap-2">
                 {visibleReasons.map(([label, hint]) => (
                   <button key={label} type="button" onClick={() => setReason(label)} aria-pressed={reason === label}
@@ -2945,7 +2978,38 @@ function AdjustModal({
 
           {selectedItem && !countInvalid && diff !== 0 && (
             <div className="space-y-2">
-              <Step n={4} title="ผลที่จะเกิด" hint="กดยืนยันแล้วระบบจะลงบัญชีให้เองทันที" />
+              <AdjustStep n={4} title="ถ่ายรูปของจริง" hint="รับเฉพาะ .jpg .jpeg .png · ไม่เกิน 5 MB · ไม่บังคับ แต่ของหายมูลค่าสูงควรมี" />
+              <div className="flex items-center gap-2 flex-wrap">
+                {shots.map((sh, i) => (
+                  <span key={sh.url} className="relative">
+                    <img src={sh.url} alt={sh.file.name} className="w-16 h-16 rounded-xl object-cover border border-[var(--border)]" />
+                    <button type="button" aria-label="ลบรูป"
+                      onClick={() => { URL.revokeObjectURL(sh.url); setShots(p => p.filter((_, j) => j !== i)) }}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger-soft)] text-danger border border-danger/40 flex items-center justify-center">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {shots.length < 4 && (
+                  <label className="w-16 h-16 rounded-xl border border-dashed border-[var(--border-strong)] flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:border-phopy-indigo transition-colors">
+                    <Plus className="w-4 h-4 text-[var(--fg-4)]" />
+                    <span className="text-[10px] text-[var(--fg-4)]">เพิ่มรูป</span>
+                    <input type="file" accept="image/jpeg,image/png" className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]; e.target.value = ''
+                        if (!f) return
+                        if (f.size > 5 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 5 MB'); return }
+                        setShots(p => [...p, { file: f, url: URL.createObjectURL(f) }])
+                      }} />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedItem && !countInvalid && diff !== 0 && (
+            <div className="space-y-2">
+              <AdjustStep n={5} title="ผลที่จะเกิด" hint="กดยืนยันแล้วระบบจะลงบัญชีให้เองทันที" />
               <div className="rounded-xl border border-[var(--border)] overflow-hidden text-xs">
                 <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
                   <span className="text-[var(--fg-3)]">สต็อก</span>

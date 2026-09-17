@@ -37,6 +37,8 @@ const REF_TYPE_TABLES: Record<string, string> = {
   PURCHASE_ORDER: 'purchase_orders',
   GOODS_RECEIPT: 'goods_receipts',
   PURCHASE_INVOICE: 'purchase_invoices',
+  // ใบปรับสต็อก — รูปของจริงตอนนับ ใช้เป็นหลักฐานประกอบรายการขาดทุน
+  STOCK_ADJUSTMENT: 'stock_adjustments',
 }
 
 // Which subscription feature gates each ref_type. Mount in index.ts is gate-free
@@ -49,6 +51,7 @@ const REF_TYPE_FEATURE: Record<string, string> = {
   PURCHASE_ORDER: 'purchase',
   GOODS_RECEIPT: 'purchase',
   PURCHASE_INVOICE: 'purchase',
+  STOCK_ADJUSTMENT: 'stock',
   SUPPLIER_PAYMENT: 'purchase',
   POS_PAYMENT: 'pos',
 }

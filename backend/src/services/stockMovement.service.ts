@@ -66,6 +66,9 @@ export function applyStockMovement(
 ): any {
   const { stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason } = payload
 
+  // id ของทะเบียนที่เพิ่งสร้าง — คืนออกไปให้หน้าเว็บผูกไฟล์แนบ (รูปของจริงตอนนับ)
+  let adjustmentId: string | null = null
+
   const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
   if (!item) {
     throw new StockMovementError('STOCK_ITEM_NOT_FOUND', 'Stock item not found')
@@ -170,17 +173,17 @@ export function applyStockMovement(
       // ไม่มีทะเบียนก็ย้อนไม่ได้ว่าใครปรับอะไร เพราะอะไร มูลค่าเท่าไร
       // เขียนทุกครั้งที่ปรับ ไม่ว่ามูลค่าจะเป็นศูนย์หรือไม่ (นับผิดรอบก่อนก็ต้องมีร่องรอย)
       try {
-        const adjSeq = db.prepare(
-          "SELECT COUNT(*) n FROM stock_adjustments WHERE tenant_id = ?"
-        ).get(tenantId) as any
+        // เลขทะเบียนต้องมาจาก document_sequences เหมือนเอกสารอื่นทั้งระบบ
+        // เคยใช้ COUNT(*)+1 ซึ่งพังทันทีที่มีคนลบแถว — เลขจะวนกลับมาชนของเดิม
+        const adjNumber = formatDocumentNumber('ADJ', tenantId, 'STOCK_ADJUSTMENT', new Date(now).getFullYear(), 5)
+        adjustmentId = generateId()
         db.prepare(`
           INSERT INTO stock_adjustments (id, tenant_id, adjustment_number, stock_item_id, adjustment_type,
             quantity_before, quantity_after, quantity_adjusted, unit_cost, total_value, reason,
             reference_type, reference_id, status, notes, created_by, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stock_movements', ?, 'EXECUTED', ?, ?, ?, ?)
         `).run(
-          generateId(), tenantId,
-          `ADJ-${new Date(now).getFullYear()}-${String((adjSeq?.n || 0) + 1).padStart(5, '0')}`,
+          adjustmentId, tenantId, adjNumber,
           stockItemId, diffQty >= 0 ? 'INCREASE' : 'DECREASE',
           oldQty, newQuantity, diffQty, itemUnitCost, Math.abs(diffValue),
           adjustReason || notes || '', movementId,
@@ -188,6 +191,7 @@ export function applyStockMovement(
           createdBy, now, now)
       } catch (regErr) {
         // ทะเบียนพังต้องไม่ทำให้การปรับสต็อกพังตาม ของขยับไปแล้วจริง
+        adjustmentId = null
         console.error('⚠️ stock_adjustments register error:', regErr)
       }
 
@@ -230,7 +234,9 @@ export function applyStockMovement(
   })
 
   recordMovement()
-  return updatedItem
+  // แนบ adjustmentId ไปกับผลลัพธ์ ไม่เปลี่ยนรูปร่างเดิมของ stock_items
+  // ผู้เรียกที่ไม่สนใจก็ไม่กระทบ (ฟิลด์เกินมาเฉย ๆ)
+  return adjustmentId ? { ...updatedItem, adjustmentId } : updatedItem
 }
 
 export interface ManualUnpackPayload {
