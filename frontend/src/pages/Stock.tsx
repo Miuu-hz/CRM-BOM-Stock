@@ -2415,14 +2415,17 @@ function AdjustModal({
   const money = (n: number) => '฿' + Math.abs(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ควรไปลงบัญชีไหน จึงบังคับให้เลือกเมื่อของไม่ตรง
-  const REASONS: Array<[string, string, string]> = [
-    ['ของเสีย/หมดอายุ', 'ทิ้งไปแล้ว ลงเป็นผลขาดทุน', 'down'],
-    ['ของหาย', 'หาไม่เจอ ไม่รู้ไปไหน', 'down'],
-    ['แตก/ชำรุด', 'เสียหายระหว่างเก็บ', 'down'],
-    ['นับผิดรอบก่อน', 'ของครบ แต่ตัวเลขเดิมผิด', 'any'],
-    ['รับเพิ่มไม่ผ่านใบ', 'ของเกิน เพิ่งเจอ', 'up'],
-    ['เบิกใช้ไม่ได้บันทึก', 'เอาไปใช้แล้วลืมลง', 'down'],
+  // ช่องที่ 4 = บัญชีที่เงินก้อนนี้จะไปลง ต้องตรงกับ ADJUST_REASON_ACCOUNT ฝั่ง backend
+  const REASONS: Array<[string, string, string, string]> = [
+    ['ของเสีย/หมดอายุ', 'ทิ้งไปแล้ว ลงเป็นผลขาดทุน', 'down', 'ผลขาดทุนของเสีย'],
+    ['ของหาย', 'หาไม่เจอ ไม่รู้ไปไหน', 'down', 'ผลขาดทุนสินค้าสูญหาย'],
+    ['แตก/ชำรุด', 'เสียหายระหว่างเก็บ', 'down', 'ผลขาดทุนของเสีย'],
+    ['นับผิดรอบก่อน', 'ของครบ แต่ตัวเลขเดิมผิด', 'any', 'ค่าใช้จ่ายปรับปรุงสต็อก'],
+    ['รับเพิ่มไม่ผ่านใบ', 'ของเกิน เพิ่งเจอ', 'up', 'รายได้อื่น'],
+    ['เบิกใช้ไม่ได้บันทึก', 'เอาไปใช้แล้วลืมลง', 'down', 'ต้นทุนวัตถุดิบใช้ไป'],
   ]
+  // ไม่เลือกเหตุผลก็ยังส่งไม่ได้อยู่แล้ว ค่า fallback ไว้กันจอว่างระหว่างยังไม่เลือก
+  const reasonAccount = REASONS.find(([label]) => label === reason)?.[3] || (diff > 0 ? 'รายได้อื่น' : 'ค่าใช้จ่ายปรับปรุงสต็อก')
   const visibleReasons = REASONS.filter(([, , dir]) =>
     diff === 0 ? dir === 'any' : diff > 0 ? dir !== 'down' : dir !== 'up')
 
@@ -2573,7 +2576,7 @@ function AdjustModal({
             <div className="space-y-2">
               <AdjustStep n={3} title="ทำไมถึงไม่ตรง" hint="เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีตัวไหน" />
               <div className="grid grid-cols-2 gap-2">
-                {visibleReasons.map(([label, hint]) => (
+                {visibleReasons.map(([label, hint, , accName]) => (
                   <button key={label} type="button" onClick={() => setReason(label)} aria-pressed={reason === label}
                     className={'flex flex-col gap-0.5 px-3 py-2 rounded-xl border text-left transition-colors ' + (
                       reason === label
@@ -2581,6 +2584,7 @@ function AdjustModal({
                         : 'bg-[var(--surface)] border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo/40')}>
                     <span className="text-sm font-medium">{label}</span>
                     <span className="text-[11px] text-[var(--fg-4)] leading-tight">{hint}</span>
+                    <span className="text-[10px] text-[var(--fg-3)] leading-tight">ลงบัญชี: {accName}</span>
                   </button>
                 ))}
               </div>
@@ -2633,12 +2637,12 @@ function AdjustModal({
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)]">
                   <span className="shrink-0 w-[58px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--success-soft)] text-success">เดบิต</span>
-                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? 'สินค้าคงเหลือ' : 'ค่าใช้จ่ายปรับปรุงสต็อก'}</span>
+                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? 'สินค้าคงเหลือ' : reasonAccount}</span>
                   <span className="font-semibold text-[var(--fg-1)] tabular-nums">{money(diffValue)}</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2">
                   <span className="shrink-0 w-[58px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">เครดิต</span>
-                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? 'รายได้อื่น' : 'สินค้าคงเหลือ'}</span>
+                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? reasonAccount : 'สินค้าคงเหลือ'}</span>
                   <span className="font-semibold text-warning tabular-nums">{money(diffValue)}</span>
                 </div>
               </div>

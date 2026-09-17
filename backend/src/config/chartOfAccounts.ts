@@ -129,6 +129,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // แยกจาก 5901 เพราะเดิม stock.routes.ts ใช้ '5901' ร่วมกับเงินขาด/เงินเกินของ POS
   // ทั้งที่คนละเรื่อง ชื่อบัญชีเลยขึ้นกับว่าธุรกรรมไหนเกิดก่อน
   { code: '5902', name: 'ค่าใช้จ่ายปรับปรุงสต็อก', type: 'EXPENSE', category: 'OTHER_EXPENSE', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
+  { code: '5903', name: 'ผลขาดทุนของเสีย', type: 'EXPENSE', category: 'OTHER_EXPENSE', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
+  { code: '5904', name: 'ผลขาดทุนสินค้าสูญหาย', type: 'EXPENSE', category: 'OTHER_EXPENSE', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
 ] as const satisfies ChartOfAccountRow[]
 
 /**

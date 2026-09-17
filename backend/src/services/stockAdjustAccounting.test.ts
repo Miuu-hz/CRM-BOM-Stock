@@ -170,3 +170,76 @@ describe('ปรับสต็อก — ตีมูลค่าและล�
     expect(moves.n).toBe(1)
   })
 })
+
+/**
+ * เดิมโค้ดดูแค่ทิศทาง: ลดเข้า 5902 เสมอ / เพิ่มเข้ารายได้อื่นเสมอ
+ * "ของเสีย" กับ "นับผิดรอบก่อน" จึงจมอยู่ในบัญชีเดียวกัน แยกไม่ออกว่าร้านเสียของไปเท่าไร
+ */
+function debitCodeOf(tenantId: string, stockItemId: string) {
+  return db.prepare(`
+    SELECT a.code FROM journal_entries je
+    JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.debit > 0
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.tenant_id = ? AND je.reference_type = 'STOCK_ADJUST' AND je.reference_id = ?
+    ORDER BY je.created_at DESC LIMIT 1
+  `).get(tenantId, stockItemId) as any
+}
+function creditCodeOf(tenantId: string, stockItemId: string) {
+  return db.prepare(`
+    SELECT a.code FROM journal_entries je
+    JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.credit > 0
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.tenant_id = ? AND je.reference_type = 'STOCK_ADJUST' AND je.reference_id = ?
+    ORDER BY je.created_at DESC LIMIT 1
+  `).get(tenantId, stockItemId) as any
+}
+
+describe('ปรับสต็อก — เหตุผลพาเงินไปลงบัญชีคนละตัว', () => {
+  const cases: Array<[string, string, string]> = [
+    ['ของเสีย/หมดอายุ', '5903', 'ผลขาดทุนของเสีย'],
+    ['แตก/ชำรุด', '5903', 'ผลขาดทุนของเสีย'],
+    ['ของหาย', '5904', 'ผลขาดทุนสินค้าสูญหาย'],
+    ['เบิกใช้ไม่ได้บันทึก', '5102', 'ต้นทุนวัตถุดิบใช้ไป'],
+    ['นับผิดรอบก่อน', '5902', 'ค่าใช้จ่ายปรับปรุงสต็อก'],
+  ]
+
+  for (const [reason, code, name] of cases) {
+    it(`ปรับลดเพราะ "${reason}" ต้อง Dr ${code} ${name}`, () => {
+      const user = createTestUser({ role: 'ADMIN' })
+      const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
+      applyStockMovement(user.tenantId, user.email, {
+        stockItemId: id, type: 'ADJUST', quantity: 90, unit: 'ชิ้น', adjustReason: reason,
+      })
+      expect(debitCodeOf(user.tenantId, id)?.code).toBe(code)
+      expect(creditCodeOf(user.tenantId, id)?.code).toBe('1107')
+    })
+  }
+
+  it('ไม่ระบุเหตุผล ตกมาที่ 5902 เหมือนพฤติกรรมเดิม', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
+    applyStockMovement(user.tenantId, user.email, {
+      stockItemId: id, type: 'ADJUST', quantity: 90, unit: 'ชิ้น',
+    })
+    expect(debitCodeOf(user.tenantId, id)?.code).toBe('5902')
+  })
+
+  it('ปรับเพิ่มเพราะนับผิดรอบก่อน = กลับรายการค่าปรับปรุงสต็อก ไม่ใช่รายได้อื่น', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
+    applyStockMovement(user.tenantId, user.email, {
+      stockItemId: id, type: 'ADJUST', quantity: 110, unit: 'ชิ้น', adjustReason: 'นับผิดรอบก่อน',
+    })
+    expect(debitCodeOf(user.tenantId, id)?.code).toBe('1107')
+    expect(creditCodeOf(user.tenantId, id)?.code).toBe('5902')
+  })
+
+  it('ปรับเพิ่มเพราะรับเพิ่มไม่ผ่านใบ ยังเข้ารายได้อื่นตามเดิม', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
+    applyStockMovement(user.tenantId, user.email, {
+      stockItemId: id, type: 'ADJUST', quantity: 110, unit: 'ชิ้น', adjustReason: 'รับเพิ่มไม่ผ่านใบ',
+    })
+    expect(creditCodeOf(user.tenantId, id)?.code).toBe('4203')
+  })
+})

@@ -59,6 +59,10 @@ export const ACC = {
   OTHER_REVENUE:     '4203',
   CASH_OVER_SHORT:   '5901',  // เงินขาด/เงินเกินจากการปิดกะ/นำเงินเข้า
   STOCK_ADJUSTMENT:  '5902',  // ค่าใช้จ่ายปรับปรุงสต็อก (แยกจาก 5901)
+  // แยกจาก 5902 เพราะ "ของเสีย" กับ "นับผิดรอบก่อน" คนละเรื่องกันในสายตาเจ้าของร้าน
+  // ตัวแรกคือของหายไปจริงและกันไม่ได้ทั้งหมด ตัวหลังคือตัวเลขเคยผิดเฉย ๆ ของไม่เคยหาย
+  STOCK_WASTE:       '5903',  // ผลขาดทุนของเสีย (ของเสีย/หมดอายุ/แตก/ชำรุด)
+  STOCK_SHRINKAGE:   '5904',  // ผลขาดทุนสินค้าสูญหาย (ของหาย หาไม่เจอ)
 } as const
 
 import type { AccountType, NormalBalance } from '../types'
@@ -103,6 +107,8 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.OTHER_REVENUE]:    { name: 'รายได้อื่น', type: 'REVENUE', category: 'OTHER', normalBalance: 'CREDIT' },
   [ACC.CASH_OVER_SHORT]:  { name: 'เงินขาด/เงินเกิน', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.STOCK_ADJUSTMENT]: { name: 'ค่าใช้จ่ายปรับปรุงสต็อก', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
+  [ACC.STOCK_WASTE]:      { name: 'ผลขาดทุนของเสีย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
+  [ACC.STOCK_SHRINKAGE]:  { name: 'ผลขาดทุนสินค้าสูญหาย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
 }
 
 // ============================================================

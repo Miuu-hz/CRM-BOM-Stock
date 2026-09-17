@@ -56,6 +56,21 @@ export class StockMovementError extends Error {
 }
 
 /**
+ * เหตุผลที่เลือกตอนปรับสต็อก = ตัวบอกว่าเงินก้อนนี้ควรลงบัญชีตัวไหน
+ * ของเสียเป็นผลขาดทุนจริง · ของหายเป็นสินค้าสูญหาย · เบิกไปใช้เป็นต้นทุนวัตถุดิบ ·
+ * "นับผิดรอบก่อน" ของไม่เคยหาย แค่ตัวเลขเคยผิด จึงเข้าค่าปรับปรุงสต็อกตามเดิม
+ * เหตุผลที่ไม่รู้จัก/ไม่ได้กรอก ตกมาที่ 5902 เหมือนพฤติกรรมเดิม
+ * ต้องตรงกับชุดเหตุผลใน AdjustModal (frontend/src/pages/Stock.tsx) — ที่นั่นโชว์ชื่อบัญชีให้ดูก่อนกด
+ */
+export const ADJUST_REASON_ACCOUNT: Record<string, string> = {
+  'ของเสีย/หมดอายุ': ACC.STOCK_WASTE,
+  'แตก/ชำรุด': ACC.STOCK_WASTE,
+  'ของหาย': ACC.STOCK_SHRINKAGE,
+  'เบิกใช้ไม่ได้บันทึก': ACC.COGS_RAW_MATERIAL,
+  'นับผิดรอบก่อน': ACC.STOCK_ADJUSTMENT,
+}
+
+/**
  * มูลค่าของที่กำลังจะขยับ — ประตูอนุมัติเอาไปเทียบกับ auto_approve_threshold
  * ต้องเป็นตัวเลขตัวเดียวกับที่ใช้ลงบัญชี ไม่งั้นวงเงินกับงบพูดคนละเรื่อง
  * ตีมูลค่าไม่ได้ (แปลงหน่วยไม่ออก/ไม่มีต้นทุน) คืน 0 แล้วปล่อยให้ตกไปตามกฎ approval_required ปกติ
@@ -230,9 +245,13 @@ export function applyStockMovement(
           const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
           const entryId = generateId()
 
+          // ปรับขึ้นด้วยเหตุผลที่ map ได้ = กลับรายการค่าใช้จ่ายตัวนั้น ไม่ใช่รายได้อื่น
+          // (นับผิดรอบก่อนแล้วของเกิน ไม่ใช่ร้านมีรายได้เพิ่ม)
+          const reasonAcc = ADJUST_REASON_ACCOUNT[String(adjustReason || '').trim()]
+
           if (diffValue > 0) {
-            // Adjust up: Dr Inventory / Cr Other Income
-            const incomeAccId = getOrCreateAccount(tenantId, ACC.OTHER_REVENUE)
+            // Adjust up: Dr Inventory / Cr บัญชีตามเหตุผล (ไม่มีเหตุผล -> รายได้อื่น)
+            const incomeAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.OTHER_REVENUE)
             db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
               VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
               .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
@@ -241,8 +260,8 @@ export function applyStockMovement(
             db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
               .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
           } else {
-            // Adjust down: Dr Stock Adjustment Expense / Cr Inventory
-            const adjExpAccId = getOrCreateAccount(tenantId, ACC.STOCK_ADJUSTMENT)
+            // Adjust down: Dr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก) / Cr Inventory
+            const adjExpAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
             const absValue = Math.abs(diffValue)
             db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
               VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
