@@ -32,9 +32,14 @@ export interface StockMovementPayload {
   reference?: string
   notes?: string
   unitCost?: number | null
+  /** เหตุผลที่ปรับ (ของเสีย/ของหาย/นับผิด...) เก็บลงทะเบียน stock_adjustments */
+  adjustReason?: string | null
 }
 
 /** ข้อผิดพลาดที่ผู้เรียกต้องแปลงเป็นข้อความให้ผู้ใช้ (ไม่ใช่ 500) */
+// อ่านแค่ db เหมือนกัน ไม่ได้ import ไฟล์นี้กลับ จึงไม่เกิด import วงกลม
+import { getCostBasis } from './stockCostBasis.service'
+
 export class StockMovementError extends Error {
   constructor(
     public code:
@@ -59,7 +64,7 @@ export function applyStockMovement(
   createdBy: string,
   payload: StockMovementPayload
 ): any {
-  const { stockItemId, type, quantity, unit, reference, notes, unitCost } = payload
+  const { stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason } = payload
 
   const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
   if (!item) {
@@ -150,12 +155,42 @@ export function applyStockMovement(
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
 
-    // Auto-journal for ADJUST stock movements
+    // Auto-journal + ทะเบียนการปรับสต็อก
     if (type === 'ADJUST') {
       const oldQty = currentItem.quantity || 0
       const diffQty = newQuantity - oldQty
-      const itemUnitCost = Number(currentItem.unit_cost || 0)
+      // ตีมูลค่าส่วนต่างด้วยทุนเฉลี่ยถ่วงน้ำหนักจากทุกครั้งที่ซื้อของชิ้นนี้เข้ามา
+      // เดิมใช้ stock_items.unit_cost ซึ่งถูกทับด้วยราคาครั้งล่าสุดทุกครั้งที่รับของ
+      // ของในคลังคละล็อตคละเจ้า ตีด้วยราคาเจ้าเดียวแล้วบัญชีเพี้ยนตาม
+      // ไม่เคยรับเข้าผ่านใบรับสินค้าเลย -> getCostBasis คืน basis 'fallback' = unit_cost เดิม
+      const basis = getCostBasis(tenantId, stockItemId)
+      const itemUnitCost = basis.weightedAvg || Number(currentItem.unit_cost || 0)
       const diffValue = diffQty * itemUnitCost
+      // ทะเบียนการปรับสต็อก — ตารางนี้มีโครงครบมาตลอดแต่ไม่เคยมีใครเขียนลงไปเลย (0 แถว)
+      // ไม่มีทะเบียนก็ย้อนไม่ได้ว่าใครปรับอะไร เพราะอะไร มูลค่าเท่าไร
+      // เขียนทุกครั้งที่ปรับ ไม่ว่ามูลค่าจะเป็นศูนย์หรือไม่ (นับผิดรอบก่อนก็ต้องมีร่องรอย)
+      try {
+        const adjSeq = db.prepare(
+          "SELECT COUNT(*) n FROM stock_adjustments WHERE tenant_id = ?"
+        ).get(tenantId) as any
+        db.prepare(`
+          INSERT INTO stock_adjustments (id, tenant_id, adjustment_number, stock_item_id, adjustment_type,
+            quantity_before, quantity_after, quantity_adjusted, unit_cost, total_value, reason,
+            reference_type, reference_id, status, notes, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stock_movements', ?, 'EXECUTED', ?, ?, ?, ?)
+        `).run(
+          generateId(), tenantId,
+          `ADJ-${new Date(now).getFullYear()}-${String((adjSeq?.n || 0) + 1).padStart(5, '0')}`,
+          stockItemId, diffQty >= 0 ? 'INCREASE' : 'DECREASE',
+          oldQty, newQuantity, diffQty, itemUnitCost, Math.abs(diffValue),
+          adjustReason || notes || '', movementId,
+          basis.basis === 'fallback' ? 'ตีมูลค่าด้วยต้นทุนที่บันทึกไว้ (ไม่มีประวัติรับเข้า)' : `ตีมูลค่าด้วยทุนเฉลี่ยถ่วงน้ำหนักจาก ${basis.sources.length} ครั้งที่ซื้อ`,
+          createdBy, now, now)
+      } catch (regErr) {
+        // ทะเบียนพังต้องไม่ทำให้การปรับสต็อกพังตาม ของขยับไปแล้วจริง
+        console.error('⚠️ stock_adjustments register error:', regErr)
+      }
+
       if (Math.abs(diffValue) > 0.01) {
         try {
           const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)

@@ -677,18 +677,23 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
       // Update stock
       const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(adj.stock_item_id, request.tenant_id) as any
       if (stockItem) {
+        // ไม่อัปเดต quantity เองแล้ว — applyStockMovement ข้างล่างเป็นคนทำ
+        // ถ้าทำทั้งสองที่ ของจะขยับ 2 เท่าและได้ stock_movements 2 แถว
         const newQty = adj.quantity_after
-        db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(newQty, now, adj.stock_item_id, request.tenant_id)
 
-        // Record movement
-        db.prepare(`
-          INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(generateId(), request.tenant_id, adj.stock_item_id, 
-          adj.adjustment_type === 'INCREASE' ? 'ADJ_IN' : 'ADJ_OUT',
-          Math.abs(adj.quantity_adjusted), `ADJ:${adj.adjustment_number}`,
-          `Manual adjustment approved: ${adj.reason}`, now, executorId)
+        // เดิมสาขานี้เขียน stock_movements เองแบบดิบ แล้วไม่ลง journal เลย
+        // ของขยับแต่บัญชีไม่ขยับ = งบเพี้ยนเงียบ ๆ (ยังไม่เคยเกิดจริง เพราะตารางนี้ 0 แถว
+        // และหน้าเว็บยิง /stock/movement ตรงเสมอ — แต่เป็นระเบิดเวลาที่รอวันมีคนเรียก)
+        // เปลี่ยนมาใช้ service ตัวเดียวกับสายหลัก journal และทะเบียนจึงเกิดครบเหมือนกัน
+        applyStockMovement(request.tenant_id, executorId, {
+          stockItemId: adj.stock_item_id,
+          type: 'ADJUST',
+          quantity: newQty,
+          unit: stockItem.base_unit || stockItem.unit,
+          reference: `ADJ:${adj.adjustment_number}`,
+          notes: `อนุมัติการปรับสต็อก: ${adj.reason}`,
+          adjustReason: adj.reason,
+        })
       }
 
       db.prepare("UPDATE stock_adjustments SET status = 'EXECUTED', updated_at = ? WHERE id = ? AND tenant_id = ?")

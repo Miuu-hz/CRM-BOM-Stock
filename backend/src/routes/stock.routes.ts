@@ -514,7 +514,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.post('/movement', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { stockItemId, type, quantity, unit, reference, notes, unitCost } = req.body
+    const { stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason } = req.body
 
     if (!stockItemId || !type || quantity === undefined || quantity === null) {
       return res.status(400).json({ success: false, message: 'Missing required fields' })
@@ -561,7 +561,8 @@ router.post('/movement', async (req: Request, res: Response) => {
       refType: 'stock_items',
       refId: stockItemId,
       description: stockDescription,
-      payload: { stockItemId, type, quantity, unit, reference, notes, unitCost },
+      // adjustReason ต้องอยู่ใน payload ด้วย ไม่งั้นพอผ่านด่านอนุมัติแล้วเหตุผลหายเกลี้ยง
+      payload: { stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason },
     }
     const pending = gateOrCreate(gateArgs)
     if (pending) {
@@ -574,7 +575,7 @@ router.post('/movement', async (req: Request, res: Response) => {
     }
 
     const updatedItem = applyStockMovement(tenantId, req.user!.email, {
-      stockItemId, type, quantity, unit, reference, notes, unitCost,
+      stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason,
     })
     recordAutoAction(gateArgs)
 

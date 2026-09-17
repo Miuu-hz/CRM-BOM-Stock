@@ -2720,10 +2720,13 @@ function AdjustModal({
 }) {
   useModalClose(onClose)
   const [selectedItemId, setSelectedItemId] = useState('')
-  const [physicalCount, setPhysicalCount] = useState(0)
+  const [countText, setCountText] = useState('')
   const [unit, setUnit] = useState('')
+  const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [costBasis, setCostBasis] = useState<any>(null)
+  const [showSources, setShowSources] = useState(false)
 
   const selectedItem = stockItems.find(i => i.id === selectedItemId)
   const { units: availableUnits } = useUnits(selectedItem?.id)
@@ -2731,22 +2734,36 @@ function AdjustModal({
   useEffect(() => {
     if (item) {
       setSelectedItemId(item.id)
-      setPhysicalCount(item.quantity)
+      setCountText(String(item.quantity))
       setUnit(item.baseUnit || item.unit || '')
     } else {
       setSelectedItemId('')
-      setPhysicalCount(0)
+      setCountText('')
       setUnit('')
     }
+    setReason('')
     setNotes('')
+    setShowSources(false)
   }, [item, open])
 
   useEffect(() => {
     if (selectedItem && !item) {
-      setPhysicalCount(selectedItem.quantity)
+      setCountText(String(selectedItem.quantity))
       setUnit(selectedItem.baseUnit || selectedItem.unit || '')
     }
   }, [selectedItemId])
+
+  // ค่ากลางที่ใช้ตีมูลค่าส่วนต่าง — ดึงจาก backend ตัวเดียวกับที่ลง journal จริง
+  // จะได้ไม่มีทางที่ตัวเลขบนจอกับตัวเลขที่ลงบัญชีไม่ตรงกัน
+  useEffect(() => {
+    if (!open || !selectedItemId) { setCostBasis(null); return }
+    api.get('/stock/' + selectedItemId + '/cost-basis')
+      .then(r => setCostBasis(r.data?.data ?? null))
+      .catch(() => setCostBasis(null))
+  }, [open, selectedItemId])
+
+  const physicalCount = Number(countText)
+  const countInvalid = countText.trim() === '' || !isFinite(physicalCount) || physicalCount < 0
 
   const baseQuantity = useMemo(() => {
     if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) return physicalCount
@@ -2758,13 +2775,33 @@ function AdjustModal({
     return physicalCount
   }, [physicalCount, unit, selectedItem])
 
-  const diff = baseQuantity - (selectedItem?.quantity ?? 0)
+  const systemQty = selectedItem?.quantity ?? 0
+  const baseUnitLabel = unitLabel(selectedItem?.baseUnit || selectedItem?.unit || '')
+  const diff = countInvalid ? 0 : baseQuantity - systemQty
+  const avgCost = costBasis?.weightedAvg ?? 0
+  const diffValue = diff * avgCost
+  const bigLoss = Math.abs(diffValue) > 1000
+  const money = (n: number) => '฿' + Math.abs(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ควรไปลงบัญชีไหน จึงบังคับให้เลือกเมื่อของไม่ตรง
+  const REASONS: Array<[string, string, string]> = [
+    ['ของเสีย/หมดอายุ', 'ทิ้งไปแล้ว ลงเป็นผลขาดทุน', 'down'],
+    ['ของหาย', 'หาไม่เจอ ไม่รู้ไปไหน', 'down'],
+    ['แตก/ชำรุด', 'เสียหายระหว่างเก็บ', 'down'],
+    ['นับผิดรอบก่อน', 'ของครบ แต่ตัวเลขเดิมผิด', 'any'],
+    ['รับเพิ่มไม่ผ่านใบ', 'ของเกิน เพิ่งเจอ', 'up'],
+    ['เบิกใช้ไม่ได้บันทึก', 'เอาไปใช้แล้วลืมลง', 'down'],
+  ]
+  const visibleReasons = REASONS.filter(([, , dir]) =>
+    diff === 0 ? dir === 'any' : diff > 0 ? dir !== 'down' : dir !== 'up')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedItemId) { toast.error('กรุณาเลือกสินค้า'); return }
-    if (physicalCount < 0) { toast.error('จำนวนต้องไม่ติดลบ'); return }
+    if (countInvalid) { toast.error('กรอกจำนวนที่นับได้ให้ถูกต้อง'); return }
     if (diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
+    if (!reason) { toast.error('เลือกเหตุผลก่อน — เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีไหน'); return }
+    if (bigLoss && !confirm('ส่วนต่างคิดเป็นเงิน ' + money(diffValue) + ' ยืนยันว่านับถูกแล้ว?')) return
 
     setSaving(true)
     try {
@@ -2773,9 +2810,9 @@ function AdjustModal({
         type: 'ADJUST',
         quantity: baseQuantity,
         unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
-        notes: notes || `ปรับสต๊อก: ${selectedItem?.quantity} → ${baseQuantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit || '')} (นับได้ ${physicalCount} ${unit})`,
+        adjustReason: reason,
+        notes: notes || (reason + ': ' + systemQty + ' → ' + baseQuantity + ' ' + baseUnitLabel),
       })
-      // ติดด่านอนุมัติ: ยังไม่มีอะไรเปลี่ยน แค่แจ้งผู้ใช้ว่าส่งคำขอแล้ว
       if (onPending?.(moveResult)) { onClose(); return }
       onSave()
       onClose()
@@ -2789,133 +2826,156 @@ function AdjustModal({
 
   if (!open) return null
 
+  const Step = ({ n, title, hint }: { n: number; title: string; hint?: string }) => (
+    <div className="flex items-baseline gap-2.5">
+      <span className="shrink-0 w-5 h-5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] text-[11px] font-bold flex items-center justify-center">{n}</span>
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-[var(--fg-1)] leading-tight">{title}</h3>
+        {hint && <p className="text-xs text-[var(--fg-4)] mt-0.5">{hint}</p>}
+      </div>
+    </div>
+  )
+
   return (
-    <div
-      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
-      >
-        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between bg-blue-500/10 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <SlidersHorizontal className="w-6 h-6 text-blue-400" />
-            <div>
-              <h2 className="text-xl font-bold text-[var(--fg-1)]">ปรับสต๊อก (Physical Count)</h2>
-              <p className="text-xs text-[var(--fg-3)] mt-0.5">ตรวจนับและปรับยอดสต๊อกให้ตรงกับความจริง</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
+    <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
+          <h2 className="text-lg font-bold text-[var(--fg-1)]">ปรับสต็อกให้ตรงของจริง</h2>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors" aria-label="ปิด">
             <X className="w-5 h-5 text-[var(--fg-3)]" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">เลือกสินค้า</label>
-            <SearchableDropdown
-              value={selectedItemId}
-              onChange={setSelectedItemId}
-              options={stockItems.map(si => ({
-                id: si.id,
-                label: `${si.name} (${si.sku}) - ยอดปัจจุบัน: ${si.quantity} ${unitLabel(si.baseUnit || si.unit)}`,
-                searchText: `${si.name} ${si.sku}`,
-              }))}
-              placeholder="-- เลือกสินค้า --"
-              disabled={!!item}
-            />
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-5 flex-1">
+          <div className="space-y-2">
+            <Step n={1} title="นับสินค้าตัวไหน" />
+            {item ? (
+              <div className="px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+                <p className="text-sm font-medium text-[var(--fg-1)]">{selectedItem?.name}</p>
+                <p className="text-xs text-[var(--fg-4)] font-mono">{selectedItem?.sku}{selectedItem?.location ? ' · ' + selectedItem.location : ''}</p>
+              </div>
+            ) : (
+              <SearchableDropdown
+                options={stockItems.map(i => ({ id: i.id, label: i.name + ' (' + i.sku + ')', searchText: i.sku }))}
+                value={selectedItemId}
+                onChange={setSelectedItemId}
+                placeholder="ค้นชื่อ หรือรหัสสินค้า…"
+              />
+            )}
           </div>
 
           {selectedItem && (
-            <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[var(--fg-3)] text-sm">ยอดในระบบ:</span>
-                <span className="font-bold text-[var(--primary)]">
-                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
-                    ? `${selectedItem.displayQuantity} ${unitLabel(selectedItem.displayUnit || selectedItem.unit)}`
-                    : `${selectedItem.quantity} ${unitLabel(selectedItem.baseUnit || selectedItem.unit)}`}
-                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
-                    <span className="block text-xs text-[var(--fg-4)] text-right">{selectedItem.quantity} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
-                  )}
-                </span>
-              </div>
+            <div className="space-y-2">
+              <Step n={2} title="เทียบตัวเลข" hint="ระบบจำได้เท่าไร เทียบกับที่นับได้จริง" />
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">จำนวนที่นับได้จริง</label>
-                  <input
-                    type="number"
-                    value={physicalCount}
-                    onChange={(e) => setPhysicalCount(parseInt(e.target.value) || 0)}
-                    onFocus={(e) => e.target.select()}
-                    className="phopy-input w-full text-lg font-bold"
-                    min="0"
-                    required
-                  />
+                <div className="px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+                  <p className="text-xs text-[var(--fg-4)]">ระบบบอกว่ามี</p>
+                  <p className="text-lg font-bold text-[var(--fg-1)] tabular-nums">{systemQty.toLocaleString('th-TH')} <span className="text-sm font-normal text-[var(--fg-3)]">{baseUnitLabel}</span></p>
                 </div>
-                <div>
-                  <label className="block text-sm text-[var(--fg-3)] mb-2">หน่วยที่นับ</label>
-                  <select
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
-                    className="phopy-input w-full"
-                  >
-                    {selectedItem.baseUnit && (
-                      <option value={selectedItem.baseUnit}>{UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (Base)</option>
-                    )}
-                    {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
-                      <option value={selectedItem.displayUnit}>{UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (บรรจุ)</option>
-                    )}
-                    {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
-                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                    ))}
-                  </select>
+                <div className="px-3 py-2 rounded-xl bg-[var(--surface)] border border-phopy-indigo/40">
+                  <label className="text-xs text-[var(--fg-4)] block mb-0.5">นับได้จริง</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" step="any" min="0" value={countText} autoFocus
+                      onChange={(e) => setCountText(e.target.value)}
+                      className="w-full bg-transparent text-lg font-bold text-[var(--fg-1)] tabular-nums focus:outline-none" />
+                    <UnitPicker value={unit} onChange={setUnit} materialId={selectedItem?.id} baseUnit={selectedItem?.baseUnit || selectedItem?.unit} restrict="warn" size="sm" />
+                  </div>
                 </div>
               </div>
-              {diff !== 0 && (
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${diff > 0 ? 'bg-success/10 border-success/30' : 'bg-[var(--danger-soft)] border-danger/30'}`}>
-                  <span className="text-sm text-[var(--fg-2)]">ผลต่าง:</span>
-                  <span className={`font-bold text-lg ${diff > 0 ? 'text-success' : 'text-danger'}`}>
-                    {diff > 0 ? '+' : ''}{diff} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}
-                  </span>
+
+              {!countInvalid && diff !== 0 && (
+                <div className={'rounded-xl border px-3 py-2.5 space-y-2 ' + (bigLoss ? 'bg-[var(--danger-soft)] border-danger/40' : 'bg-[var(--warning-soft)] border-warning/35')}>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-[var(--fg-1)]">
+                      ส่วนต่าง {diff > 0 ? '+' : '−'}{Math.abs(diff).toLocaleString('th-TH')} {baseUnitLabel}
+                    </span>
+                    <span className={'text-sm font-bold tabular-nums ' + (diff > 0 ? 'text-success' : 'text-danger')}>
+                      {diff > 0 ? '+' : '−'}{money(diffValue)}
+                    </span>
+                  </div>
+                  {/* ค่ากลางมาจากไหนต้องกดดูได้ ไม่งั้นคนไม่เชื่อตัวเลขแล้วไม่กล้ากดยืนยัน */}
+                  <button type="button" onClick={() => setShowSources(v => !v)}
+                    className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1">
+                    ค่ากลาง ฿{avgCost.toLocaleString('th-TH', { maximumFractionDigits: 4 })}/{baseUnitLabel}
+                    {costBasis?.basis === 'weighted'
+                      ? ' (ถ่วงน้ำหนักจาก ' + costBasis.sources.length + ' ครั้งที่ซื้อ)'
+                      : ' (ยังไม่มีประวัติรับเข้า ใช้ต้นทุนที่บันทึกไว้)'}
+                    <ChevronDown className={'w-3 h-3 transition-transform ' + (showSources ? 'rotate-180' : '')} />
+                  </button>
+                  {showSources && costBasis?.sources?.length > 0 && (
+                    <div className="rounded-lg bg-[var(--surface)] border border-[var(--border)] divide-y divide-[var(--border)]/50">
+                      {costBasis.sources.slice(0, 6).map((s: any) => (
+                        <div key={s.doc} className="grid grid-cols-[1fr_auto_auto] gap-2 px-2.5 py-1.5 text-[11px] items-center">
+                          <span className="truncate text-[var(--fg-3)]">{s.supplier || '-'} <span className="font-mono text-[var(--fg-4)]">{s.doc}</span></span>
+                          <span className="text-[var(--fg-3)] tabular-nums">{s.qty} {s.unit} × ฿{s.unitPrice}</span>
+                          <span className="text-[var(--fg-1)] font-semibold tabular-nums">{money(s.value)}</span>
+                        </div>
+                      ))}
+                      <div className="grid grid-cols-[1fr_auto] gap-2 px-2.5 py-1.5 text-[11px] bg-[var(--bg)]">
+                        <span className="text-[var(--fg-3)]">รวม {costBasis.totalBaseQty.toLocaleString('th-TH')} {baseUnitLabel}</span>
+                        <span className="text-[var(--fg-1)] font-semibold tabular-nums">{money(costBasis.totalValue)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {diff === 0 && physicalCount === selectedItem.quantity && (
-                <p className="text-[var(--fg-4)] text-sm text-center">จำนวนเท่ากับยอดในระบบ</p>
               )}
             </div>
           )}
 
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">หมายเหตุ (ไม่บังคับ)</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="phopy-input w-full"
-              rows={2}
-              placeholder="เช่น ตรวจนับประจำเดือน, เจอสินค้าหาย..."
-            />
-          </div>
-          </div>
-          <div className="flex justify-end gap-3 px-6 py-4 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !selectedItemId}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <SlidersHorizontal className="w-4 h-4" />}
-              ยืนยันปรับสต๊อก
-            </button>
-          </div>
+          {selectedItem && !countInvalid && diff !== 0 && (
+            <div className="space-y-2">
+              <Step n={3} title="ทำไมถึงไม่ตรง" hint="เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีตัวไหน" />
+              <div className="grid grid-cols-2 gap-2">
+                {visibleReasons.map(([label, hint]) => (
+                  <button key={label} type="button" onClick={() => setReason(label)} aria-pressed={reason === label}
+                    className={'flex flex-col gap-0.5 px-3 py-2 rounded-xl border text-left transition-colors ' + (
+                      reason === label
+                        ? 'bg-phopy-indigo/10 border-phopy-indigo text-[var(--primary)]'
+                        : 'bg-[var(--surface)] border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo/40')}>
+                    <span className="text-sm font-medium">{label}</span>
+                    <span className="text-[11px] text-[var(--fg-4)] leading-tight">{hint}</span>
+                  </button>
+                ))}
+              </div>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+                placeholder="อธิบายเพิ่ม (ไม่บังคับ)"
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] resize-none focus:outline-none focus:border-phopy-indigo" />
+            </div>
+          )}
+
+          {selectedItem && !countInvalid && diff !== 0 && (
+            <div className="space-y-2">
+              <Step n={4} title="ผลที่จะเกิด" hint="กดยืนยันแล้วระบบจะลงบัญชีให้เองทันที" />
+              <div className="rounded-xl border border-[var(--border)] overflow-hidden text-xs">
+                <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
+                  <span className="text-[var(--fg-3)]">สต็อก</span>
+                  <span className="font-semibold text-[var(--fg-1)] tabular-nums">
+                    {systemQty.toLocaleString('th-TH')} → {baseQuantity.toLocaleString('th-TH')} {baseUnitLabel}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)]">
+                  <span className="shrink-0 w-[58px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--success-soft)] text-success">เดบิต</span>
+                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? 'สินค้าคงเหลือ' : 'ค่าใช้จ่ายปรับปรุงสต็อก'}</span>
+                  <span className="font-semibold text-[var(--fg-1)] tabular-nums">{money(diffValue)}</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <span className="shrink-0 w-[58px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">เครดิต</span>
+                  <span className="flex-1 min-w-0 text-[var(--fg-2)] truncate">{diff > 0 ? 'รายได้อื่น' : 'สินค้าคงเหลือ'}</span>
+                  <span className="font-semibold text-warning tabular-nums">{money(diffValue)}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </form>
+
+        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          <button onClick={handleSubmit} disabled={saving || !selectedItemId || countInvalid}
+            className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
+            {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+            ยืนยันปรับสต็อก
+          </button>
+        </div>
       </div>
     </div>
   )

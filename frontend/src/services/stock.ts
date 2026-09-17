@@ -118,6 +118,8 @@ export interface StockMovementInput {
   notes?: string
   reference?: string
   unitCost?: number
+  /** เหตุผลที่ปรับสต็อก (ของเสีย/ของหาย/นับผิด...) backend เก็บลงทะเบียน stock_adjustments */
+  adjustReason?: string
 }
 
 function mapStockMovement(m: any): StockMovement {
