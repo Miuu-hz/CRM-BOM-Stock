@@ -11,13 +11,11 @@ import {
   ArrowUpCircle,
   ArrowDownCircle,
   X,
-  Eye,
   Lock,
   Edit2,
   Loader2,
   Clock,
   MapPin,
-  AlertCircle,
   Plus,
   Upload,
   DollarSign,
@@ -173,12 +171,6 @@ function Stock() {
     open: false,
     item: null,
   })
-  const [movementModal, setMovementModal] = useState<{
-    open: boolean
-    type: 'IN' | 'OUT'
-    item: StockItem | null
-  }>({ open: false, type: 'IN', item: null })
-
   // Add New Item Modal
   // Unpack Modal — open sealed packs by hand
   const [unpackModal, setUnpackModal] = useState<{ open: boolean; item: StockItem | null }>({ open: false, item: null })
@@ -396,14 +388,6 @@ function Stock() {
     }
   }
 
-  const handleStockMovement = (type: 'IN' | 'OUT', item: StockItem) => {
-    if (type === 'OUT' && item.quantity === 0) {
-      toast.error('สต๊อกหมด ไม่สามารถทำ Stock Out ได้')
-      return
-    }
-    setMovementModal({ open: true, type, item })
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -452,22 +436,6 @@ function Stock() {
 
           {/* Stock movement group */}
           <div className="flex rounded-xl overflow-hidden border border-[var(--border)]">
-            <button
-              onClick={() => setMovementModal({ open: true, type: 'IN', item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-success hover:bg-success/10 transition-colors border-r border-[var(--border)]"
-              title="Stock In"
-            >
-              <ArrowUpCircle className="w-4 h-4" />
-              รับเข้า
-            </button>
-            <button
-              onClick={() => setMovementModal({ open: true, type: 'OUT', item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-danger hover:bg-[var(--danger-soft)] transition-colors border-r border-[var(--border)]"
-              title="Stock Out"
-            >
-              <ArrowDownCircle className="w-4 h-4" />
-              ตัดออก
-            </button>
             <button
               onClick={() => setAdjustModal({ open: true, item: null })}
               className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-400 hover:bg-blue-400/10 transition-colors"
@@ -871,24 +839,6 @@ function Stock() {
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleStockMovement('IN', item)}
-                            className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg transition-colors cursor-pointer"
-                            aria-label={`รับสินค้าเข้า ${item.name}`}
-                          >
-                            <ArrowUpCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleStockMovement('OUT', item)}
-                            disabled={item.quantity === 0}
-                            className={`p-2 rounded-lg transition-colors ${item.quantity === 0
-                              ? 'text-[var(--fg-4)] cursor-not-allowed'
-                              : 'text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] cursor-pointer'
-                              }`}
-                            aria-label={item.quantity === 0 ? `${item.name} สต๊อกหมด` : `ตัดสินค้าออก ${item.name}`}
-                          >
-                            <ArrowDownCircle className="w-4 h-4" />
-                          </button>
-                          <button
                             onClick={() => setAdjustModal({ open: true, item })}
                             className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors cursor-pointer"
                             aria-label={`ปรับสต๊อก ${item.name}`}
@@ -986,18 +936,7 @@ function Stock() {
         onSave={loadData}
       />
 
-      {/* Movement Modal */}
       {approvalGate.modal}
-      <MovementModal
-        open={movementModal.open}
-        type={movementModal.type}
-        item={movementModal.item}
-        stockItems={stockItems}
-        onClose={() => setMovementModal({ open: false, type: 'IN', item: null })}
-        onSave={loadData}
-        onPending={approvalGate.handleResponse}
-        setShowAddModal={setShowAddModal}
-      />
 
       {/* Adjust Modal */}
       <AdjustModal
@@ -2188,429 +2127,6 @@ export function EditModal({
 }
 
 // Movement Modal Component
-function MovementModal({
-  open,
-  type,
-  item,
-  stockItems,
-  onClose,
-  onSave,
-  onPending,
-  setShowAddModal,
-}: {
-  open: boolean
-  type: 'IN' | 'OUT'
-  item: StockItem | null
-  stockItems: StockItem[]
-  onClose: () => void
-  onSave: () => void
-  onPending?: (data: any) => boolean
-  setShowAddModal: (show: boolean) => void
-}) {
-  useModalClose(onClose)
-  const [selectedItemId, setSelectedItemId] = useState('')
-  const [quantity, setQuantity] = useState(1)
-  const [unit, setUnit] = useState('')
-  const [notes, setNotes] = useState('')
-  const [reference, setReference] = useState('')
-  const [unitCost, setUnitCost] = useState<number | ''>('')
-  const [saving, setSaving] = useState(false)
-  // ของที่กำลังจะขยับคิดเป็นเงินเท่าไร — คนกดต้องเห็นก่อน ไม่ใช่รู้ทีหลังตอนดูรายงาน
-  const [costBasis, setCostBasis] = useState<{ weightedAvg: number; basis: string } | null>(null)
-  // ตัดออกโดยไม่บอกเหตุผล = ของหายจากคลังแบบไม่มีร่องรอย
-  const [outReason, setOutReason] = useState('')
-
-  useEffect(() => {
-    if (item) {
-      setSelectedItemId(item.id)
-      setUnit(item.displayUnit || item.unit || item.baseUnit || '')
-    } else {
-      setSelectedItemId('')
-      setUnit('')
-    }
-    setQuantity(1)
-    setNotes('')
-    setReference('')
-    setUnitCost('')
-    setOutReason('')
-  }, [item, open])
-
-  useEffect(() => {
-    if (!open || !selectedItemId) { setCostBasis(null); return }
-    api.get('/stock/' + selectedItemId + '/cost-basis')
-      .then((r) => setCostBasis(r.data?.data ?? null))
-      .catch(() => setCostBasis(null))
-  }, [open, selectedItemId])
-
-  const selectedItem = stockItems.find((i) => i.id === selectedItemId)
-  const { units: availableUnits } = useUnits(selectedItem?.id)
-
-  const baseQuantity = useMemo(() => {
-    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) return quantity
-    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0) {
-      const ratio = selectedItem.quantity / selectedItem.displayQuantity
-      if (!isFinite(ratio) || ratio <= 0) return quantity
-      return Math.round(quantity * ratio * 1000) / 1000
-    }
-    return quantity
-  }, [quantity, unit, selectedItem])
-
-  const isOutOfStock = selectedItem && selectedItem.quantity === 0 && type === 'OUT'
-  const canConvertInFrontend = !selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit) || (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0)
-  const exceedsStock = selectedItem && type === 'OUT' && canConvertInFrontend && Number.isFinite(baseQuantity) && baseQuantity > selectedItem.quantity
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!selectedItemId) {
-      toast.error('เลือกสินค้าก่อน')
-      return
-    }
-
-    if (isOutOfStock) {
-      toast.error('ของหมดคลังแล้ว ตัดออกไม่ได้')
-      return
-    }
-
-    if (exceedsStock) {
-      toast.error(`เอาออกมากกว่าของที่มีไม่ได้ — ตอนนี้เหลือ ${selectedItem?.quantity} ${unitLabel(selectedItem?.baseUnit || selectedItem?.unit)}`)
-      return
-    }
-
-    if (type === 'OUT' && !outReason.trim()) {
-      toast.error('บอกก่อนว่าเอาของออกไปทำอะไร — ของหายจากคลังต้องมีร่องรอย')
-      return
-    }
-
-    setSaving(true)
-    try {
-      const moveResult = await stockService.recordMovement({
-        stockItemId: selectedItemId,
-        type,
-        quantity: baseQuantity,
-        unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
-        // เหตุผลนำหน้าเสมอ เพราะบรรทัดนี้คือสิ่งที่โผล่ในประวัติและในคำขออนุมัติ
-        notes: [type === 'OUT' ? outReason.trim() : '', notes.trim()].filter(Boolean).join(' · ') || undefined,
-        reference: reference || undefined,
-        unitCost: unitCost !== '' ? unitCost : undefined,
-      })
-      // ติดด่านอนุมัติ: ยังไม่มีอะไรเปลี่ยน แค่แจ้งผู้ใช้ว่าส่งคำขอแล้ว
-      if (onPending?.(moveResult)) { onClose(); return }
-      onSave()
-      onClose()
-    } catch (err) {
-      console.error('Failed to record movement:', err)
-      toast.error((err as any)?.response?.data?.message || 'บันทึกรายการไม่สำเร็จ')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const fmtQty = (n: number) => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 4 })
-  // ราคาที่ผู้ใช้เพิ่งพิมพ์ชนะค่ากลาง เพราะเป็นราคาที่กำลังจะกลายเป็นต้นทุนจริงของล็อตนี้
-  const movementValue = useMemo(() => {
-    const perBase = unitCost !== '' && Number(unitCost) > 0 ? Number(unitCost) : (costBasis?.weightedAvg || 0)
-    if (!perBase || !Number.isFinite(baseQuantity) || baseQuantity <= 0) return null
-    return baseQuantity * perBase
-  }, [unitCost, costBasis, baseQuantity])
-
-  const availableItems = useMemo(
-    () => type === 'OUT' ? (stockItems || []).filter((i) => i.quantity > 0) : stockItems,
-    [type, stockItems],
-  )
-  const availableItemOptions = useMemo(
-    () => availableItems.map((stockItem) => ({
-      id: stockItem.id,
-      label: `${stockItem.name} (${stockItem.sku}) - ${stockItem.quantity} ${unitLabel(stockItem.unit)}`,
-      searchText: `${stockItem.name} ${stockItem.sku}`,
-    })),
-    [availableItems],
-  )
-
-  if (!open) return null
-
-  return (
-    <div
-      className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="phopy-card w-full max-w-lg flex flex-col max-h-[90vh] animate-scaleIn"
-      >
-        <div className={`p-6 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0 ${type === 'IN' ? 'bg-success/10' : 'bg-[var(--danger-soft)]'
-          }`}>
-          <div className="flex items-center gap-3">
-            {type === 'IN' ? (
-              <ArrowUpCircle className="w-6 h-6 text-success" />
-            ) : (
-              <ArrowDownCircle className="w-6 h-6 text-danger" />
-            )}
-            <h2 className="text-xl font-bold text-[var(--fg-1)]">
-              {type === 'IN' ? 'รับของเข้าคลัง' : 'ตัดของออกจากคลัง'}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-[var(--fg-3)]" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">เลือกสินค้า</label>
-            <SearchableDropdown
-              value={selectedItemId}
-              onChange={setSelectedItemId}
-              options={availableItemOptions}
-              placeholder="-- พิมพ์ชื่อหรือรหัสสินค้า --"
-              disabled={!!item}
-            />
-            {type === 'OUT' && availableItems.length === 0 && (
-              <p className="text-danger text-sm mt-2 flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                ไม่มีสินค้าที่ยังเหลือให้ตัดออก
-              </p>
-            )}
-            {type === 'IN' && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-[var(--fg-4)]">ไม่เจอสินค้าที่ต้องการ?</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose()
-                    setShowAddModal(true)
-                  }}
-                  className="text-sm text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
-                >
-                  <Plus className="w-4 h-4" />
-                  เพิ่มสินค้าใหม่
-                </button>
-              </div>
-            )}
-          </div>
-
-          {selectedItem && (
-            <div className="p-4 bg-[var(--surface-2)] rounded-lg space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-[var(--fg-3)]">ตอนนี้มีอยู่</span>
-                <span className={`font-bold ${selectedItem.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
-                  {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity
-                    ? `${selectedItem.displayQuantity} ${unitLabel(selectedItem.displayUnit || selectedItem.unit)}`
-                    : `${selectedItem.quantity} ${unitLabel(selectedItem.baseUnit || selectedItem.unit)}`}
-                  {selectedItem.quantity === 0 && (
-                    <span className="ml-2 text-xs bg-[var(--danger-soft)] text-danger px-2 py-1 rounded">
-                      ของหมด
-                    </span>
-                  )}
-                </span>
-              </div>
-              {selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== selectedItem.quantity && (
-                <div className="flex justify-between items-center text-xs text-[var(--fg-4)]">
-                  <span></span>
-                  <span>{selectedItem.quantity} {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {selectedItem && !isOutOfStock && baseQuantity > 0 && (
-            <div className={'rounded-xl border px-4 py-3 space-y-1.5 ' + (type === 'IN' ? 'border-success/30 bg-success/5' : 'border-danger/30 bg-[var(--danger-soft)]')}>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-[var(--fg-3)]">ของจะเปลี่ยนเป็น</span>
-                <span className="font-semibold text-[var(--fg-1)]">
-                  {fmtQty(selectedItem.quantity)} → {fmtQty(type === 'IN' ? selectedItem.quantity + baseQuantity : selectedItem.quantity - baseQuantity)}
-                  <span className="text-[var(--fg-4)] font-normal"> {unitLabel(selectedItem.baseUnit || selectedItem.unit)}</span>
-                </span>
-              </div>
-              {movementValue !== null && (
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-[var(--fg-3)]">
-                    คิดเป็นเงิน
-                    <span className="text-[var(--fg-4)] text-xs"> ({costBasis && costBasis.basis !== 'fallback' ? 'ทุนเฉลี่ยถ่วงน้ำหนัก' : 'ต้นทุนที่บันทึกไว้'})</span>
-                  </span>
-                  <span className="font-semibold text-[var(--fg-1)]">
-                    ฿{movementValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              )}
-              <p className="text-[11px] text-[var(--fg-4)] pt-1.5 border-t border-[var(--border)]">
-                รายการนี้ขยับเฉพาะจำนวนของ ยังไม่ลงบัญชี — ถ้าของหาย/ของเสียและต้องการให้กระทบบัญชีด้วย ให้ใช้ปุ่ม “ปรับสต๊อก”
-              </p>
-            </div>
-          )}
-
-          {isOutOfStock && (
-            <div className="p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3">
-              <AlertCircle className="w-6 h-6 text-danger flex-shrink-0" />
-              <div>
-                <p className="text-danger font-medium">ทำรายการนี้ไม่ได้</p>
-                <p className="text-danger/70 text-sm">สินค้านี้เหลือ 0 ในคลัง จึงตัดออกไม่ได้ — ถ้าของมีอยู่จริงให้ใช้ปุ่ม “ปรับสต๊อก” แทน</p>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">จำนวน</label>
-              <input
-                type="number"
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
-                onFocus={(e) => e.target.select()}
-                className="phopy-input w-full"
-                min="1"
-                required
-                disabled={isOutOfStock}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">หน่วย</label>
-              <select
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                className="phopy-input w-full"
-                disabled={isOutOfStock}
-              >
-                {selectedItem ? (
-                  <>
-                    {selectedItem.baseUnit && (
-                      <option value={selectedItem.baseUnit}>
-                        {UNIT_LABELS_MAP[selectedItem.baseUnit] || selectedItem.baseUnit} (หน่วยนับ)
-                      </option>
-                    )}
-                    {selectedItem.displayUnit && selectedItem.displayUnit !== selectedItem.baseUnit && (
-                      <option value={selectedItem.displayUnit}>
-                        {UNIT_LABELS_MAP[selectedItem.displayUnit] || selectedItem.displayUnit} (บรรจุ)
-                      </option>
-                    )}
-                    {availableUnits.filter(u => u.value !== selectedItem.baseUnit && u.value !== selectedItem.displayUnit).map(u => (
-                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                    ))}
-                  </>
-                ) : (
-                  <option value="">เลือกสินค้าก่อน</option>
-                )}
-              </select>
-            </div>
-          </div>
-          {exceedsStock && (
-            <p className="text-danger text-sm mt-1">
-              เอาออกมากกว่าของที่มีไม่ได้ — ตอนนี้เหลือ {selectedItem?.quantity} {unitLabel(selectedItem?.baseUnit || selectedItem?.unit)}
-            </p>
-          )}
-
-          {type === 'OUT' && (
-            <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">
-                เอาออกไปทำอะไร <span className="text-danger">*</span>
-              </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {['เบิกไปใช้ในครัว', 'เบิกให้ลูกค้า', 'ของเสีย/หมดอายุ', 'ส่งคืนผู้ขาย', 'ย้ายไปสาขาอื่น'].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setOutReason(preset)}
-                    className={'px-2.5 py-1 rounded-lg text-xs border transition-colors ' + (outReason === preset
-                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
-                      : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)]')}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="text"
-                value={outReason}
-                onChange={(e) => setOutReason(e.target.value)}
-                className="phopy-input w-full"
-                placeholder="กดปุ่มด้านบน หรือพิมพ์เอง"
-                disabled={isOutOfStock}
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">
-              เลขเอกสารอ้างอิง <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
-            </label>
-            <input
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              className="phopy-input w-full"
-              placeholder="เช่น PO-2026-00001 · WO-2026-00012"
-              disabled={isOutOfStock}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">
-              หมายเหตุเพิ่มเติม <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="phopy-input w-full"
-              rows={3}
-              placeholder="รายละเอียดที่คนอ่านย้อนหลังควรรู้"
-              disabled={isOutOfStock}
-            />
-          </div>
-
-          {type === 'IN' && (
-            <div>
-              <label className="block text-sm text-[var(--fg-3)] mb-2">
-                อัปเดตราคาต้นทุน/หน่วยฐาน (฿) <span className="text-[var(--fg-4)]">(ไม่บังคับ)</span>
-              </label>
-              <input
-                type="number"
-                value={unitCost}
-                onChange={(e) => setUnitCost(e.target.value ? parseFloat(e.target.value) : '')}
-                onFocus={(e) => e.target.select()}
-                className="phopy-input w-full"
-                min="0"
-                step="0.01"
-                placeholder="เว้นว่างถ้าไม่ต้องการเปลี่ยนราคา"
-              />
-            </div>
-          )}
-          </div>
-          <div className="flex justify-end gap-3 px-6 py-4 flex-shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              disabled={saving || isOutOfStock || exceedsStock || !selectedItemId || (type === 'OUT' && !outReason.trim())}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${type === 'IN'
-                ? 'bg-success text-black hover:shadow-2-green disabled:opacity-50'
-                : 'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50'
-                }`}
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : type === 'IN' ? (
-                <ArrowUpCircle className="w-4 h-4" />
-              ) : (
-                <ArrowDownCircle className="w-4 h-4" />
-              )}
-              {type === 'IN' ? 'บันทึกรับเข้า' : 'บันทึกตัดออก'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 function StatCard({
   label,
   value,
