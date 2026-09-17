@@ -20,7 +20,6 @@ function generateId() {
 function generateNumber(prefix: string, tenantId: string, table: string) {
   const docTypeMap: Record<string, string> = {
     approval_requests: 'APPROVAL_REQUEST',
-    stock_adjustments: 'STOCK_ADJUSTMENT',
   }
   const docType = docTypeMap[table]
   if (!docType) {
@@ -284,7 +283,6 @@ router.get('/pending', async (req: Request, res: Response) => {
           WHEN 'work_orders' THEN (SELECT wo_number FROM work_orders WHERE id = ar.reference_id)
           WHEN 'supplier_payments' THEN (SELECT payment_number FROM supplier_payments WHERE id = ar.reference_id)
           WHEN 'receipts' THEN (SELECT receipt_number FROM receipts WHERE id = ar.reference_id)
-          WHEN 'stock_adjustments' THEN (SELECT adjustment_number FROM stock_adjustments WHERE id = ar.reference_id)
           ELSE ar.reference_id
         END as reference_number
       FROM approval_requests ar
@@ -471,8 +469,6 @@ router.post('/requests', async (req: Request, res: Response) => {
         db.prepare("UPDATE supplier_payments SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       } else if (referenceType === 'receipts') {
         db.prepare("UPDATE receipts SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
-      } else if (referenceType === 'stock_adjustments') {
-        db.prepare("UPDATE stock_adjustments SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
       }
     })
 
@@ -670,35 +666,6 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     if (unpackPayload) {
       applyManualUnpack(request.tenant_id, request.requester_name, unpackPayload)
     }
-  } else if (request.reference_type === 'stock_adjustments') {
-    // Stock adjustment approved - execute the adjustment
-    const adj = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(request.reference_id, request.tenant_id) as any
-    if (adj) {
-      // Update stock
-      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(adj.stock_item_id, request.tenant_id) as any
-      if (stockItem) {
-        // ไม่อัปเดต quantity เองแล้ว — applyStockMovement ข้างล่างเป็นคนทำ
-        // ถ้าทำทั้งสองที่ ของจะขยับ 2 เท่าและได้ stock_movements 2 แถว
-        const newQty = adj.quantity_after
-
-        // เดิมสาขานี้เขียน stock_movements เองแบบดิบ แล้วไม่ลง journal เลย
-        // ของขยับแต่บัญชีไม่ขยับ = งบเพี้ยนเงียบ ๆ (ยังไม่เคยเกิดจริง เพราะตารางนี้ 0 แถว
-        // และหน้าเว็บยิง /stock/movement ตรงเสมอ — แต่เป็นระเบิดเวลาที่รอวันมีคนเรียก)
-        // เปลี่ยนมาใช้ service ตัวเดียวกับสายหลัก journal และทะเบียนจึงเกิดครบเหมือนกัน
-        applyStockMovement(request.tenant_id, executorId, {
-          stockItemId: adj.stock_item_id,
-          type: 'ADJUST',
-          quantity: newQty,
-          unit: stockItem.base_unit || stockItem.unit,
-          reference: `ADJ:${adj.adjustment_number}`,
-          notes: `อนุมัติการปรับสต็อก: ${adj.reason}`,
-          adjustReason: adj.reason,
-        })
-      }
-
-      db.prepare("UPDATE stock_adjustments SET status = 'EXECUTED', updated_at = ? WHERE id = ? AND tenant_id = ?")
-        .run(now, request.reference_id, request.tenant_id)
-    }
   }
 
   // Log execution
@@ -721,8 +688,6 @@ function revertReferenceStatus(request: any) {
   } else if (request.reference_type === 'sales_orders') {
     db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(new Date().toISOString(), request.reference_id, request.tenant_id)
-  } else if (request.reference_type === 'stock_adjustments') {
-    db.prepare("UPDATE stock_adjustments SET status = 'REJECTED' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   }
 }
 
@@ -748,57 +713,6 @@ router.get('/stock-adjustments', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get stock adjustments error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch adjustments' })
-  }
-})
-
-// POST create stock adjustment
-router.post('/stock-adjustments', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { stockItemId, adjustmentType, quantityAdjusted, unitCost, reason, notes } = req.body
-    
-    if (!stockItemId || !adjustmentType || !quantityAdjusted || !reason) {
-      return res.status(400).json({ success: false, message: 'Required fields missing' })
-    }
-
-    const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
-    if (!stockItem) {
-      return res.status(404).json({ success: false, message: 'Stock item not found' })
-    }
-
-    const qtyBefore = stockItem.quantity
-    const qtyAdjusted = parseFloat(quantityAdjusted)
-    let qtyAfter = qtyBefore
-
-    if (adjustmentType === 'INCREASE') {
-      qtyAfter = qtyBefore + qtyAdjusted
-    } else if (adjustmentType === 'DECREASE') {
-      qtyAfter = qtyBefore - qtyAdjusted
-      if (qtyAfter < 0) {
-        return res.status(400).json({ success: false, message: 'Insufficient stock for decrease' })
-      }
-    } else {
-      qtyAfter = qtyAdjusted  // CORRECTION
-    }
-
-    const id = generateId()
-    const adjNumber = generateNumber('ADJ', tenantId, 'stock_adjustments')
-    const now = new Date().toISOString()
-    const totalValue = (unitCost || 0) * Math.abs(qtyAdjusted)
-
-    db.prepare(`
-      INSERT INTO stock_adjustments (id, tenant_id, adjustment_number, stock_item_id, adjustment_type,
-        quantity_before, quantity_after, quantity_adjusted, unit_cost, total_value, reason, notes,
-        status, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
-    `).run(id, tenantId, adjNumber, stockItemId, adjustmentType, qtyBefore, qtyAfter,
-      qtyAdjusted, unitCost || 0, totalValue, reason, notes || '', req.user!.userId, now, now)
-
-    const adjustment = db.prepare('SELECT * FROM stock_adjustments WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    res.status(201).json({ success: true, data: adjustment, message: 'Stock adjustment created and pending approval' })
-  } catch (error) {
-    console.error('Create stock adjustment error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create adjustment' })
   }
 })
 
