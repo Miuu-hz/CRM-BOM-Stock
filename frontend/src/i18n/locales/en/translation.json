@@ -981,7 +981,8 @@
       "drAccountHint": "Change if purchasing office supplies / non-stock expenses",
       "taxId": "Tax ID: {{id}}",
       "mergeMore": "Merge other orders into this bill",
-      "mergeHint": "Only orders from {{name}} are listed — different vendors cannot share one bill"
+      "mergeHint": "Only orders from {{name}} are listed — different vendors cannot share one bill",
+      "mergeTotal": "{{count}} orders = {{amount}}"
     },
     "paymentModal": {
       "title": "Record Payment",

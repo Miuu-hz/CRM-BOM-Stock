@@ -74,6 +74,21 @@ function deriveItemsFromGoodsReceipts(tenantId: string, grIds: string[]): Create
 }
 
 /**
+ * ดึงรายการสินค้าจากใบสั่งซื้อโดยตรง — ใช้เมื่อออกบิลคลุมทั้งใบ (ไม่ได้เจาะจงใบรับสินค้า)
+ * ตรวจกับข้อมูลจริงแล้ว: purchase_orders.subtotal เท่ากับ SUM(items.total_price) ครบทั้ง 56 ใบ
+ * (ตารางนี้ไม่มีคอลัมน์ส่วนลด) จึงใช้ผลรวมรายการเป็นยอดได้โดยไม่เพี้ยน
+ */
+function deriveItemsFromPurchaseOrders(tenantId: string, poIds: string[]): CreatePurchaseInvoiceItem[] {
+  if (poIds.length === 0) return []
+  const placeholders = poIds.map(() => '?').join(',')
+  return db.prepare(`
+    SELECT id as poItemId, material_id as materialId, quantity, unit_price as unitPrice
+    FROM purchase_order_items
+    WHERE tenant_id = ? AND purchase_order_id IN (${placeholders}) AND quantity > 0
+  `).all(tenantId, ...poIds) as CreatePurchaseInvoiceItem[]
+}
+
+/**
  * สร้างใบแจ้งหนี้ซื้อจากใบสั่งซื้อ + (ถ้ามี) ใบรับสินค้าที่ยืนยันแล้ว ลง journal ทันที
  * (Dr สต็อกวัตถุดิบ/บัญชีที่เลือก + Dr ภาษีซื้อ = Cr เจ้าหนี้การค้า) พร้อม vat_entries
  */
@@ -148,22 +163,28 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     // ต้องล็อก GR ที่ยืนยันแล้วของ PO นั้นไปด้วย ไม่งั้น GR จะค้างสถานะ "ยังไม่ออกใบ" ตลอดไป
     // แล้ว PO จะโผล่ในตัวเลือกสร้างใบแจ้งหนี้ทั้งที่กดไปก็ถูกเด้งว่าซ้ำ (เจอจริงที่ PO-2026-00029)
     // ยอดยังคิดจาก PO เหมือนเดิม — id พวกนี้ใช้เพื่อล็อก/ปลดล็อกตอนยกเลิกเท่านั้น
+    // ล็อกใบรับสินค้าของ "ทุกใบสั่งซื้อที่รวมอยู่ในบิลนี้" ไม่ใช่แค่ใบหลัก
+    // เดิมล็อกเฉพาะใบหลัก ใบที่เอามารวมจึงค้างสถานะ "ยังไม่ออกใบ" แล้วโผล่ให้เลือกซ้ำได้ตลอด
+    const poPlaceholders = allPoIds.map(() => '?').join(',')
     const confirmedGrs = db.prepare(
-      `SELECT id, invoiced_at FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED'`
-    ).all(tenantId, purchaseOrderId) as any[]
+      `SELECT id, invoiced_at, purchase_order_id FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id IN (${poPlaceholders}) AND status = 'CONFIRMED'`
+    ).all(tenantId, ...allPoIds) as any[]
     const freeGrs = confirmedGrs.filter((r: any) => !r.invoiced_at)
 
     if (freeGrs.length > 0) {
       for (const row of freeGrs) grIds.push(row.id)
     } else if (confirmedGrs.length > 0) {
-      // ใบรับสินค้าทุกใบของ PO นี้ถูกใช้ออกใบแจ้งหนี้ไปหมดแล้ว
-      throw new PurchaseBillingError('GR_ALREADY_INVOICED', 'ใบรับสินค้าของใบสั่งซื้อนี้ถูกใช้สร้างใบแจ้งหนี้ไปหมดแล้ว')
+      // ใบรับสินค้าทุกใบของ PO ที่เลือกถูกใช้ออกใบแจ้งหนี้ไปหมดแล้ว
+      throw new PurchaseBillingError('GR_ALREADY_INVOICED', 'ใบรับสินค้าของใบสั่งซื้อที่เลือกถูกใช้สร้างใบแจ้งหนี้ไปหมดแล้ว')
     } else {
-      // PO ที่ไม่มีใบรับสินค้าเลย — กันออกใบคลุมทั้ง PO ซ้ำ
-      const existingInvoice = db.prepare(
-        `SELECT id FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED'`
-      ).get(tenantId, purchaseOrderId) as any
-      if (existingInvoice) throw new PurchaseBillingError('INVOICE_EXISTS_NO_GR', 'ใบสั่งซื้อนี้มีใบแจ้งหนี้อยู่แล้ว')
+      // ไม่มีใบรับสินค้าเลยสักใบ — กันออกบิลคลุมซ้ำ ต้องดูทั้งใบหลักเดิมและลิสต์ใบที่รวมเข้ามา
+      const dup = (db.prepare(
+        `SELECT pi_number, purchase_order_id, purchase_order_ids FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED'`
+      ).all(tenantId) as any[]).find((inv: any) => {
+        if (allPoIds.includes(inv.purchase_order_id)) return true
+        try { return (JSON.parse(inv.purchase_order_ids || '[]') as string[]).some(x => allPoIds.includes(x)) } catch { return false }
+      })
+      if (dup) throw new PurchaseBillingError('INVOICE_EXISTS_NO_GR', `ใบสั่งซื้อที่เลือกมีใบแจ้งหนี้อยู่แล้ว (${dup.pi_number})`)
     }
   }
 
@@ -174,17 +195,30 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const userPickedGrs = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
     ? payload.goodsReceiptIds
     : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
-  const items = (payload.items && payload.items.length > 0)
+  // ที่มาของรายการสินค้า เรียงตามความเจาะจง:
+  //   1. items ที่ผู้เรียกส่งมาเอง
+  //   2. ใบรับสินค้าที่ผู้ใช้เจาะจงเลือก (คลุมเฉพาะใบสั่งซื้อหลัก)
+  //   3. รายการจากใบสั่งซื้อทุกใบที่รวมอยู่ในบิล  <-- ทางนี้เพิ่งเพิ่ม
+  // เดิมไม่มีข้อ 3 ใบแจ้งหนี้ที่สร้างจาก dropdown ใบสั่งซื้อจึงไม่มีรายการสินค้าเลยสักบรรทัด
+  // (เช็คข้อมูลจริงแล้ว: 13 จาก 13 ใบว่างทั้งหมด) และยอดก็มาจาก po.subtotal ดิบ ๆ
+  let items = (payload.items && payload.items.length > 0)
     ? payload.items
     : deriveItemsFromGoodsReceipts(tenantId, userPickedGrs)
+  // รายการจากใบรับสินค้าคลุมแค่ใบหลัก ยอดใบที่รวมเข้ามาจึงต้องบวก extraSubtotal ต่างหาก
+  // แต่รายการจากใบสั่งซื้อคลุมครบทุกใบอยู่แล้ว ถ้าบวกซ้ำจะได้ยอดเกิน
+  let extraNeeded = true
+  if (items.length === 0) {
+    const poItems = deriveItemsFromPurchaseOrders(tenantId, allPoIds)
+    if (poItems.length > 0) { items = poItems; extraNeeded = false }
+  }
 
   const id = generateId()
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
   const now = new Date().toISOString()
 
-  const subtotal = (items.length > 0
-    ? items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
-    : po.subtotal) + extraSubtotal
+  const subtotal = items.length > 0
+    ? items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) + (extraNeeded ? extraSubtotal : 0)
+    : po.subtotal + extraSubtotal
 
   const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
   const taxAmount = subtotal * (taxRate / 100)

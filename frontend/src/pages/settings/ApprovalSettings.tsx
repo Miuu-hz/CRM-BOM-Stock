@@ -77,7 +77,6 @@ export default function ApprovalSettings() {
     { value: 'purchase_order',    label: t('settings.approval.modules.purchaseOrder') },
     { value: 'sales_order',       label: t('settings.approval.modules.salesOrder') },
     { value: 'work_orders',       label: t('settings.approval.modules.workOrder') },
-    { value: 'stock_adjustments', label: t('settings.approval.modules.stockAdjustment') },
     { value: 'stock_adjust',      label: t('settings.approval.modules.stockChange') },
     { value: 'pos_void',          label: t('settings.approval.modules.posVoid') },
     { value: 'doc_edit',          label: t('settings.approval.modules.docEdit') },

@@ -160,6 +160,8 @@ interface PurchaseInvoice {
   payment_status: string
   notes: string
   goods_receipt_id?: string
+  // ใบสั่งซื้อทุกใบที่รวมอยู่ในบิลนี้ เก็บเป็น JSON array — purchase_order_id เป็นใบแรกในลิสต์
+  purchase_order_ids?: string | null
   goods_receipt_ids?: string
   journal_entry_id?: string
   journal_entry_number?: string
@@ -1948,7 +1950,9 @@ const Purchase = () => {
       if (data.success) {
         toast.success(t('purchase.toast.invoiceCreated'))
         closeModal()
-        fetchInvoices()
+        // ต้องดึงใบรับสินค้ากับใบสั่งซื้อใหม่ด้วย ไม่งั้น invoiced_at/สถานะยังเป็นของเก่า
+        // แล้วใบสั่งซื้อที่เพิ่งออกบิลไปจะยังค้างอยู่ใน dropdown จนกว่าจะสลับแท็บ
+        fetchInvoices(); fetchReceipts(); fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.invoiceCreateFailed')) }
     } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
     finally { setFormLoading(false) }
@@ -2106,10 +2110,19 @@ const Purchase = () => {
     return { kind: 'locked', label: t('purchase.nextStep.waitApproval') }
   }
 
+  // บิลใบนี้ครอบคลุมใบสั่งซื้อใบนั้นหรือเปล่า — ต้องดูลิสต์ที่รวมเข้ามาด้วย
+  // ไม่ใช่แค่ purchase_order_id ตัวเดียว ไม่งั้นใบที่เอามารวมจะโผล่ให้เลือกซ้ำตลอดไป
+  const invoiceCoversPO = (inv: PurchaseInvoice, poId: string) => {
+    if (inv.purchase_order_id === poId) return true
+    try { return (JSON.parse(inv.purchase_order_ids || '[]') as string[]).includes(poId) } catch { return false }
+  }
+
   const poHasInvoiceableTarget = (order: PurchaseOrder) => {
+    // ถูกรวมเข้าบิลใบอื่นไปแล้ว = จบ ไม่ต้องดูใบรับสินค้าต่อ
+    if (invoices.some(i => i.status !== 'CANCELLED' && invoiceCoversPO(i, order.id))) return false
     const confirmedGRs = receipts.filter(r => r.purchase_order_id === order.id && r.status === 'CONFIRMED')
     if (confirmedGRs.length > 0) return confirmedGRs.some(r => !r.invoiced_at)
-    return !invoices.some(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
+    return true
   }
 
   // ใบแจ้งหนี้ของ PO ใบนี้ที่ยังค้างจ่าย — ใช้ตัดสินว่าจะโชว์ปุ่ม "จ่ายเงิน" ในแถวไหม
@@ -4302,9 +4315,24 @@ const Purchase = () => {
                   )
                 })}
               </div>
-              <p className="text-xs text-[var(--fg-4)] mt-1.5">
-                {t('purchase.invoiceModal.mergeHint', { name: selectedPO.supplier_name })}
-              </p>
+              <div className="flex items-center justify-between gap-3 mt-1.5">
+                <p className="text-xs text-[var(--fg-4)]">
+                  {t('purchase.invoiceModal.mergeHint', { name: selectedPO.supplier_name })}
+                </p>
+                {/* ยอดต้องขยับให้เห็นตั้งแต่ตอนติ๊ก ไม่ใช่ไปรู้เอาตอนบิลออกแล้ว */}
+                {invoiceForm.extra_po_ids.length > 0 && (
+                  <span className="text-xs font-semibold text-[var(--primary)] whitespace-nowrap tabular-nums">
+                    {t('purchase.invoiceModal.mergeTotal', {
+                      count: invoiceForm.extra_po_ids.length + 1,
+                      amount: formatCurrency(
+                        (selectedPO.total_amount || 0) +
+                        invoiceForm.extra_po_ids.reduce((sum, id) =>
+                          sum + (orders.find(o => o.id === id)?.total_amount || 0), 0)
+                      ),
+                    })}
+                  </span>
+                )}
+              </div>
             </Field>
           )
         })()}
