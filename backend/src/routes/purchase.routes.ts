@@ -1201,10 +1201,17 @@ router.get('/payments', async (req: Request, res: Response) => {
     
     const payments = db.prepare(`
       SELECT sp.*, s.name as supplier_name, s.code as supplier_code,
-        pi.pi_number
+        pi.pi_number,
+        je.entry_number as journal_entry_number, je.id as journal_entry_id,
+        ba.bank_name, ba.account_number as bank_account_number
       FROM supplier_payments sp
       LEFT JOIN suppliers s ON sp.supplier_id = s.id
       LEFT JOIN purchase_invoices pi ON sp.purchase_invoice_id = pi.id
+      -- supplier_payments ไม่มีคอลัมน์ journal_entry_id ต้องไล่จาก reference ของใบสำคัญแทน
+      -- ไม่ join ตัวนี้มา หน้าเว็บจะขึ้นว่า "ยังไม่ลงบัญชี" ทั้งที่ลงจริงครบทุกใบ
+      LEFT JOIN journal_entries je ON je.tenant_id = sp.tenant_id
+        AND je.reference_type = 'SUPPLIER_PAYMENT' AND je.reference_id = sp.id
+      LEFT JOIN bank_accounts ba ON ba.id = sp.bank_account_id
       WHERE sp.tenant_id = ? AND (sp.status IS NULL OR sp.status != 'CANCELLED')
       ORDER BY sp.payment_date DESC
     `).all(tenantId)

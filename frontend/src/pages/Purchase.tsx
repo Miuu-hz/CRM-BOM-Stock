@@ -29,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import bankAccountsService, { type BankAccount } from '../services/bankAccounts.service'
 import api from '../services/api'
 import { accountsApi, type Account } from '../services/accounting'
 import { stockService } from '../services/stock'
@@ -1295,6 +1296,8 @@ const Purchase = () => {
   const [drAccounts, setDrAccounts] = useState<Account[]>([])
   // บัญชีหนี้สิน สำหรับเลือกปลายทางของหนี้ (เดิมยึดเจ้าหนี้การค้าตายตัว ปรับไม่ได้)
   const [crAccounts, setCrAccounts] = useState<Account[]>([])
+  // บัญชีธนาคาร/เงินสดที่เงินจะออก — backend รับ bankAccountId อยู่แล้ว แต่หน้าเว็บไม่เคยส่งให้
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -1372,7 +1375,8 @@ const Purchase = () => {
     payment_reference: '',
     amount: 0,
     withholding_tax: 0,
-    notes: ''
+    notes: '',
+    bank_account_id: '',   // '' = ให้ระบบเลือกตามวิธีจ่าย (เงินสด 1101 / อื่น ๆ 1102)
   })
 
   const [returnForm, setReturnForm] = useState({
@@ -1402,6 +1406,7 @@ const Purchase = () => {
         setCrAccounts(list.filter(a => a.type === 'LIABILITY'))
       }
     }).catch(() => {})
+    bankAccountsService.list().then(setBankAccounts).catch(() => {})
   }, [])
 
   // Fetch tab-specific list data when switching tabs
@@ -2021,6 +2026,7 @@ const Purchase = () => {
         paymentReference: paymentForm.payment_reference,
         amount: paymentForm.amount,
         withholdingTax: paymentForm.withholding_tax,
+        bankAccountId: paymentForm.bank_account_id || undefined,
         notes: paymentForm.notes,
       })
       if (data.success) {
@@ -2412,7 +2418,8 @@ const Purchase = () => {
           payment_reference: data.payment_reference || '',
           amount: data.amount || 0,
           withholding_tax: data.withholding_tax || 0,
-          notes: data.notes || ''
+          notes: data.notes || '',
+          bank_account_id: data.bank_account_id || '',
         })
       } else if (type === 'return') {
         setReturnForm({
@@ -2430,7 +2437,7 @@ const Purchase = () => {
       setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
       setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
-      setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
+      setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: '' })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
@@ -4567,6 +4574,25 @@ const Purchase = () => {
           </div>
 
           {/* Invoice selector — filtered by supplier */}
+          {/* เดิมถ้าไม่มีใบค้างจ่ายจะได้ dropdown ว่างเปล่าโดยไม่บอกอะไรเลย
+              ผู้ใช้เข้าใจว่าระบบพัง ทั้งที่แปลว่า "ไม่มีหนี้ค้างของเจ้านี้" */}
+          {(() => {
+            const payable = invoices.filter(i => i.payment_status !== 'PAID' && i.status !== 'CANCELLED')
+            const mine = payable.filter(i => !paymentForm.supplier_id || i.supplier_id === paymentForm.supplier_id)
+            if (mine.length > 0) return null
+            const supName = suppliers.find(x => x.id === paymentForm.supplier_id)?.name
+            return (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[var(--warning-soft)] border border-warning/30">
+                <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                <p className="text-xs text-[var(--fg-2)] leading-relaxed">
+                  {paymentForm.supplier_id && payable.length > 0
+                    ? t('purchase.paymentModal.noInvoiceForSupplier', { name: supName })
+                    : t('purchase.paymentModal.noPayableInvoice')}
+                </p>
+              </div>
+            )
+          })()}
+
           <Field label={t('purchase.paymentModal.selectInvoice')}>
             <select value={paymentForm.purchase_invoice_id}
               onChange={e => {
@@ -4664,16 +4690,63 @@ const Purchase = () => {
               onChange={e => setPaymentForm(p => ({ ...p, payment_reference: e.target.value }))} className={inputCls()} />
           </Field>
 
-          {/* Journal preview */}
-          {paymentForm.amount > 0 && (
-            <JournalPreview entries={[
-              { dr: true,  account: t('purchase.journal.accountsPayable'),   label: t('purchase.journal.reducePayable'), amount: paymentForm.amount },
-              { dr: false, account: paymentForm.payment_method === 'CASH' ? t('purchase.journal.cash') : t('purchase.journal.bankDeposit'), label: t('purchase.journal.actualTransfer'),    amount: netPay },
-              ...(paymentForm.withholding_tax > 0 ? [
-                { dr: false as const, account: t('purchase.journal.withholdingTaxPayable'), label: t('purchase.journal.whtRemitted'), amount: paymentForm.withholding_tax }
-              ] : [])
-            ]} />
-          )}
+          {/* เงินออกจากบัญชีไหน — เดิมไม่มีช่องนี้เลย ระบบเดาจากวิธีจ่ายอย่างเดียว
+              (เงินสด -> 1101 · อื่น ๆ -> 1102) พอมีหลายบัญชีธนาคารก็แยกไม่ออก */}
+          <Field label={t('purchase.paymentModal.payFrom')}>
+            {bankAccounts.length === 0 ? (
+              <div className="px-3 py-2.5 rounded-xl border border-dashed border-[var(--border-strong)] text-xs text-[var(--fg-3)]">
+                {t('purchase.paymentModal.noBankAccount')}
+              </div>
+            ) : (
+              <select value={paymentForm.bank_account_id}
+                onChange={e => setPaymentForm(p => ({ ...p, bank_account_id: e.target.value }))}
+                className={inputCls()}>
+                <option value="">{t('purchase.paymentModal.payFromAuto')}</option>
+                {bankAccounts.filter(b => b.is_active).map(b => (
+                  <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number} ({b.account_name})</option>
+                ))}
+              </select>
+            )}
+          </Field>
+
+          {/* ตารางลงบัญชี — ชุดเดียวกับโมดัลใบแจ้งหนี้ จะได้อ่านแบบเดียวกัน */}
+          {paymentForm.amount > 0 && (() => {
+            const picked = bankAccounts.find(b => b.id === paymentForm.bank_account_id)
+            const outLabel = picked
+              ? `${picked.gl_code ? picked.gl_code + ' ' : ''}${picked.bank_name} · ${picked.account_number}`
+              : paymentForm.payment_method === 'CASH' ? t('purchase.journal.cash') : t('purchase.journal.bankDeposit')
+            return (
+              <div className="space-y-2">
+                <StepHead n={4} title={t('purchase.invoiceModal.step4')} hint={t('purchase.paymentModal.accountHint')} />
+                <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)] bg-[var(--surface)]">
+                    <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--success-soft)] text-success">{t('purchase.invoiceModal.debitSide')}</span>
+                    <span className="flex-1 min-w-0 text-xs text-[var(--fg-2)] truncate">
+                      {t('purchase.journal.accountsPayable')}
+                      <span className="text-[var(--fg-4)]"> · {t('purchase.journal.reducePayable')}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-mono font-semibold text-[var(--fg-1)] tabular-nums">{formatCurrency(paymentForm.amount)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--surface)] border-b border-[var(--border)] last:border-b-0">
+                    <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">{t('purchase.invoiceModal.creditSide')}</span>
+                    <span className="flex-1 min-w-0 text-xs text-[var(--fg-2)] truncate">{outLabel}</span>
+                    <span className="shrink-0 text-xs font-mono font-semibold text-warning tabular-nums">{formatCurrency(netPay)}</span>
+                  </div>
+                  {paymentForm.withholding_tax > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--bg)]">
+                      <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">{t('purchase.invoiceModal.creditSide')}</span>
+                      <span className="flex-1 min-w-0 text-xs text-[var(--fg-3)] truncate">
+                        {t('purchase.journal.withholdingTaxPayable')}
+                        <span className="text-[var(--fg-4)]"> · {t('purchase.invoiceModal.fixedByChart')}</span>
+                      </span>
+                      <span className="shrink-0 text-xs font-mono text-[var(--fg-2)] tabular-nums">{formatCurrency(paymentForm.withholding_tax)}</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-[var(--fg-4)]">{t('purchase.invoiceModal.balanceHint', { amount: formatCurrency(paymentForm.amount) })}</p>
+              </div>
+            )
+          })()}
         </div>
         <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
           <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
