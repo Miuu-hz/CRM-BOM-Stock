@@ -93,6 +93,28 @@ export default function ApprovalSettings() {
   const isCategoryOn = (category: string) =>
     settings.some(s => s.module_type === category && s.role === 'USER' && s.approval_required === 1)
 
+  // วงเงิน "ทำเองได้ไม่ต้องขออนุมัติ" ของหมวดนี้ — เป็นค่าของแต่ละบริษัท ไม่ใช่ค่ากลางในโค้ด
+  const thresholdOf = (category: string) =>
+    settings.find(s => s.module_type === category && s.role === 'USER')?.auto_approve_threshold ?? 0
+
+  const saveThreshold = async (category: string, value: number) => {
+    if (!Number.isFinite(value) || value < 0 || value === thresholdOf(category)) return
+    setTogglingCategory(category)
+    try {
+      await api.post('/approval/settings', {
+        role: 'USER',
+        moduleType: category,
+        approvalRequired: true,
+        autoApproveThreshold: value,
+      })
+      await load()
+    } catch {
+      toast.error(t('settings.approval.quick.saveFailed'))
+    } finally {
+      setTogglingCategory(null)
+    }
+  }
+
   const toggleCategory = async (category: string, on: boolean) => {
     setTogglingCategory(category)
     try {
@@ -100,7 +122,8 @@ export default function ApprovalSettings() {
         role: 'USER',
         moduleType: category,
         approvalRequired: on,
-        autoApproveThreshold: 0,
+        // ห้ามส่ง 0 ตายตัว — เดิมปิดแล้วเปิดใหม่ทีเดียว วงเงินที่บริษัทตั้งไว้หายเกลี้ยง
+        autoApproveThreshold: thresholdOf(category),
       })
       toast.success(on ? t('settings.approval.quick.turnedOn') : t('settings.approval.quick.turnedOff'))
       await load()
@@ -261,12 +284,35 @@ export default function ApprovalSettings() {
             const on = isCategoryOn(cat.value)
             const busy = togglingCategory === cat.value
             return (
-              <div key={cat.value} className="flex items-center gap-4 px-5 py-4">
+              <div key={cat.value} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
                 <span className="text-xl leading-none" aria-hidden>{cat.icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm text-[var(--fg-1)]">{cat.label}</p>
                   <p className="text-xs text-[var(--fg-3)] mt-0.5">{cat.hint}</p>
                 </div>
+                {on && (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <label className="text-xs text-[var(--fg-3)] text-right leading-tight">
+                      ทำเองได้ถึง<br />
+                      <span className="text-[10px] text-[var(--fg-4)]">0 = ขอทุกใบ</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">฿</span>
+                      <input
+                        key={cat.value + ':' + thresholdOf(cat.value)}
+                        type="number"
+                        min="0"
+                        step="100"
+                        disabled={busy}
+                        defaultValue={thresholdOf(cat.value)}
+                        onBlur={e => saveThreshold(cat.value, Number(e.target.value))}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        aria-label={cat.label + ' — วงเงินที่ทำเองได้'}
+                        className="w-24 pl-5 pr-2 py-1 text-sm text-right rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+                )}
                 <button
                   role="switch"
                   aria-checked={on}

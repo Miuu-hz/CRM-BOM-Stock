@@ -2352,6 +2352,8 @@ function AdjustModal({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [costBasis, setCostBasis] = useState<any>(null)
+  // null = ยังไม่รู้ (โหลดไม่สำเร็จ) ให้ใช้ค่าสำรอง · ตัวเลขจริงมาจาก approval_settings ของบริษัทนี้
+  const [gateLimit, setGateLimit] = useState<number | null>(null)
   const [showSources, setShowSources] = useState(false)
   // รูปของจริงตอนนับ — ใบยังไม่เกิดตอนกรอก จึงเก็บไฟล์ค้างไว้ก่อน
   // แล้วอัปโหลดผูกกับทะเบียนที่เพิ่งสร้างหลังบันทึกสำเร็จ (แนวเดียวกับสลิปจ่ายเงิน)
@@ -2393,6 +2395,14 @@ function AdjustModal({
       .catch(() => setCostBasis(null))
   }, [open, selectedItemId])
 
+  // วงเงินของบริษัทนี้เอง (Settings > การอนุมัติ) — อ่านจากตัวบังคับจริง ไม่คิดกฎเองซ้ำ
+  useEffect(() => {
+    if (!open) return
+    api.get('/approval/check-required', { params: { moduleType: 'stock_adjust', amount: 0 } })
+      .then(r => setGateLimit(Number(r.data?.data?.autoApproveThreshold) || 0))
+      .catch(() => setGateLimit(null))
+  }, [open])
+
   const physicalCount = Number(countText)
   const countInvalid = countText.trim() === '' || !isFinite(physicalCount) || physicalCount < 0
 
@@ -2411,7 +2421,11 @@ function AdjustModal({
   const diff = countInvalid ? 0 : baseQuantity - systemQty
   const avgCost = costBasis?.weightedAvg ?? 0
   const diffValue = diff * avgCost
-  const bigLoss = Math.abs(diffValue) > 1000
+  // เกณฑ์ "ถามซ้ำก่อนกด" ใช้วงเงินที่บริษัทตั้งไว้เอง ไม่ใช่เลขตายตัวในโค้ด
+  // ตั้ง 0 (= ทุกใบต้องขออนุมัติ) ก็ยังถามซ้ำเมื่อมีส่วนต่าง เพราะ ADMIN ข้ามด่านอนุมัติได้
+  // ถามซ้ำจึงเป็นการ์ดใบสุดท้ายของคนที่ไม่มีใครคอยเบรก
+  const warnOver = gateLimit === null ? 1000 : gateLimit
+  const bigLoss = Math.abs(diffValue) > warnOver
   const money = (n: number) => '฿' + Math.abs(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ควรไปลงบัญชีไหน จึงบังคับให้เลือกเมื่อของไม่ตรง
@@ -2441,7 +2455,10 @@ function AdjustModal({
     if (countInvalid) { toast.error('กรอกจำนวนที่นับได้ให้ถูกต้อง'); return }
     if (diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
     if (!reason) { toast.error('เลือกเหตุผลก่อน — เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีไหน'); return }
-    if (bigLoss && !confirm('ส่วนต่างคิดเป็นเงิน ' + money(diffValue) + ' ยืนยันว่านับถูกแล้ว?')) return
+    if (bigLoss && !confirm(
+      'ส่วนต่างคิดเป็นเงิน ' + money(diffValue) +
+      ' เกินวงเงินที่บริษัทตั้งไว้ (' + money(warnOver) + ') ยืนยันว่านับถูกแล้ว?'
+    )) return
 
     setSaving(true)
     try {
