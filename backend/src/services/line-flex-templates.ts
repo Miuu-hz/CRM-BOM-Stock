@@ -398,15 +398,11 @@ export const flexTemplates = {
                     { type: 'text', text: '→ ดูส่วนผสม + ต้นทุนการผลิต', size: 'sm', color: '#666666', margin: 'xs' },
                     ...(isPersonal ? [
                         { type: 'separator' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: 'งาน [คำอธิบาย]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '→ สร้างงานเข้า Paperclip AI (ต้องเชื่อมบัญชี)', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
+                        { type: 'text' as const, text: 'ถาม-ตอบทั่วไป (AI)', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
+                        { type: 'text' as const, text: '→ พิมพ์สอบถามหรือคุยกับระบบได้โดยตรง', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
                         { type: 'separator' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: 'บอม [ชื่อสินค้า]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '[วัตถุดิบ] [จำนวน] [หน่วย]', size: 'xs' as const, color: '#888888', margin: 'xs' as const },
-                        { type: 'text' as const, text: '→ สร้าง BOM Draft รอแก้ไขในเว็บ', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
-                        { type: 'separator' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '/ลิงก์ [รหัส]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '→ เชื่อมบัญชี LINE กับระบบ', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
+                        { type: 'text' as const, text: 'ลิงก์ [รหัส 6 หลัก]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
+                        { type: 'text' as const, text: '→ เชื่อมบัญชีเพื่อรับการแจ้งเตือนงานอนุมัติ', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
                     ] : []),
                 ]
             }
@@ -515,5 +511,363 @@ export const flexTemplates = {
                 }
             }
         };
-    }
+    },
+
+    // ─── Samsung One UI 9 Style: Approval Request Card ───────────────────────
+    approvalRequestCard: (req: {
+        id: string
+        requestNumber: string
+        moduleType: string
+        requesterName: string
+        requesterRole: string
+        amount?: number
+        description?: string
+        createdAt: string
+        webUrl: string
+    }) => {
+        const moduleConfig: Record<string, { label: string; icon: string; bg: string; color: string }> = {
+            stock_adjust:      { label: 'ปรับ/เปลี่ยนสต็อก',  icon: '📦', bg: '#EEF2FF', color: '#4F46E5' },
+            pos_void:          { label: 'ยกเลิกบิล POS',     icon: '🧾', bg: '#FFF7ED', color: '#EA580C' },
+            doc_edit:          { label: 'แก้ไขเอกสาร',       icon: '✏️', bg: '#FAF5FF', color: '#9333EA' },
+            sales_order:       { label: 'คำสั่งขาย',         icon: '🛒', bg: '#ECFEFF', color: '#0891B2' },
+            purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
+            purchase_request:  { label: 'ใบขอซื้อ',          icon: '📄', bg: '#FEF3C7', color: '#D97706' },
+            work_orders:       { label: 'ใบสั่งผลิต',        icon: '🏭', bg: '#F1F5F9', color: '#475569' },
+        }
+        const mod = moduleConfig[req.moduleType] || { label: req.moduleType, icon: '📋', bg: '#F1F5F9', color: '#475569' }
+
+        const amountFormatted = req.amount && req.amount > 0
+            ? `฿${Number(req.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : null
+
+        const timeStr = new Date(req.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        const dateStr = new Date(req.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+
+        return {
+            type: 'flex',
+            altText: `🔔 คำขออนุมัติใหม่: ${mod.label} (${req.requestNumber})`,
+            contents: {
+                type: 'bubble',
+                size: 'mega',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: '20px',
+                    spacing: 'md',
+                    contents: [
+                        // One UI Header Row: Pill Badge + Status Pill
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            contents: [
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    backgroundColor: mod.bg,
+                                    cornerRadius: 'xxl',
+                                    paddingStart: '10px',
+                                    paddingEnd: '10px',
+                                    paddingTop: '4px',
+                                    paddingBottom: '4px',
+                                    contents: [
+                                        {
+                                            type: 'text',
+                                            text: `${mod.icon} ${mod.label}`,
+                                            size: 'xs',
+                                            weight: 'bold',
+                                            color: mod.color,
+                                        }
+                                    ]
+                                },
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    backgroundColor: '#FEF3C7',
+                                    cornerRadius: 'xxl',
+                                    paddingStart: '10px',
+                                    paddingEnd: '10px',
+                                    paddingTop: '4px',
+                                    paddingBottom: '4px',
+                                    contents: [
+                                        {
+                                            type: 'text',
+                                            text: 'รอการอนุมัติ',
+                                            size: 'xxs',
+                                            weight: 'bold',
+                                            color: '#B45309',
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        // Request Title / Number
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            margin: 'md',
+                            spacing: 'none',
+                            contents: [
+                                {
+                                    type: 'text',
+                                    text: req.requestNumber,
+                                    size: 'xs',
+                                    color: '#94A3B8',
+                                    weight: 'bold',
+                                },
+                                ...(amountFormatted ? [
+                                    {
+                                        type: 'text' as const,
+                                        text: amountFormatted,
+                                        size: 'xxl' as const,
+                                        weight: 'bold' as const,
+                                        color: '#0F172A',
+                                        margin: 'xs' as const,
+                                    }
+                                ] : [
+                                    {
+                                        type: 'text' as const,
+                                        text: 'มีคำขอรอการตรวจสอบ',
+                                        size: 'lg' as const,
+                                        weight: 'bold' as const,
+                                        color: '#0F172A',
+                                        margin: 'xs' as const,
+                                    }
+                                ])
+                            ]
+                        },
+                        // One UI Inset Card (Rounded Squircle Section)
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            backgroundColor: '#F8FAFC',
+                            cornerRadius: '16px',
+                            paddingAll: '14px',
+                            spacing: 'sm',
+                            margin: 'md',
+                            contents: [
+                                ...(req.description ? [
+                                    {
+                                        type: 'text' as const,
+                                        text: req.description,
+                                        size: 'sm' as const,
+                                        color: '#334155' as const,
+                                        wrap: true as const,
+                                        maxLines: 3 as const,
+                                    },
+                                    {
+                                        type: 'separator' as const,
+                                        margin: 'sm' as const,
+                                        color: '#E2E8F0' as const,
+                                    }
+                                ] : []),
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    justifyContent: 'space-between',
+                                    contents: [
+                                        {
+                                            type: 'text',
+                                            text: 'ผู้ขอ',
+                                            size: 'xs',
+                                            color: '#64748B',
+                                            flex: 1,
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: `${req.requesterName} (${req.requesterRole})`,
+                                            size: 'xs',
+                                            color: '#0F172A',
+                                            weight: 'bold',
+                                            align: 'end',
+                                            flex: 3,
+                                        }
+                                    ]
+                                },
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    justifyContent: 'space-between',
+                                    contents: [
+                                        {
+                                            type: 'text',
+                                            text: 'เวลา',
+                                            size: 'xs',
+                                            color: '#64748B',
+                                            flex: 1,
+                                        },
+                                        {
+                                            type: 'text',
+                                            text: `${dateStr} ${timeStr}`,
+                                            size: 'xs',
+                                            color: '#0F172A',
+                                            align: 'end',
+                                            flex: 3,
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        // One UI Bottom Pill Action Button
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            margin: 'lg',
+                            contents: [
+                                {
+                                    type: 'button',
+                                    style: 'primary',
+                                    height: 'md',
+                                    color: '#0072DE',
+                                    action: {
+                                        type: 'uri',
+                                        label: '🔍 ตรวจสอบและอนุมัติ',
+                                        uri: `${req.webUrl}/approvals`,
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+
+    // ─── Samsung One UI 9 Style: Approval Decision Card (ส่งกลับหาผู้ขอ) ──────
+    approvalDecisionCard: (req: {
+        requestNumber: string
+        moduleType: string
+        decision: 'APPROVED' | 'REJECTED'
+        approverName: string
+        comment?: string
+        decidedAt: string
+        webUrl: string
+    }) => {
+        const isApproved = req.decision === 'APPROVED'
+        const statusBg = isApproved ? '#DCFCE7' : '#FEE2E2'
+        const statusColor = isApproved ? '#15803D' : '#B91C1C'
+        const statusText = isApproved ? 'อนุมัติเรียบร้อย' : 'คำขอถูกปฏิเสธ'
+        const statusIcon = isApproved ? '✅' : '❌'
+
+        const timeStr = new Date(req.decidedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        const dateStr = new Date(req.decidedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+
+        return {
+            type: 'flex',
+            altText: `${statusIcon} ${statusText}: ${req.requestNumber}`,
+            contents: {
+                type: 'bubble',
+                size: 'mega',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: '20px',
+                    spacing: 'md',
+                    contents: [
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            contents: [
+                                {
+                                    type: 'text',
+                                    text: req.requestNumber,
+                                    size: 'xs',
+                                    color: '#94A3B8',
+                                    weight: 'bold',
+                                },
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    backgroundColor: statusBg,
+                                    cornerRadius: 'xxl',
+                                    paddingStart: '10px',
+                                    paddingEnd: '10px',
+                                    paddingTop: '4px',
+                                    paddingBottom: '4px',
+                                    contents: [
+                                        {
+                                            type: 'text',
+                                            text: `${statusIcon} ${statusText}`,
+                                            size: 'xxs',
+                                            weight: 'bold',
+                                            color: statusColor,
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            type: 'text',
+                            text: isApproved ? 'คำขอของคุณได้รับการอนุมัติแล้ว' : 'คำขอของคุณไม่ผ่านการอนุมัติ',
+                            size: 'lg',
+                            weight: 'bold',
+                            color: isApproved ? '#0F172A' : '#991B1B',
+                            margin: 'md',
+                        },
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            backgroundColor: '#F8FAFC',
+                            cornerRadius: '16px',
+                            paddingAll: '14px',
+                            spacing: 'sm',
+                            margin: 'md',
+                            contents: [
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    justifyContent: 'space-between',
+                                    contents: [
+                                        { type: 'text', text: 'ผู้ตัดสินใจ', size: 'xs', color: '#64748B', flex: 1 },
+                                        { type: 'text', text: req.approverName, size: 'xs', color: '#0F172A', weight: 'bold', align: 'end', flex: 2 }
+                                    ]
+                                },
+                                ...(req.comment ? [
+                                    {
+                                        type: 'box' as const,
+                                        layout: 'horizontal' as const,
+                                        justifyContent: 'space-between' as const,
+                                        contents: [
+                                            { type: 'text' as const, text: 'เหตุผล', size: 'xs' as const, color: '#64748B' as const, flex: 1 },
+                                            { type: 'text' as const, text: req.comment, size: 'xs' as const, color: '#0F172A' as const, align: 'end' as const, flex: 2, wrap: true as const }
+                                        ]
+                                    }
+                                ] : []),
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    justifyContent: 'space-between',
+                                    contents: [
+                                        { type: 'text', text: 'เวลา', size: 'xs', color: '#64748B', flex: 1 },
+                                        { type: 'text', text: `${dateStr} ${timeStr}`, size: 'xs', color: '#0F172A', align: 'end', flex: 2 }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            margin: 'lg',
+                            contents: [
+                                {
+                                    type: 'button',
+                                    style: 'secondary',
+                                    height: 'md',
+                                    action: {
+                                        type: 'uri',
+                                        label: '📄 ดูรายละเอียดในระบบ',
+                                        uri: `${req.webUrl}/approvals`,
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+
 };

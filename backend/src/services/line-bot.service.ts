@@ -278,6 +278,98 @@ class LineBotService {
         ])
     }
 
+
+    // ── Approval notifications (Samsung One UI 9 Flex Card) ───────────────────
+    public async notifyApprovalRequest(tenantId: string, req: any) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+
+        const db = getDb()
+        // 1. Target: ADMIN and MASTER in this tenant (check users table or line_user_mappings)
+        const blanketUsers = db.prepare(`
+            SELECT DISTINCT lum.line_user_id
+            FROM line_user_mappings lum
+            LEFT JOIN users u ON lum.user_id = u.id AND (lum.tenant_id = u.tenant_id OR u.tenant_id IS NULL)
+            WHERE lum.tenant_id = ? 
+              AND (
+                u.role IN ('ADMIN', 'MASTER')
+                OR lum.role IN ('ADMIN', 'MASTER')
+                OR lum.user_id LIKE 'master_%'
+              )
+        `).all(tenantId) as { line_user_id: string }[]
+
+        // 2. Specific module approvers from user_approval_permissions
+        const specificUsers = db.prepare(`
+            SELECT lum.line_user_id
+            FROM user_approval_permissions uap
+            JOIN line_user_mappings lum ON uap.user_id = lum.user_id AND uap.tenant_id = lum.tenant_id
+            WHERE uap.tenant_id = ? AND uap.module_type = ? AND uap.can_approve = 1
+        `).all(tenantId, req.module_type) as { line_user_id: string }[]
+
+        const targets = new Set<string>()
+        blanketUsers.forEach(u => targets.add(u.line_user_id))
+        specificUsers.forEach(u => targets.add(u.line_user_id))
+
+        if (targets.size === 0) return
+
+        const webUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
+        const card = (flexTemplates as any).approvalRequestCard({
+            id: req.id,
+            requestNumber: req.request_number,
+            moduleType: req.module_type,
+            requesterName: req.requester_name,
+            requesterRole: req.requester_role,
+            amount: req.amount,
+            description: req.description,
+            createdAt: req.created_at,
+            webUrl,
+        })
+
+        for (const lineUserId of targets) {
+            try {
+                await client.pushMessage(lineUserId, card)
+            } catch (err) {
+                console.error(`notifyApprovalRequest push failed → ${lineUserId}:`, err)
+            }
+        }
+    }
+
+    public async notifyApprovalDecision(
+        tenantId: string,
+        req: any,
+        decision: 'APPROVED' | 'REJECTED',
+        approverName: string,
+        comment?: string
+    ) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+
+        const db = getDb()
+        // Target: Requester's line_user_id
+        const userMapping = db.prepare(
+            'SELECT line_user_id FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?'
+        ).get(tenantId, req.requester_id) as { line_user_id: string } | undefined
+
+        if (!userMapping?.line_user_id) return
+
+        const webUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
+        const card = (flexTemplates as any).approvalDecisionCard({
+            requestNumber: req.request_number,
+            moduleType: req.module_type,
+            decision,
+            approverName,
+            comment,
+            decidedAt: new Date().toISOString(),
+            webUrl,
+        })
+
+        try {
+            await client.pushMessage(userMapping.line_user_id, card)
+        } catch (err) {
+            console.error(`notifyApprovalDecision push failed → ${userMapping.line_user_id}:`, err)
+        }
+    }
+
     // ── Account linking ───────────────────────────────────────────────────────
     /** Generate a short-lived 6-digit token; returns the plain token */
     public generateLinkToken(tenantId: string, userId: string): string {
@@ -829,21 +921,7 @@ class LineBotService {
                 }
             }
 
-            // ── BOM Draft (personal chat only) ───────────────────────────────
-            if (src === 'user') {
-                const bomParsed = parseBOMCommand(text)
-                if (bomParsed) {
-                    await this.handleBOMCommand(tenantId, event, client, bomParsed)
-                    return
-                }
-            }
-
-            // ── PR request (group + personal) ────────────────────────────────
-            const prParsed = parsePRCommand(text)
-            if (prParsed) {
-                await this.handlePRCommand(tenantId, event, client, prParsed)
-                return
-            }
+            // BOM and PR drafting via chat removed (use Web ERP instead)
 
             // ── Account linking (personal chat only) ─────────────────────────
             if (src === 'user' && (lower.startsWith('/ลิงก์ ') || lower.startsWith('ลิงก์ '))) {

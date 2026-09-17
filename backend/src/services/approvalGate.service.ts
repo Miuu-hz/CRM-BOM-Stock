@@ -160,7 +160,16 @@ export function createRequest(args: CreateRequestArgs) {
   `).run(generateId(), args.tenantId, id, args.user.userId, args.user.email, args.user.role,
     args.description, now)
 
-  return db.prepare('SELECT * FROM approval_requests WHERE id = ?').get(id) as any
+  const created = db.prepare('SELECT * FROM approval_requests WHERE id = ?').get(id) as any
+  try {
+    const { lineBotService } = require('./line-bot.service')
+    lineBotService.notifyApprovalRequest(args.tenantId, created).catch((err: any) => {
+      console.error('[approvalGate] notifyApprovalRequest error:', err)
+    })
+  } catch (err) {
+    // silent fail
+  }
+  return created
 }
 
 /**

@@ -479,6 +479,16 @@ router.post('/requests', async (req: Request, res: Response) => {
     transaction()
 
     const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+
+    try {
+      const { lineBotService } = require('../services/line-bot.service')
+      lineBotService.notifyApprovalRequest(tenantId, request).catch((err: any) => {
+        console.error('[approval.routes] notifyApprovalRequest error:', err)
+      })
+    } catch (lineErr) {
+      console.error('[approval.routes] lineBotService error:', lineErr)
+    }
+
     res.status(201).json({ success: true, data: request, message: 'Approval request created' })
   } catch (error) {
     console.error('Create approval request error:', error)
@@ -578,6 +588,17 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     })
 
     transaction()
+
+    try {
+      const { lineBotService } = require('../services/line-bot.service')
+      lineBotService.notifyApprovalDecision(
+        tenantId,
+        request,
+        decision,
+        req.user!.email || req.user!.userId,
+        comment
+      ).catch((err: any) => console.error('[approval.routes] notifyApprovalDecision error:', err))
+    } catch (e) {}
 
     const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: `Request ${decision.toLowerCase()}` })
