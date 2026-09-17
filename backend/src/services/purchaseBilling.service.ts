@@ -31,6 +31,7 @@ export class PurchaseBillingError extends Error {
       | 'INVOICE_NOT_FOUND'
       | 'OVER_BALANCE'
   | 'PO_SUPPLIER_MISMATCH'
+  | 'CR_ACCOUNT_INVALID'
   | 'PO_CANCELLED',
     message: string
   ) {
@@ -57,6 +58,8 @@ export interface CreatePurchaseInvoicePayload {
   notes?: string
   items?: CreatePurchaseInvoiceItem[]
   drAccountId?: string | null
+  // บัญชีปลายทางของหนี้ (ฝั่ง Cr) — ไม่ส่งมา = ใช้เจ้าหนี้การค้าตามผังบัญชี
+  crAccountId?: string | null
   taxRate?: number
 }
 
@@ -93,7 +96,7 @@ function deriveItemsFromPurchaseOrders(tenantId: string, poIds: string[]): Creat
  * (Dr สต็อกวัตถุดิบ/บัญชีที่เลือก + Dr ภาษีซื้อ = Cr เจ้าหนี้การค้า) พร้อม vat_entries
  */
 export function createPurchaseInvoice(tenantId: string, actorEmail: string, payload: CreatePurchaseInvoicePayload) {
-  const { purchaseOrderId, supplierInvoiceNumber, invoiceDate, dueDate, notes, drAccountId, taxRate: reqTaxRate } = payload
+  const { purchaseOrderId, supplierInvoiceNumber, invoiceDate, dueDate, notes, drAccountId, crAccountId, taxRate: reqTaxRate } = payload
   if (!purchaseOrderId) throw new PurchaseBillingError('PO_REQUIRED', 'Purchase order is required')
 
   const grIds: string[] = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
@@ -230,7 +233,16 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     : null
   const inventoryAccId = resolvedDrAccId
     ?? getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
-  const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
+  // ปลายทางของหนี้: ถ้าผู้ใช้เลือกมาต้องเป็นบัญชีหนี้สินของ tenant นี้จริง ๆ
+  // เลือกผิดประเภท (เช่นไปลงบัญชีรายได้) งบจะเพี้ยนเงียบ ๆ จึงเช็ค type ก่อนรับ
+  const pickedCrAcc = crAccountId
+    ? (db.prepare("SELECT id FROM accounts WHERE id = ? AND tenant_id = ? AND type = 'LIABILITY'").get(crAccountId, tenantId) as any)?.id ?? null
+    : null
+  if (crAccountId && !pickedCrAcc) {
+    throw new PurchaseBillingError('CR_ACCOUNT_INVALID', 'บัญชีปลายทางของหนี้ที่เลือกไม่ใช่บัญชีหนี้สินของกิจการนี้')
+  }
+  const payableAccId = pickedCrAcc
+    ?? getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
   const vatAccId = taxAmount > 0 ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : null
   const journalId = generateId()
   const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(invoiceDate || now).getFullYear(), 5)

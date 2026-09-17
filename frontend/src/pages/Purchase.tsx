@@ -656,6 +656,17 @@ const PRSearchInput = ({ requests, value, onChange, disabled = false }: {
   )
 }
 
+// หัวข้อบอกขั้นตอนในโมดัล — เดิมทุกช่องกองรวมกันจนไม่รู้ว่าต้องกรอกอะไรก่อนหลัง
+const StepHead = ({ n, title, hint }: { n: number; title: string; hint?: string }) => (
+  <div className="flex items-baseline gap-2.5 pt-1">
+    <span className="shrink-0 w-5 h-5 rounded-full bg-phopy-indigo/15 text-[var(--primary)] text-[11px] font-bold flex items-center justify-center">{n}</span>
+    <div className="min-w-0">
+      <h3 className="text-sm font-semibold text-[var(--fg-1)] leading-tight">{title}</h3>
+      {hint && <p className="text-xs text-[var(--fg-4)] mt-0.5">{hint}</p>}
+    </div>
+  </div>
+)
+
 const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string; label: string; amount?: number }[] }) => {
   const { t } = useTranslation()
   return (
@@ -1282,6 +1293,8 @@ const Purchase = () => {
   const [quickAddStockCallback, setQuickAddStockCallback] = useState<((item: { id: string; code: string; name: string; unit: string; unitCost: number }) => void) | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [drAccounts, setDrAccounts] = useState<Account[]>([])
+  // บัญชีหนี้สิน สำหรับเลือกปลายทางของหนี้ (เดิมยึดเจ้าหนี้การค้าตายตัว ปรับไม่ได้)
+  const [crAccounts, setCrAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -1338,6 +1351,7 @@ const Purchase = () => {
     tax_rate: 7,
     notes: '',
     dr_account_id: '',   // '' = default 1107 สต็อกวัตถุดิบ
+    cr_account_id: '',   // '' = default 2101 เจ้าหนี้การค้า
     // view-mode snapshot (populated from invoice data, not from orders state)
     _subtotal: 0,
     _tax_amount: 0,
@@ -1385,6 +1399,7 @@ const Purchase = () => {
       if (res.data.success) {
         const list: Account[] = res.data.data.list.filter((a: Account) => a.level >= 2)
         setDrAccounts(list.filter(a => a.type === 'ASSET' || a.type === 'EXPENSE'))
+        setCrAccounts(list.filter(a => a.type === 'LIABILITY'))
       }
     }).catch(() => {})
   }, [])
@@ -1946,6 +1961,7 @@ const Purchase = () => {
         taxRate: invoiceForm.tax_rate,
         notes: invoiceForm.notes,
         drAccountId: invoiceForm.dr_account_id || undefined,
+        crAccountId: invoiceForm.cr_account_id || undefined,
       })
       if (data.success) {
         toast.success(t('purchase.toast.invoiceCreated'))
@@ -2376,6 +2392,7 @@ const Purchase = () => {
           tax_rate: data.tax_rate ?? 7,
           notes: data.notes || '',
           dr_account_id: '',
+          cr_account_id: '',
           _subtotal: data.subtotal || 0,
           _tax_amount: data.tax_amount || 0,
           _total_amount: data.total_amount || 0,
@@ -2412,7 +2429,7 @@ const Purchase = () => {
       setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
       setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
       setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '' })
       setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -3537,7 +3554,7 @@ const Purchase = () => {
             <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
             <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
           </div>
-          <PaymentAttachments refType="PURCHASE_REQUEST" refId={modalData?.id} />
+          <PaymentAttachments dense refType="PURCHASE_REQUEST" refId={modalData?.id} />
         </div>
       )}
 
@@ -3751,7 +3768,7 @@ const Purchase = () => {
             <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
             <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
           </div>
-          <PaymentAttachments refType="PURCHASE_ORDER" refId={modalData?.id} />
+          <PaymentAttachments dense refType="PURCHASE_ORDER" refId={modalData?.id} />
         </div>
       )}
 
@@ -4013,7 +4030,7 @@ const Purchase = () => {
             <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
             <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
           </div>
-          <PaymentAttachments refType="GOODS_RECEIPT" refId={modalData.id} />
+          <PaymentAttachments dense refType="GOODS_RECEIPT" refId={modalData.id} />
         </div>
       )}
 
@@ -4211,8 +4228,11 @@ const Purchase = () => {
     const selectedGRs    = invoiceForm.goods_receipt_ids.map(id => receipts.find(r => r.id === id)).filter(Boolean) as GoodsReceipt[]
     const poGRs          = receipts.filter(r => r.purchase_order_id === invoiceForm.purchase_order_id && r.status === 'CONFIRMED' && !r.invoiced_at)
     const supplierDetail = selectedPO ? suppliers.find(s => s.id === selectedPO.supplier_id) : null
-    // In view mode use the invoice's own stored amounts; in create mode derive from selected PO
-    const subtotal = isView ? invoiceForm._subtotal : (selectedPO?.subtotal ?? 0)
+    // โหมดดู = ใช้ยอดที่บันทึกไว้ในบิล · โหมดสร้าง = คิดจากใบสั่งซื้อที่เลือก
+    // ต้องรวมใบที่ติ๊กเพิ่มด้วย เดิมโชว์แค่ใบหลัก ยอดในจอจึงไม่ตรงกับบิลที่ออกจริง
+    const extraPOs = invoiceForm.extra_po_ids.map(id => orders.find(o => o.id === id)).filter(Boolean) as PurchaseOrder[]
+    const subtotal = isView ? invoiceForm._subtotal
+      : (selectedPO?.subtotal ?? 0) + extraPOs.reduce((sum, o) => sum + (o.subtotal || 0), 0)
     const taxAmt   = isView ? invoiceForm._tax_amount : subtotal * (invoiceForm.tax_rate / 100)
     const total    = isView ? invoiceForm._total_amount : subtotal + taxAmt
     // supplier/po labels for view mode when PO may not be in orders state
@@ -4235,22 +4255,9 @@ const Purchase = () => {
         ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
       }
     >
-      {/* เส้นทางเอกสารร่วม — ชุดเดียวกับที่โมดัลอื่นใช้ จะได้อ่านเหมือนกันทุกจุด
-          (เดิมโมดัลนี้มีแถบ chain ของตัวเองคนละหน้าตากับโมดัลอื่น) */}
-      {invoiceForm.purchase_order_id && <PurchaseTrail poId={invoiceForm.purchase_order_id} />}
-
-      {/* แนบรูป — คอมโพเนนต์เดียวกับสลิปจ่ายเงิน รับเฉพาะไฟล์ภาพสามัญ */}
-      {modalMode === 'view' && modalData?.id && (
-        <div className="space-y-2">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
-            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
-          </div>
-          <PaymentAttachments refType="PURCHASE_INVOICE" refId={modalData.id} />
-        </div>
-      )}
-
-      {/* ── Section 1: PO + GR reference ── */}
+      {/* เส้นทางเอกสารกับช่องแนบรูปย้ายไปท้ายโมดัลแล้ว — ของพวกนั้นเอาไว้ดู
+          ไม่ใช่ของที่ต้องกรอก เอามาขวางหัวโมดัลทำให้ไม่รู้ว่าต้องเริ่มตรงไหน */}
+      <StepHead n={1} title={t('purchase.invoiceModal.step1')} hint={t('purchase.invoiceModal.step1Hint')} />
       <div className="space-y-3">
         {isView ? (
           <div className="p-3 bg-[var(--bg)] rounded-xl text-sm">
@@ -4308,9 +4315,28 @@ const Purchase = () => {
                         <span className={`w-[18px] h-[18px] rounded-md flex items-center justify-center shrink-0 border ${on ? 'bg-phopy-indigo border-phopy-indigo' : 'bg-[var(--surface)] border-[var(--border-strong)]'}`}>
                           {on && <Check className="w-3 h-3 text-white" />}
                         </span>
-                        <span className="text-xs font-mono text-[var(--fg-1)] truncate">{o.po_number}</span>
+                        {/* เดิมโชว์แค่เลขที่กับยอด ตัดสินใจไม่ได้ว่าควรรวมใบไหน */}
+                        <span className="min-w-0">
+                          <span className="flex items-baseline gap-2">
+                            <span className="text-xs font-mono font-semibold text-[var(--fg-1)]">{o.po_number}</span>
+                            <span className="text-[11px] text-[var(--fg-4)] whitespace-nowrap">{formatDate(o.order_date)}</span>
+                          </span>
+                          <span className="block text-[11px] text-[var(--fg-4)] truncate">
+                            {(() => {
+                              const grs = receipts.filter(r => r.purchase_order_id === o.id && r.status === 'CONFIRMED')
+                              const parts = [t('purchase.invoiceModal.itemCount', { count: o.item_count ?? 0 })]
+                              parts.push(grs.length > 0
+                                ? t('purchase.invoiceModal.receivedVia', { docs: grs.map(g => g.gr_number).join(', ') })
+                                : t('purchase.invoiceModal.noReceiptYet'))
+                              return parts.join(' · ')
+                            })()}
+                          </span>
+                        </span>
                       </span>
-                      <span className="text-xs font-mono text-[var(--fg-2)] shrink-0">{formatCurrency(o.total_amount)}</span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-xs font-mono font-semibold text-[var(--fg-1)]">{formatCurrency(o.total_amount)}</span>
+                        <span className="block text-[10px] text-[var(--fg-4)] font-mono">{t('purchase.invoiceModal.beforeVat', { amount: formatCurrency(o.subtotal) })}</span>
+                      </span>
                     </button>
                   )
                 })}
@@ -4372,7 +4398,7 @@ const Purchase = () => {
         )}
       </div>
 
-      {/* ── Section 2: Invoice details ── */}
+      <StepHead n={2} title={t('purchase.invoiceModal.step2')} hint={t('purchase.invoiceModal.step2Hint')} />
       <Field label={`${t('purchase.invoiceModal.supplierInvoiceNumber')} *`}>
         <input type="text" value={invoiceForm.supplier_invoice_number}
           placeholder={t('purchase.invoiceModal.supplierInvoicePlaceholder')}
@@ -4391,7 +4417,7 @@ const Purchase = () => {
         </Field>
       </div>
 
-      {/* ── Section 3: Amount breakdown ── */}
+      <StepHead n={3} title={t('purchase.invoiceModal.step3')} />
       {selectedPO && (
         <div className="p-4 bg-[var(--bg)] rounded-xl space-y-2.5 text-sm">
           <div className="flex justify-between text-[var(--fg-3)]">
@@ -4414,43 +4440,87 @@ const Purchase = () => {
         </div>
       )}
 
+
+      {/* ── ขั้นที่ 4: เงินก้อนนี้ไปอยู่บัญชีไหน ──
+          เดิมมี dropdown ฝั่งเดบิตอันเดียวอยู่ท้ายโมดัล ส่วนฝั่งเครดิตถูกยึดเป็น
+          เจ้าหนี้การค้าตายตัว แล้วตัวอย่างการลงบัญชีอยู่แยกอีกกล่อง อ่านไม่ออกว่าอะไรคู่กับอะไร
+          ตอนนี้รวมเป็นตารางเดียว เห็นคู่เดบิต-เครดิตพร้อมยอด และแก้ได้ทั้งสองฝั่ง */}
+      {(selectedPO || isView) && (
+        <div className="space-y-2">
+          <StepHead n={4} title={t('purchase.invoiceModal.step4')} hint={t('purchase.invoiceModal.step4Hint')} />
+          <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+            {/* มูลค่าสินค้า — เลือกปลายทางได้ */}
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)] bg-[var(--surface)]">
+              <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--success-soft)] text-success">{t('purchase.invoiceModal.debitSide')}</span>
+              {isView ? (
+                <span className="flex-1 text-xs text-[var(--fg-2)] truncate">{t('purchase.journal.rawStockAccount')}</span>
+              ) : (
+                <select value={invoiceForm.dr_account_id}
+                  onChange={e => setInvoiceForm(p => ({ ...p, dr_account_id: e.target.value }))}
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
+                  <option value="">{t('purchase.invoiceModal.defaultDrAccount')}</option>
+                  {['ASSET', 'EXPENSE'].map(type => {
+                    const group = drAccounts.filter(acc => acc.type === type)
+                    if (!group.length) return null
+                    return (
+                      <optgroup key={type} label={type === 'ASSET' ? t('purchase.accountType.asset') : t('purchase.accountType.expense')}>
+                        {group.map(acc => <option key={acc.id} value={acc.id}>{acc.code} – {acc.name}</option>)}
+                      </optgroup>
+                    )
+                  })}
+                </select>
+              )}
+              <span className="shrink-0 text-xs font-mono font-semibold text-[var(--fg-1)] tabular-nums">{formatCurrency(subtotal)}</span>
+            </div>
+
+            {/* ภาษีซื้อ — ผังบัญชีบังคับ แก้ไม่ได้ บอกไปตรง ๆ ดีกว่าให้เดา */}
+            {taxAmt > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)] bg-[var(--bg)]">
+                <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--success-soft)] text-success">{t('purchase.invoiceModal.debitSide')}</span>
+                <span className="flex-1 min-w-0 text-xs text-[var(--fg-3)] truncate">
+                  {t('purchase.journal.inputVatAccount')}
+                  <span className="text-[var(--fg-4)]"> · {t('purchase.invoiceModal.fixedByChart')}</span>
+                </span>
+                <span className="shrink-0 text-xs font-mono text-[var(--fg-2)] tabular-nums">{formatCurrency(taxAmt)}</span>
+              </div>
+            )}
+
+            {/* หนี้ไปค้างที่บัญชีไหน — เดิมยึดเจ้าหนี้การค้าตายตัว ตอนนี้เลือกได้ */}
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--surface)]">
+              <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">{t('purchase.invoiceModal.creditSide')}</span>
+              {isView || crAccounts.length === 0 ? (
+                <span className="flex-1 text-xs text-[var(--fg-2)] truncate">{t('purchase.journal.accountsPayable')}</span>
+              ) : (
+                <select value={invoiceForm.cr_account_id}
+                  onChange={e => setInvoiceForm(p => ({ ...p, cr_account_id: e.target.value }))}
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
+                  <option value="">{t('purchase.invoiceModal.defaultCrAccount')}</option>
+                  {crAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.code} – {acc.name}</option>)}
+                </select>
+              )}
+              <span className="shrink-0 text-xs font-mono font-semibold text-warning tabular-nums">{formatCurrency(total)}</span>
+            </div>
+          </div>
+          <p className="text-xs text-[var(--fg-4)]">{t('purchase.invoiceModal.balanceHint', { amount: formatCurrency(total) })}</p>
+        </div>
+      )}
+
       <Field label={t('purchase.common.notes')}>
         <textarea value={invoiceForm.notes} onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))}
           rows={2} className={`${inputCls()} resize-none`} placeholder={t('purchase.common.notes')} />
       </Field>
+      {/* ── ของไว้ดู ไม่ใช่ของต้องกรอก จึงอยู่ท้ายสุด ── */}
+      {invoiceForm.purchase_order_id && <PurchaseTrail poId={invoiceForm.purchase_order_id} />}
 
-      {/* DR Account override */}
-      <Field label={t('purchase.invoiceModal.drAccount')}>
-        <select value={invoiceForm.dr_account_id}
-          onChange={e => setInvoiceForm(p => ({ ...p, dr_account_id: e.target.value }))}
-          className={inputCls()}>
-          <option value="">{t('purchase.invoiceModal.defaultDrAccount')}</option>
-          {['ASSET', 'EXPENSE'].map(type => {
-            const group = drAccounts.filter(a => a.type === type)
-            if (!group.length) return null
-            const label = type === 'ASSET' ? t('purchase.accountType.asset') : t('purchase.accountType.expense')
-            return (
-              <optgroup key={type} label={label}>
-                {group.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
-              </optgroup>
-            )
-          })}
-        </select>
-        <p className="text-xs text-[var(--fg-4)] mt-1">{t('purchase.invoiceModal.drAccountHint')}</p>
-      </Field>
-
-      {/* Journal preview */}
-      {selectedPO && (() => {
-        const selectedDrAcc = drAccounts.find(a => a.id === invoiceForm.dr_account_id)
-        const drLabel = selectedDrAcc ? `${selectedDrAcc.code} ${selectedDrAcc.name}` : t('purchase.journal.rawStockAccount')
-        return (
-          <JournalPreview entries={[
-            { dr: true,  account: drLabel,                  label: t('purchase.journal.goodsValue'), amount: subtotal },
-            { dr: true,  account: t('purchase.journal.inputVatAccount'),         label: t('purchase.journal.vat'),          amount: taxAmt },
-            { dr: false, account: t('purchase.journal.accountsPayable'),   label: t('purchase.journal.total'),       amount: total },
-          ]} />
-        )
-      })()}
+      {modalMode === 'view' && modalData?.id && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">{t('purchase.attachments.title')}</h3>
+            <span className="text-xs text-[var(--fg-4)]">{t('purchase.attachments.hint')}</span>
+          </div>
+          <PaymentAttachments dense refType="PURCHASE_INVOICE" refId={modalData.id} />
+        </div>
+      )}
     </ModalShell>
     )
   }
@@ -4479,7 +4549,7 @@ const Purchase = () => {
 
           {/* Slip attachments — only meaningful once the payment row exists (view mode) */}
           {modalMode === 'view' && modalData?.id && (
-            <PaymentAttachments refType="SUPPLIER_PAYMENT" refId={modalData.id} />
+            <PaymentAttachments dense refType="SUPPLIER_PAYMENT" refId={modalData.id} />
           )}
 
           {/* Supplier */}

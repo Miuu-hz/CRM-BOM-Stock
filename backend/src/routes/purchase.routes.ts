@@ -938,7 +938,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
     if (!canHandleBilling(req.user!, 'purchase')) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
     }
-    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, taxRate: reqTaxRate } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, crAccountId, taxRate: reqTaxRate } = req.body
 
     const invoice = createPurchaseInvoice(tenantId, req.user!.email, {
       purchaseOrderId,
@@ -946,6 +946,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
       purchaseOrderIds: req.body.purchaseOrderIds,
       goodsReceiptId,
       goodsReceiptIds,
+      crAccountId,
       supplierInvoiceNumber,
       invoiceDate,
       dueDate,

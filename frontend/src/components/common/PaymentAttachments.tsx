@@ -33,7 +33,9 @@ function formatSize(bytes: number) {
 // GET /api/attachments/:id/file — see backend/src/routes/attachments.routes.ts).
 // One component so supplier payment slips (Purchase.tsx) and sales
 // receipts/invoices (Sales.tsx) don't each reimplement upload + PDF handling.
-export function PaymentAttachments({ refType, refId, readOnly = false }: { refType: AttachmentRefType; refId: string; readOnly?: boolean }) {
+// dense = โหมดแน่น รูปเล็กลง ใช้ในโมดัลที่มีเนื้อหาเยอะอยู่แล้ว (ฝั่งจัดซื้อ)
+// ค่าเริ่มต้นยังเป็นขนาดเดิม ฝั่งขายจึงไม่กระทบ
+export function PaymentAttachments({ refType, refId, readOnly = false, dense = false }: { refType: AttachmentRefType; refId: string; readOnly?: boolean; dense?: boolean }) {
   const { t } = useTranslation()
   const [items, setItems] = useState<AttachmentRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,12 +106,12 @@ export function PaymentAttachments({ refType, refId, readOnly = false }: { refTy
         )}
       </div>
       {items.length === 0 ? (
-        <div className="border-2 border-dashed border-[var(--border)]/50 rounded-xl p-4 text-center text-[var(--fg-4)] text-sm">
-          <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-30" />
+        <div className={`border border-dashed border-[var(--border)]/60 rounded-xl text-center text-[var(--fg-4)] ${dense ? 'py-2 text-xs' : 'p-4 text-sm border-2'}`}>
+          {!dense && <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-30" />}
           {t('attachments.none')}
         </div>
       ) : (
-        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+        <div className={`grid gap-2 ${dense ? 'grid-cols-5 md:grid-cols-8' : 'grid-cols-3 md:grid-cols-5'}`}>
           {items.map(att => (
             <div key={att.id} className="rounded-xl overflow-hidden border border-[var(--border)]/50 bg-[var(--surface-2)] flex flex-col">
               <div className="relative group aspect-square">
