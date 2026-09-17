@@ -583,7 +583,9 @@
       "journalEntry": "สมุดรายวัน: {{number}}",
       "reference": "อ้างอิง:",
       "companyFallback": "บริษัท",
-      "unitFallback": "หน่วย"
+      "unitFallback": "หน่วย",
+      "progress": "ไปถึงไหนแล้ว",
+      "nextStep": "ขั้นต่อไป"
     },
     "overview": {
       "totalOrderAmount": "ยอดสั่งซื้อรวม",
@@ -600,7 +602,9 @@
       "unpaidInvoicesLabel": "ใบแจ้งหนี้ค้างจ่าย",
       "workflowTitle": "กระบวนการจัดซื้อ",
       "orderStatusTitle": "สถานะใบสั่งซื้อ",
-      "paymentStatusTitle": "สถานะการจ่ายเงิน"
+      "paymentStatusTitle": "สถานะการจ่ายเงิน",
+      "recentTitle": "ความเคลื่อนไหวล่าสุด",
+      "recentEmpty": "ยังไม่มีความเคลื่อนไหวในโมดูลจัดซื้อ"
     },
     "workflow": {
       "request": "ใบขอซื้อ",
@@ -635,7 +639,8 @@
       "paid": "จ่ายแล้ว",
       "overdue": "เกินกำหนด",
       "issued": "ออกแล้ว",
-      "converted": "แปลงเป็นใบสั่งซื้อแล้ว"
+      "converted": "แปลงเป็นใบสั่งซื้อแล้ว",
+      "rejected": "ถูกปฏิเสธ"
     },
     "priority": {
       "low": "ต่ำ",
@@ -815,7 +820,8 @@
         "grConfirmed": "GR ×{{count}}",
         "grDraft": "GR ร่าง ×{{count}}",
         "invCount": "INV ×{{count}}"
-      }
+      },
+      "expectedOn": "กำหนดส่ง {{date}}"
     },
     "receipts": {
       "headers": {
@@ -1133,7 +1139,8 @@
         "APPROVED": "อนุมัติแล้ว",
         "PARTIAL": "รับบางส่วน",
         "RECEIVED": "รับครบ"
-      }
+      },
+      "noOrderYet": "ใบนี้ยังไม่ได้ออกใบสั่งซื้อ จึงยังไม่มีเส้นทางเอกสารให้ดู"
     },
     "selfApprove": {
       "readyNote": "ข้ามขั้นรออนุมัติ เพราะคุณมีสิทธิ์อนุมัติเอง — ระบบจะบันทึกว่าคุณเป็นคนอนุมัติ",
@@ -1152,7 +1159,41 @@
       "waitApproval": "รออนุมัติก่อน",
       "prRejected": "ใบนี้ถูกปฏิเสธ",
       "prCancelled": "ใบนี้ถูกยกเลิก",
-      "noPermissionPO": "ไม่มีสิทธิ์เปิดใบสั่งซื้อ"
+      "noPermissionPO": "ไม่มีสิทธิ์เปิดใบสั่งซื้อ",
+      "cancelled": "ยกเลิกแล้ว ทำต่อไม่ได้",
+      "noPermissionApprove": "ไม่มีสิทธิ์อนุมัติ",
+      "cycleClosed": "ปิดครบวงจรแล้ว",
+      "confirmReceipt": "ยืนยันรับของ",
+      "stockedIn": "ของเข้าคลังแล้ว",
+      "fullyPaid": "จ่ายครบแล้ว"
+    },
+    "header": {
+      "waiting": "{{count}} ใบรอคุณจัดการ"
+    },
+    "filter": {
+      "all": "ทั้งหมด",
+      "mine": "รอคุณจัดการ",
+      "due": "ค้างจ่าย"
+    },
+    "rowMenu": {
+      "more": "ตัวเลือกเพิ่มเติม"
+    },
+    "stage": {
+      "pr": {
+        "draft": "ร่าง",
+        "pending": "รออนุมัติ",
+        "approved": "อนุมัติแล้ว",
+        "converted": "เป็นใบสั่งซื้อแล้ว"
+      },
+      "gr": {
+        "draft": "ร่าง",
+        "confirmed": "ของเข้าคลังแล้ว"
+      },
+      "inv": {
+        "draft": "ร่าง",
+        "billed": "ตั้งหนี้แล้ว",
+        "paid": "จ่ายครบ"
+      }
     }
   },
   "sales": {
@@ -2644,7 +2685,30 @@
         "regenerateConfirm": "สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?",
         "regenerateSuccess": "สร้าง API Key ใหม่แล้ว",
         "regenerateFailed": "สร้าง Key ไม่สำเร็จ",
-        "testFailed": "ทดสอบไม่สำเร็จ"
+        "testFailed": "ทดสอบไม่สำเร็จ",
+        "clientPresetLabel": "เลือกรูปแบบไคลเอนต์ AI ที่คุณใช้งาน",
+        "presets": {
+          "gemini": "Gemini Spark",
+          "claudeCode": "Claude Code (CLI)",
+          "claudeDesktop": "Claude Desktop",
+          "raw": "URL ทั่วไป (Cursor / Cline)"
+        },
+        "labels": {
+          "gemini": "URL เชื่อมต่อสำหรับ Gemini Spark (มีคีย์ในตัว):",
+          "claudeCode": "คำสั่ง Terminal สำหรับ Claude Code:",
+          "claudeDesktop": "JSON Config สำหรับ Claude Desktop:",
+          "raw": "Endpoint URL พร้อมคีย์:"
+        },
+        "hints": {
+          "gemini": "นำ URL ด้านบนไปวางใน Gemini > Settings & help > Connected Apps > Custom apps for Spark",
+          "claudeCode": "รันคำสั่งนี้ใน Terminal เพื่อเพิ่ม MCP Server ใน Claude Code ทันที",
+          "claudeDesktop": "นำ JSON ไปใส่ใต้คีย์ mcpServers ในไฟล์ claude_desktop_config.json",
+          "raw": "ใช้สำหรับ Cursor, Cline หรือเครื่องมือใดๆ ที่ต้องการ MCP Endpoint URL เต็ม"
+        },
+        "copyBtn": "คัดลอก",
+        "copiedFor": "คัดลอกสำหรับ {{client}} แล้ว",
+        "showKey": "แสดงคีย์",
+        "hideKey": "ซ่อนคีย์"
       }
     },
     "line": {

@@ -19,6 +19,7 @@ import {
   Landmark,
   LayoutGrid,
   Lock,
+  MoreHorizontal,
   LayoutList,
   Package,
   Pencil,
@@ -67,7 +68,20 @@ interface Material {
   unitCost?: number
 }
 
+// รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
+// party ของใบขอซื้อคือแผนก ไม่ใช่ผู้ขาย (ใบขอซื้อยังไม่มีผู้ขาย) · amount เป็น null ได้ (ใบรับของ)
+interface PurchaseActivity {
+  kind: 'PR' | 'PO' | 'GR' | 'INV' | 'PAY'
+  id: string
+  doc: string
+  party: string | null
+  amount: number | null
+  status: string
+  updated_at: string
+}
+
 interface PurchaseSummary {
+  recentActivity?: PurchaseActivity[]
   purchaseRequests: { total: number; draft: number; pending: number; approved: number; totalAmount: number }
   purchaseOrders: { total: number; draft: number; pending: number; received: number; partial: number; totalAmount: number }
   goodsReceipts: { confirmed: number }
@@ -1013,6 +1027,15 @@ const QuickAddStockItemModal = ({ onClose, onCreated, prefill }: {
 
 // ─── แถบสถานะใบสั่งซื้อ ───────────────────────────────────────────────────────
 // เห็นทีเดียวว่าใบนี้เดินมาถึงไหน แบบเดียวกับ Status Flow ของใบสั่งขาย
+// ป้ายและปลายทางของแต่ละชนิดเอกสารในฟีดความเคลื่อนไหว
+const ACTIVITY_TARGET: Record<string, { tab: string; modal: string; labelKey: string; tone: string }> = {
+  PR:  { tab: 'requests', modal: 'request', labelKey: 'purchase.tabs.requests', tone: 'bg-phopy-indigo/10 text-[var(--primary)] border-phopy-indigo/30' },
+  PO:  { tab: 'orders',   modal: 'order',   labelKey: 'purchase.tabs.orders',   tone: 'bg-purple-500/10 text-purple-500 border-purple-500/30' },
+  GR:  { tab: 'receipts', modal: 'receipt', labelKey: 'purchase.tabs.receipts', tone: 'bg-[var(--success-soft)] text-success border-success/30' },
+  INV: { tab: 'invoices', modal: 'invoice', labelKey: 'purchase.tabs.invoices', tone: 'bg-[var(--warning-soft)] text-warning border-warning/30' },
+  PAY: { tab: 'payments', modal: 'payment', labelKey: 'purchase.tabs.payments', tone: 'bg-[var(--info-soft)] text-info border-info/30' },
+}
+
 const PO_FLOW = ['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL', 'RECEIVED'] as const
 
 const POStatusFlow = ({ status }: { status: string }) => {
@@ -1049,6 +1072,20 @@ const POStatusFlow = ({ status }: { status: string }) => {
 // ─── เส้นทางเอกสารของใบสั่งซื้อใบนี้ ───────────────────────────────────────────
 // ใบขอซื้อ → ใบสั่งซื้อ → รับสินค้า → ใบแจ้งหนี้ → จ่ายเงิน (+ คืนสินค้าถ้ามี)
 // ใช้ซ้ำได้ทุกโมดัลย่อย จะได้รู้ตลอดว่ากำลังยืนอยู่ตรงไหนของสาย
+// "เมื่อ 2 ชม.ที่แล้ว" — ใช้ Intl.RelativeTimeFormat ที่มีในเบราว์เซอร์อยู่แล้ว ไม่ต้องลง lib
+const timeAgo = (iso: string) => {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return ''
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['day', 86400000], ['hour', 3600000], ['minute', 60000],
+  ]
+  const rtf = new Intl.RelativeTimeFormat('th-TH', { numeric: 'auto', style: 'narrow' })
+  for (const [unit, size] of units) {
+    if (Math.abs(ms) >= size) return rtf.format(-Math.round(ms / size), unit)
+  }
+  return rtf.format(0, 'minute')
+}
+
 const PurchaseTrail = ({ poId }: { poId: string }) => {
   const { t } = useTranslation()
   const [data, setData] = useState<any>(null)
@@ -1114,6 +1151,65 @@ const PurchaseTrail = ({ poId }: { poId: string }) => {
   )
 }
 
+// เมนู "..." ท้ายแถว — เก็บปุ่มรอง (พิมพ์/แก้/ลบ/ยกเลิก) ไม่ให้แย่งสายตากับปุ่มขั้นต่อไป
+// เงื่อนไขสิทธิ์/สถานะยังเป็นของเดิมทุกข้อ แค่ย้ายที่อยู่ — ไม่ได้เปิดสิทธิ์ให้ใครเพิ่ม
+type RowMenuItem = { label: string; onClick: () => void; danger?: boolean }
+
+const RowMenu = ({ items, label }: { items: RowMenuItem[]; label: string }) => {
+  const [open, setOpen] = useState(false)
+  if (items.length === 0) return null
+  return (
+    <div className="relative flex justify-end">
+      <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} aria-label={label} aria-expanded={open}
+        className="p-2 rounded-lg text-[var(--fg-4)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)] transition-colors">
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+      {open && (<>
+        <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOpen(false) }} />
+        <div className="absolute right-0 top-9 z-50 min-w-[168px] py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl">
+          {items.map(it => (
+            <button key={it.label} onClick={e => { e.stopPropagation(); setOpen(false); it.onClick() }}
+              className={`w-full text-left px-3 py-2.5 text-xs transition-colors hover:bg-[var(--bg)] ${it.danger ? 'text-danger' : 'text-[var(--fg-2)]'}`}>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      </>)}
+    </div>
+  )
+}
+
+// แถบ "ไปถึงไหนแล้ว" — ขีดสั้น ๆ บอกว่าใบนี้เดินมาถึงขั้นไหนของสาย
+//   เขียว = ผ่านแล้ว · น้ำเงิน = อยู่ตรงนี้ · เทา = ยังไม่ถึง · เทาจาง = ข้ามขั้นนั้นไป
+// ใบที่ถูกยกเลิก/ปฏิเสธไม่วาดขีด เพราะมันไม่ได้อยู่บนสายแล้ว — ขึ้นป้ายแดงแทน
+type StageView = { stages: string[]; idx: number; skipped?: number[]; dead?: string }
+
+const StagePips = ({ view }: { view: StageView }) => {
+  if (view.dead) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[var(--danger-soft)] text-danger text-[11px] font-medium">
+        <Ban className="w-3 h-3 shrink-0" />{view.dead}
+      </span>
+    )
+  }
+  const last = view.stages.length - 1
+  return (
+    <div>
+      <div className="flex items-center gap-[3px] mb-1">
+        {view.stages.map((_, i) => (
+          <span key={i} className={`w-[15px] h-1 rounded-sm shrink-0 ${
+            view.skipped?.includes(i) ? 'bg-[var(--border)] opacity-40'
+              : i < view.idx ? 'bg-success'
+                : i === view.idx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
+        ))}
+      </div>
+      <span className={`text-[11px] font-medium ${view.idx >= last ? 'text-success' : 'text-[var(--primary)]'}`}>
+        {view.stages[view.idx] ?? view.stages[last]}
+      </span>
+    </div>
+  )
+}
+
 // ช่อง "ขั้นต่อไป" ของแต่ละแถว — มี 3 หน้าตาเท่านั้น
 //   ปุ่ม    = ยังทำได้ กดแล้วเปิดโมดัลสร้างเอกสารใบถัดไป (กรอกให้แล้ว แก้ได้ก่อนยืนยัน)
 //   ข้อความ = ทำไปแล้ว บอกว่าไปเป็นใบไหน กดไปดูใบนั้นได้
@@ -1164,6 +1260,10 @@ const Purchase = () => {
   const canMakePO = canCancelDoc
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
+  // กางได้ทีละใบ — เก็บ id ใบเดียว จึงยิง doc-trail ครั้งละคำขอเดียว ไม่ถล่ม backend
+  const [openRow, setOpenRow] = useState<string | null>(null)
+  // ชิปกรองบนแถบค้นหา: ทั้งหมด / รอคุณจัดการ / ค้างจ่าย
+  const [rowFilter, setRowFilter] = useState<'all' | 'mine' | 'due'>('all')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
   const [currentPage, setCurrentPage] = useState(1)
   const [summary, setSummary] = useState<PurchaseSummary | null>(null)
@@ -2000,6 +2100,13 @@ const Purchase = () => {
       if (!canMakePO) return { kind: 'locked', label: t('purchase.nextStep.noPermissionPO') }
       return { kind: 'action', label: t('purchase.nextStep.createPO'), onClick: () => handleConvertRequestToOrder(req.id) }
     }
+    if (req.status === 'DRAFT') {
+      return { kind: 'action', label: t('purchase.actions.submitForApproval'), onClick: () => handleSubmitRequestDirect(req.id, 'PENDING') }
+    }
+    if (req.status === 'PENDING') {
+      if (!canMakePO) return { kind: 'locked', label: t('purchase.nextStep.waitApproval') }
+      return { kind: 'action', label: t('purchase.actions.approve'), onClick: () => handleSubmitRequestDirect(req.id, 'APPROVED') }
+    }
     return { kind: 'locked', label: t('purchase.nextStep.waitApproval') }
   }
 
@@ -2012,6 +2119,168 @@ const Purchase = () => {
   // ใบแจ้งหนี้ของ PO ใบนี้ที่ยังค้างจ่าย — ใช้ตัดสินว่าจะโชว์ปุ่ม "จ่ายเงิน" ในแถวไหม
   const poUnpaidInvoice = (order: PurchaseOrder) =>
     invoices.find(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED' && i.payment_status !== 'PAID')
+
+  // ── ขั้นต่อไป: กฎชุดเดียวใช้ทั้งมุมมองตารางและการ์ด ─────────────
+  // เดิมกฎเดียวกันถูกเขียนซ้ำคนละที่แล้วไม่ตรงกัน จึงเกิดเคส PO-2026-00029
+  // ที่ออกบิลไปแล้วแต่ยังโผล่ใน dropdown ให้เลือกซ้ำได้
+  const poNextStep = (order: PurchaseOrder): NextStep => {
+    if (order.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.cancelled') }
+    if (order.status === 'DRAFT') {
+      return { kind: 'action', label: t('purchase.actions.submitForApproval'), onClick: () => handleUpdateOrderStatus(order.id, 'SUBMITTED') }
+    }
+    if (order.status === 'SUBMITTED') {
+      if (!canMakePO) return { kind: 'locked', label: t('purchase.nextStep.noPermissionApprove') }
+      return { kind: 'action', label: t('purchase.actions.approve'), onClick: () => handleUpdateOrderStatus(order.id, 'APPROVED') }
+    }
+    if (order.status === 'APPROVED' || order.status === 'PARTIAL') {
+      return {
+        kind: 'action', label: t('purchase.actions.receiveGoods'),
+        onClick: () => {
+          setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
+          loadPendingItems(order.id)
+          openModal('receipt', 'create')
+        },
+      }
+    }
+    // รับของครบแล้ว — ถ้ายังมีของที่ยังไม่ได้วางบิล ให้ออกใบแจ้งหนี้
+    if (poHasInvoiceableTarget(order)) {
+      return {
+        kind: 'action', label: t('purchase.actions.createInvoice'),
+        onClick: () => {
+          setInvoiceForm(p => ({
+            ...p,
+            purchase_order_id: order.id,
+            extra_po_ids: [],
+            goods_receipt_ids: [],
+            tax_rate: order.tax_rate ?? 7,
+            due_date: order.expected_date?.split('T')[0] || '',
+          }))
+          openModal('invoice', 'create')
+        },
+      }
+    }
+    // วางบิลแล้วแต่ยังค้างจ่าย — เดินต่อไปจ่ายเงินได้จากตรงนี้เลย
+    const unpaid = poUnpaidInvoice(order)
+    if (unpaid) {
+      return {
+        kind: 'action', label: t('purchase.actions.payNow'),
+        onClick: () => {
+          setPaymentForm(p => ({ ...p, supplier_id: order.supplier_id, purchase_invoice_id: unpaid.id, amount: unpaid.balance_amount || 0 }))
+          openModal('payment', 'create')
+        },
+      }
+    }
+    // ไม่มีอะไรให้ทำต่อ = ปิดครบวงจรแล้ว บอกไปเลยว่าจบที่ใบไหน
+    const paid = invoices.find(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
+    if (paid) {
+      return {
+        kind: 'done', label: t('purchase.nextStep.cycleClosed'), docNumber: paid.pi_number,
+        onClick: () => { setActiveTab('invoices'); openModalWithDetail('invoice', 'view', paid.id, paid) },
+      }
+    }
+    return { kind: 'done', label: t('purchase.nextStep.cycleClosed') }
+  }
+
+  const grNextStep = (receipt: GoodsReceipt): NextStep => {
+    if (receipt.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.cancelled') }
+    // สิทธิ์ยืนยันรับของฝั่ง backend ดูถึงระดับแผนก (can(purchase|stock,'write'))
+    // ซึ่งฝั่งหน้าเว็บไม่มีข้อมูลพอจะคำนวณ จึงไม่ล็อกปุ่มที่นี่ ปล่อยให้ backend ตัดสิน
+    if (receipt.status === 'DRAFT') {
+      return { kind: 'action', label: t('purchase.nextStep.confirmReceipt'), onClick: () => handleConfirmReceipt(receipt.id) }
+    }
+    return { kind: 'done', label: t('purchase.nextStep.stockedIn') }
+  }
+
+  const invNextStep = (invoice: PurchaseInvoice): NextStep => {
+    if (invoice.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.cancelled') }
+    if (invoice.payment_status === 'PAID') return { kind: 'done', label: t('purchase.nextStep.fullyPaid') }
+    return {
+      kind: 'action', label: t('purchase.actions.payNow'),
+      onClick: () => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount }),
+    }
+  }
+
+  // ── แถบ "ไปถึงไหนแล้ว" ของแต่ละชนิดเอกสาร ─────────────────────
+  const prStageView = (req: PurchaseRequest): StageView => {
+    const stages = [t('purchase.stage.pr.draft'), t('purchase.stage.pr.pending'), t('purchase.stage.pr.approved'), t('purchase.stage.pr.converted')]
+    if (req.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
+    if (req.status === 'REJECTED') return { stages, idx: 0, dead: t('purchase.status.rejected') }
+    if (orders.some(o => o.linked_pr_id === req.id && o.status !== 'CANCELLED')) return { stages, idx: 3 }
+    return { stages, idx: req.status === 'APPROVED' ? 2 : req.status === 'DRAFT' ? 0 : 1 }
+  }
+
+  const poStageView = (order: PurchaseOrder): StageView => {
+    const stages = PO_FLOW.map(k => t(`purchase.trail.step.${k}`))
+    if (order.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
+    const idx = PO_FLOW.indexOf(order.status as any)
+    // รับครบโดยไม่เคยผ่าน "รับบางส่วน" = ข้ามขั้นนั้นไป ไม่ใช่ค้างอยู่
+    return { stages, idx: idx < 0 ? 0 : idx, skipped: order.status === 'RECEIVED' ? [3] : undefined }
+  }
+
+  const grStageView = (receipt: GoodsReceipt): StageView => {
+    const stages = [t('purchase.stage.gr.draft'), t('purchase.stage.gr.confirmed')]
+    if (receipt.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
+    return { stages, idx: receipt.status === 'CONFIRMED' ? 1 : 0 }
+  }
+
+  const invStageView = (invoice: PurchaseInvoice): StageView => {
+    const stages = [t('purchase.stage.inv.draft'), t('purchase.stage.inv.billed'), t('purchase.stage.inv.paid')]
+    if (invoice.status === 'CANCELLED') return { stages, idx: 0, dead: t('purchase.status.cancelled') }
+    if (invoice.status === 'DRAFT') return { stages, idx: 0 }
+    return { stages, idx: invoice.payment_status === 'PAID' ? 2 : 1 }
+  }
+
+  // ชิปกรองบนแถบค้นหา — "ค้างจ่าย" โผล่เฉพาะแท็บที่มีความหมายจริง (PO/ใบแจ้งหนี้)
+  // แท็บใบขอซื้อกับใบรับของไม่มีหนี้ให้ค้าง จึงซ่อนไปเลย ดีกว่าโชว์แล้วกดได้ 0 รายการ
+  const rowFilterChips = (showDue: boolean) => {
+    const chips: Array<['all' | 'mine' | 'due', string]> = [
+      ['all', t('purchase.filter.all')],
+      ['mine', t('purchase.filter.mine')],
+    ]
+    if (showDue) chips.push(['due', t('purchase.filter.due')])
+    return (
+      <div className="flex items-center gap-2">
+        {chips.map(([key, label]) => (
+          <button key={key} onClick={() => { setRowFilter(key); setCurrentPage(1) }} aria-pressed={rowFilter === key}
+            className={`h-9 px-3.5 rounded-lg text-xs font-semibold border whitespace-nowrap transition-colors ${
+              rowFilter === key
+                ? 'bg-phopy-indigo/10 text-[var(--primary)] border-phopy-indigo/40'
+                : 'bg-[var(--bg)] text-[var(--fg-3)] border-[var(--border)] hover:text-[var(--fg-1)]'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  // ผ่านตัวกรองไหม — 'mine' = ยังมีอะไรให้ทำ · 'due' = ยังค้างจ่าย
+  const passesRowFilter = (step: NextStep, due: boolean) =>
+    rowFilter === 'all' ? true : rowFilter === 'mine' ? step.kind === 'action' : due
+
+  // กล่องเส้นทางเอกสารที่กางออกมาใต้แถว — เรียกเป็นฟังก์ชัน ไม่ใช่ <Component/>
+  // เพราะถ้าเป็นคอมโพเนนต์ที่ประกาศในนี้ มันจะ remount ทุกครั้งที่ re-render
+  // แล้ว PurchaseTrail จะยิง API ซ้ำไม่หยุด
+  const expandedTrail = (kind: 'pr' | 'po' | 'gr' | 'inv', row: any) => {
+    const poId = trailPoId(kind, row)
+    return (
+      <div className="px-4 pb-4 pt-1 bg-[var(--surface-2)]/40 border-b border-[var(--border)]/20" onClick={e => e.stopPropagation()}>
+        {poId ? <PurchaseTrail poId={poId} /> : (
+          <div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[var(--border-strong)]">
+            <AlertCircle className="w-3.5 h-3.5 text-[var(--fg-4)] shrink-0" />
+            <span className="text-xs text-[var(--fg-3)]">{t('purchase.trail.noOrderYet')}</span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ใบสั่งซื้อที่เป็นต้นสายของเอกสารใบนี้ — ใช้เปิดกล่องเส้นทางเอกสาร
+  // ใบขอซื้อที่ยังไม่ได้แปลงเป็น PO จะไม่มีต้นสาย → คืน null แล้วไม่ยิง API เปล่า
+  const trailPoId = (kind: 'pr' | 'po' | 'gr' | 'inv', row: any): string | null => {
+    if (kind === 'po') return row.id
+    if (kind === 'gr' || kind === 'inv') return row.purchase_order_id || null
+    return orders.find(o => o.linked_pr_id === row.id && o.status !== 'CANCELLED')?.id || null
+  }
 
   // Modal handlers
   const openModal = (type: string, mode: 'create' | 'edit' | 'view', data?: any) => {
@@ -2412,29 +2681,35 @@ const Purchase = () => {
           </motion.div>
         )}
 
-        {/* Workflow pipeline */}
+        {/* ความเคลื่อนไหวล่าสุด — แทนแถบ "ขั้นตอนการทำงาน" เดิมที่เป็นตัวเลขเฉย ๆ
+            และซ้ำกับตารางสถานะที่อยู่ถัดลงไปอยู่แล้ว */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
           className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-[var(--fg-3)] mb-4">{t('purchase.overview.workflowTitle')}</h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { label: t('purchase.workflow.request'), count: summary?.purchaseRequests.total || 0, color: 'text-[var(--primary)]' },
-              { label: t('purchase.workflow.order'), count: summary?.purchaseOrders.total || 0, color: 'text-purple-500' },
-              { label: t('purchase.workflow.receipt'), count: summary?.goodsReceipts.confirmed || 0, color: 'text-success' },
-              { label: t('purchase.workflow.invoice'), count: summary?.invoices.total || 0, color: 'text-blue-400' },
-              { label: t('purchase.workflow.payment'), count: summary?.payments.total || 0, color: 'text-success' },
-            ].map((step, i, arr) => (
-              <div key={step.label} className="flex items-center gap-2">
-                <div className="text-center min-w-[60px]">
-                  <p className={`text-2xl font-bold ${step.color}`}>{step.count}</p>
-                  <p className="text-xs text-[var(--fg-4)] mt-0.5">{step.label}</p>
-                </div>
-                {i < arr.length - 1 && <ChevronRight className="w-5 h-5 text-gray-700 shrink-0" />}
-              </div>
-            ))}
-          </div>
+          <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-3 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[var(--primary)]" /> {t('purchase.overview.recentTitle')}
+          </h3>
+          {(summary?.recentActivity?.length ?? 0) === 0 ? (
+            <p className="text-sm text-[var(--fg-4)] py-6 text-center">{t('purchase.overview.recentEmpty')}</p>
+          ) : (
+            <div className="divide-y divide-[var(--border)]/30">
+              {summary!.recentActivity!.map(a => {
+                const go = ACTIVITY_TARGET[a.kind]
+                return (
+                  <button key={`${a.kind}-${a.id}`} onClick={() => { setActiveTab(go.tab as any); openModalWithDetail(go.modal, 'view', a.id) }}
+                    className="w-full flex items-center gap-3 py-2.5 px-1 text-left rounded-lg hover:bg-[var(--bg)] transition-colors">
+                    <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold border ${go.tone}`}>{t(go.labelKey)}</span>
+                    <span className="font-mono text-xs text-[var(--primary)] shrink-0">{a.doc}</span>
+                    <span className="text-sm text-[var(--fg-2)] truncate flex-1 min-w-0">{a.party || '-'}</span>
+                    {a.amount != null && (
+                      <span className="text-xs font-semibold text-[var(--fg-1)] tabular-nums shrink-0">{formatCurrency(a.amount)}</span>
+                    )}
+                    <span className="text-[11px] text-[var(--fg-4)] shrink-0 w-20 text-right">{timeAgo(a.updated_at)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </motion.div>
-
         {/* Status grids */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
@@ -2548,77 +2823,63 @@ const Purchase = () => {
   // ─── Document list content components ────────────────────────────
   const RequestsContent = () => {
     const filtered = requests.filter(r =>
-      r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.requester_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      (r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.requester_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      && passesRowFilter(prNextStep(r), false)
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.requestsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          {rowFilterChips(false)}
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('request', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createRequest')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.requests')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.requests.headers.number')}</span><span className="col-span-3">{t('purchase.requests.headers.requester')}</span><span className="col-span-2">{t('purchase.requests.headers.department')}</span>
-              <span className="col-span-2">{t('purchase.requests.headers.requestDate')}</span><span className="col-span-1">{t('purchase.common.status')}</span>
-              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-1"></span>
+              <span className="col-span-2">{t('purchase.requests.headers.number')}</span><span className="col-span-3">{t('purchase.requests.headers.requester')}</span>
+              <span className="col-span-1">{t('purchase.requests.headers.requestDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((req, i) => (
-              <div key={req.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <div className="col-span-2 flex items-center gap-1.5">
-                  <p className="font-mono text-xs text-[var(--fg-3)]">{req.pr_number}</p>
-                  {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-xs bg-[var(--success-soft)] text-success border border-green-500/30 leading-none">LINE</span>}
+              <div key={req.id}>
+                {/* คลิกแถว = กางเส้นทางเอกสาร · คลิกเลขที่ = เปิดใบนั้น */}
+                <div onClick={() => setOpenRow(openRow === req.id ? null : req.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === req.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === req.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModalWithDetail('request', 'view', req.id, req) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{req.pr_number}</button>
+                    {req.source === 'LINE' && <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--success-soft)] text-success border border-green-500/30 leading-none shrink-0">LINE</span>}
+                  </div>
+                  <div className="col-span-3 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] truncate">{req.department || '-'}</p>
+                  </div>
+                  <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(req.request_date)}</p>
+                  <div className="col-span-2"><StagePips view={prStageView(req)} /></div>
+                  <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs tabular-nums">{formatCurrency(req.total_amount)}</p>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={prNextStep(req)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('request', 'view', req.id, req) },
+                      ...(req.status === 'DRAFT' ? [
+                        { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('request', 'edit', req.id, req) },
+                        { label: t('purchase.actions.delete'), onClick: () => handleDeleteRequest(req.id), danger: true },
+                      ] : []),
+                      ...(canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status)
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelRequest(req.id, req.pr_number), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
-                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{req.requester_name || req.supplier_name || '-'}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs truncate">{req.department || '-'}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(req.request_date)}</p>
-                <div className="col-span-1"><StatusBadge status={req.status} /></div>
-                <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(req.total_amount)}</p>
-                <div className="col-span-1 flex justify-end gap-1">
-                  {req.status === 'DRAFT' && (<>
-                    <button onClick={() => openModalWithDetail('request', 'edit', req.id, req)}
-                      className="p-1 text-warning bg-[var(--warning-soft)] rounded" title={t('purchase.actions.edit')}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleSubmitRequestDirect(req.id, 'PENDING')}
-                      className="p-1 text-blue-400 bg-blue-500/10 rounded" title={t('purchase.actions.submitForApproval')}>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleDeleteRequest(req.id)}
-                      className="p-1 text-danger bg-[var(--danger-soft)] rounded" title={t('purchase.actions.delete')}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </>)}
-                  {req.status === 'PENDING' && (
-                    <button onClick={() => handleSubmitRequestDirect(req.id, 'APPROVED')}
-                      className="p-1 text-success bg-[var(--success-soft)] rounded" title={t('purchase.actions.approve')}>
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {/* ขั้นต่อไป: กดแล้วเปิดโมดัลสร้างใบสั่งซื้อที่กรอกให้แล้ว
-                      พอสร้างเสร็จช่องนี้จะกลายเป็นข้อความว่าไปเป็นใบไหน */}
-                  <div className="min-w-[150px]"><NextStepCell step={prNextStep(req)} /></div>
-                  {/* ยกเลิกได้เฉพาะใบที่ยังไม่จบเรื่อง — ที่ปฏิเสธ/ยกเลิกไปแล้วไม่ต้องโชว์ซ้ำ */}
-                  {canCancelDoc && !['CANCELLED', 'REJECTED'].includes(req.status) && (
-                    <button onClick={() => handleCancelRequest(req.id, req.pr_number)} title={t('purchase.actions.cancel')}
-                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button onClick={() => openModalWithDetail('request', 'view', req.id, req)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
-                </div>
+                {openRow === req.id && expandedTrail('pr', req)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(req => (
@@ -2698,121 +2959,65 @@ const Purchase = () => {
 
   const OrdersContent = () => {
     const filtered = orders.filter(o =>
-      o.po_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      (o.po_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        o.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      && passesRowFilter(poNextStep(o), !!poUnpaidInvoice(o))
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.ordersPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          {rowFilterChips(true)}
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('order', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createOrder')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.orders')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.orders.headers.poNumber')}</span><span className="col-span-2">{t('purchase.common.supplier')}</span><span className="col-span-1">{t('purchase.orders.headers.orderDate')}</span>
-              <span className="col-span-1">{t('purchase.orders.headers.expectedDate')}</span><span className="col-span-1">{t('purchase.common.status')}</span>
-              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-4"></span>
+              <span className="col-span-2">{t('purchase.orders.headers.poNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
+              <span className="col-span-1">{t('purchase.orders.headers.orderDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((order, i) => (
-              <div key={order.id}
-                onClick={() => openModalWithDetail('order', 'view', order.id, order)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{order.po_number}</p>
-                <p className="col-span-2 text-[var(--fg-1)] font-medium truncate">{order.supplier_name}</p>
-                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.order_date)}</p>
-                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.expected_date)}</p>
-                <div className="col-span-1"><StatusBadge status={order.status} /></div>
-                <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs">{formatCurrency(order.total_amount)}</p>
-                <div className="col-span-4 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint('po', order.id)} title={t('purchase.actions.printOrderA4')}
-                    className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {/* รับของแล้ว (บางส่วนหรือครบ) ยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน
-                      ซ่อนปุ่มไปเลยดีกว่าโชว์แล้วกดไปเจอ error ทุกครั้ง */}
-                  {canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status) && (
-                    <button onClick={() => handleCancelOrder(order.id, order.po_number)} title={t('purchase.actions.cancel')} aria-label={t('purchase.actions.cancel')}
-                      className="p-1.5 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded transition-colors">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {order.status === 'DRAFT' && (<>
-                    <button onClick={() => openModalWithDetail('order', 'edit', order.id, order)}
-                      className="p-1.5 text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] transition-colors" title={t('purchase.actions.edit')}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleUpdateOrderStatus(order.id, 'SUBMITTED')}
-                      className="px-2 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded hover:bg-[var(--info-soft)] font-medium transition-colors whitespace-nowrap">
-                      {t('purchase.actions.submitForApproval')}
-                    </button>
-                    <button onClick={() => handleDeleteOrder(order.id)}
-                      className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </>)}
-                  {order.status === 'SUBMITTED' && (
-                    <button onClick={() => handleUpdateOrderStatus(order.id, 'APPROVED')}
-                      className="px-2 py-1.5 text-xs text-success bg-[var(--success-soft)] rounded hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
-                      <Check className="w-3 h-3" /> {t('purchase.actions.approve')}
-                    </button>
-                  )}
-                  {(order.status === 'APPROVED' || order.status === 'PARTIAL') && (
-                    <button onClick={() => {
-                      setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
-                      loadPendingItems(order.id)
-                      openModal('receipt', 'create')
-                    }}
-                      className="px-2 py-1.5 text-xs text-success bg-success/10 rounded hover:bg-[var(--success-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
-                      {t('purchase.actions.receiveGoods')} <Package className="w-3 h-3" />
-                    </button>
-                  )}
-                  {order.status === 'RECEIVED' && poHasInvoiceableTarget(order) && (
-                    <button onClick={() => {
-                      setInvoiceForm(p => ({
-                        ...p,
-                        purchase_order_id: order.id,
-                        goods_receipt_ids: [],
-                        tax_rate: order.tax_rate ?? 7,
-                        due_date: order.expected_date?.split('T')[0] || '',
-                      }))
-                      openModal('invoice', 'create')
-                    }}
-                      className="px-2 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded hover:bg-[var(--warning-soft)] font-medium transition-colors whitespace-nowrap">
-                      {t('purchase.actions.createInvoice')}
-                    </button>
-                  )}
-                  {/* มีใบแจ้งหนี้แล้วแต่ยังไม่จ่าย → ให้เดินต่อได้จากตรงนี้เลย */}
-                  {(() => {
-                    const unpaid = poUnpaidInvoice(order)
-                    if (!unpaid) return null
-                    return (
-                      <button onClick={() => {
-                        setPaymentForm(p => ({
-                          ...p,
-                          supplier_id: order.supplier_id,
-                          purchase_invoice_id: unpaid.id,
-                          amount: unpaid.balance_amount || 0,
-                        }))
-                        openModal('payment', 'create')
-                      }}
-                        className="px-2 py-1.5 text-xs text-info bg-[var(--info-soft)] rounded hover:bg-[var(--info-soft)] font-medium transition-colors flex items-center gap-1 whitespace-nowrap">
-                        <Banknote className="w-3 h-3" /> {t('purchase.actions.payNow')}
-                      </button>
-                    )
-                  })()}
+              <div key={order.id}>
+                <div onClick={() => setOpenRow(openRow === order.id ? null : order.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === order.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === order.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModalWithDetail('order', 'view', order.id, order) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{order.po_number}</button>
+                  </div>
+                  <div className="col-span-3 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{order.supplier_name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] truncate">
+                      {order.expected_date ? t('purchase.orders.expectedOn', { date: formatDate(order.expected_date) }) : order.supplier_code || '-'}
+                    </p>
+                  </div>
+                  <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(order.order_date)}</p>
+                  <div className="col-span-2"><StagePips view={poStageView(order)} /></div>
+                  <p className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs tabular-nums">{formatCurrency(order.total_amount)}</p>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={poNextStep(order)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('order', 'view', order.id, order) },
+                      { label: t('purchase.actions.printOrderA4'), onClick: () => handlePrint('po', order.id) },
+                      ...(order.status === 'DRAFT' ? [
+                        { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('order', 'edit', order.id, order) },
+                        { label: t('purchase.actions.delete'), onClick: () => handleDeleteOrder(order.id), danger: true },
+                      ] : []),
+                      /* รับของแล้วยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน (กฎเดิม ไม่ได้เปลี่ยน) */
+                      ...(canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status)
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelOrder(order.id, order.po_number), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
+                {openRow === order.id && expandedTrail('po', order)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(order => (
@@ -2968,68 +3173,60 @@ const Purchase = () => {
 
   const ReceiptsContent = () => {
     const filtered = receipts.filter(r =>
-      r.gr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.po_number?.toLowerCase().includes(searchQuery.toLowerCase())
+      (r.gr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.po_number?.toLowerCase().includes(searchQuery.toLowerCase()))
+      && passesRowFilter(grNextStep(r), false)
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.receiptsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          {rowFilterChips(false)}
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('receipt', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createReceipt')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.receipts')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.receipts.headers.grNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.receipts.headers.poReference')}</span><span className="col-span-1">{t('purchase.receipts.headers.receiptDate')}</span>
-              <span className="col-span-1">{t('purchase.common.status')}</span><span className="col-span-3"></span>
+              <span className="col-span-2">{t('purchase.receipts.headers.receiptDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((receipt, i) => (
-              <div key={receipt.id}
-                onClick={() => openModalWithDetail('receipt', 'view', receipt.id, receipt)}
-                className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 cursor-pointer ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{receipt.gr_number}</p>
-                <p className="col-span-3 text-[var(--fg-1)] font-medium truncate">{receipt.supplier_name}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{receipt.po_number}</p>
-                <p className="col-span-1 text-[var(--fg-3)] text-xs">{formatDate(receipt.receipt_date)}</p>
-                <div className="col-span-1"><StatusBadge status={receipt.status} /></div>
-                <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'a4')} title={t('purchase.actions.printA4')}
-                    className="p-1.5 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handlePrint('gr', receipt.id, 'thermal')} title={t('purchase.actions.printThermal')}
-                    className="p-1.5 text-[var(--fg-3)] hover:text-warning bg-[var(--bg)] rounded transition-colors text-xs leading-none">
-                    <Receipt className="w-4 h-4 inline" />
-                  </button>
-                  {receipt.status === 'DRAFT' && (<>
-                    <button onClick={() => handleConfirmReceipt(receipt.id)} title={t('purchase.actions.confirm')}
-                      className="p-1.5 text-success bg-success/10 rounded hover:bg-[var(--success-soft)] transition-colors">
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleDeleteReceipt(receipt.id)} title={t('purchase.actions.delete')}
-                      className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </>)}
-                  {receipt.status === 'CONFIRMED' && canCancelDoc && (
-                    <button onClick={() => handleCancelReceipt(receipt.id)} title={t('purchase.actions.cancel')}
-                      className="p-1.5 text-danger bg-[var(--danger-soft)] rounded hover:bg-[var(--danger-soft)] transition-colors">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+              <div key={receipt.id}>
+                <div onClick={() => setOpenRow(openRow === receipt.id ? null : receipt.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === receipt.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === receipt.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModalWithDetail('receipt', 'view', receipt.id, receipt) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{receipt.gr_number}</button>
+                  </div>
+                  <div className="col-span-3 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{receipt.supplier_name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] font-mono truncate">{receipt.po_number}</p>
+                  </div>
+                  <p className="col-span-2 text-[var(--fg-3)] text-xs">{formatDate(receipt.receipt_date)}</p>
+                  <div className="col-span-2"><StagePips view={grStageView(receipt)} /></div>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={grNextStep(receipt)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('receipt', 'view', receipt.id, receipt) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('gr', receipt.id, 'a4') },
+                      { label: t('purchase.actions.printThermal'), onClick: () => handlePrint('gr', receipt.id, 'thermal') },
+                      ...(receipt.status === 'DRAFT'
+                        ? [{ label: t('purchase.actions.delete'), onClick: () => handleDeleteReceipt(receipt.id), danger: true }] : []),
+                      ...(receipt.status === 'CONFIRMED' && canCancelDoc
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelReceipt(receipt.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
+                {openRow === receipt.id && expandedTrail('gr', receipt)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(receipt => (
@@ -3087,65 +3284,60 @@ const Purchase = () => {
 
   const InvoicesContent = () => {
     const filtered = invoices.filter(i =>
-      i.pi_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      i.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      (i.pi_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      && passesRowFilter(invNextStep(i), i.balance_amount > 0 && i.status !== 'CANCELLED')
     )
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
+        <div className="flex items-center gap-3 flex-wrap">
           <SearchBar placeholder={t('purchase.search.invoicesPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2">
+          {rowFilterChips(true)}
+          <div className="flex items-center gap-2 ml-auto">
             <PageSizeSelect />
             <ViewToggle />
-            <button onClick={() => openModal('invoice', 'create')}
-              className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 whitespace-nowrap text-sm">
-              <Plus className="w-4 h-4" /> {t('purchase.actions.createInvoice')}
-            </button>
           </div>
         </div>
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{t('purchase.invoices.headers.piNumber')}</span><span className="col-span-2">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.invoices.headers.poReference')}</span><span className="col-span-2">{t('purchase.invoices.headers.dueDate')}</span>
-              <span className="col-span-1">{t('purchase.common.status')}</span>
-              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-2"></span>
+              <span className="col-span-2">{t('purchase.invoices.headers.dueDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((invoice, i) => (
-              <div key={invoice.id} className={`grid grid-cols-12 px-4 py-3 items-center text-sm hover:bg-[var(--surface-2)] transition-colors border-b border-[var(--border)]/20 last:border-0 ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20' : ''}`}>
-                <p className="col-span-2 font-mono text-xs text-[var(--fg-3)]">{invoice.pi_number}</p>
-                <p className="col-span-2 text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
-                <p className="col-span-2 text-[var(--fg-3)] text-xs font-mono">{invoice.po_number}</p>
-                <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-danger' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
-                <div className="col-span-1"><StatusBadge status={invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} /></div>
-                <p className={`col-span-1 text-right text-xs font-bold ${invoice.balance_amount > 0 ? 'text-danger' : 'text-[var(--fg-4)]'}`}>
-                  {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
-                </p>
-                <div className="col-span-2 flex justify-end gap-1">
-                  {/* พิมพ์ใบแจ้งหนี้ — มุมมองการ์ดมีปุ่มนี้อยู่แล้ว แต่มุมมองรายการไม่มี
-                      ทั้งที่ printBill() รองรับชนิด 'pi' มาตั้งแต่แรก */}
-                  <button onClick={() => handlePrint('pi', invoice.id)} title={t('purchase.actions.printA4')}
-                    className="p-1 text-[var(--fg-3)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded transition-colors">
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
-                  {invoice.payment_status !== 'PAID' && invoice.status !== 'CANCELLED' && (
-                    <button onClick={() => openModal('payment', 'create', { purchase_invoice_id: invoice.id, supplier_id: invoice.supplier_id, amount: invoice.balance_amount })}
-                      className="p-1 text-success hover:text-[var(--fg-1)] bg-success/10 rounded" title={t('purchase.actions.pay')}>
-                      <DollarSign className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {invoice.status !== 'CANCELLED' && canCancelDoc && (
-                    <button onClick={() => handleCancelInvoice(invoice.id)} title={t('purchase.actions.cancel')}
-                      className="p-1 text-danger hover:text-[var(--fg-1)] bg-[var(--danger-soft)] rounded">
-                      <Ban className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button onClick={() => openModalWithDetail('invoice', 'view', invoice.id, invoice)} className="p-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded"><ChevronRight className="w-3.5 h-3.5" /></button>
+              <div key={invoice.id}>
+                <div onClick={() => setOpenRow(openRow === invoice.id ? null : invoice.id)}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${openRow === invoice.id ? 'bg-[var(--surface-2)]' : i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === invoice.id ? 'rotate-90' : ''}`} />
+                    <button onClick={e => { e.stopPropagation(); openModalWithDetail('invoice', 'view', invoice.id, invoice) }}
+                      className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{invoice.pi_number}</button>
+                  </div>
+                  <div className="col-span-2 min-w-0">
+                    <p className="text-[var(--fg-1)] font-medium truncate">{invoice.supplier_name}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] font-mono truncate">{invoice.po_number}</p>
+                  </div>
+                  <p className={`col-span-2 text-xs ${invoice.payment_status === 'UNPAID' ? 'text-danger' : 'text-[var(--fg-3)]'}`}>{formatDate(invoice.due_date)}</p>
+                  <div className="col-span-2"><StagePips view={invStageView(invoice)} /></div>
+                  <p className={`col-span-1 text-right text-xs font-bold tabular-nums ${invoice.balance_amount > 0 ? 'text-danger' : 'text-[var(--fg-4)]'}`}>
+                    {invoice.balance_amount > 0 ? formatCurrency(invoice.balance_amount) : '-'}
+                  </p>
+                  <div className="col-span-2" onClick={e => e.stopPropagation()}><NextStepCell step={invNextStep(invoice)} /></div>
+                  <div className="col-span-1" onClick={e => e.stopPropagation()}>
+                    <RowMenu label={t('purchase.rowMenu.more')} items={[
+                      { label: t('purchase.actions.viewDetails'), onClick: () => openModalWithDetail('invoice', 'view', invoice.id, invoice) },
+                      { label: t('purchase.actions.printA4'), onClick: () => handlePrint('pi', invoice.id) },
+                      ...(invoice.status !== 'CANCELLED' && canCancelDoc
+                        ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelInvoice(invoice.id), danger: true }] : []),
+                    ]} />
+                  </div>
                 </div>
+                {openRow === invoice.id && expandedTrail('inv', invoice)}
               </div>
-            ))}
-          </div>
+            ))}          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {paginated.map(invoice => (
@@ -4691,6 +4883,26 @@ const Purchase = () => {
   // 'PARTIAL') didn't match any status purchase_orders actually uses in this DB
   // (real values are DRAFT/SUBMITTED/APPROVED/PARTIAL/RECEIVED/CANCELLED), so
   // the Orders badge was silently stuck at 0.
+  // ปุ่มสร้างในหัวหน้าเปลี่ยนตามแท็บที่เปิดอยู่ — จะได้ไม่ต้องมีปุ่มสร้างซ้ำในทุกแถบเครื่องมือ
+  const CREATE_BY_TAB: Record<string, { type: string; labelKey: string }> = {
+    overview: { type: 'request', labelKey: 'purchase.actions.createRequest' },
+    requests: { type: 'request', labelKey: 'purchase.actions.createRequest' },
+    orders:   { type: 'order',   labelKey: 'purchase.actions.createOrder' },
+    receipts: { type: 'receipt', labelKey: 'purchase.actions.createReceipt' },
+    invoices: { type: 'invoice', labelKey: 'purchase.actions.createInvoice' },
+    payments: { type: 'payment', labelKey: 'purchase.actions.createPayment' },
+    returns:  { type: 'return',  labelKey: 'purchase.actions.createReturn' },
+  }
+  const createAction = CREATE_BY_TAB[activeTab] ?? CREATE_BY_TAB.requests
+
+  // จำนวนใบในแท็บนี้ที่ยังมีขั้นต่อไปให้กดได้จริง
+  const waitingCount =
+    activeTab === 'requests' ? requests.filter(r => prNextStep(r).kind === 'action').length
+      : activeTab === 'orders' ? orders.filter(o => poNextStep(o).kind === 'action').length
+        : activeTab === 'receipts' ? receipts.filter(r => grNextStep(r).kind === 'action').length
+          : activeTab === 'invoices' ? invoices.filter(i => invNextStep(i).kind === 'action').length
+            : 0
+
   const tabs = [
     { id: 'overview',  label: t('purchase.tabs.overview'),    icon: TrendingUp, badge: 0 },
     { id: 'requests',  label: t('purchase.tabs.requests'),  icon: FileText,   badge: badgeCounts.requests },
@@ -4714,17 +4926,26 @@ const Purchase = () => {
           </h1>
           <p className="text-[var(--fg-3)] mt-1">{t('purchase.subtitle')}</p>
         </div>
-        <button onClick={() => openModal('request', 'create')}
-          className="flex items-center gap-2 px-5 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors">
-          <Plus className="w-4 h-4" /> {t('purchase.actions.createRequest')}
-        </button>
+        <div className="flex items-center gap-2.5">
+          {/* นับเฉพาะแท็บที่เห็นอยู่ จะได้ตรงกับที่ตาเห็นในตาราง ไม่ใช่ตัวเลขลอย ๆ */}
+          {waitingCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--warning-soft)] border border-warning/40">
+              <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
+              <span className="text-xs font-semibold text-warning whitespace-nowrap">{t('purchase.header.waiting', { count: waitingCount })}</span>
+            </div>
+          )}
+          <button onClick={() => openModal(createAction.type, 'create')}
+            className="flex items-center gap-2 px-5 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 transition-colors whitespace-nowrap">
+            <Plus className="w-4 h-4" /> {t(createAction.labelKey)}
+          </button>
+        </div>
       </motion.div>
 
       {/* Tab navigation */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-wrap gap-1.5 bg-[var(--surface)] p-2 rounded-2xl border border-[var(--border)]">
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1) }}
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1); setRowFilter('all'); setOpenRow(null) }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all relative ${
               activeTab === tab.id ? 'bg-phopy-indigo text-white shadow-lg' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)]'
             }`}>

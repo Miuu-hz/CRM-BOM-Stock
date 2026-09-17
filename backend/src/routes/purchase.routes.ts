@@ -1702,9 +1702,40 @@ router.get('/summary', async (req: Request, res: Response) => {
       WHERE tenant_id = ? AND status = 'CONFIRMED'
     `).get(tenantId) as any
 
+    // ความเคลื่อนไหวล่าสุดของทั้งโมดูล — รวม 5 ตารางแล้วเรียงตามเวลาที่ขยับล่าสุด
+    // ใบขอซื้อไม่มี supplier_id (ผูกกับแผนก/ผู้ขอ ไม่ใช่ผู้ขาย) จึงใช้ department เป็นคู่กรณีแทน
+    // ครอบ try แยกไว้ ถ้าคิวรีนี้พังต้องไม่ทำให้สถิติทั้งก้อนล่มตาม
+    let recentActivity: any[] = []
+    try {
+      recentActivity = db.prepare(`
+        SELECT 'PR' AS kind, id, pr_number AS doc, department AS party, total_amount AS amount, status, updated_at
+          FROM purchase_requests WHERE tenant_id = ?
+        UNION ALL
+        SELECT 'PO', po.id, po.po_number, s.name, po.total_amount, po.status, po.updated_at
+          FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.tenant_id = po.tenant_id
+         WHERE po.tenant_id = ?
+        UNION ALL
+        SELECT 'GR', gr.id, gr.gr_number, s.name, NULL, gr.status, gr.updated_at
+          FROM goods_receipts gr LEFT JOIN suppliers s ON s.id = gr.supplier_id AND s.tenant_id = gr.tenant_id
+         WHERE gr.tenant_id = ?
+        UNION ALL
+        SELECT 'INV', pi.id, pi.pi_number, s.name, pi.total_amount, pi.payment_status, pi.updated_at
+          FROM purchase_invoices pi LEFT JOIN suppliers s ON s.id = pi.supplier_id AND s.tenant_id = pi.tenant_id
+         WHERE pi.tenant_id = ?
+        UNION ALL
+        SELECT 'PAY', sp.id, sp.payment_number, s.name, sp.net_amount, sp.status, sp.updated_at
+          FROM supplier_payments sp LEFT JOIN suppliers s ON s.id = sp.supplier_id AND s.tenant_id = sp.tenant_id
+         WHERE sp.tenant_id = ?
+        ORDER BY updated_at DESC LIMIT 12
+      `).all(tenantId, tenantId, tenantId, tenantId, tenantId) as any[]
+    } catch (e) {
+      console.error('recentActivity query error (ไม่กระทบสถิติส่วนอื่น):', e)
+    }
+
     res.json({
       success: true,
       data: {
+        recentActivity,
         purchaseRequests: {
           total: prStats.total_requests,
           draft: prStats.draft_requests,

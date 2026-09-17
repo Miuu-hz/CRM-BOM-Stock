@@ -582,7 +582,9 @@
       "journalEntry": "Journal: {{number}}",
       "reference": "Reference:",
       "companyFallback": "Company",
-      "unitFallback": "unit"
+      "unitFallback": "unit",
+      "progress": "Progress",
+      "nextStep": "Next step"
     },
     "overview": {
       "totalOrderAmount": "Total Order Amount",
@@ -599,7 +601,9 @@
       "unpaidInvoicesLabel": "Unpaid invoices",
       "workflowTitle": "Procurement Workflow",
       "orderStatusTitle": "Order Status",
-      "paymentStatusTitle": "Payment Status"
+      "paymentStatusTitle": "Payment Status",
+      "recentTitle": "Recent activity",
+      "recentEmpty": "No purchase activity yet"
     },
     "workflow": {
       "request": "PR",
@@ -634,7 +638,8 @@
       "paid": "Paid",
       "overdue": "Overdue",
       "issued": "Issued",
-      "converted": "Converted to PO"
+      "converted": "Converted to PO",
+      "rejected": "Rejected"
     },
     "priority": {
       "low": "Low",
@@ -814,7 +819,8 @@
         "grConfirmed": "GR ×{{count}}",
         "grDraft": "GR draft ×{{count}}",
         "invCount": "INV ×{{count}}"
-      }
+      },
+      "expectedOn": "Due {{date}}"
     },
     "receipts": {
       "headers": {
@@ -1132,7 +1138,8 @@
         "APPROVED": "Approved",
         "PARTIAL": "Partial",
         "RECEIVED": "Received"
-      }
+      },
+      "noOrderYet": "No purchase order yet, so there is no document trail to show"
     },
     "selfApprove": {
       "readyNote": "Skips the waiting-for-approval step because you can approve this yourself — recorded as approved by you",
@@ -1151,7 +1158,41 @@
       "waitApproval": "Awaiting approval",
       "prRejected": "Rejected",
       "prCancelled": "Cancelled",
-      "noPermissionPO": "No permission to create order"
+      "noPermissionPO": "No permission to create order",
+      "cancelled": "Cancelled — nothing further",
+      "noPermissionApprove": "No permission to approve",
+      "cycleClosed": "Cycle complete",
+      "confirmReceipt": "Confirm receipt",
+      "stockedIn": "Stocked in",
+      "fullyPaid": "Fully paid"
+    },
+    "header": {
+      "waiting": "{{count}} waiting for you"
+    },
+    "filter": {
+      "all": "All",
+      "mine": "Needs you",
+      "due": "Unpaid"
+    },
+    "rowMenu": {
+      "more": "More options"
+    },
+    "stage": {
+      "pr": {
+        "draft": "Draft",
+        "pending": "Pending approval",
+        "approved": "Approved",
+        "converted": "Converted to PO"
+      },
+      "gr": {
+        "draft": "Draft",
+        "confirmed": "Stocked in"
+      },
+      "inv": {
+        "draft": "Draft",
+        "billed": "Billed",
+        "paid": "Paid"
+      }
     }
   },
   "sales": {
@@ -2643,7 +2684,30 @@
         "regenerateConfirm": "Generating a new API Key will invalidate the current URL. Continue?",
         "regenerateSuccess": "New API Key generated",
         "regenerateFailed": "Failed to generate key",
-        "testFailed": "Test failed"
+        "testFailed": "Test failed",
+        "clientPresetLabel": "Select your AI client format",
+        "presets": {
+          "gemini": "Gemini Spark",
+          "claudeCode": "Claude Code (CLI)",
+          "claudeDesktop": "Claude Desktop",
+          "raw": "Generic URL (Cursor / Cline)"
+        },
+        "labels": {
+          "gemini": "Connection URL for Gemini Spark (with embedded key):",
+          "claudeCode": "Terminal command for Claude Code:",
+          "claudeDesktop": "JSON Config for Claude Desktop:",
+          "raw": "Endpoint URL with key:"
+        },
+        "hints": {
+          "gemini": "Paste the URL in Gemini > Settings & help > Connected Apps > Custom apps for Spark",
+          "claudeCode": "Run this command in your terminal to add MCP server to Claude Code instantly",
+          "claudeDesktop": "Add this JSON snippet under mcpServers in claude_desktop_config.json",
+          "raw": "For Cursor, Cline or any tool requiring full MCP endpoint URL"
+        },
+        "copyBtn": "Copy",
+        "copiedFor": "Copied for {{client}}",
+        "showKey": "Show key",
+        "hideKey": "Hide key"
       }
     },
     "line": {
