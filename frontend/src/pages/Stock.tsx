@@ -2074,6 +2074,30 @@ function DetailModal({
   useModalClose(onClose)
   const { t } = useTranslation()
 
+  // ต้องประกาศเหนือ early return ด้านล่าง ไม่งั้นผิดกฎ hooks ของ React
+  const [costBasis, setCostBasis] = useState<any>(null)
+  const [logTab, setLogTab] = useState<'buy' | 'sell'>('buy')
+  const [logRows, setLogRows] = useState<any[]>([])
+  const [logLoading, setLogLoading] = useState(false)
+  const [pics, setPics] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!open || !item) return
+    setPics(item.imageUrl ? [item.imageUrl] : [])
+    api.get(`/stock/${item.id}/cost-basis`)
+      .then(r => setCostBasis(r.data?.data ?? null))
+      .catch(() => setCostBasis(null))
+  }, [open, item?.id])
+
+  useEffect(() => {
+    if (!open || !item) return
+    setLogLoading(true)
+    api.get(`/stock/${item.id}/price-log`, { params: { side: logTab } })
+      .then(r => setLogRows(r.data?.data?.rows ?? []))
+      .catch(() => setLogRows([]))
+      .finally(() => setLogLoading(false))
+  }, [open, item?.id, logTab])
+
   if (!open || !item) return null
 
 
@@ -2098,25 +2122,178 @@ function DetailModal({
 
         <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
 
-          <h2 className="text-xl font-bold text-[var(--fg-1)]">Stock Item Details</h2>
+          <div className="min-w-0">
 
-          <button
+            {/* เดิมหัวเขียนว่า "Stock Item Details" เหมือนกันทุกใบ ไม่บอกอะไรเลย */}
 
-            onClick={onClose}
+            <h2 className="text-xl font-bold text-[var(--fg-1)] truncate">{item.name}</h2>
 
-            className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors"
+            <div className="flex items-center gap-2 mt-1">
 
-          >
+              <span className="text-xs font-mono text-[var(--fg-4)]">{item.sku}</span>
 
-            <X className="w-5 h-5 text-[var(--fg-3)]" />
+              <CategoryBadge category={item.category} />
 
-          </button>
+              <StatusBadge status={item.status} />
+
+            </div>
+
+          </div>
+
+
+
+          {/* รูปสินค้าเก็บและดูได้จากหัวหน้าต่างเลย ไม่ต้องเข้าหน้าแก้ไข */}
+
+          <div className="flex items-center gap-2 shrink-0">
+
+            {pics.map((url, i) => (
+
+              <span key={url} className="relative">
+
+                <img src={url} alt={item.name}
+
+                  className={`w-11 h-11 rounded-lg object-cover border ${i === 0 ? 'border-phopy-indigo' : 'border-[var(--border)]'}`} />
+
+                {i === 0 && <span className="absolute -bottom-1.5 left-0 right-0 text-[9px] text-center text-[var(--primary)]">รูปหลัก</span>}
+
+              </span>
+
+            ))}
+
+            <label className="w-11 h-11 rounded-lg border border-dashed border-[var(--border-strong)] flex items-center justify-center cursor-pointer hover:border-phopy-indigo transition-colors"
+
+              title="เพิ่มรูปสินค้า">
+
+              <Plus className="w-4 h-4 text-[var(--fg-4)]" />
+
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+
+                onChange={async (e) => {
+
+                  const f = e.target.files?.[0]; e.target.value = ''
+
+                  if (!f) return
+
+                  if (f.size > 10 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 10 MB'); return }
+
+                  try {
+
+                    const res: any = await stockService.uploadImage(item.id, f)
+
+                    const url = res?.imageUrl || res?.data?.imageUrl
+
+                    if (url) setPics(p => [...p, url])
+
+                    toast.success('เพิ่มรูปแล้ว')
+
+                  } catch { toast.error('อัปโหลดรูปไม่สำเร็จ') }
+
+                }} />
+
+            </label>
+
+            <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors" aria-label="ปิด">
+
+              <X className="w-5 h-5 text-[var(--fg-3)]" />
+
+            </button>
+
+          </div>
 
         </div>
 
 
 
         <div className="p-6 space-y-6">
+
+          {/* ตัวเลขที่ต้องรู้ก่อนอย่างอื่น — เดิมต้องไล่อ่านตารางฟิลด์เอาเอง */}
+          {(() => {
+            const avg = costBasis?.weightedAvg ?? 0
+            const last = item.purchasePrice ?? 0
+            const sell = item.unitPrice ?? 0
+            const margin = sell > 0 && avg > 0 ? ((sell - avg) / sell) * 100 : null
+            const low = item.minStock > 0 && item.quantity <= item.minStock
+            const fmt = (n: number) => n >= 1 ? n.toLocaleString('th-TH', { maximumFractionDigits: 2 }) : n.toFixed(4)
+            const cards = [
+              { label: 'คงเหลือ', value: `${item.quantity.toLocaleString('th-TH')}`,
+                sub: `${item.baseUnit || item.unit}${low ? ` · ต่ำกว่าจุดสั่ง ${item.minStock}` : ''}`,
+                tone: low ? 'warn' : 'plain' },
+              { label: 'ทุนล่าสุด', value: last ? `฿${fmt(last)}` : '—',
+                sub: 'ราคาครั้งที่ซื้อล่าสุด', tone: 'plain' },
+              { label: 'ทุนเฉลี่ย', value: avg ? `฿${fmt(avg)}` : '—',
+                sub: costBasis?.basis === 'weighted'
+                  ? `ถ่วงน้ำหนักจาก ${costBasis.sources.length} ครั้งที่ซื้อ`
+                  : 'ยังไม่มีประวัติรับเข้า — ใช้ค่าสำรอง',
+                tone: costBasis?.basis === 'fallback' ? 'warn' : 'plain' },
+              { label: 'กำไร/หน่วย', value: margin === null ? '—' : `${sell - avg >= 0 ? '+' : ''}฿${fmt(sell - avg)}`,
+                sub: margin === null ? 'ยังไม่ได้ตั้งราคาขาย' : `ขาย ฿${fmt(sell)} · ${margin.toFixed(1)}%`,
+                tone: margin === null ? 'plain' : margin >= 0 ? 'good' : 'bad' },
+            ]
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {cards.map(c => (
+                  <div key={c.label} className={`rounded-xl border px-3 py-2.5 ${
+                    c.tone === 'warn' ? 'bg-[var(--warning-soft)] border-warning/35'
+                      : c.tone === 'good' ? 'bg-[var(--success-soft)] border-success/30'
+                        : c.tone === 'bad' ? 'bg-[var(--danger-soft)] border-danger/30'
+                          : 'bg-[var(--bg)] border-[var(--border)]'}`}>
+                    <p className="text-xs text-[var(--fg-4)]">{c.label}</p>
+                    <p className="text-lg font-bold text-[var(--fg-1)] leading-tight tabular-nums">{c.value}</p>
+                    <p className="text-[11px] text-[var(--fg-4)] mt-0.5 leading-tight">{c.sub}</p>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          {/* ประวัติราคา — เจ้าของขอไว้ว่าอยากเห็นทั้งฝั่งซื้อและฝั่งขายในที่เดียว */}
+          <div>
+            <div className="flex items-center gap-1 mb-2 bg-[var(--bg)] rounded-xl p-1 w-fit">
+              {([['ราคาซื้อ', 'buy'], ['ราคาขาย', 'sell']] as const).map(([label, key]) => (
+                <button key={key} onClick={() => setLogTab(key)}
+                  className={`h-8 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                    logTab === key ? 'bg-[var(--surface)] text-[var(--fg-1)] shadow-sm' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {logLoading ? (
+              <div className="h-20 rounded-xl bg-[var(--bg)] animate-pulse" />
+            ) : logRows.length === 0 ? (
+              <p className="text-sm text-[var(--fg-4)] py-6 text-center border border-dashed border-[var(--border)] rounded-xl">
+                {logTab === 'buy' ? 'ยังไม่เคยรับของชิ้นนี้เข้าคลังผ่านใบรับสินค้า' : 'ยังไม่เคยขายของชิ้นนี้'}
+              </p>
+            ) : (
+              <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+                {logRows.map((r, i) => {
+                  // %เปลี่ยนเทียบกับครั้งก่อนหน้า (แถวถัดลงไป เพราะเรียงใหม่->เก่า)
+                  const prev = logRows[i + 1]
+                  const diff = r.price != null && prev?.price ? ((r.price - prev.price) / prev.price) * 100 : null
+                  return (
+                    <div key={`${r.doc}-${i}`} className="grid grid-cols-[88px_1fr_96px_92px_64px] gap-2 items-center px-3 py-2 text-xs border-b border-[var(--border)]/50 last:border-b-0">
+                      <span className="text-[var(--fg-3)]">{new Date(r.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
+                      <span className="min-w-0">
+                        <span className="block text-[var(--fg-2)] truncate">{r.party || (r.kind === 'pos' ? 'หน้าร้าน (POS)' : '-')}</span>
+                        <span className="block font-mono text-[10px] text-[var(--fg-4)] truncate">{r.doc}</span>
+                      </span>
+                      <span className="text-right text-[var(--fg-2)] tabular-nums">{r.qty.toLocaleString('th-TH')} {r.unit || ''}</span>
+                      <span className="text-right font-semibold text-[var(--fg-1)] tabular-nums">
+                        {r.price == null ? <span className="text-[var(--fg-4)] font-normal">ราคาอยู่ที่เมนู</span> : `฿${r.price.toLocaleString('th-TH', { maximumFractionDigits: 4 })}`}
+                      </span>
+                      <span className={`text-right tabular-nums ${diff === null ? 'text-[var(--fg-4)]' : diff > 0 ? 'text-danger' : diff < 0 ? 'text-success' : 'text-[var(--fg-4)]'}`}>
+                        {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {logTab === 'sell' && (
+              <p className="text-[11px] text-[var(--fg-4)] mt-1.5">
+                ขายผ่านหน้าร้านเก็บราคาไว้ที่ระดับเมนู ไม่ใช่ระดับวัตถุดิบ แถวพวกนั้นจึงไม่มีราคาต่อหน่วยให้แสดง
+              </p>
+            )}
+          </div>
 
           {/* Item Info */}
 

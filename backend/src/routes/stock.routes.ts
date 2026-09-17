@@ -14,6 +14,7 @@ import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
 import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
+import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -755,6 +756,33 @@ router.post('/:id/unpack', async (req: Request, res: Response) => {
     }
     console.error('Unpack stock error:', error)
     res.status(500).json({ success: false, message: 'แกะแพ็คไม่สำเร็จ' })
+  }
+})
+
+
+// ต้นทุนถ่วงน้ำหนักจากทุกครั้งที่ของชิ้นนี้ถูกซื้อเข้ามา + ที่มาให้ตรวจได้
+// ใช้ทั้งในการ์ด "ทุนเฉลี่ย" หน้ารายละเอียด และตอนตีมูลค่าส่วนต่างในหน้าปรับสต็อก
+router.get('/:id/cost-basis', (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: getCostBasis(req.user!.tenantId, req.params.id) })
+  } catch (error) {
+    console.error('Get cost basis error:', error)
+    res.status(500).json({ success: false, message: 'Failed to compute cost basis' })
+  }
+})
+
+// ประวัติราคา แยกฝั่งซื้อ/ขาย
+// ฝั่งขายบางแถวไม่มีราคาจริง ๆ (POS เก็บราคาที่ระดับเมนู ไม่ใช่วัตถุดิบ) คืน price = null
+// ให้หน้าเว็บอธิบายเอง ดีกว่าเดาตัวเลขมาใส่แล้วคนอ่านเข้าใจผิด
+router.get('/:id/price-log', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const side = req.query.side === 'sell' ? 'sell' : 'buy'
+    const rows = side === 'sell' ? getSellLog(tenantId, req.params.id) : getBuyLog(tenantId, req.params.id)
+    res.json({ success: true, data: { side, rows } })
+  } catch (error) {
+    console.error('Get price log error:', error)
+    res.status(500).json({ success: false, message: 'Failed to load price log' })
   }
 })
 
