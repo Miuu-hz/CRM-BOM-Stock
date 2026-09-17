@@ -24,6 +24,7 @@ import {
   X,
 
   Eye,
+  Lock,
 
   Edit2,
 
@@ -147,6 +148,22 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
 
   status: 'สถานะ',
 
+}
+
+// คำอธิบายสั้น ๆ ใต้ชื่อคอลัมน์ — แต่ละร้านดูตัวเลขคนละชุด ต้องรู้ว่าแต่ละอันคืออะไรก่อนเลือก
+const COLUMN_HINTS: Partial<Record<ColumnKey, string>> = {
+  image: 'เห็นของก่อนอ่านชื่อ เร็วกว่ามาก',
+  sku: 'รหัสสินค้าที่ใช้อ้างอิงในเอกสาร',
+  category: 'วัตถุดิบ / สำเร็จรูป / บริการ',
+  quantity: 'ปิดไม่ได้ — เป็นหัวใจของหน้านี้',
+  displayQty: 'จำนวนตามหน่วยบรรจุ เช่น 3 ลัง',
+  baseUnit: 'หน่วยที่ระบบใช้ตัดสต็อกจริง',
+  displayUnit: 'หน่วยที่คนใช้เรียกกันหน้างาน',
+  minmax: 'จุดสั่งซื้อและเพดานที่ตั้งไว้',
+  purchasePrice: 'ราคาล่าสุดที่ซื้อเข้ามา',
+  unitPrice: 'ราคาขายต่อหน่วยฐาน',
+  location: 'ชั้นวาง / ตู้แช่',
+  status: 'หมด / ใกล้หมด / ปกติ',
 }
 
 const ALWAYS_VISIBLE: ColumnKey[] = ['name', 'quantity', 'status']
@@ -421,6 +438,21 @@ function Stock() {
 
 
 
+  // จำนวนต่อชิป — นับจากรายการทั้งหมดเสมอ ไม่ใช่ของที่กรองแล้ว
+  // ไม่งั้นพอกดชิปนึง ตัวเลขชิปอื่นจะกลายเป็น 0 หมดจนกดต่อไม่ถูก
+  const chipCounts = useMemo(() => {
+    const cat: Record<string, number> = { all: 0, raw: 0, wip: 0, finished: 0, service: 0, material: 0 }
+    const st: Record<string, number> = { all: 0, out: 0, sealed: 0, critical: 0, low: 0, nearLow: 0, overstock: 0 }
+    for (const item of stockItems || []) {
+      cat.all++; st.all++
+      const g = getCategoryGroup(item.category)
+      if (g in cat) cat[g]++
+      const s = getItemStatus(item)
+      if (s in st) st[s]++
+    }
+    return { cat, st }
+  }, [stockItems])
+
   const filteredItems = useMemo(() => (stockItems || []).filter((item) => {
 
     const matchesSearch =
@@ -620,6 +652,29 @@ function Stock() {
   }
 
 
+
+  // กดรูปในแถว: มีรูปแล้วเปิดดูรูปเต็ม · ยังไม่มีก็เปิดตัวเลือกไฟล์แล้วอัปทันที
+  // จำกัดชนิดไฟล์ให้ตรงกับ allowlist ฝั่ง server ไม่เสนอสิ่งที่ server ไม่รับ
+  const handleRowImage = (item: StockItem) => {
+    if (item.imageUrl) { setImageViewer(item); return }
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/png,image/webp'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      if (file.size > 10 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 10 MB'); return }
+      try {
+        await stockService.uploadImage(item.id, file)
+        toast.success('เพิ่มรูปแล้ว')
+        loadData()
+      } catch { toast.error('อัปโหลดรูปไม่สำเร็จ') }
+    }
+    input.click()
+  }
+
+  // รูปเต็มจอเวลากดดูรูปจากแถว
+  const [imageViewer, setImageViewer] = useState<StockItem | null>(null)
 
   const handleOpenDetail = async (item: StockItem) => {
 
@@ -905,6 +960,18 @@ function Stock() {
 
 
 
+      {/* ดูรูปสินค้าเต็มจอ — กดที่ไหนก็ปิด */}
+      {imageViewer?.imageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+          onClick={() => setImageViewer(null)}
+          role="dialog"
+          aria-label={`รูป ${imageViewer.name}`}
+        >
+          <img src={imageViewer.imageUrl} alt={imageViewer.name} className="max-w-full max-h-full rounded-2xl object-contain" />
+        </div>
+      )}
+
       {/* Filters */}
 
       <div className="phopy-card p-6">
@@ -937,63 +1004,47 @@ function Stock() {
 
 
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          {/* แถบกรองแถวเดียว — เดิมเป็น 2 บล็อกซ้อนกันพร้อมหัวข้อกำกับ สูงรวมราว 110px
 
-            {/* Category Filter */}
+              ชิปมันอ่านออกด้วยตัวเองอยู่แล้ว หัวข้อจึงเป็นแค่ที่กินพื้นที่เปล่า ๆ
 
-            <div className="flex flex-col gap-2">
+              พ่วงจำนวนไว้ท้ายชิปด้วย จะได้รู้ว่ากดแล้วเจออะไรก่อนกด */}
 
-              <p className="text-xs text-[var(--fg-4)] font-medium uppercase tracking-wider">ประเภทสินค้า</p>
+          <div className="flex items-center gap-2 flex-wrap">
 
-              <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap">
 
-                <FilterButton label="ทั้งหมด" active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
+              <FilterButton label="ทั้งหมด" count={chipCounts.cat.all} active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
 
-                <FilterButton label="วัตถุดิบ" active={selectedCategory === 'raw'} onClick={() => handleCategoryChange('raw')} />
+              <FilterButton label="วัตถุดิบ" count={chipCounts.cat.raw} active={selectedCategory === 'raw'} onClick={() => handleCategoryChange('raw')} />
 
-                <FilterButton label="กึ่งสำเร็จรูป" active={selectedCategory === 'wip'} onClick={() => handleCategoryChange('wip')} />
+              <FilterButton label="กึ่งสำเร็จรูป" count={chipCounts.cat.wip} active={selectedCategory === 'wip'} onClick={() => handleCategoryChange('wip')} />
 
-                <FilterButton label="สินค้าสำเร็จรูป" active={selectedCategory === 'finished'} onClick={() => handleCategoryChange('finished')} />
+              <FilterButton label="สำเร็จรูป" count={chipCounts.cat.finished} active={selectedCategory === 'finished'} onClick={() => handleCategoryChange('finished')} />
 
-                <FilterButton label="บริการ" active={selectedCategory === 'service'} onClick={() => handleCategoryChange('service')} />
+              <FilterButton label="บริการ" count={chipCounts.cat.service} active={selectedCategory === 'service'} onClick={() => handleCategoryChange('service')} />
 
-                <FilterButton label="วัสดุ/อื่นๆ" active={selectedCategory === 'material'} onClick={() => handleCategoryChange('material')} />
-
-              </div>
+              <FilterButton label="วัสดุ/อื่นๆ" count={chipCounts.cat.material} active={selectedCategory === 'material'} onClick={() => handleCategoryChange('material')} />
 
             </div>
 
+            <span className="hidden sm:block w-px h-6 bg-[var(--border)] shrink-0" />
 
+            <div className="flex gap-1.5 flex-wrap">
 
-            {/* Divider */}
+              <FilterButton label="ทุกสถานะ" count={chipCounts.st.all} active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
 
-            <div className="hidden sm:block w-px bg-[var(--border)] self-stretch" />
+              <FilterButton label="หมด" tone="danger" count={chipCounts.st.out} active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
 
+              <FilterButton label="วิกฤต" tone="danger" count={chipCounts.st.critical} active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
 
+              <FilterButton label="ต่ำ" tone="warning" count={chipCounts.st.low} active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
 
-            {/* Status Filter */}
+              <FilterButton label="ใกล้หมด" tone="warning" count={chipCounts.st.nearLow} active={selectedStatus === 'nearLow'} onClick={() => handleStatusChange('nearLow')} />
 
-            <div className="flex flex-col gap-2">
+              <FilterButton label="ยังไม่แกะ" count={chipCounts.st.sealed} active={selectedStatus === 'sealed'} onClick={() => handleStatusChange('sealed')} />
 
-              <p className="text-xs text-[var(--fg-4)] font-medium uppercase tracking-wider">สถานะสต๊อก</p>
-
-              <div className="flex gap-2 flex-wrap">
-
-                <FilterButton label="ทั้งหมด" active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
-
-                <FilterButton label="หมด" active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
-
-                <FilterButton label="ยังไม่แกะ" active={selectedStatus === 'sealed'} onClick={() => handleStatusChange('sealed')} />
-
-                <FilterButton label="วิกฤต" active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
-
-                <FilterButton label="ต่ำ" active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
-
-                <FilterButton label="ใกล้หมด" active={selectedStatus === 'nearLow'} onClick={() => handleStatusChange('nearLow')} />
-
-                <FilterButton label="เกิน" active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
-
-              </div>
+              <FilterButton label="เกิน" count={chipCounts.st.overstock} active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
 
             </div>
 
@@ -1075,13 +1126,13 @@ function Stock() {
 
             <div
 
-              className="absolute top-10 right-0 z-30 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl p-3 min-w-[180px]"
+              className="absolute top-10 right-0 z-30 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl p-3 w-[268px]"
 
               onClick={(e) => e.stopPropagation()}
 
             >
 
-              <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่แสดง</p>
+              <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่อยากเห็น</p>
 
               {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
 
@@ -1115,9 +1166,19 @@ function Stock() {
 
                     </span>
 
-                    {COLUMN_LABELS[key]}
+                    <span className="flex-1 min-w-0 text-left">
 
-                    {always && <span className="ml-auto text-[10px] text-[var(--fg-4)]">บังคับ</span>}
+                      <span className="block">{COLUMN_LABELS[key]}</span>
+
+                      {COLUMN_HINTS[key] && (
+
+                        <span className="block text-[11px] leading-[15px] text-[var(--fg-4)] font-normal">{COLUMN_HINTS[key]}</span>
+
+                      )}
+
+                    </span>
+
+                    {always && <Lock className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
 
                   </button>
 
@@ -1288,37 +1349,55 @@ function Stock() {
 
                         <td className="w-14">
 
-                          {item.imageUrl ? (
+                          {/* ไม่มีรูปก็กดเพิ่มตรงนี้ได้เลย เดิมต้องเข้าโมดัลแก้ไขก่อน
 
-                            <img
+                              ซึ่งไม่มีใครทำ สินค้าเลยไม่มีรูปกันเกือบทั้งคลัง */}
 
-                              src={item.imageUrl}
+                          <button
 
-                              alt={item.name}
+                            onClick={(e) => { e.stopPropagation(); handleRowImage(item) }}
 
-                              className="w-10 h-10 rounded-lg object-cover border border-[var(--border)]"
+                            aria-label={item.imageUrl ? `ดูรูป ${item.name}` : `เพิ่มรูป ${item.name}`}
 
-                            />
+                            title={item.imageUrl ? item.name : `เพิ่มรูป ${item.name}`}
 
-                          ) : (
+                            className="w-10 h-10 rounded-lg border border-[var(--border)] overflow-hidden flex items-center justify-center bg-[var(--bg)] hover:border-phopy-indigo transition-colors cursor-pointer"
 
-                            <div className="w-10 h-10 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center">
+                          >
 
-                              <Package className="w-4 h-4 text-[var(--fg-4)]" />
+                            {item.imageUrl
 
-                            </div>
+                              ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
 
-                          )}
+                              : <Plus className="w-4 h-4 text-[var(--fg-4)]" />}
+
+                          </button>
 
                         </td>
 
                       )}
 
+
+
                       {visibleCols.name && (
 
                         <td>
 
-                          <span className="text-[var(--fg-2)] font-medium">{item.name}</span>
+                          {/* คลิกชื่อ = เปิดรายละเอียด แทนไอคอนรูปตาที่เอาออกแล้ว
+
+                              กฎเดียวกับหน้าจัดซื้อที่คลิกเลขที่เอกสารเพื่อเปิดใบ */}
+
+                          <button
+
+                            onClick={(e) => { e.stopPropagation(); handleOpenDetail(item) }}
+
+                            className="text-left font-medium text-[var(--primary)] hover:underline cursor-pointer"
+
+                          >
+
+                            {item.name}
+
+                          </button>
 
                         </td>
 
@@ -1483,19 +1562,6 @@ function Stock() {
 
                         <div className="flex items-center gap-1">
 
-                          <button
-
-                            onClick={() => handleOpenDetail(item)}
-
-                            className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg transition-colors cursor-pointer"
-
-                            aria-label={`ดูรายละเอียด ${item.name}`}
-
-                          >
-
-                            <Eye className="w-4 h-4" />
-
-                          </button>
 
                           <button
 
@@ -4460,6 +4526,10 @@ function StatCard({
 
 
 
+// ชิปกรอง — พ่วงจำนวนรายการในกลุ่มนั้น และแต้มสีตามความเร่งด่วนของสถานะ
+
+// กลุ่มที่ว่างเปล่าเป็นเทาจาง กดได้แต่รู้ตั้งแต่ยังไม่กดว่าไม่มีอะไร
+
 function FilterButton({
 
   label,
@@ -4467,6 +4537,10 @@ function FilterButton({
   active,
 
   onClick,
+
+  count,
+
+  tone = 'neutral',
 
 }: {
 
@@ -4476,7 +4550,21 @@ function FilterButton({
 
   onClick: () => void
 
+  count?: number
+
+  tone?: 'neutral' | 'warning' | 'danger'
+
 }) {
+
+  const empty = count === 0
+
+  const activeCls =
+
+    tone === 'danger' ? 'bg-[var(--danger-soft)] text-danger border-danger/40'
+
+      : tone === 'warning' ? 'bg-[var(--warning-soft)] text-warning border-warning/40'
+
+        : 'bg-[var(--primary-soft)] text-[var(--primary)] border-phopy-indigo/50'
 
   return (
 
@@ -4484,17 +4572,25 @@ function FilterButton({
 
       onClick={onClick}
 
-      className={`px-4 py-2 rounded-lg transition-all whitespace-nowrap ${active
+      aria-pressed={active}
 
-        ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/50'
+      className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm whitespace-nowrap transition-colors ${
 
-        : 'bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)] hover:border-phopy-indigo/30'
+        active ? activeCls
 
-        }`}
+          : `bg-[var(--surface-2)] border-[var(--border)] hover:border-phopy-indigo/30 ${empty ? 'text-[var(--fg-4)]' : 'text-[var(--fg-3)]'}`
+
+      }`}
 
     >
 
       {label}
+
+      {count !== undefined && (
+
+        <span className={`text-[11px] tabular-nums ${active ? 'opacity-70' : 'text-[var(--fg-4)]'}`}>{count}</span>
+
+      )}
 
     </button>
 
