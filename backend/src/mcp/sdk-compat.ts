@@ -32,7 +32,7 @@ export interface IStreamableHTTPTransport {
 
 type McpServerConstructor = new (info: { name: string; version: string }) => IMcpServer
 type SSETransportConstructor = new (endpoint: string, res: unknown) => ISSETransport
-type StreamableHTTPConstructor = new (options?: { sessionIdGenerator?: () => string }) => IStreamableHTTPTransport
+type StreamableHTTPConstructor = new (options?: { sessionIdGenerator?: () => string; enableJsonResponse?: boolean }) => IStreamableHTTPTransport
 
 const mcpMod = require('@modelcontextprotocol/sdk/server/mcp.js') as { McpServer: McpServerConstructor }
 const sseMod = require('@modelcontextprotocol/sdk/server/sse.js') as { SSEServerTransport: SSETransportConstructor }

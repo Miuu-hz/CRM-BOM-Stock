@@ -44,9 +44,13 @@ function resolveTenant(key: string): TenantContext | null {
 
 function extractKey(req: Request): string | null {
   const fromQuery = req.query.key as string | undefined
-  if (fromQuery) return fromQuery
+  if (fromQuery) return fromQuery.trim()
   const auth = req.headers.authorization
-  if (auth?.startsWith('Bearer ')) return auth.slice(7)
+  if (auth) {
+    const match = auth.match(/^Bearer\s+(.+)$/i)
+    if (match) return match[1].trim()
+    return auth.trim()
+  }
   return null
 }
 
@@ -90,7 +94,50 @@ function buildServer(tenantId: string, userId: string) {
 
 // ── Route setup ───────────────────────────────────────────────────────────────
 
+
+function normalizeAcceptHeader(req: Request): void {
+  req.headers['accept'] = 'application/json, text/event-stream'
+  if (req.rawHeaders) {
+    let found = false
+    for (let i = 0; i < req.rawHeaders.length; i += 2) {
+      if (req.rawHeaders[i].toLowerCase() === 'accept') {
+        req.rawHeaders[i + 1] = 'application/json, text/event-stream'
+        found = true
+      }
+    }
+    if (!found) {
+      req.rawHeaders.push('Accept', 'application/json, text/event-stream')
+    }
+  }
+}
+
 export function setupMcpRoutes(app: Router): void {
+
+  // Universal CORS & Preflight for MCP
+  app.use(['/mcp', '/mcp/*'], (req: Request, res: Response, next) => {
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, mcp-session-id, mcp-protocol-version',
+      'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version'
+    })
+    if (req.method === 'OPTIONS') {
+      res.status(204).end()
+      return
+    }
+    next()
+  })
+
+  // HEAD probe (instant 200 for URL reachability tests)
+  app.head(['/mcp/sse', '/mcp'], (req: Request, res: Response) => {
+    res.status(200).set({
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, mcp-session-id, mcp-protocol-version'
+    }).end()
+  })
+
   // Health / capability check
   app.get('/mcp/test', (req: Request, res: Response) => {
     const key = extractKey(req)
@@ -100,8 +147,9 @@ export function setupMcpRoutes(app: Router): void {
     res.json({ ok: true, tools: 23, server: 'mini-erp', tenantId: ctx.tenantId })
   })
 
-  // ── POST /mcp/sse — Streamable HTTP (Gallery sends this) ─────────────────────
-  app.post('/mcp/sse', async (req: Request, res: Response) => {
+  // ── POST /mcp & /mcp/sse — Streamable HTTP ──────────────────────────────────
+  app.post(['/mcp/sse', '/mcp'], async (req: Request, res: Response) => {
+    normalizeAcceptHeader(req)
     const existingSessionId = req.headers['mcp-session-id'] as string | undefined
 
     if (existingSessionId) {
@@ -120,7 +168,7 @@ export function setupMcpRoutes(app: Router): void {
     if (!ctx) { res.status(401).json({ error: 'Invalid API key' }); return }
 
     const sessionId = randomUUID()
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId })
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId, enableJsonResponse: true })
     streamableSessions.set(sessionId, { transport, tenantId: ctx.tenantId, expiresAt: Date.now() + SESSION_TTL_MS })
     transport.onclose = () => streamableSessions.delete(sessionId)
 
@@ -129,13 +177,14 @@ export function setupMcpRoutes(app: Router): void {
     await transport.handleRequest(req, res, req.body)
   })
 
-  // ── GET /mcp/sse — SSE notifications for existing Streamable HTTP session ────
-  // (Also handles legacy SSE clients that open a new stream with ?key=)
-  app.get('/mcp/sse', async (req: Request, res: Response) => {
+  // ── GET /mcp & /mcp/sse ─────────────────────────────────────────────────────
+  // 1. If existing mcp-session-id: SSE notification stream for Streamable HTTP
+  // 2. If Accept: text/event-stream: legacy SSE connection
+  // 3. Otherwise (Accept: application/json, */*): instant HTTP 200 JSON probe
+  app.get(['/mcp/sse', '/mcp'], async (req: Request, res: Response) => {
     const existingSessionId = req.headers['mcp-session-id'] as string | undefined
 
     if (existingSessionId) {
-      // SSE notification stream for an established Streamable HTTP session
       const session = touchSession(existingSessionId)
       if (!session) { res.status(404).json({ error: 'Session not found or expired' }); return }
       if (!keyMatchesSession(req, session)) { res.status(401).json({ error: 'Invalid API key' }); return }
@@ -143,7 +192,37 @@ export function setupMcpRoutes(app: Router): void {
       return
     }
 
-    // Legacy SSE new connection (no session yet) — keep for backward compat
+    const isSse = req.headers['accept']?.includes('text/event-stream')
+
+    if (!isSse) {
+      // Non-SSE GET probe (e.g. Gemini URL verification, health checks, crawlers)
+      const key = extractKey(req)
+      if (key) {
+        const ctx = resolveTenant(key)
+        if (!ctx) { res.status(401).json({ error: 'Invalid API key' }); return }
+        res.status(200).json({
+          ok: true,
+          server: 'mini-erp',
+          protocolVersion: '2024-11-05',
+          transport: 'streamable-http',
+          status: 'ready',
+          tenantId: ctx.tenantId,
+          tools: 23
+        })
+        return
+      }
+      // Reachability probe without key
+      res.status(200).json({
+        ok: true,
+        server: 'mini-erp',
+        protocolVersion: '2024-11-05',
+        transport: 'streamable-http',
+        status: 'ready'
+      })
+      return
+    }
+
+    // Legacy SSE connection (explicitly requested text/event-stream)
     const key = extractKey(req)
     if (!key) { res.status(401).json({ error: 'Missing API key' }); return }
     const ctx = resolveTenant(key)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Zap, KeyRound, Copy, Eye, EyeOff, RefreshCw, Check, X, Users,
   Loader2, ShieldCheck, PlugZap,
@@ -21,6 +22,8 @@ interface TeamUser {
   role: string
   hasKey: number
 }
+
+type ClientPreset = 'gemini' | 'claude-code' | 'claude-desktop' | 'raw'
 
 const fmtLimit = (n: number | null) => (n === null ? 'ไม่จำกัด' : n)
 
@@ -46,12 +49,14 @@ const ROLE_BADGE: Record<string, string> = {
 }
 
 export default function MCPSettings() {
+  const { t } = useTranslation()
   const [info, setInfo] = useState<McpInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [revealSelf, setRevealSelf] = useState(false)
   const [regenBusy, setRegenBusy] = useState(false)
   const [testBusy, setTestBusy] = useState(false)
   const [testSteps, setTestSteps] = useState<Array<{ step: string; ok: boolean }> | null>(null)
+  const [clientPreset, setClientPreset] = useState<ClientPreset>('gemini')
 
   // team
   const [team, setTeam] = useState<TeamUser[]>([])
@@ -90,11 +95,11 @@ export default function MCPSettings() {
       if (res.data.success) {
         setInfo(i => i ? { ...i, key: res.data.data.key, hasKey: true } : i)
         setRevealSelf(true)
-        toast.success('สร้างคีย์ใหม่แล้ว')
+        toast.success(t('settings.llm.mcp.regenerateSuccess', 'สร้างคีย์ใหม่แล้ว'))
         loadInfo()
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'สร้างคีย์ไม่สำเร็จ')
+      toast.error(err?.response?.data?.message || t('settings.llm.mcp.regenerateFailed', 'สร้างคีย์ไม่สำเร็จ'))
     } finally { setRegenBusy(false) }
   }
 
@@ -103,8 +108,8 @@ export default function MCPSettings() {
     try {
       const res = await api.post('/mcp-settings/test')
       setTestSteps(res.data.steps || [])
-      if (res.data.success) toast.success('ทดสอบผ่าน'); else toast.error('ทดสอบไม่ผ่าน')
-    } catch { toast.error('ทดสอบไม่สำเร็จ') }
+      if (res.data.success) toast.success(t('settings.llm.mcp.ready', 'ทดสอบผ่าน')); else toast.error(t('settings.llm.mcp.testFailed', 'ทดสอบไม่ผ่าน'))
+    } catch { toast.error(t('settings.llm.mcp.testFailed', 'ทดสอบไม่สำเร็จ')) }
     finally { setTestBusy(false) }
   }
 
@@ -142,6 +147,34 @@ export default function MCPSettings() {
 
   const atQuota = info.quota.limit != null && info.quota.used >= info.quota.limit
 
+  // Helper strings for single-row presets
+  const getCombinedValue = (k: string) => {
+    const base = info.endpointUrl || 'https://erp.phopy.net/mcp/sse'
+    if (clientPreset === 'gemini' || clientPreset === 'raw') {
+      return `${base}?key=${k}`
+    }
+    if (clientPreset === 'claude-code') {
+      return `claude mcp add phopy-erp "${base}?key=${k}"`
+    }
+    if (clientPreset === 'claude-desktop') {
+      return JSON.stringify({ mcpServers: { 'phopy-erp': { url: `${base}?key=${k}` } } })
+    }
+    return `${base}?key=${k}`
+  }
+
+  const getCombinedDisplay = () => {
+    if (!info.key) return ''
+    const k = revealSelf ? info.key : (info.key.length > 10 ? `${info.key.slice(0, 6)}•••••••••••••••••••••••••••••${info.key.slice(-4)}` : '••••••••••••••••')
+    return getCombinedValue(k)
+  }
+
+  const copyPreset = () => {
+    if (!info.key) return
+    const val = getCombinedValue(info.key)
+    const clientName = clientPreset === 'gemini' ? 'Gemini Spark' : clientPreset === 'claude-code' ? 'Claude Code' : clientPreset === 'claude-desktop' ? 'Claude Desktop' : 'URL'
+    copy(val, t('settings.llm.mcp.copiedFor', { client: clientName, defaultValue: `คัดลอกสำหรับ ${clientName} แล้ว` }))
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -150,57 +183,108 @@ export default function MCPSettings() {
         <h2 className="text-lg font-bold text-[var(--fg-1)]">MCP / AI Connect</h2>
       </div>
       <p className="text-sm text-[var(--fg-3)] -mt-4">
-        เชื่อมข้อมูลในระบบเข้ากับ AI (Claude, ChatGPT ฯลฯ) ผ่าน MCP — ใช้ URL + คีย์ด้านล่างตั้งค่าใน MCP client ของคุณ
+        {t('settings.llm.subtitle', 'เชื่อมข้อมูลในระบบเข้ากับ AI (Gemini, Claude, ChatGPT ฯลฯ) ผ่าน MCP — คัดลอกลิงก์หรือคำสั่งด้านล่างไปตั้งค่าใน AI client ของคุณ')}
       </p>
 
       {/* ── Your connection ── */}
       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
         <div className="flex items-center gap-2">
           <PlugZap className="w-4 h-4 text-[var(--primary)]" />
-          <h3 className="font-semibold text-[var(--fg-1)]">การเชื่อมต่อของคุณ</h3>
+          <h3 className="font-semibold text-[var(--fg-1)]">{t('settings.llm.mcp.title', 'การเชื่อมต่อของคุณ')}</h3>
         </div>
 
-        {/* endpoint URL */}
-        <div>
-          <label className="block text-xs text-[var(--fg-3)] mb-1">Endpoint URL</label>
-          <div className="flex items-center gap-2">
-            <input readOnly value={info.endpointUrl} className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm font-mono" />
-            <button onClick={() => copy(info.endpointUrl, 'คัดลอก URL แล้ว')} className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)] transition-all"><Copy className="w-4 h-4" /></button>
+        {info.key ? (
+          <div className="space-y-3">
+            {/* Preset Selector Pills */}
+            <div>
+              <label className="block text-xs text-[var(--fg-3)] mb-1.5">
+                {t('settings.llm.mcp.clientPresetLabel', 'เลือกรูปแบบไคลเอนต์ AI ที่คุณใช้งาน')}
+              </label>
+              <div className="flex flex-wrap gap-1.5 p-1 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]">
+                {(['gemini', 'claude-code', 'claude-desktop', 'raw'] as const).map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setClientPreset(p)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      clientPreset === p
+                        ? 'bg-[var(--primary)] text-white shadow-xs'
+                        : 'text-[var(--fg-2)] hover:text-[var(--primary)] hover:bg-[var(--surface)]'
+                    }`}
+                  >
+                    {p === 'gemini' && t('settings.llm.mcp.presets.gemini', 'Gemini Spark')}
+                    {p === 'claude-code' && t('settings.llm.mcp.presets.claudeCode', 'Claude Code (CLI)')}
+                    {p === 'claude-desktop' && t('settings.llm.mcp.presets.claudeDesktop', 'Claude Desktop')}
+                    {p === 'raw' && t('settings.llm.mcp.presets.raw', 'URL ทั่วไป (Cursor / Cline)')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Single Row Input & Copy */}
+            <div>
+              <label className="block text-xs text-[var(--fg-3)] mb-1">
+                {clientPreset === 'gemini' && t('settings.llm.mcp.labels.gemini', 'URL เชื่อมต่อสำหรับ Gemini Spark (มีคีย์ในตัว):')}
+                {clientPreset === 'claude-code' && t('settings.llm.mcp.labels.claudeCode', 'คำสั่ง Terminal สำหรับ Claude Code:')}
+                {clientPreset === 'claude-desktop' && t('settings.llm.mcp.labels.claudeDesktop', 'JSON Config สำหรับ Claude Desktop:')}
+                {clientPreset === 'raw' && t('settings.llm.mcp.labels.raw', 'Endpoint URL พร้อมคีย์:')}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={getCombinedDisplay()}
+                  className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm font-mono truncate"
+                />
+                <button
+                  type="button"
+                  onClick={() => setRevealSelf(v => !v)}
+                  title={revealSelf ? t('settings.llm.mcp.hideKey', 'ซ่อนคีย์') : t('settings.llm.mcp.showKey', 'แสดงคีย์')}
+                  className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)] transition-all shrink-0"
+                >
+                  {revealSelf ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={copyPreset}
+                  title={t('settings.llm.mcp.copyBtn', 'คัดลอก')}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium shrink-0"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>{t('settings.llm.mcp.copyBtn', 'คัดลอก')}</span>
+                </button>
+              </div>
+
+              {/* Helper Hint */}
+              <p className="text-xs text-[var(--fg-3)] mt-1.5">
+                {clientPreset === 'gemini' && `💡 ${t('settings.llm.mcp.hints.gemini', 'นำ URL ด้านบนไปวางใน Gemini > Settings & help > Connected Apps > Custom apps for Spark')}`}
+                {clientPreset === 'claude-code' && `💡 ${t('settings.llm.mcp.hints.claudeCode', 'รันคำสั่งนี้ใน Terminal เพื่อเพิ่ม MCP Server ใน Claude Code ทันที')}`}
+                {clientPreset === 'claude-desktop' && `💡 ${t('settings.llm.mcp.hints.claudeDesktop', 'นำ JSON ไปใส่ใต้คีย์ mcpServers ในไฟล์ claude_desktop_config.json')}`}
+                {clientPreset === 'raw' && `💡 ${t('settings.llm.mcp.hints.raw', 'ใช้สำหรับ Cursor, Cline หรือเครื่องมือใดๆ ที่ต้องการ MCP Endpoint URL เต็ม')}`}
+              </p>
+            </div>
           </div>
-        </div>
-
-        {/* your key */}
-        <div>
-          <label className="block text-xs text-[var(--fg-3)] mb-1">คีย์ของคุณ (API key)</label>
-          {info.key ? (
-            <div className="flex items-center gap-2">
-              <input readOnly type={revealSelf ? 'text' : 'password'} value={info.key} className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm font-mono" />
-              <button onClick={() => setRevealSelf(v => !v)} title={revealSelf ? 'ซ่อน' : 'แสดง'} className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)] transition-all">{revealSelf ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
-              <button onClick={() => copy(info.key!, 'คัดลอกคีย์แล้ว')} title="คัดลอก" className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)] transition-all"><Copy className="w-4 h-4" /></button>
-            </div>
-          ) : info.canManage ? (
-            <p className="text-sm text-[var(--fg-3)]">คุณยังไม่มีคีย์ — กด “สร้างคีย์” เพื่อเปิดใช้ MCP ของตัวเอง</p>
-          ) : (
-            <div className="flex items-start gap-2 text-sm bg-[var(--warning-soft)] text-[var(--warning)] rounded-lg p-3">
-              <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>คุณยังไม่ได้รับสิทธิ์ใช้งาน MCP — กรุณาติดต่อแอดมินของบริษัทเพื่อเปิดสิทธิ์ให้</span>
-            </div>
-          )}
-        </div>
+        ) : info.canManage ? (
+          <p className="text-sm text-[var(--fg-3)]">{t('settings.llm.mcp.noKey', 'คุณยังไม่มีคีย์ — กด “สร้างคีย์” เพื่อเปิดใช้ MCP ของตัวเอง')}</p>
+        ) : (
+          <div className="flex items-start gap-2 text-sm bg-[var(--warning-soft)] text-[var(--warning)] rounded-lg p-3">
+            <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>คุณยังไม่ได้รับสิทธิ์ใช้งาน MCP — กรุณาติดต่อแอดมินของบริษัทเพื่อเปิดสิทธิ์ให้</span>
+          </div>
+        )}
 
         {(info.key || info.canManage) && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[var(--border)]">
             <button onClick={regenerateSelf} disabled={regenBusy || (!info.key && atQuota)}
               title={!info.key && atQuota ? 'โควตาเต็ม' : ''}
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 active:scale-95 transition-all text-sm font-medium disabled:opacity-50">
               {regenBusy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-              {info.key ? 'สร้างคีย์ใหม่ (rotate)' : 'สร้างคีย์'}
+              {info.key ? t('settings.llm.mcp.regenerate', 'สร้างคีย์ใหม่ (rotate)') : t('settings.llm.mcp.generateKey', 'สร้างคีย์')}
             </button>
             {info.key && (
               <button onClick={runTest} disabled={testBusy}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm disabled:opacity-50">
                 {testBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                ทดสอบการเชื่อมต่อ
+                {t('settings.llm.mcp.test', 'ทดสอบการเชื่อมต่อ')}
               </button>
             )}
           </div>
