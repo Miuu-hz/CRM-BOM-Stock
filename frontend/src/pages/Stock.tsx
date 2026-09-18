@@ -2376,6 +2376,8 @@ function AdjustModal({
   const [costBasis, setCostBasis] = useState<any>(null)
   // null = ยังไม่รู้ (โหลดไม่สำเร็จ) ให้ใช้ค่าสำรอง · ตัวเลขจริงมาจาก approval_settings ของบริษัทนี้
   const [gateLimit, setGateLimit] = useState<number | null>(null)
+  // หมวดนี้เปิดด่านอนุมัติไว้กับ role ของคนนี้หรือเปล่า — ใช้บอกว่า "ของจะขยับทันที" หรือ "ต้องรอ"
+  const [gateRequired, setGateRequired] = useState(false)
   const [showSources, setShowSources] = useState(false)
   // รูปของจริงตอนนับ — ใบยังไม่เกิดตอนกรอก จึงเก็บไฟล์ค้างไว้ก่อน
   // แล้วอัปโหลดผูกกับทะเบียนที่เพิ่งสร้างหลังบันทึกสำเร็จ (แนวเดียวกับสลิปจ่ายเงิน)
@@ -2421,8 +2423,11 @@ function AdjustModal({
   useEffect(() => {
     if (!open) return
     api.get('/approval/check-required', { params: { moduleType: 'stock_adjust', amount: 0 } })
-      .then(r => setGateLimit(Number(r.data?.data?.autoApproveThreshold) || 0))
-      .catch(() => setGateLimit(null))
+      .then(r => {
+        setGateLimit(Number(r.data?.data?.autoApproveThreshold) || 0)
+        setGateRequired(!!r.data?.data?.required)
+      })
+      .catch(() => { setGateLimit(null); setGateRequired(false) })
   }, [open])
 
   const physicalCount = Number(countText)
@@ -2448,6 +2453,17 @@ function AdjustModal({
   // ถามซ้ำจึงเป็นการ์ดใบสุดท้ายของคนที่ไม่มีใครคอยเบรก
   const warnOver = gateLimit === null ? 1000 : gateLimit
   const bigLoss = Math.abs(diffValue) > warnOver
+  // เกินเกณฑ์เตือน กับ ต้องรออนุมัติจริง เป็นคนละเรื่อง — ADMIN เกินเกณฑ์ก็ยังทำเองได้
+  const needsBoss = bigLoss && gateRequired
+  const photoMissing = bigLoss && shots.length === 0
+  const blockReason =
+    !selectedItemId ? 'ยังไม่ได้เลือกสินค้า'
+    : countInvalid ? 'ยังไม่ได้กรอกจำนวนที่นับได้'
+    : diff === 0 ? 'จำนวนตรงกับระบบแล้ว ไม่มีอะไรต้องปรับ'
+    : !reason ? 'ยังไม่ได้เลือกเหตุผล'
+    : photoMissing ? 'ส่วนต่างเกินวงเงิน ต้องแนบรูปก่อน'
+    : ''
+  const canSubmit = !blockReason
   const money = (n: number) => '฿' + Math.abs(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ควรไปลงบัญชีไหน จึงบังคับให้เลือกเมื่อของไม่ตรง
@@ -2477,6 +2493,8 @@ function AdjustModal({
     if (countInvalid) { toast.error('กรอกจำนวนที่นับได้ให้ถูกต้อง'); return }
     if (diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
     if (!reason) { toast.error('เลือกเหตุผลก่อน — เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีไหน'); return }
+    // ของมูลค่าสูงหายไปโดยไม่มีรูปเป็นหลักฐาน = ตรวจย้อนหลังไม่ได้เลย
+    if (photoMissing) { toast.error('แนบรูปของจริงอย่างน้อย 1 รูปก่อน — ส่วนต่างเกินวงเงินที่บริษัทตั้งไว้'); return }
     if (bigLoss && !confirm(
       'ส่วนต่างคิดเป็นเงิน ' + money(diffValue) +
       ' เกินวงเงินที่บริษัทตั้งไว้ (' + money(warnOver) + ') ยืนยันว่านับถูกแล้ว?'
@@ -2593,16 +2611,38 @@ function AdjustModal({
                   </button>
                   {showSources && costBasis?.sources?.length > 0 && (
                     <div className="rounded-lg bg-[var(--surface)] border border-[var(--border)] divide-y divide-[var(--border)]/50">
+                      {/* หัวคอลัมน์ — เดิมไม่มีเลย ตัวเลข 3 ก้อนเรียงกันโดยไม่บอกว่าก้อนไหนคืออะไร */}
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2.5 py-1.5 text-[10px] text-[var(--fg-4)] bg-[var(--bg)]">
+                        <span>ซื้อจาก</span>
+                        <span className="text-right">จำนวน</span>
+                        <span className="text-right">ราคา/หน่วย</span>
+                        <span className="text-right">มูลค่า</span>
+                      </div>
                       {costBasis.sources.slice(0, 6).map((s: any) => (
-                        <div key={s.doc} className="grid grid-cols-[1fr_auto_auto] gap-2 px-2.5 py-1.5 text-[11px] items-center">
+                        <div key={s.doc} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2.5 py-1.5 text-[11px] items-center">
                           <span className="truncate text-[var(--fg-3)]">{s.supplier || '-'} <span className="font-mono text-[var(--fg-4)]">{s.doc}</span></span>
-                          <span className="text-[var(--fg-3)] tabular-nums">{s.qty} {s.unit} × ฿{s.unitPrice}</span>
-                          <span className="text-[var(--fg-1)] font-semibold tabular-nums">{money(s.value)}</span>
+                          <span className="text-[var(--fg-3)] tabular-nums text-right">{s.qty} {s.unit}</span>
+                          <span className="text-[var(--fg-3)] tabular-nums text-right">฿{s.unitPrice}</span>
+                          <span className="text-[var(--fg-1)] font-semibold tabular-nums text-right">{money(s.value)}</span>
                         </div>
                       ))}
-                      <div className="grid grid-cols-[1fr_auto] gap-2 px-2.5 py-1.5 text-[11px] bg-[var(--bg)]">
-                        <span className="text-[var(--fg-3)]">รวม {costBasis.totalBaseQty.toLocaleString('th-TH')} {baseUnitLabel}</span>
-                        <span className="text-[var(--fg-1)] font-semibold tabular-nums">{money(costBasis.totalValue)}</span>
+                      {/* เดิมตัดเหลือ 6 แถวเงียบ ๆ คนเห็นยอดรวมไม่ตรงกับแถวที่โชว์แล้วนึกว่าโปรแกรมคิดผิด */}
+                      {costBasis.sources.length > 6 && (
+                        <div className="px-2.5 py-1.5 text-[10px] text-[var(--fg-4)]">
+                          แสดง 6 จาก {costBasis.sources.length} ครั้งที่ซื้อ — ยอดรวมด้านล่างนับครบทุกครั้ง
+                        </div>
+                      )}
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2.5 py-1.5 text-[11px] bg-[var(--bg)]">
+                        <span className="text-[var(--fg-3)]">รวม</span>
+                        <span className="text-[var(--fg-2)] tabular-nums text-right">{costBasis.totalBaseQty.toLocaleString('th-TH')} {baseUnitLabel}</span>
+                        <span className="text-[var(--fg-4)] text-right">เฉลี่ย</span>
+                        <span className="text-[var(--fg-1)] font-semibold tabular-nums text-right">{money(costBasis.totalValue)}</span>
+                      </div>
+                      {/* กางสูตรให้เห็น ไม่งั้นคนไม่เชื่อว่าเลขนี้ไม่ได้ลากราคาล่าสุดมามั่ว ๆ */}
+                      <div className="px-2.5 py-2 text-[10px] text-[var(--fg-4)] leading-relaxed">
+                        {money(costBasis.totalValue)} ÷ {costBasis.totalBaseQty.toLocaleString('th-TH')} {baseUnitLabel}
+                        {' = '}฿{avgCost.toLocaleString('th-TH', { maximumFractionDigits: 4 })}/{baseUnitLabel}
+                        {' — ค่านี้คือตัวที่เอาไปลงบัญชี ไม่ใช่ราคาครั้งล่าสุด'}
                       </div>
                     </div>
                   )}
@@ -2614,6 +2654,11 @@ function AdjustModal({
           {selectedItem && !countInvalid && diff !== 0 && (
             <div className="space-y-2">
               <AdjustStep n={3} title="ทำไมถึงไม่ตรง" hint="เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีตัวไหน" />
+              {diff !== 0 && !reason && (
+                <p className="text-xs text-danger">
+                  ยังไม่ได้เลือกเหตุผล — ปรับสต็อกโดยไม่บอกสาเหตุ เดือนหน้าจะไม่มีใครรู้ว่าของหายไปไหน
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 {visibleReasons.map(([label, hint, , accName]) => (
                   <button key={label} type="button" onClick={() => setReason(label)} aria-pressed={reason === label}
@@ -2635,7 +2680,18 @@ function AdjustModal({
 
           {selectedItem && !countInvalid && diff !== 0 && (
             <div className="space-y-2">
-              <AdjustStep n={4} title="ถ่ายรูปของจริง" hint="รับเฉพาะ .jpg .jpeg .png · ไม่เกิน 5 MB · ไม่บังคับ แต่ของหายมูลค่าสูงควรมี" />
+              <AdjustStep
+                n={4}
+                title={'ถ่ายรูปของจริง' + (bigLoss ? ' (จำเป็น)' : '')}
+                hint={bigLoss
+                  ? 'ส่วนต่างเกินวงเงินที่บริษัทตั้งไว้ — ต้องแนบรูปอย่างน้อย 1 รูปก่อนส่ง · .jpg .jpeg .png ไม่เกิน 5 MB'
+                  : 'รับเฉพาะ .jpg .jpeg .png · ไม่เกิน 5 MB · ไม่บังคับ แต่ของหายมูลค่าสูงควรมี'}
+              />
+              {photoMissing && (
+                <p className="text-xs text-danger">
+                  ส่วนต่างมูลค่า {money(diffValue)} เกินวงเงิน {money(warnOver)} — ต้องแนบรูปของจริงอย่างน้อย 1 รูปก่อนส่ง
+                </p>
+              )}
               <div className="flex items-center gap-2 flex-wrap">
                 {shots.map((sh, i) => (
                   <span key={sh.url} className="relative">
@@ -2666,7 +2722,20 @@ function AdjustModal({
 
           {selectedItem && !countInvalid && diff !== 0 && (
             <div className="space-y-2">
-              <AdjustStep n={5} title="ผลที่จะเกิด" hint="กดยืนยันแล้วระบบจะลงบัญชีให้เองทันที" />
+              <AdjustStep
+                n={5}
+                title="ผลที่จะเกิด"
+                hint={needsBoss ? 'ส่งแล้วยังไม่ขยับ ต้องรอผู้มีสิทธิ์อนุมัติก่อน' : 'กดยืนยันแล้วระบบปรับและลงบัญชีให้ทันที'}
+              />
+              <ul className="space-y-1 text-xs text-[var(--fg-3)]">
+                <li>• สต็อกเปลี่ยนจาก {systemQty.toLocaleString('th-TH')} เป็น {baseQuantity.toLocaleString('th-TH')} {baseUnitLabel}</li>
+                <li>• บันทึกเป็นรายการเคลื่อนไหว และขึ้นในทะเบียนการปรับสต็อกพร้อมเหตุผล</li>
+                <li className={needsBoss ? 'text-warning' : 'text-success'}>
+                  {needsBoss
+                    ? '• มูลค่า ' + money(diffValue) + ' เกินวงเงิน ' + money(warnOver) + ' จึงต้องให้ผู้มีสิทธิ์อนุมัติก่อน สต็อกจะยังไม่ขยับจนกว่าจะอนุมัติ'
+                    : '• อยู่ในวงเงินที่คุณทำเองได้ ปรับทันทีหลังกดส่ง'}
+                </li>
+              </ul>
               <div className="rounded-xl border border-[var(--border)] overflow-hidden text-xs">
                 <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
                   <span className="text-[var(--fg-3)]">สต็อก</span>
@@ -2691,10 +2760,10 @@ function AdjustModal({
 
         <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
           <button type="button" onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
-          <button onClick={handleSubmit} disabled={saving || !selectedItemId || countInvalid}
+          <button onClick={handleSubmit} disabled={saving || !canSubmit} title={blockReason || undefined}
             className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
             {saving && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-            ยืนยันปรับสต็อก
+            {blockReason ? 'กรอกให้ครบก่อน' : needsBoss ? 'ส่งขออนุมัติ' : 'ยืนยันปรับสต็อก'}
           </button>
         </div>
       </div>
