@@ -4,7 +4,8 @@
 
 # Package managers
 node_modules/
-package-lock.json
+# package-lock.json ต้องอยู่ใน git — ไม่งั้นแต่ละเครื่อง npm install แล้วได้เวอร์ชันไม่ตรงกัน
+# yarn/pnpm ยังกันไว้ เพราะโปรเจกต์นี้ใช้ npm ตัวเดียว ไม่ควรมี lockfile ปนกัน 2 ชนิด
 yarn.lock
 pnpm-lock.yaml
 upload data/
