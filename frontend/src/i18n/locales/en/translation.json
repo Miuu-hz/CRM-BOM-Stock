@@ -958,7 +958,10 @@
       "lineValue": "Line value",
       "totalReceivedValue": "Total received value",
       "loadingItems": "Loading items from PO...",
-      "selectPOHint": "Select a purchase order above to load items"
+      "selectPOHint": "Select a purchase order above to load items",
+      "perPurchaseUnit": "per purchase unit",
+      "stockUnitHint": "Enters stock as {{qty}} {{unit}}",
+      "noConversionHint": "No {{from}} → {{to}} conversion yet — set one up before confirming receipt"
     },
     "invoiceModal": {
       "titleView": "Invoice Details",

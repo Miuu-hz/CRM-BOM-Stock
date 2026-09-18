@@ -659,6 +659,11 @@ router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Resp
   try {
     const tenantId = req.user!.tenantId
 
+    // `unit` ต้องเป็นหน่วยซื้อ (poi.unit) — quantity/pending_qty/unit_price ทุกตัวอยู่ในหน่วยนี้
+    // และ confirmGoodsReceipt ก็อ่าน poItem.unit เป็นหน่วยตั้งต้นตอนแปลงเข้าคลัง
+    // เดิมตรงนี้คืน COALESCE(si.base_unit, si.unit) = หน่วย "นับสต็อก" ซึ่งคนละตัว
+    // ของจริงมี 88 บรรทัดที่สองหน่วยนี้ไม่ตรงกัน เช่น ซื้อกุ้ง 1.148 kg ที่ ฿219
+    // จอรับของโชว์ "฿219 · กรัม" อ่านได้ว่ากรัมละ 219 บาท ผิดไป 1,000 เท่า
     const items = db.prepare(`
       SELECT
         poi.id, poi.purchase_order_id, poi.material_id,
@@ -667,14 +672,27 @@ router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Resp
         (poi.quantity - poi.received_qty) AS pending_qty,
         si.name  AS material_name,
         si.sku   AS material_code,
-        COALESCE(si.base_unit, si.unit) AS unit
+        COALESCE(NULLIF(TRIM(poi.unit), ''), si.base_unit, si.unit) AS unit,
+        COALESCE(si.base_unit, si.unit) AS stock_unit
       FROM purchase_order_items poi
       LEFT JOIN stock_items si ON poi.material_id = si.id
       LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE poi.purchase_order_id = ?
         AND po.tenant_id = ?
         AND poi.quantity > poi.received_qty
-    `).all(req.params.poId, tenantId)
+    `).all(req.params.poId, tenantId) as any[]
+
+    // หน่วยซื้อกับหน่วยคลังต่างกัน = คนกรอกควรเห็นก่อนกดว่าของจะเข้าคลังเป็นเท่าไร
+    // แปลงไม่ได้ก็บอกไปตรง ๆ (stock_factor = null) ดีกว่าปล่อยให้ไปเจอ error ตอนกดยืนยัน
+    for (const it of items) {
+      const buy = normalizeUnit(it.unit || '')
+      const keep = normalizeUnit(it.stock_unit || '')
+      it.stock_factor = null
+      if (buy && keep && buy !== keep && it.material_id) {
+        const conv = convertQuantityBidirectional(1, buy, keep, tenantId, it.material_id)
+        if (conv) it.stock_factor = conv.factor
+      }
+    }
 
     res.json({ success: true, data: items })
   } catch (error) {

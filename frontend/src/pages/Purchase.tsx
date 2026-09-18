@@ -235,7 +235,12 @@ interface ReceiptItem {
   material_id: string
   description: string
   material_name?: string
+  /** หน่วยที่สั่งซื้อ — quantity/pending_qty/unit_price ทุกตัวอยู่ในหน่วยนี้ */
   unit: string
+  /** หน่วยที่คลังนับ ต่างจากหน่วยซื้อได้ (ซื้อเป็น กก. เก็บเป็น กรัม) */
+  stock_unit?: string
+  /** 1 หน่วยซื้อ = กี่หน่วยคลัง · null = ยังไม่มีอัตราแปลง */
+  stock_factor?: number | null
   unit_price: number
   ordered_qty: number
   already_received_qty: number  // sum from previous GRs
@@ -2198,9 +2203,9 @@ const Purchase = () => {
       return {
         kind: 'action', label: t('purchase.actions.receiveGoods'),
         onClick: () => {
-          setReceiptForm(p => ({ ...p, purchase_order_id: order.id, items: [] }))
+          // ส่งค่าผ่าน data ให้ openModal เป็นคนเซ็ต — ห้ามเซ็ตเองก่อนเรียก
+          openModal('receipt', 'create', { purchase_order_id: order.id, items: [] })
           loadPendingItems(order.id)
-          openModal('receipt', 'create')
         },
       }
     }
@@ -2209,15 +2214,11 @@ const Purchase = () => {
       return {
         kind: 'action', label: t('purchase.actions.createInvoice'),
         onClick: () => {
-          setInvoiceForm(p => ({
-            ...p,
+          openModal('invoice', 'create', {
             purchase_order_id: order.id,
-            extra_po_ids: [],
-            goods_receipt_ids: [],
             tax_rate: order.tax_rate ?? 7,
-            due_date: order.expected_date?.split('T')[0] || '',
-          }))
-          openModal('invoice', 'create')
+            due_date: order.expected_date || '',
+          })
         },
       }
     }
@@ -2227,8 +2228,7 @@ const Purchase = () => {
       return {
         kind: 'action', label: t('purchase.actions.payNow'),
         onClick: () => {
-          setPaymentForm(p => ({ ...p, supplier_id: order.supplier_id, purchase_invoice_id: unpaid.id, amount: unpaid.balance_amount || 0 }))
-          openModal('payment', 'create')
+          openModal('payment', 'create', { supplier_id: order.supplier_id, purchase_invoice_id: unpaid.id, amount: unpaid.balance_amount || 0 })
         },
       }
     }
@@ -2468,12 +2468,14 @@ const Purchase = () => {
         })
       }
     } else {
-      setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
-      setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
-      setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
-      setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
-      setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
+      // ล้างเฉพาะฟอร์มของชนิดที่กำลังเปิด — เดิมล้างทุกใบรวด ทำให้เปิดใบแจ้งหนี้
+      // ไปทับใบสั่งซื้อที่กรอกค้างไว้ และทำให้ค่าที่ปุ่ม "ขั้นต่อไป" ใส่มาหายเกลี้ยง
+      if (type === 'request') setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
+      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
+      if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
+      if (type === 'invoice') setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
+      if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
 
@@ -2605,6 +2607,9 @@ const Purchase = () => {
               description: item.description || item.material_name || '',
               material_name: item.material_name || '',
               unit: normalizeUnit(item.unit) || t('purchase.common.unitFallback'),
+              // หน่วยที่คลังนับ — ต่างจากหน่วยซื้อได้ (ซื้อเป็น กก. เก็บเป็น กรัม)
+              stock_unit: normalizeUnit(item.stock_unit) || '',
+              stock_factor: item.stock_factor ?? null,
               unit_price: item.unit_price || 0,
               ordered_qty: item.quantity || 0,
               already_received_qty: item.received_qty || 0,
@@ -4162,9 +4167,24 @@ const Purchase = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-[var(--fg-1)] truncate">{item.description || item.material_name || item.material_id}</p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">
-                        {t('purchase.receiptModal.unitPriceLabel')} <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
-                        {item.unit && <span className="ml-2 text-[var(--fg-4)]">· {unitLabelFor(item.unit)}</span>}
+                        <span className="text-[var(--primary)] font-medium">{formatCurrency(item.unit_price)}</span>
+                        <span className="text-[var(--fg-3)]"> / {unitLabelFor(item.unit)}</span>
+                        <span className="ml-1 text-[var(--fg-4)]">({t('purchase.receiptModal.perPurchaseUnit')})</span>
                       </p>
+                      {/* หน่วยซื้อกับหน่วยคลังต่างกัน ต้องบอกก่อนกด ไม่ใช่ให้ไปเซอร์ไพรส์ในคลัง */}
+                      {item.stock_unit && item.stock_unit !== item.unit && (
+                        <p className="text-[11px] text-[var(--fg-4)] mt-0.5">
+                          {item.stock_factor
+                            ? t('purchase.receiptModal.stockUnitHint', {
+                                qty: (item.accepted_qty * item.stock_factor).toLocaleString('th-TH', { maximumFractionDigits: 4 }),
+                                unit: unitLabelFor(item.stock_unit),
+                              })
+                            : t('purchase.receiptModal.noConversionHint', {
+                                from: unitLabelFor(item.unit),
+                                to: unitLabelFor(item.stock_unit),
+                              })}
+                        </p>
+                      )}
                     </div>
                     {/* Progress bar: already received vs ordered */}
                     <div className="text-right shrink-0">
