@@ -193,9 +193,35 @@ export default function UnitChainEditor({
 
   const handleRemoveNode = async (unit: string) => {
     const toDelete = conversions.filter(c => c.from_unit === unit || c.to_unit === unit)
+
+    // ย้อนยาก: กฎที่ลบไปแล้วสร้างใหม่เองไม่ได้ ต้องจำตัวเลขเดิมให้ได้
+    // และของที่ไม่มีกฎแปลง จะรับเข้าคลังไม่ได้เลย (goodsReceipt โยน NO_CONVERSION)
+    if (toDelete.length > 0) {
+      const lines = toDelete.map(c => `  • 1 ${ul(c.from_unit)} = ${c.conversion_factor} ${ul(c.to_unit)}`).join('\n')
+      const extra = (unit === baseUnit || unit === displayUnit)
+        ? `\n\n"${ul(unit)}" เป็นหน่วย${unit === baseUnit ? 'ที่คลังนับ' : 'บรรจุ'}ของสินค้านี้ — ลบกฎแล้วระบบจะคิดสต็อกไม่ได้`
+        : ''
+      if (!confirm(`ลบ "${ul(unit)}" ออกจากผัง จะลบกฎแปลงหน่วย ${toDelete.length} ข้อนี้ถาวร:\n\n${lines}${extra}\n\nยืนยันลบ?`)) return
+    }
+
     try {
       await Promise.all(toDelete.map(c => onDelete(c.id)))
       setNodePositions(prev => { const next = { ...prev }; delete next[unit]; return next })
+      // ไม่มีเสียงตอบกลับ = คนกดไม่รู้ว่าเพิ่งลบอะไรไปกี่ข้อ
+      toast.success(toDelete.length > 0
+        ? `ลบ "${ul(unit)}" และกฎแปลงหน่วย ${toDelete.length} ข้อแล้ว`
+        : `เอา "${ul(unit)}" ออกจากผังแล้ว (ไม่มีกฎผูกอยู่)`)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
+    }
+  }
+
+  // ป้ายด้านล่างก็ลบกฎจริงเหมือนกัน ต้องถามแบบเดียวกัน
+  const handleDeleteEdge = async (conv: UnitConversionRow) => {
+    if (!confirm(`ลบกฎ 1 ${ul(conv.from_unit)} = ${conv.conversion_factor} ${ul(conv.to_unit)} ถาวร?\n\nของที่ไม่มีกฎแปลงหน่วย จะรับเข้าคลังไม่ได้`)) return
+    try {
+      await onDelete(conv.id)
+      toast.success('ลบกฎแปลงหน่วยแล้ว')
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
     }
@@ -252,7 +278,7 @@ export default function UnitChainEditor({
         <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <Network className="w-4 h-4 text-[var(--uce-accent)]" />
-            <h3 className="text-sm font-semibold text-[var(--fg-1)]">Unit Chain Editor</h3>
+            <h3 className="text-sm font-semibold text-[var(--fg-1)]">ผังการแปลงหน่วย</h3>
             <span className="text-xs text-[var(--fg-4)] hidden sm:block">ลากโหนดได้ · คลิก → เชื่อม · Esc ยกเลิก</span>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-[var(--bg)] rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
@@ -335,7 +361,7 @@ export default function UnitChainEditor({
                   <button
                     type="button"
                     className={`p-1 rounded transition-colors flex-shrink-0 ${isSource ? 'bg-[var(--uce-blue)]/30 text-[var(--uce-blue-soft)]' : 'hover:bg-[var(--uce-accent)]/20 text-[var(--uce-accent)]/70 hover:text-[var(--uce-accent-soft)]'}`}
-                    title="เชื่อมต่อ"
+                    title="ลากเส้นไปหาหน่วยปลายทาง"
                     onClick={(e) => {
                       e.stopPropagation()
                       if (connectFrom === unit) { setConnectFrom(null); setMousePos(null) }
@@ -347,7 +373,7 @@ export default function UnitChainEditor({
                   <button
                     type="button"
                     className="p-1 rounded hover:bg-[var(--danger-soft)] text-[var(--fg-4)] hover:text-danger transition-colors flex-shrink-0"
-                    title="ลบโหนด"
+                    title="เอาหน่วยนี้ออก (ลบกฎแปลงที่ผูกอยู่ด้วย)"
                     onClick={(e) => { e.stopPropagation(); handleRemoveNode(unit) }}
                   >
                     <X className="w-3 h-3" />
@@ -377,7 +403,7 @@ export default function UnitChainEditor({
               {conversions.map(conv => (
                 <div key={conv.id} className="flex items-center gap-1 px-2 py-0.5 bg-[var(--uce-accent)]/10 border border-[var(--uce-accent)]/20 rounded-full text-xs text-[var(--uce-accent-soft)] whitespace-nowrap">
                   <span className="font-mono">{ul(conv.from_unit)} →×{conv.conversion_factor}→ {ul(conv.to_unit)}</span>
-                  <button type="button" onClick={() => onDelete(conv.id)} className="text-purple-400/50 hover:text-danger transition-colors ml-0.5">
+                  <button type="button" onClick={() => handleDeleteEdge(conv)} title="ลบกฎนี้" className="text-[var(--fg-4)] hover:text-danger transition-colors ml-0.5">
                     <X className="w-2.5 h-2.5" />
                   </button>
                 </div>
