@@ -5,8 +5,6 @@ import {
   Package,
   PackageOpen,
   Search,
-  TrendingUp,
-  TrendingDown,
   AlertTriangle,
   ArrowUpCircle,
   ArrowDownCircle,
@@ -30,7 +28,6 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Network,
-  Factory,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
@@ -405,10 +402,26 @@ function Stock() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
-            <span className="text-[var(--fg-1)]">จัดการสต๊อกสินค้า</span>
-          </h1>
-          <p className="text-[var(--fg-3)]">ติดตามและจัดการระดับสต๊อกสินค้า</p>
+          {/* แบบร่างให้สรุปทุกอย่างไว้บรรทัดเดียวใต้หัวเรื่อง แทนการ์ดใหญ่ 4-5 ใบ
+              ที่กินความสูงจนตารางเหลือพื้นที่น้อย — ตัวเลขชุดเดียวกันเป๊ะ แค่ย้ายที่ */}
+          <h1 className="text-2xl leading-8 font-bold text-[var(--fg-1)] mb-1">คลังสินค้า</h1>
+          <p className="text-[var(--fg-3)] text-sm">
+            {(stats?.totalItems ?? 0).toLocaleString('th-TH')} รายการ
+            <span className="mx-1.5 text-[var(--fg-4)]">·</span>
+            มูลค่ารวม ฿{(stats?.totalValue ?? 0).toLocaleString('th-TH')}
+            {(stats?.lowStockCount ?? 0) > 0 && (
+              <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
+              <span className="text-warning">ใกล้หมด {(stats?.lowStockCount ?? 0).toLocaleString('th-TH')}</span></>
+            )}
+            {(stats?.criticalCount ?? 0) > 0 && (
+              <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
+              <span className="text-danger">วิกฤต {(stats?.criticalCount ?? 0).toLocaleString('th-TH')}</span></>
+            )}
+            {showSubconStockWidget && (
+              <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
+              ผู้รับเหมา ฿{(subconStock?.summary.total_value ?? 0).toLocaleString('th-TH')}</>
+            )}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end items-center">
           {/* Utility */}
@@ -438,7 +451,7 @@ function Stock() {
           <div className="flex rounded-xl overflow-hidden border border-[var(--border)]">
             <button
               onClick={() => setAdjustModal({ open: true, item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-400 hover:bg-blue-400/10 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
               title="ปรับสต๊อก"
             >
               <SlidersHorizontal className="w-4 h-4" />
@@ -467,43 +480,6 @@ function Stock() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className={`grid grid-cols-1 md:grid-cols-2 ${showSubconStockWidget ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
-        <StatCard
-          label="สินค้าทั้งหมด"
-          value={(stats?.totalItems ?? 0).toString()}
-          icon={Package}
-          color="primary"
-        />
-        <StatCard
-          label="สต๊อกวิกฤต"
-          value={(stats?.criticalCount ?? 0).toString()}
-          icon={AlertTriangle}
-          color="red"
-        />
-        <StatCard
-          label="สต๊อกต่ำ"
-          value={(stats?.lowStockCount ?? 0).toString()}
-          icon={TrendingDown}
-          color="yellow"
-        />
-        <StatCard
-          label="มูลค่ารวม"
-          value={`฿${(stats?.totalValue ?? 0).toLocaleString()}`}
-          icon={TrendingUp}
-          color="green"
-        />
-        {showSubconStockWidget && (
-          <StatCard
-            label="มูลค่าสต็อกผู้รับเหมา"
-            value={`฿${(subconStock?.summary.total_value ?? 0).toLocaleString()}`}
-            icon={Factory}
-            color="primary"
-            onClick={() => navigate('/stock/subcontractors')}
-          />
-        )}
-      </div>
-
       {/* ดูรูปสินค้าเต็มจอ — กดที่ไหนก็ปิด */}
       {imageViewer?.imageUrl && (
         <div
@@ -516,14 +492,14 @@ function Stock() {
         </div>
       )}
       {/* Filters */}
-      <div className="phopy-card p-6">
+      <div className="phopy-card rounded-[14px] p-6">
         <div className="flex flex-col gap-4">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" aria-hidden="true" />
             <input
               type="search"
-              placeholder="ค้นหาชื่อสินค้า หรือ SKU..."
+              placeholder="ค้นชื่อ หรือรหัสสินค้า…"
               aria-label="ค้นหาสินค้า"
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
@@ -558,7 +534,7 @@ function Stock() {
       </div>
 
       {/* Stock List */}
-      <div className="phopy-card p-6">
+      <div className="phopy-card rounded-2xl p-6">
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3 mb-3 p-3 bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-xl">
@@ -587,6 +563,9 @@ function Stock() {
           >
             <Settings2 className="w-4 h-4" />
             ปรับคอลัมน์
+            <span className="px-1.5 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--fg-3)] text-xs tabular-nums">
+              {Object.values(visibleCols).filter(Boolean).length}/{Object.keys(COLUMN_LABELS).length}
+            </span>
           </button>
 
           {/* Column picker dropdown */}
@@ -596,6 +575,7 @@ function Stock() {
               onClick={(e) => e.stopPropagation()}
             >
               <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่อยากเห็น</p>
+              <p className="text-[10px] text-[var(--fg-4)] mb-2 px-1">จำไว้ให้เป็นรายคน — เปิดครั้งหน้าได้ชุดเดิม</p>
               {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
                 const always = ALWAYS_VISIBLE.includes(key)
                 const active = visibleCols[key]
@@ -2149,53 +2129,6 @@ export function EditModal({
 }
 
 // Movement Modal Component
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  onClick,
-}: {
-  label: string
-  value: string
-  icon: any
-  color: string
-  onClick?: () => void
-}) {
-  const colorClass = {
-    primary: 'text-[var(--primary)]',
-    green: 'text-success',
-    yellow: 'text-warning',
-    red: 'text-danger',
-  }[color]
-
-  const cardContent = (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-[var(--fg-3)] mb-1">{label}</p>
-        <p className={`text-2xl font-bold ${colorClass}`}>
-          {value}
-        </p>
-      </div>
-      <Icon className={`w-8 h-8 ${colorClass} opacity-50`} />
-    </div>
-  )
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className="phopy-card p-4 text-left w-full transition-all hover:border-phopy-indigo/50 hover:shadow-md cursor-pointer">
-        {cardContent}
-      </button>
-    )
-  }
-  return (
-    <div className="phopy-card p-4">
-      {cardContent}
-    </div>
-  )
-}
-
-// ชิปกรอง — พ่วงจำนวนรายการในกลุ่มนั้น และแต้มสีตามความเร่งด่วนของสถานะ
-// กลุ่มที่ว่างเปล่าเป็นเทาจาง กดได้แต่รู้ตั้งแต่ยังไม่กดว่าไม่มีอะไร
 function FilterButton({
   label,
   active,
@@ -2213,14 +2146,14 @@ function FilterButton({
   const activeCls =
     tone === 'danger' ? 'bg-[var(--danger-soft)] text-danger border-danger/40'
       : tone === 'warning' ? 'bg-[var(--warning-soft)] text-warning border-warning/40'
-        : 'bg-[var(--primary-soft)] text-[var(--primary)] border-phopy-indigo/50'
+        : 'bg-[var(--primary)] text-white border-[var(--primary)]'
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
       className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm whitespace-nowrap transition-colors ${
         active ? activeCls
-          : `bg-[var(--surface-2)] border-[var(--border)] hover:border-phopy-indigo/30 ${empty ? 'text-[var(--fg-4)]' : 'text-[var(--fg-3)]'}`
+          : `bg-transparent border-[var(--border)] hover:border-phopy-indigo/30 ${empty ? 'text-[var(--fg-4)]' : 'text-[var(--fg-3)]'}`
       }`}
     >
       {label}
@@ -3127,7 +3060,7 @@ function AddStockModal({
                     onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
                     className="phopy-input w-full"
                   >
-                    <option value="">{unitLabel(formData.unit || 'เลือกหน่วยฐาน')}</option>
+                    <option value="">— ยังไม่ได้เลือก —</option>
                     {availableUnits.map((u) => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
@@ -3141,7 +3074,7 @@ function AddStockModal({
                     onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
                     className="phopy-input w-full"
                   >
-                    <option value="">{unitLabel(formData.unit || 'เลือกหน่วยบรรจุ')}</option>
+                    <option value="">— ยังไม่ได้เลือก —</option>
                     {availableUnits.map((u) => (
                       <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                     ))}
@@ -3262,7 +3195,7 @@ function AddStockModal({
                   <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
                   <p className="text-[10px] text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-3)]'}`}>
                   {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                 </span>
               </label>

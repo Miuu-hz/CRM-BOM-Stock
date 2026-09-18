@@ -4,8 +4,16 @@ import { describe, it, expect } from 'vitest'
 import StockSource from './Stock.tsx?raw'
 
 const SRC: string = StockSource
-const slice = (from: string, to: string) => SRC.slice(SRC.indexOf(from), SRC.indexOf(to))
-const EDIT_MODAL = slice('export function EditModal({', 'function StatCard({')
+const slice = (from: string, to: string) => {
+  const a = SRC.indexOf(from), b = SRC.indexOf(to)
+  // หมุดหาย = ขอบเขตผิด ต้องล้มเสียงดัง ไม่ใช่เงียบแล้วตัดไปจนจบไฟล์
+  if (a < 0) throw new Error('หาหมุดหัวไม่เจอ: ' + from)
+  if (b < 0) throw new Error('หาหมุดท้ายไม่เจอ: ' + to)
+  return SRC.slice(a, b)
+}
+// หมุดท้ายต้องเป็นสิ่งที่อยู่ถัดจาก EditModal จริง ๆ ณ ตอนนี้
+// ถ้าหมุดหาย indexOf คืน -1 แล้ว slice จะกินไปจนจบไฟล์โดยไม่มีอะไรเตือน
+const EDIT_MODAL = slice('export function EditModal({', 'function FilterButton({')
 const DETAIL_MODAL = slice('function DetailModal({', 'export function EditModal({')
 
 describe('Stock.tsx — ห้าม JSX รั่วออกมาเป็นข้อความ', () => {
