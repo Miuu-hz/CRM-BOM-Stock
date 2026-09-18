@@ -28,32 +28,72 @@ const NODE_H = 46
 
 const ul = (u: string) => unitLabel(u)
 
-function autoLayout(
+/** export ไว้ให้เทสต์เรียกของจริง ไม่ใช่ตรรกะที่ลอกไปไว้อีกไฟล์ */
+export function autoLayout(
   units: string[],
   convs: UnitConversionRow[],
   baseUnit?: string,
 ): Record<string, NodePos> {
   if (units.length === 0) return {}
-  const adj: Record<string, string[]> = {}
-  units.forEach(u => { adj[u] = [] })
-  convs.forEach(c => { if (adj[c.from_unit]) adj[c.from_unit].push(c.to_unit) })
-  const root = baseUnit && units.includes(baseUnit) ? baseUnit : units[0]
-  const visited = new Set<string>()
-  const levels: string[][] = []
-  let queue = [root]
-  visited.add(root)
-  while (queue.length > 0) {
-    levels.push([...queue])
-    const next: string[] = []
-    for (const u of queue) {
-      for (const v of (adj[u] || [])) {
-        if (!visited.has(v)) { visited.add(v); next.push(v) }
-      }
+
+  // Layout must follow the real direction of each rule (from_unit -> to_unit,
+  // backend convention: "1 from_unit = X to_unit"), so the source/larger unit
+  // lands left and the finer/destination unit lands right — not an arbitrary
+  // BFS root pick (that was the bug: rooting BFS at baseUnit walked adj[] the
+  // wrong way since rules point large->small, e.g. kg->g, leaving kg
+  // unvisited and dumped into an unordered leftover row).
+  // When both directions of one pair are recorded (a genuine 2-unit cycle),
+  // keep only the factor > 1 side (large -> small, this dataset's majority
+  // convention) for ordering purposes so the graph stays a DAG; the raw
+  // convs array is still what actually gets drawn as edges.
+  const pairKey = (a: string, b: string) => (a < b ? a + '|' + b : b + '|' + a)
+  const bestForPair = new Map<string, UnitConversionRow>()
+  convs.forEach(c => {
+    if (!units.includes(c.from_unit) || !units.includes(c.to_unit) || c.from_unit === c.to_unit) return
+    const key = pairKey(c.from_unit, c.to_unit)
+    const existing = bestForPair.get(key)
+    if (!existing || (c.conversion_factor > 1 && existing.conversion_factor <= 1)) {
+      bestForPair.set(key, c)
     }
-    queue = next
+  })
+
+  const adj: Record<string, string[]> = {}
+  const indeg: Record<string, number> = {}
+  units.forEach(u => { adj[u] = []; indeg[u] = 0 })
+  bestForPair.forEach(c => { adj[c.from_unit].push(c.to_unit); indeg[c.to_unit] += 1 })
+
+  // Kahn's topological layering: column 0 = units nothing converts into
+  // (sources). If a real cycle survives the dedup above, force-drain the
+  // lowest-indegree remaining unit instead of stalling, so every unit still
+  // gets a column — never a blank canvas.
+  const levels: string[][] = []
+  const remaining = new Set(units)
+  while (remaining.size > 0) {
+    let frontier = [...remaining].filter(u => indeg[u] === 0)
+    if (frontier.length === 0) {
+      frontier = [[...remaining].sort((a, b) => indeg[a] - indeg[b])[0]]
+    }
+    levels.push(frontier)
+    frontier.forEach(u => {
+      remaining.delete(u)
+      adj[u].forEach(v => { if (remaining.has(v)) indeg[v] -= 1 })
+    })
   }
-  const unvisited = units.filter(u => !visited.has(u))
-  for (let i = 0; i < unvisited.length; i += 2) levels.push(unvisited.slice(i, i + 2))
+
+  // baseUnit is this material's stock-counting unit — by definition the
+  // terminal destination of its conversion chain — so it always anchors the
+  // rightmost column, even with zero conversion rows of its own (e.g. only a
+  // tenant-wide rule reaches it), instead of tying for a left column with
+  // every other unconnected unit.
+  if (baseUnit && units.includes(baseUnit) && units.length > 1) {
+    const idx = levels.findIndex(lvl => lvl.includes(baseUnit))
+    if (idx !== -1) {
+      levels[idx] = levels[idx].filter(u => u !== baseUnit)
+      if (levels[idx].length === 0) levels.splice(idx, 1)
+      levels.push([baseUnit])
+    }
+  }
+
   const positions: Record<string, NodePos> = {}
   levels.forEach((lvl, li) => {
     const x = 20 + li * (NODE_W + 50)
