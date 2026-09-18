@@ -1294,24 +1294,24 @@ function DetailModal({
           {/* Item Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1">Name</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ชื่อสินค้า</p>
               <p className="text-[var(--fg-2)] font-medium">{item.name}</p>
             </div>
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1">SKU</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">รหัสสินค้า</p>
               <p className="text-[var(--fg-2)] font-mono">{item.sku}</p>
             </div>
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1">Category</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ประเภท</p>
               <CategoryBadge category={item.category} />
             </div>
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1" title={t('stock.unpack.looseHint')}>Current Stock (Base)</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1" title={t('stock.unpack.looseHint')}>ของที่หยิบใช้ได้ตอนนี้</p>
               <p className={`font-bold text-lg ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}>
                 {item.quantity} {unitLabel(item.baseUnit || item.unit)}
                 {item.quantity === 0 && (
                   <span className="ml-2 text-xs bg-[var(--danger-soft)] text-danger px-2 py-1 rounded">
-                    OUT OF STOCK
+                    ของหมด
                   </span>
                 )}
               </p>
@@ -1352,11 +1352,11 @@ function DetailModal({
               <p className="text-[var(--fg-2)]">{unitLabel(item.displayUnit || '-')}</p>
             </div>
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1">Min Stock</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">ต่ำกว่านี้ต้องสั่งเพิ่ม</p>
               <p className="text-[var(--fg-2)]">{item.minStock} {unitLabel(item.baseUnit || item.unit)}</p>
             </div>
             <div>
-              <p className="text-sm text-[var(--fg-3)] mb-1">Max Stock</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">เก็บได้มากสุด</p>
               <p className="text-[var(--fg-2)]">{item.maxStock} {unitLabel(item.baseUnit || item.unit)}</p>
             </div>
             <div>
@@ -1376,7 +1376,7 @@ function DetailModal({
               </p>
             </div>
             <div className="col-span-2">
-              <p className="text-sm text-[var(--fg-3)] mb-1">Location</p>
+              <p className="text-sm text-[var(--fg-3)] mb-1">สถานที่เก็บ</p>
               <div className="flex items-center gap-2 text-[var(--fg-2)]">
                 <MapPin className="w-4 h-4 text-[var(--primary)]" />
                 {item.location || 'Not specified'}
@@ -1387,7 +1387,7 @@ function DetailModal({
           {/* Related Material/Product */}
           {item.material && (
             <div className="p-4 bg-[var(--surface-2)] rounded-lg">
-              <p className="text-sm text-[var(--fg-3)] mb-2">Related Material</p>
+              <p className="text-sm text-[var(--fg-3)] mb-2">วัตถุดิบที่เกี่ยวข้อง</p>
               <div className="flex justify-between items-center">
                 <div>
                   <p className="text-[var(--fg-2)] font-medium">{item.material.name}</p>
@@ -1634,7 +1634,7 @@ export function EditModal({
     }
 
     if (!found) {
-      setConversionWarning(`<AlertTriangle className="w-4 h-4" /> ไม่พบการแปลงหน่วยจาก "${ul(from)}" เป็น "${ul(to)}" — ระบบจะไม่สามารถคำนวณสต๊อกได้`)
+      setConversionWarning(`ยังไม่มีสูตรแปลง "${ul(from)}" เป็น "${ul(to)}" — ระบบจะคิดสต๊อกของสินค้านี้ไม่ได้`)
     } else {
       setConversionWarning(null)
     }
@@ -1894,7 +1894,7 @@ export function EditModal({
                       <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
                       <p className="text-xs text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-gray-700 text-[var(--fg-3)]'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-3)]'}`}>
                       {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
                     </span>
                   </label>
@@ -1904,6 +1904,28 @@ export function EditModal({
               {/* ── UNITS TAB ── */}
               {activeTab === 'units' && (
                 <>
+                  {/* สายหน่วยทั้งเส้น — ซื้อมาเป็นอะไร เก็บเป็นอะไร (หน่วยซื้อแก้ได้ที่แท็บทั่วไป คู่กับราคา) */}
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+                    <p className="text-xs text-[var(--fg-3)] mb-2">สายหน่วยของสินค้านี้</p>
+                    <div className="flex items-center gap-2 flex-wrap text-sm">
+                      <span className="px-2.5 py-1 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)]">
+                        ซื้อเป็น {formData.purchaseUnit ? ul(formData.purchaseUnit) : '—'}
+                      </span>
+                      <span className="text-[var(--fg-4)]">→</span>
+                      <span className="px-2.5 py-1 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)]">
+                        เก็บเป็น {formData.displayUnit ? ul(formData.displayUnit) : '—'}
+                      </span>
+                      <span className="text-[var(--fg-4)]">→</span>
+                      <span className="px-2.5 py-1 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/30 text-[var(--primary)] font-medium">
+                        นับเป็น {formData.baseUnit ? ul(formData.baseUnit) : '—'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--fg-4)] mt-2">
+                      ทุกช่วงที่หน่วยเปลี่ยน ต้องมีสูตรแปลงด้านล่าง ไม่งั้นระบบรับของเข้าคลังไม่ได้
+                      · หน่วยซื้อแก้ได้ที่แท็บ "ทั่วไป" คู่กับราคาที่ซื้อมา
+                    </p>
+                  </div>
+
                   {/* ช่อง "หน่วยสินค้า (Legacy)" ถูกเอาออกแล้ว — คอลัมน์ stock_items.unit เป็นของเก่า
     ก่อนมีระบบหน่วย ตอนนี้ backend sync ให้เท่ากับ base_unit อัตโนมัติทุกครั้งที่บันทึก
     การเปิดช่องนี้ให้แก้ทำให้ค่าถูกเขียนทับสวนทางกับหน่วยฐานจนสต็อกคิดผิด */}
@@ -1912,35 +1934,35 @@ export function EditModal({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        หน่วยฐาน <span className="text-[var(--fg-4)]">(Base - หน่วยย่อยสุด)</span>
+                        หน่วยที่คลังนับ <span className="text-[var(--fg-4)]">หน่วยย่อยสุด</span>
                       </label>
                       <select
                         value={formData.baseUnit || ''}
                         onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
                         className="phopy-input w-full"
                       >
-                        <option value="">{unitLabel(formData.unit || 'เลือกหน่วยฐาน')}</option>
+                        <option value="">— ยังไม่ได้เลือก —</option>
                         {availableUnits.map((u) => (
                           <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                         ))}
                       </select>
-                      <p className="text-xs text-[var(--fg-4)] mt-1">เช่น ขวด, pcs, g, ml</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-1">ตัวเลขสต็อกทั้งระบบนับเป็นหน่วยนี้ · เช่น กรัม ชิ้น มิลลิลิตร</p>
                     </div>
                     <div>
                       <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        หน่วยบรรจุ <span className="text-[var(--fg-4)]">(Packaging - บรรจุภัณฑ์)</span>
+                        หน่วยบรรจุ <span className="text-[var(--fg-4)]">ที่ยังไม่แกะ</span>
                       </label>
                       <select
                         value={formData.displayUnit || ''}
                         onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
                         className="phopy-input w-full"
                       >
-                        <option value="">{unitLabel(formData.unit || 'เลือกหน่วยบรรจุ')}</option>
+                        <option value="">— ยังไม่ได้เลือก —</option>
                         {availableUnits.map((u) => (
                           <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
                         ))}
                       </select>
-                      <p className="text-xs text-[var(--fg-4)] mt-1">เช่น ลัง, กล่อง, ถุง</p>
+                      <p className="text-xs text-[var(--fg-4)] mt-1">ของที่มาเป็นแพ็คแล้วต้องแกะก่อนใช้ · เช่น ลัง กล่อง ถุง</p>
                     </div>
                   </div>
 
@@ -1987,10 +2009,10 @@ export function EditModal({
                         {itemConversions.length > 0 && (
                           <div className="space-y-1">
                             {itemConversions.map(c => (
-                              <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-lg">
-                                <span className="text-xs font-mono text-blue-300">1 {ul(c.from_unit)}</span>
+                              <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg">
+                                <span className="text-xs font-mono text-[var(--fg-1)]">1 {ul(c.from_unit)}</span>
                                 <span className="text-[var(--fg-4)] text-xs">=</span>
-                                <span className="text-xs font-mono text-green-300">{c.conversion_factor} {ul(c.to_unit)}</span>
+                                <span className="text-xs font-mono font-semibold text-[var(--primary)]">{c.conversion_factor} {ul(c.to_unit)}</span>
                                 <span className="text-[var(--fg-4)] text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
                                 <button
                                   type="button"
@@ -2005,11 +2027,11 @@ export function EditModal({
                         )}
                         <div className="flex gap-2 items-end">
                           <div className="flex-1">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">จาก (เช่น pack)</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">1 หน่วยของ</p>
                             <select
                               value={convForm.from_unit}
                               onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -2018,11 +2040,11 @@ export function EditModal({
                             </select>
                           </div>
                           <div className="flex-1">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">เป็น (เช่น pcs)</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">เท่ากับหน่วย</p>
                             <select
                               value={convForm.to_unit}
                               onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
                             >
                               <option value="">เลือกหน่วย</option>
                               {availableUnits.map((u) => (
@@ -2031,7 +2053,7 @@ export function EditModal({
                             </select>
                           </div>
                           <div className="w-20">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">จำนวน</p>
+                            <p className="text-[10px] text-[var(--fg-4)] mb-1">กี่หน่วย</p>
                             <input
                               type="number"
                               value={convForm.conversion_factor}
@@ -2039,7 +2061,7 @@ export function EditModal({
                               placeholder="24"
                               min="0.000001"
                               step="any"
-                              className="w-full px-2.5 py-1.5 bg-gray-700/50 border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
                             />
                           </div>
                           <button
@@ -2053,7 +2075,7 @@ export function EditModal({
                           </button>
                         </div>
                         {convForm.from_unit && convForm.to_unit && convForm.conversion_factor && Number(convForm.conversion_factor) > 0 && (
-                          <p className="text-xs text-purple-300/70 text-center">
+                          <p className="text-xs text-[var(--fg-3)] text-center">
                             1 {ul(convForm.from_unit)} = {convForm.conversion_factor} {ul(convForm.to_unit)}
                           </p>
                         )}
@@ -2080,7 +2102,7 @@ export function EditModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-500 transition-colors text-sm"
+                className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-[var(--border-strong)] transition-colors text-sm"
               >
                 ยกเลิก
               </button>
@@ -2874,7 +2896,7 @@ function AddStockModal({
   const addConversionWarning = (() => {
     if (!formData.baseUnit || !formData.displayUnit) return null
     if (formData.baseUnit === formData.displayUnit) return null
-    return `<AlertTriangle className="w-4 h-4" /> หน่วยฐาน (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — ควรไปสร้างการแปลงหน่วยใน Settings → Unit Conversions หลังจากเพิ่มสินค้า`
+    return `หน่วยนับ (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — สร้างสินค้าเสร็จแล้วอย่าลืมไปตั้งสูตรแปลงหน่วยที่แท็บ "หน่วย"`
   })()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -3110,7 +3132,7 @@ function AddStockModal({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1">Min Stock</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ต่ำกว่านี้ต้องสั่งเพิ่ม</label>
                   <input
                     type="number"
                     value={formData.minStock}
@@ -3121,7 +3143,7 @@ function AddStockModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1">Max Stock</label>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">เก็บได้มากสุด</label>
                   <input
                     type="number"
                     value={formData.maxStock}
@@ -3184,7 +3206,7 @@ function AddStockModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-gray-500 transition-colors text-sm"
+              className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-[var(--border-strong)] transition-colors text-sm"
             >
               ยกเลิก
             </button>
