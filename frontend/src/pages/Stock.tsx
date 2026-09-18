@@ -28,6 +28,7 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Network,
+  ArrowRight,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
@@ -906,6 +907,14 @@ function Stock() {
           setDetailModal({ open: false, item: null })
           setUnpackModal({ open: true, item: it })
         }}
+        onAdjust={(it) => {
+          setDetailModal({ open: false, item: null })
+          setAdjustModal({ open: true, item: it })
+        }}
+        onEdit={(it) => {
+          setDetailModal({ open: false, item: null })
+          setEditModal({ open: true, item: it })
+        }}
       />
 
       {/* Edit Modal */}
@@ -1099,11 +1108,15 @@ function UnpackModal({ open, item, onClose, onSaved, onPending }: {
 function DetailModal({
   open,
   onUnpack,
+  onAdjust,
+  onEdit,
   item,
   onClose,
 }: {
   open: boolean
   onUnpack?: (item: StockItem) => void
+  onAdjust?: (item: StockItem) => void
+  onEdit?: (item: StockItem) => void
   item: StockItem | null
   onClose: () => void
 }) {
@@ -1115,12 +1128,28 @@ function DetailModal({
   const [logRows, setLogRows] = useState<any[]>([])
   const [logLoading, setLogLoading] = useState(false)
   const [pics, setPics] = useState<string[]>([])
+  // กฎ "เฉพาะสินค้านี้" เท่านั้น — ตัวเดียวกับที่ EditModal ใช้ ไม่ดึงกฎกลางมาปน
+  const [convs, setConvs] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number }>>([])
+  const [showChain, setShowChain] = useState(false)
+  const { units: chainUnits } = useUnits(item?.id)
+
+  // โหลดกฎใหม่หลังแก้ในผัง — ตัวเลขบนการ์ดต้องขยับตามทันที ไม่ใช่ต้องปิดเปิดหน้าต่างเอง
+  const reloadConvs = async () => {
+    if (!item) return
+    try {
+      const r = await api.get(`/materials/unit-conversions?materialId=${item.id}`)
+      setConvs(r.data?.data ?? [])
+    } catch { /* ผังยังโชว์ของเดิมได้ ไม่ต้องล้มทั้งหน้าต่าง */ }
+  }
   useEffect(() => {
     if (!open || !item) return
     setPics(item.imageUrl ? [item.imageUrl] : [])
     api.get(`/stock/${item.id}/cost-basis`)
       .then(r => setCostBasis(r.data?.data ?? null))
       .catch(() => setCostBasis(null))
+    api.get(`/materials/unit-conversions?materialId=${item.id}`)
+      .then(r => setConvs(r.data?.data ?? []))
+      .catch(() => setConvs([]))
   }, [open, item?.id])
   useEffect(() => {
     if (!open || !item) return
@@ -1271,6 +1300,99 @@ function DetailModal({
               </p>
             )}
           </div>
+          {/* ── ผังหน่วย ── สายหน่วยของสินค้าตัวนี้ตัวเดียว ไม่เกี่ยวกับสินค้าตัวอื่น */}
+          {(() => {
+            const base = item.baseUnit || item.unit || ''
+            const pack = item.displayUnit || ''
+            const buy = item.purchaseUnit || ''
+            // เรียง ซื้อ → บรรจุ → นับ แล้วตัดตัวซ้ำออก หน่วยนับอยู่ท้ายเสมอ (เป็นปลายทางของการแปลง)
+            const chain: Array<{ unit: string; role: string }> = []
+            for (const [u, role] of [[buy, 'ซื้อ'], [pack, 'บรรจุ'], [base, 'นับ']] as const) {
+              if (u && !chain.some(c => c.unit === u)) chain.push({ unit: u, role })
+            }
+            // ตัวคูณระหว่าง 2 หน่วยที่ติดกัน หาจากกฎของสินค้านี้ ไม่เจอก็บอกตรง ๆ ว่าไม่มี
+            const factorOf = (from: string, to: string) => {
+              const fwd = convs.find(c => c.from_unit === from && c.to_unit === to)
+              if (fwd) return fwd.conversion_factor
+              const rev = convs.find(c => c.from_unit === to && c.to_unit === from)
+              if (rev && rev.conversion_factor > 0) return 1 / rev.conversion_factor
+              return null
+            }
+            const gaps = chain.slice(0, -1).map((c, i) => ({
+              from: c.unit, to: chain[i + 1].unit, factor: factorOf(c.unit, chain[i + 1].unit),
+            }))
+            const missing = gaps.filter(g => g.factor === null)
+            return (
+              <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-[var(--fg-1)]">ผังหน่วย</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowChain(true)}
+                    className="flex items-center gap-1.5 text-xs text-[var(--primary)] hover:underline"
+                  >
+                    <Network className="w-3.5 h-3.5" />
+                    เปิดผังเต็มจอ
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {chain.length === 0 ? (
+                    <p className="text-xs text-[var(--fg-4)]">ยังไม่ได้ตั้งหน่วยให้สินค้านี้</p>
+                  ) : chain.map((c, i) => (
+                    <span key={c.unit} className="flex items-center gap-2">
+                      <span className={'px-3 py-1.5 rounded-lg border text-center ' + (c.role === 'นับ'
+                        ? 'bg-[var(--primary)]/10 border-[var(--primary)]/40'
+                        : 'bg-[var(--surface)] border-[var(--border)]')}>
+                        <span className={'block text-sm font-semibold ' + (c.role === 'นับ' ? 'text-[var(--primary)]' : 'text-[var(--fg-1)]')}>
+                          {unitLabel(c.unit)}
+                        </span>
+                        <span className="block text-[10px] text-[var(--fg-4)]">หน่วย{c.role}</span>
+                      </span>
+                      {i < chain.length - 1 && (
+                        <span className="flex flex-col items-center">
+                          <span className={'text-[10px] font-mono ' + (gaps[i].factor === null ? 'text-danger' : 'text-[var(--fg-3)]')}>
+                            {gaps[i].factor === null ? 'ไม่มีสูตร' : '×' + Number(gaps[i].factor).toLocaleString('th-TH', { maximumFractionDigits: 4 })}
+                          </span>
+                          <ArrowRight className={'w-4 h-4 ' + (gaps[i].factor === null ? 'text-danger' : 'text-[var(--fg-4)]')} />
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[var(--fg-4)] mt-2">
+                  ตัวเลขสต็อกทั้งระบบนับเป็น{chain.length ? ' "' + unitLabel(chain[chain.length - 1].unit) + '"' : 'หน่วยนับ'} · หน่วยอื่นต้องแปลงกลับมาที่หน่วยนี้เสมอ
+                </p>
+                {missing.length > 0 && (
+                  <p className="text-xs text-danger mt-1.5">
+                    ขาดสูตรแปลง {missing.map(g => unitLabel(g.from) + ' → ' + unitLabel(g.to)).join(', ')}
+                    {' '}— รับของหรือขายด้วยหน่วยนั้นจะตัดสต็อกผิดทันที
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* ── จุดเตือน ── รวมเกณฑ์ไว้ที่เดียว เดิมกระจายปนอยู่ในตารางข้อมูลทั่วไป */}
+          <div className="mb-6 rounded-xl border border-[var(--border)] p-4">
+            <p className="text-sm font-semibold text-[var(--fg-1)] mb-3">จุดเตือน</p>
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-[var(--fg-4)] mb-0.5">จุดสั่งซื้อ</p>
+                <p className={(item.quantity <= (item.minStock ?? 0) ? 'text-danger font-semibold' : 'text-[var(--fg-2)]')}>
+                  {(item.minStock ?? 0).toLocaleString('th-TH')} {unitLabel(item.baseUnit || item.unit)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--fg-4)] mb-0.5">เก็บสูงสุด</p>
+                <p className="text-[var(--fg-2)]">{(item.maxStock ?? 0).toLocaleString('th-TH')} {unitLabel(item.baseUnit || item.unit)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--fg-4)] mb-0.5">ที่เก็บ</p>
+                <p className="text-[var(--fg-2)] truncate">{item.location || '-'}</p>
+              </div>
+            </div>
+          </div>
+
           {/* Item Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1440,7 +1562,53 @@ function DetailModal({
             )}
           </div>
         </div>
+
+        {/* ── แถบปุ่มท้ายหน้าต่าง ── เดิมดูได้อย่างเดียว ต้องปิดแล้วไปหาแถวเดิมในตารางถึงจะแก้ได้ */}
+        <div className="px-6 py-3 border-t border-[var(--border)] flex items-center gap-3 flex-wrap">
+          <p className="text-[11px] text-[var(--fg-4)] flex-1 min-w-[180px]">
+            ราคาทั้งหมดมาจากเอกสารจริง ไม่ได้กรอกมือ
+          </p>
+          <button
+            type="button"
+            onClick={() => onAdjust?.(item)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-sm text-[var(--fg-2)] hover:border-[var(--primary)] transition-colors"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            ปรับสต็อก
+          </button>
+          <button
+            type="button"
+            onClick={() => onEdit?.(item)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-medium hover:bg-[var(--primary)]/90 transition-colors"
+          >
+            <Edit2 className="w-4 h-4" />
+            แก้ไขสินค้า
+          </button>
+        </div>
       </div>
+
+      {/* ผังเต็มจอ — ใช้ตัวเดิมที่มีอยู่แล้ว ไม่สร้าง UI แก้ไขชุดที่สอง */}
+      {showChain && (
+        <UnitChainEditor
+          conversions={convs}
+          availableUnits={chainUnits}
+          onAdd={async (from, to, factor) => {
+            await api.post('/materials/unit-conversions', {
+              material_id: item.id, from_unit: from, to_unit: to, conversion_factor: factor,
+            })
+            await reloadConvs()
+            invalidateUnitsCache()
+          }}
+          onDelete={async (convId) => {
+            await api.delete(`/materials/unit-conversions/${convId}`)
+            await reloadConvs()
+            invalidateUnitsCache()
+          }}
+          onClose={() => setShowChain(false)}
+          baseUnit={item.baseUnit || item.unit || ''}
+          displayUnit={item.displayUnit || ''}
+        />
+      )}
     </div>
   )
 }
