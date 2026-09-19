@@ -73,24 +73,40 @@ function splitVat(grossSales: number, vatAmount?: number): { revenue: number; va
 // รหัสบัญชีเหล่านี้ไม่มีชื่อเรียกใน ACC (accountCodes.ts) เพราะเป็นรหัสมาตรฐานที่มีอยู่แล้ว
 // ในผังบัญชีทุก tenant (ดู config/chartOfAccounts.ts) ไม่ใช่บัญชีระบบที่ getOrCreateAccount
 // ต้องสร้างเอง — อ้างเป็น literal ตรงนี้พอ ไม่ต้องเพิ่มใน ACC
-const DEFAULT_FEE_ACCOUNTS: Array<{ feeType: string; accountCode: string; label: string }> = [
-  { feeType: 'COMMISSION',      accountCode: '5203', label: 'ค่าคอมมิชชั่น (GP/ค่าต๋ง)' },
-  { feeType: 'SHIPPING',        accountCode: '5202', label: 'ค่าขนส่งสินค้า' },
-  { feeType: 'ADS',             accountCode: '5201', label: 'ค่าโฆษณา' },
-  { feeType: 'TRANSACTION',     accountCode: '5309', label: 'ค่าธรรมเนียมชำระเงิน/ธนาคาร' },
-  { feeType: 'PACKAGING',       accountCode: '5204', label: 'ค่าบรรจุภัณฑ์' },
-  { feeType: 'SELLER_DISCOUNT', accountCode: '4301', label: 'ส่วนลดผู้ขายร่วมจ่าย' },
+// columnAliases = ชื่อหัวคอลัมน์ที่ให้ถือว่าเป็นค่าธรรมเนียมตัวนี้
+// ⚠ ยังไม่ได้ยืนยันกับไฟล์รายงานจริงของ Shopee/Lazada/TikTok — เป็นจุดตั้งต้นให้แก้เท่านั้น
+// พอได้ไฟล์จริงมาสักรอบ ให้แก้รายการนี้ผ่านหน้าตั้งค่า (PUT /fee-mappings) ไม่ต้องแก้โค้ด
+// เทียบแบบไม่สนตัวพิมพ์เล็กใหญ่และช่องว่าง คอลัมน์ไหนไม่ตรงสักตัว preview จะฟ้องว่า "ไม่รู้จัก"
+const DEFAULT_FEE_ACCOUNTS: Array<{ feeType: string; accountCode: string; label: string; columnAliases: string[] }> = [
+  { feeType: 'COMMISSION',      accountCode: '5203', label: 'ค่าคอมมิชชั่น (GP/ค่าต๋ง)',
+    columnAliases: ['Commission Fee', 'Commission', 'Service Fee', 'Platform commission', 'Payment Fee', 'ค่าคอมมิชชั่น', 'ค่าบริการ'] },
+  { feeType: 'SHIPPING',        accountCode: '5202', label: 'ค่าขนส่งสินค้า',
+    columnAliases: ['Shipping Fee', 'Actual shipping fee', 'Shipping cost', 'ค่าจัดส่ง', 'ค่าขนส่ง'] },
+  { feeType: 'ADS',             accountCode: '5201', label: 'ค่าโฆษณา',
+    columnAliases: ['Ads Cost', 'Ad Cost', 'Advertising Fee', 'ค่าโฆษณา'] },
+  { feeType: 'TRANSACTION',     accountCode: '5309', label: 'ค่าธรรมเนียมชำระเงิน/ธนาคาร',
+    columnAliases: ['Transaction Fee', 'Payment processing fee', 'ค่าธรรมเนียมการทำรายการ', 'ค่าธรรมเนียมชำระเงิน'] },
+  { feeType: 'PACKAGING',       accountCode: '5204', label: 'ค่าบรรจุภัณฑ์',
+    columnAliases: ['Packaging Fee', 'Fulfilment Fee', 'ค่าบรรจุภัณฑ์'] },
+  { feeType: 'SELLER_DISCOUNT', accountCode: '4301', label: 'ส่วนลดผู้ขายร่วมจ่าย',
+    columnAliases: ['Seller Discount', 'Seller Voucher', 'Seller Coupon', 'ส่วนลดจากผู้ขาย'] },
 ]
 
 // ฟิลด์หลักที่ไม่ใช่ค่าธรรมเนียม (บัญชีปลายทางตายตัวตามกติกาบัญชี ไม่ให้แก้ผ่านหน้านี้)
 // มีแถวไว้ในตารางเดียวกันเพื่อให้ "โครงไฟล์เป็นข้อมูล" ครบทุกคอลัมน์ ไม่ใช่แค่ค่าธรรมเนียม
-const CORE_FIELDS: Array<{ targetField: string; label: string }> = [
-  { targetField: 'GROSS_SALES',  label: 'ยอดขายเต็ม (ก่อนหักอะไรทั้งสิ้น)' },
-  { targetField: 'VAT',          label: 'ภาษีขาย (VAT)' },
-  { targetField: 'COGS',         label: 'ต้นทุนสินค้าที่ขายไปรอบนี้' },
-  { targetField: 'PAYOUT',       label: 'ยอดที่แพลตฟอร์มโอนเข้าจริง' },
-  { targetField: 'PERIOD_START', label: 'วันที่เริ่มรอบ' },
-  { targetField: 'PERIOD_END',   label: 'วันที่สิ้นสุดรอบ' },
+const CORE_FIELDS: Array<{ targetField: string; label: string; columnAliases: string[] }> = [
+  { targetField: 'GROSS_SALES',  label: 'ยอดขายเต็ม (ก่อนหักอะไรทั้งสิ้น)',
+    columnAliases: ['Original Price', 'Product Subtotal', 'Gross Sales', 'Total Sales', 'ยอดขายสินค้า', 'ยอดขายรวม'] },
+  { targetField: 'VAT',          label: 'ภาษีขาย (VAT)',
+    columnAliases: ['VAT', 'Tax', 'ภาษีขาย', 'ภาษีมูลค่าเพิ่ม'] },
+  { targetField: 'COGS',         label: 'ต้นทุนสินค้าที่ขายไปรอบนี้',
+    columnAliases: [] },
+  { targetField: 'PAYOUT',       label: 'ยอดที่แพลตฟอร์มโอนเข้าจริง',
+    columnAliases: ['Total Released Amount', 'Settlement Amount', 'Payout', 'Payout Amount', 'ยอดเงินที่ได้รับ', 'ยอดโอนเข้า'] },
+  { targetField: 'PERIOD_START', label: 'วันที่เริ่มรอบ',
+    columnAliases: ['Period Start', 'Start Date', 'วันที่เริ่ม'] },
+  { targetField: 'PERIOD_END',   label: 'วันที่สิ้นสุดรอบ',
+    columnAliases: ['Period End', 'End Date', 'วันที่สิ้นสุด'] },
 ]
 
 /**
@@ -102,13 +118,17 @@ export function ensureDefaultFeeMappings(tenantId: string): void {
   const insert = db.prepare(`
     INSERT OR IGNORE INTO platform_fee_mappings
       (id, tenant_id, target_field, fee_type, account_code, label, column_aliases, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', 1, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `)
+  // INSERT OR IGNORE — แถวที่มีอยู่แล้วไม่ถูกทับ ของที่ผู้ใช้แก้เองจึงไม่หาย
+  // (แลกกับการที่ tenant เก่าจะไม่ได้ alias ชุดใหม่อัตโนมัติ ต้องไปเพิ่มเองในหน้าตั้งค่า)
   for (const f of DEFAULT_FEE_ACCOUNTS) {
-    insert.run(`${tenantId}-fee-${f.feeType}`, tenantId, 'FEE', f.feeType, f.accountCode, f.label, now, now)
+    insert.run(`${tenantId}-fee-${f.feeType}`, tenantId, 'FEE', f.feeType, f.accountCode, f.label,
+      JSON.stringify(f.columnAliases), now, now)
   }
   for (const c of CORE_FIELDS) {
-    insert.run(`${tenantId}-core-${c.targetField}`, tenantId, c.targetField, null, null, c.label, now, now)
+    insert.run(`${tenantId}-core-${c.targetField}`, tenantId, c.targetField, null, null, c.label,
+      JSON.stringify(c.columnAliases), now, now)
   }
 }
 

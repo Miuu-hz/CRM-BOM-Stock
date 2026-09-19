@@ -3276,8 +3276,8 @@
         "allowed": "✅ = อนุญาต",
         "denied": "❌ = ปฏิเสธ",
         "default": "⬜ = ตามระบบ",
-        "resourceCol": "หมวดสิทธิ์",
-        "overridesCount": "แก้ไขสิทธิ์ {{count}} รายการ",
+        "resourceCol": "Resource",
+        "overridesCount": "{{count}} overrides",
         "overrideNone": "คลิกเพื่อ override",
         "overrideAllow": "อนุญาต → คลิกเพื่อปฏิเสธ",
         "overrideDeny": "ปฏิเสธ → คลิกเพื่อล้าง"
