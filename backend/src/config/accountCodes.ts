@@ -56,6 +56,12 @@ export const ACC = {
 
   // เดิมเป็น string ดิบตาม call site จนชื่อบัญชีขึ้นกับว่าธุรกรรมไหนเกิดก่อน
   POS_CLEARING:      '1180',  // ลูกหนี้การค้า-POS (พักเงินก่อนนำเข้าบัญชี)
+  // บัญชีพักคู่ขนานกับ 1180 — ขายบนแพลตฟอร์มแล้วเงินยังอยู่ในกระเป๋าร้านค้า รอรอบโอน
+  // ตั้งรหัสล้อ 1180 ให้จำง่ายว่าทั้งคู่คือ 'ขายแล้วแต่เงินยังไม่ถึงบัญชีบริษัท'
+  PLATFORM_CLEARING: '1181',  // ลูกหนี้การค้า-แพลตฟอร์ม (Shopee/Lazada/TikTok)
+  // ของเข้าคลังแล้วแต่ผู้ขายยังไม่ออกใบแจ้งหนี้ — คู่บัญชีของใบรับสินค้า
+  // 2103 = เงินกู้ระยะสั้น, 2106 = ประกันสังคม จึงต้องใช้ 2109 ซึ่งเป็นรหัสว่างตัวถัดไป
+  GRNI:              '2109',  // ของรับแล้วยังไม่ได้รับใบแจ้งหนี้ (Goods Received Not Invoiced)
   OTHER_REVENUE:     '4203',
   CASH_OVER_SHORT:   '5901',  // เงินขาด/เงินเกินจากการปิดกะ/นำเงินเข้า
   STOCK_ADJUSTMENT:  '5902',  // ค่าใช้จ่ายปรับปรุงสต็อก (แยกจาก 5901)
@@ -104,6 +110,8 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
 
   [ACC.POS_CLEARING]:     { name: 'ลูกหนี้การค้า-POS', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
+  [ACC.PLATFORM_CLEARING]:{ name: 'ลูกหนี้การค้า-แพลตฟอร์ม', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
+  [ACC.GRNI]:             { name: 'ของรับแล้วยังไม่ได้รับใบแจ้งหนี้', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
   [ACC.OTHER_REVENUE]:    { name: 'รายได้อื่น', type: 'REVENUE', category: 'OTHER', normalBalance: 'CREDIT' },
   [ACC.CASH_OVER_SHORT]:  { name: 'เงินขาด/เงินเกิน', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.STOCK_ADJUSTMENT]: { name: 'ค่าใช้จ่ายปรับปรุงสต็อก', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },

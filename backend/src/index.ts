@@ -105,6 +105,9 @@ import accountsRoutes from './routes/accounts.routes'
 
 
 import journalRoutes from './routes/journal.routes'
+import clearingReconcileRoutes from './routes/clearingReconcile.routes'
+import platformSettlementRoutes from './routes/platformSettlement.routes'
+import journalSourceRoutes from './routes/journalSource.routes'
 
 
 import reportsRoutes from './routes/reports.routes'
@@ -467,6 +470,8 @@ app.use('/api/work-orders', authenticate, subscriptionGate('work_orders'))
 app.use('/api/subcontracts', authenticate, subscriptionGate('work_orders'))
 app.use('/api/accounts', authenticate, subscriptionGate('accounting'))
 app.use('/api/journal', authenticate, subscriptionGate('accounting'))
+app.use('/api/clearing', authenticate, subscriptionGate('accounting'), clearingReconcileRoutes)
+app.use('/api/platform-settlement', authenticate, subscriptionGate('accounting'), platformSettlementRoutes)
 app.use('/api/period-closing', authenticate, subscriptionGate('accounting'))
 app.use('/api/budgets', authenticate, subscriptionGate('accounting'))
 app.use('/api/currencies', authenticate, subscriptionGate('accounting'))
@@ -550,6 +555,8 @@ app.use('/api/accounts', accountsRoutes)
 
 
 app.use('/api/journal', journalRoutes)
+// เอกสารต้นทางของรายการสมุดรายวัน — /:id/source ไม่ชนกับ /:id ของ journalRoutes (คนละจำนวน segment)
+app.use('/api/journal', journalSourceRoutes)
 
 
 app.use('/api/reports', reportsRoutes)
@@ -636,6 +643,8 @@ app.get('*', (_req: Request, res: Response) => {
   // ไม่งั้นหน้าที่เปิดค้างไว้ขอ bundle เก่าที่ถูกลบตอน build ใหม่ จะได้ HTML
   // กลับไปแล้วเอาไปรันเป็น JavaScript เกิด error แปลก ๆ ที่ไล่ต้นเหตุยากมาก
   if (/^\/(assets|brand|icons|sounds)\//.test(_req.path) || /\.[a-z0-9]+$/i.test(_req.path)) {
+    if (_req.path.endsWith('.css')) return res.status(404).type('text/css').send('/* 404 Not Found */')
+    if (_req.path.endsWith('.js')) return res.status(404).type('application/javascript').send('/* 404 Not Found */')
     return res.status(404).type('text/plain').send('Not found')
   }
 

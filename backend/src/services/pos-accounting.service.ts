@@ -244,10 +244,11 @@ class POSAccountingService {
       // when the cashier selected one (e.g. QR_CODE payment), else the generic
       // CASH/BANK account by payment method.
       const line1Id = generateId()
-      const linkedAccountId = resolveBankAccountGL(tenantId, payment.bank_account_id)
-      const cashAccountCode = payment.payment_method === 'CASH' ? ACC.CASH : ACC.BANK
-      const cashAccountMeta = ACC_META[cashAccountCode]!
-      const cashAccountId = linkedAccountId || getOrCreateAccount(tenantId, cashAccountCode, cashAccountMeta.name, cashAccountMeta.type, cashAccountMeta.category, cashAccountMeta.normalBalance)
+      // เงินจากบิล POS ยังไม่ถึงบัญชีบริษัท ณ ตอนปิดบิล — ลงบัญชีพัก 1180 ไว้ก่อน
+      // ทั้งบิลเงินสดและบิลโอน/QR แล้วไปปิดเป็นเงินสด/ธนาคารทีเดียวตอนปิดกะ
+      // เดิมบรรทัดนี้ Dr เงินสด/ธนาคาร ตรง ๆ ทำให้ตอนเคลียร์ยอดนับเงินซ้ำ
+      // และบัญชีพัก 1180 ติดลบเรื่อย ๆ ทั้งที่ไม่เคยมีใครใส่ยอดเข้าไป
+      const cashAccountId = getOrCreateAccount(tenantId, ACC.POS_CLEARING)
 
       const lineStmt = db.prepare(`
         INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)

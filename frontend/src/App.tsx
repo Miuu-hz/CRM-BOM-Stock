@@ -19,7 +19,7 @@ import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
 import Settings from './pages/Settings'
-import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard, PeriodClosing, BudgetVsActual } from './pages/Accounting'
+import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard, PeriodClosing, BudgetVsActual, ClearingReconcile, PlatformSettlement } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
 import KDS from './pages/KDS'
@@ -90,6 +90,8 @@ function AppContent() {
 
         {/* POS Clearing Route */}
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />
+        <Route path="/accounting/reconcile" element={<ClearingReconcile />} />
+        <Route path="/accounting/platform-settlement" element={<PlatformSettlement />} />
         <Route path="/accounting/phopy-board" element={<PhopyBoard />} />
 
         <Route path="/users" element={<Guard path="/users"><UserManagement /></Guard>} />

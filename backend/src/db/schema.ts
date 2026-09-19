@@ -442,6 +442,7 @@ export function applySchema(db: any): void {
       unit_price REAL DEFAULT 0,
       discount_percent REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
+      issued_unit_cost REAL,             -- ต้นทุนต่อหน่วยฐาน ณ วินาทีตัดสต็อกจริง (deductStockForSO) ไม่ใช่ unit_cost ปัจจุบันที่เปลี่ยนได้ตลอด
       notes TEXT,
       FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE,
       -- ไม่มี FK ของ product_id: products เป็นแคตตาล็อกตาย ของจริงอยู่ที่ stock_items

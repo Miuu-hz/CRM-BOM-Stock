@@ -865,6 +865,12 @@ router.put('/goods-receipts/:id/status', async (req: Request, res: Response) => 
     const transaction = db.transaction(() => {
       if (wasConfirmed) {
         reverseGoodsReceiptStock(tenantId, gr, req.user!.userId, now)
+        // ยืนยัน GR ตั้งค้างรับของไว้ (Dr สต็อก / Cr 2109) ยกเลิกแล้วต้องกลับรายการด้วย
+        // ไม่งั้นของออกจากคลังแต่มูลค่ายังค้างอยู่ในงบ — helper มี guard กันกลับซ้ำในตัว
+        reverseJournalEntryForReference(
+          tenantId, 'GOODS_RECEIPT', 'GOODS_RECEIPT_CANCEL', gr.id,
+          `กลับรายการรับสินค้า ${gr.gr_number}`, req.user!.email, now.substring(0, 10)
+        )
       }
       db.prepare("UPDATE goods_receipts SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(now, req.params.id, tenantId)
@@ -956,7 +962,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
     if (!canHandleBilling(req.user!, 'purchase')) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
     }
-    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, crAccountId, taxRate: reqTaxRate } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, crAccountId, taxRate: reqTaxRate, autoPay, paymentMethod, paymentReference, bankAccountId } = req.body
 
     const invoice = createPurchaseInvoice(tenantId, req.user!.email, {
       purchaseOrderId,
@@ -972,6 +978,10 @@ router.post('/invoices', async (req: Request, res: Response) => {
       items,
       drAccountId,
       taxRate: reqTaxRate,
+      autoPay,
+      paymentMethod,
+      paymentReference,
+      bankAccountId,
     })
 
     res.status(201).json({ success: true, data: invoice })

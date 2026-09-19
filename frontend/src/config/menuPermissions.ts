@@ -35,6 +35,8 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/accounting/period-closing': ALL_ROLES, // page is viewable by all; the close/reopen/year-end actions are gated server-side to ADMIN/MASTER + password
   '/accounting/budget-vs-actual': ALL_ROLES,
   '/accounting/pos-clearing': ALL_ROLES,
+  '/accounting/reconcile': ALL_ROLES,
+  '/accounting/platform-settlement': ALL_ROLES,
   '/accounting/reports': ALL_ROLES,
   '/accounting/phopy-board': ALL_ROLES,
   '/approvals': NOT_USER,

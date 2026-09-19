@@ -123,16 +123,19 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
         salesOrder.customer_name || '', salesOrder.customer_tax_id || null,
         salesOrder.subtotal, salesOrder.tax_rate || 7, salesOrder.tax_amount, salesOrder.total_amount, now)
     }
+
+    // Journal: DR ลูกหนี้การค้า / CR รายได้ขาย + ภาษีขาย (ลงครั้งเดียวตอนออกใบแจ้งหนี้)
+    // อยู่ในทรานแซกชันเดียวกับการสร้างเอกสาร — createSalesJournal throw ออกมาถ้าลงไม่ได้ (ดุลหลุด/
+    // DB error) ตอนนี้แล้ว ต้อง rollback ใบแจ้งหนี้ที่เพิ่งสร้างไปด้วย ไม่ใช่ปล่อยให้ออกเอกสารสำเร็จ
+    // ทั้งที่บัญชีไม่ลง (เคยทำให้เงิน ฿34,026 หายจากงบมาแล้ว)
+    createSalesJournal(tenantId, 'INVOICE', id,
+      `ขายสินค้า INV ${invoiceNumber}`,
+      salesOrder.total_amount, salesOrder.tax_amount || 0,
+      undefined, invoiceNumber, salesOrder.so_number)
   })()
 
   const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
   const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)
-
-  // Journal: DR ลูกหนี้การค้า / CR รายได้ขาย + ภาษีขาย (ลงครั้งเดียวตอนออกใบแจ้งหนี้)
-  createSalesJournal(tenantId, 'INVOICE', id,
-    `ขายสินค้า INV ${invoiceNumber}`,
-    salesOrder.total_amount, salesOrder.tax_amount || 0,
-    undefined, invoiceNumber, salesOrder.so_number)
 
   return { invoice, items: invoiceItems }
 }
@@ -202,15 +205,16 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
 
     db.prepare("UPDATE sales_orders SET payment_status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(paymentStatus, now, invoice.sales_order_id, tenantId)
+
+    // Journal: DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า (ลงคนละชุดจากตอนออกใบแจ้งหนี้ ไม่ซ้ำกัน) — อยู่ใน
+    // ทรานแซกชันเดียวกับการสร้างใบเสร็จ ด้วยเหตุผลเดียวกับตอนออกใบแจ้งหนี้ข้างบน
+    createSalesJournal(tenantId, 'RECEIPT', id,
+      `รับชำระเงิน ${receiptNumber} (${paymentMethod || 'CASH'})`,
+      amount, 0, paymentMethod, receiptNumber, invoice.so_number, bankAccountId || null)
   })()
 
   const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
   const updatedInvoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(invoiceId, tenantId) as any
-
-  // Journal: DR เงินสด/ธนาคาร / CR ลูกหนี้การค้า (ลงคนละชุดจากตอนออกใบแจ้งหนี้ ไม่ซ้ำกัน)
-  createSalesJournal(tenantId, 'RECEIPT', id,
-    `รับชำระเงิน ${receiptNumber} (${paymentMethod || 'CASH'})`,
-    amount, 0, paymentMethod, receiptNumber, invoice.so_number, bankAccountId || null)
 
   return { receipt, invoice: updatedInvoice, previousBalance: invoice.balance_amount, previousPaid: invoice.paid_amount }
 }

@@ -45,7 +45,7 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 
 // ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
 // กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
-import { getOrCreateAccount } from '../../services/accounting.service'
+import { getOrCreateAccount, postJournal } from '../../services/accounting.service'
 import { isServiceItem } from '../../services/stockItem.service'
 export { getOrCreateAccount }
 
@@ -58,7 +58,6 @@ export function createSalesJournal(
   description: string, totalAmount: number, taxAmount: number,
   paymentMethod?: string, sourceNumber?: string, soNumber?: string, bankAccountId?: string | null
 ) {
-  try {
     const now = new Date().toISOString()
     const dateStr = now.split('T')[0]
     const yr = new Date().getFullYear()
@@ -70,72 +69,28 @@ export function createSalesJournal(
     const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
     const cashMeta = ACC_META[ACC.CASH]!
     const bankMeta = ACC_META[ACC.BANK]!
-    const invMeta = ACC_META[ACC.INVENTORY]!
-    const cogsMeta = ACC_META[ACC.COGS_PRODUCT]!
 
     const arId   = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
     const revId  = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
     const vatId  = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
     const cashId = getOrCreateAccount(tenantId, ACC.CASH, cashMeta.name, cashMeta.type, cashMeta.category, cashMeta.normalBalance)
     const bankId = getOrCreateAccount(tenantId, ACC.BANK, bankMeta.name, bankMeta.type, bankMeta.category, bankMeta.normalBalance)
-    const invId  = getOrCreateAccount(tenantId, ACC.INVENTORY, invMeta.name, invMeta.type, invMeta.category, invMeta.normalBalance)
-    const cogsId = getOrCreateAccount(tenantId, ACC.COGS_PRODUCT, cogsMeta.name, cogsMeta.type, cogsMeta.category, cogsMeta.normalBalance)
 
     const entryId = generateId()
     const netRevenue = totalAmount - taxAmount
 
     if (referenceType === 'INVOICE') {
-      // Calculate COGS from invoice items → sales_order_items → stock_items.unit_cost
-      let totalCOGS = 0
-      try {
-        const invoice = db.prepare('SELECT sales_order_id FROM invoices WHERE id = ? AND tenant_id = ?').get(referenceId, tenantId) as any
-        if (invoice?.sales_order_id) {
-          const soItems = db.prepare(`
-            SELECT soi.quantity, soi.unit as so_unit, si.unit_cost, si.unit as stock_unit,
-                   si.base_unit as stock_base_unit, si.id as stock_item_id
-            FROM sales_order_items soi
-            JOIN stock_items si ON soi.stock_item_id = si.id
-            WHERE soi.sales_order_id = ?
-          `).all(invoice.sales_order_id) as any[]
-          for (const it of soItems) {
-            let qty = Number(it.quantity || 0)
-            const soUnit = it.so_unit || ''
-            // stock_items.quantity is always stored in base_unit (the one true unit) —
-            // `unit` is the legacy pre-unit-system column, only used as a fallback for
-            // old rows where base_unit hasn't been backfilled. Using `unit` here silently
-            // priced/matched COGS against the wrong unit for the 23/456 items where
-            // unit != base_unit (e.g. shrimp: unit=kg, base_unit=g).
-            const stockUnit = it.stock_base_unit || it.stock_unit || ''
-            // Convert SO quantity to stock's base unit if different for accurate COGS.
-            // Compare via normalizeUnit so equivalent spellings ('กก.' vs 'kg') aren't
-            // treated as different units.
-            if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-              const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, it.stock_item_id)
-              if (converted) qty = converted.converted
-            }
-            totalCOGS += (qty * (it.unit_cost || 0))
-          }
-        }
-      } catch (cogsErr) {
-        console.error('⚠️ COGS calculation error:', cogsErr)
-      }
-
-      const grandTotal = totalAmount + totalCOGS
-
-      // DR ลูกหนี้การค้า + DR ต้นทุนขาย / CR รายได้ขาย + CR ภาษีขาย + CR สต็อกสินค้า
+      // ต้นทุนขาย/ลดสต็อกย้ายไปลงตอนตัดสต็อกแล้ว (deductStockForSO → journal referenceType SO_COGS)
+      // เพราะ unit_cost ตอนออกใบแจ้งหนี้อาจไม่ใช่ราคาที่ตัดจริงตอนยืนยัน SO แล้ว (ต้นทุนขยับได้ตลอด
+      // จากรับของเข้าใหม่) ลง COGS ซ้ำที่นี่จะทำให้ต้นทุนขายถูกนับสองรอบ
+      // DR ลูกหนี้การค้า / CR รายได้ขาย + CR ภาษีขาย
       db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
         VALUES (?, ?, ?, ?, 'INVOICE', ?, ?, ?, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
-        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, grandTotal, grandTotal, now, now)
+        .run(entryId, tenantId, jvNumber, dateStr, referenceId, sourceNumber || null, soNumber || null, description, totalAmount, totalAmount, now, now)
 
       let lineNum = 1
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
         .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
-      if (totalCOGS > 0) {
-        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-          .run(generateId(), tenantId, entryId, cogsId, lineNum++, `ต้นทุนขาย - ${sourceNumber || ''}`, totalCOGS)
-        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-          .run(generateId(), tenantId, entryId, invId, lineNum++, `ลดสต็อก - ${sourceNumber || ''}`, totalCOGS)
-      }
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
         .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue)
       if (taxAmount > 0) {
@@ -162,10 +117,6 @@ export function createSalesJournal(
         .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
 
     }
-  } catch (err) {
-    console.error('⚠️ createSalesJournal error:', err)
-    // Non-fatal — don't throw
-  }
 }
 
 export function deductStockForSO(tenantId: string, soId: string, soNumber: string) {
@@ -177,6 +128,7 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
   const allowNegativeStock = !!setting && setting.allow_negative_stock === 1
 
   const deduct = db.transaction(() => {
+    let totalCogsValue = 0
     for (const item of items) {
       const stockItemId = item.stock_item_id
       if (!stockItemId) continue
@@ -243,6 +195,37 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
       db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
         VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')`).run(
         generateId(), tenantId, stockItemId, deductQty, `SO: ${soNumber}`, `ขายสินค้า SO ${soNumber}${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} → ${deductQty} ${stockUnit})` : ''}`, new Date().toISOString())
+
+      // เก็บต้นทุนต่อหน่วยฐาน ณ วินาทีตัดสต็อกจริงไว้ที่บรรทัด SO — stock_items.unit_cost เปลี่ยนได้
+      // ตลอดเวลา (รับของเข้าใหม่ราคาไม่เท่าเดิม) ถ้ารอไปอ่านตอนออกใบแจ้งหนี้ทีหลังจะได้ต้นทุนผิดตัว
+      // ไม่ตรงกับของที่ถูกตัดออกจากคลังจริง ณ วินาทีนี้
+      const unitCost = Number(stockItem.unit_cost || 0)
+      db.prepare('UPDATE sales_order_items SET issued_unit_cost = ? WHERE id = ?').run(unitCost, item.id)
+      totalCogsValue += deductQty * unitCost
+    }
+
+    // Dr ต้นทุนขาย / Cr สต็อกสินค้า ในทรานแซกชันเดียวกับการตัดของ — กันช่วงเวลาที่สต็อกในงบสูงเกินจริง
+    // ระหว่างตอนตัดของกับตอนออกใบแจ้งหนี้ (ต้นทุนอาจขยับไปแล้วตอนนั้น) ข้ามถ้ามูลค่ารวมน้อยจนไม่มี
+    // นัยสำคัญ (ทศนิยมสะสมจากการปัดเศษ) หรือถ้าเคยลง SO_COGS ของ SO นี้ไปแล้ว (กันเรียกซ้ำ)
+    const alreadyPostedCogs = db.prepare(
+      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'SO_COGS' AND reference_id = ?"
+    ).get(tenantId, soId)
+    if (!alreadyPostedCogs && totalCogsValue > 0.005) {
+      postJournal({
+        tenantId,
+        date: new Date().toISOString().substring(0, 10),
+        referenceType: 'SO_COGS',
+        referenceId: soId,
+        description: `ต้นทุนขาย SO ${soNumber}`,
+        lines: [
+          { code: ACC.COGS_PRODUCT, description: `ต้นทุนขาย - ${soNumber}`, debit: totalCogsValue },
+          { code: ACC.INVENTORY, description: `ลดสต็อก - ${soNumber}`, credit: totalCogsValue },
+        ],
+        createdBy: 'system',
+        businessUnit: 'WHOLESALE',
+        sourceNumber: soNumber,
+        soNumber,
+      })
     }
   })
 
@@ -288,6 +271,11 @@ export function restoreStockForSO(tenantId: string, soId: string, soNumber: stri
         VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, 'system')`).run(
         generateId(), tenantId, stockItemId, restoreQty, `SO: ${soNumber}`, `ยกเลิก SO ${soNumber} - คืนสต็อก${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} \u2192 ${restoreQty} ${stockUnit})` : ''}`, new Date().toISOString())
     }
+
+    // กลับรายการต้นทุนขายที่ deductStockForSO ลงไว้ (ถ้ามี) — ไม่งั้นยกเลิก SO แล้วต้นทุนค้างอยู่
+    // ในงบทั้งที่สต็อกถูกคืนแล้ว reverseSalesJournalByRef ทำตัวเป็น no-op เองถ้าไม่เคยลง SO_COGS
+    // มาก่อน หรือกลับรายการไปแล้ว (กันเรียกซ้ำจากการยกเลิกซ้ำ)
+    reverseSalesJournalByRef(tenantId, 'SO_COGS', 'SO_COGS_CANCEL', soId, `กลับรายการต้นทุนขาย (ยกเลิก SO) - ${soNumber}`)
   })
 
   restore()

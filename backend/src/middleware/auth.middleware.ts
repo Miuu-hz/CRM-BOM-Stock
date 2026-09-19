@@ -26,11 +26,14 @@ if (!JWT_SECRET) {
 const HOURS_LIMIT = 24
 
 // ponytail: starter allowlist for tables that can be time-box edited.
+// ตรวจกับ sqlite_master ของ dev.db จริงเมื่อ 2026-09-19: materials/marketing_imports/
+// tax_invoices/invoice_payments ไม่มีตารางเหล่านี้อยู่จริง, journal_entry_lines สะกดผิด
+// (ของจริงคือ journal_lines), products เป็นตารางตายที่เลิกใช้แล้ว — เอาออกทั้งหมด
 const EDITABLE_TABLES = new Set([
-  'orders', 'customers', 'products', 'materials', 'stock_items', 'stock_movements',
+  'orders', 'customers', 'stock_items', 'stock_movements',
   'boms', 'bom_items', 'purchase_orders', 'purchase_requests', 'pos_running_bills',
-  'pos_bill_items', 'journal_entries', 'journal_entry_lines', 'accounts', 'account_balances',
-  'work_orders', 'suppliers', 'shops', 'marketing_imports', 'tax_invoices', 'invoice_payments',
+  'pos_bill_items', 'journal_entries', 'journal_lines', 'accounts', 'account_balances',
+  'work_orders', 'suppliers', 'shops',
   'pos_clearing_transfers', 'pos_kds_tickets'
 ])
 

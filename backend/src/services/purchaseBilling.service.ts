@@ -61,6 +61,10 @@ export interface CreatePurchaseInvoicePayload {
   // บัญชีปลายทางของหนี้ (ฝั่ง Cr) — ไม่ส่งมา = ใช้เจ้าหนี้การค้าตามผังบัญชี
   crAccountId?: string | null
   taxRate?: number
+  autoPay?: boolean
+  paymentMethod?: string
+  paymentReference?: string
+  bankAccountId?: string | null
 }
 
 /** รายการจาก GR (join ราคาจาก PO item) — ใช้ derive items เมื่อผู้เรียกไม่ส่ง items มา */
@@ -297,7 +301,29 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     const drAccLabel = resolvedDrAccId
       ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
       : 'สต็อกวัตถุดิบ'
-    insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, subtotal, 0)
+    // ของที่ใบนี้อ้างอิงถูกตั้งค้างรับไว้แล้วตอนยืนยันใบรับสินค้า (Dr สต็อก / Cr 2109)
+    // ใบแจ้งหนี้จึงมาปิด 2109 ไม่ใช่ Dr สต็อกซ้ำอีกรอบ — ไม่งั้นสินค้าคงเหลือเบิ้ล
+    // ดึงยอดที่ตั้งค้างไว้จริงจาก journal แทนการเดาจาก subtotal เพราะราคาบนใบแจ้งหนี้
+    // อาจไม่เท่าราคาใบสั่งซื้อ ส่วนต่างที่เหลือค้างใน 2109 คือผลต่างราคา ซึ่งควรเห็นได้
+    const accruedForGRs = grIds.length > 0
+      ? (db.prepare(`
+          SELECT COALESCE(SUM(l.credit), 0) AS total
+          FROM journal_lines l
+          JOIN journal_entries je ON je.id = l.journal_entry_id
+          JOIN accounts a ON a.id = l.account_id
+          WHERE je.tenant_id = ? AND je.reference_type = 'GOODS_RECEIPT' AND a.code = ?
+            AND je.reference_id IN (${grIds.map(() => '?').join(', ')})
+        `).get(tenantId, ACC.GRNI, ...grIds) as any).total as number
+      : 0
+    const grniPortion = Math.min(Math.round(accruedForGRs * 100) / 100, subtotal)
+    const inventoryPortion = Math.round((subtotal - grniPortion) * 100) / 100
+    if (grniPortion > 0.005) {
+      const grniAccId = getOrCreateAccount(tenantId, ACC.GRNI)
+      insertLine.run(generateId(), tenantId, journalId, grniAccId, lineNo++, `ปิดค้างรับของ - ${piNumber}`, grniPortion, 0)
+    }
+    if (inventoryPortion > 0.005) {
+      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, inventoryPortion, 0)
+    }
     if (vatAccId && taxAmount > 0) {
       insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
     }
@@ -316,9 +342,34 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
 
   transaction()
 
-  const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+  let invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+
+  // Auto-settle payment if autoPay is requested, or if PO was already paid (is_paid === 1) and autoPay !== false
+  const shouldAutoPay = payload.autoPay !== undefined
+    ? payload.autoPay
+    : (po && po.is_paid === 1)
+
+  let paymentResult: any = null
+  if (shouldAutoPay && invoice && invoice.balance_amount > 0) {
+    try {
+      paymentResult = paySupplier(tenantId, actorEmail, {
+        supplierId: po.supplier_id,
+        purchaseInvoiceId: id,
+        paymentDate: invoiceDate || now,
+        paymentMethod: payload.paymentMethod || po.payment_method || 'TRANSFER',
+        paymentReference: payload.paymentReference || po.payment_reference || '',
+        bankAccountId: payload.bankAccountId || po.bank_account_id || null,
+        amount: invoice.total_amount,
+        notes: `[Auto-Settle from ${po.po_number}] ${notes || ''}`.trim(),
+      })
+      invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+    } catch (payErr) {
+      console.error('Auto-settle payment failed for invoice', id, payErr)
+    }
+  }
+
   const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
-  return { ...invoice, items: invoiceItems }
+  return { ...invoice, items: invoiceItems, payment: paymentResult }
 }
 
 export interface PaySupplierPayload {

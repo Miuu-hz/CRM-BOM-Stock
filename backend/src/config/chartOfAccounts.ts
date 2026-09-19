@@ -125,6 +125,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // ทั้ง 3 ตัวนี้เดิมถูก getOrCreateAccount() ปั้นสดตอนมีธุรกรรม จึงได้ level 0
   // ไม่มี parent และชื่อแล้วแต่ call site ไหนมาถึงก่อน — ย้ายมาอยู่ในผังให้จบ
   { code: '1180', name: 'ลูกหนี้การค้า-POS', type: 'ASSET', category: 'RECEIVABLE', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  // บัญชีพักอีกสองตัวในตระกูลเดียวกัน — ต้องกลับมาเป็นศูนย์เมื่อรายการจบ
+  { code: '1181', name: 'ลูกหนี้การค้า-แพลตฟอร์ม', type: 'ASSET', category: 'RECEIVABLE', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  { code: '2109', name: 'ของรับแล้วยังไม่ได้รับใบแจ้งหนี้', type: 'LIABILITY', category: 'PAYABLE', level: 2, parent_code: '21', normal_balance: 'CREDIT' },
   { code: '5901', name: 'เงินขาด/เงินเกิน', type: 'EXPENSE', category: 'OTHER_EXPENSE', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
   // แยกจาก 5901 เพราะเดิม stock.routes.ts ใช้ '5901' ร่วมกับเงินขาด/เงินเกินของ POS
   // ทั้งที่คนละเรื่อง ชื่อบัญชีเลยขึ้นกับว่าธุรกรรมไหนเกิดก่อน

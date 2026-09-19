@@ -4,7 +4,7 @@ import { getLimits } from '../../services/subscription.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { ACC } from '../../config/accountCodes'
-import { getOrCreateAccount } from '../../services/accounting.service'
+import { postJournal, getOrCreateAccount } from '../../services/accounting.service'
 import { cancelPosBill } from '../../services/posBillCancel.service'
 import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.service'
 import posStockService from '../../services/pos-stock.service'
@@ -578,16 +578,43 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     // Post เงินขาด/เงินเกิน เข้าบัญชีทันทีที่ปิดกะ (ข้ามถ้าเท่ากันพอดี) — ป้องกันลงซ้ำ
     // อัตโนมัติเพราะ UPDATE ด้านบนใช้ WHERE status='OPEN' เท่านั้น กดปิดซ้ำจะเจอ 404
     // ก่อนถึงจุดนี้เสมอ (shift ถูกเปลี่ยนเป็น CLOSED ไปแล้วในรอบแรก)
+    //
+    // ปิดกะ = ปิดยอดบัญชีพัก 1180 ทั้งก้อน ไม่ใช่ลงแค่ส่วนต่าง
+    //   Dr เงินสด        ยอดขายเงินสด บวก/ลบ ส่วนต่างที่นับได้จริง
+    //   Dr ธนาคาร        ยอดขายที่รับผ่านโอน/QR (เข้าบัญชีไปแล้วตั้งแต่ลูกค้าจ่าย)
+    //   Dr 5901          ถ้านับเงินได้น้อยกว่าที่ควรมี
+    //   Cr 1180          ยอดบิลทั้งกะ — หลังบรรทัดนี้บัญชีพักต้องกลับเป็นศูนย์
+    //   Cr 5901          ถ้านับเงินได้มากกว่าที่ควรมี
+    //
+    // เดิมลงเฉพาะส่วนต่างเงินขาด/เงินเกิน เพราะสมมติว่ายอดขายเข้าเงินสดไปแล้วตั้งแต่ปิดบิล
+    // พอย้ายฝั่งขายไปลงบัญชีพักแทน (pos-accounting.service.ts) ขั้นนี้ต้องรับช่วงปิดยอดเอง
+    //
+    // เงินทอนเริ่มกะกับเงินเข้า-ออกลิ้นชักไม่เกี่ยวกับยอดขาย มี journal ของตัวเองอยู่แล้ว
+    // จึงไม่นับซ้ำในรายการนี้ — ใช้แค่ cash_revenue / bank_revenue ของกะนี้
     let journalEntryId: string | null = null
-    if (Math.abs(cashDifference) > 0.005) {
-      const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
-      const overShortAccountId = getOrCreateAccount(tenantId, ACC.CASH_OVER_SHORT)
-      const desc = `ปิดกะ ${shift.shift_number} — ${cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'} ${Math.abs(cashDifference).toFixed(2)} บาท`
-      journalEntryId = cashDifference < 0
-        // เงินขาด: Dr 5901 / Cr เงินสด
-        ? postSimpleJournal(tenantId, userId, today, 'POS_SHIFT_CLOSE', id, desc, overShortAccountId, cashAccountId, Math.abs(cashDifference))
-        // เงินเกิน: Dr เงินสด / Cr 5901
-        : postSimpleJournal(tenantId, userId, today, 'POS_SHIFT_CLOSE', id, desc, cashAccountId, overShortAccountId, cashDifference)
+    const billsTotal = Number(sales.total_revenue || 0)
+    if (billsTotal > 0.005 || Math.abs(cashDifference) > 0.005) {
+      const diffLabel = cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'
+      const desc = Math.abs(cashDifference) > 0.005
+        ? `ปิดกะ ${shift.shift_number} — ${diffLabel} ${Math.abs(cashDifference).toFixed(2)} บาท`
+        : `ปิดกะ ${shift.shift_number} — นำยอดขายเข้าบัญชี`
+      journalEntryId = postJournal({
+        tenantId,
+        date: today,
+        referenceType: 'POS_SHIFT_CLOSE',
+        referenceId: id,
+        description: desc,
+        createdBy: userId,
+        businessUnit: 'RETAIL',
+        sourceNumber: shift.shift_number,
+        lines: [
+          { code: ACC.CASH, description: 'เงินสดจากการขายหน้าร้าน', debit: Number(sales.cash_revenue || 0) + cashDifference },
+          { code: ACC.BANK, description: 'ยอดรับผ่านโอน/QR', debit: Number(sales.bank_revenue || 0) },
+          { code: ACC.CASH_OVER_SHORT, description: 'เงินขาดจากการนับ', debit: cashDifference < 0 ? Math.abs(cashDifference) : 0 },
+          { code: ACC.POS_CLEARING, description: `ปิดยอดบิลทั้งกะ ${shift.shift_number}`, credit: billsTotal },
+          { code: ACC.CASH_OVER_SHORT, description: 'เงินเกินจากการนับ', credit: cashDifference > 0 ? cashDifference : 0 },
+        ],
+      })
     }
 
     res.json({

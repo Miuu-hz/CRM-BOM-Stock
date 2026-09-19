@@ -11,6 +11,11 @@ import deliveryOrdersRouter from './deliveryOrders'
 import invoicesRouter from './invoices'
 import receiptsRouter from './receipts'
 
+/** นับสมุดรายวันแยกตามชนิดเอกสารต้นทาง — { SO_COGS: 1, INVOICE: 1 } อ่านง่ายกว่าเลขรวม
+ *  และถ้าลงซ้ำจะเห็นทันทีว่าซ้ำที่ชนิดไหน */
+const byRefType = (rows: any[]) =>
+  rows.reduce<Record<string, number>>((m, e) => { m[e.reference_type] = (m[e.reference_type] || 0) + 1; return m }, {})
+
 /**
  * เดินสายขายทั้งเส้นผ่าน HTTP จริงเหมือนคนกดปุ่มทีละปุ่ม
  *   ใบเสนอราคา → คำสั่งขาย → ยืนยัน → ส่งของแล้ว → ใบส่งของ → ใบแจ้งหนี้ → ใบเสร็จ → เสร็จสิ้น
@@ -117,8 +122,11 @@ describe('สายขายทั้งเส้น — กดทีละป�
     const inv = await s.auth(request(app).post('/api/invoices')).send({ salesOrderId: soId })
     expect(inv.status, 'ออกใบแจ้งหนี้').toBe(201)
     const entries = db.prepare('SELECT * FROM journal_entries WHERE tenant_id = ?').all(s.tenantId) as any[]
-    expect(entries.length, 'ขาย 1 บิลต้องลงบัญชีใบเดียว').toBe(1)
-    expect(entries[0].total_debit, 'เดบิตต้องเท่าเครดิต').toBe(entries[0].total_credit)
+    // ต้นทุนขายไม่ได้ฝังอยู่ในใบแจ้งหนี้แล้ว — ลงแยกตั้งแต่ตอนตัดสต็อก (SO_COGS) เพื่อไม่ให้
+    // สต็อกในงบสูงเกินจริงระหว่างส่งของกับวางบิล นับแยกตามชนิดแทนการนับใบรวม ๆ
+    // จะจับ "ลงซ้ำ" ได้จริง ไม่ใช่แค่จับว่าจำนวนเปลี่ยน
+    expect(byRefType(entries), 'ต้นทุนขาย 1 ใบ + ใบแจ้งหนี้ 1 ใบ ห้ามมีใบซ้ำ').toEqual({ SO_COGS: 1, INVOICE: 1 })
+    expect(entries.every(e => e.total_debit === e.total_credit), 'ทุกใบต้องดุล').toBe(true)
     expect(qtyOf(s.stockId), 'ออกใบแจ้งหนี้ต้องไม่แตะสต็อก').toBe(90)
 
     // ── 8. รับชำระ → ใบเสร็จ + ปิดยอดค้าง ──────────────────────────────────────
@@ -133,7 +141,7 @@ describe('สายขายทั้งเส้น — กดทีละป�
 
     // รับชำระลงอีกใบ (เดบิตเงินสด/เครดิตลูกหนี้) — รวมทั้งสาย 2 ใบ ห้ามมีรายได้ซ้ำ
     const allEntries = db.prepare('SELECT * FROM journal_entries WHERE tenant_id = ?').all(s.tenantId) as any[]
-    expect(allEntries.length, 'ขาย 1 บิล + รับเงิน 1 ครั้ง = สมุดรายวัน 2 ใบ').toBe(2)
+    expect(byRefType(allEntries), 'จบสาย: ต้นทุนขาย 1 + ใบแจ้งหนี้ 1 + รับชำระ 1').toEqual({ SO_COGS: 1, INVOICE: 1, PAYMENT: 1 })
     expect(allEntries.every(e => e.total_debit === e.total_credit), 'ทุกใบต้องดุล').toBe(true)
     const revenue = db.prepare(`
       SELECT SUM(l.credit) - SUM(l.debit) net FROM journal_lines l

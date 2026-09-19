@@ -22,7 +22,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { journalApi, accountsApi, type Account } from '../../services/accounting'
-import salesService from '../../services/sales.service'
+import api from '../../services/api'
 import { PaymentAttachments } from '../../components/common/PaymentAttachments'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../../hooks/useModalClose'
@@ -38,6 +38,10 @@ interface RawEntry {
   referenceType?: string
   reference_id?: string
   referenceId?: string
+  source_number?: string
+  sourceNumber?: string
+  so_number?: string
+  soNumber?: string
   description: string
   total_debit?: number
   totalDebit?: number
@@ -78,6 +82,8 @@ interface Entry {
   date: string
   referenceType?: string
   referenceId?: string
+  sourceNumber?: string
+  soNumber?: string
   description: string
   totalDebit: number
   totalCredit: number
@@ -122,6 +128,8 @@ const normalizeEntry = (e: RawEntry): Entry => ({
   date: e.date,
   referenceType: e.reference_type ?? e.referenceType,
   referenceId: e.reference_id ?? e.referenceId,
+  sourceNumber: e.source_number ?? e.sourceNumber,
+  soNumber: e.so_number ?? e.soNumber,
   description: e.description ?? '',
   totalDebit: e.total_debit ?? e.totalDebit ?? 0,
   totalCredit: e.total_credit ?? e.totalCredit ?? 0,
@@ -165,7 +173,12 @@ const getSourceBadge = (refType?: string, isAuto?: boolean) => {
 // supplier payment, invoice, POS payment) happens server-side — see backend
 // attachments.routes.ts GET /counts. Everything else (PURCHASE_INVOICE,
 // EXPENSE, STOCK_ADJUST, POS_CANCEL, ...) has no slip concept.
-const EVIDENCE_REF_TYPES = new Set(['PAYMENT', 'SUPPLIER_PAYMENT', 'INVOICE', 'POS_SALE'])
+const EVIDENCE_REF_TYPES = new Set([
+  'PAYMENT', 'SUPPLIER_PAYMENT', 'INVOICE', 'POS_SALE',
+  // ฝั่งจัดซื้อ — /attachments/counts รองรับมาตลอด (REF_TYPE_TABLES) แต่หน้านี้ไม่เคยถาม
+  // คนทำบัญชีจึงไม่เห็นเลยว่าบิลผู้ขายกับรูปตอนรับของแนบไว้แล้ว
+  'PURCHASE_INVOICE', 'GOODS_RECEIPT',
+])
 
 const evidenceKeyFor = (entry: Entry): string | null =>
   entry.referenceType && entry.referenceId && EVIDENCE_REF_TYPES.has(entry.referenceType)
@@ -173,6 +186,41 @@ const evidenceKeyFor = (entry: Entry): string | null =>
     : null
 
 // ==================== Main Component ====================
+
+function Pagination({ total, page, pageSize, onChange }: { total: number; page: number; pageSize: number; onChange: (p: number) => void }) {
+  const totalPages = Math.ceil(total / pageSize)
+  if (totalPages <= 1) return null
+  const pages: (number | '...')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    if (page > 3) pages.push('...')
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
+    if (page < totalPages - 2) pages.push('...')
+    pages.push(totalPages)
+  }
+  return (
+    <div className="flex items-center justify-between">
+      <p className="text-xs text-[var(--fg-4)]">
+        แสดง {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} จาก {total}
+      </p>
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1}
+          className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">‹</button>
+        {pages.map((p, i) => p === '...'
+          ? <span key={`e${i}`} className="px-2 py-1 text-xs text-[var(--fg-4)]">…</span>
+          : <button key={p} onClick={() => onChange(p as number)}
+              className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${page === p ? 'bg-phopy-indigo text-white font-bold' : 'text-[var(--fg-3)] bg-[var(--bg)] hover:text-[var(--fg-1)]'}`}>
+              {p}
+            </button>
+        )}
+        <button onClick={() => onChange(Math.min(totalPages, page + 1))} disabled={page === totalPages}
+          className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">›</button>
+      </div>
+    </div>
+  )
+}
 
 export default function JournalEntries() {
   const [entries, setEntries] = useState<Entry[]>([])
@@ -182,6 +230,9 @@ export default function JournalEntries() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [filterPosted, setFilterPosted] = useState<'all' | 'draft' | 'posted'>('all')
+  const [filterRefType, setFilterRefType] = useState('')
+  const [filterAccountId, setFilterAccountId] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showQuickModal, setShowQuickModal] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
@@ -195,6 +246,8 @@ export default function JournalEntries() {
       if (dateRange.end) params.endDate = dateRange.end
       if (filterPosted === 'draft') params.isPosted = false
       if (filterPosted === 'posted') params.isPosted = true
+      if (filterRefType) params.referenceType = filterRefType
+      if (filterAccountId) params.accountId = filterAccountId
       const res = await journalApi.getAll(params)
       if (res.data.success) {
         const list = (res.data.data as RawEntry[]).map(normalizeEntry)
@@ -211,9 +264,12 @@ export default function JournalEntries() {
       }
     } catch { toast.error('ไม่สามารถโหลดข้อมูลสมุดรายวันได้') }
     finally { setLoading(false) }
-  }, [dateRange, filterPosted])
+  }, [dateRange, filterPosted, filterRefType, filterAccountId])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
+
+  // ก4: เปลี่ยนตัวกรองหรือค้นหาแล้วต้องกลับไปหน้าแรกเสมอ ไม่งั้นค้างอยู่หน้าท้าย ๆ ที่อาจไม่เหลือข้อมูล
+  useEffect(() => { setCurrentPage(1) }, [dateRange, filterPosted, filterRefType, filterAccountId, searchTerm])
 
   const getEvidenceCount = (entry: Entry): number | undefined => {
     const key = evidenceKeyFor(entry)
@@ -223,24 +279,25 @@ export default function JournalEntries() {
   const [accountsLoaded, setAccountsLoaded] = useState(false)
 
   useEffect(() => {
-    if ((showCreateModal || showQuickModal) && !accountsLoaded) {
-      accountsApi.getAll({ active: true })
-        .then(res => {
-          if (res.data.success) {
-            const all: Account[] = res.data.data.list
-            const parentIds = new Set(all.map((a: Account) => a.parentId).filter(Boolean))
-            // show leaf accounts (no children) — or fallback to all if everything is flat (no parent_id set)
-            const leaves = all.filter((a: Account) => !parentIds.has(a.id))
-            setAccounts(leaves.length > 0 ? leaves : all)
-          }
-          setAccountsLoaded(true)
-        })
-        .catch(() => {
-          toast.error('ไม่สามารถโหลดผังบัญชีได้')
-          setAccountsLoaded(true)
-        })
-    }
-  }, [showCreateModal, showQuickModal])
+    // ก3: dropdown กรองตามบัญชีอยู่บนหน้าหลักตลอดเวลา เลยต้องโหลดผังบัญชีทันทีที่เข้าหน้า
+    // ไม่ใช่รอผู้ใช้เปิดโมดัลบันทึกรายการก่อนเหมือนเดิม
+    if (accountsLoaded) return
+    accountsApi.getAll({ active: true })
+      .then(res => {
+        if (res.data.success) {
+          const all: Account[] = res.data.data.list
+          const parentIds = new Set(all.map((a: Account) => a.parentId).filter(Boolean))
+          // show leaf accounts (no children) — or fallback to all if everything is flat (no parent_id set)
+          const leaves = all.filter((a: Account) => !parentIds.has(a.id))
+          setAccounts(leaves.length > 0 ? leaves : all)
+        }
+        setAccountsLoaded(true)
+      })
+      .catch(() => {
+        toast.error('ไม่สามารถโหลดผังบัญชีได้')
+        setAccountsLoaded(true)
+      })
+  }, [accountsLoaded])
 
   const openDetail = async (entry: Entry) => {
     setSelectedEntry(entry)
@@ -283,13 +340,15 @@ export default function JournalEntries() {
   const totalDebit = filtered.reduce((s, e) => s + e.totalDebit, 0)
   const totalCredit = filtered.reduce((s, e) => s + e.totalCredit, 0)
   const draftCount = filtered.filter(e => !e.isPosted).length
+  const PAGE_SIZE = 50
+  const pagedEntries = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
             <FileText className="w-7 h-7 text-[var(--primary)]" />
             สมุดรายวัน
           </h1>
@@ -341,20 +400,32 @@ export default function JournalEntries() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
           <input type="text" placeholder="ค้นหาเลขที่ หรือคำอธิบาย..."
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
         <div className="flex gap-2">
           <input type="date" value={dateRange.start}
             onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
           />
           <span className="self-center text-[var(--fg-4)]">–</span>
           <input type="date" value={dateRange.end}
             onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo"
+            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
           />
         </div>
+        <select value={filterRefType} onChange={e => setFilterRefType(e.target.value)}
+          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
+          <option value="">ทุกที่มา</option>
+          {Object.keys(SOURCE_BADGE).filter(k => k !== 'MANUAL').map(k => (
+            <option key={k} value={k}>{SOURCE_BADGE[k].label}</option>
+          ))}
+        </select>
+        <select value={filterAccountId} onChange={e => setFilterAccountId(e.target.value)}
+          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
+          <option value="">ทุกบัญชี</option>
+          {accounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
+        </select>
         <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
           {(['all', 'draft', 'posted'] as const).map(f => (
             <button key={f} onClick={() => setFilterPosted(f)}
@@ -389,7 +460,7 @@ export default function JournalEntries() {
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]">
-            {filtered.map(entry => {
+            {pagedEntries.map(entry => {
               const badge = getSourceBadge(entry.referenceType, entry.isAutoGenerated)
               const evidenceCount = getEvidenceCount(entry)
               return (
@@ -417,14 +488,17 @@ export default function JournalEntries() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-white mt-0.5 truncate">{entry.description}</p>
+                    <p className="text-sm text-[var(--fg-1)] mt-0.5 truncate">
+                      {entry.description}
+                      {entry.sourceNumber && <span className="text-[var(--fg-4)] font-mono text-xs"> · {entry.sourceNumber}</span>}
+                    </p>
                   </div>
                   {/* Debit */}
-                  <span className="text-right text-sm font-mono text-white">
+                  <span className="text-right text-sm font-mono text-[var(--fg-1)]">
                     {entry.totalDebit > 0 ? fmt(entry.totalDebit) : <span className="text-[var(--fg-4)]">–</span>}
                   </span>
                   {/* Credit */}
-                  <span className="text-right text-sm font-mono text-white">
+                  <span className="text-right text-sm font-mono text-[var(--fg-1)]">
                     {entry.totalCredit > 0 ? fmt(entry.totalCredit) : <span className="text-[var(--fg-4)]">–</span>}
                   </span>
                   {/* Status */}
@@ -457,6 +531,11 @@ export default function JournalEntries() {
                 </motion.div>
               )
             })}
+          </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <div className="px-4 py-3 border-t border-[var(--border)]">
+            <Pagination total={filtered.length} page={currentPage} pageSize={PAGE_SIZE} onChange={setCurrentPage} />
           </div>
         )}
       </div>
@@ -570,15 +649,15 @@ function DetailModal({ entry, evidenceCount, loading, onClose, onPost }: {
                       <p className="px-4 py-3 text-xs text-[var(--fg-4)]">–</p>
                     ) : debitLines.map((l, i) => (
                       <div key={i} className="px-4 py-3">
-                        <p className="text-sm text-white font-medium">{l.accountName}</p>
+                        <p className="text-sm text-[var(--fg-1)] font-medium">{l.accountName}</p>
                         <p className="text-xs text-[var(--fg-4)] font-mono">{l.accountCode}</p>
                         {l.description && <p className="text-xs text-[var(--fg-4)] mt-0.5">{l.description}</p>}
-                        <p className="text-sm font-bold text-white mt-1 text-right">฿{fmt(l.debit)}</p>
+                        <p className="text-sm font-bold text-[var(--fg-1)] mt-1 text-right">฿{fmt(l.debit)}</p>
                       </div>
                     ))}
                   </div>
                   <div className="px-4 py-2 bg-[var(--surface-2)] border-t border-[var(--border)]">
-                    <p className="text-sm font-bold text-white text-right">฿{fmt(entry.totalDebit)}</p>
+                    <p className="text-sm font-bold text-[var(--fg-1)] text-right">฿{fmt(entry.totalDebit)}</p>
                   </div>
                 </div>
                 {/* Credit side */}
@@ -591,15 +670,15 @@ function DetailModal({ entry, evidenceCount, loading, onClose, onPost }: {
                       <p className="px-4 py-3 text-xs text-[var(--fg-4)]">–</p>
                     ) : creditLines.map((l, i) => (
                       <div key={i} className="px-4 py-3">
-                        <p className="text-sm text-white font-medium">{l.accountName}</p>
+                        <p className="text-sm text-[var(--fg-1)] font-medium">{l.accountName}</p>
                         <p className="text-xs text-[var(--fg-4)] font-mono">{l.accountCode}</p>
                         {l.description && <p className="text-xs text-[var(--fg-4)] mt-0.5">{l.description}</p>}
-                        <p className="text-sm font-bold text-white mt-1 text-right">฿{fmt(l.credit)}</p>
+                        <p className="text-sm font-bold text-[var(--fg-1)] mt-1 text-right">฿{fmt(l.credit)}</p>
                       </div>
                     ))}
                   </div>
                   <div className="px-4 py-2 bg-[var(--surface-2)] border-t border-[var(--border)]">
-                    <p className="text-sm font-bold text-white text-right">฿{fmt(entry.totalCredit)}</p>
+                    <p className="text-sm font-bold text-[var(--fg-1)] text-right">฿{fmt(entry.totalCredit)}</p>
                   </div>
                 </div>
               </div>
@@ -618,30 +697,11 @@ function DetailModal({ entry, evidenceCount, loading, onClose, onPost }: {
                 </span>
               </div>
 
-              {entry.referenceType === 'PAYMENT' && entry.referenceId && (
-                <div>
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">หลักฐานการรับชำระ</p>
-                  <PaymentAttachments refType="RECEIPT" refId={entry.referenceId} readOnly />
-                </div>
-              )}
-              {entry.referenceType === 'SUPPLIER_PAYMENT' && entry.referenceId && (
-                <div>
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">หลักฐานการจ่ายเงิน</p>
-                  <PaymentAttachments refType="SUPPLIER_PAYMENT" refId={entry.referenceId} readOnly />
-                </div>
-              )}
-              {entry.referenceType === 'INVOICE' && entry.referenceId && (
-                <InvoiceEvidenceSection invoiceId={entry.referenceId} />
-              )}
-              {entry.referenceType === 'POS_SALE' && !!evidenceCount && (
-                <div className="px-4 py-3 bg-[var(--bg)] rounded-lg text-xs text-[var(--fg-4)]">
-                  มีหลักฐานแนบไว้ที่รายการขาย POS นี้ — หน้านี้ยังไม่รองรับการเปิดดูโดยตรง
-                </div>
-              )}
+              <SourceDocSection entryId={entry.id} />
 
               {entry.notes && (
                 <div className="px-4 py-3 bg-[var(--bg)] rounded-lg text-sm text-[var(--fg-3)]">
-                  <span className="text-[var(--fg-4)]">หมายเหตุ: </span>{entry.notes}
+                  <span className="text-[var(--fg-4)]">หมายเหตุในสมุดรายวัน: </span>{entry.notes}
                 </div>
               )}
             </>
@@ -663,31 +723,146 @@ function DetailModal({ entry, evidenceCount, loading, onClose, onPost }: {
   )
 }
 
-function InvoiceEvidenceSection({ invoiceId }: { invoiceId: string }) {
-  const [receipts, setReceipts] = useState<{ id: string; receipt_number?: string }[]>([])
+// ==================== เอกสารต้นทาง ====================
+// คนทำบัญชีเห็นแต่ Dr/Cr กับคำอธิบายบรรทัดเดียว แล้วตัดสินไม่ได้ว่ารายการถูกไหม
+// ก้อนนี้ดึงตัวเอกสารจริงมาวางไว้ใต้ผัง T: เลขที่ วันที่ คู่กรณี รายการสินค้า
+// หมายเหตุที่คนออกเอกสารเขียนไว้ และสลิปทุกใบที่เกี่ยวข้อง — ครบทั้งฝั่งซื้อและฝั่งขาย
+// หลังบ้าน: GET /journal/:id/source (routes/journalSource.routes.ts)
+
+interface SourceAttachment { refType: string; refId: string; label: string }
+interface SourceDoc {
+  kind: string
+  docNumber: string | null
+  docDate: string | null
+  partyLabel: string | null
+  party: string | null
+  notes: string | null
+  amounts: { subtotal?: number; tax?: number; total?: number; paid?: number; balance?: number } | null
+  extra: { label: string; value: string }[]
+  items: { name: string; quantity?: number; unit?: string; unitPrice?: number; total?: number }[]
+  attachments: SourceAttachment[]
+  route: string | null
+}
+
+const KIND_LABEL: Record<string, string> = {
+  INVOICE: 'ใบแจ้งหนี้ขาย',
+  PAYMENT: 'ใบเสร็จรับเงิน',
+  PURCHASE_INVOICE: 'ใบแจ้งหนี้ซื้อ',
+  SUPPLIER_PAYMENT: 'ใบจ่ายเงิน',
+  GOODS_RECEIPT: 'ใบรับสินค้า',
+  POS_SALE: 'บิลขายหน้าร้าน',
+  POS_CANCEL: 'บิลขายหน้าร้าน (ยกเลิก)',
+  STOCK_ADJUST: 'ใบปรับสต็อก',
+}
+
+function SourceDocSection({ entryId }: { entryId: string }) {
+  const [doc, setDoc] = useState<SourceDoc | null | undefined>(undefined)
 
   useEffect(() => {
     let alive = true
-    salesService.getInvoice(invoiceId)
-      .then((res: any) => { if (alive && res?.success) setReceipts(res.data?.receipts || []) })
-      .catch(() => {})
+    setDoc(undefined)
+    api.get(`/journal/${entryId}/source`)
+      .then(res => { if (alive) setDoc(res.data?.data ?? null) })
+      .catch(() => { if (alive) setDoc(null) })
     return () => { alive = false }
-  }, [invoiceId])
+  }, [entryId])
+
+  if (doc === undefined) return <div className="h-24 rounded-xl bg-[var(--surface-2)] animate-pulse" />
+  // รายการที่คีย์มือไม่มีเอกสารต้นทาง ไม่ต้องโชว์อะไร
+  if (!doc) return null
+
+  const money = (n?: number) => n === undefined || n === null ? '-' : `฿${fmt(n)}`
 
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">หลักฐานที่แนบกับใบแจ้งหนี้</p>
-        <PaymentAttachments refType="INVOICE" refId={invoiceId} readOnly />
-      </div>
-      {receipts.map(r => (
-        <div key={r.id}>
-          <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">
-            หลักฐานการรับชำระ{r.receipt_number ? ` — ใบเสร็จ ${r.receipt_number}` : ''}
-          </p>
-          <PaymentAttachments refType="RECEIPT" refId={r.id} readOnly />
+    <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-2.5 flex-wrap">
+          <span className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">เอกสารต้นทาง</span>
+          <span className="text-xs text-[var(--fg-2)]">{KIND_LABEL[doc.kind] || doc.kind}</span>
+          {doc.docNumber && <span className="font-mono text-sm text-[var(--primary)] font-semibold">{doc.docNumber}</span>}
         </div>
-      ))}
+        {doc.docDate && <span className="text-xs text-[var(--fg-4)]">{fmtDate(doc.docDate)}</span>}
+      </div>
+
+      <div className="p-4 space-y-3">
+        {doc.party && (
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="text-[var(--fg-4)] text-xs">{doc.partyLabel || 'คู่กรณี'}</span>
+            <span className="text-[var(--fg-1)] font-medium">{doc.party}</span>
+          </div>
+        )}
+
+        {doc.extra.length > 0 && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {doc.extra.map(e => (
+              <span key={e.label} className="text-xs">
+                <span className="text-[var(--fg-4)]">{e.label}: </span>
+                <span className="text-[var(--fg-2)]">{e.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {doc.items.length > 0 && (
+          <div className="rounded-lg border border-[var(--border)]/60 overflow-hidden">
+            <div className="max-h-56 overflow-y-auto">
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-[var(--border)]/40">
+                  {doc.items.map((it, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2 text-[var(--fg-2)]">{it.name}</td>
+                      <td className="px-3 py-2 text-right text-[var(--fg-3)] whitespace-nowrap tabular-nums">
+                        {it.quantity ?? '-'}{it.unit ? ` ${it.unit}` : ''}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[var(--fg-3)] whitespace-nowrap tabular-nums">{money(it.unitPrice)}</td>
+                      <td className="px-3 py-2 text-right text-[var(--fg-1)] font-medium whitespace-nowrap tabular-nums">{money(it.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {doc.amounts && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
+            {doc.amounts.subtotal !== undefined && doc.amounts.subtotal !== null && (
+              <span><span className="text-[var(--fg-4)]">ก่อนภาษี: </span><span className="text-[var(--fg-2)] tabular-nums">{money(doc.amounts.subtotal)}</span></span>
+            )}
+            {!!doc.amounts.tax && (
+              <span><span className="text-[var(--fg-4)]">ภาษี: </span><span className="text-[var(--fg-2)] tabular-nums">{money(doc.amounts.tax)}</span></span>
+            )}
+            {doc.amounts.total !== undefined && doc.amounts.total !== null && (
+              <span><span className="text-[var(--fg-4)]">รวม: </span><span className="text-[var(--fg-1)] font-semibold tabular-nums">{money(doc.amounts.total)}</span></span>
+            )}
+            {!!doc.amounts.balance && (
+              <span><span className="text-[var(--fg-4)]">คงค้าง: </span><span className="text-warning font-semibold tabular-nums">{money(doc.amounts.balance)}</span></span>
+            )}
+          </div>
+        )}
+
+        {doc.notes && (
+          <div className="px-3 py-2 bg-[var(--bg)] rounded-lg text-sm text-[var(--fg-2)]">
+            <span className="text-[var(--fg-4)] text-xs">หมายเหตุจากเอกสาร: </span>{doc.notes}
+          </div>
+        )}
+
+        {doc.attachments.length > 0 && (
+          <div className="space-y-3 pt-1">
+            {doc.attachments.map(a => (
+              <PaymentAttachments
+                key={`${a.refType}:${a.refId}`}
+                refType={a.refType as any}
+                refId={a.refId}
+                title={a.label}
+                readOnly
+                dense
+                hideWhenEmpty
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -775,7 +950,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <Zap className="w-5 h-5 text-[var(--primary)]" /> บันทึกรายการด่วน
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
@@ -799,13 +974,13 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1.5">วันที่</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1.5">คำอธิบาย *</label>
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="เช่น ค่าไฟ มี.ค."
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -822,7 +997,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               DR (เดบิต) — {entryType === 'expense' ? 'ค่าใช้จ่ายอะไร?' : 'รับเงินที่ไหน?'}
             </label>
             <select value={drAccountId} onChange={e => setDrAccountId(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-yellow-400">
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-yellow-400">
               <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
               {drAccounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
             </select>
@@ -834,7 +1009,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
             <div className="relative">
               <input type="number" placeholder="0.00" value={amount}
                 onChange={e => setAmount(e.target.value)} onFocus={e => e.target.select()}
-                className="w-full px-3 py-2 pr-14 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 pr-14 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm font-mono focus:outline-none focus:border-phopy-indigo" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">บาท</span>
             </div>
           </div>
@@ -845,7 +1020,7 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               CR (เครดิต) — {entryType === 'expense' ? 'จ่ายจากไหน?' : 'รายได้อะไร?'}
             </label>
             <select value={crAccountId} onChange={e => setCrAccountId(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-blue-400">
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-blue-400">
               <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
               {crAccounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
             </select>
@@ -860,13 +1035,13 @@ function QuickEntryModal({ accounts, accountsLoaded, onClose, onSuccess }: {
               <div className="px-3 py-2 space-y-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-warning font-mono text-xs">DR</span>
-                  <span className="text-white text-xs flex-1 ml-2 truncate">{drAccount?.code} {drAccount?.name}</span>
-                  <span className="text-white font-mono text-xs ml-2">{fmt(parsedAmount)}</span>
+                  <span className="text-[var(--fg-2)] text-xs flex-1 ml-2 truncate">{drAccount?.code} {drAccount?.name}</span>
+                  <span className="text-[var(--fg-2)] font-mono text-xs ml-2">{fmt(parsedAmount)}</span>
                 </div>
                 <div className="flex justify-between items-center pl-4">
                   <span className="text-blue-400 font-mono text-xs">CR</span>
-                  <span className="text-white text-xs flex-1 ml-2 truncate">{crAccount?.code} {crAccount?.name}</span>
-                  <span className="text-white font-mono text-xs ml-2">{fmt(parsedAmount)}</span>
+                  <span className="text-[var(--fg-2)] text-xs flex-1 ml-2 truncate">{crAccount?.code} {crAccount?.name}</span>
+                  <span className="text-[var(--fg-2)] font-mono text-xs ml-2">{fmt(parsedAmount)}</span>
                 </div>
               </div>
             </div>
@@ -954,7 +1129,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
         <X className="w-3.5 h-3.5" />
       </button>
       <select value={l.accountId} onChange={e => updateLine(l.i, 'accountId', e.target.value)}
-        className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo">
+        className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
         <option value="">{!accountsLoaded ? 'กำลังโหลด...' : '— เลือกบัญชี —'}</option>
         {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map(type => {
           const group = accounts.filter(a => a.type === type)
@@ -970,20 +1145,20 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
       <div className="grid grid-cols-2 gap-2">
         <input placeholder="คำอธิบาย (optional)" value={l.description}
           onChange={e => updateLine(l.i, 'description', e.target.value)}
-          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
+          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo col-span-2" />
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Dr.</span>
           <input type="number" placeholder="0" value={l.debit}
             onChange={e => updateLine(l.i, 'debit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-yellow-400" />
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm font-mono focus:outline-none focus:border-yellow-400" />
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">Cr.</span>
           <input type="number" placeholder="0" value={l.credit}
             onChange={e => updateLine(l.i, 'credit', e.target.value)}
             onFocus={e => e.target.select()}
-            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-400" />
+            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm font-mono focus:outline-none focus:border-blue-400" />
         </div>
       </div>
     </div>
@@ -996,7 +1171,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-2xl flex flex-col"
         style={{ maxHeight: 'calc(100vh - 2rem)' }}>
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <FileText className="w-5 h-5 text-[var(--primary)]" /> บันทึกรายการคู่
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-5 h-5" /></button>
@@ -1008,13 +1183,13 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1.5">วันที่</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
               <label className="block text-xs text-[var(--fg-3)] mb-1.5">คำอธิบาย *</label>
               <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                 placeholder="เช่น บันทึกรับชำระ, บันทึกค่าใช้จ่าย..."
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo" />
+                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
             </div>
           </div>
 
@@ -1064,7 +1239,7 @@ function CreateModal({ accounts, accountsLoaded, onClose, onSuccess }: {
           <div>
             <label className="block text-xs text-[var(--fg-3)] mb-1.5">หมายเหตุ (optional)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
 

@@ -3,6 +3,8 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from './unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
+import { postJournal } from './accounting.service'
+import { ACC } from '../config/accountCodes'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -198,6 +200,9 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
 
   const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(gr.id) as any[]
   const now = new Date().toISOString()
+  // มูลค่าของที่เข้าคลังจริงในใบนี้ (ราคาตามใบสั่งซื้อ) — ใช้ตั้งค้างรับของ
+  // นับเฉพาะบรรทัดที่เข้าสต็อกจริง บรรทัด skip_stock (ปากกา ของใช้สำนักงาน) ไม่ใช่สินทรัพย์
+  let accruedValue = 0
 
   db.transaction(() => {
     db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -302,6 +307,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         }
 
         if (stockItem) {
+          accruedValue += (Number(item.accepted_qty) || 0) * (Number(unitPrice) || 0)
           db.prepare(`
             INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
@@ -341,6 +347,30 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
     } else {
       db.prepare("UPDATE purchase_orders SET status = 'PARTIAL', updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(now, gr.purchase_order_id, tenantId)
+    }
+
+    // ตั้งค้างรับของ — ของเข้าคลังแล้วต้องมีมูลค่าในงบทันที ไม่ต้องรอใบแจ้งหนี้
+    //   Dr สต็อกวัตถุดิบ 1107 / Cr ของรับแล้วยังไม่ได้รับใบแจ้งหนี้ 2109
+    // ใบแจ้งหนี้ซื้อจะมาปิด 2109 ทีหลัง (purchaseBilling.service.ts) บัญชีพักจึงกลับเป็นศูนย์
+    //
+    // เดิมไม่ลงอะไรเลยตอนรับของ รอจนออกใบแจ้งหนี้ค่อย Dr สต็อก ทำให้ของที่รับแล้วแต่ยัง
+    // ไม่มีใบแจ้งหนี้ลอยอยู่นอกงบ (ตรวจ 19 ก.ย. 2026 พบค้างอยู่ 30 ใบ รวม ฿128,659)
+    //
+    // อยู่ใน transaction เดียวกับการรับของ — ลงบัญชีไม่ได้ก็ห้ามรับของเข้าคลัง
+    if (accruedValue > 0.005) {
+      postJournal({
+        tenantId,
+        date: (gr.receipt_date || now).substring(0, 10),
+        referenceType: 'GOODS_RECEIPT',
+        referenceId: gr.id,
+        description: `รับสินค้าเข้าคลัง ${gr.gr_number}`,
+        sourceNumber: gr.gr_number,
+        createdBy: userId,
+        lines: [
+          { code: ACC.RAW_MATERIAL, description: `ของเข้าคลังตาม ${gr.gr_number}`, debit: accruedValue },
+          { code: ACC.GRNI, description: `ค้างรับใบแจ้งหนี้ ${gr.gr_number}`, credit: accruedValue },
+        ],
+      })
     }
   })()
 

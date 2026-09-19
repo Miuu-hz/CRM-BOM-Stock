@@ -213,14 +213,6 @@ export const journalApi = {
   
   // Delete entry
   delete: (id: string) => api.delete(`/journal/${id}`),
-  
-  // Auto-generate from PO
-  generateFromPO: (purchaseOrderId: string, date: string) => 
-    api.post('/journal/auto/purchase-order', { purchaseOrderId, date }),
-  
-  // Auto-generate from Sales
-  generateFromSales: (orderId: string) => 
-    api.post('/journal/auto/sales', { orderId }),
 
   // Phase 3: bulk evidence-slip counts for the accounting list — one request
   // for every visible row instead of one attachments call per row. refs are

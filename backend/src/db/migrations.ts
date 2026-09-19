@@ -727,6 +727,11 @@ export function runMigrations(db: any): void {
     "ALTER TABLE users ADD COLUMN custom_permissions TEXT",
     "ALTER TABLE purchase_orders ADD COLUMN approved_at TEXT",
     "ALTER TABLE purchase_orders ADD COLUMN rejection_reason TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN payment_method TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN payment_reference TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN bank_account_id TEXT",
+    "ALTER TABLE purchase_orders ADD COLUMN is_paid INTEGER DEFAULT 0",
+    "ALTER TABLE purchase_orders ADD COLUMN paid_amount REAL DEFAULT 0",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
   console.log('✅ Migration: schema drift columns (users/purchase_orders) ready')
 
@@ -2195,4 +2200,65 @@ export function runMigrations(db: any): void {
     console.error('⚠️ payment_attachments STOCK_ADJUSTMENT migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+
+  // ==================== ต้นทุนขายลงตอนตัดสต็อก ไม่ใช่ตอนออกใบแจ้งหนี้ (2026-09-19) ====================
+  // เดิมต้นทุนขายคำนวณจาก stock_items.unit_cost ณ วินาทีออกใบแจ้งหนี้ ซึ่งอาจเปลี่ยนไปแล้วจากตอน
+  // ตัดสต็อกจริง (ยืนยัน SO) — เก็บ snapshot ต้นทุนต่อหน่วยฐาน ณ วินาทีตัดสต็อกไว้ที่นี่ เพื่อให้
+  // journal ต้นทุนขายอิงราคาที่ตัดจริง ไม่ใช่ราคาที่ลอยไปแล้วตอนออกบิล
+  try {
+    const cols = db.prepare(`PRAGMA table_info(sales_order_items)`).all() as any[]
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'issued_unit_cost')) {
+      db.exec(`ALTER TABLE sales_order_items ADD COLUMN issued_unit_cost REAL`)
+      console.log('✅ Migration: added issued_unit_cost to sales_order_items')
+    }
+  } catch (e) { console.error('⚠️ sales_order_items issued_unit_cost migration error:', e) }
+
+  // ==================== บัญชีขายผ่านแพลตฟอร์ม Shopee/Lazada/TikTok (2026-09-19) ====================
+  // ยังไม่มีไฟล์ settlement จริงจากแพลตฟอร์มไหนเลย โครงคอลัมน์ของแต่ละเจ้าไม่เหมือนกันและเรายังไม่เห็น
+  // ของจริง — เก็บ "คอลัมน์ไหนแปลว่าอะไร/ลงบัญชีไหน" เป็นข้อมูลในตาราง ไม่ใช่ผูกไว้ในโค้ด พอได้ไฟล์จริง
+  // มาก็แค่เพิ่มชื่อ alias ในนี้ ไม่ต้องแก้ตรรกะบัญชีเลย · seed ให้เดาได้ปลอดภัยทำแบบ lazy ต่อ tenant
+  // ใน platformSettlement.service.ts (ensureDefaultFeeMappings) แทนที่จะ loop ทุก tenant ตรงนี้ เพื่อให้
+  // tenant ที่สมัครทีหลัง migration นี้ก็ได้ default เดียวกันโดยอัตโนมัติ
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS platform_fee_mappings (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      target_field TEXT NOT NULL,
+      fee_type TEXT,
+      account_code TEXT,
+      label TEXT NOT NULL,
+      column_aliases TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(tenant_id, target_field, fee_type)
+    )`)
+    console.log('✅ Migration: platform_fee_mappings พร้อมใช้งาน')
+  } catch (e) { console.error('⚠️ platform_fee_mappings migration error:', e) }
+
+  // เก็บรอบ settlement ที่ยืนยันแล้ว กันลงซ้ำ (UNIQUE ต่อ platform+ช่วงวันที่) และไล่ย้อนได้ว่าลง journal ใบไหนไปแล้ว
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS platform_settlements (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      gross_sales REAL NOT NULL,
+      vat_amount REAL NOT NULL DEFAULT 0,
+      cogs_amount REAL NOT NULL DEFAULT 0,
+      fees_json TEXT NOT NULL DEFAULT '[]',
+      payout_amount REAL,
+      status TEXT NOT NULL DEFAULT 'PENDING_PAYOUT',
+      je_sales_id TEXT,
+      je_fees_id TEXT,
+      je_payout_id TEXT,
+      source_filename TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(tenant_id, platform, period_start, period_end)
+    )`)
+    console.log('✅ Migration: platform_settlements พร้อมใช้งาน')
+  } catch (e) { console.error('⚠️ platform_settlements migration error:', e) }
 }

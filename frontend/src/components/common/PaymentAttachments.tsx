@@ -9,6 +9,8 @@ export type AttachmentRefType =
   | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'INVOICE'
   // ฝั่งจัดซื้อ — INVOICE คือใบแจ้งหนี้ขาย (AR) คนละตัวกับ PURCHASE_INVOICE
   | 'PURCHASE_REQUEST' | 'PURCHASE_ORDER' | 'GOODS_RECEIPT' | 'PURCHASE_INVOICE'
+  // หลังบ้านรองรับสองตัวนี้อยู่แล้ว (REF_TYPE_TABLES) แต่ type ฝั่งนี้ตกไป
+  | 'POS_PAYMENT' | 'STOCK_ADJUSTMENT'
 
 interface AttachmentRow {
   id: string
@@ -35,7 +37,10 @@ function formatSize(bytes: number) {
 // receipts/invoices (Sales.tsx) don't each reimplement upload + PDF handling.
 // dense = โหมดแน่น รูปเล็กลง ใช้ในโมดัลที่มีเนื้อหาเยอะอยู่แล้ว (ฝั่งจัดซื้อ)
 // ค่าเริ่มต้นยังเป็นขนาดเดิม ฝั่งขายจึงไม่กระทบ
-export function PaymentAttachments({ refType, refId, readOnly = false, dense = false }: { refType: AttachmentRefType; refId: string; readOnly?: boolean; dense?: boolean }) {
+// hideWhenEmpty = ไม่มีไฟล์ก็ไม่ต้องโชว์กล่องเปล่า — ใช้ตอนวางหลายกล่องเรียงกัน
+// (หน้าสมุดรายวันดึงหลักฐานจากหลายเอกสารพร้อมกัน ส่วนใหญ่จะว่าง)
+// title = ตั้งหัวข้อเองแทนคำว่า "ไฟล์แนบ" เพื่อบอกว่าหลักฐานนี้มาจากเอกสารใบไหน
+export function PaymentAttachments({ refType, refId, readOnly = false, dense = false, hideWhenEmpty = false, title }: { refType: AttachmentRefType; refId: string; readOnly?: boolean; dense?: boolean; hideWhenEmpty?: boolean; title?: string }) {
   const { t } = useTranslation()
   const [items, setItems] = useState<AttachmentRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,12 +90,13 @@ export function PaymentAttachments({ refType, refId, readOnly = false, dense = f
   }
 
   if (loading) return null
+  if (hideWhenEmpty && items.length === 0) return null
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{t('attachments.title')}</p>
+          <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide">{title || t('attachments.title')}</p>
           {items.length > 0 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--success-soft)] text-success">
               {t('attachments.hasEvidence')}
