@@ -155,10 +155,13 @@ function Login() {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700 rounded-2xl flex items-center justify-center shadow-2 mb-4">
-            <span className="text-white font-extrabold text-2xl">P</span>
+          {/* วางโลโก้บนแผ่นสีสว่างเสมอ เพราะเส้นทแยงกับจุดในโลโก้เป็นสีดำ
+              ถ้าวางบนพื้นมืดตรง ๆ จะเหลือแต่วงกลมสีส้มลอย ๆ */}
+          <div className="w-16 h-16 rounded-2xl bg-white ring-1 ring-black/5 shadow-2 mb-4 flex items-center justify-center overflow-hidden">
+            <img src="/brand/phopy-mark-trim.png" alt="" className="w-[76%] h-[76%] object-contain" />
           </div>
-          <h1 className="text-3xl font-bold text-[var(--fg-1)]">{t('app.name')}</h1>
+          <img src="/brand/phopy-wordmark-trim.png" alt={t('app.name')}
+            className="brand-wordmark h-8 w-auto object-contain" />
           <p className="text-[var(--fg-3)] mt-2">
             {mode === 'login' ? t('app.tagline') : mode === 'signup' ? 'สมัครใช้งานฟรี เริ่มต้นใน 1 นาที' : ''}
           </p>

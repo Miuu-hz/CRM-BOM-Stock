@@ -246,15 +246,16 @@ function Sidebar({ mode }: SidebarProps) {
       <div className={`border-b border-[var(--border)] flex-shrink-0 ${isRail ? 'p-3.5 flex justify-center' : 'p-5'}`}>
         {isRail ? (
           <div
-            className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700 flex items-center justify-center cursor-pointer"
+            className="w-9 h-9 rounded-[10px] bg-white ring-1 ring-black/5 flex items-center justify-center cursor-pointer overflow-hidden"
             title={t('app.name')}
           >
-            <span className="text-white font-extrabold text-lg">P</span>
+            <img src="/brand/phopy-mark-trim.png" alt="" className="w-[78%] h-[78%] object-contain" />
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-phopy-indigo to-phopy-indigo-700 flex items-center justify-center flex-none">
-              <span className="text-white font-extrabold text-lg">P</span>
+            {/* แผ่นพื้นสีสว่างเสมอทั้งสองธีม — เส้นสีดำในโลโก้จะได้ไม่จมหาย */}
+            <div className="w-9 h-9 rounded-[10px] bg-white ring-1 ring-black/5 flex items-center justify-center flex-none overflow-hidden">
+              <img src="/brand/phopy-mark-trim.png" alt="" className="w-[78%] h-[78%] object-contain" />
             </div>
             <div>
               <h1 className="text-base font-bold text-[var(--fg-1)] tracking-tight">{t('app.name')}</h1>
