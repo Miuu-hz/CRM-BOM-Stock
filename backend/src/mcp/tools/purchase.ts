@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
-import { ok, checkApprovalPermission, checkCanApprove } from './shared'
+import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
 import { formatDocumentNumber } from '../../utils/id'
 import {
   createGoodsReceipt,
@@ -100,6 +100,13 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         ),
       })).describe('รายการสินค้าที่อ่านได้จากรูปหรือข้อความ'),
       supplier_hint: z.string().optional().describe('ชื่อซัพพลายเออร์ถ้าอ่านได้จากรูป'),
+      payment_method: z.string().optional().describe('วิธีชำระเงิน เช่น "โอนจ่าย QR KBANK", "เงินสด", "โอนเงิน", "บัตรเครดิต"'),
+      payment_reference: z.string().optional().describe('เลขที่ใบเสร็จ/อ้างอิงการชำระเงิน หรือ POS ID เช่น "116010523634" หรือ "116010523634 (POS ID: E104600002A0974)"'),
+      bank_hint: z.string().optional().describe('ชื่อหรือรหัสธนาคาร เช่น "KBANK", "กสิกร", "กรุงศรี", "SCB"'),
+      is_paid: z.boolean().optional().describe('ระบุว่าจ่ายเงินไปแล้วหรือไม่ (true = ซื้อสด/จ่ายแล้ว ณ จุดซื้อ, default: false หรือ true หากระบุ payment_reference/payment_method)'),
+      paid_amount: z.number().optional().describe('ยอดเงินที่จ่ายจริง (บาท) หากไม่ระบุและ is_paid=true จะใช้ยอดรวมบิล'),
+      image_base64: z.string().optional().describe('รูปภาพสลิปหรือใบเสร็จแบบ Base64 data'),
+      image_name: z.string().optional().describe('ชื่อไฟล์รูปภาพ เช่น "receipt_slip.jpg"'),
       billTotal: z.number().optional().describe(
         'ยอดรวมที่เขียนไว้ในบิล — ใช้ cross-check กับ sum(lineTotal)\n' +
         'ถ้ามีและตัวเลขไม่ตรงกัน (ต่างกัน >5%) ให้แจ้ง user ก่อนสร้าง'
@@ -107,7 +114,11 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       notes: z.string().optional().describe('หมายเหตุ เช่น "จากรูปภาพใบสั่งซื้อ" หรือ "จาก AI อ่านรูป"'),
     },
     async (args) => {
-      const { items, supplier_hint, billTotal, notes } = args
+      const {
+        items, supplier_hint, billTotal, notes,
+        payment_method, payment_reference, bank_hint, is_paid, paid_amount,
+        image_base64, image_name,
+      } = args
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
       const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as { c: number }).c
       const poNumber = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
@@ -148,69 +159,137 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       }
       const subtotal = items.reduce((s: number, i: { quantity: number; lineTotal?: number; unitPrice?: number }) => s + resolveLineTotal(i), 0)
 
+      // ── Resolve payment & cash purchase status ───────────────────────────
+      const resolvedIsPaid = is_paid ?? (Boolean(payment_reference) || Boolean(payment_method))
+      const resolvedPaidAmount = paid_amount ?? (resolvedIsPaid ? subtotal : 0)
+      const resolvedPaymentMethod = payment_method || (payment_reference ? 'โอนเงิน' : null)
+      const resolvedPaymentRef = payment_reference || null
+
+      let resolvedBankAccountId: string | null = null
+      if (bank_hint) {
+        const bankRow = db.prepare(`
+          SELECT id FROM bank_accounts
+          WHERE tenant_id = ? AND (
+            bank_name LIKE ? OR account_name LIKE ? OR account_number LIKE ?
+          ) LIMIT 1
+        `).get(tenantId, `%${bank_hint}%`, `%${bank_hint}%`, `%${bank_hint}%`) as any
+        if (bankRow) resolvedBankAccountId = bankRow.id
+      }
+      if (!resolvedBankAccountId && resolvedIsPaid) {
+        const defaultBank = db.prepare(`
+          SELECT id FROM bank_accounts WHERE tenant_id = ? AND is_active = 1 LIMIT 1
+        `).get(tenantId) as any
+        if (defaultBank) resolvedBankAccountId = defaultBank.id
+      }
+
       db.prepare(`
         INSERT INTO purchase_orders
-          (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, 0, 0, ?, ?, ?, ?)
+          (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, notes,
+           payment_method, payment_reference, bank_account_id, is_paid, paid_amount,
+           created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, tenantId, poNumber, supplierId, now, subtotal, subtotal,
-        `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`, now, now)
+        `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`,
+        resolvedPaymentMethod, resolvedPaymentRef, resolvedBankAccountId,
+        resolvedIsPaid ? 1 : 0, resolvedPaidAmount,
+        now, now)
 
-      // ── Insert PO items — free text only, MCP never binds material_id ──────────
-      // Owner decision 2026-08-18: the old LIKE '%desc%' LIMIT 1 auto-match (no ORDER BY,
-      // no category filter) matched menu dishes (category='finished') to raw-ingredient
-      // bill lines — e.g. "ข้าวโพด" (corn) matched "สลัดทูน่าข้าวโพด" (tuna-corn salad) —
-      // and silently auto-created junk stock_items when nothing matched. A human now binds
-      // material_id later in the web UI. We still look up a candidate for the response
-      // (reporting only, never written to material_id).
+      // ── Save attached slip/bill image if provided ─────────────────────────
+      let attachedEvidence: any = null
+      if (image_base64) {
+        try {
+          attachedEvidence = saveBase64Attachment({
+            tenantId,
+            userId,
+            refType: 'PURCHASE_ORDER',
+            refId: id,
+            base64Data: image_base64,
+            fileName: image_name,
+          })
+        } catch (err: any) {
+          console.error('Failed to save PO attachment:', err)
+        }
+      }
+
+      // ── Insert PO items — Auto-bind ONLY if exact 100% name match ──────────
+      // กติกา (owner requirement 2026-09-18):
+      // - เน้นชื่อสินค้าตรงเป๊ะ 100% (matchStockItem rawOnly=true) -> ผูก material_id ทันที
+      // - หากเกินหรือขาด (ไม่ตรง 100% หรือกำกวม) -> ให้ material_id = null ไปก่อน
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items
           (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
       `)
 
-      const findSuggestion = db.prepare(`
-        SELECT id, name, sku, COALESCE(base_unit, unit) AS unit FROM stock_items
-        WHERE tenant_id = ? AND status = 'ACTIVE'
-          AND category IN ('raw','RAW_MATERIAL','material','wip')
-          AND name LIKE ?
-        ORDER BY CASE WHEN name = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END, length(name)
-        LIMIT 1
-      `)
-
       const resultItems: any[] = []
+      let boundCount = 0
       for (const item of items) {
-        const suggestion = findSuggestion.get(tenantId, `%${item.description}%`, item.description, `${item.description}%`) as any
-        const resolvedUnit = normalizeUnit(item.unit || 'pcs')
+        const match = matchStockItem(tenantId, item.description, true)
+        const exact = match.exact
+        const materialId = exact ? exact.id : null
+        if (exact) boundCount++
 
+        const resolvedUnit = normalizeUnit(item.unit || exact?.unit || 'pcs')
         const itemUnitPrice = resolveUnitPrice(item)
         const itemLineTotal = resolveLineTotal(item)
+
         insertItem.run(
           randomUUID().replace(/-/g, '').substring(0, 25),
-          tenantId, id, null, item.description, item.quantity,
+          tenantId, id, materialId, item.description, item.quantity,
           resolvedUnit, itemUnitPrice, itemLineTotal
         )
+
         resultItems.push({
           description: item.description,
           unit: resolvedUnit,
-          suggestedMatch: suggestion ? { id: suggestion.id, name: suggestion.name, sku: suggestion.sku, unit: suggestion.unit } : null,
-          สถานะ: 'ยังไม่ผูก — ผูกด้วย bind_document_item ก่อนจึงจะรับของได้',
+          quantity: item.quantity,
+          unitPrice: itemUnitPrice,
+          totalPrice: itemLineTotal,
+          material_id: materialId,
+          boundTo: exact ? { id: exact.id, name: exact.name, sku: exact.sku, unit: exact.unit } : null,
+          สถานะ: exact ? 'ผูกแล้ว (ชื่อตรงเป๊ะ 100%)' : 'ยังไม่ผูก — ชื่อไม่ตรง 100%',
+          ตัวเลือก: exact ? undefined : match.candidates.map(c => ({
+            stock_item_id: c.id,
+            ชื่อ: c.name,
+            sku: c.sku,
+            คงเหลือ: `${c.quantity} ${c.baseUnit}`,
+          })),
         })
       }
 
       const billTotalMismatch = billTotal != null && Math.abs(subtotal - billTotal) / Math.max(billTotal, 1) > 0.05
+      const unboundCount = items.length - boundCount
+      const statusNote = unboundCount === 0
+        ? 'ผูกสินค้าครบถ้วนตามชื่อสินค้า 100%'
+        : `มี ${unboundCount} รายการที่ชื่อไม่ตรง 100% (ยังไม่ได้ผูก)`
+
       return ok({
         poNumber,
         poId: id,
         status: 'DRAFT',
         itemCount: items.length,
+        boundCount,
+        unboundCount,
         totalAmount: subtotal,
         billTotal: billTotal ?? null,
         billTotalMismatch: billTotalMismatch || null,
         supplier: supplierId ? { id: supplierId, name: supplier_hint, isNew: supplierCreated } : null,
+        payment: {
+          is_paid: Boolean(resolvedIsPaid),
+          paid_amount: resolvedPaidAmount,
+          payment_method: resolvedPaymentMethod,
+          payment_reference: resolvedPaymentRef,
+          bank_account_id: resolvedBankAccountId,
+          attachment: attachedEvidence ? {
+            id: attachedEvidence.id,
+            file_name: attachedEvidence.original_name,
+            file_path: attachedEvidence.file_path,
+          } : null,
+        },
         items: resultItems,
         message: [
-          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()}) — ยังไม่ได้ผูกวัตถุดิบ`,
-          `กรุณาเปิด PO นี้ใน ERP web เพื่อผูกวัตถุดิบและตรวจสอบหน่วยก่อน submit`,
+          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()}) — ${statusNote}`,
+          unboundCount > 0 ? 'รายการที่ยังไม่ผูกสามารถผูกต่อในหน้าเว็บหรือใช้ bind_document_item' : '',
           supplierCreated ? `— สร้าง Supplier "${supplier_hint}" ใหม่` : '',
           billTotalMismatch ? `⚠️ ยอดรวมที่คำนวณ ฿${subtotal.toLocaleString()} ต่างจากยอดในบิล ฿${billTotal!.toLocaleString()} — กรุณาตรวจสอบ` : '',
         ].filter(Boolean).join(' '),
@@ -712,4 +791,72 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       return ok({ count: (rows as any[]).length, suppliers: rows })
     }
   )
+
+  // ── 18. attach_document_evidence ───────────────────────────────────────────
+  server.tool(
+    'attach_document_evidence',
+    `แนบรูปภาพหรือเอกสารหลักฐาน (สลิปโอนเงิน, รูปใบเสร็จ/บิล, ใบส่งของ) เข้ากับเอกสารใดๆ ในระบบ / Attach evidence slip/photo to any document.
+รองรับทุกประเภทเอกสาร: PURCHASE_ORDER, GOODS_RECEIPT, PURCHASE_INVOICE, SUPPLIER_PAYMENT, PURCHASE_REQUEST, INVOICE, RECEIPT, POS_PAYMENT, STOCK_ADJUSTMENT
+ค้นหาด้วย ID หรือเลขที่เอกสาร (เช่น "PO-2026-00035", "GR-2026-00001", "INV-2026-00010") ได้อัตโนมัติ`,
+    {
+      doc_type: z.enum([
+        'PURCHASE_ORDER',
+        'PURCHASE_REQUEST',
+        'GOODS_RECEIPT',
+        'PURCHASE_INVOICE',
+        'SUPPLIER_PAYMENT',
+        'INVOICE',
+        'RECEIPT',
+        'POS_PAYMENT',
+        'STOCK_ADJUSTMENT',
+      ]).describe('ประเภทเอกสาร'),
+      doc_id_or_number: z.string().describe('ID หรือเลขที่เอกสาร เช่น "PO-2026-00035", "GR-2026-00001", "INV-2026-00010"'),
+      image_base64: z.string().describe('ข้อมูลรูปภาพหรือเอกสารแบบ Base64 (มีหรือไม่มี data:image/...;base64, ก็ได้)'),
+      file_name: z.string().optional().describe('ชื่อไฟล์ เช่น "slip.jpg", "receipt_20260918.png"'),
+      mime_type: z.string().optional().describe('MIME type เช่น "image/jpeg", "image/png", "application/pdf"'),
+      notes: z.string().optional().describe('บันทึกช่วยจำ'),
+    },
+    async (args) => {
+      const { doc_type, doc_id_or_number, image_base64, file_name, mime_type } = args
+      const resolved = resolveDocRef(tenantId, doc_type, doc_id_or_number)
+      if (!resolved) {
+        return ok({
+          success: false,
+          message: `ไม่พบเอกสารประเภท ${doc_type} ที่มี ID หรือเลขที่ "${doc_id_or_number}" ในระบบ`,
+        })
+      }
+
+      try {
+        const att = saveBase64Attachment({
+          tenantId,
+          userId,
+          refType: doc_type,
+          refId: resolved.id,
+          base64Data: image_base64,
+          fileName: file_name,
+          mimeType: mime_type,
+        })
+
+        return ok({
+          success: true,
+          message: `แนบหลักฐานเข้ากับ ${doc_type} (${resolved.doc_num}) สำเร็จ`,
+          attachment: {
+            id: att.id,
+            doc_type,
+            doc_id: resolved.id,
+            doc_number: resolved.doc_num,
+            original_name: att.original_name,
+            file_size_bytes: att.file_size,
+            file_path: att.file_path,
+          },
+        })
+      } catch (err: any) {
+        return ok({
+          success: false,
+          message: `เกิดข้อผิดพลาดในการบันทึกไฟล์แนบ: ${err?.message || err}`,
+        })
+      }
+    }
+  )
+
 }

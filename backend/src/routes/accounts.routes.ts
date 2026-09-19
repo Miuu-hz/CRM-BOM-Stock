@@ -60,12 +60,26 @@ router.get('/', async (req: Request, res: Response) => {
              p.name as parent_name,
              p.code as parentCode,
              p.name as parentName,
+             COALESCE(b.total_debit, 0) as totalDebit,
+             COALESCE(b.total_credit, 0) as totalCredit,
+             COALESCE(b.balance, 0) as currentBalance,
              (SELECT COUNT(*) FROM journal_lines WHERE account_id = a.id) as transaction_count
       FROM accounts a
       LEFT JOIN accounts p ON a.parent_id = p.id
+      LEFT JOIN (
+        SELECT jl.account_id,
+               SUM(jl.debit) as total_debit,
+               SUM(jl.credit) as total_credit,
+               SUM(CASE WHEN acc.normal_balance = 'DEBIT' THEN jl.debit - jl.credit ELSE jl.credit - jl.debit END) as balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_entry_id = je.id
+        JOIN accounts acc ON jl.account_id = acc.id
+        WHERE je.is_posted = 1 AND je.tenant_id = ?
+        GROUP BY jl.account_id
+      ) b ON a.id = b.account_id
       WHERE a.tenant_id = ?
     `
-    const params: Array<string | number> = [tenantId]
+    const params: Array<string | number> = [tenantId, tenantId]
 
     if (type) {
       query += ' AND a.type = ?'
@@ -80,15 +94,21 @@ router.get('/', async (req: Request, res: Response) => {
     
     const accounts = db.prepare(query).all(...params) as Account[]
 
-    // Build tree structure
-    type AccountTreeNode = Account & { children: AccountTreeNode[] }
+    // Build tree structure with aggregated child balances for parent accounts
+    type AccountTreeNode = Account & { children: AccountTreeNode[]; totalBalance?: number }
     const buildTree = (parentId: string | null = null): AccountTreeNode[] => {
       return accounts
         .filter(a => a.parent_id === parentId)
-        .map(a => ({
-          ...a,
-          children: buildTree(a.id)
-        }))
+        .map(a => {
+          const children = buildTree(a.id)
+          const childSum = children.reduce((s, c) => s + (c.totalBalance ?? (c as any).currentBalance ?? 0), 0)
+          const totalBalance = Number(((a as any).currentBalance || 0) + childSum)
+          return {
+            ...a,
+            totalBalance,
+            children
+          }
+        })
     }
     
     const tree = buildTree(null)

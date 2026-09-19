@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs } from '../services/approvalGate.service'
-import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments } from '../services/purchaseOrderUpdate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { z } from 'zod'
@@ -63,9 +63,12 @@ router.get('/', async (req: Request, res: Response) => {
     
     const orders = db.prepare(`
       SELECT po.*, s.name as supplier_name, s.code as supplier_code,
-        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id) as item_count
+        ba.bank_name, ba.account_number as bank_account_number,
+        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id) as item_count,
+        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '')) as unbound_count
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
+      LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
       WHERE po.tenant_id = ?
       ORDER BY po.created_at DESC
     `).all(tenantId)
@@ -111,9 +114,12 @@ router.get('/:id', async (req: Request, res: Response) => {
     
     const po = db.prepare(`
       SELECT po.*, s.name as supplier_name, s.code as supplier_code, s.email as supplier_email, s.phone as supplier_phone,
-        s.tax_id as supplier_tax_id
+        s.tax_id as supplier_tax_id,
+        ba.bank_name, ba.account_number as bank_account_number,
+        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '')) as unbound_count
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
+      LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
       WHERE po.id = ? AND po.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -134,11 +140,22 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId, currencyCode, exchangeRate } = req.body
+    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId, currencyCode, exchangeRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount } = req.body
 
     const itemsCheck = PurchaseOrderItemsSchema.safeParse(items)
     if (!itemsCheck.success) {
       return res.status(400).json({ success: false, message: firstItemZodError(itemsCheck.error) })
+    }
+
+    // '' จากฟอร์ม = ไม่ได้เลือกผู้ขาย · ปล่อยผ่านแล้ว FK พังเป็น 500 เหมือนฝั่งแก้ไข
+    let supplierIdSafe: string | null
+    try {
+      supplierIdSafe = resolveSupplierId(tenantId, supplierId)
+    } catch (e) {
+      if (e instanceof PurchaseOrderUpdateError) {
+        return res.status(400).json({ success: false, message: e.message })
+      }
+      throw e
     }
 
     const id = generateId()
@@ -181,8 +198,8 @@ router.post('/', async (req: Request, res: Response) => {
     const insertPO = db.prepare(`
       INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
         subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at,
-        currency_code, exchange_rate, foreign_amount)
-      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        currency_code, exchange_rate, foreign_amount, payment_method, payment_reference, bank_account_id, is_paid, paid_amount)
+      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertItem = db.prepare(`
@@ -192,9 +209,12 @@ router.post('/', async (req: Request, res: Response) => {
     `)
 
     const transaction = db.transaction(() => {
-      insertPO.run(id, tenantId, poNumber, supplierId, now, expectedDate || null,
+      const isPaidInt = isPaid ? 1 : 0
+      const paidAmt = paidAmount != null ? Number(paidAmount) : (isPaidInt ? totalAmount : 0)
+      insertPO.run(id, tenantId, poNumber, supplierIdSafe, now, expectedDate || null,
         subtotal, tax, taxAmount, totalAmount, notes || '', linkedPrId || null, now, now,
-        currency_code, exchange_rate, foreign_amount)
+        currency_code, exchange_rate, foreign_amount,
+        paymentMethod || (isPaidInt ? 'TRANSFER' : null), paymentReference || null, bankAccountId || null, isPaidInt, paidAmt)
 
       if (items && items.length > 0) {
         for (const item of items) {
@@ -253,23 +273,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       if (!['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER'].includes(req.user!.role)) {
         return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบสั่งซื้อ — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER' })
       }
-      const activeGR = db.prepare(
-        "SELECT id, gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED'"
-      ).get(tenantId, req.params.id) as any
-      if (activeGR) {
-        return res.status(400).json({
-          success: false,
-          message: `ไม่สามารถยกเลิกใบสั่งซื้อได้ — มีใบรับสินค้า ${activeGR.gr_number} ที่ยืนยันแล้ว กรุณายกเลิกใบรับสินค้าก่อน`,
-        })
-      }
-      const activeInvoice = db.prepare(
-        "SELECT id, pi_number FROM purchase_invoices WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED'"
-      ).get(tenantId, req.params.id) as any
-      if (activeInvoice) {
-        return res.status(400).json({
-          success: false,
-          message: `ไม่สามารถยกเลิกใบสั่งซื้อได้ — มีใบแจ้งหนี้ ${activeInvoice.pi_number} อ้างอิงอยู่ กรุณายกเลิกใบแจ้งหนี้ก่อน`,
-        })
+      const blocking = poBlockingDocuments(tenantId, req.params.id)
+      if (blocking) {
+        return res.status(400).json({ success: false, message: `ไม่สามารถยกเลิกใบสั่งซื้อได้ — ${blocking.message}` })
       }
     }
 
@@ -281,6 +287,16 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // ต้องใช้ และไม่ลงบัญชี ทำให้ PO-00007/PO-00010 (2026-07-08) เป็น RECEIVED โดยไม่มี GR
     // ไม่มีหน้าเว็บหรือ MCP ตัวไหนเรียกแล้ว (UI ส่งแค่ SUBMITTED/APPROVED/CANCELLED,
     // MCP update_po_status ปิด RECEIVED ไว้ใน enum) จึงปิดประตูทิ้งแทนที่จะไล่แก้ให้เท่า GR
+    // ย้อนกลับเป็นร่างมีประตูเดียวคือ POST /:id/reopen ซึ่งเช็คสิทธิ์ · ใบรับสินค้าที่ยืนยันแล้ว ·
+    // ใบแจ้งหนี้ที่ยังไม่ยกเลิก · และล้าง GR DRAFT ให้ด้วย
+    // ทางนี้เดิมเขียนสถานะทับดื้อ ๆ ไม่เช็คอะไรเลย = ข้ามด่านทั้งหมดได้ในคำสั่งเดียว
+    if (status === 'DRAFT') {
+      return res.status(400).json({
+        success: false,
+        message: 'ย้อนใบสั่งซื้อกลับเป็นร่างต้องใช้ปุ่ม "ย้อนคืนเป็นร่าง" — ทางนี้ไม่ตรวจใบรับสินค้า/ใบแจ้งหนี้ที่ค้างอยู่',
+      })
+    }
+
     if (status === 'RECEIVED' || status === 'PARTIAL') {
       return res.status(400).json({
         success: false,
@@ -305,7 +321,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, expectedDate, notes, items, taxRate } = req.body
+    const { supplierId, expectedDate, notes, items, taxRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount } = req.body
 
     // Check PO exists and belongs to tenant
     const existing = db.prepare('SELECT id, status, po_number FROM purchase_orders WHERE id = ? AND tenant_id = ?')
@@ -380,10 +396,14 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate })
+    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount })
     if (gateArgs) recordAutoAction(gateArgs)
     res.json({ success: true, data: result })
   } catch (error) {
+    // ข้อมูลที่กรอกไม่ผ่าน = ความผิดของคำขอ ต้องบอกให้คนแก้ได้ ไม่ใช่ 500 เงียบ ๆ
+    if (error instanceof PurchaseOrderUpdateError) {
+      return res.status(400).json({ success: false, message: error.message })
+    }
     console.error('Update PO error:', error)
     res.status(500).json({ success: false, message: 'Failed to update purchase order' })
   }
@@ -491,5 +511,67 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
 })
 
 
+
+// -- POST /api/purchase-orders/:id/reopen
+// ย้อนคืน PO กลับเป็น DRAFT สำหรับ admin เมื่อ PO ค้างใน SUBMITTED/APPROVED
+// และมี GR ที่ยังเป็น DRAFT อยู่ (ยังไม่ยืนยันรับของ) — GR DRAFT เหล่านั้นจะถูกลบทิ้ง
+// บล็อกถ้ามี GR ที่ CONFIRMED อยู่ (รับของไปแล้วย้อนไม่ได้)
+router.post('/:id/reopen', async (req: Request, res: Response) => {
+  try {
+    const { tenantId, role } = req.user!
+    // ย้อนใบที่อนุมัติไปแล้วกลับมาแก้ = ลบร่องรอยการอนุมัติ (approved_by/at ถูกล้าง)
+    // เจ้าของสั่ง 2026-09-18 ให้แคบกว่าการยกเลิก: เฉพาะ ADMIN กับ MASTER
+    // (MANAGER/POWERUSER ยกเลิกใบได้ แต่ย้อนกลับมาแก้ไม่ได้)
+    if (!['ADMIN', 'MASTER'].includes(role)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ย้อนคืนใบสั่งซื้อ — ต้องเป็น ADMIN หรือ MASTER เท่านั้น' })
+    }
+
+    const po = db.prepare('SELECT id, po_number, status FROM purchase_orders WHERE id = ? AND tenant_id = ?')
+      .get(req.params.id, tenantId) as any
+    if (!po) return res.status(404).json({ success: false, message: 'ไม่พบใบสั่งซื้อ' })
+
+    if (!['SUBMITTED', 'APPROVED'].includes(po.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `ย้อนคืนได้เฉพาะ PO ที่อยู่ในสถานะ SUBMITTED หรือ APPROVED เท่านั้น (ปัจจุบัน: ${po.status})`,
+      })
+    }
+
+    // รับของจริง/วางบิลไปแล้วย้อนไม่ได้ — ตัวเช็คเดียวกับตอนยกเลิกใบ (รู้จักใบแจ้งหนี้รวมหลาย PO)
+    // ฝั่งย้อนคืนเข้มกว่า: เคยเข้าใบแจ้งหนี้แล้วถือว่าหมดสิทธิ์ ถึงใบนั้นจะถูกยกเลิกไปแล้ว
+    const blocking = poBlockingDocuments(tenantId, req.params.id, { anyInvoiceEver: true })
+    if (blocking) {
+      return res.status(400).json({ success: false, message: `ย้อนคืนไม่ได้ — ${blocking.message}` })
+    }
+
+    const now = new Date().toISOString()
+
+    const transaction = db.transaction(() => {
+      // ลบ GR DRAFT ทั้งหมดที่ผูกกับ PO นี้ (ยังไม่ยืนยัน ไม่มีผลต่อสต็อก)
+      const draftGRs = db.prepare(
+        "SELECT id FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'DRAFT'"
+      ).all(tenantId, req.params.id) as any[]
+      for (const gr of draftGRs) {
+        db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ? AND tenant_id = ?').run(gr.id, tenantId)
+        db.prepare('DELETE FROM goods_receipts WHERE id = ? AND tenant_id = ?').run(gr.id, tenantId)
+      }
+      // ย้อนสถานะ PO กลับเป็น DRAFT
+      db.prepare("UPDATE purchase_orders SET status = 'DRAFT', approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(now, req.params.id, tenantId)
+      return draftGRs.length
+    })
+
+    const deletedGRCount = transaction()
+    const updated = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({
+      success: true,
+      data: updated,
+      message: `ย้อนคืน ${po.po_number} กลับเป็นร่างเรียบร้อย${deletedGRCount > 0 ? ` (ลบใบรับสินค้า DRAFT ${deletedGRCount} ใบ)` : ''}`,
+    })
+  } catch (error) {
+    console.error('Reopen PO error:', error)
+    res.status(500).json({ success: false, message: 'Failed to reopen purchase order' })
+  }
+})
 
 export default router

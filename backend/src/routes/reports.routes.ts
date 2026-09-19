@@ -334,7 +334,7 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
       WHERE jl.account_id IN (${placeholders})
         AND je.is_posted = 1
         AND je.date < ?
-    `).all(...cashAccountIds, startDate) as any
+    `).get(...cashAccountIds, startDate) as any
     
     // Categorize transactions
     const operating = transactions.filter(t => 

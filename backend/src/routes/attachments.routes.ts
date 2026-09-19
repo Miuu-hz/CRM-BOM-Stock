@@ -358,9 +358,55 @@ router.get('/:refType/:refId', (req: Request, res: Response) => {
   }
   if (!checkFeature(req, res, REF_TYPE_FEATURE[refType])) return
   const rows = db.prepare(
-    `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at
+    `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 0 as is_upstream, NULL as source_doc
      FROM payment_attachments WHERE tenant_id = ? AND ref_type = ? AND ref_id = ? ORDER BY created_at ASC`
-  ).all(tenantId, refType, refId)
+  ).all(tenantId, refType, refId) as any[]
+
+  // Upstream document evidence lineage (สืบทอดหลักฐานจากใบสั่งซื้อต้นทาง)
+  try {
+    if (refType === 'PURCHASE_INVOICE') {
+      const inv = db.prepare('SELECT purchase_order_id, purchase_order_ids FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(refId, tenantId) as any
+      const poIds = new Set<string>()
+      if (inv?.purchase_order_id) poIds.add(inv.purchase_order_id)
+      if (inv?.purchase_order_ids) {
+        try { JSON.parse(inv.purchase_order_ids).forEach((id: string) => id && poIds.add(id)) } catch {}
+      }
+      for (const poId of poIds) {
+        const po = db.prepare('SELECT po_number FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+        const poRows = db.prepare(
+          `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 1 as is_upstream, ? as source_doc
+           FROM payment_attachments WHERE tenant_id = ? AND ref_type = 'PURCHASE_ORDER' AND ref_id = ? ORDER BY created_at ASC`
+        ).all(po?.po_number || 'PO', tenantId, poId) as any[]
+        rows.push(...poRows)
+      }
+    } else if (refType === 'GOODS_RECEIPT') {
+      const gr = db.prepare('SELECT purchase_order_id FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(refId, tenantId) as any
+      if (gr?.purchase_order_id) {
+        const po = db.prepare('SELECT po_number FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(gr.purchase_order_id, tenantId) as any
+        const poRows = db.prepare(
+          `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 1 as is_upstream, ? as source_doc
+           FROM payment_attachments WHERE tenant_id = ? AND ref_type = 'PURCHASE_ORDER' AND ref_id = ? ORDER BY created_at ASC`
+        ).all(po?.po_number || 'PO', tenantId, gr.purchase_order_id) as any[]
+        rows.push(...poRows)
+      }
+    } else if (refType === 'SUPPLIER_PAYMENT') {
+      const sp = db.prepare('SELECT purchase_invoice_id FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(refId, tenantId) as any
+      if (sp?.purchase_invoice_id) {
+        const inv = db.prepare('SELECT purchase_order_id, pi_number FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(sp.purchase_invoice_id, tenantId) as any
+        if (inv?.purchase_order_id) {
+          const po = db.prepare('SELECT po_number FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(inv.purchase_order_id, tenantId) as any
+          const poRows = db.prepare(
+            `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 1 as is_upstream, ? as source_doc
+             FROM payment_attachments WHERE tenant_id = ? AND ref_type = 'PURCHASE_ORDER' AND ref_id = ? ORDER BY created_at ASC`
+          ).all(po?.po_number || 'PO', tenantId, inv.purchase_order_id) as any[]
+          rows.push(...poRows)
+        }
+      }
+    }
+  } catch (upstreamErr) {
+    console.warn('Error fetching upstream attachments:', upstreamErr)
+  }
+
   res.json({ success: true, data: rows })
 })
 

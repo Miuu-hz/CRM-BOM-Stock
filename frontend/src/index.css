@@ -192,6 +192,15 @@
     @apply bg-[var(--surface-2)];
   }
 
+  /* ตารางหน้าคลัง — หัวคอลัมน์เป็นภาษาไทย uppercase/tracking-wider ของตารางกลาง
+     ทำให้ตัวอักษรห่างจนอ่านเป็นคำไม่ได้ และแถวสูงเกินจนหน้าดูลอย */
+  .phopy-table.stock-grid th {
+    @apply normal-case tracking-normal text-xs font-semibold py-2.5 align-middle;
+  }
+  .phopy-table.stock-grid td {
+    @apply py-2.5 align-middle leading-6;
+  }
+
   /* Status Badges */
   .status-badge {
     @apply px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
