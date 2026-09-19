@@ -276,7 +276,7 @@ function Marketing() {
   const fetchPlatAccounts = useCallback(async () => {
     try {
       const res = await api.get('/accounts')
-      setPlatAccounts(res.data.data || [])
+      setPlatAccounts(Array.isArray(res.data?.data) ? res.data.data : (res.data?.data?.list || []))
     } catch { /* silent */ }
   }, [])
 

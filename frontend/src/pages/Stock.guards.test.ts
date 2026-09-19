@@ -57,3 +57,50 @@ describe('Stock.tsx — แท็บหน่วย', () => {
     }
   })
 })
+
+describe('Stock.tsx — หน้าคลังตามแบบร่างใหม่', () => {
+  const MAIN = slice('function Stock() {', 'function UnpackModal({')
+
+  it('ทะเบียนการปรับสต็อกต้องยังเรียกได้ แม้ปุ่มจะย้ายไปอยู่ใต้ "…"', () => {
+    // เจ้าของงานสั่งไว้ชัดว่าตัดปุ่มอื่นได้ แต่ห้ามตัดทะเบียนปรับ
+    expect(MAIN).toContain('ทะเบียนการปรับสต็อก')
+    expect(MAIN).toContain('setAdjLogModal(true)')
+  })
+
+  it('SKU ต้องไม่กลับมาเป็นคอลัมน์ของตัวเอง — อยู่ใต้ชื่อสินค้า', () => {
+    expect(SRC).not.toContain("colKey=\"sku\"")
+    expect(MAIN).toContain('{item.sku}')
+  })
+
+  it('ทุกคอลัมน์ที่ซ่อนบนจอเล็ก ต้องซ่อนทั้งหัวและช่องข้อมูล', () => {
+    // หัวกับ td ต้องมีจำนวน hidden เท่ากัน ไม่งั้นตารางเหลื่อมกันทั้งแถวบนมือถือ
+    const th = (MAIN.match(/<SortTh[^>]*hidden (sm|md|lg):table-cell/g) || []).length
+    const td = (MAIN.match(/<td className="hidden (sm|md|lg):table-cell/g) || []).length
+    expect(th).toBeGreaterThan(0)
+    expect(td).toBe(th)
+  })
+})
+
+describe('Stock.tsx — โมดัลแก้ไขหน้าตาเดียวกับโมดัลรายละเอียด', () => {
+  it('ไม่มีประวัติซื้อ/ขาย และประวัติการเคลื่อนไหวในโมดัลแก้ไข', () => {
+    // สองอันนี้อยู่ที่หน้ารายละเอียด — ในโมดัลแก้ไขมันยาวโดยไม่ช่วยให้แก้อะไรได้
+    for (const k of ['price-log', 'ประวัติการเคลื่อนไหว', 'logTab']) {
+      expect(EDIT_MODAL, 'โมดัลแก้ไขไม่ควรมี "' + k + '"').not.toContain(k)
+    }
+  })
+
+  it('ยังจัดการรูปได้จากหัวหน้าต่างเหมือนโมดัลรายละเอียด', () => {
+    expect(EDIT_MODAL).toContain('รูปหลัก')
+    expect(EDIT_MODAL).toContain('handleImageChange')
+  })
+})
+
+describe('Stock.tsx — ผังหน่วยสองจอต้องตรงกัน', () => {
+  it('แถบผังหน่วยในโมดัลแก้ไขลากตามกฎแปลงจริง ไม่ใช่โชว์แค่หน่วยที่ตั้งไว้', () => {
+    // ผังเต็มจอโชว์ ลัง ×5 กก. ×1000 กรัม แต่แถบในโมดัลเคยโชว์ "ลัง → กรัม" ไม่มีตัวคูณ
+    // เพราะสร้างจาก purchase/display/base ตรง ๆ ไม่ได้เดินกราฟกฎแปลง
+    for (const k of ['pathBetween', 'standardConversions.forEach', 'fmtFactor']) {
+      expect(EDIT_MODAL, 'ขาด "' + k + '"').toContain(k)
+    }
+  })
+})

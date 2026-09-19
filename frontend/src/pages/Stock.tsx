@@ -16,6 +16,8 @@ import {
   MapPin,
   Plus,
   Upload,
+  RefreshCw,
+  MoreHorizontal,
   DollarSign,
   History,
   ImagePlus,
@@ -63,44 +65,51 @@ function availableOf(item: StockItem): number {
   if (packFactor && sealed > 0) return item.quantity + sealed * packFactor
   return item.quantity
 }
-type ColumnKey = 'image' | 'name' | 'sku' | 'category' | 'quantity' | 'displayQty' | 'baseUnit' | 'displayUnit' | 'minmax' | 'purchasePrice' | 'unitPrice' | 'location' | 'status'
+type ColumnKey = 'image' | 'category' | 'quantity' | 'purchasePrice' | 'unitPrice' | 'value' | 'location' | 'status'
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
-  image: 'รูปภาพ',
-  name: 'ชื่อสินค้า',
-  sku: 'SKU',
+  image: 'รูปสินค้า',
   category: 'ประเภท',
-  quantity: 'จำนวน',
-  displayQty: 'จำนวนบรรจุ',
-  baseUnit: 'หน่วยฐาน',
-  displayUnit: 'หน่วยบรรจุ',
-  minmax: 'Min/Max',
-  purchasePrice: 'ราคาที่ซื้อมา',
-  unitPrice: 'ราคาขาย/หน่วยฐาน',
-  location: 'สถานที่',
+  quantity: 'คงเหลือ',
+  purchasePrice: 'ทุน/หน่วย',
+  unitPrice: 'ราคาขาย/หน่วย',
+  value: 'มูลค่ารวม',
+  location: 'ที่เก็บ',
   status: 'สถานะ',
 }
 // คำอธิบายสั้น ๆ ใต้ชื่อคอลัมน์ — แต่ละร้านดูตัวเลขคนละชุด ต้องรู้ว่าแต่ละอันคืออะไรก่อนเลือก
 const COLUMN_HINTS: Partial<Record<ColumnKey, string>> = {
   image: 'เห็นของก่อนอ่านชื่อ เร็วกว่ามาก',
-  sku: 'รหัสสินค้าที่ใช้อ้างอิงในเอกสาร',
   category: 'วัตถุดิบ / สำเร็จรูป / บริการ',
   quantity: 'ปิดไม่ได้ — เป็นหัวใจของหน้านี้',
-  displayQty: 'จำนวนตามหน่วยบรรจุ เช่น 3 ลัง',
-  baseUnit: 'หน่วยที่ระบบใช้ตัดสต็อกจริง',
-  displayUnit: 'หน่วยที่คนใช้เรียกกันหน้างาน',
-  minmax: 'จุดสั่งซื้อและเพดานที่ตั้งไว้',
   purchasePrice: 'ราคาล่าสุดที่ซื้อเข้ามา',
   unitPrice: 'ราคาขายต่อหน่วยฐาน',
+  value: 'คงเหลือ × ทุน — ปิดไว้ตอนแรก',
   location: 'ชั้นวาง / ตู้แช่',
   status: 'หมด / ใกล้หมด / ปกติ',
 }
-const ALWAYS_VISIBLE: ColumnKey[] = ['name', 'quantity', 'status']
+const ALWAYS_VISIBLE: ColumnKey[] = ['quantity', 'status']
+// ชื่อสินค้าโชว์เสมอ เลยไม่ใช่คอลัมน์ที่ปิดได้ แต่ยังต้องเรียงตามชื่อได้อยู่
+type SortKey = ColumnKey | 'name'
 
+// คีย์ v2: ชุดคอลัมน์เปลี่ยนไปจากเดิม (SKU ย้ายไปอยู่ใต้ชื่อ หน่วยไปอยู่กับตัวเลข)
+// ของที่ localStorage เก่าเก็บไว้จึงมีคีย์ที่ไม่มีอยู่แล้ว ทำให้ตัวนับ "กี่/กี่" เพี้ยน
 function getDefaultCols(): Record<ColumnKey, boolean> {
-  const saved = localStorage.getItem('stock_columns')
-  if (saved) return JSON.parse(saved)
-  return { image: true, name: true, sku: true, category: true, quantity: true, displayQty: false, baseUnit: false, displayUnit: false, minmax: false, purchasePrice: true, unitPrice: true, location: false, status: true }
+  const fallback: Record<ColumnKey, boolean> = {
+    image: true, category: true, quantity: true, purchasePrice: true,
+    unitPrice: false, value: false, location: false, status: true,
+  }
+  const saved = localStorage.getItem('stock_columns_v2')
+  if (!saved) return fallback
+  try {
+    const parsed = JSON.parse(saved)
+    // รับเฉพาะคีย์ที่รู้จัก กันค่าเก่า/ค่าขยะหลุดเข้ามาแล้วนับผิด
+    const out = { ...fallback }
+    for (const k of Object.keys(fallback) as ColumnKey[]) {
+      if (typeof parsed?.[k] === 'boolean') out[k] = parsed[k]
+    }
+    return out
+  } catch { return fallback }
 }
 
 function Stock() {
@@ -120,20 +129,19 @@ function Stock() {
     if (ALWAYS_VISIBLE.includes(key)) return
     const next = { ...visibleCols, [key]: !visibleCols[key] }
     setVisibleCols(next)
-    localStorage.setItem('stock_columns', JSON.stringify(next))
+    localStorage.setItem('stock_columns_v2', JSON.stringify(next))
   }
 
-  const colSpanCount = (Object.keys(visibleCols) as ColumnKey[]).filter(k => visibleCols[k]).length + 1 // +1 for actions
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
 
   // Sort states
-  const [sortKey, setSortKey] = useState<ColumnKey | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  const handleSort = (key: ColumnKey) => {
+  const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
@@ -142,16 +150,10 @@ function Stock() {
     }
   }
 
-  // Bulk selection
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  const handleToggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
+  // เมนู "…" ของหัวหน้าจอ (ทะเบียนปรับ/นำเข้า/ส่งออก) และของแต่ละแถว
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+  // เมนูแถวลอยแบบ fixed เพราะตารางมี overflow-x-auto ซึ่งจะตัดเมนูที่ absolute ทิ้ง
+  const [rowMenu, setRowMenu] = useState<{ item: StockItem; x: number; y: number } | null>(null)
 
   // Adjust modal
   const approvalGate = useApprovalGate()
@@ -270,12 +272,9 @@ function Stock() {
     let aVal: any, bVal: any
     switch (sortKey) {
       case 'name': aVal = a.name; bVal = b.name; break
-      case 'sku': aVal = a.sku; bVal = b.sku; break
       case 'category': aVal = getCategoryGroup(a.category); bVal = getCategoryGroup(b.category); break
-      case 'quantity': aVal = a.quantity; bVal = b.quantity; break
-      case 'displayQty': aVal = a.sealedQty ?? 0; bVal = b.sealedQty ?? 0; break
-      case 'baseUnit': aVal = a.baseUnit || a.unit || ''; bVal = b.baseUnit || b.unit || ''; break
-      case 'displayUnit': aVal = a.displayUnit || a.unit || ''; bVal = b.displayUnit || b.unit || ''; break
+      case 'quantity': aVal = availableOf(a); bVal = availableOf(b); break
+      case 'value': aVal = availableOf(a) * (a.purchasePrice ?? 0); bVal = availableOf(b) * (b.purchasePrice ?? 0); break
       case 'purchasePrice': aVal = a.purchasePrice ?? 0; bVal = b.purchasePrice ?? 0; break
       case 'unitPrice': aVal = a.unitPrice ?? 0; bVal = b.unitPrice ?? 0; break
       case 'location': aVal = a.location || ''; bVal = b.location || ''; break
@@ -334,24 +333,14 @@ function Stock() {
     toast.success(`ส่งออก ${rows.length} รายการเรียบร้อย`)
   }
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return
-    if (!confirm(`ยืนยันลบ ${selectedIds.size} รายการ? การกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+  const handleDeleteItem = async (item: StockItem) => {
+    if (!confirm(`ยืนยันลบ "${item.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     try {
-      await Promise.all([...selectedIds].map(id => stockService.delete(id)))
-      toast.success(`ลบ ${selectedIds.size} รายการเรียบร้อย`)
-      setSelectedIds(new Set())
+      await stockService.delete(item.id)
+      toast.success('ลบแล้ว')
       loadData()
-    } catch {
-      toast.error('ลบบางรายการไม่สำเร็จ กรุณาลองใหม่')
-    }
-  }
-
-  const handleSelectAll = () => {
-    if (selectedIds.size === paginatedItems.length && paginatedItems.length > 0) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(paginatedItems.map(i => i.id)))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ลบไม่สำเร็จ')
     }
   }
 
@@ -398,25 +387,25 @@ function Stock() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="space-y-6"
+      className="space-y-4"
     >
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           {/* แบบร่างให้สรุปทุกอย่างไว้บรรทัดเดียวใต้หัวเรื่อง แทนการ์ดใหญ่ 4-5 ใบ
               ที่กินความสูงจนตารางเหลือพื้นที่น้อย — ตัวเลขชุดเดียวกันเป๊ะ แค่ย้ายที่ */}
-          <h1 className="text-2xl leading-8 font-bold text-[var(--fg-1)] mb-1">คลังสินค้า</h1>
+          <h1 className="text-2xl leading-8 font-bold text-[var(--fg-1)] mb-0.5">คลังสินค้า</h1>
           <p className="text-[var(--fg-3)] text-sm">
             {(stats?.totalItems ?? 0).toLocaleString('th-TH')} รายการ
             <span className="mx-1.5 text-[var(--fg-4)]">·</span>
             มูลค่ารวม ฿{(stats?.totalValue ?? 0).toLocaleString('th-TH')}
             {(stats?.lowStockCount ?? 0) > 0 && (
               <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
-              <span className="text-warning">ใกล้หมด {(stats?.lowStockCount ?? 0).toLocaleString('th-TH')}</span></>
+              <span className="text-[var(--warning-strong)]">ใกล้หมด {(stats?.lowStockCount ?? 0).toLocaleString('th-TH')}</span></>
             )}
             {(stats?.criticalCount ?? 0) > 0 && (
               <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
-              <span className="text-danger">วิกฤต {(stats?.criticalCount ?? 0).toLocaleString('th-TH')}</span></>
+              <span className="text-danger">หมด {(stats?.criticalCount ?? 0).toLocaleString('th-TH')}</span></>
             )}
             {showSubconStockWidget && (
               <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
@@ -424,60 +413,63 @@ function Stock() {
             )}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end items-center">
-          {/* Utility */}
+
+        {/* เหลือ 2 ปุ่มที่ใช้ทุกวัน ที่เหลือยุบไปอยู่ใต้ "…" — เดิมมี 5 ปุ่มเรียงกัน
+            จนปุ่มที่กดบ่อยที่สุดกับปุ่มที่กดปีละครั้งดูสำคัญเท่ากัน */}
+        <div className="flex items-center gap-2 shrink-0">
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleExport}
-            className="phopy-btn-secondary flex items-center gap-2 text-sm"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setAdjustModal({ open: true, item: null })}
+            className="flex items-center gap-2 h-11 px-4 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm font-semibold text-[var(--fg-2)] hover:border-[var(--primary)] transition-colors"
           >
-            <FileDown className="w-4 h-4" />
-            Export
+            <RefreshCw className="w-4 h-4" />
+            ปรับสต็อก
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowImportModal(true)}
-            className="phopy-btn-secondary flex items-center gap-2 text-sm"
-          >
-            <Upload className="w-4 h-4" />
-            Import
-          </motion.button>
-
-          {/* Divider */}
-          <div className="w-px h-8 bg-[var(--border)]" />
-
-          {/* Stock movement group */}
-          <div className="flex rounded-xl overflow-hidden border border-[var(--border)]">
-            <button
-              onClick={() => setAdjustModal({ open: true, item: null })}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
-              title="ปรับสต๊อก"
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              ปรับสต๊อก
-            </button>
-            <button
-              onClick={() => setAdjLogModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-[var(--fg-2)] hover:bg-[var(--bg)] transition-colors border-l border-[var(--border)]"
-              title="ทะเบียนการปรับสต็อก — ใครปรับอะไร เพราะอะไร เป็นเงินเท่าไร"
-            >
-              <History className="w-4 h-4" />
-              ทะเบียนปรับ
-            </button>
-          </div>
-
-          {/* Add Item — primary CTA */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => setShowAddModal(true)}
-            className="phopy-btn-primary flex items-center gap-2 text-sm"
+            className="flex items-center gap-2 h-11 px-4.5 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:bg-[var(--primary-hover)] transition-colors"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" strokeWidth={2.4} />
             เพิ่มสินค้า
           </motion.button>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowMoreMenu(v => !v)}
+              aria-label="เครื่องมืออื่น"
+              aria-expanded={showMoreMenu}
+              className={`w-11 h-11 flex items-center justify-center rounded-xl border transition-colors ${showMoreMenu ? 'bg-[var(--surface-2)] border-[var(--border-strong)] text-[var(--fg-1)]' : 'bg-[var(--surface)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
+                <div role="menu" className="absolute top-12 right-0 z-40 w-60 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2 overflow-hidden">
+                  {[
+                    { icon: History, label: 'ทะเบียนการปรับสต็อก', hint: 'ใครปรับอะไร เพราะอะไร เป็นเงินเท่าไร', go: () => setAdjLogModal(true) },
+                    { icon: Upload, label: 'นำเข้าจากไฟล์', hint: 'Excel / CSV', go: () => setShowImportModal(true) },
+                    { icon: FileDown, label: 'ส่งออกเป็น Excel', hint: 'ตามตัวกรองที่เลือกอยู่', go: handleExport },
+                  ].map(m => (
+                    <button
+                      key={m.label}
+                      onClick={() => { setShowMoreMenu(false); m.go() }}
+                      className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left hover:bg-[var(--bg)] transition-colors"
+                    >
+                      <m.icon className="w-4 h-4 text-[var(--fg-3)] mt-0.5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-[var(--fg-1)]">{m.label}</span>
+                        <span className="block text-[11px] leading-4 text-[var(--fg-4)]">{m.hint}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -492,212 +484,161 @@ function Stock() {
           <img src={imageViewer.imageUrl} alt={imageViewer.name} className="max-w-full max-h-full rounded-2xl object-contain" />
         </div>
       )}
-      {/* Filters */}
-      <div className="phopy-card rounded-[14px] p-6">
-        <div className="flex flex-col gap-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" aria-hidden="true" />
-            <input
-              type="search"
-              placeholder="ค้นชื่อ หรือรหัสสินค้า…"
-              aria-label="ค้นหาสินค้า"
-              value={searchTerm}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="phopy-input pl-10 w-full"
-            />
-          </div>
+      {/* แถบกรองแถวเดียว — เดิมเป็น 2 บล็อกซ้อนกันพร้อมหัวข้อกำกับ สูงรวมราว 110px
+          ชิปมันอ่านออกด้วยตัวเองอยู่แล้ว หัวข้อจึงเป็นแค่ที่กินพื้นที่เปล่า ๆ
+          ชิปที่นับได้ 0 ถูกซ่อน — ไม่มีของให้กรองก็ไม่ต้องกินที่ */}
+      <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-2.5 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] basis-full sm:basis-60">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="ค้นชื่อ หรือรหัสสินค้า…"
+            aria-label="ค้นหาสินค้า"
+            value={searchTerm}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full h-9 pl-9 pr-3 rounded-[10px] bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
+          />
+        </div>
 
-          {/* แถบกรองแถวเดียว — เดิมเป็น 2 บล็อกซ้อนกันพร้อมหัวข้อกำกับ สูงรวมราว 110px
-              ชิปมันอ่านออกด้วยตัวเองอยู่แล้ว หัวข้อจึงเป็นแค่ที่กินพื้นที่เปล่า ๆ
-              พ่วงจำนวนไว้ท้ายชิปด้วย จะได้รู้ว่ากดแล้วเจออะไรก่อนกด */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex gap-1.5 flex-wrap">
-              <FilterButton label="ทั้งหมด" count={chipCounts.cat.all} active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
-              <FilterButton label="วัตถุดิบ" count={chipCounts.cat.raw} active={selectedCategory === 'raw'} onClick={() => handleCategoryChange('raw')} />
-              <FilterButton label="กึ่งสำเร็จรูป" count={chipCounts.cat.wip} active={selectedCategory === 'wip'} onClick={() => handleCategoryChange('wip')} />
-              <FilterButton label="สำเร็จรูป" count={chipCounts.cat.finished} active={selectedCategory === 'finished'} onClick={() => handleCategoryChange('finished')} />
-              <FilterButton label="บริการ" count={chipCounts.cat.service} active={selectedCategory === 'service'} onClick={() => handleCategoryChange('service')} />
-              <FilterButton label="วัสดุ/อื่นๆ" count={chipCounts.cat.material} active={selectedCategory === 'material'} onClick={() => handleCategoryChange('material')} />
-            </div>
-            <span className="hidden sm:block w-px h-6 bg-[var(--border)] shrink-0" />
-            <div className="flex gap-1.5 flex-wrap">
-              <FilterButton label="ทุกสถานะ" count={chipCounts.st.all} active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
-              <FilterButton label="หมด" tone="danger" count={chipCounts.st.out} active={selectedStatus === 'out'} onClick={() => handleStatusChange('out')} />
-              <FilterButton label="วิกฤต" tone="danger" count={chipCounts.st.critical} active={selectedStatus === 'critical'} onClick={() => handleStatusChange('critical')} />
-              <FilterButton label="ต่ำ" tone="warning" count={chipCounts.st.low} active={selectedStatus === 'low'} onClick={() => handleStatusChange('low')} />
-              <FilterButton label="ใกล้หมด" tone="warning" count={chipCounts.st.nearLow} active={selectedStatus === 'nearLow'} onClick={() => handleStatusChange('nearLow')} />
-              <FilterButton label="ยังไม่แกะ" count={chipCounts.st.sealed} active={selectedStatus === 'sealed'} onClick={() => handleStatusChange('sealed')} />
-              <FilterButton label="เกิน" count={chipCounts.st.overstock} active={selectedStatus === 'overstock'} onClick={() => handleStatusChange('overstock')} />
-            </div>
-          </div>
+        {/* บนมือถือให้ชิปเลื่อนแนวนอนแทนที่จะตกบรรทัดจนเต็มจอ */}
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible -mx-0.5 px-0.5 py-0.5">
+          <FilterButton label="ทั้งหมด" count={chipCounts.cat.all} active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
+          {([
+            ['วัตถุดิบ', 'raw', chipCounts.cat.raw],
+            ['กึ่งสำเร็จรูป', 'wip', chipCounts.cat.wip],
+            ['สำเร็จรูป', 'finished', chipCounts.cat.finished],
+            ['บริการ', 'service', chipCounts.cat.service],
+            ['วัสดุ/อื่นๆ', 'material', chipCounts.cat.material],
+          ] as const).filter(([, key, n]) => n > 0 || selectedCategory === key).map(([label, key, n]) => (
+            <FilterButton key={key} label={label} count={n} active={selectedCategory === key} onClick={() => handleCategoryChange(key)} />
+          ))}
+
+          <span className="w-px h-6 bg-[var(--border)] shrink-0 mx-0.5" />
+
+          <FilterButton label="ทั้งหมด" count={chipCounts.st.all} active={selectedStatus === 'all'} onClick={() => handleStatusChange('all')} />
+          {([
+            ['หมด', 'out', chipCounts.st.out, 'danger'],
+            ['วิกฤต', 'critical', chipCounts.st.critical, 'danger'],
+            ['ต่ำ', 'low', chipCounts.st.low, 'warning'],
+            ['ใกล้หมด', 'nearLow', chipCounts.st.nearLow, 'warning'],
+            ['ยังไม่แกะ', 'sealed', chipCounts.st.sealed, 'neutral'],
+            ['เกิน', 'overstock', chipCounts.st.overstock, 'neutral'],
+          ] as const).filter(([, key, n]) => n > 0 || selectedStatus === key).map(([label, key, n, tone]) => (
+            <FilterButton key={key} label={label} count={n} tone={tone} dot active={selectedStatus === key} onClick={() => handleStatusChange(key)} />
+          ))}
+        </div>
+
+        {/* เลือกคอลัมน์: แต่ละร้านดูตัวเลขคนละชุด ไม่ต้องยัดทุกคอลัมน์ให้ทุกคน */}
+        <div className="relative ml-auto shrink-0">
+          <button
+            onClick={() => setShowColumnPicker(v => !v)}
+            aria-expanded={showColumnPicker}
+            className={`flex items-center gap-1.5 h-9 px-3 rounded-[10px] border text-sm font-semibold transition-colors ${showColumnPicker ? 'bg-[var(--surface-2)] border-[var(--border-strong)] text-[var(--fg-1)]' : 'bg-[var(--bg)] border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--primary)]'}`}
+          >
+            <Settings2 className="w-4 h-4" />
+            <span className="hidden sm:inline">คอลัมน์</span>
+            <span className="text-[11px] tabular-nums opacity-65">
+              {Object.values(visibleCols).filter(Boolean).length}/{Object.keys(COLUMN_LABELS).length}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {showColumnPicker && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowColumnPicker(false)} />
+              <div role="menu" className="absolute top-11 right-0 z-40 w-[264px] rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2 overflow-hidden">
+                <p className="px-3.5 pt-3 pb-2 text-[11px] font-semibold text-[var(--fg-3)] border-b border-[var(--border)]">เลือกคอลัมน์ที่อยากเห็น</p>
+                {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
+                  const always = ALWAYS_VISIBLE.includes(key)
+                  const active = visibleCols[key]
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleCol(key)}
+                      disabled={always}
+                      role="menuitemcheckbox"
+                      aria-checked={active}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors ${always ? 'opacity-60 cursor-not-allowed' : 'hover:bg-[var(--bg)]'}`}
+                    >
+                      <span className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center flex-shrink-0 ${active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'bg-[var(--surface)] border-[var(--border-strong)]'}`}>
+                        {active && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.4} />}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] font-medium text-[var(--fg-1)]">{COLUMN_LABELS[key]}</span>
+                        {COLUMN_HINTS[key] && (
+                          <span className="block text-[11px] leading-[15px] text-[var(--fg-4)]">{COLUMN_HINTS[key]}</span>
+                        )}
+                      </span>
+                      {always && <Lock className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
+                    </button>
+                  )
+                })}
+                <p className="px-3.5 py-2.5 text-[11px] leading-4 text-[var(--fg-3)] border-t border-[var(--border)]">จำไว้ให้เป็นรายคน — เปิดครั้งหน้าได้ชุดเดิม</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Stock List */}
-      <div className="phopy-card rounded-2xl p-6">
-        {/* Bulk action bar */}
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 mb-3 p-3 bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-xl">
-            <span className="text-[var(--primary)] text-sm font-semibold">{selectedIds.size} รายการที่เลือก</span>
-            <button
-              onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--danger-soft)] text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              ลบที่เลือก
-            </button>
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              className="text-sm text-[var(--fg-3)] hover:text-[var(--fg-2)] transition-colors ml-auto"
-            >
-              ยกเลิก
-            </button>
-          </div>
-        )}
-
-        {/* Table toolbar */}
-        <div className="flex items-center justify-end mb-3 relative">
-          <button
-            onClick={() => setShowColumnPicker(v => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${showColumnPicker ? 'border-phopy-indigo text-[var(--primary)] bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-3)] hover:border-phopy-indigo/50 hover:text-[var(--fg-2)]'}`}
-          >
-            <Settings2 className="w-4 h-4" />
-            ปรับคอลัมน์
-            <span className="px-1.5 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--fg-3)] text-xs tabular-nums">
-              {Object.values(visibleCols).filter(Boolean).length}/{Object.keys(COLUMN_LABELS).length}
-            </span>
-          </button>
-
-          {/* Column picker dropdown */}
-          {showColumnPicker && (
-            <div
-              className="absolute top-10 right-0 z-30 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl p-3 w-[268px]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="text-xs text-[var(--fg-3)] mb-2 px-1">เลือกคอลัมน์ที่อยากเห็น</p>
-              <p className="text-[10px] text-[var(--fg-4)] mb-2 px-1">จำไว้ให้เป็นรายคน — เปิดครั้งหน้าได้ชุดเดิม</p>
-              {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => {
-                const always = ALWAYS_VISIBLE.includes(key)
-                const active = visibleCols[key]
-                return (
-                  <button
-                    key={key}
-                    onClick={() => toggleCol(key)}
-                    disabled={always}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-colors mb-0.5 ${
-                      always ? 'opacity-50 cursor-not-allowed' :
-                      active ? 'bg-phopy-indigo/10 text-[var(--primary)]' : 'text-[var(--fg-3)] hover:bg-[var(--bg)] hover:text-[var(--fg-2)]'
-                    }`}
-                  >
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${active ? 'bg-phopy-indigo border-phopy-indigo' : 'border-[var(--border-strong)]'}`}>
-                      {active && <Check className="w-3 h-3 text-black" />}
-                    </span>
-                    <span className="flex-1 min-w-0 text-left">
-                      <span className="block">{COLUMN_LABELS[key]}</span>
-                      {COLUMN_HINTS[key] && (
-                        <span className="block text-[11px] leading-[15px] text-[var(--fg-4)] font-normal">{COLUMN_HINTS[key]}</span>
-                      )}
-                    </span>
-                    {always && <Lock className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="overflow-x-auto" onClick={() => setShowColumnPicker(false)}>
-          <table className="phopy-table">
+      {/* ตาราง — ชุดคอลัมน์ตามแบบร่าง: รูป · สินค้า(+SKU ใต้ชื่อ) · ประเภท · คงเหลือ · ทุน/หน่วย · สถานะ · จัดการ
+          บนมือถือคอลัมน์รองถูกซ่อน เหลือรูป/ชื่อ/คงเหลือ/จัดการ จะได้ไม่ต้องเลื่อนซ้ายขวา */}
+      <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-1 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="phopy-table stock-grid w-full">
             <thead>
-              <tr>
-                <th className="w-10">
-                  <label className="relative cursor-pointer flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={paginatedItems.length > 0 && selectedIds.size === paginatedItems.length}
-                      onChange={handleSelectAll}
-                      className="sr-only"
-                      aria-label="เลือกทั้งหมด"
-                    />
-                    {(() => {
-                      const allSel = paginatedItems.length > 0 && selectedIds.size === paginatedItems.length
-                      const someSel = selectedIds.size > 0 && selectedIds.size < paginatedItems.length
-                      const active = allSel || someSel
-                      return (
-                        <div className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all duration-150 ${active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'bg-transparent border-[var(--border)] hover:border-[var(--primary)]/60'}`}>
-                          <motion.div initial={false} animate={{ scale: active ? 1 : 0, opacity: active ? 1 : 0 }} transition={{ duration: 0.12, type: 'spring', stiffness: 400, damping: 20 }}>
-                            {someSel && !allSel
-                              ? <div className="w-2 h-0.5 bg-white rounded-full" />
-                              : <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />}
-                          </motion.div>
-                        </div>
-                      )
-                    })()}
-                  </label>
-                </th>
-                {visibleCols.image && <th className="w-14"></th>}
-                {visibleCols.name && <SortTh label="ชื่อสินค้า" colKey="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.sku && <SortTh label="SKU" colKey="sku" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.quantity && <SortTh label="จำนวน" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} hint={t('stock.unpack.looseHint')} />}
-                {visibleCols.baseUnit && <SortTh label="หน่วยฐาน" colKey="baseUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.displayQty && <SortTh label="จำนวนบรรจุ" colKey="displayQty" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} hint={t('stock.unpack.sealedHint')} />}
-                {visibleCols.displayUnit && <SortTh label="หน่วยบรรจุ" colKey="displayUnit" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.minmax && <th>Min / Max</th>}
-                {visibleCols.purchasePrice && <SortTh label="ราคาที่ซื้อมา" colKey="purchasePrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.location && <SortTh label="สถานที่" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                {visibleCols.status && <SortTh label="สถานะ" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />}
-                <th>Actions</th>
+              <tr className="bg-[var(--surface-2)]">
+                {visibleCols.image && <th className="w-[52px]">รูป</th>}
+                <SortTh label="สินค้า" colKey="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                {visibleCols.category && <SortTh label="ประเภท" colKey="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="hidden md:table-cell" />}
+                <SortTh label="คงเหลือ" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" hint={t('stock.unpack.looseHint')} />
+                {visibleCols.purchasePrice && <SortTh label="ทุน/หน่วย" colKey="purchasePrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" className="hidden md:table-cell" />}
+                {visibleCols.value && <SortTh label="มูลค่ารวม" colKey="value" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" className="hidden lg:table-cell" />}
+                {visibleCols.unitPrice && <SortTh label="ราคาขาย/หน่วย" colKey="unitPrice" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" className="hidden lg:table-cell" />}
+                {visibleCols.location && <SortTh label="ที่เก็บ" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="hidden lg:table-cell" />}
+                {visibleCols.status && <SortTh label="สถานะ" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="hidden sm:table-cell" />}
+                <th className="text-right">จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {sortedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={colSpanCount + 1} className="text-center py-8 text-[var(--fg-4)]">
+                  <td colSpan={12} className="text-center py-10 text-[var(--fg-4)]">
                     ไม่พบสินค้าที่ค้นหา
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((item, index) => {
+                paginatedItems.map((item) => {
                   const status = getItemStatus(item)
-                  const purchasePrice = item.purchasePrice ?? 0
+                  const available = availableOf(item)
+                  const baseUnit = unitLabel(item.baseUnit || item.unit)
+                  const cost = item.purchasePrice ?? 0
                   const price = item.unitPrice ?? 0
-                  const isSelected = selectedIds.has(item.id)
+                  // แถบระดับสต็อก: เทียบเพดานที่ตั้งไว้ · ไม่ได้ตั้งเพดานก็เทียบจุดสั่งซื้อ x2
+                  // ไม่ได้ตั้งอะไรเลย = ไม่มีอะไรให้เทียบ ถือว่าของที่มีอยู่คือเต็ม
+                  // (แถบว่างเปล่าทั้งคอลัมน์ดูเหมือนของหมดทั้งคลัง ทั้งที่แค่ยังไม่ได้ตั้งเพดาน)
+                  const ceiling = item.maxStock > 0 ? item.maxStock : (item.minStock > 0 ? item.minStock * 2 : 0)
+                  const pct = available <= 0 ? 0
+                    : ceiling > 0 ? Math.max(4, Math.min(100, (available / ceiling) * 100))
+                      : 100
+                  const num = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 })
+                  const barTitle = available <= 0
+                    ? `ไม่มีของคงเหลือ`
+                    : item.maxStock > 0
+                      ? `${num(available)} / ${num(item.maxStock)} ${baseUnit} (${Math.round(pct)}%) · เทียบเพดานที่ตั้งไว้`
+                      : item.minStock > 0
+                        ? `${num(available)} / ${num(ceiling)} ${baseUnit} (${Math.round(pct)}%) · เทียบ 2 เท่าของจุดสั่งซื้อ ${num(item.minStock)} — ยังไม่ได้ตั้งเพดาน`
+                        : `${num(available)} ${baseUnit} · ยังไม่ได้ตั้งเพดานสต็อก จึงถือว่าเต็ม`
                   return (
-                    <motion.tr
-                      key={item.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: Math.min(index * 0.03, 0.3) }}
-                      className={isSelected ? 'bg-phopy-indigo/5' : ''}
-                    >
-                      <td className="w-10">
-                        <label className="relative cursor-pointer flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelect(item.id)}
-                            className="sr-only"
-                            aria-label={`เลือก ${item.name}`}
-                          />
-                          <div className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-[var(--primary)] border-[var(--primary)]' : 'bg-transparent border-[var(--border)] hover:border-[var(--primary)]/60 hover:bg-[var(--primary)]/5'}`}>
-                            <motion.div initial={false} animate={{ scale: isSelected ? 1 : 0, opacity: isSelected ? 1 : 0 }} transition={{ duration: 0.12, type: 'spring', stiffness: 400, damping: 20 }}>
-                              <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />
-                            </motion.div>
-                          </div>
-                        </label>
-                      </td>
+                    <tr key={item.id} className="hover:bg-[var(--bg)] transition-colors">
                       {visibleCols.image && (
-                        <td className="w-14">
+                        <td className="w-[52px]">
                           {/* ไม่มีรูปก็กดเพิ่มตรงนี้ได้เลย เดิมต้องเข้าโมดัลแก้ไขก่อน
                               ซึ่งไม่มีใครทำ สินค้าเลยไม่มีรูปกันเกือบทั้งคลัง */}
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRowImage(item) }}
                             aria-label={item.imageUrl ? `ดูรูป ${item.name}` : `เพิ่มรูป ${item.name}`}
                             title={item.imageUrl ? item.name : `เพิ่มรูป ${item.name}`}
-                            className="w-10 h-10 rounded-lg border border-[var(--border)] overflow-hidden flex items-center justify-center bg-[var(--bg)] hover:border-phopy-indigo transition-colors cursor-pointer"
+                            className={`w-10 h-10 rounded-[10px] overflow-hidden flex items-center justify-center transition-colors cursor-pointer ${item.imageUrl ? 'bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--primary)]' : 'border-[1.5px] border-dashed border-[var(--border-strong)] hover:border-[var(--primary)]'}`}
                           >
                             {item.imageUrl
                               ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
@@ -706,130 +647,127 @@ function Stock() {
                         </td>
                       )}
 
-                      {visibleCols.name && (
-                        <td>
-                          {/* คลิกชื่อ = เปิดรายละเอียด แทนไอคอนรูปตาที่เอาออกแล้ว
-                              กฎเดียวกับหน้าจัดซื้อที่คลิกเลขที่เอกสารเพื่อเปิดใบ */}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleOpenDetail(item) }}
-                            className="text-left font-medium text-[var(--primary)] hover:underline cursor-pointer"
-                          >
-                            {item.name}
-                          </button>
-                        </td>
-                      )}
-                      {visibleCols.sku && (
-                        <td>
-                          <span className="text-[var(--fg-3)] font-mono text-sm">{item.sku}</span>
-                        </td>
-                      )}
+                      <td className="min-w-0">
+                        {/* คลิกชื่อ = เปิดรายละเอียด แทนไอคอนรูปตาที่เอาออกแล้ว
+                            SKU ย้ายมาอยู่ใต้ชื่อ ประหยัดไปได้ทั้งคอลัมน์ */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenDetail(item) }}
+                          title={item.name}
+                          className="block text-left text-sm font-semibold leading-6 text-[var(--primary)] hover:underline cursor-pointer truncate max-w-[52vw] sm:max-w-none sm:whitespace-normal"
+                        >
+                          {item.name}
+                        </button>
+                        <span className="block font-mono text-[11px] text-[var(--fg-4)]">{item.sku}</span>
+                        {/* บนมือถือไม่มีคอลัมน์สถานะ เลยย้ายมาเกาะใต้ชื่อแทน */}
+                        <span className="sm:hidden mt-1 inline-block"><StatusBadge status={status} /></span>
+                      </td>
+
                       {visibleCols.category && (
-                        <td><CategoryBadge category={item.category} /></td>
+                        <td className="hidden md:table-cell"><CategoryBadge category={item.category} /></td>
                       )}
-                      {visibleCols.quantity && (
-                        <td>
-                          <div className="flex flex-col gap-0.5">
-                            {/* แกะแล้ว พร้อมใช้ทันที = หน่วยฐาน */}
-                            <span
-                              className={`font-semibold ${item.quantity === 0 ? 'text-danger' : 'text-[var(--primary)]'}`}
-                              title={t('stock.unpack.looseHint')}
-                            >
-                              {item.quantity} {unitLabel(item.baseUnit || item.unit)}
-                            </span>
-                            {/* ถ้ามีแพ็คยังไม่แกะ ให้แสดงเป็น secondary info + ยอดรวมทั้งหมด */}
-                            {(item.sealedQty ?? 0) > 0 && (
-                              <>
-                                {item.canUnpack ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setUnpackModal({ open: true, item }) }}
-                                    className="text-xs text-[var(--warning)] hover:underline text-left flex items-center gap-1"
-                                    title="แกะแพ็คเพื่อนำมาใช้"
-                                  >
-                                    <PackageOpen className="w-3 h-3 shrink-0" />
-                                    ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
-                                  </button>
-                                ) : (
-                                  <span className="text-xs text-[var(--warning)]" title="ยังตั้งหน่วยบรรจุไม่ครบ จึงแกะแพ็คไม่ได้">
-                                    ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
-                                  </span>
-                                )}
-                                <span
-                                  className="text-[10px] text-[var(--fg-4)]"
-                                  title={t('stock.unpack.totalHint')}
-                                >
-                                  {t('stock.unpack.totalInline', { value: availableOf(item), unit: unitLabel(item.baseUnit || item.unit) })}
-                                </span>
-                              </>
+
+                      <td className="text-right whitespace-nowrap">
+                        <span className={`text-sm font-semibold tabular-nums ${available === 0 ? 'text-danger' : 'text-[var(--fg-1)]'}`} title={t('stock.unpack.looseHint')}>
+                          {item.quantity.toLocaleString('th-TH')}
+                        </span>
+                        <span className="text-xs text-[var(--fg-3)]"> {baseUnit}</span>
+                        {(item.sealedQty ?? 0) > 0 && (
+                          <span className="block mt-0.5">
+                            {item.canUnpack ? (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setUnpackModal({ open: true, item }) }}
+                                className="text-[11px] text-[var(--warning-strong)] hover:underline inline-flex items-center gap-1"
+                                title="แกะแพ็คเพื่อนำมาใช้"
+                              >
+                                <PackageOpen className="w-3 h-3 shrink-0" />
+                                ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-[var(--warning-strong)]" title="ยังตั้งหน่วยบรรจุไม่ครบ จึงแกะแพ็คไม่ได้">
+                                ยังไม่แกะ {item.sealedQty} {unitLabel(item.displayUnit || item.unit)}
+                              </span>
                             )}
+                          </span>
+                        )}
+                      </td>
+
+                      {visibleCols.purchasePrice && (
+                        <td className="hidden md:table-cell text-right whitespace-nowrap">
+                          <span className={`text-[13px] tabular-nums ${cost ? 'text-[var(--fg-1)]' : 'text-[var(--fg-4)]'}`}>
+                            {cost ? `฿${Number(cost).toLocaleString('th-TH', { minimumFractionDigits: 2 })}` : '—'}
+                          </span>
+                          {cost > 0 && item.purchaseUnit && item.purchaseUnit !== (item.baseUnit || item.unit) && (
+                            <span className="block text-[10px] text-[var(--fg-4)]">/{unitLabel(item.purchaseUnit)}</span>
+                          )}
+                        </td>
+                      )}
+
+                      {visibleCols.value && (
+                        <td className="hidden lg:table-cell text-right whitespace-nowrap">
+                          <span className={`text-[13px] tabular-nums ${cost ? 'text-[var(--fg-1)]' : 'text-[var(--fg-4)]'}`}>
+                            {cost ? `฿${(available * cost).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '—'}
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleCols.unitPrice && (
+                        <td className="hidden lg:table-cell text-right whitespace-nowrap">
+                          <span className={`text-[13px] tabular-nums ${price ? 'text-[var(--success-strong)]' : 'text-[var(--fg-4)]'}`}>
+                            {price ? `฿${Number(price).toLocaleString('th-TH', { minimumFractionDigits: 2 })}` : '—'}
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleCols.location && (
+                        <td className="hidden lg:table-cell">
+                          <span className="text-[13px] text-[var(--fg-3)]">{item.location || '—'}</span>
+                        </td>
+                      )}
+
+                      {visibleCols.status && (
+                        <td className="hidden sm:table-cell">
+                          <div className="flex items-center gap-1.5" title={barTitle}>
+                            {/* แถบสั้น ๆ ให้กวาดตาเห็นระดับของทั้งคอลัมน์ได้โดยไม่ต้องอ่านตัวเลขทีละแถว */}
+                            <span className="inline-block w-[42px] h-[5px] rounded-full bg-[var(--surface-sunken)] overflow-hidden shrink-0">
+                              <span className={`block h-full rounded-full ${STATUS_BAR[status]}`} style={{ width: `${pct}%` }} />
+                            </span>
+                            <StatusBadge status={status} />
                           </div>
                         </td>
                       )}
-                      {visibleCols.baseUnit && (
-                        <td>
-                          <span className="text-[var(--fg-2)] text-sm">{unitLabel(item.baseUnit || item.unit)}</span>
-                        </td>
-                      )}
-                      {visibleCols.displayQty && (
-                        <td>
-                          <span className={`font-semibold ${(item.sealedQty ?? 0) === 0 ? 'text-[var(--fg-4)]' : 'text-[var(--primary)]'}`}>
-                            {item.sealedQty ?? 0} {unitLabel(item.displayUnit || item.unit)}
-                          </span>
-                        </td>
-                      )}
-                      {visibleCols.displayUnit && (
-                        <td>
-                          <span className="text-[var(--fg-2)] text-sm">{unitLabel(item.displayUnit || item.unit)}</span>
-                        </td>
-                      )}
-                      {visibleCols.minmax && (
-                        <td>
-                          <span className="text-[var(--fg-3)] text-sm">{item.minStock} / {item.maxStock}</span>
-                        </td>
-                      )}
-                      {visibleCols.purchasePrice && (
-                        <td>
-                          <span className="text-amber-400 text-sm font-medium">
-                            {purchasePrice ? `฿${Number(purchasePrice).toLocaleString()}/${unitLabel(item.purchaseUnit || item.baseUnit || item.unit || 'หน่วย')}` : '-'}
-                          </span>
-                        </td>
-                      )}
-                      {visibleCols.unitPrice && (
-                        <td>
-                          <span className="text-success text-sm font-medium">
-                            {price ? `฿${Number(price).toLocaleString()}/${unitLabel(item.baseUnit || item.unit || 'หน่วย')}` : '-'}
-                          </span>
-                        </td>
-                      )}
-                      {visibleCols.location && (
-                        <td>
-                          <span className="text-[var(--fg-3)] text-sm">{item.location || '-'}</span>
-                        </td>
-                      )}
-                      {visibleCols.status && (
-                        <td><StatusBadge status={status} /></td>
-                      )}
-                      <td>
-                        <div className="flex items-center gap-1">
 
+                      <td>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button
+                            onClick={() => setAdjustModal({ open: true, item })}
+                            className="w-9 h-9 flex items-center justify-center rounded-[9px] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--bg)] transition-colors cursor-pointer"
+                            aria-label={`ปรับสต็อก ${item.name}`}
+                            title="ปรับสต็อก"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => setEditModal({ open: true, item })}
-                            className="p-2 text-[var(--fg-3)] hover:text-warning hover:bg-[var(--warning-soft)] rounded-lg transition-colors cursor-pointer"
+                            className="w-9 h-9 flex items-center justify-center rounded-[9px] text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--bg)] transition-colors cursor-pointer"
                             aria-label={`แก้ไข ${item.name}`}
+                            title="แก้ไขสินค้า"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => setAdjustModal({ open: true, item })}
-                            className="p-2 text-[var(--fg-3)] hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors cursor-pointer"
-                            aria-label={`ปรับสต๊อก ${item.name}`}
-                            title="ปรับสต๊อก"
+                            onClick={(e) => {
+                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              setRowMenu(rowMenu?.item.id === item.id ? null : { item, x: r.right, y: r.bottom })
+                            }}
+                            className="w-9 h-9 flex items-center justify-center rounded-[9px] text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)] transition-colors cursor-pointer"
+                            aria-label={`ตัวเลือกเพิ่มเติม ${item.name}`}
                           >
-                            <SlidersHorizontal className="w-4 h-4" />
+                            <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
-                    </motion.tr>
+                    </tr>
                   )
                 })
               )}
@@ -838,8 +776,8 @@ function Stock() {
         </div>
 
         {/* Pagination Controls */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-[var(--border)]">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-3 py-3 border-t border-[var(--border)]">
+          <div className="flex items-center gap-3 flex-wrap justify-center">
             <span className="text-[var(--fg-3)] text-sm">
               แสดง <span className="text-[var(--primary)] font-semibold">{startIndex + 1}-{Math.min(endIndex, totalItems)}</span> จาก <span className="text-[var(--primary)] font-semibold">{totalItems}</span> รายการ
             </span>
@@ -864,7 +802,7 @@ function Stock() {
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="hidden sm:block px-3 py-1 text-sm rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               หน้าแรก
             </button>
@@ -890,13 +828,49 @@ function Stock() {
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="px-3 py-1 text-sm rounded bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="hidden sm:block px-3 py-1 text-sm rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               หน้าสุดท้าย
             </button>
           </div>
         </div>
       </div>
+
+      {/* เมนู "…" ของแถว — วางเป็น fixed เพราะกล่องตารางมี overflow-x-auto ที่จะตัดเมนูทิ้ง */}
+      {rowMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setRowMenu(null)} />
+          <div
+            role="menu"
+            className="fixed z-50 w-52 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-2 overflow-hidden"
+            style={{ top: Math.min(rowMenu.y + 6, window.innerHeight - 190), left: Math.max(12, rowMenu.x - 208) }}
+          >
+            <button
+              onClick={() => { const it = rowMenu.item; setRowMenu(null); handleOpenDetail(it) }}
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[var(--fg-1)] hover:bg-[var(--bg)] transition-colors"
+            >
+              <Package className="w-4 h-4 text-[var(--fg-3)]" />
+              ดูรายละเอียด
+            </button>
+            {rowMenu.item.canUnpack && (
+              <button
+                onClick={() => { const it = rowMenu.item; setRowMenu(null); setUnpackModal({ open: true, item: it }) }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[var(--fg-1)] hover:bg-[var(--bg)] transition-colors"
+              >
+                <PackageOpen className="w-4 h-4 text-[var(--fg-3)]" />
+                แกะแพ็ค
+              </button>
+            )}
+            <button
+              onClick={() => { const it = rowMenu.item; setRowMenu(null); handleDeleteItem(it) }}
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-danger hover:bg-[var(--danger-soft)] transition-colors border-t border-[var(--border)]"
+            >
+              <Trash2 className="w-4 h-4" />
+              ลบสินค้า
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Detail Modal */}
       <DetailModal
@@ -1131,6 +1105,10 @@ function DetailModal({
   // กฎ "เฉพาะสินค้านี้" เท่านั้น — ตัวเดียวกับที่ EditModal ใช้ ไม่ดึงกฎกลางมาปน
   const [convs, setConvs] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number }>>([])
   const [showChain, setShowChain] = useState(false)
+  // คำตอบจาก backend ว่าแต่ละช่วงของสายหน่วยแปลงได้จริงไหม · key = 'from>to'
+  // source: 'item' = มีกฎเฉพาะสินค้านี้ · 'shared' = ได้ด้วยกฎรวมของเทแนนต์ · null = แปลงไม่ได้จริง
+  // 3 สถานะ: ไม่มี key = ยังตรวจไม่เสร็จ · null = แปลงไม่ได้จริง · object = แปลงได้
+  const [paths, setPaths] = useState<Record<string, { factor: number; source: 'item' | 'shared' } | null | undefined>>({})
   const { units: chainUnits } = useUnits(item?.id)
 
   // โหลดกฎใหม่หลังแก้ในผัง — ตัวเลขบนการ์ดต้องขยับตามทันที ไม่ใช่ต้องปิดเปิดหน้าต่างเอง
@@ -1151,6 +1129,30 @@ function DetailModal({
       .then(r => setConvs(r.data?.data ?? []))
       .catch(() => setConvs([]))
   }, [open, item?.id])
+
+  useEffect(() => {
+    if (!open || !item) return
+    const base = item.baseUnit || item.unit || ''
+    const seq: string[] = []
+    for (const u of [item.purchaseUnit || '', item.displayUnit || '', base]) {
+      if (u && !seq.includes(u)) seq.push(u)
+    }
+    let cancelled = false
+    Promise.all(seq.slice(0, -1).map((from, i) => {
+      const to = seq[i + 1]
+      return api.post('/materials/unit-conversions/check-path', { from_unit: from, to_unit: to, material_id: item.id })
+        .then(r => {
+          const d = r.data?.data
+          if (!d?.found) return [from + '>' + to, null] as const
+          // กฎของสินค้านี้เองไหม หรืออาศัยกฎรวม — ต่างกันตรงที่ลบ/แก้ได้จากผังหรือเปล่า
+          const own = convs.some(c =>
+            (c.from_unit === from && c.to_unit === to) || (c.from_unit === to && c.to_unit === from))
+          return [from + '>' + to, { factor: d.factor, source: own ? 'item' : 'shared' }] as const
+        })
+        .catch(() => [from + '>' + to, null] as const)
+    })).then(entries => { if (!cancelled) setPaths(Object.fromEntries(entries)) })
+    return () => { cancelled = true }
+  }, [open, item?.id, convs])
   useEffect(() => {
     if (!open || !item) return
     setLogLoading(true)
@@ -1244,9 +1246,9 @@ function DetailModal({
                       : c.tone === 'good' ? 'bg-[var(--success-soft)] border-success/30'
                         : c.tone === 'bad' ? 'bg-[var(--danger-soft)] border-danger/30'
                           : 'bg-[var(--bg)] border-[var(--border)]'}`}>
-                    <p className="text-xs text-[var(--fg-4)]">{c.label}</p>
-                    <p className="text-lg font-bold text-[var(--fg-1)] leading-tight tabular-nums">{c.value}</p>
-                    <p className="text-[11px] text-[var(--fg-4)] mt-0.5 leading-tight">{c.sub}</p>
+                    <p className="text-xs leading-4 text-[var(--fg-4)]">{c.label}</p>
+                    <p className="text-lg font-bold text-[var(--fg-1)] leading-7 tabular-nums">{c.value}</p>
+                    <p className="text-[11px] leading-4 text-[var(--fg-4)] mt-0.5">{c.sub}</p>
                   </div>
                 ))}
               </div>
@@ -1310,18 +1312,13 @@ function DetailModal({
             for (const [u, role] of [[buy, 'ซื้อ'], [pack, 'บรรจุ'], [base, 'นับ']] as const) {
               if (u && !chain.some(c => c.unit === u)) chain.push({ unit: u, role })
             }
-            // ตัวคูณระหว่าง 2 หน่วยที่ติดกัน หาจากกฎของสินค้านี้ ไม่เจอก็บอกตรง ๆ ว่าไม่มี
-            const factorOf = (from: string, to: string) => {
-              const fwd = convs.find(c => c.from_unit === from && c.to_unit === to)
-              if (fwd) return fwd.conversion_factor
-              const rev = convs.find(c => c.from_unit === to && c.to_unit === from)
-              if (rev && rev.conversion_factor > 0) return 1 / rev.conversion_factor
-              return null
-            }
-            const gaps = chain.slice(0, -1).map((c, i) => ({
-              from: c.unit, to: chain[i + 1].unit, factor: factorOf(c.unit, chain[i + 1].unit),
-            }))
-            const missing = gaps.filter(g => g.factor === null)
+            // ถาม backend แล้วว่าแปลงได้ไหม (รองรับหลายทอด + กฎรวมของเทแนนต์)
+            // ห้ามเดาเองจาก convs เพราะ convs มีแค่กฎของสินค้านี้ จะฟันธงว่า "แปลงไม่ได้" ทั้งที่ได้
+            const gaps = chain.slice(0, -1).map((c, i) => {
+              const to = chain[i + 1].unit
+              return { from: c.unit, to, path: paths[c.unit + '>' + to] }
+            })
+            const missing = gaps.filter(g => g.path === null)   // เฉพาะที่ตอบกลับมาแล้วว่าไม่มีจริง
             return (
               <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1350,10 +1347,18 @@ function DetailModal({
                       </span>
                       {i < chain.length - 1 && (
                         <span className="flex flex-col items-center">
-                          <span className={'text-[10px] font-mono ' + (gaps[i].factor === null ? 'text-danger' : 'text-[var(--fg-3)]')}>
-                            {gaps[i].factor === null ? 'ไม่มีสูตร' : '×' + Number(gaps[i].factor).toLocaleString('th-TH', { maximumFractionDigits: 4 })}
+                          <span className={'text-[10px] font-mono ' + (gaps[i].path === null ? 'text-danger' : 'text-[var(--fg-3)]')}>
+                            {gaps[i].path === undefined
+                              ? '…'
+                              : gaps[i].path === null
+                                ? 'ไม่มีสูตร'
+                                : '×' + Number(gaps[i].path!.factor).toLocaleString('th-TH', { maximumFractionDigits: 4 })}
                           </span>
-                          <ArrowRight className={'w-4 h-4 ' + (gaps[i].factor === null ? 'text-danger' : 'text-[var(--fg-4)]')} />
+                          <ArrowRight className={'w-4 h-4 ' + (gaps[i].path === null ? 'text-danger' : 'text-[var(--fg-4)]')} />
+                          {/* ได้จากกฎรวมของทั้งระบบ = ลบ/แก้จากผังของสินค้านี้ไม่ได้ ต้องรู้ก่อนจะไปหาปุ่มลบ */}
+                          {gaps[i].path?.source === 'shared' && (
+                            <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap">กฎรวม</span>
+                          )}
                         </span>
                       )}
                     </span>
@@ -1366,6 +1371,12 @@ function DetailModal({
                   <p className="text-xs text-danger mt-1.5">
                     ขาดสูตรแปลง {missing.map(g => unitLabel(g.from) + ' → ' + unitLabel(g.to)).join(', ')}
                     {' '}— รับของหรือขายด้วยหน่วยนั้นจะตัดสต็อกผิดทันที
+                  </p>
+                )}
+                {missing.length === 0 && gaps.some(g => g.path?.source === 'shared') && (
+                  <p className="text-[11px] text-[var(--fg-4)] mt-1.5">
+                    ช่วงที่เขียนว่า "กฎรวม" ใช้สูตรกลางของทั้งระบบ ไม่ใช่ของสินค้าตัวนี้ —
+                    แปลงได้ปกติ ไม่ต้องเพิ่มซ้ำ · อยากให้สินค้านี้ใช้ตัวเลขต่างจากกฎกลาง ค่อยเพิ่มกฎเฉพาะทับ
                   </p>
                 )}
               </div>
@@ -1654,7 +1665,6 @@ export function EditModal({
   const { units: availableUnits } = useUnits(item?.id)
 
   // Per-material unit conversions
-  const [activeTab, setActiveTab] = useState<'general' | 'units'>(initialTab)
   const [showChainEditor, setShowChainEditor] = useState(false)
   const [convExpanded, setConvExpanded] = useState(false)
   const [itemConversions, setItemConversions] = useState<Array<{ id: string; from_unit: string; to_unit: string; conversion_factor: number; notes?: string }>>([])
@@ -1730,7 +1740,6 @@ export function EditModal({
       })
       setImagePreview(item.imageUrl || null)
       setImageFile(null)
-      setActiveTab(initialTab)
       setConvForm(initialConvForm
         ? { from_unit: initialConvForm.from_unit, to_unit: initialConvForm.to_unit, conversion_factor: '' }
         : { from_unit: '', to_unit: '', conversion_factor: '' }
@@ -1788,6 +1797,27 @@ export function EditModal({
     }
   }, [formData.baseUnit, formData.displayUnit, itemConversions, standardConversions])
 
+  // เปลี่ยน "หน่วยที่คลังนับ" แล้วหน่วยซื้อ/หน่วยบรรจุที่เคยเป็นตัวเดียวกันต้องขยับตามทันที
+  // ไม่งั้น ชิ้น→ขีด จะเหลือหน่วยซื้อค้างเป็น "ชิ้น" = สายขาดสูตรแปลง แล้ว backend ตีกลับ
+  // 400 UNIT_CONVERSION_MISSING ตอนกดบันทึก ทั้งที่บนจอดูเหมือนเปลี่ยนครบแล้ว
+  const changeBaseUnit = (next: string) => {
+    setFormData(prev => {
+      const prevBase = normalizeUnit(prev.baseUnit || prev.unit)
+      const out = { ...prev, baseUnit: next }
+      if (prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevBase) out.purchaseUnit = next
+      if (prev.displayUnit && normalizeUnit(prev.displayUnit) === prevBase) out.displayUnit = next
+      return out
+    })
+  }
+  const changeDisplayUnit = (next: string) => {
+    setFormData(prev => {
+      const prevPack = prev.displayUnit ? normalizeUnit(prev.displayUnit) : ''
+      const out = { ...prev, displayUnit: next }
+      if (prevPack && prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevPack) out.purchaseUnit = next
+      return out
+    })
+  }
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1820,103 +1850,199 @@ export function EditModal({
 
   if (!open || !item) return null
 
+  // ── สายหน่วย: ลากตามกฎแปลงจริง ชุดเดียวกับผังเต็มจอ ──
+  // เดิมโชว์แค่หน่วยที่ตั้งไว้ 3 ช่อง คนเลยเห็น "ลัง → กรัม" ทั้งที่ผังเต็มจอมี "กิโลกรัม" คั่นอยู่
+  // และไม่มีตัวคูณให้ดูเลย — สองจอบอกคนละเรื่องทั้งที่เป็นข้อมูลชุดเดียวกัน
+  const uGraph: Record<string, Array<{ to: string; factor: number; shared: boolean }>> = {}
+  const addUnitEdge = (a: string, b: string, f: number, shared: boolean) => {
+    if (!a || !b || !f || f <= 0 || !isFinite(f)) return
+    const na = normalizeUnit(a); const nb = normalizeUnit(b)
+    if (na === nb) return
+    if (!uGraph[na]) uGraph[na] = []
+    if (!uGraph[nb]) uGraph[nb] = []
+    uGraph[na].push({ to: nb, factor: f, shared })
+    uGraph[nb].push({ to: na, factor: 1 / f, shared })
+  }
+  itemConversions.forEach(c => addUnitEdge(c.from_unit, c.to_unit, Number(c.conversion_factor), false))
+  standardConversions.forEach(c => addUnitEdge(c.from_unit, c.to_unit, Number(c.factor), true))
+
+  // เส้นทางน้อยทอดที่สุดจาก a ไป b พร้อมตัวคูณรายช่วง · null = แปลงไม่ได้จริง
+  const pathBetween = (from: string, to: string): Array<{ unit: string; factor: number; shared: boolean }> | null => {
+    const a = normalizeUnit(from); const b = normalizeUnit(to)
+    if (!a || !b) return null
+    if (a === b) return []
+    const prev: Record<string, { unit: string; factor: number; shared: boolean }> = {}
+    const seen = new Set<string>([a])
+    const queue = [a]
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      if (cur === b) break
+      for (const e of uGraph[cur] ?? []) {
+        if (seen.has(e.to)) continue
+        seen.add(e.to)
+        prev[e.to] = { unit: cur, factor: e.factor, shared: e.shared }
+        queue.push(e.to)
+      }
+    }
+    if (!seen.has(b)) return null
+    const out: Array<{ unit: string; factor: number; shared: boolean }> = []
+    let cur = b
+    while (cur !== a) {
+      const step = prev[cur]
+      out.unshift({ unit: cur, factor: step.factor, shared: step.shared })
+      cur = step.unit
+    }
+    return out
+  }
+
+  // หน่วยเดียวอาจสวมหลายบทบาท (ซื้อเป็นลัง เก็บเป็นลัง) — ต้องเขียนรวมไว้ที่โหนดเดียว
+  const roleOf: Record<string, string[]> = {}
+  const anchors: string[] = []
+  for (const [u, role] of [
+    [formData.purchaseUnit, 'หน่วยซื้อ'],
+    [formData.displayUnit, 'หน่วยบรรจุ'],
+    [formData.baseUnit || formData.unit, 'หน่วยนับ'],
+  ] as const) {
+    if (!u) continue
+    const k = normalizeUnit(u)
+    if (!roleOf[k]) roleOf[k] = []
+    if (!roleOf[k].includes(role)) roleOf[k].push(role)
+    if (!anchors.some(a => normalizeUnit(a) === k)) anchors.push(u)
+  }
+
+  const chain: Array<{ unit: string; roles: string[]; factor: number | null; missing: boolean; shared: boolean }> = []
+  if (anchors.length > 0) {
+    chain.push({ unit: normalizeUnit(anchors[0]), roles: roleOf[normalizeUnit(anchors[0])] ?? [], factor: null, missing: false, shared: false })
+    for (let i = 0; i < anchors.length - 1; i++) {
+      const seg = pathBetween(anchors[i], anchors[i + 1])
+      const nextKey = normalizeUnit(anchors[i + 1])
+      if (seg === null) {
+        chain.push({ unit: nextKey, roles: roleOf[nextKey] ?? [], factor: null, missing: true, shared: false })
+      } else {
+        for (const st of seg) {
+          chain.push({ unit: st.unit, roles: roleOf[st.unit] ?? [], factor: st.factor, missing: false, shared: st.shared })
+        }
+      }
+    }
+  }
+  const fmtFactor = (f: number) => '×' + Number(f.toFixed(6)).toLocaleString('th-TH', { maximumFractionDigits: 6 })
+  // ช่วงที่ขาดสูตรจริง ๆ ในสาย — ตัวนี้แหละที่ทำให้ backend ตีกลับตอนบันทึกราคา
+  const gapIdx = chain.findIndex(c => c.missing)
+  const chainGapMsg = gapIdx > 0
+    ? `ยังไม่มีสูตรแปลง "${ul(chain[gapIdx - 1].unit)}" → "${ul(chain[gapIdx].unit)}" — บันทึกราคาที่ซื้อมาไม่ได้จนกว่าจะเพิ่มสูตรด้านล่าง`
+    : null
+
+  const cost = Number(formData.purchasePrice) || 0
+  const sell = Number(formData.unitPrice) || 0
+  const available = availableOf(item)
+  const baseLabel = unitLabel(formData.baseUnit || formData.unit)
+  const money = (n: number) => '฿' + n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // การ์ดสรุปแบบเดียวกับหน้ารายละเอียด แต่คิดจากค่าที่กำลังพิมพ์อยู่ จะได้เห็นผลก่อนกดบันทึก
+  const kpis = [
+    { label: 'คงเหลือ', value: available.toLocaleString('th-TH'), sub: baseLabel, tone: available === 0 ? 'bad' : available <= formData.minStock ? 'warn' : 'plain' },
+    { label: 'ทุน/หน่วย', value: cost ? money(cost) : '—', sub: formData.purchaseUnit ? 'ต่อ ' + unitLabel(formData.purchaseUnit) : 'ยังไม่ได้ตั้งหน่วยซื้อ', tone: 'plain' },
+    { label: 'ราคาขาย', value: sell ? money(sell) : '—', sub: 'ต่อ ' + baseLabel, tone: 'plain' },
+    {
+      label: 'กำไร/หน่วย',
+      value: sell && cost ? (sell - cost >= 0 ? '+' : '') + money(sell - cost) : '—',
+      sub: sell && cost ? ((sell - cost) / sell * 100).toFixed(1) + '%' : 'ยังตั้งราคาไม่ครบ',
+      tone: !sell || !cost ? 'plain' : sell - cost >= 0 ? 'good' : 'bad',
+    },
+  ]
+
   return (
     <>
       <div
-        className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-50 p-4 animate-fadeIn"
+        className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-50 p-3 sm:p-4 animate-fadeIn"
         onClick={onClose}
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="phopy-card w-full max-w-lg flex flex-col animate-scaleIn"
-          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          className="w-full max-w-[640px] flex flex-col rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2 overflow-hidden animate-scaleIn"
+          style={{ maxHeight: 'calc(100vh - 1.5rem)' }}
         >
-          {/* Header — sticky */}
-          <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between flex-shrink-0">
-            <div>
-              <h2 className="text-lg font-bold text-[var(--fg-1)]">แก้ไขสินค้า</h2>
-              <p className="text-xs text-[var(--fg-4)] mt-0.5">{item.sku} · {item.name}</p>
+          {/* หัวหน้าต่างชุดเดียวกับหน้ารายละเอียด — เปิดจากปุ่มดินสอแล้วต้องไม่รู้สึกว่าไปโผล่คนละแอป */}
+          <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-[var(--border)] flex-shrink-0">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-[var(--fg-1)] truncate">{formData.name || item.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                <span className="text-xs font-mono text-[var(--fg-3)]">{item.sku}</span>
+                <CategoryBadge category={formData.category || item.category} />
+                <StatusBadge status={item.status} />
+              </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg transition-colors">
-              <X className="w-5 h-5 text-[var(--fg-3)]" />
-            </button>
-          </div>
 
-          {/* Tab bar */}
-          <div className="flex border-b border-[var(--border)] flex-shrink-0">
-            {(['general', 'units'] as const).map(tab => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                  activeTab === tab
-                    ? 'text-[var(--primary)] border-phopy-indigo'
-                    : 'text-[var(--fg-4)] border-transparent hover:text-[var(--fg-2)]'
-                }`}
-              >
-                {tab === 'general' ? 'ทั่วไป' : 'หน่วย'}
+            {/* รูปสินค้าจัดการได้จากหัวหน้าต่างเลย ไม่ต้องหาช่องอัปโหลดในฟอร์ม */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {imagePreview ? (
+                <span className="relative">
+                  <img src={imagePreview} alt={item.name} className="w-11 h-11 rounded-[10px] object-cover border border-[var(--primary)]" />
+                  <span className="absolute bottom-0.5 inset-x-0.5 rounded bg-[var(--fg-1)]/70 text-white text-[8px] font-semibold text-center">รูปหลัก</span>
+                  <button
+                    type="button"
+                    aria-label="ลบรูปนี้"
+                    onClick={async () => {
+                      if (!confirm('ลบรูปภาพ?')) return
+                      try {
+                        if (item.imageUrl) await stockService.deleteImage(item.id)
+                        setImagePreview(null)
+                        setImageFile(null)
+                        onSave()
+                      } catch { toast.error('ลบรูปไม่สำเร็จ') }
+                    }}
+                    className="absolute top-0.5 right-0.5 w-[17px] h-[17px] flex items-center justify-center rounded-[5px] bg-[var(--fg-1)]/70 text-white"
+                  >
+                    <X className="w-2.5 h-2.5" strokeWidth={3} />
+                  </button>
+                </span>
+              ) : (
+                <label
+                  className="w-11 h-11 rounded-[10px] border-[1.5px] border-dashed border-[var(--border-strong)] hover:border-[var(--primary)] flex items-center justify-center cursor-pointer transition-colors"
+                  title="เพิ่มรูปสินค้า"
+                >
+                  <ImagePlus className="w-4 h-4 text-[var(--fg-3)]" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImageChange} className="hidden" />
+                </label>
+              )}
+              <span className="w-px h-7 bg-[var(--border)] mx-0.5" />
+              <button type="button" onClick={onClose} aria-label="ปิด" className="w-10 h-10 flex items-center justify-center rounded-[10px] hover:bg-[var(--bg)] transition-colors">
+                <X className="w-5 h-5 text-[var(--fg-3)]" />
               </button>
-            ))}
+            </div>
           </div>
 
-          {/* Scrollable body */}
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-3.5">
 
-              {/* ── GENERAL TAB ── */}
-              {activeTab === 'general' && (
-                <>
-                  {/* Image + Name row */}
-                  <div className="flex gap-3 items-start">
-                    <label className="cursor-pointer flex-shrink-0">
-                      <div className="w-20 h-20 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-phopy-indigo/60 flex items-center justify-center overflow-hidden bg-[var(--bg)] transition-colors relative group">
-                        {imagePreview ? (
-                          <>
-                            <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-[var(--fg-1)]/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Upload className="w-5 h-5 text-white" />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center gap-1">
-                            <ImagePlus className="w-6 h-6 text-[var(--fg-4)]" />
-                            <span className="text-[10px] text-[var(--fg-4)]">อัปโหลด</span>
-                          </div>
-                        )}
-                      </div>
-                      <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-                    </label>
-                    <div className="flex-1">
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อสินค้า <span className="text-danger">*</span></label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="phopy-input w-full"
-                        required
-                      />
-                      {imagePreview && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!item) return
-                            if (confirm('ลบรูปภาพ?')) {
-                              await stockService.deleteImage(item.id)
-                              setImagePreview(null)
-                              setImageFile(null)
-                              onSave()
-                            }
-                          }}
-                          className="mt-1.5 text-xs text-danger hover:text-red-300 flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> ลบรูปภาพ
-                        </button>
-                      )}
-                    </div>
+              {/* ตัวเลขสรุป — ขยับตามที่พิมพ์ทันที */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {kpis.map(k => (
+                  <div key={k.label} className={`rounded-xl border px-3 py-2.5 ${
+                    k.tone === 'warn' ? 'bg-[var(--warning-soft)] border-warning/35'
+                      : k.tone === 'good' ? 'bg-[var(--success-soft)] border-success/30'
+                        : k.tone === 'bad' ? 'bg-[var(--danger-soft)] border-danger/30'
+                          : 'bg-[var(--bg)] border-[var(--border)]'}`}>
+                    <p className="text-[11px] leading-4 text-[var(--fg-3)]">{k.label}</p>
+                    <p className="text-base sm:text-[17px] font-bold text-[var(--fg-1)] leading-7 tabular-nums">{k.value}</p>
+                    <p className="text-[10px] leading-4 text-[var(--fg-4)] mt-0.5 truncate">{k.sub}</p>
                   </div>
+                ))}
+              </div>
 
-                  {/* Category */}
+              {/* ── ข้อมูลสินค้า ── */}
+              <div className="rounded-2xl border border-[var(--border)] p-3.5 space-y-3">
+                <p className="text-xs font-semibold text-[var(--fg-2)]">ข้อมูลสินค้า</p>
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">ชื่อสินค้า <span className="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="phopy-input w-full"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-[var(--fg-3)] mb-1.5">ประเภท</label>
                     <select
@@ -1925,346 +2051,328 @@ export function EditModal({
                       className="phopy-input w-full"
                       required
                     >
-                      <option value="raw">วัตถุดิบ (Raw)</option>
-                      <option value="wip">กำลังผลิต (WIP)</option>
-                      <option value="finished">สำเร็จรูป (Finished)</option>
+                      <option value="raw">วัตถุดิบ</option>
+                      <option value="wip">กึ่งสำเร็จรูป</option>
+                      <option value="finished">สำเร็จรูป</option>
                       <option value="material">วัสดุสิ้นเปลือง</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">บาร์โค้ด GS1 <span className="text-[var(--fg-4)]">ไม่บังคับ</span></label>
+                    <input
+                      type="text"
+                      value={formData.gs1Barcode}
+                      onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
+                      className="phopy-input w-full"
+                      placeholder="—"
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-3 p-2.5 bg-[var(--bg)] rounded-xl border border-[var(--border)] cursor-pointer hover:border-[var(--primary)]/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    id="isPosEnabled"
+                    checked={formData.isPosEnabled}
+                    onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
+                    className="w-5 h-5 rounded border-[var(--border)] bg-[var(--surface)] text-[var(--primary)]"
+                  />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-[var(--fg-1)]">แสดงในหน้าขาย (POS)</span>
+                    <span className="block text-[11px] text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</span>
+                  </span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-[var(--success-strong)]' : 'bg-[var(--surface-2)] text-[var(--fg-3)]'}`}>
+                    {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
+                  </span>
+                </label>
+              </div>
 
-                  {/* Cost + Price */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        ราคาที่ซื้อมา (฿)
-                      </label>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="number"
-                          value={formData.purchasePrice}
-                          onChange={(e) => setFormData({ ...formData, purchasePrice: parseFloat(e.target.value) || 0 })}
-                          onFocus={(e) => e.target.select()}
-                          className="phopy-input flex-1 min-w-0"
-                          min="0"
-                          step="0.01"
-                          placeholder="0.00"
-                        />
-                        <div className="w-24 shrink-0">
-                          <UnitPicker
-                            value={formData.purchaseUnit}
-                            onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
-                            materialId={item?.id}
-                            baseUnit={formData.baseUnit || formData.unit}
-                            restrict="warn"
-                            size="sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        ราคาขาย/หน่วยฐาน (฿)
-                        <span className="ml-1 text-success/70">ต่อ {unitLabel(formData.baseUnit || formData.unit || 'หน่วยฐาน')}</span>
-                      </label>
+              {/* ── ราคา ── */}
+              <div className="rounded-2xl border border-[var(--border)] p-3.5 space-y-3">
+                <p className="text-xs font-semibold text-[var(--fg-2)]">ราคา</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">ราคาที่ซื้อมา (฿)</label>
+                    <div className="flex gap-1.5">
                       <input
                         type="number"
-                        value={formData.unitPrice}
-                        onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                        value={formData.purchasePrice}
+                        onChange={(e) => setFormData({ ...formData, purchasePrice: parseFloat(e.target.value) || 0 })}
                         onFocus={(e) => e.target.select()}
-                        className="phopy-input w-full"
+                        className="phopy-input flex-1 min-w-0"
                         min="0"
                         step="0.01"
                         placeholder="0.00"
                       />
+                      <div className="w-24 shrink-0">
+                        <UnitPicker
+                          value={formData.purchaseUnit}
+                          onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
+                          materialId={item?.id}
+                          baseUnit={formData.baseUnit || formData.unit}
+                          restrict="warn"
+                          size="sm"
+                        />
+                      </div>
                     </div>
                   </div>
-
-                  {/* Min/Max Stock */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สต็อกขั้นต่ำ</label>
-                      <input
-                        type="number"
-                        value={formData.minStock}
-                        onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                        onFocus={(e) => e.target.select()}
-                        className="phopy-input w-full"
-                        min="0"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สต็อกสูงสุด</label>
-                      <input
-                        type="number"
-                        value={formData.maxStock}
-                        onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                        onFocus={(e) => e.target.select()}
-                        className="phopy-input w-full"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Location + Barcode */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">สถานที่เก็บ</label>
-                      <input
-                        type="text"
-                        value={formData.location}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        className="phopy-input w-full"
-                        placeholder="เช่น คลังหลัก"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">GS1 Barcode</label>
-                      <input
-                        type="text"
-                        value={formData.gs1Barcode}
-                        onChange={(e) => setFormData({ ...formData, gs1Barcode: e.target.value })}
-                        className="phopy-input w-full"
-                        placeholder="ไม่บังคับ"
-                      />
-                    </div>
-                  </div>
-
-                  {/* POS toggle */}
-                  <label className="flex items-center gap-3 p-3 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] cursor-pointer hover:border-phopy-indigo/50 transition-colors">
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">
+                      ราคาขาย (฿) <span className="text-[var(--fg-4)]">ต่อ {baseLabel}</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      id="isPosEnabled"
-                      checked={formData.isPosEnabled}
-                      onChange={(e) => setFormData({ ...formData, isPosEnabled: e.target.checked })}
-                      className="w-5 h-5 rounded border-[var(--border)] bg-[var(--bg)] text-[var(--primary)] focus:ring-phopy-indigo"
+                      type="number"
+                      value={formData.unitPrice}
+                      onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
+                      className="phopy-input w-full"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
                     />
-                    <div className="flex-1">
-                      <p className="text-sm text-[var(--fg-2)] font-medium">แสดงใน POS</p>
-                      <p className="text-xs text-[var(--fg-4)]">เพิ่มสินค้านี้เข้าเมนูขาย</p>
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${formData.isPosEnabled ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-3)]'}`}>
-                      {formData.isPosEnabled ? 'เปิด' : 'ปิด'}
-                    </span>
-                  </label>
-                </>
-              )}
-
-              {/* ── UNITS TAB ── */}
-              {activeTab === 'units' && (
-                <>
-                  {/* สายหน่วยทั้งเส้น — ซื้อมาเป็นอะไร เก็บเป็นอะไร (หน่วยซื้อแก้ได้ที่แท็บทั่วไป คู่กับราคา) */}
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
-                    <p className="text-xs text-[var(--fg-3)] mb-2">สายหน่วยของสินค้านี้</p>
-                    <div className="flex items-center gap-2 flex-wrap text-sm">
-                      <span className="px-2.5 py-1 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)]">
-                        ซื้อเป็น {formData.purchaseUnit ? ul(formData.purchaseUnit) : '—'}
-                      </span>
-                      <span className="text-[var(--fg-4)]">→</span>
-                      <span className="px-2.5 py-1 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)]">
-                        เก็บเป็น {formData.displayUnit ? ul(formData.displayUnit) : '—'}
-                      </span>
-                      <span className="text-[var(--fg-4)]">→</span>
-                      <span className="px-2.5 py-1 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/30 text-[var(--primary)] font-medium">
-                        นับเป็น {formData.baseUnit ? ul(formData.baseUnit) : '—'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-[var(--fg-4)] mt-2">
-                      ทุกช่วงที่หน่วยเปลี่ยน ต้องมีสูตรแปลงด้านล่าง ไม่งั้นระบบรับของเข้าคลังไม่ได้
-                      · หน่วยซื้อแก้ได้ที่แท็บ "ทั่วไป" คู่กับราคาที่ซื้อมา
-                    </p>
                   </div>
+                </div>
+              </div>
 
-                  {/* ช่อง "หน่วยสินค้า (Legacy)" ถูกเอาออกแล้ว — คอลัมน์ stock_items.unit เป็นของเก่า
-    ก่อนมีระบบหน่วย ตอนนี้ backend sync ให้เท่ากับ base_unit อัตโนมัติทุกครั้งที่บันทึก
-    การเปิดช่องนี้ให้แก้ทำให้ค่าถูกเขียนทับสวนทางกับหน่วยฐานจนสต็อกคิดผิด */}
-
-                  {/* Base Unit + Display Unit */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        หน่วยที่คลังนับ <span className="text-[var(--fg-4)]">หน่วยย่อยสุด</span>
-                      </label>
-                      <select
-                        value={formData.baseUnit || ''}
-                        onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
-                        className="phopy-input w-full"
-                      >
-                        <option value="">— ยังไม่ได้เลือก —</option>
-                        {availableUnits.map((u) => (
-                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-[var(--fg-4)] mt-1">ตัวเลขสต็อกทั้งระบบนับเป็นหน่วยนี้ · เช่น กรัม ชิ้น มิลลิลิตร</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[var(--fg-3)] mb-1.5">
-                        หน่วยบรรจุ <span className="text-[var(--fg-4)]">ที่ยังไม่แกะ</span>
-                      </label>
-                      <select
-                        value={formData.displayUnit || ''}
-                        onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
-                        className="phopy-input w-full"
-                      >
-                        <option value="">— ยังไม่ได้เลือก —</option>
-                        {availableUnits.map((u) => (
-                          <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-[var(--fg-4)] mt-1">ของที่มาเป็นแพ็คแล้วต้องแกะก่อนใช้ · เช่น ลัง กล่อง ถุง</p>
-                    </div>
-                  </div>
-
-                  {/* Conversion Warning */}
-                  {conversionWarning && (
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm text-amber-300">{conversionWarning}</p>
-                        <button
-                          type="button"
-                          onClick={() => setConvExpanded(true)}
-                          className="text-xs text-amber-400 hover:text-amber-300 underline mt-1"
-                        >
-                          คลิกเพื่อเพิ่มการแปลงหน่วย
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Unit Conversions (per-material) */}
-                  <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setConvExpanded(v => !v)}
-                      className="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface-2)] hover:bg-[var(--bg)]/70 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ArrowUpCircle className="w-4 h-4 text-purple-400" style={{ transform: 'rotate(90deg)' }} />
-                        <span className="text-sm font-medium text-[var(--fg-2)]">การแปลงหน่วยเฉพาะสินค้านี้</span>
-                        {itemConversions.length > 0 && (
-                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
-                            {itemConversions.length} รายการ
-                          </span>
-                        )}
-                      </div>
-                      {convExpanded
-                        ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" />
-                        : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
-                    </button>
-
-                    {convExpanded && (
-                      <div className="p-3 space-y-2 bg-[var(--bg)]/20">
-                        {itemConversions.length > 0 && (
-                          <div className="space-y-1">
-                            {itemConversions.map(c => (
-                              <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg">
-                                <span className="text-xs font-mono text-[var(--fg-1)]">1 {ul(c.from_unit)}</span>
-                                <span className="text-[var(--fg-4)] text-xs">=</span>
-                                <span className="text-xs font-mono font-semibold text-[var(--primary)]">{c.conversion_factor} {ul(c.to_unit)}</span>
-                                <span className="text-[var(--fg-4)] text-xs font-mono">({c.from_unit}→{c.to_unit})</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteConversion(c.id)}
-                                  className="ml-auto p-1 text-[var(--fg-4)] hover:text-danger transition-colors"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="flex gap-2 items-end">
-                          <div className="flex-1">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">1 หน่วยของ</p>
-                            <select
-                              value={convForm.from_unit}
-                              onChange={e => setConvForm(f => ({ ...f, from_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
-                            >
-                              <option value="">เลือกหน่วย</option>
-                              {availableUnits.map((u) => (
-                                <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">เท่ากับหน่วย</p>
-                            <select
-                              value={convForm.to_unit}
-                              onChange={e => setConvForm(f => ({ ...f, to_unit: e.target.value }))}
-                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
-                            >
-                              <option value="">เลือกหน่วย</option>
-                              {availableUnits.map((u) => (
-                                <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="w-20">
-                            <p className="text-[10px] text-[var(--fg-4)] mb-1">กี่หน่วย</p>
-                            <input
-                              type="number"
-                              value={convForm.conversion_factor}
-                              onChange={e => setConvForm(f => ({ ...f, conversion_factor: e.target.value }))}
-                              placeholder="24"
-                              min="0.000001"
-                              step="any"
-                              className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleAddConversion}
-                            disabled={convSaving || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor}
-                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 flex-shrink-0"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            เพิ่ม
-                          </button>
-                        </div>
-                        {convForm.from_unit && convForm.to_unit && convForm.conversion_factor && Number(convForm.conversion_factor) > 0 && (
-                          <p className="text-xs text-[var(--fg-3)] text-center">
-                            1 {ul(convForm.from_unit)} = {convForm.conversion_factor} {ul(convForm.to_unit)}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Chain Editor button */}
+              {/* ── ผังหน่วย ── อ่านง่ายก่อน แก้ได้ในที่เดียวกัน */}
+              <div className="rounded-2xl border border-[var(--border)] p-3.5">
+                <div className="flex items-center justify-between gap-3 mb-2.5">
+                  <p className="text-xs font-semibold text-[var(--fg-2)]">ผังหน่วย <span className="font-normal text-[var(--fg-4)]">สายหน่วยของสินค้านี้</span></p>
                   <button
                     type="button"
-                    onClick={() => setShowChainEditor(true)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 border border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10 text-purple-300 rounded-xl text-sm transition-colors"
+                    onClick={() => setConvExpanded(v => !v)}
+                    className={`h-8 px-2.5 flex items-center gap-1.5 rounded-[9px] border text-xs font-semibold transition-colors ${convExpanded ? 'bg-[var(--primary-soft)] border-[var(--primary)] text-[var(--primary)]' : 'bg-[var(--surface)] border-[var(--border)] text-[var(--fg-2)]'}`}
                   >
-                    <Network className="w-4 h-4" />
-                    เปิด Chain Editor (ผังหน่วยแบบ Visual)
+                    <Edit2 className="w-3 h-3" />
+                    {convExpanded ? 'เสร็จแล้ว' : 'แก้ไขหน่วย'}
                   </button>
-                </>
-              )}
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+                  {chain.length === 0 ? (
+                    <p className="text-xs text-[var(--fg-4)]">ยังไม่ได้ตั้งหน่วยให้สินค้านี้</p>
+                  ) : chain.map((c, i) => {
+                    const isBase = c.roles.includes('หน่วยนับ')
+                    const isBuy = c.roles.includes('หน่วยซื้อ')
+                    const isPack = c.roles.includes('หน่วยบรรจุ')
+                    return (
+                      <span key={c.unit + i} className="flex items-center gap-1.5">
+                        {i > 0 && (
+                          <span className="flex flex-col items-center leading-4">
+                            <span className={`text-[10px] font-mono ${c.missing ? 'text-danger' : 'text-[var(--primary)]'}`}>
+                              {c.missing ? 'ไม่มีสูตร' : fmtFactor(c.factor ?? 1)}
+                            </span>
+                            <ArrowRight className={`w-3.5 h-3.5 ${c.missing ? 'text-danger' : 'text-[var(--fg-4)]'}`} />
+                            {c.shared && (
+                              <span className="text-[9px] text-[var(--fg-4)] whitespace-nowrap" title="ใช้สูตรกลางของทั้งระบบ ไม่ใช่กฎเฉพาะสินค้านี้ จึงไม่มีในรายการข้างล่าง">กฎรวม</span>
+                            )}
+                          </span>
+                        )}
+                        <span className={`px-2.5 py-1.5 rounded-[10px] border text-center ${
+                          isBase ? 'bg-[var(--success-soft)] border-success/30'
+                            : isBuy ? 'bg-[var(--primary-soft)] border-[var(--primary)]/30'
+                              : isPack ? 'bg-[var(--warning-soft)] border-warning/35'
+                                : 'bg-[var(--surface)] border-[var(--border)]'}`}>
+                          <span className={`block text-[13px] font-bold leading-5 ${
+                            isBase ? 'text-[var(--success-strong)]'
+                              : isBuy ? 'text-[var(--primary)]'
+                                : isPack ? 'text-[var(--warning-strong)]' : 'text-[var(--fg-2)]'}`}>
+                            {ul(c.unit)}
+                          </span>
+                          <span className="block text-[10px] leading-4 text-[var(--fg-3)]">
+                            {c.roles.length > 0 ? c.roles.join(' · ') : 'หน่วยกลาง'}
+                          </span>
+                        </span>
+                      </span>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] leading-4 text-[var(--fg-3)] mt-2">
+                  ซื้อเป็น {formData.purchaseUnit ? ul(formData.purchaseUnit) : '—'} ·
+                  เก็บเป็น {formData.displayUnit ? ul(formData.displayUnit) : '—'} ·
+                  นับเป็น {formData.baseUnit ? ul(formData.baseUnit) : '—'} — ตัวเลขสต็อกทั้งระบบนับเป็นหน่วยนับเสมอ
+                </p>
+
+                {(chainGapMsg || conversionWarning) && (
+                  <div role="alert" className="mt-2.5 flex items-start gap-2 p-2.5 rounded-xl bg-[var(--danger-soft)] border border-danger/30">
+                    <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+                    <p className="text-xs leading-[17px] text-[var(--danger-strong)]">
+                      {chainGapMsg || conversionWarning} — รับของหรือขายด้วยหน่วยนั้นจะตัดสต็อกผิดทันที
+                    </p>
+                  </div>
+                )}
+
+                {convExpanded && (
+                  <div className="mt-3 space-y-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยที่คลังนับ <span className="text-[var(--fg-4)]">หน่วยย่อยสุด</span></label>
+                        <UnitPicker
+                          value={formData.baseUnit || ''}
+                          onChange={changeBaseUnit}
+                          materialId={item?.id}
+                          restrict="none"
+                          placeholder="เลือกหน่วย — พิมพ์ค้นได้"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[var(--fg-3)] mb-1.5">หน่วยบรรจุ <span className="text-[var(--fg-4)]">ที่ยังไม่แกะ</span></label>
+                        <UnitPicker
+                          value={formData.displayUnit || ''}
+                          onChange={changeDisplayUnit}
+                          materialId={item?.id}
+                          baseUnit={formData.baseUnit || formData.unit}
+                          restrict="warn"
+                          placeholder="เลือกหน่วย — พิมพ์ค้นได้"
+                        />
+                      </div>
+                    </div>
+
+                    {itemConversions.length > 0 && (
+                      <div className="space-y-1.5">
+                        {itemConversions.map(c => (
+                          <div key={c.id} className="flex items-center gap-2 px-2.5 py-2 rounded-[10px] bg-[var(--bg)] border border-[var(--border)]">
+                            <span className="text-xs font-mono text-[var(--fg-2)]">1 {ul(c.from_unit)} =</span>
+                            <span className="text-xs font-mono font-semibold text-[var(--primary)]">{c.conversion_factor} {ul(c.to_unit)}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteConversion(c.id)}
+                              aria-label="ลบกฎนี้"
+                              className="ml-auto w-7 h-7 flex items-center justify-center rounded-lg text-[var(--fg-4)] hover:text-danger hover:bg-[var(--danger-soft)] transition-colors shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <div className="flex-1 min-w-[120px]">
+                        <p className="text-[10px] text-[var(--fg-4)] mb-1">1 หน่วยของ</p>
+                        <UnitPicker
+                          value={convForm.from_unit}
+                          onChange={(u) => setConvForm(f => ({ ...f, from_unit: u }))}
+                          materialId={item?.id}
+                          restrict="none"
+                          size="sm"
+                          placeholder="เลือกหน่วย"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[120px]">
+                        <p className="text-[10px] text-[var(--fg-4)] mb-1">เท่ากับหน่วย</p>
+                        <UnitPicker
+                          value={convForm.to_unit}
+                          onChange={(u) => setConvForm(f => ({ ...f, to_unit: u }))}
+                          materialId={item?.id}
+                          restrict="none"
+                          size="sm"
+                          placeholder="เลือกหน่วย"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <p className="text-[10px] text-[var(--fg-4)] mb-1">กี่หน่วย</p>
+                        <input
+                          type="number"
+                          value={convForm.conversion_factor}
+                          onChange={e => setConvForm(f => ({ ...f, conversion_factor: e.target.value }))}
+                          placeholder="24"
+                          min="0.000001"
+                          step="any"
+                          className="w-full px-2.5 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddConversion}
+                        disabled={convSaving || !convForm.from_unit || !convForm.to_unit || !convForm.conversion_factor}
+                        className="h-[34px] px-3 flex items-center gap-1 rounded-lg bg-[var(--primary)] text-white text-xs font-semibold disabled:opacity-40 hover:bg-[var(--primary-hover)] transition-colors shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        เพิ่มกฎ
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setShowChainEditor(true)}
+                        className="h-9 px-3 flex items-center gap-1.5 rounded-[10px] bg-[var(--surface)] border border-[var(--border)] text-xs font-semibold text-[var(--fg-2)] hover:border-[var(--primary)] transition-colors"
+                      >
+                        <Network className="w-3.5 h-3.5" />
+                        เปิดผังเต็มจอ
+                      </button>
+                      <span className="text-[11px] leading-4 text-[var(--fg-3)]">
+                        แก้ตัวคูณแล้วมีผลกับทุกใบที่ใช้หน่วยนี้ · เอกสารเก่ายังใช้ตัวคูณ ณ ตอนนั้น
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── จุดเตือน ── */}
+              <div className="rounded-2xl border border-[var(--border)] p-3.5">
+                <p className="text-xs font-semibold text-[var(--fg-2)] mb-2.5">จุดเตือน</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">จุดสั่งซื้อ <span className="text-[var(--fg-4)]">{baseLabel}</span></label>
+                    <input
+                      type="number"
+                      value={formData.minStock}
+                      onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
+                      className="phopy-input w-full"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">เก็บสูงสุด <span className="text-[var(--fg-4)]">{baseLabel}</span></label>
+                    <input
+                      type="number"
+                      value={formData.maxStock}
+                      onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
+                      className="phopy-input w-full"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--fg-3)] mb-1.5">ที่เก็บ</label>
+                    <input
+                      type="text"
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      className="phopy-input w-full"
+                      placeholder="เช่น คลังหลัก"
+                    />
+                  </div>
+                </div>
+              </div>
 
             </div>
 
-            {/* Footer — sticky */}
-            <div className="px-5 py-3 border-t border-[var(--border)] flex gap-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-2 border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:border-[var(--border-strong)] transition-colors text-sm"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="submit"
-                disabled={saving || uploadingImage}
-                className="flex-1 phopy-btn-primary flex items-center justify-center gap-2 text-sm py-2"
-              >
-                {(saving || uploadingImage) ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก...</>
-                ) : (
-                  <><Edit2 className="w-4 h-4" /> บันทึก</>
-                )}
-              </button>
+            {/* แถบปุ่มท้ายหน้าต่าง */}
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-[var(--border)] bg-[var(--bg)] flex-shrink-0">
+              <p className="hidden sm:block text-[11px] text-[var(--fg-3)] flex-1 min-w-0">
+                ประวัติราคาซื้อ/ขายและการเคลื่อนไหว ดูได้ที่หน้ารายละเอียด (คลิกชื่อสินค้า)
+              </p>
+              <div className="flex gap-2 flex-1 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 sm:flex-none h-10 px-4 rounded-[11px] bg-[var(--surface)] border border-[var(--border)] text-sm font-semibold text-[var(--fg-2)] hover:border-[var(--border-strong)] transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || uploadingImage}
+                  className="flex-1 sm:flex-none h-10 px-4 rounded-[11px] bg-[var(--primary)] text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60 hover:bg-[var(--primary-hover)] transition-colors"
+                >
+                  {(saving || uploadingImage)
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> กำลังบันทึก…</>
+                    : 'บันทึก'}
+                </button>
+              </div>
             </div>
           </form>
 
@@ -2303,12 +2411,15 @@ function FilterButton({
   onClick,
   count,
   tone = 'neutral',
+  dot = false,
 }: {
   label: string
   active: boolean
   onClick: () => void
   count?: number
   tone?: 'neutral' | 'warning' | 'danger'
+  /** จุดสีนำหน้าชิปสถานะ — กวาดตาแยกหมด/ใกล้หมดได้โดยไม่ต้องอ่าน */
+  dot?: boolean
 }) {
   const empty = count === 0
   const activeCls =
@@ -2324,6 +2435,11 @@ function FilterButton({
           : `bg-transparent border-[var(--border)] hover:border-phopy-indigo/30 ${empty ? 'text-[var(--fg-4)]' : 'text-[var(--fg-3)]'}`
       }`}
     >
+      {dot && (
+        <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${
+          tone === 'danger' ? 'bg-[var(--danger)]' : tone === 'warning' ? 'bg-[var(--warning)]' : 'bg-[var(--fg-4)]'
+        }`} />
+      )}
       {label}
       {count !== undefined && (
         <span className={`text-[11px] tabular-nums ${active ? 'opacity-70' : 'text-[var(--fg-4)]'}`}>{count}</span>
@@ -2359,6 +2475,17 @@ function CategoryBadge({ category }: { category: string }) {
   return (
     <span className={`status-badge ${selected.color}`} title={category}>{selected.label}</span>
   )
+}
+
+// สีของแถบระดับสต็อกในตาราง — ชุดเดียวกับป้ายสถานะ จะได้ไม่เพี้ยนกันเอง
+const STATUS_BAR: Record<string, string> = {
+  out: 'bg-[var(--danger)]',
+  critical: 'bg-[var(--danger)]',
+  low: 'bg-[var(--warning)]',
+  nearLow: 'bg-[var(--warning)]',
+  adequate: 'bg-[var(--success)]',
+  overstock: 'bg-[var(--primary)]',
+  sealed: 'bg-[var(--fg-4)]',
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -2411,23 +2538,28 @@ function SortTh({
   sortDir,
   onSort,
   hint,
+  align = 'left',
+  className = '',
 }: {
   label: string
-  colKey: ColumnKey
-  sortKey: ColumnKey | null
+  colKey: SortKey
+  sortKey: SortKey | null
   sortDir: 'asc' | 'desc'
-  onSort: (key: ColumnKey) => void
+  onSort: (key: SortKey) => void
   /** Optional tooltip clarifying an ambiguous column (e.g. loose qty vs. sealed packs). */
   hint?: string
+  align?: 'left' | 'right'
+  /** ให้ซ่อนคอลัมน์รองบนจอเล็กได้ เช่น "hidden md:table-cell" */
+  className?: string
 }) {
   const active = sortKey === colKey
   return (
     <th
       onClick={() => onSort(colKey)}
-      className="cursor-pointer select-none hover:text-[var(--primary)] transition-colors"
+      className={`cursor-pointer select-none hover:text-[var(--primary)] transition-colors ${className}`}
       title={hint}
     >
-      <span className="flex items-center gap-1">
+      <span className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
         {label}
         {active ? (
           sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-[var(--primary)]" /> : <ChevronDown className="w-3.5 h-3.5 text-[var(--primary)]" />

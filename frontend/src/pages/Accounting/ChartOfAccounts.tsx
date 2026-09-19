@@ -25,6 +25,10 @@ import {
 import { accountsApi, reportsApi, ACCOUNT_TYPES, Account, AccountType } from '../../services/accounting'
 import toast from 'react-hot-toast'
 
+const fmtMoney = (n: number) =>
+  (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+
 interface TreeNodeProps {
   account: Account & { children?: Account[] }
   level: number
@@ -173,8 +177,6 @@ interface LedgerData {
   closingBalance: number
 }
 
-const fmtMoney = (n: number) =>
-  (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // Reconstructs month-end balance snapshots from the already-cumulative
 // `balance` field on each transaction (server computes running balance from

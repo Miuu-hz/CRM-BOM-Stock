@@ -67,7 +67,8 @@ export default function BudgetVsActual() {
         api.get('/accounts'),
         api.get(`/budgets/${year}`),
       ])
-      const budgetableAccounts = (accRes.data.data || []).filter((a: any) =>
+      const accList = Array.isArray(accRes.data?.data) ? accRes.data.data : (accRes.data?.data?.list || [])
+      const budgetableAccounts = accList.filter((a: any) =>
         ['REVENUE', 'EXPENSE', 'COGS'].includes(a.type) && a.is_active !== 0
       )
       setAccounts(budgetableAccounts)
