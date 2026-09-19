@@ -55,9 +55,46 @@ router.get('/', async (req: Request, res: Response) => {
       WHERE tenant_id = ? AND status = 'PENDING'
     `).get(tenantId) as any
 
+    // ความเคลื่อนไหวล่าสุดของโมดูลขาย — รวม 6 ตารางแล้วเรียงตามเวลาที่ขยับล่าสุด
+    // open_id = เอกสารที่ให้เปิดเมื่อคลิก (ใบเสร็จไม่มีหน้าตัวเอง จึงเปิดใบแจ้งหนี้ต้นทาง)
+    // ครอบ try แยกไว้ ถ้าคิวรีนี้พังต้องไม่ทำให้สถิติทั้งก้อนล่มตาม (แบบเดียวกับฝั่งจัดซื้อ)
+    let recentActivity: any[] = []
+    try {
+      recentActivity = db.prepare(`
+        SELECT 'QT' AS kind, q.id, q.quotation_number AS doc, c.name AS party,
+               q.total_amount AS amount, q.status AS status, q.updated_at AS updated_at, q.id AS open_id
+          FROM quotations q LEFT JOIN customers c ON c.id = q.customer_id AND c.tenant_id = q.tenant_id
+         WHERE q.tenant_id = ?
+        UNION ALL
+        SELECT 'SO', so.id, so.so_number, c.name, so.total_amount, so.status, so.updated_at, so.id
+          FROM sales_orders so LEFT JOIN customers c ON c.id = so.customer_id AND c.tenant_id = so.tenant_id
+         WHERE so.tenant_id = ?
+        UNION ALL
+        SELECT 'DO', d.id, d.do_number, c.name, NULL, d.status, d.updated_at, d.id
+          FROM delivery_orders d LEFT JOIN customers c ON c.id = d.customer_id AND c.tenant_id = d.tenant_id
+         WHERE d.tenant_id = ?
+        UNION ALL
+        SELECT 'INV', i.id, i.invoice_number, c.name, i.total_amount, i.payment_status, i.updated_at, i.id
+          FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id
+         WHERE i.tenant_id = ?
+        UNION ALL
+        SELECT 'RC', r.id, r.receipt_number, c.name, r.amount, 'PAID', r.updated_at, r.invoice_id
+          FROM receipts r LEFT JOIN customers c ON c.id = r.customer_id AND c.tenant_id = r.tenant_id
+         WHERE r.tenant_id = ?
+        UNION ALL
+        SELECT 'CN', cn.id, cn.cn_number, c.name, cn.total_amount, cn.status, cn.updated_at, cn.id
+          FROM credit_notes cn LEFT JOIN customers c ON c.id = cn.customer_id AND c.tenant_id = cn.tenant_id
+         WHERE cn.tenant_id = ?
+        ORDER BY updated_at DESC LIMIT 12
+      `).all(tenantId, tenantId, tenantId, tenantId, tenantId, tenantId) as any[]
+    } catch (e) {
+      console.error('sales recentActivity query error (ไม่กระทบสถิติส่วนอื่น):', e)
+    }
+
     res.json({
       success: true,
       data: {
+        recentActivity,
         salesOrders: {
           total: soStats.total_orders,
           draft: soStats.draft_orders,

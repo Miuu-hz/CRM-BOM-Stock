@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { timeAgo } from '../utils/timeAgo'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertCircle,
@@ -18,6 +19,7 @@ import {
   MoreHorizontal,
   LayoutList,
   Package,
+  Pencil,
   Plus,
   Receipt,
   RotateCcw,
@@ -120,6 +122,14 @@ interface PurchaseOrder {
   notes: string
   linked_pr_id?: string
   item_count?: number
+  unbound_count?: number
+  payment_method?: string
+  payment_reference?: string
+  bank_account_id?: string
+  bank_name?: string
+  bank_account_number?: string
+  is_paid?: number
+  paid_amount?: number
   items?: any[]
 }
 
@@ -226,6 +236,7 @@ interface OrderItem {
   unit_price: number
   total_price: number
   received_qty?: number
+  skip_stock?: boolean
   notes: string
 }
 
@@ -1086,19 +1097,6 @@ const POStatusFlow = ({ status }: { status: string }) => {
 // ─── เส้นทางเอกสารของใบสั่งซื้อใบนี้ ───────────────────────────────────────────
 // ใบขอซื้อ → ใบสั่งซื้อ → รับสินค้า → ใบแจ้งหนี้ → จ่ายเงิน (+ คืนสินค้าถ้ามี)
 // ใช้ซ้ำได้ทุกโมดัลย่อย จะได้รู้ตลอดว่ากำลังยืนอยู่ตรงไหนของสาย
-// "เมื่อ 2 ชม.ที่แล้ว" — ใช้ Intl.RelativeTimeFormat ที่มีในเบราว์เซอร์อยู่แล้ว ไม่ต้องลง lib
-const timeAgo = (iso: string) => {
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms)) return ''
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['day', 86400000], ['hour', 3600000], ['minute', 60000],
-  ]
-  const rtf = new Intl.RelativeTimeFormat('th-TH', { numeric: 'auto', style: 'narrow' })
-  for (const [unit, size] of units) {
-    if (Math.abs(ms) >= size) return rtf.format(-Math.round(ms / size), unit)
-  }
-  return rtf.format(0, 'minute')
-}
 
 const PurchaseTrail = ({ poId }: { poId: string }) => {
   const { t } = useTranslation()
@@ -1277,6 +1275,9 @@ const Purchase = () => {
   // Cancel/void of posted documents (GR, PI, supplier payment) reverses journal + stock —
   // gate behind ADMIN/MANAGER/MASTER same as other irreversible accounting actions.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER' || user?.role === 'POWERUSER'
+  // ย้อนใบกลับมาแก้แคบกว่ายกเลิก — ล้างร่องรอยการอนุมัติทิ้ง จึงให้เฉพาะ ADMIN/MASTER
+  // (ฝั่ง backend บังคับเหมือนกันที่ POST /purchase-orders/:id/reopen)
+  const canReopenDoc = user?.role === 'ADMIN' || user?.role === 'MASTER'
   // เปิดใบสั่งซื้อจากใบขอซื้อ = ผูกพันเงินกับผู้ขาย ใช้เกณฑ์เดียวกับงานที่ย้อนยากอื่น ๆ
   const canMakePO = canCancelDoc
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
@@ -1352,6 +1353,11 @@ const Purchase = () => {
     tax_rate: 7,
     notes: '',
     linked_pr_id: '',
+    payment_method: '',
+    payment_reference: '',
+    bank_account_id: '',
+    is_paid: false,
+    paid_amount: 0,
     items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] as OrderItem[]
   })
 
@@ -1376,6 +1382,10 @@ const Purchase = () => {
     notes: '',
     dr_account_id: '',   // '' = default 1107 สต็อกวัตถุดิบ
     cr_account_id: '',   // '' = default 2101 เจ้าหนี้การค้า
+    auto_pay: false,
+    payment_method: '',
+    payment_reference: '',
+    bank_account_id: '',
     // view-mode snapshot (populated from invoice data, not from orders state)
     _subtotal: 0,
     _tax_amount: 0,
@@ -1775,7 +1785,20 @@ const Purchase = () => {
 
   // เหมือน submitRequestFlow แต่สำหรับใบสั่งซื้อ — PO ใช้สถานะ SUBMITTED ไม่ใช่ PENDING
   // (แทนที่ handleCreateOrder เดิม — เรียกไม่ใส่ toStatus = พฤติกรรมเดิมของมันทุกอย่าง)
+  // แจ้งเตือนเมื่อมีรายการสินค้าที่ยังไม่ผูกรหัสสินค้า (SKU)
+  const confirmUnboundOrder = (unboundCount: number) => {
+    if (!unboundCount || unboundCount <= 0) return true
+    return window.confirm(
+      `ใบสั่งซื้อนี้มี ${unboundCount} รายการที่ยังไม่ได้ผูกรหัสสินค้า (SKU)\n\n` +
+      `คุณต้องการดำเนินการต่อหรือไม่?\n` +
+      `• กด 'ตกลง' (OK) เพื่อดำเนินการต่อ\n` +
+      `• กด 'ยกเลิก' (Cancel) เพื่อกลับไปตรวจสอบหรือแก้ไขผูก SKU ก่อน`
+    )
+  }
+
   const submitOrderFlow = async (toStatus?: 'SUBMITTED' | 'APPROVED') => {
+    const unbound = orderForm.items.filter(i => !i.material_id && !i.skip_stock && (i.description || i.material_id)).length
+    if (toStatus && unbound > 0 && !confirmUnboundOrder(unbound)) return
     setFormLoading(true)
     try {
       const items = orderForm.items.filter(i => i.material_id || i.description).map(item => ({
@@ -1784,6 +1807,7 @@ const Purchase = () => {
         quantity: item.quantity,
         unit: normalizeUnit(item.unit),
         unitPrice: item.unit_price,
+        skipStock: item.skip_stock || false,
         notes: item.notes,
       }))
       const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
@@ -1796,6 +1820,11 @@ const Purchase = () => {
         taxRate,
         notes:        orderForm.notes,
         linkedPrId:   orderForm.linked_pr_id || undefined,
+        paymentMethod: orderForm.payment_method || undefined,
+        paymentReference: orderForm.payment_reference || undefined,
+        bankAccountId: orderForm.bank_account_id || undefined,
+        isPaid: orderForm.is_paid ? 1 : 0,
+        paidAmount: orderForm.is_paid ? (orderForm.paid_amount || totalAmount) : 0,
         items,
         subtotal,
         taxAmount,
@@ -1820,14 +1849,20 @@ const Purchase = () => {
 
   const handleUpdateOrder = async () => {
     if (!modalData?.id) return
+    const unbound = orderForm.items.filter(i => !i.material_id && !i.skip_stock && (i.description || i.material_id)).length
+    if (unbound > 0 && !confirmUnboundOrder(unbound)) return
     setFormLoading(true)
     try {
       const items = orderForm.items.filter(i => i.material_id || i.description).map(item => ({
+        // ส่ง id ของแถวเดิมไปด้วย ฝั่งหลังบ้านจะได้แก้แถวเดิมแทนการลบทิ้งแล้วสร้างใหม่
+        // (ลบทิ้งไม่ได้จริงเมื่อมีใบรับของ/ใบแจ้งหนี้อ้างอยู่ — เคยเป็น 500 FK)
+        id: (item as any).id,
         materialId: item.material_id,
         description: item.description,
         quantity: item.quantity,
         unit: normalizeUnit(item.unit),
         unitPrice: item.unit_price,
+        skipStock: item.skip_stock || false,
         notes: item.notes,
       }))
       const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
@@ -1839,6 +1874,11 @@ const Purchase = () => {
         expectedDate: orderForm.expected_date,
         taxRate,
         notes: orderForm.notes,
+        paymentMethod: orderForm.payment_method || undefined,
+        paymentReference: orderForm.payment_reference || undefined,
+        bankAccountId: orderForm.bank_account_id || undefined,
+        isPaid: orderForm.is_paid ? 1 : 0,
+        paidAmount: orderForm.is_paid ? (orderForm.paid_amount || totalAmount) : 0,
         items,
         subtotal,
         taxAmount,
@@ -1859,6 +1899,10 @@ const Purchase = () => {
   }
 
   const handleUpdateOrderStatus = async (id: string, status: string) => {
+    const targetOrder = orders.find(o => o.id === id)
+    if (['SUBMITTED', 'APPROVED'].includes(status) && (targetOrder?.unbound_count ?? 0) > 0) {
+      if (!confirmUnboundOrder(targetOrder!.unbound_count!)) return
+    }
     try {
       const { data } = await api.put(`/purchase-orders/${id}/status`, { status })
       if (data.success) {
@@ -1980,6 +2024,7 @@ const Purchase = () => {
   const handleCreateInvoice = async () => {
     setFormLoading(true)
     try {
+      const currentPO = orders.find(o => o.id === invoiceForm.purchase_order_id)
       const { data } = await api.post('/purchase/invoices', {
         purchaseOrderId: invoiceForm.purchase_order_id,
         purchaseOrderIds: [invoiceForm.purchase_order_id, ...invoiceForm.extra_po_ids],
@@ -1991,6 +2036,10 @@ const Purchase = () => {
         notes: invoiceForm.notes,
         drAccountId: invoiceForm.dr_account_id || undefined,
         crAccountId: invoiceForm.cr_account_id || undefined,
+        autoPay: invoiceForm.auto_pay ?? (currentPO?.is_paid === 1),
+        paymentMethod: invoiceForm.payment_method || currentPO?.payment_method || undefined,
+        paymentReference: invoiceForm.payment_reference || currentPO?.payment_reference || undefined,
+        bankAccountId: invoiceForm.bank_account_id || currentPO?.bank_account_id || undefined,
       })
       if (data.success) {
         toast.success(t('purchase.toast.invoiceCreated'))
@@ -2023,6 +2072,22 @@ const Purchase = () => {
   const handleCancelOrder = async (id: string, poNumber: string) => {
     if (!confirm(`ยืนยันยกเลิกใบสั่งซื้อ ${poNumber}?`)) return
     await handleUpdateOrderStatus(id, 'CANCELLED')
+  }
+
+  // ย้อนคืน PO กลับเป็นร่าง — สำหรับ admin เมื่อพบว่ามีรายการยังไม่ผูก SKU หรือ skip_stock
+  const handleReopenOrder = async (id: string, poNumber: string) => {
+    if (!confirm(`ย้อนคืน ${poNumber} กลับเป็นร่าง? ใบรับสินค้า DRAFT ที่เชื่อมอยู่จะถูกลบด้วย`)) return
+    try {
+      const { data } = await api.post(`/purchase-orders/${id}/reopen`, {})
+      if (data.success) {
+        toast.success(data.message || `ย้อนคืน ${poNumber} กลับเป็นร่างแล้ว`)
+        await Promise.all([fetchOrders(), fetchReceipts()])
+      } else {
+        toast.error(data.message || 'ย้อนคืนไม่สำเร็จ')
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'ย้อนคืนไม่สำเร็จ')
+    }
   }
 
   const handleCancelInvoice = async (id: string) => {
@@ -2193,18 +2258,31 @@ const Purchase = () => {
   const poNextStep = (order: PurchaseOrder): NextStep => {
     if (order.status === 'CANCELLED') return { kind: 'locked', label: t('purchase.nextStep.cancelled') }
     if (order.status === 'DRAFT') {
-      return { kind: 'action', label: t('purchase.actions.submitForApproval'), onClick: () => handleUpdateOrderStatus(order.id, 'SUBMITTED') }
+      return {
+        kind: 'action', label: t('purchase.actions.submitForApproval'),
+        onClick: () => {
+          if (!confirmUnboundOrder(order.unbound_count || 0)) return
+          handleUpdateOrderStatus(order.id, 'SUBMITTED')
+        }
+      }
     }
     if (order.status === 'SUBMITTED') {
       if (!canMakePO) return { kind: 'locked', label: t('purchase.nextStep.noPermissionApprove') }
-      return { kind: 'action', label: t('purchase.actions.approve'), onClick: () => handleUpdateOrderStatus(order.id, 'APPROVED') }
+      return {
+        kind: 'action', label: t('purchase.actions.approve'),
+        onClick: () => {
+          if (!confirmUnboundOrder(order.unbound_count || 0)) return
+          handleUpdateOrderStatus(order.id, 'APPROVED')
+        }
+      }
     }
     if (order.status === 'APPROVED' || order.status === 'PARTIAL') {
       return {
         kind: 'action', label: t('purchase.actions.receiveGoods'),
         onClick: () => {
+          if (!confirmUnboundOrder(order.unbound_count || 0)) return
           // ส่งค่าผ่าน data ให้ openModal เป็นคนเซ็ต — ห้ามเซ็ตเองก่อนเรียก
-          openModal('receipt', 'create', { purchase_order_id: order.id, items: [] })
+          openModal('receipt', 'create', { purchase_order_id: order.id, delivery_note_no: order.payment_reference || '', items: [] })
           loadPendingItems(order.id)
         },
       }
@@ -2214,10 +2292,16 @@ const Purchase = () => {
       return {
         kind: 'action', label: t('purchase.actions.createInvoice'),
         onClick: () => {
+          if (!confirmUnboundOrder(order.unbound_count || 0)) return
           openModal('invoice', 'create', {
             purchase_order_id: order.id,
+            supplier_invoice_number: order.payment_reference || '',
             tax_rate: order.tax_rate ?? 7,
             due_date: order.expected_date || '',
+            auto_pay: order.is_paid === 1,
+            payment_method: order.payment_method || '',
+            payment_reference: order.payment_reference || '',
+            bank_account_id: order.bank_account_id || '',
           })
         },
       }
@@ -2404,7 +2488,14 @@ const Purchase = () => {
           tax_rate: data.tax_rate || 7,
           notes: data.notes || '',
           linked_pr_id: data.linked_pr_id || '',
-          items: (data.items || [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }]).map((item: any) => ({
+          payment_method: data.payment_method || '',
+          payment_reference: data.payment_reference || '',
+          bank_account_id: data.bank_account_id || '',
+          is_paid: Boolean(data.is_paid),
+          paid_amount: data.paid_amount || 0,
+          items: (data.items || [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }]).map((item: any) => ({
+            ...item,
+            skip_stock: Boolean(item.skip_stock),
             ...item,
             unit: normalizeUnit(item.unit || ''),
           }))
@@ -2434,6 +2525,10 @@ const Purchase = () => {
           notes: data.notes || '',
           dr_account_id: '',
           cr_account_id: '',
+          auto_pay: Boolean(data.auto_pay),
+          payment_method: data.payment_method || '',
+          payment_reference: data.payment_reference || '',
+          bank_account_id: data.bank_account_id || '',
           _subtotal: data.subtotal || 0,
           _tax_amount: data.tax_amount || 0,
           _total_amount: data.total_amount || 0,
@@ -2471,9 +2566,9 @@ const Purchase = () => {
       // ล้างเฉพาะฟอร์มของชนิดที่กำลังเปิด — เดิมล้างทุกใบรวด ทำให้เปิดใบแจ้งหนี้
       // ไปทับใบสั่งซื้อที่กรอกค้างไว้ และทำให้ค่าที่ปุ่ม "ขั้นต่อไป" ใส่มาหายเกลี้ยง
       if (type === 'request') setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
-      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] })
+      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
       if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      if (type === 'invoice') setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      if (type === 'invoice') setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
       if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -2561,7 +2656,7 @@ const Purchase = () => {
   }
   const removeRequestItem = (index: number) => setRequestForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))
 
-  const addOrderItem = () => setOrderForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '' }] }))
+  const addOrderItem = () => setOrderForm(prev => ({ ...prev, items: [...prev.items, { material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] }))
   const updateOrderItem = (index: number, field: keyof OrderItem, value: any) => {
     setOrderForm(prev => {
       const items = [...prev.items]
@@ -3071,6 +3166,16 @@ const Purchase = () => {
                     <ChevronRight className={`w-3 h-3 shrink-0 text-[var(--fg-4)] transition-transform ${openRow === order.id ? 'rotate-90' : ''}`} />
                     <button onClick={e => { e.stopPropagation(); openModalWithDetail('order', 'view', order.id, order) }}
                       className="font-mono text-xs text-[var(--primary)] hover:underline text-left truncate">{order.po_number}</button>
+                    {order.is_paid === 1 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium whitespace-nowrap shrink-0 flex items-center gap-0.5" title="ชำระแล้ว ณ จุดซื้อ">
+                        ✓ ซื้อสด
+                      </span>
+                    )}
+                    {(order.unbound_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap shrink-0 flex items-center gap-0.5" title={`มี ${order.unbound_count} รายการยังไม่ผูก SKU`}>
+                        <AlertCircle className="w-2.5 h-2.5" /> ไม่ผูก SKU ({order.unbound_count})
+                      </span>
+                    )}
                   </div>
                   <div className="col-span-3 min-w-0">
                     <p className="text-[var(--fg-1)] font-medium truncate">{order.supplier_name}</p>
@@ -3091,6 +3196,8 @@ const Purchase = () => {
                         { label: t('purchase.actions.delete'), onClick: () => handleDeleteOrder(order.id), danger: true },
                       ] : []),
                       /* รับของแล้วยกเลิกไม่ได้ — ต้องไปยกเลิกใบรับของก่อน (กฎเดิม ไม่ได้เปลี่ยน) */
+                      ...(canReopenDoc && ['SUBMITTED', 'APPROVED'].includes(order.status)
+                        ? [{ label: 'ย้อนคืนเป็นร่าง', onClick: () => handleReopenOrder(order.id, order.po_number) }] : []),
                       ...(canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status)
                         ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelOrder(order.id, order.po_number), danger: true }] : []),
                     ]} />
@@ -3105,7 +3212,19 @@ const Purchase = () => {
               <div key={order.id} className="bg-[var(--surface)] border border-[var(--border)] hover:border-phopy-indigo/40 rounded-xl p-4 transition-colors flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-[var(--fg-4)] font-mono">{order.po_number}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs text-[var(--fg-4)] font-mono">{order.po_number}</p>
+                      {order.is_paid === 1 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium whitespace-nowrap shrink-0 flex items-center gap-0.5" title="ชำระแล้ว ณ จุดซื้อ">
+                          ✓ ซื้อสด
+                        </span>
+                      )}
+                      {(order.unbound_count ?? 0) > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap shrink-0 flex items-center gap-0.5" title={`มี ${order.unbound_count} รายการยังไม่ผูก SKU`}>
+                          <AlertCircle className="w-2.5 h-2.5" /> ไม่ผูก SKU ({order.unbound_count})
+                        </span>
+                      )}
+                    </div>
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{order.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">{order.supplier_code}</p>
                   </div>
@@ -3157,6 +3276,8 @@ const Purchase = () => {
                         { label: t('purchase.actions.edit'), onClick: () => openModalWithDetail('order', 'edit', order.id, order) },
                         { label: t('purchase.actions.delete'), onClick: () => handleDeleteOrder(order.id), danger: true },
                       ] : []),
+                      ...(canReopenDoc && ['SUBMITTED', 'APPROVED'].includes(order.status)
+                        ? [{ label: 'ย้อนคืนเป็นร่าง', onClick: () => handleReopenOrder(order.id, order.po_number) }] : []),
                       ...(canCancelDoc && !['CANCELLED', 'RECEIVED', 'PARTIAL'].includes(order.status)
                         ? [{ label: t('purchase.actions.cancel'), onClick: () => handleCancelOrder(order.id, order.po_number), danger: true }] : []),
                     ]} />
@@ -3702,7 +3823,7 @@ const Purchase = () => {
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.quantity')}</label>
-                  <input type="number" min="0" step="0.01" value={item.quantity}
+                  <input type="number" min="0" step="any" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
@@ -3765,6 +3886,38 @@ const Purchase = () => {
     </ModalShell>
   )
 
+  // ฟังก์ชันจับคู่รหัสสินค้า (SKU) อัตโนมัติจากชื่อสินค้า 100%
+  const autoMatchOrderItems = () => {
+    let matched = 0
+    const norm = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    setOrderForm(prev => {
+      const items = prev.items.map(it => {
+        if (it.material_id) return it
+        const want = norm(it.description)
+        if (!want) return it
+        const exact = materials.filter(m => norm(m.name) === want)
+        if (exact.length === 1) {
+          matched++
+          const m = exact[0]
+          return {
+            ...it,
+            material_id: m.id,
+            unit: it.unit || m.unit,
+            unit_price: m.unitCost && (!it.unit_price || it.unit_price === 0) ? m.unitCost : it.unit_price,
+            total_price: it.quantity * (m.unitCost && (!it.unit_price || it.unit_price === 0) ? m.unitCost : it.unit_price),
+          }
+        }
+        return it
+      })
+      return { ...prev, items }
+    })
+    if (matched > 0) {
+      toast.success(`จับคู่รหัสสินค้า (SKU) ตามชื่อ 100% สำเร็จ ${matched} รายการ`)
+    } else {
+      toast.error('ไม่พบสินค้าที่ชื่อตรงเป๊ะ 100% ในระบบ')
+    }
+  }
+
   const OrderModal = () => {
     const subtotal   = orderForm.items.reduce((s, i) => s + i.total_price, 0)
     const afterDisc  = subtotal - (orderForm.discount || 0)
@@ -3805,7 +3958,28 @@ const Purchase = () => {
               {t('purchase.orderModal.saveEdit')}
             </button>
           </div>
-        ) : <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
+        ) : (
+          <div className="flex justify-between items-center w-full">
+            <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.close')}</button>
+            <div className="flex items-center gap-2">
+              {modalData?.status === 'DRAFT' ? (
+                <button
+                  type="button"
+                  onClick={() => setModalMode('edit')}
+                  className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 flex items-center gap-2 text-sm transition-colors shadow-sm"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span>{t('purchase.actions.edit')}</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-[var(--fg-4)]">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>ยืนยันแล้ว ไม่สามารถแก้ไขได้</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
       }
     >
       {/* PO header display when viewing */}
@@ -3894,23 +4068,75 @@ const Purchase = () => {
           <span className="text-sm font-semibold text-[var(--fg-2)]">{t('purchase.orderModal.itemsTitle')}
             <span className="ml-2 text-xs text-[var(--fg-4)]">{t('purchase.common.itemCount', { count: orderForm.items.length })}</span>
           </span>
-          {modalMode !== 'view' && (
-            <button onClick={addOrderItem}
-              className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-[var(--primary)] text-xs rounded-lg hover:bg-[var(--primary-soft)]">
-              <Plus className="w-3 h-3" /> {t('purchase.actions.addItem')}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {modalMode !== 'view' && orderForm.items.some(i => !i.material_id && i.description) && (
+              <button
+                type="button"
+                onClick={autoMatchOrderItems}
+                className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 text-xs font-medium rounded-lg transition-colors border border-amber-500/30"
+                title="ค้นหาและผูกกับรหัสสินค้า (SKU) ที่ชื่อตรงเป๊ะ 100%"
+              >
+                <span>🪄 จับคู่ SKU จากชื่อ</span>
+              </button>
+            )}
+            {modalMode !== 'view' && (
+              <button onClick={addOrderItem}
+                className="flex items-center gap-1 px-2.5 py-1 bg-phopy-indigo/10 text-[var(--primary)] text-xs rounded-lg hover:bg-[var(--primary-soft)]">
+                <Plus className="w-3 h-3" /> {t('purchase.actions.addItem')}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Warning banner if there are unbound items */}
+        {(() => {
+          const unboundCount = orderForm.items.filter(i => !i.material_id && (i.description || i.material_id)).length
+          if (unboundCount === 0) return null
+          return (
+            <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>มี <strong>{unboundCount}</strong> รายการที่ยังไม่ได้ผูกกับรหัสสินค้า (SKU) — สามารถกดปุ่ม <strong>"🪄 จับคู่ SKU จากชื่อ"</strong> หรือเลือกค้นหารหัสวัสดุเองได้</span>
+              </div>
+            </div>
+          )
+        })()}
+
         <div className="space-y-3">
-          {orderForm.items.map((item, index) => (
-            <div key={index} className="p-3 bg-[var(--bg)] rounded-xl space-y-2 border border-[var(--border)]/40">
+          {orderForm.items.map((item, index) => {
+            const isUnbound = !item.material_id && !!item.description
+            return (
+            <div key={index} className={`p-3 rounded-xl space-y-2 border transition-colors ${isUnbound ? 'bg-amber-500/[0.03] border-amber-500/40' : 'bg-[var(--bg)] border-[var(--border)]/40'}`}>
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                {item.material_id ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                    ✓ ผูก SKU แล้ว
+                  </span>
+                ) : item.skip_stock ? (
+                  <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                    ✓ ไม่นับสต็อก (ของใช้สำนักงาน/บริการ)
+                  </span>
+                ) : item.description ? (
+                  <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> ยังไม่ผูกรหัสสินค้า (SKU)
+                  </span>
+                ) : (
+                  <span className="text-[var(--fg-4)]">รายการใหม่</span>
+                )}
+                {item.material_id && (
+                  <span className="text-[var(--fg-4)] font-mono text-[10px]">
+                    {materials.find(m => m.id === item.material_id)?.code || ''}
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <MaterialSearchInput materials={materials} value={item.material_id} disabled={modalMode === 'view'}
                   onChange={(id, mat) => updateOrderItemFields(index, {
                     material_id: id,
-                    description: mat ? mat.name : '',
+                    description: mat ? mat.name : item.description,
                     unit: item.unit || mat?.unit,
                     unit_price: mat?.unitCost && item.unit_price === 0 ? mat.unitCost : item.unit_price,
+                    skip_stock: id ? false : item.skip_stock,
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
                     (newItem) => {
@@ -3954,7 +4180,7 @@ const Purchase = () => {
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.orderModal.unitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
-                    <input type="number" min="0" step="0.01" value={item.unit_price}
+                    <input type="number" min="0" step="any" value={item.unit_price}
                       onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
                       disabled={modalMode === 'view'}
                       className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
@@ -3973,8 +4199,21 @@ const Purchase = () => {
                   )}
                 </div>
               </div>
+              {/* ติ๊ก "ไม่นับสต็อก" — ซ่อนเมื่อมี SKU แล้ว */}
+              {!item.material_id && modalMode !== 'view' && (
+                <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+                  <input type="checkbox" checked={!!item.skip_stock}
+                    onChange={e => updateOrderItem(index, 'skip_stock', e.target.checked)}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer" />
+                  <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">ไม่นับสต็อก (ของใช้สำนักงาน / รับได้โดยไม่ต้องผูก SKU)</span>
+                </label>
+              )}
+              {!item.material_id && modalMode === 'view' && !!item.skip_stock && (
+                <span className="text-[11px] text-blue-600 dark:text-blue-400 flex items-center gap-1 pt-1 font-medium">✓ ไม่นับสต็อก</span>
+              )}
             </div>
-          ))}
+            )
+          })}
           {orderForm.items.length === 0 && (
             <div className="text-center py-6 text-[var(--fg-4)] text-sm border border-dashed border-[var(--border)] rounded-xl">
               {t('purchase.common.noItemsYet')}
@@ -4016,6 +4255,96 @@ const Purchase = () => {
           </div>
         </div>
       )}
+
+      {/* ── ข้อมูลการชำระเงิน (ซื้อสด / ชำระแล้ว) ── */}
+      <div className="p-4 bg-[var(--bg)] rounded-xl space-y-3 border border-[var(--border)]">
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer font-medium text-sm text-[var(--fg-1)]">
+            {modalMode !== 'view' ? (
+              <input
+                type="checkbox"
+                checked={orderForm.is_paid}
+                onChange={e => {
+                  const checked = e.target.checked
+                  setOrderForm(p => ({
+                    ...p,
+                    is_paid: checked,
+                    payment_method: checked ? (p.payment_method || 'โอนจ่าย QR') : '',
+                    bank_account_id: checked ? (p.bank_account_id || defaultBankId()) : '',
+                    paid_amount: checked ? (p.paid_amount || grandTotal) : 0,
+                  }))
+                }}
+                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+              />
+            ) : (
+              <span className={`w-2.5 h-2.5 rounded-full ${modalData?.is_paid ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            )}
+            <span>ชำระเงินแล้ว ณ จุดซื้อ (ซื้อสด / มีสลิปหรือใบเสร็จ)</span>
+          </label>
+          {modalMode === 'view' && (
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${modalData?.is_paid ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-gray-500/10 text-[var(--fg-4)]'}`}>
+              {modalData?.is_paid ? 'ชำระแล้ว' : 'ยังไม่ชำระ'}
+            </span>
+          )}
+        </div>
+
+        {(orderForm.is_paid || (modalMode === 'view' && modalData?.is_paid)) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-[var(--border)]">
+            <Field label="วิธีชำระเงิน">
+              {modalMode === 'view' ? (
+                <div className="px-3 py-2 bg-[var(--surface)] rounded-lg text-sm text-[var(--fg-1)] border border-[var(--border)]">
+                  {modalData?.payment_method || '-'}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="เช่น โอนจ่าย QR KBANK, เงินสด"
+                  value={orderForm.payment_method}
+                  onChange={e => setOrderForm(p => ({ ...p, payment_method: e.target.value }))}
+                  className={inputCls()}
+                />
+              )}
+            </Field>
+
+            <Field label="เลขที่ใบเสร็จ / อ้างอิง POS">
+              {modalMode === 'view' ? (
+                <div className="px-3 py-2 bg-[var(--surface)] rounded-lg text-sm text-[var(--fg-1)] font-mono border border-[var(--border)]">
+                  {modalData?.payment_reference || '-'}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="เช่น 116010523634 (POS ID: ...)"
+                  value={orderForm.payment_reference}
+                  onChange={e => setOrderForm(p => ({ ...p, payment_reference: e.target.value }))}
+                  className={inputCls()}
+                />
+              )}
+            </Field>
+
+            <Field label="บัญชีธนาคาร (เงินออก)">
+              {modalMode === 'view' ? (
+                <div className="px-3 py-2 bg-[var(--surface)] rounded-lg text-sm text-[var(--fg-1)] border border-[var(--border)]">
+                  {modalData?.bank_name ? `${modalData.bank_name} (${modalData.bank_account_number || ''})` : '-'}
+                </div>
+              ) : (
+                <select
+                  value={orderForm.bank_account_id}
+                  onChange={e => setOrderForm(p => ({ ...p, bank_account_id: e.target.value }))}
+                  className={inputCls()}
+                >
+                  <option value="">เลือกบัญชีธนาคาร</option>
+                  {bankAccounts.filter(b => b.is_active).map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.bank_name} · {b.account_number} ({b.account_name})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          </div>
+        )}
+      </div>
 
       <Field label={t('purchase.common.notes')}>
         <textarea value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))}
@@ -4096,7 +4425,16 @@ const Purchase = () => {
             orders={orders.filter(o => ['SUBMITTED', 'APPROVED', 'PARTIAL'].includes(o.status)
               && !receipts.some(r => r.purchase_order_id === o.id && r.status === 'DRAFT'))}
             value={receiptForm.purchase_order_id}
-            onChange={id => { setReceiptForm(p => ({ ...p, purchase_order_id: id, items: [] })); if (id) loadPendingItems(id) }}
+            onChange={id => {
+              const po = orders.find(o => o.id === id)
+              setReceiptForm(p => ({
+                ...p,
+                purchase_order_id: id,
+                delivery_note_no: p.delivery_note_no || po?.payment_reference || '',
+                items: []
+              }))
+              if (id) loadPendingItems(id)
+            }}
             emptyMessage={t('purchase.receiptModal.noEligiblePO')}
           />
         </Field>
@@ -4479,6 +4817,40 @@ const Purchase = () => {
             onChange={e => setInvoiceForm(p => ({ ...p, due_date: e.target.value }))} className={inputCls()} />
         </Field>
       </div>
+
+      {selectedPO?.is_paid === 1 && (
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-sm flex items-start gap-2.5">
+          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+              ใบสั่งซื้อนี้ชำระเงินแล้ว ณ จุดซื้อ (ซื้อสด)
+            </p>
+            <p className="text-[var(--fg-3)] mt-0.5">
+              วิธีชำระ: {selectedPO.payment_method || 'โอนเงิน'} | อ้างอิง: {selectedPO.payment_reference || '-'}
+              {selectedPO.bank_name && ` | ธนาคาร: ${selectedPO.bank_name}`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isView && selectedPO?.is_paid === 1 && (
+        <div className="p-3 bg-[var(--surface)] border border-emerald-500/30 rounded-xl space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={invoiceForm.auto_pay ?? true}
+              onChange={e => setInvoiceForm(p => ({ ...p, auto_pay: e.target.checked }))}
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+            />
+            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+              [✓] บันทึกปิดจ่ายเงิน (PAID) อัตโนมัติทันที
+            </span>
+          </label>
+          <p className="text-xs text-[var(--fg-4)] pl-6">
+            ตัดชำระผ่าน {selectedPO.payment_method || 'เงินโอน'} อ้างอิง {selectedPO.payment_reference || '-'} ปิดสถานะเป็น PAID และลงบัญชีสมบูรณ์ทันที
+          </p>
+        </div>
+      )}
 
       <StepHead n={3} title={t('purchase.invoiceModal.step3')} />
       {selectedPO && (

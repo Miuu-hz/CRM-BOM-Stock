@@ -17,9 +17,25 @@ import { useModalClose } from '../hooks/useModalClose'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { unitLabel } from '../hooks/useUnits'
+import { timeAgo } from '../utils/timeAgo'
 
 // Types
+// รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
+// amount เป็น null ได้ (ใบส่งของไม่มียอดเงินของตัวเอง)
+// open_id = เอกสารที่เปิดเมื่อคลิก — ใบเสร็จไม่มีหน้าของตัวเอง จึงชี้กลับไปที่ใบแจ้งหนี้
+interface SalesActivity {
+  kind: 'QT' | 'SO' | 'DO' | 'INV' | 'RC' | 'CN'
+  id: string
+  doc: string
+  party: string | null
+  amount: number | null
+  status: string
+  updated_at: string
+  open_id: string
+}
+
 interface SalesSummary {
+  recentActivity?: SalesActivity[]
   salesOrders: {
     total: number
     draft: number
@@ -190,6 +206,17 @@ interface POSDailySales {
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
+// ป้าย ปลายทาง และ endpoint ของแต่ละชนิดเอกสารในฟีดความเคลื่อนไหว
+// คู่ขนานกับ ACTIVITY_TARGET ของฝั่งจัดซื้อ ให้ทั้งสองโมดูลอ่านเหมือนกัน
+const ACTIVITY_TARGET: Record<string, { tab: string; path: string; labelKey: string; tone: string }> = {
+  QT:  { tab: 'quotations',      path: 'quotations',      labelKey: 'sales.docType.quotation',     tone: 'bg-[var(--info-soft)] text-info border-info/30' },
+  SO:  { tab: 'orders',          path: 'sales-orders',    labelKey: 'sales.docType.salesOrder',    tone: 'bg-purple-500/10 text-purple-500 border-purple-500/30' },
+  DO:  { tab: 'delivery-orders', path: 'delivery-orders', labelKey: 'sales.docType.deliveryOrder', tone: 'bg-[var(--success-soft)] text-success border-success/30' },
+  INV: { tab: 'invoices',        path: 'invoices',        labelKey: 'sales.docType.invoice',       tone: 'bg-[var(--warning-soft)] text-warning border-warning/30' },
+  RC:  { tab: 'invoices',        path: 'invoices',        labelKey: 'sales.docType.receipt',       tone: 'bg-phopy-indigo/10 text-[var(--primary)] border-phopy-indigo/30' },
+  CN:  { tab: 'credit-notes',    path: 'credit-notes',    labelKey: 'sales.docType.creditNote',    tone: 'bg-[var(--danger-soft)] text-danger border-danger/30' },
+}
+
 const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string }> = {
   DRAFT:      { labelKey: 'sales.status.draft',        bg: 'bg-gray-500/15',    text: 'text-[var(--fg-2)]' },
   SENT:       { labelKey: 'sales.status.sent',         bg: 'bg-blue-500/15',    text: 'text-blue-300' },
@@ -496,6 +523,23 @@ const Sales = () => {
     else if (type === t('sales.docType.deliveryOrder')) setDetailDO(item)
     else toast(`${t('sales.viewDetails')} ${type} — ${t('sales.common.comingSoon')}`)
   }
+  // เปิดเอกสารจากฟีดความเคลื่อนไหว — โหลดตัวจริงก่อนค่อยส่งเข้าโมดัล
+  // โมดัลใบลดหนี้อ่านค่าจาก prop ตรง ๆ (ไม่ fetch เอง) ส่ง stub ไปจะได้ช่องว่าง
+  const openActivity = async (a: SalesActivity) => {
+    const target = ACTIVITY_TARGET[a.kind]
+    if (!target) return
+    setActiveTab(target.tab as any)
+    try {
+      const { data } = await api.get(`/sales/${target.path}/${a.open_id}`)
+      const doc = data.data || data
+      if (a.kind === 'QT') setDetailQT(doc)
+      else if (a.kind === 'SO') setDetailSO(doc)
+      else if (a.kind === 'DO') setDetailDO(doc)
+      else if (a.kind === 'CN') setDetailCN(doc)
+      else setDetailInv(doc)   // INV และ RC — ใบเสร็จเปิดใบแจ้งหนี้ต้นทาง
+    } catch { toast.error(t('sales.error.loadFailed')) }
+  }
+
   const handleEditQT = async (q: Quotation) => {
     try {
       const r = await salesService.getQuotation(q.id)
@@ -662,10 +706,10 @@ const Sales = () => {
       {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: t('sales.stats.totalSales'),   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-[var(--primary)]', bg: 'bg-phopy-indigo/10',  border: 'border-phopy-indigo-50' },
-          { label: t('sales.docType.salesOrder'),   value: `${t('sales.common.itemCount', { count: summary?.salesOrders.total || 0 })}`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-purple-500/10',   border: 'border-purple-500/20' },
-          { label: t('sales.stats.collectedToday'), value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-success/10',    border: 'border-success-soft' },
-          { label: t('sales.stats.receivable'),   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-warning',    bg: 'bg-orange-500/10',     border: 'border-orange-500/20' },
+          { label: t('sales.stats.totalSales'),   value: formatCurrency(summary?.salesOrders.totalSales || 0), icon: TrendingUp,  color: 'text-[var(--primary)]', bg: 'bg-gradient-to-br from-phopy-indigo/20 to-phopy-indigo-600/20',  border: 'border-phopy-indigo/30' },
+          { label: t('sales.docType.salesOrder'),   value: `${t('sales.common.itemCount', { count: summary?.salesOrders.total || 0 })}`,          icon: ShoppingCart, color: 'text-purple-500',  bg: 'bg-gradient-to-br from-purple-500/20 to-pink-500/20',   border: 'border-purple-500/30' },
+          { label: t('sales.stats.collectedToday'), value: formatCurrency(summary?.receipts.todayReceived || 0), icon: DollarSign,  color: 'text-success',   bg: 'bg-gradient-to-br from-success/20 to-emerald-500/20',    border: 'border-success/30' },
+          { label: t('sales.stats.receivable'),   value: formatCurrency(summary?.invoices.outstanding || 0),   icon: AlertCircle, color: 'text-warning',    bg: 'bg-gradient-to-br from-orange-500/20 to-red-500/20',     border: 'border-warning/30' },
         ].map((card, i) => (
           <motion.div key={card.label}
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
@@ -675,13 +719,43 @@ const Sales = () => {
                 <p className="text-xs text-[var(--fg-3)] mb-1">{card.label}</p>
                 <p className={`text-xl font-bold ${card.color}`}>{card.value}</p>
               </div>
-              <div className={`p-2 rounded-lg ${card.bg} shrink-0`}>
+              <div className="p-2 rounded-lg bg-[var(--surface)]/50 shrink-0">
                 <card.icon className={`w-5 h-5 ${card.color}`} />
               </div>
             </div>
           </motion.div>
         ))}
       </div>
+
+      {/* ความเคลื่อนไหวล่าสุด — ใบล่าสุดของทั้งโมดูลเรียงตามเวลาที่ขยับ คลิกแล้วเปิดใบนั้นได้เลย */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-[var(--fg-1)] mb-3 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-[var(--primary)]" /> {t('sales.overview.recentTitle')}
+        </h3>
+        {(summary?.recentActivity?.length ?? 0) === 0 ? (
+          <p className="text-sm text-[var(--fg-4)] py-6 text-center">{t('sales.overview.recentEmpty')}</p>
+        ) : (
+          <div className="divide-y divide-[var(--border)]/30">
+            {summary!.recentActivity!.map(a => {
+              const go = ACTIVITY_TARGET[a.kind]
+              if (!go) return null
+              return (
+                <button key={`${a.kind}-${a.id}`} onClick={() => openActivity(a)}
+                  className="w-full flex items-center gap-3 py-2.5 px-1 text-left rounded-lg hover:bg-[var(--bg)] transition-colors">
+                  <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold border ${go.tone}`}>{t(go.labelKey)}</span>
+                  <span className="font-mono text-xs text-[var(--primary)] shrink-0">{a.doc}</span>
+                  <span className="text-sm text-[var(--fg-2)] truncate flex-1 min-w-0">{a.party || '-'}</span>
+                  {a.amount != null && (
+                    <span className="text-xs font-semibold text-[var(--fg-1)] tabular-nums shrink-0">{formatCurrency(a.amount)}</span>
+                  )}
+                  <span className="text-[11px] text-[var(--fg-4)] shrink-0 w-20 text-right">{timeAgo(a.updated_at)}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pending actions */}
