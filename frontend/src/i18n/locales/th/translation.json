@@ -5,10 +5,10 @@
   },
   "login": {
     "title": "Phopy",
-    "emailLabel": "Email / Username",
+    "emailLabel": "อีเมล / ชื่อผู้ใช้",
     "emailPlaceholder": "admin@example.com",
-    "passwordLabel": "Password",
-    "forgotPassword": "Forgot Password?",
+    "passwordLabel": "รหัสผ่าน",
+    "forgotPassword": "ลืมรหัสผ่าน?",
     "submit": "เข้าสู่ระบบ",
     "loading": "กำลังเข้าสู่ระบบ...",
     "error": "เข้าสู่ระบบไม่สำเร็จ"
@@ -17,9 +17,9 @@
     "expiringTitle": "Session กำลังหมดอายุ",
     "expiringMessage": "ไม่มีการใช้งานนานกว่า 30 นาที<br/>ระบบจะ logout อัตโนมัติใน 1 นาที",
     "extend": "ใช้งานต่อ",
-    "logout": "Logout"
+    "logout": "ออกจากระบบ"
   },
-  "loading": "Loading...",
+  "loading": "กำลังโหลด...",
   "sidebar": {
     "dashboard": "ภาพรวม",
     "crm": "CRM",
@@ -30,6 +30,8 @@
     "workOrders": "ใบสั่งงาน",
     "qualityControl": "ควบคุมคุณภาพ",
     "stock": "คลังสินค้า",
+    "stockItems": "รายการสินค้า",
+    "subcontractors": "ผู้รับจ้างช่วง",
     "stockDesc": "จัดการสินค้าคงคลัง",
     "purchase": "จัดซื้อ",
     "purchaseDesc": "จัดการจัดซื้อ",
@@ -48,6 +50,8 @@
     "periodClosing": "ปิดงวดบัญชี",
     "budgetVsActual": "งบประมาณเทียบผลจริง",
     "posClearing": "ปิดยอด POS",
+    "clearingReconcile": "บัญชีตรงกับของหรือยัง",
+    "platformSettlement": "ขายผ่านแพลตฟอร์ม",
     "financialReports": "รายงานการเงิน",
     "phopyBoard": "Phopy Board",
     "cashier": "แคชเชียร์",
@@ -138,7 +142,7 @@
     "searchError": "เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่อีกครั้ง",
     "noResultsFor": "ไม่พบผลลัพธ์สำหรับ \"{{query}}\"",
     "tryDifferentKeyword": "ลองใช้คำค้นหาอื่น",
-    "foundResults": "Found {{count}} results",
+    "foundResults": "พบ {{count}} รายการ",
     "customers": "ลูกค้า",
     "orders": "Orders",
     "products": "สินค้า",
@@ -178,7 +182,7 @@
     "items_count": "{{count}} รายการ",
     "loading": "กำลังโหลด...",
     "sessionExpired": "Session expired. Please login again.",
-    "copy": "Copy",
+    "copy": "คัดลอก",
     "confirm": "ยืนยัน"
   },
   "workOrders": {
@@ -279,7 +283,7 @@
       "completedOn": "เสร็จสิ้นเมื่อ {{date}}",
       "completed": "เสร็จสิ้น",
       "putOnHold": "ระงับการผลิต",
-      "resume": "Resume",
+      "resume": "ดำเนินการต่อ",
       "cancelOrder": "ยกเลิกคำสั่งผลิต",
       "planProduction": "วางแผนการผลิต",
       "startProduction": "เริ่มการผลิต",
@@ -422,7 +426,7 @@
     "createChecklistFirst": "กรุณาสร้าง Checklist ในแท็บ Checklists ก่อน",
     "productName": "ชื่อสินค้า",
     "productNamePlaceholder": "เช่น หมอนยางพารา",
-    "batch": "Batch / Lot",
+    "batch": "แบทช์ / ล็อต",
     "batchPlaceholder": "เช่น LOT-001",
     "workOrderRef": "อ้างอิง Work Order",
     "workOrderRefPlaceholder": "WO-00001",
@@ -435,7 +439,7 @@
     "createError": "สร้างไม่สำเร็จ",
     "start": "เริ่ม",
     "productLabel": "สินค้า",
-    "batchLabel": "Batch",
+    "batchLabel": "ล็อต",
     "inspectorLabel": "ผู้ตรวจสอบ",
     "pendingCount": "รอดำเนินการ",
     "target": "เป้าหมาย",
@@ -817,9 +821,9 @@
       "card": {
         "orderedOn": "สั่ง {{date}}",
         "expectedBy": "กำหนดรับ {{date}}",
-        "grConfirmed": "GR ×{{count}}",
+        "grConfirmed": "รับของ ×{{count}}",
         "grDraft": "GR ร่าง ×{{count}}",
-        "invCount": "INV ×{{count}}"
+        "invCount": "ใบแจ้งหนี้ ×{{count}}"
       },
       "expectedOn": "กำหนดส่ง {{date}}"
     },
@@ -951,7 +955,7 @@
       "rejectedQty": "ปฏิเสธ / เสียหาย",
       "overReceiveWarning": "รับเกินยอดคงค้าง {{qty}} {{unit}}",
       "imbalanceWarning": "รับจริง ≠ รับเข้าสต็อก + ปฏิเสธ (ยอดไม่สมดุล)",
-      "lotLabel": "Lot / Batch No.",
+      "lotLabel": "เลขที่ล็อต / แบทช์",
       "lotPlaceholder": "เช่น LOT-2026-001",
       "location": "สถานที่จัดเก็บ",
       "locationPlaceholder": "เช่น คลัง A, ชั้น 3",
@@ -1056,8 +1060,8 @@
     },
     "journal": {
       "title": "สมุดรายวัน (ระบบบันทึกอัตโนมัติ)",
-      "debit": "Dr.",
-      "credit": "Cr.",
+      "debit": "เดบิต",
+      "credit": "เครดิต",
       "rawStockAccount": "1107 สต็อกวัตถุดิบ",
       "inputVatAccount": "1110 ภาษีซื้อ",
       "accountsPayable": "2101 เจ้าหนี้การค้า",
@@ -1136,8 +1140,8 @@
       "costLabel": "ต้นทุน",
       "unitPrice": "ราคาขาย/หน่วย (฿)",
       "saleLabel": "ขาย",
-      "minStock": "Min Stock",
-      "maxStock": "Max Stock",
+      "minStock": "สต็อกขั้นต่ำ",
+      "maxStock": "สต็อกสูงสุด",
       "initialQty": "จำนวนเริ่มต้น",
       "location": "สถานที่เก็บ",
       "locationPlaceholder": "เช่น คลังหลัก, A-12",
@@ -1360,7 +1364,8 @@
       "invoice": "ใบแจ้งหนี้",
       "creditNote": "ใบลดหนี้",
       "backorder": "ใบค้างส่ง",
-      "deliveryOrder": "ใบส่งของ"
+      "deliveryOrder": "ใบส่งของ",
+      "receipt": "ใบเสร็จ"
     },
     "stats": {
       "totalSales": "ยอดขายรวม",
@@ -1378,7 +1383,7 @@
       "edit": "แก้ไข",
       "openShift": "เปิดกะ",
       "createDeliveryFromSO": "สร้างใบส่งของจากคำสั่งขาย",
-      "createInvoiceShort": "INV",
+      "createInvoiceShort": "ออกบิล",
       "collectPayment": "รับเงิน",
       "convertToSOFull": "แปลงเป็นคำสั่งขาย",
       "printA4": "พิมพ์ A4",
@@ -1564,8 +1569,8 @@
     },
     "journal": {
       "title": "สมุดรายวัน (ระบบบันทึกอัตโนมัติ)",
-      "debit": "Dr.",
-      "credit": "Cr.",
+      "debit": "เดบิต",
+      "credit": "เครดิต",
       "cashAccount": "1100 เงินสด",
       "bankAccount": "1101 เงินฝากธนาคาร",
       "arAccount": "1110 ลูกหนี้การค้า"
@@ -1577,7 +1582,9 @@
     "overview": {
       "itemCount": "{{count}} รายการ",
       "pendingActionsTitle": "รายการรอดำเนินการ",
-      "workflowTitle": "กระบวนการขาย"
+      "workflowTitle": "กระบวนการขาย",
+      "recentTitle": "ความเคลื่อนไหวล่าสุด",
+      "recentEmpty": "ยังไม่มีความเคลื่อนไหวในโมดูลขาย"
     },
     "orders": {
       "pendingDelivery": "ค้างส่ง {{qty}}"
@@ -2189,97 +2196,97 @@
     },
     "materialsTab": {
       "errors": {
-        "loadFailed": "Failed to load materials",
-        "deleteFailed": "Failed to delete material",
+        "loadFailed": "โหลดรายการวัตถุดิบไม่สำเร็จ",
+        "deleteFailed": "ลบวัตถุดิบไม่สำเร็จ",
         "saveFailed": "Failed to save",
         "quantityRequired": "Please enter a quantity",
         "adjustFailed": "Failed to adjust stock"
       },
-      "confirmDelete": "Are you sure you want to delete material \"{{name}}\"?",
-      "retry": "Retry",
+      "confirmDelete": "ต้องการลบวัตถุดิบ \"{{name}}\" ใช่หรือไม่?",
+      "retry": "ลองใหม่",
       "stats": {
-        "totalMaterials": "Total Materials",
-        "lowStock": "Low Stock",
-        "totalValue": "Total Value",
-        "activeItems": "Active Items"
+        "totalMaterials": "วัตถุดิบทั้งหมด",
+        "lowStock": "ใกล้หมด",
+        "totalValue": "มูลค่ารวม",
+        "activeItems": "รายการที่ใช้งาน"
       },
-      "searchPlaceholder": "Search materials...",
-      "addMaterial": "Add Material",
+      "searchPlaceholder": "ค้นหาวัตถุดิบ...",
+      "addMaterial": "เพิ่มวัตถุดิบ",
       "table": {
-        "code": "Code",
-        "name": "Name",
-        "category": "Category",
-        "unit": "Unit",
-        "costPerUnit": "Cost/Unit",
-        "stock": "Stock",
-        "status": "Status",
-        "usedIn": "Used In",
-        "actions": "Actions"
+        "code": "รหัส",
+        "name": "ชื่อ",
+        "category": "หมวดหมู่",
+        "unit": "หน่วย",
+        "costPerUnit": "ต้นทุน/หน่วย",
+        "stock": "คงเหลือ",
+        "status": "สถานะ",
+        "usedIn": "ใช้ในสูตรผลิต",
+        "actions": "จัดการ"
       },
       "empty": {
-        "noResults": "No materials found",
-        "noMaterials": "No materials yet"
+        "noResults": "ไม่พบวัตถุดิบ",
+        "noMaterials": "ยังไม่มีวัตถุดิบ"
       },
-      "usedInBOMs": "{{count}} BOMs",
-      "uncategorized": "Uncategorized",
+      "usedInBOMs": "{{count}} BOM",
+      "uncategorized": "ไม่มีหมวดหมู่",
       "status": {
-        "critical": "Critical",
-        "low": "Low",
-        "adequate": "Adequate",
-        "overstock": "Overstock",
-        "noStock": "No Stock"
+        "critical": "วิกฤต",
+        "low": "ใกล้หมด",
+        "adequate": "เพียงพอ",
+        "overstock": "สต็อกเกิน",
+        "noStock": "หมดสต็อก"
       },
       "actions": {
-        "adjustStock": "Adjust Stock"
+        "adjustStock": "ปรับสต็อก"
       },
       "modal": {
         "title": {
-          "edit": "Edit Material",
-          "create": "Add New Material"
+          "edit": "แก้ไขวัตถุดิบ",
+          "create": "เพิ่มวัตถุดิบใหม่"
         },
         "labels": {
-          "code": "Code",
-          "category": "Category",
+          "code": "รหัส",
+          "category": "หมวดหมู่",
           "name": "Name",
-          "unit": "Unit (Auto)",
-          "unitHint": "Unit is determined automatically by category",
-          "costPerUnit": "Cost per Unit (฿)",
-          "minStock": "Min Stock",
-          "maxStock": "Max Stock",
-          "initialStock": "Initial Stock"
+          "unit": "หน่วย (อัตโนมัติ)",
+          "unitHint": "หน่วยจะถูกกำหนดอัตโนมัติตามหมวดหมู่",
+          "costPerUnit": "ต้นทุนต่อหน่วย (฿)",
+          "minStock": "สต็อกขั้นต่ำ",
+          "maxStock": "สต็อกสูงสุด",
+          "initialStock": "สต็อกตั้งต้น"
         },
         "placeholders": {
-          "selectCategory": "Select category",
-          "selectCategoryFirst": "Select category first",
-          "name": "Material name"
+          "selectCategory": "เลือกหมวดหมู่",
+          "selectCategoryFirst": "เลือกหมวดหมู่ก่อน",
+          "name": "ชื่อวัตถุดิบ"
         },
         "errors": {
-          "required": "Please fill in all required fields",
-          "saveFailed": "Failed to save"
+          "required": "กรุณากรอกข้อมูลที่จำเป็นให้ครบ",
+          "saveFailed": "บันทึกไม่สำเร็จ"
         }
       },
       "stockModal": {
-        "title": "Adjust Stock",
-        "materialLabel": "Material",
-        "currentStock": "Current Stock: {{stock}} {{unit}}",
-        "typeLabel": "Type",
+        "title": "ปรับสต็อก",
+        "materialLabel": "วัตถุดิบ",
+        "currentStock": "สต็อกปัจจุบัน: {{stock}} {{unit}}",
+        "typeLabel": "ประเภท",
         "types": {
-          "in": "Stock In",
-          "out": "Stock Out",
-          "adjust": "Adjust"
+          "in": "รับเข้า",
+          "out": "จ่ายออก",
+          "adjust": "ปรับยอด"
         },
         "labels": {
-          "quantity": "Quantity",
-          "newQuantity": "New Quantity",
-          "notes": "Notes"
+          "quantity": "จำนวน",
+          "newQuantity": "จำนวนใหม่",
+          "notes": "หมายเหตุ"
         },
         "placeholders": {
-          "notes": "Optional notes"
+          "notes": "หมายเหตุ (ไม่บังคับ)"
         },
-        "newStockLabel": "New Stock",
+        "newStockLabel": "สต็อกใหม่",
         "errors": {
-          "quantityRequired": "Please enter a quantity",
-          "adjustFailed": "Failed to adjust stock"
+          "quantityRequired": "กรุณากรอกจำนวน",
+          "adjustFailed": "ปรับสต็อกไม่สำเร็จ"
         }
       }
     },
@@ -2357,12 +2364,12 @@
       "instruction": "กรุณาเลือกประเภทที่ถูกต้องสำหรับสินค้าที่จะผลิต:",
       "finished": {
         "title": "สินค้าสำเร็จรูป",
-        "subtitle": "Finished Good",
+        "subtitle": "สินค้าสำเร็จรูป",
         "description": "สินค้าพร้อมขาย ผลิตแล้วเข้า stock โดยตรง"
       },
       "wip": {
         "title": "กึ่งสำเร็จรูป",
-        "subtitle": "Semi-Finished Good",
+        "subtitle": "สินค้ากึ่งสำเร็จรูป",
         "description": "ผ่านการผลิตขั้นต้น ใช้เป็น Child BOM ต่อได้"
       },
       "cancel": "ยกเลิก"
@@ -2414,20 +2421,20 @@
       "status": "สถานะ"
     },
     "settingsPage": {
-      "title": "Settings",
+      "title": "ตั้งค่า",
       "subtitle": "ตั้งค่าระบบและจัดการผู้ใช้งาน",
       "tabs": {
         "general": "ทั่วไป",
         "users": "ผู้ใช้งาน",
         "security": "ความปลอดภัย",
-        "pos": "POS Menu",
+        "pos": "เมนู POS",
         "line": "LINE Bot",
         "billing": "การชำระเงิน",
         "loyalty": "สะสมแต้ม",
         "units": "แปลงหน่วย",
         "materialCategories": "หมวดหมู่วัตถุดิบ",
         "llm": "AI / LLM",
-        "backup": "Auto Backup",
+        "backup": "สำรองข้อมูลอัตโนมัติ",
         "permissions": "จัดการสิทธิ์",
         "approval": "ระบบอนุมัติ",
         "docNumbering": "เลขที่เอกสาร",
@@ -2452,7 +2459,7 @@
         "serviceRate": "อัตราค่าบริการ (%)",
         "previewTitle": "ตัวอย่าง (ยอดสินค้า {{amount}})",
         "subtotal": "ยอดสินค้า",
-        "serviceCharge": "Service Charge ({{rate}}%)",
+        "serviceCharge": "ค่าบริการ ({{rate}}%)",
         "total": "ยอดสุทธิ",
         "save": "บันทึกการตั้งค่า"
       },
@@ -2502,8 +2509,8 @@
         "tenantCode": "รหัสองค์กร",
         "accountType": "ประเภทบัญชี",
         "subscriptionPlan": "แพ็กเกจสมาชิก",
-        "masterAccount": "Master Account",
-        "standardAccount": "Standard Account",
+        "masterAccount": "บัญชี Master",
+        "standardAccount": "บัญชีทั่วไป",
         "masterPrivilegesTitle": "สิทธิ์ Master Account",
         "privilegeUnlimitedUsers": "สามารถสร้างผู้ใช้งานลูกได้ไม่จำกัด",
         "privilegeNoTimeLock": "แก้ไขข้อมูลได้ไม่จำกัดเวลา (ไม่ติด 24hr rule)",
@@ -2616,11 +2623,11 @@
         "passwordPlaceholderCreate": "ตั้งรหัสผ่าน",
         "roleLabel": "ระดับสิทธิ์",
         "role": {
-          "manager": "Manager",
+          "manager": "ผู้จัดการ",
           "managerDesc": "อนุมัติ / จัดการแผนก",
-          "powerUser": "Power User",
+          "powerUser": "ผู้ใช้ระดับสูง",
           "powerUserDesc": "ใช้งานได้ทุกฟีเจอร์",
-          "user": "User",
+          "user": "ผู้ใช้งาน",
           "userDesc": "ใช้งานพื้นฐานในแผนก"
         },
         "presetLabel": "ตำแหน่ง (Preset)",
@@ -2628,7 +2635,7 @@
         "saving": "กำลังบันทึก…",
         "save": "บันทึก",
         "saveAndCreate": "เพิ่มผู้ใช้",
-        "passwordPlaceholderEdit": "•••••••• (leave blank to keep current)"
+        "passwordPlaceholderEdit": "•••••••• (เว้นว่างเพื่อใช้รหัสผ่านเดิม)"
       },
       "presets": {
         "sales": "พนักงานขาย",
@@ -2663,7 +2670,7 @@
       }
     },
     "backup": {
-      "title": "Auto Backup",
+      "title": "สำรองข้อมูลอัตโนมัติ",
       "subtitle": "สำรองฐานข้อมูลอัตโนมัติทุก 3 วัน · เฉพาะ Master เท่านั้น",
       "backupNow": "Backup ตอนนี้เลย",
       "backingUp": "กำลัง Backup...",
@@ -2678,7 +2685,7 @@
         "0": "ไปที่ {{consoleUrl}} → สร้าง Project ใหม่",
         "1": "เปิด {{driveApi}} → APIs & Services → Enable",
         "2": "สร้าง {{serviceAccount}} → IAM & Admin → Create Service Account",
-        "3": "Download JSON key → Actions → Manage Keys → Add Key → JSON",
+        "3": "ดาวน์โหลดคีย์ JSON → Actions → Manage Keys → Add Key → JSON",
         "4": "สร้าง folder ใน Google Drive → Share กับ email ของ Service Account (Editor)",
         "5": "คัดลอก Folder ID จาก URL: {{folderUrl}}",
         "6": "เพิ่มใน {{envFile}}:"
@@ -2691,8 +2698,8 @@
         "size": "ขนาด",
         "status": "สถานะ",
         "date": "วันที่",
-        "actions": "Actions",
-        "download": "Download"
+        "actions": "จัดการ",
+        "download": "ดาวน์โหลด"
       },
       "status": {
         "SUCCESS": "สำเร็จ",
@@ -2714,18 +2721,18 @@
       }
     },
     "llm": {
-      "title": "AI Assistant",
+      "title": "ผู้ช่วย AI",
       "subtitle": "เชื่อมต่อ AI client ภายนอกผ่าน MCP protocol",
       "mcp": {
-        "title": "MCP Server",
+        "title": "เซิร์ฟเวอร์ MCP",
         "subtitle": "สำหรับ AI clients ที่รองรับ MCP protocol",
         "noKey": "ยังไม่มี API Key — สร้างเพื่อเปิดใช้งาน MCP",
         "generateKey": "สร้าง API Key",
-        "urlLabel": "MCP Server URL",
+        "urlLabel": "URL เซิร์ฟเวอร์ MCP",
         "copy": "Copy",
         "copied": "คัดลอก URL แล้ว",
-        "test": "Test MCP",
-        "regenerate": "Regenerate Key",
+        "test": "ทดสอบ MCP",
+        "regenerate": "สร้างคีย์ใหม่",
         "resultTitle": "ผลการทดสอบ MCP Server",
         "ready": "MCP Server พร้อมใช้งาน",
         "regenerateConfirm": "สร้าง API Key ใหม่จะทำให้ URL เดิมใช้งานไม่ได้ ต้องการดำเนินการต่อ?",
@@ -2853,7 +2860,7 @@
       "selectUser": "เลือกพนักงาน…",
       "noUsers": "ไม่พบผู้ใช้",
       "emptyHint": "เลือกพนักงานด้านบนเพื่อจัดการสิทธิ์",
-      "presets": "Quick Presets",
+      "presets": "ชุดสิทธิ์สำเร็จรูป",
       "roleSection": "บทบาท (Role)",
       "departmentSection": "แผนก / สิทธิ์เข้าถึง",
       "customOverrides": "Custom Overrides (ขั้นสูง)",
@@ -2906,118 +2913,118 @@
         "ceo": "CEO / เจ้าของ"
       },
       "ceoModal": {
-        "title": "Grant {{dept}} permission — Admin level",
-        "warning": "This person will receive <span class=\"font-semibold text-[var(--warning)]\">Admin</span> privileges, allowing them to <strong>access, edit, and delete documents in every module and department</strong> without restrictions.",
-        "bullet1": "• Read / Write / Approve / <strong>Delete</strong> all data",
-        "bullet2": "• Access every department and module, second only to Master",
-        "bullet3": "• Can be revoked later by removing the {{dept}} department",
-        "confirm": "Confirm Grant Admin"
+        "title": "ให้สิทธิ์แผนก {{dept}} — ระดับผู้ดูแลระบบ",
+        "warning": "บุคคลนี้จะได้รับสิทธิ์ <span class=\"font-semibold text-[var(--warning)]\">ผู้ดูแลระบบ (Admin)</span> ซึ่งสามารถ<strong>เข้าถึง แก้ไข และลบเอกสารได้ทุกโมดูลและทุกแผนก</strong>โดยไม่มีข้อจำกัด",
+        "bullet1": "• อ่าน / เขียน / อนุมัติ / <strong>ลบ</strong> ข้อมูลทั้งหมด",
+        "bullet2": "• เข้าถึงได้ทุกแผนกและทุกโมดูล รองจาก Master เท่านั้น",
+        "bullet3": "• ยกเลิกภายหลังได้โดยลบแผนก {{dept}} ออก",
+        "confirm": "ยืนยันให้สิทธิ์ผู้ดูแลระบบ"
       }
     },
     "posMenu": {
-      "title": "POS Menu Management",
-      "subtitle": "Configure which products are available for sale in POS",
+      "title": "จัดการเมนู POS",
+      "subtitle": "ตั้งค่าสินค้าที่เปิดขายใน POS",
       "tabs": {
-        "menus": "Menus",
-        "categories": "Categories"
+        "menus": "เมนู",
+        "categories": "หมวดหมู่"
       },
       "bomDeduct": {
         "title": "ตัด stock วัตถุดิบตาม BOM เมื่อชำระเงิน",
         "description": "เปิด = ร้านที่ผลิตเอง (ร้านอาหาร / โรงงาน) · ปิด = ร้านค้าที่ขายของสำเร็จรูปโดยตรง"
       },
-      "searchPlaceholder": "Search menus...",
-      "allCategories": "All Categories",
-      "addMenu": "Add Menu",
-      "addCategory": "Add Category",
+      "searchPlaceholder": "ค้นหาเมนู...",
+      "allCategories": "ทุกหมวดหมู่",
+      "addMenu": "เพิ่มเมนู",
+      "addCategory": "เพิ่มหมวดหมู่",
       "stats": {
-        "totalMenus": "Total Menus",
-        "available": "Available",
-        "unavailable": "Unavailable",
-        "categories": "Categories"
+        "totalMenus": "เมนูทั้งหมด",
+        "available": "พร้อมขาย",
+        "unavailable": "งดขาย",
+        "categories": "หมวดหมู่"
       },
-      "loading": "Loading...",
-      "noMenus": "No menus found",
-      "noSearchResults": "Try different search terms",
-      "addFirstMenu": "Add your first menu to POS",
-      "uncategorized": "Uncategorized",
-      "bomVersion": "BOM v{{version}}",
+      "loading": "กำลังโหลด...",
+      "noMenus": "ไม่พบเมนู",
+      "noSearchResults": "ลองค้นหาด้วยคำอื่น",
+      "addFirstMenu": "เพิ่มเมนูแรกของคุณลงใน POS",
+      "uncategorized": "ไม่มีหมวดหมู่",
+      "bomVersion": "BOM เวอร์ชัน {{version}}",
       "price": "{{price}}",
-      "prepTime": "{{minutes}}m",
-      "enabled": "Enabled",
-      "disabled": "Disabled",
-      "deleteMenuConfirm": "Are you sure you want to remove this menu from POS?",
-      "deleteCategoryConfirm": "Are you sure? Menus in this category will be uncategorized.",
+      "prepTime": "{{minutes}} นาที",
+      "enabled": "เปิดใช้งาน",
+      "disabled": "ปิดใช้งาน",
+      "deleteMenuConfirm": "ต้องการนำเมนูนี้ออกจาก POS ใช่หรือไม่?",
+      "deleteCategoryConfirm": "ยืนยันหรือไม่? เมนูในหมวดหมู่นี้จะกลายเป็นไม่มีหมวดหมู่",
       "toast": {
-        "loadFailed": "Failed to load POS data",
+        "loadFailed": "โหลดข้อมูล POS ไม่สำเร็จ",
         "bomEnabled": "เปิดการตัด stock ตาม BOM แล้ว",
         "bomDisabled": "ปิดการตัด stock ตาม BOM แล้ว",
         "bomSaveFailed": "บันทึกไม่สำเร็จ",
-        "menuEnabled": "Menu enabled",
-        "menuDisabled": "Menu disabled",
-        "menuUpdateFailed": "Failed to update menu",
-        "menuDeleted": "Menu removed from POS",
-        "menuDeleteFailed": "Failed to delete menu",
-        "categoryDeleted": "Category deleted",
-        "categoryDeleteFailed": "Failed to delete category",
-        "menuSaved": "Menu added to POS successfully",
-        "menuUpdated": "Menu updated successfully",
-        "menuSaveFailed": "Failed to save menu",
-        "categorySaved": "Category created",
-        "categoryUpdated": "Category updated",
-        "categorySaveFailed": "Failed to save category",
-        "categoryNameRequired": "Category name is required"
+        "menuEnabled": "เปิดใช้งานเมนูแล้ว",
+        "menuDisabled": "ปิดใช้งานเมนูแล้ว",
+        "menuUpdateFailed": "อัปเดตเมนูไม่สำเร็จ",
+        "menuDeleted": "นำเมนูออกจาก POS แล้ว",
+        "menuDeleteFailed": "ลบเมนูไม่สำเร็จ",
+        "categoryDeleted": "ลบหมวดหมู่แล้ว",
+        "categoryDeleteFailed": "ลบหมวดหมู่ไม่สำเร็จ",
+        "menuSaved": "เพิ่มเมนูลง POS สำเร็จ",
+        "menuUpdated": "อัปเดตเมนูสำเร็จ",
+        "menuSaveFailed": "บันทึกเมนูไม่สำเร็จ",
+        "categorySaved": "สร้างหมวดหมู่แล้ว",
+        "categoryUpdated": "อัปเดตหมวดหมู่แล้ว",
+        "categorySaveFailed": "บันทึกหมวดหมู่ไม่สำเร็จ",
+        "categoryNameRequired": "กรุณากรอกชื่อหมวดหมู่"
       },
       "menuModal": {
-        "titleEdit": "Edit Menu",
-        "titleCreate": "Add Menu to POS",
-        "step1Title": "Select a product to add to POS",
-        "searchPlaceholder": "Search products...",
-        "noProducts": "No available products found",
-        "allInPos": "All products may already be in POS",
-        "productLabel": "Product",
-        "categoryLabel": "Category",
-        "selectCategory": "Select category...",
+        "titleEdit": "แก้ไขเมนู",
+        "titleCreate": "เพิ่มเมนูลง POS",
+        "step1Title": "เลือกสินค้าที่จะเพิ่มลง POS",
+        "searchPlaceholder": "ค้นหาสินค้า...",
+        "noProducts": "ไม่พบสินค้าที่ใช้ได้",
+        "allInPos": "สินค้าทั้งหมดอาจถูกเพิ่มลง POS แล้ว",
+        "productLabel": "สินค้า",
+        "categoryLabel": "หมวดหมู่",
+        "selectCategory": "เลือกหมวดหมู่...",
         "bomLabel": "BOM (Bill of Materials)",
-        "bomAvailable": "({{count}} available)",
-        "versionLabel": "Version",
-        "noBom": "No BOM available",
-        "selectBom": "Select BOM (optional)...",
-        "bomLinked": "Stock will be deducted from BOM ingredients",
-        "bomTip": "Tip: Link a BOM to auto-deduct stock from production recipe",
-        "posPrice": "POS Price",
+        "bomAvailable": "(มี {{count}} รายการ)",
+        "versionLabel": "เวอร์ชัน",
+        "noBom": "ไม่มี BOM ให้ใช้",
+        "selectBom": "เลือก BOM (ไม่บังคับ)...",
+        "bomLinked": "จะตัดสต็อกตามวัตถุดิบใน BOM",
+        "bomTip": "เคล็ดลับ: ผูก BOM เพื่อตัดสต็อกอัตโนมัติตามสูตรการผลิต",
+        "posPrice": "ราคาขาย POS",
         "required": "*",
-        "costPrice": "Cost Price",
-        "quickCode": "Quick Code",
-        "quickPlaceholder": "e.g., A01",
-        "prepTime": "Prep Time (min)",
-        "displayOrder": "Display Order",
+        "costPrice": "ราคาต้นทุน",
+        "quickCode": "รหัสลัด",
+        "quickPlaceholder": "เช่น A01",
+        "prepTime": "เวลาเตรียม (นาที)",
+        "displayOrder": "ลำดับการแสดง",
         "saleUnit": "หน่วยขาย",
-        "saleUnitLabel": "(Sale Unit)",
+        "saleUnitLabel": "(หน่วยขาย)",
         "selectSaleUnit": "เลือกหน่วย...",
-        "defaultUnit": "{{unit}} (default)",
-        "displayUnit": "{{unit}} (Display)",
-        "baseUnit": "{{unit}} (Base)",
-        "unitInfo": "Base: {{base}} | Display: {{display}}",
+        "defaultUnit": "{{unit}} (ค่าเริ่มต้น)",
+        "displayUnit": "{{unit}} (แสดงผล)",
+        "baseUnit": "{{unit}} (หน่วยฐาน)",
+        "unitInfo": "หน่วยฐาน: {{base}} | แสดงผล: {{display}}",
         "selectProductFirst": "เลือกสินค้าก่อนเพื่อดูหน่วยที่มี",
-        "description": "Description",
-        "descriptionPlaceholder": "Menu description...",
-        "available": "Available for sale",
-        "back": "Back",
+        "description": "รายละเอียด",
+        "descriptionPlaceholder": "รายละเอียดเมนู...",
+        "available": "พร้อมขาย",
+        "back": "ย้อนกลับ",
         "cancel": "Cancel",
-        "saving": "Saving...",
+        "saving": "กำลังบันทึก...",
         "save": "Save",
-        "requiredFields": "Please fill in all required fields"
+        "requiredFields": "กรุณากรอกข้อมูลที่จำเป็นให้ครบ"
       },
       "categoryModal": {
-        "titleEdit": "Edit Category",
-        "titleCreate": "Add Category",
-        "nameLabel": "Name",
-        "namePlaceholder": "e.g., Main Course",
-        "colorLabel": "Color",
-        "iconLabel": "Icon (optional)",
-        "iconPlaceholder": "Icon name",
+        "titleEdit": "แก้ไขหมวดหมู่",
+        "titleCreate": "เพิ่มหมวดหมู่",
+        "nameLabel": "ชื่อ",
+        "namePlaceholder": "เช่น อาหารจานหลัก",
+        "colorLabel": "สี",
+        "iconLabel": "ไอคอน (ไม่บังคับ)",
+        "iconPlaceholder": "ชื่อไอคอน",
         "cancel": "Cancel",
-        "saving": "Saving...",
+        "saving": "กำลังบันทึก...",
         "save": "Save"
       }
     },
@@ -3028,7 +3035,7 @@
       "searchPlaceholder": "ค้นหาหน่วย หรือชื่อสินค้า...",
       "global": {
         "title": "ทั่วไป (ใช้กับทุกสินค้า)",
-        "chainView": "Chain View",
+        "chainView": "มุมมองแบบลำดับ",
         "empty": "ยังไม่มีการแปลงหน่วยทั่วไป",
         "emptyHint": "ตัวอย่าง: 1 ลัง = 12 กล่อง"
       },
@@ -3037,7 +3044,7 @@
         "empty": "ยังไม่มีการแปลงเฉพาะสินค้า",
         "emptyHint": "ใช้เมื่อสินค้าแต่ละชิ้นมีขนาดบรรจุต่างกัน เช่น แป้ง A: 1 ถุง = 25 kg",
         "itemCount": "{{count}} รายการ",
-        "chain": "Chain"
+        "chain": "ลำดับ"
       },
       "builtIn": {
         "title": "มาตราสากล (Built-in)",
@@ -3214,9 +3221,9 @@
         "docEdit": "แก้ไขเอกสารที่ออกไปแล้ว"
       },
       "roles": {
-        "manager": "Manager",
-        "powerUser": "Power User",
-        "user": "User"
+        "manager": "ผู้จัดการ",
+        "powerUser": "ผู้ใช้ระดับสูง",
+        "user": "ผู้ใช้งาน"
       },
       "toasts": {
         "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
@@ -3247,30 +3254,30 @@
       "saveFailed": "บันทึกไม่สำเร็จ",
       "deleteFailed": "ลบไม่สำเร็จ",
       "userCol": "ผู้ใช้งาน",
-      "roleCol": "Role",
+      "roleCol": "บทบาท",
       "departmentCol": "แผนก",
       "noDepartment": "—",
-      "customBadge": "+custom",
+      "customBadge": "+กำหนดเอง",
       "modal": {
         "titleCreate": "เพิ่มผู้ใช้ใหม่",
         "titleEdit": "แก้ไข: {{name}}",
         "nameLabel": "ชื่อ *",
         "namePlaceholder": "ชื่อผู้ใช้งาน",
-        "emailLabel": "Email *",
+        "emailLabel": "อีเมล *",
         "emailPlaceholder": "email@example.com",
         "passwordLabel": "รหัสผ่าน",
         "passwordHintEdit": "(เว้นว่างถ้าไม่เปลี่ยน)",
         "passwordPlaceholderCreate": "รหัสผ่าน *",
         "passwordPlaceholderEdit": "••••••••",
-        "roleLabel": "Role",
+        "roleLabel": "บทบาท",
         "departmentsLabel": "แผนก (เลือกได้หลายแผนก)",
         "advancedTitle": "สิทธิ์ขั้นสูง (Custom Override)",
         "advancedHint": "กำหนด override เฉพาะ user นี้ — จะมีผลก่อน role+แผนก",
         "allowed": "✅ = อนุญาต",
         "denied": "❌ = ปฏิเสธ",
         "default": "⬜ = ตามระบบ",
-        "resourceCol": "Resource",
-        "overridesCount": "{{count}} overrides",
+        "resourceCol": "หมวดสิทธิ์",
+        "overridesCount": "แก้ไขสิทธิ์ {{count}} รายการ",
         "overrideNone": "คลิกเพื่อ override",
         "overrideAllow": "อนุญาต → คลิกเพื่อปฏิเสธ",
         "overrideDeny": "ปฏิเสธ → คลิกเพื่อล้าง"

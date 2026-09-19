@@ -59,6 +59,8 @@
     "workOrders": "Work Orders",
     "qualityControl": "Quality Control",
     "stock": "Stock",
+    "stockItems": "Stock Items",
+    "subcontractors": "Subcontractors",
     "stockDesc": "Inventory Management",
     "purchase": "Purchase",
     "purchaseDesc": "Procurement Management",
@@ -77,6 +79,8 @@
     "periodClosing": "Period Closing",
     "budgetVsActual": "Budget vs Actual",
     "posClearing": "POS Clearing",
+    "clearingReconcile": "Clearing Reconcile",
+    "platformSettlement": "Platform Sales",
     "financialReports": "Financial Reports",
     "phopyBoard": "Phopy Board",
     "cashier": "Cashier",
@@ -1359,7 +1363,8 @@
       "invoice": "Invoice",
       "creditNote": "Credit Note",
       "backorder": "Backorder",
-      "deliveryOrder": "Delivery Order"
+      "deliveryOrder": "Delivery Order",
+      "receipt": "Receipt"
     },
     "stats": {
       "totalSales": "Total Sales",
@@ -1576,7 +1581,9 @@
     "overview": {
       "itemCount": "{{count}} items",
       "pendingActionsTitle": "Pending actions",
-      "workflowTitle": "Sales workflow"
+      "workflowTitle": "Sales workflow",
+      "recentTitle": "Recent activity",
+      "recentEmpty": "No sales activity yet"
     },
     "orders": {
       "pendingDelivery": "Pending delivery {{qty}}"

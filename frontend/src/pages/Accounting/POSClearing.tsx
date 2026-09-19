@@ -145,7 +145,7 @@ export default function POSClearing() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">นำเงิน POS เข้าบัญชี</h1>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">นำเงิน POS เข้าบัญชี</h1>
           <p className="text-[var(--fg-3)] mt-1 text-sm">
             รับเงินจากลิ้นชักและ QR เข้าบัญชีเงินสด / ธนาคารประจำวัน
           </p>
@@ -172,7 +172,7 @@ export default function POSClearing() {
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-transparent text-white text-sm focus:outline-none cursor-pointer"
+            className="bg-transparent text-[var(--fg-1)] text-sm focus:outline-none cursor-pointer"
           />
           <span className="text-[var(--primary)] font-medium text-sm">
             {dateLabel()}
@@ -264,7 +264,7 @@ export default function POSClearing() {
       {pendingBills.length > 0 && (
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[var(--border)]">
-            <h2 className="font-semibold text-white flex items-center gap-2">
+            <h2 className="font-semibold text-[var(--fg-1)] flex items-center gap-2">
               <Receipt className="w-4 h-4 text-[var(--primary)]" />
               บิลที่รอนำเงินเข้า ({pendingBills.length} บิล)
             </h2>
@@ -295,7 +295,7 @@ export default function POSClearing() {
       {pendingBills.length === 0 && !loading && (
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-10 text-center">
           <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-success" />
-          <p className="text-white font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
+          <p className="text-[var(--fg-1)] font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
           <p className="text-[var(--fg-4)] text-sm mt-1">ไม่มีบิลค้างอยู่</p>
         </div>
       )}
@@ -310,7 +310,7 @@ export default function POSClearing() {
             className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden"
           >
             <div className="px-5 py-4 border-b border-[var(--border)]">
-              <h2 className="font-semibold text-white flex items-center gap-2">
+              <h2 className="font-semibold text-[var(--fg-1)] flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[var(--fg-3)]" />
                 ประวัติการนำเงินเข้าบัญชี
               </h2>
@@ -322,7 +322,7 @@ export default function POSClearing() {
                 {balance.recentTransfers.map((t) => (
                   <div key={t.id} className="px-5 py-4 flex justify-between items-center">
                     <div>
-                      <p className="text-sm font-medium text-white">{fmtDate(t.transfer_date)}</p>
+                      <p className="text-sm font-medium text-[var(--fg-1)]">{fmtDate(t.transfer_date)}</p>
                       <p className="text-xs text-[var(--fg-4)] mt-0.5">
                         {t.bill_count ? `${t.bill_count} บิล · ` : ''}
                         {t.cash_amount > 0 && `เงินสด ${fmt(t.cash_amount)}`}
@@ -412,12 +412,12 @@ function BillGroup({
             {bills.map((bill) => (
               <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20">
                 <div>
-                  <p className="text-sm text-white">{bill.display_name || bill.bill_number}</p>
+                  <p className="text-sm text-[var(--fg-1)]">{bill.display_name || bill.bill_number}</p>
                   <p className="text-xs text-[var(--fg-4)]">
                     {bill.bill_number} · {fmtDate(bill.closed_at)} {fmtTime(bill.closed_at)}
                   </p>
                 </div>
-                <p className="text-sm font-medium text-white">{fmt(bill.total_amount)}</p>
+                <p className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</p>
               </div>
             ))}
           </motion.div>
@@ -519,7 +519,7 @@ function DepositModal({
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
               <ArrowDownToLine className="w-5 h-5 text-[var(--primary)]" />
               นำเงินเข้าบัญชี
             </h2>
@@ -569,7 +569,7 @@ function DepositModal({
                 type="date"
                 value={transferDate}
                 onChange={(e) => setTransferDate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
               />
             </div>
           </div>
@@ -589,7 +589,7 @@ function DepositModal({
                   onChange={(e) => setCashAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-warning/30 rounded-lg text-white focus:outline-none focus:border-yellow-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-warning/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-yellow-400"
                 />
               </div>
             )}
@@ -605,7 +605,7 @@ function DepositModal({
                   onChange={(e) => setBankAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-info/30 rounded-lg text-white focus:outline-none focus:border-blue-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-info/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-blue-400"
                 />
               </div>
             )}
@@ -659,7 +659,7 @@ function DepositModal({
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="เช่น เลขสลิปโอน, เลขที่ใบนำฝาก"
-                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo"
+                className="w-full pl-10 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
               />
             </div>
           </div>
@@ -670,7 +670,7 @@ function DepositModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-white focus:outline-none focus:border-phopy-indigo resize-none text-sm"
+              className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo resize-none text-sm"
               placeholder="บันทึกเพิ่มเติม..."
             />
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   AlertTriangle,
@@ -32,6 +32,7 @@ const FinancialReports = () => {
   const [trialBalance, setTrialBalance] = useState<TrialBalanceReport | null>(null)
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null)
   const [profitLoss, setProfitLoss] = useState<ProfitLossReport | null>(null)
+  const [cashFlow, setCashFlow] = useState<any | null>(null)
 
   const fetchReport = async () => {
     try {
@@ -60,6 +61,14 @@ const FinancialReports = () => {
           })
           setProfitLoss(plRes.data.data)
           break
+          
+        case 'cash-flow':
+          const cfRes = await reportsApi.getCashFlow({
+            startDate: dateRange.start,
+            endDate: dateRange.end,
+          })
+          setCashFlow(cfRes.data.data)
+          break
       }
     } catch (error) {
       toast.error('ไม่สามารถโหลดรายงานได้')
@@ -67,6 +76,11 @@ const FinancialReports = () => {
       setLoading(false)
     }
   }
+
+  // Auto fetch when report changes or on initial mount
+  useEffect(() => {
+    fetchReport()
+  }, [activeReport])
 
   const formatCurrency = (amount: number) => {
     return amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -83,7 +97,7 @@ const FinancialReports = () => {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
           <BarChart3 className="w-8 h-8 text-[var(--primary)]" />
           รายงานทางการเงิน (Financial Reports)
         </h1>
@@ -176,7 +190,7 @@ const FinancialReports = () => {
         {activeReport === 'trial-balance' && trialBalance && (
           <div>
             <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-white">งบทดลอง (Trial Balance)</h2>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">งบทดลอง (Trial Balance)</h2>
               <p className="text-[var(--fg-3)]">
                 ระหว่างวันที่ {new Date(dateRange.start).toLocaleDateString('th-TH')} ถึง {new Date(dateRange.end).toLocaleDateString('th-TH')}
               </p>
@@ -229,7 +243,7 @@ const FinancialReports = () => {
         {activeReport === 'balance-sheet' && balanceSheet && (
           <div>
             <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-white">งบดุล (Balance Sheet)</h2>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">งบดุล (Balance Sheet)</h2>
               <p className="text-[var(--fg-3)]">
                 ณ วันที่ {new Date(balanceSheet.asOfDate).toLocaleDateString('th-TH')}
               </p>
@@ -332,7 +346,7 @@ const FinancialReports = () => {
         {activeReport === 'profit-loss' && profitLoss && (
           <div>
             <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-white">งบกำไรขาดทุน (Profit & Loss)</h2>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">งบกำไรขาดทุน (Profit & Loss)</h2>
               <p className="text-[var(--fg-3)]">
                 ระหว่างวันที่ {new Date(profitLoss.period.startDate).toLocaleDateString('th-TH')} ถึง {new Date(profitLoss.period.endDate).toLocaleDateString('th-TH')}
               </p>
@@ -420,14 +434,112 @@ const FinancialReports = () => {
           </div>
         )}
 
-        {activeReport === 'cash-flow' && (
-          <div className="text-center py-12">
-            <DollarSign className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
-            <p className="text-[var(--fg-3)]">งบกระแสเงินสด - อยู่ระหว่างพัฒนา</p>
+        {activeReport === 'cash-flow' && cashFlow && (
+          <div>
+            <div className="text-center mb-6">
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">งบกระแสเงินสด (Cash Flow Statement)</h2>
+              <p className="text-[var(--fg-3)]">
+                ระหว่างวันที่ {new Date(dateRange.start).toLocaleDateString('th-TH')} ถึง {new Date(dateRange.end).toLocaleDateString('th-TH')}
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              {/* Operating Activities */}
+              <div>
+                <h3 className="text-lg font-bold text-success mb-3 flex items-center gap-2">
+                  <ArrowUpRight className="w-5 h-5" />
+                  กระแสเงินสดจากกิจกรรมดำเนินงาน (Operating Activities)
+                </h3>
+                {cashFlow.operating.items.length === 0 ? (
+                  <p className="text-sm text-[var(--fg-4)] ml-4">ไม่มีรายการกิจกรรมดำเนินงานในช่วงเวลานี้</p>
+                ) : (
+                  <div className="space-y-1 ml-4">
+                    {cashFlow.operating.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between py-1 border-b border-[var(--border)]/50 text-sm">
+                        <span className="text-[var(--fg-2)]">{item.entry_description || item.description || item.account_name}</span>
+                        <span className="font-mono text-[var(--fg-1)]">{formatCurrency(item.debit - item.credit)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-success border-t border-[var(--border)] pt-2 mt-2">
+                  <span>เงินสดสุทธิจากกิจกรรมดำเนินงาน</span>
+                  <span className="font-mono">{formatCurrency(cashFlow.operating.total)}</span>
+                </div>
+              </div>
+
+              {/* Investing Activities */}
+              <div>
+                <h3 className="text-lg font-bold text-cyan-400 mb-3 flex items-center gap-2">
+                  <Calculator className="w-5 h-5" />
+                  กระแสเงินสดจากกิจกรรมลงทุน (Investing Activities)
+                </h3>
+                {cashFlow.investing.items.length === 0 ? (
+                  <p className="text-sm text-[var(--fg-4)] ml-4">ไม่มีรายการกิจกรรมลงทุนในช่วงเวลานี้</p>
+                ) : (
+                  <div className="space-y-1 ml-4">
+                    {cashFlow.investing.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between py-1 border-b border-[var(--border)]/50 text-sm">
+                        <span className="text-[var(--fg-2)]">{item.entry_description || item.description || item.account_name}</span>
+                        <span className="font-mono text-[var(--fg-1)]">{formatCurrency(item.debit - item.credit)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-cyan-400 border-t border-[var(--border)] pt-2 mt-2">
+                  <span>เงินสดสุทธิจากกิจกรรมลงทุน</span>
+                  <span className="font-mono">{formatCurrency(cashFlow.investing.total)}</span>
+                </div>
+              </div>
+
+              {/* Financing Activities */}
+              <div>
+                <h3 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+                  <Scale className="w-5 h-5" />
+                  กระแสเงินสดจากกิจกรรมจัดหาเงิน (Financing Activities)
+                </h3>
+                {cashFlow.financing.items.length === 0 ? (
+                  <p className="text-sm text-[var(--fg-4)] ml-4">ไม่มีรายการกิจกรรมจัดหาเงินในช่วงเวลานี้</p>
+                ) : (
+                  <div className="space-y-1 ml-4">
+                    {cashFlow.financing.items.map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between py-1 border-b border-[var(--border)]/50 text-sm">
+                        <span className="text-[var(--fg-2)]">{item.entry_description || item.description || item.account_name}</span>
+                        <span className="font-mono text-[var(--fg-1)]">{formatCurrency(item.debit - item.credit)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-purple-400 border-t border-[var(--border)] pt-2 mt-2">
+                  <span>เงินสดสุทธิจากกิจกรรมจัดหาเงิน</span>
+                  <span className="font-mono">{formatCurrency(cashFlow.financing.total)}</span>
+                </div>
+              </div>
+
+              {/* Summary Totals */}
+              <div className="border-t-2 border-phopy-indigo pt-4 space-y-2">
+                <div className="flex justify-between text-[var(--fg-2)]">
+                  <span>เงินสดยกมาต้นงวด</span>
+                  <span className="font-mono">{formatCurrency(cashFlow.openingBalance || 0)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-[var(--fg-1)]">
+                  <span>เงินสดเพิ่มขึ้น (ลดลง) สุทธิ</span>
+                  <span className="font-mono">
+                    {formatCurrency(cashFlow.operating.total + cashFlow.investing.total + cashFlow.financing.total)}
+                  </span>
+                </div>
+                <div className="flex justify-between font-bold text-xl text-[var(--primary)] border-t border-[var(--border)] pt-2">
+                  <span>เงินสดยกไปปลายงวด</span>
+                  <span className="font-mono">
+                    {formatCurrency((cashFlow.openingBalance || 0) + cashFlow.operating.total + cashFlow.investing.total + cashFlow.financing.total)}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {!trialBalance && !balanceSheet && !profitLoss && !loading && (
+        {!trialBalance && !balanceSheet && !profitLoss && !cashFlow && !loading && (
           <div className="text-center py-12">
             <FileText className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
             <p className="text-[var(--fg-3)] mb-4">เลือกช่วงวันที่และคลิก "ดูรายงาน"</p>
