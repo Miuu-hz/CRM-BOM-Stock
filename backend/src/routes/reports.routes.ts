@@ -203,11 +203,15 @@ router.get('/profit-loss', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { startDate, endDate } = req.query
-    
+
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'Start date and end date are required' })
     }
-    
+
+    // แยกกำไรตามหน่วยธุรกิจ — ขายผ่านแพลตฟอร์มลง business_unit='ONLINE', POS หน้าร้านลง 'STORE'
+    // ไม่ส่งมา = รวมทุกหน่วย (พฤติกรรมเดิม) · entry เก่าที่ยังไม่มีค่าจะถูกกรองออกเมื่อเลือกหน่วยใดหน่วยหนึ่ง
+    const businessUnit = (req.query.businessUnit as string) || null
+
     // Get revenue and expense accounts with balances
     const accounts = db.prepare(`
       SELECT a.*,
@@ -220,12 +224,13 @@ router.get('/profit-loss', async (req: Request, res: Response) => {
                JOIN journal_entries je ON jl.journal_entry_id = je.id
                WHERE jl.account_id = a.id AND je.is_posted = 1 
                AND je.date >= ? AND je.date <= ?
+               AND (? IS NULL OR je.business_unit = ?)
              ), 0) as balance
       FROM accounts a
       WHERE a.tenant_id = ? AND a.is_active = 1 
         AND a.type IN ('REVENUE', 'EXPENSE') AND a.level >= 1
       ORDER BY a.code
-    `).all(startDate, endDate, tenantId) as any[]
+    `).all(startDate, endDate, businessUnit, businessUnit, tenantId) as any[]
     
     const revenues = accounts.filter(a => a.type === 'REVENUE')
     const expenses = accounts.filter(a => a.type === 'EXPENSE')

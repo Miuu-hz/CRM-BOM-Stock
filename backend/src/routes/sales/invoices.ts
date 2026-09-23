@@ -30,10 +30,11 @@ router.get('/', async (req: Request, res: Response) => {
 
     const invoices = db.prepare(`
       SELECT i.*, c.name as customer_name, c.code as customer_code,
-        so.so_number
+        so.so_number, pb.bill_number as pos_bill_number
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
       LEFT JOIN sales_orders so ON i.sales_order_id = so.id
+      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id
       WHERE i.tenant_id = ?
       ORDER BY i.created_at DESC
     `).all(tenantId)
@@ -52,10 +53,11 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const invoice = db.prepare(`
       SELECT i.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone,
-        c.address as customer_address, so.so_number
+        c.tax_branch as customer_tax_branch, so.so_number, pb.bill_number as pos_bill_number
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
       LEFT JOIN sales_orders so ON i.sales_order_id = so.id
+      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id
       WHERE i.id = ? AND i.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -158,7 +160,16 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     // so AR/revenue/COGS/inventory are backed out. reverseSalesJournal() is a no-op
     // if this invoice never had a journal posted, or if it was already reversed
     // (guards against double-reversal from repeated CANCELLED calls).
-    if (status === 'CANCELLED' && existing.status !== 'CANCELLED') {
+    //
+    // ⚠️ ใบที่ออกจากบิล POS (pos_bill_id ไม่เป็น null) เป็น "เอกสารล้วน" ไม่มี journal/vat_entries/
+    // การตัดสต็อกของตัวเองเลย — ตอนปิดบิล POS ลงบัญชีไปครบแล้ว (Dr 1180 พัก POS / Cr รายได้ขาย /
+    // Cr ภาษีขาย + Dr ต้นทุนขาย / Cr สินค้าคงคลัง ดู createInvoiceFromPosBill() ใน
+    // services/salesBilling.service.ts) วันนี้การ reverse ตรงนี้เป็น no-op เปล่า ๆ (ไม่มี journal ให้
+    // กลับ) แต่ถ้าอนาคตมีใครเผลอไปเพิ่ม journal ให้สายนี้ จะกลับรายการผิดตัวทันที รายได้หายจากงบ
+    // จึง reverse เฉพาะใบที่ไม่ได้มาจากบิล POS เท่านั้น ถ้าลูกค้าต้องคืนเงินจริงสำหรับบิล POS
+    // ให้ไปยกเลิกที่บิล POS เอง (POST /api/pos/bills/:id/cancel → cancelPosBill() คืนสต็อก +
+    // กลับ journal ครบอยู่แล้ว) ไม่ใช่มายกเลิกที่ใบกำกับภาษีตรงนี้
+    if (status === 'CANCELLED' && existing.status !== 'CANCELLED' && existing.pos_bill_id == null) {
       const so = existing.sales_order_id
         ? (db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?').get(existing.sales_order_id, tenantId) as any)
         : null

@@ -11,6 +11,7 @@ import { printPOSReceipt } from '../utils/printBill'
 import { useModalClose } from '../hooks/useModalClose'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { accountsApi } from '../services/accounting'
+import api from '../services/api'
 
 // ==================== Types ====================
 
@@ -39,11 +40,15 @@ interface OpenBill {
   id: string
   bill_number: string
   display_name: string
+  customer_id?: string
   customer_name?: string
   subtotal: number
   total_amount: number
   item_count: number
   opened_at: string
+  closed_at?: string
+  status?: string
+  invoice_number?: string | null
 }
 
 interface BillItem {
@@ -69,10 +74,15 @@ interface CurrentBill {
   id: string
   bill_number: string
   display_name: string
+  status?: string
   customer_id?: string
   customer_name?: string
   customer_phone?: string
   customer_loyalty_points?: number
+  customer_code?: string
+  customer_tax_id?: string
+  customer_address?: string
+  customer_tax_branch?: string
   items: BillItem[]
   subtotal: number
   tax_amount: number
@@ -80,6 +90,7 @@ interface CurrentBill {
   total_amount: number
   receipt_url?: string
   receipt_qr?: string
+  invoice?: { id: string; invoice_number: string; status: string } | null
 }
 
 interface POSShift {
@@ -106,6 +117,9 @@ export default function Cashier() {
   // State
   const [view, setView] = useState<'bills' | 'menu'>('bills')
   const [openBills, setOpenBills] = useState<OpenBill[]>([])
+  const [billsMode, setBillsMode] = useState<'OPEN' | 'PAID'>('OPEN')
+  const [paidBills, setPaidBills] = useState<OpenBill[]>([])
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [currentBill, setCurrentBill] = useState<CurrentBill | null>(null)
   const [menus, setMenus] = useState<POSMenu[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
@@ -180,6 +194,31 @@ export default function Cashier() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // บิลที่ชำระเงินแล้ว (สำหรับออกใบกำกับภาษีย้อนหลัง) — โหลดแยกจาก openBills เพื่อไม่ให้
+  // ตัวเลขนับ "บิล (n)" บนหัวจอกลายเป็นนับบิล PAID ไปโดยไม่ตั้งใจ
+  const fetchPaidBills = useCallback(async () => {
+    try {
+      const res = await posBillService.getBills({ status: 'PAID' })
+      if (res.success) {
+        const sorted = [...(res.data || [])].sort((a: OpenBill, b: OpenBill) =>
+          new Date(b.closed_at || b.opened_at).getTime() - new Date(a.closed_at || a.opened_at).getTime()
+        )
+        setPaidBills(sorted)
+      }
+    } catch {
+      toast.error('โหลดบิลที่ชำระแล้วไม่สำเร็จ')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (billsMode === 'PAID') fetchPaidBills()
+  }, [billsMode, fetchPaidBills])
+
+  const displayedBills = billsMode === 'OPEN' ? openBills : paidBills
+
+  // แก้รายการ/ยอด/ชำระเงินซ้ำได้เฉพาะบิลที่ยังเปิดอยู่เท่านั้น — บิล PAID ดูได้อย่างเดียว
+  const isBillEditable = (b: CurrentBill | null): b is CurrentBill => !!b && (b.status == null || b.status === 'OPEN')
 
   // POS shift (เปิด/ปิดกะ + เงินเข้า/ออกลิ้นชัก)
   const fetchShift = useCallback(async () => {
@@ -295,6 +334,12 @@ export default function Cashier() {
       const res = await posBillService.getBill(billId)
       if (res.success) {
         setCurrentBill(res.data)
+        // บิลที่ไม่ใช่ OPEN (PAID/CANCELLED) ห้ามแก้ยอด — ล้างส่วนลด/ค่าบริการเสริมที่ค้างจากบิลก่อนหน้า
+        if (res.data.status && res.data.status !== 'OPEN') {
+          setDiscount({ type: 'pct', value: 0 })
+          setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 })
+          setExpandedRow(null)
+        }
         setView('menu')
       }
     } catch (error) {
@@ -304,7 +349,7 @@ export default function Cashier() {
 
   // Add item to bill
   const addToBill = async (menu: POSMenu) => {
-    if (!currentBill) return
+    if (!isBillEditable(currentBill)) return
 
     try {
       const res = await posBillService.addItem(currentBill.id, {
@@ -325,7 +370,7 @@ export default function Cashier() {
 
   // Update item quantity
   const updateQuantity = async (itemId: string, delta: number, currentQty: number) => {
-    if (!currentBill) return
+    if (!isBillEditable(currentBill)) return
     
     const newQty = currentQty + delta
     if (newQty <= 0) {
@@ -385,7 +430,7 @@ export default function Cashier() {
 
   // Process payment
   const processPayment = async (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => {
-    if (!currentBill) return
+    if (!isBillEditable(currentBill)) return
 
     try {
       const res = await posBillService.payBill(currentBill.id, {
@@ -447,7 +492,7 @@ export default function Cashier() {
 
   // Send unsent items to KDS
   const sendToKitchen = async () => {
-    if (!currentBill) return
+    if (!isBillEditable(currentBill)) return
     setSendingToKitchen(true)
     try {
       const result = await kdsService.sendToKitchen(currentBill.id)
@@ -561,9 +606,31 @@ export default function Cashier() {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-6"
               >
-                {/* Create Bill Button */}
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-semibold text-[var(--fg-1)]">บิลที่เปิดอยู่</h2>
+                {/* Create Bill Button + โหมดเปิดอยู่/ชำระแล้ว */}
+                <div className="flex justify-between items-center flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-semibold text-[var(--fg-1)]">
+                      {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : 'บิลที่ชำระแล้ว'}
+                    </h2>
+                    <div className="flex bg-[var(--bg)] rounded-lg p-1">
+                      <button
+                        onClick={() => setBillsMode('OPEN')}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-all ${
+                          billsMode === 'OPEN' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                        }`}
+                      >
+                        เปิดอยู่
+                      </button>
+                      <button
+                        onClick={() => setBillsMode('PAID')}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-all ${
+                          billsMode === 'PAID' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                        }`}
+                      >
+                        ชำระแล้ว
+                      </button>
+                    </div>
+                  </div>
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -580,15 +647,17 @@ export default function Cashier() {
                   <div className="text-center py-12">
                     <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
                   </div>
-                ) : openBills.length === 0 ? (
+                ) : displayedBills.length === 0 ? (
                   <div className="text-center py-12 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
                     <Receipt className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
-                    <p className="text-[var(--fg-3)]">ยังไม่มีบิล</p>
-                    <p className="text-sm text-[var(--fg-4)] mt-1">สร้างบิลใหม่เพื่อเริ่มขาย</p>
+                    <p className="text-[var(--fg-3)]">{billsMode === 'OPEN' ? 'ยังไม่มีบิล' : 'ยังไม่มีบิลที่ชำระแล้ว'}</p>
+                    <p className="text-sm text-[var(--fg-4)] mt-1">
+                      {billsMode === 'OPEN' ? 'สร้างบิลใหม่เพื่อเริ่มขาย' : 'บิลที่ชำระเงินแล้วจะมาแสดงที่นี่'}
+                    </p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {openBills.map((bill) => (
+                    {displayedBills.map((bill) => (
                       <motion.button
                         key={bill.id}
                         whileHover={{ scale: 1.02 }}
@@ -608,7 +677,14 @@ export default function Cashier() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-[var(--fg-4)]">{bill.bill_number}</p>
+                        <p className="text-xs text-[var(--fg-4)] flex items-center gap-1.5 flex-wrap">
+                          <span>{bill.bill_number}</span>
+                          {bill.invoice_number && (
+                            <span className="px-1.5 py-0.5 rounded bg-success/15 text-success text-[10px] font-medium">
+                              INV {bill.invoice_number}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xl font-bold text-success mt-2">
                           ฿{(() => {
                             const s = bill.subtotal || 0
@@ -619,7 +695,10 @@ export default function Cashier() {
                         </p>
                         <div className="flex items-center gap-1 text-xs text-[var(--fg-4)] mt-2">
                           <Clock className="w-3 h-3" />
-                          <span>{new Date(bill.opened_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>
+                            {new Date(billsMode === 'PAID' && bill.closed_at ? bill.closed_at : bill.opened_at)
+                              .toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
                       </motion.button>
                     ))}
@@ -702,7 +781,8 @@ export default function Cashier() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => addToBill(menu)}
-                      className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group"
+                      disabled={!isBillEditable(currentBill)}
+                      className="p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-left hover:border-phopy-indigo/50 transition-all group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--border)]"
                     >
                       <div
                         className="aspect-video rounded-lg mb-3 flex items-center justify-center overflow-hidden"
@@ -821,14 +901,16 @@ export default function Cashier() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => updateQuantity(item.id, -1, item.quantity)}
-                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)]"
+                                disabled={!isBillEditable(currentBill)}
+                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)] disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
                               <span className="w-6 text-center text-sm">{item.quantity}</span>
                               <button
                                 onClick={() => updateQuantity(item.id, 1, item.quantity)}
-                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)]"
+                                disabled={!isBillEditable(currentBill)}
+                                className="p-1 rounded bg-[var(--surface)] hover:bg-[var(--primary-soft)] text-[var(--primary)] disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -855,6 +937,7 @@ export default function Cashier() {
                   : discount.value
                 const finalTotal = Math.max(0, beforeDiscount - discountAmt + extraCharge.amount)
                 return (
+                  <>
                   <div className="p-4 border-t border-[var(--border)] space-y-3">
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between text-[var(--fg-3)]">
@@ -877,8 +960,9 @@ export default function Cashier() {
                       {/* Discount row */}
                       <div className="border-t border-[var(--border)]/50 pt-1">
                         <button
-                          className="w-full flex items-center justify-between py-1 text-warning hover:text-warning transition-colors"
+                          className="w-full flex items-center justify-between py-1 text-warning hover:text-warning transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           onClick={() => setExpandedRow(expandedRow === 'discount' ? null : 'discount')}
+                          disabled={!isBillEditable(currentBill)}
                         >
                           <span className="flex items-center gap-1">
                             <Tag className="w-3.5 h-3.5" />
@@ -939,8 +1023,9 @@ export default function Cashier() {
                       {/* Extra charge row */}
                       <div>
                         <button
-                          className="w-full flex items-center justify-between py-1 text-[var(--primary)] hover:text-[var(--primary)] transition-colors"
+                          className="w-full flex items-center justify-between py-1 text-[var(--primary)] hover:text-[var(--primary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           onClick={() => setExpandedRow(expandedRow === 'extra' ? null : 'extra')}
+                          disabled={!isBillEditable(currentBill)}
                         >
                           <span className="flex items-center gap-1">
                             <Plus className="w-3.5 h-3.5" />
@@ -997,7 +1082,7 @@ export default function Cashier() {
                         return (
                           <button
                             onClick={sendToKitchen}
-                            disabled={sendingToKitchen || unsentCount === 0}
+                            disabled={sendingToKitchen || unsentCount === 0 || !isBillEditable(currentBill)}
                             className="relative px-3 py-3 rounded-lg bg-[var(--warning-soft)] border border-warning/50 text-warning hover:bg-warning/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1 text-sm"
                           >
                             {sendingToKitchen
@@ -1023,7 +1108,7 @@ export default function Cashier() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => setShowPaymentModal(true)}
-                        disabled={currentBill.items.length === 0}
+                        disabled={currentBill.items.length === 0 || !isBillEditable(currentBill)}
                         className="flex-1 px-4 py-4 rounded-xl bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <CreditCard className="w-5 h-5" />
@@ -1042,10 +1127,7 @@ export default function Cashier() {
                         <span className="text-[9px] leading-none">ย่อ</span>
                       </button>
                       <button
-                        onClick={() => {
-                          const rd = buildReceiptData(currentBill, 'CASH', 0, discountAmt)
-                          printPOSReceipt(rd, 'a4')
-                        }}
+                        onClick={() => setShowInvoiceModal(true)}
                         disabled={currentBill.items.length === 0}
                         title={billing.vatEnabled ? 'ใบกำกับภาษี A4' : 'ใบเสร็จรับเงิน A4'}
                         className="px-3 py-4 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-all disabled:opacity-50 flex flex-col items-center gap-0.5"
@@ -1064,6 +1146,16 @@ export default function Cashier() {
                       </button>
                     </div>
                   </div>
+                  <InvoiceCustomerModal
+                    isOpen={showInvoiceModal}
+                    onClose={() => setShowInvoiceModal(false)}
+                    bill={currentBill}
+                    discountAmt={discountAmt}
+                    onBillUpdated={setCurrentBill}
+                    onListRefresh={fetchPaidBills}
+                    buildReceiptData={buildReceiptData}
+                  />
+                  </>
                 )
               })()}
             </>
@@ -1443,6 +1535,319 @@ function AssignMemberModal({ onClose, onAssign }: {
             <p className="text-sm text-center text-[var(--fg-4)] py-4">ไม่พบสมาชิก</p>
           )}
         </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ==================== Invoice Customer Modal ====================
+// popup ผูกกับปุ่มพิมพ์ A4: กรอก/เลือกข้อมูลผู้ซื้อสำหรับใบกำกับภาษี แล้วออกใบกำกับได้เมื่อบิลจ่ายเงินแล้ว
+
+function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdated, onListRefresh, buildReceiptData }: {
+  isOpen: boolean
+  onClose: () => void
+  bill: CurrentBill
+  discountAmt: number
+  onBillUpdated: (bill: CurrentBill) => void
+  onListRefresh: () => void
+  buildReceiptData: (bill: any, method: string, cashReceived?: number, discountAmt?: number) => any
+}) {
+  useModalClose(onClose)
+  const [tab, setTab] = useState<'search' | 'new'>('search')
+  const [editingCustomer, setEditingCustomer] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CRMCustomer[]>([])
+  const [searching, setSearching] = useState(false)
+  const [assigning, setAssigning] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [issuing, setIssuing] = useState(false)
+  const [issueError, setIssueError] = useState<string | null>(null)
+  const [form, setForm] = useState({ name: '', taxId: '', address: '', branchMode: 'HQ' as 'HQ' | 'BRANCH', branchNo: '', phone: '' })
+
+  useEffect(() => {
+    if (isOpen) {
+      setTab('search'); setQuery(''); setResults([]); setEditingCustomer(false); setIssueError(null)
+      setForm({ name: '', taxId: '', address: '', branchMode: 'HQ', branchNo: '', phone: '' })
+    }
+  }, [isOpen, bill.id])
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return }
+    const t = setTimeout(async () => {
+      try {
+        setSearching(true)
+        const res = await posBillService.searchCustomers(query)
+        if (res.success) setResults(res.data)
+      } finally { setSearching(false) }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  if (!isOpen) return null
+
+  const hasInvoice = !!bill.invoice
+  const showForm = !bill.customer_id || editingCustomer
+
+  const assignCustomer = async (customerId: string) => {
+    setAssigning(true)
+    try {
+      const res = await posBillService.assignMember(bill.id, customerId)
+      if (res.success) {
+        const r = await posBillService.getBill(bill.id)
+        if (r.success) onBillUpdated(r.data)
+        setEditingCustomer(false)
+        toast.success('ผูกข้อมูลผู้ซื้อแล้ว')
+      }
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'ผูกข้อมูลผู้ซื้อไม่สำเร็จ')
+    } finally { setAssigning(false) }
+  }
+
+  const handleCreateAndAssign = async () => {
+    if (!form.name.trim()) { toast.error('กรุณากรอกชื่อผู้ซื้อ'); return }
+    if (!form.address.trim()) { toast.error('กรุณากรอกที่อยู่'); return }
+    if (form.taxId && !/^\d{13}$/.test(form.taxId.trim())) { toast.error('เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก'); return }
+    const taxBranch = form.branchMode === 'HQ'
+      ? 'สำนักงานใหญ่'
+      : `สาขาที่ ${(form.branchNo.trim() || '00001').padStart(5, '0')}`
+    setSaving(true)
+    try {
+      const res = await api.post('/customers', {
+        name: form.name.trim(),
+        taxId: form.taxId.trim() || undefined,
+        address: form.address.trim(),
+        taxBranch,
+        // เว้นว่างได้ — ไม่ยัด '-' เพราะมันจะพิมพ์ออกมาเป็น "โทร : -" บนใบกำกับภาษีจริง
+        phone: form.phone.trim(),
+        type: 'RETAIL',
+      })
+      const customerId = res.data?.data?.id
+      if (customerId) await assignCustomer(customerId)
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'เพิ่มลูกค้าไม่สำเร็จ')
+    } finally { setSaving(false) }
+  }
+
+  const handlePrint = () => {
+    const rd = buildReceiptData(bill, 'CASH', 0, discountAmt)
+    printPOSReceipt(rd, 'a4')
+  }
+
+  const issueInvoice = async () => {
+    if (!bill.customer_id) { toast.error('กรุณาเลือกหรือเพิ่มผู้ซื้อก่อน'); return }
+    setIssuing(true)
+    setIssueError(null)
+    try {
+      const res = await api.post(`/pos/bills/${bill.id}/invoice`, { customerId: bill.customer_id })
+      if (res.data?.success) {
+        toast.success(`ออกใบกำกับภาษีสำเร็จ: ${res.data.data.invoice.invoice_number}`)
+        const r = await posBillService.getBill(bill.id)
+        if (r.success) onBillUpdated(r.data)
+        onListRefresh()
+      }
+    } catch (e: any) {
+      setIssueError(e.response?.data?.message || 'ออกใบกำกับภาษีไม่สำเร็จ')
+    } finally { setIssuing(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[var(--fg-1)]">ข้อมูลผู้ซื้อสำหรับใบกำกับภาษี</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {hasInvoice && (
+          <div className="mb-4 p-3 bg-success/10 border border-success/30 rounded-xl">
+            <p className="text-sm font-semibold text-success">ออกใบกำกับภาษีแล้ว {bill.invoice!.invoice_number}</p>
+            <p className="text-xs text-[var(--fg-3)] mt-1">ต้องยกเลิกใบกำกับก่อนถ้าจะแก้ผู้ซื้อ (ผู้มีสิทธิ์อนุมัติเท่านั้น)</p>
+          </div>
+        )}
+
+        {!showForm ? (
+          <div className="mb-4 p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)] space-y-1">
+            <p className="text-sm font-medium text-[var(--fg-1)]">{bill.customer_name || '-'}</p>
+            {bill.customer_tax_id && <p className="text-xs text-[var(--fg-3)]">เลขผู้เสียภาษี {bill.customer_tax_id}</p>}
+            <p className="text-xs text-[var(--fg-3)]">{bill.customer_address || 'ไม่มีที่อยู่'}</p>
+            <p className="text-xs text-[var(--fg-3)]">{bill.customer_tax_branch || 'สำนักงานใหญ่'}</p>
+            {bill.customer_phone && <p className="text-xs text-[var(--fg-3)]">โทร {bill.customer_phone}</p>}
+            {!hasInvoice && (
+              <button onClick={() => setEditingCustomer(true)} className="text-xs text-[var(--primary)] hover:underline mt-1">
+                เปลี่ยนผู้ซื้อ
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-1 bg-[var(--bg)] rounded-lg p-1 mb-4">
+              <button
+                onClick={() => setTab('search')}
+                className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'search' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
+              >
+                ค้นหาจาก CRM
+              </button>
+              <button
+                onClick={() => setTab('new')}
+                className={`flex-1 py-1.5 rounded-md text-sm transition-all ${tab === 'new' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}
+              >
+                เพิ่มลูกค้าใหม่
+              </button>
+            </div>
+
+            {tab === 'search' ? (
+              <div className="space-y-2 mb-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="ค้นหาชื่อ หรือเบอร์โทร..."
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder:text-[var(--fg-4)] focus:outline-none focus:border-phopy-indigo text-sm"
+                  />
+                </div>
+                {searching && <p className="text-xs text-center text-[var(--fg-4)]">กำลังค้นหา...</p>}
+                {results.length > 0 && (
+                  <div className="space-y-1 max-h-56 overflow-y-auto">
+                    {results.map(c => (
+                      <button
+                        key={c.id}
+                        disabled={assigning}
+                        onClick={() => assignCustomer(c.id)}
+                        className="w-full px-3 py-2.5 text-left hover:bg-[var(--bg)] rounded-lg flex items-center justify-between disabled:opacity-50"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-[var(--fg-1)]">{c.name}</p>
+                          <p className="text-xs text-[var(--fg-4)]">{c.phone}</p>
+                        </div>
+                        <span className="text-xs text-[var(--fg-4)]">{c.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {query.length > 0 && !searching && results.length === 0 && (
+                  <p className="text-xs text-center text-[var(--fg-4)] py-3">ไม่พบลูกค้า ลองแท็บ "เพิ่มลูกค้าใหม่"</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ชื่อผู้ซื้อ / นิติบุคคล *</label>
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">เลขประจำตัวผู้เสียภาษี (ถ้ามี)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={13}
+                    value={form.taxId}
+                    onChange={(e) => setForm(f => ({ ...f, taxId: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
+                  />
+                  {form.taxId.length > 0 && form.taxId.length !== 13 && (
+                    <p className="text-xs text-danger mt-1">เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก (กรอกแล้ว {form.taxId.length} หลัก)</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">ที่อยู่ *</label>
+                  <textarea
+                    rows={2}
+                    value={form.address}
+                    onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">สาขา</label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-1.5 text-sm text-[var(--fg-2)]">
+                      <input type="radio" checked={form.branchMode === 'HQ'} onChange={() => setForm(f => ({ ...f, branchMode: 'HQ' }))} />
+                      สำนักงานใหญ่
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm text-[var(--fg-2)]">
+                      <input type="radio" checked={form.branchMode === 'BRANCH'} onChange={() => setForm(f => ({ ...f, branchMode: 'BRANCH' }))} />
+                      สาขาที่
+                    </label>
+                    {form.branchMode === 'BRANCH' && (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="00001"
+                        value={form.branchNo}
+                        onChange={(e) => setForm(f => ({ ...f, branchNo: e.target.value.replace(/\D/g, '') }))}
+                        className="w-20 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                      />
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1">เบอร์โทร</label>
+                  <input
+                    type="text"
+                    value={form.phone}
+                    onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
+                  />
+                </div>
+                <button
+                  onClick={handleCreateAndAssign}
+                  disabled={saving}
+                  className="w-full py-2.5 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold rounded-lg hover:opacity-90 disabled:opacity-50"
+                >
+                  {saving ? 'กำลังบันทึก...' : 'บันทึกและใช้ลูกค้ารายนี้'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {bill.customer_id && !showForm && (
+          <div className="space-y-2 pt-3 border-t border-[var(--border)]">
+            <button
+              onClick={handlePrint}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-2)] hover:text-[var(--primary)] text-sm"
+            >
+              <Printer className="w-4 h-4" /> พิมพ์ A4
+            </button>
+
+            {hasInvoice ? (
+              <button
+                onClick={handlePrint}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-success/15 text-success font-semibold text-sm hover:bg-success/25"
+              >
+                <Printer className="w-4 h-4" /> พิมพ์ใบกำกับภาษี
+              </button>
+            ) : bill.status === 'PAID' ? (
+              <>
+                {issueError && <p className="text-xs text-danger text-center">{issueError}</p>}
+                <button
+                  onClick={issueInvoice}
+                  disabled={issuing}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-phopy-indigo text-white font-semibold text-sm hover:bg-phopy-indigo/80 disabled:opacity-50"
+                >
+                  {issuing ? 'กำลังออกใบกำกับ...' : 'ยืนยันออกใบกำกับภาษี'}
+                </button>
+              </>
+            ) : (
+              <p className="text-xs text-center text-warning">ต้องชำระเงินก่อนจึงจะออกใบกำกับภาษีได้</p>
+            )}
+          </div>
+        )}
       </motion.div>
     </div>
   )

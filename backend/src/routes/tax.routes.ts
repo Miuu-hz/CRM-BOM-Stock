@@ -151,15 +151,16 @@ function syncVatOutputFromPosBills(tenantId: string) {
   }
 }
 
-// Formal AR invoices (src/routes/sales/invoices.ts) are a separate sales channel from POS bills —
-// pos_running_bills has no sales_order_id/invoice_id linkage, so there is no double-count risk here.
+// ใบกำกับภาษีที่ออกจากบิล POS (invoices.pos_bill_id ไม่ใช่ NULL) ถูกนับภาษีขายไปแล้วที่
+// syncVatOutputFromPosBills (อ่านจาก pos_running_bills โดยตรง) จึงต้องกันแถวเหล่านั้นออกที่นี่
+// ด้วย AND i.pos_bill_id IS NULL ไม่งั้นภาษีขายบิลเดียวกันจะถูกนับซ้ำ 2 รอบ (ยอดนำส่งสรรพากรผิด)
 function syncVatOutputFromSalesInvoices(tenantId: string) {
   const rows = db.prepare(
     `SELECT i.id, i.invoice_number, i.invoice_date, i.subtotal, i.tax_amount, i.total_amount, i.tax_rate,
             i.customer_id, c.name as customer_name, c.tax_id as customer_tax_id
      FROM invoices i
      LEFT JOIN customers c ON i.customer_id = c.id
-     WHERE i.tenant_id = ? AND i.status != 'CANCELLED' AND i.tax_amount > 0`
+     WHERE i.tenant_id = ? AND i.status != 'CANCELLED' AND i.tax_amount > 0 AND i.pos_bill_id IS NULL`
   ).all(tenantId) as any[]
 
   for (const inv of rows) {

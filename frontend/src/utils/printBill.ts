@@ -121,6 +121,8 @@ function partyOf(d: any, side: DocSpec['party']): BillParty {
     taxId: String(d[`${p}_tax_id`] || ''),
     tel: String(d[`${p}_phone`] || ''),
     email: d[`${p}_email`] || undefined,
+    // ใบกำกับภาษีเต็มรูปต้องระบุ "สำนักงานใหญ่ / สาขาที่ ____" ของผู้ซื้อตามกฎหมาย
+    branch: d[`${p}_tax_branch`] || undefined,
   }
 }
 

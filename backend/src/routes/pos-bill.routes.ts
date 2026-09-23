@@ -7,6 +7,8 @@ import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service
 import { authenticate } from '../middleware/auth.middleware'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../utils/receiptToken'
+import { createInvoiceFromPosBill, findActiveInvoiceForPosBill, SalesBillingError } from '../services/salesBilling.service'
+import { canHandleBilling } from '../services/rbac.service'
 
 const router = Router()
 
@@ -29,10 +31,12 @@ router.get('/bills', (req, res) => {
     const { status } = req.query
     
     let query = `
-      SELECT 
+      SELECT
         b.*,
         COUNT(bi.id) as item_count,
-        SUM(bi.quantity) as total_items
+        SUM(bi.quantity) as total_items,
+        (SELECT i.invoice_number FROM invoices i
+          WHERE i.pos_bill_id = b.id AND i.tenant_id = b.tenant_id AND i.status != 'CANCELLED' LIMIT 1) AS invoice_number
       FROM pos_running_bills b
       LEFT JOIN pos_bill_items bi ON b.id = bi.bill_id
       WHERE b.tenant_id = ?
@@ -93,9 +97,13 @@ router.get('/bills/:id', async (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
 
-    // Get bill (JOIN customer loyalty_points if linked)
+    // Get bill (JOIN customer loyalty_points + ข้อมูลสำหรับพิมพ์ใบกำกับภาษี)
+    // ⚠️ ห้ามตั้ง alias ว่า customer_name เฉย ๆ เพราะ b.* มีคอลัมน์ customer_name อยู่แล้ว
+    // ชื่อซ้ำกันตัวหลังทับตัวหน้า = เอา null ไปทับชื่อจริง (ดูคอมเมนต์เดียวกันใน sales/invoices.ts GET /:id)
     const billStmt = db.prepare(`
-      SELECT b.*, c.loyalty_points as customer_loyalty_points
+      SELECT b.*, c.loyalty_points as customer_loyalty_points,
+        c.name as customer_name_crm, c.code as customer_code, c.tax_id as customer_tax_id,
+        c.address as customer_address, c.tax_branch as customer_tax_branch
       FROM pos_running_bills b
       LEFT JOIN customers c ON b.customer_id = c.id
       WHERE b.id = ? AND b.tenant_id = ?
@@ -123,7 +131,13 @@ router.get('/bills/:id', async (req, res) => {
     const receipt_url = buildReceiptUrl(receiptToken)
     const receipt_qr = await buildReceiptQr(receiptToken)
 
-    res.json({ success: true, data: { ...bill, items, receipt_url, receipt_qr } })
+    // บอกหน้าจอว่าบิลนี้ออกใบกำกับไปแล้วหรือยัง (ถ้าออกแล้ว frontend ต้องล็อกปุ่มแก้ผู้ซื้อ/ออกซ้ำ)
+    const activeInvoice = findActiveInvoiceForPosBill(tenantId, id) as any
+    const invoice = activeInvoice
+      ? { id: activeInvoice.id, invoice_number: activeInvoice.invoice_number, status: activeInvoice.status }
+      : null
+
+    res.json({ success: true, data: { ...bill, items, receipt_url, receipt_qr, invoice } })
   } catch (error) {
     console.error('Error fetching bill:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch bill' })
@@ -218,6 +232,26 @@ router.patch('/bills/:id/member', (req, res) => {
     const { id } = req.params
     const { customer_id } = req.body  // null to unassign
 
+    // เดิมแก้ผู้ซื้อได้เฉพาะบิล OPEN เท่านั้น — บิลจ่ายเงินแล้ว (PAID) แก้ชื่อลูกค้าไม่ได้เลย
+    // ซึ่งเป็นปัญหาต้นเรื่องทั้งหมด ตอนนี้ยอมทั้ง OPEN และ PAID แต่กันเพิ่ม 2 ชั้นข้างล่าง
+    const bill = db.prepare('SELECT status FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+    // ชั้นที่ 1: บิลไม่พบ หรือถูกยกเลิกไปแล้ว (สถานะที่เหลือมีแค่ OPEN/PAID/CANCELLED) — แก้ผู้ซื้อไม่ได้
+    if (!bill || (bill.status !== 'OPEN' && bill.status !== 'PAID')) {
+      return res.status(400).json({
+        success: false,
+        message: bill?.status === 'CANCELLED' ? 'บิลนี้ถูกยกเลิกแล้ว แก้ข้อมูลลูกค้าไม่ได้' : 'บิลไม่พบหรือปิดแล้ว',
+      })
+    }
+    // ชั้นที่ 2: "ยืนยันแล้วหมดสิทธิ์แก้" — บิลนี้ออกใบกำกับไปแล้ว ห้ามเปลี่ยนผู้ซื้ออีก
+    // ต้องยกเลิกใบกำกับก่อน (ยกเลิกใบกำกับบังคับ ADMIN/MANAGER/MASTER อยู่แล้วใน invoices.ts PUT /:id/status)
+    const activeInvoice = findActiveInvoiceForPosBill(tenantId, id) as any
+    if (activeInvoice) {
+      return res.status(409).json({
+        success: false,
+        message: `บิลนี้ออกใบกำกับ ${activeInvoice.invoice_number} ไปแล้ว เปลี่ยนผู้ซื้อไม่ได้ — ต้องยกเลิกใบกำกับก่อน`,
+      })
+    }
+
     let customerName = null
     let customerPhone = null
 
@@ -231,7 +265,7 @@ router.patch('/bills/:id/member', (req, res) => {
     const result = db.prepare(`
       UPDATE pos_running_bills
       SET customer_id = ?, customer_name = ?, customer_phone = ?
-      WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+      WHERE id = ? AND tenant_id = ? AND status IN ('OPEN', 'PAID')
     `).run(customer_id || null, customerName, customerPhone, id, tenantId)
 
     if (result.changes === 0) {
@@ -635,6 +669,45 @@ router.post('/bills/:id/cancel', async (req, res) => {
   } catch (error) {
     console.error('Error cancelling bill:', error)
     res.status(500).json({ success: false, message: 'Failed to cancel bill' })
+  }
+})
+
+// Map SalesBillingError codes → HTTP status สำหรับออกใบกำกับจากบิล POS
+// (แพทเทิร์นเดียวกับ INVOICE_ERROR_STATUS ใน routes/sales/invoices.ts)
+const POS_INVOICE_ERROR_STATUS: Record<string, number> = {
+  DUPLICATE_INVOICE: 409,
+  POS_BILL_NOT_FOUND: 404,
+  CUSTOMER_NOT_FOUND: 404,
+  POS_BILL_NOT_PAID: 400,
+  POS_BILL_CANCELLED: 400,
+  CUSTOMER_REQUIRED: 400,
+}
+
+// ยืนยันออกใบกำกับภาษีจากบิล POS ที่ชำระเงินแล้ว
+// ⚠️ ห้ามผ่าน gateOrCreate/ประตูอนุมัติที่นี่ (ต่างจาก /cancel ข้างบน) — executeApprovedAction
+// ใน approval.routes.ts ยังไม่มี handler ของหมวด pos_invoice เลย ถ้า gate คืน 202 คำขอจะค้าง
+// อยู่ใน inbox ตลอดไปไม่มีใครรันให้ ต้องเพิ่ม handler ที่นั่นก่อนถึงจะเอา gate มาครอบตรงนี้ได้
+router.post('/bills/:id/invoice', (req, res) => {
+  try {
+    if (!canHandleBilling((req as any).user!, 'sales')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายขาย/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
+    const tenantId = (req as any).user!.tenantId
+    const { id } = req.params
+    const { customerId, notes } = req.body
+
+    // ตรรกะจริงอยู่ที่ services/salesBilling.service.ts createInvoiceFromPosBill — วางไว้ที่ service
+    // เพื่อให้สาย MCP มาเรียกตัวเดียวกันได้เมื่อถึงเวลา (วันนี้ MCP ยังไม่มี tool ออกใบแจ้งหนี้เลย)
+    // ไม่ลง journal/vat_entries/สต็อกซ้ำ — ลงไปแล้วตอนปิดบิล POS
+    const { invoice, items } = createInvoiceFromPosBill(tenantId, { posBillId: id, customerId, notes })
+
+    res.status(201).json({ success: true, message: 'ออกใบกำกับภาษีสำเร็จ', data: { invoice, items } })
+  } catch (error) {
+    if (error instanceof SalesBillingError) {
+      return res.status(POS_INVOICE_ERROR_STATUS[error.code] || 400).json({ success: false, message: error.message })
+    }
+    console.error('Error creating invoice from POS bill:', error)
+    res.status(500).json({ success: false, message: 'Failed to create invoice' })
   }
 })
 

@@ -26,9 +26,8 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
     {
       csv_content: z.string().min(1).describe('เนื้อหาไฟล์ CSV ทั้งหมด (ดิบ) รวมบรรทัด header'),
       platform: z.enum(['SHOPEE', 'TIKTOK', 'LAZADA', 'FACEBOOK']).describe('แพลตฟอร์มของข้อมูล'),
-      // ponytail: min(2) instead of min(1) — a 1-char hint fuzzy-matches too broadly against
-      // marketingRepo.getAllShops(), which (like the rest of this module) isn't tenant-scoped.
-      // Real fix is scoping shops/marketing_files/marketing_metrics by tenant_id — out of scope here.
+      // ponytail: min(2) instead of min(1) — a 1-char hint fuzzy-matches too broadly
+      // against the tenant's shop list.
       shop_hint: z.string().min(2).describe('ชื่อร้านค้า (อย่างน้อย 2 ตัวอักษร) — ถ้าไม่พบร้านที่ชื่อใกล้เคียงจะสร้างร้านใหม่ให้อัตโนมัติ'),
       start_date: z.string().describe('วันที่เริ่มต้นของรายงาน (YYYY-MM-DD)'),
       end_date: z.string().describe('วันที่สิ้นสุดของรายงาน (YYYY-MM-DD)'),
@@ -44,12 +43,11 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
       }
 
       // หาร้านค้าจากชื่อใกล้เคียง หรือสร้างใหม่ — เลียนแบบ pattern customer_hint ใน create_sales_order
-      // (module นี้ไม่มี tenant scoping ใน repository เดิมอยู่แล้ว — คงพฤติกรรมเดิมไว้ ไม่ขยายขอบเขตแก้ตรงนี้)
-      const shops = marketingRepo.getAllShops(platform) as any[]
+      const shops = marketingRepo.getAllShops(tenantId, platform) as any[]
       let shop = shops.find(s => s.name.includes(shop_hint) || shop_hint.includes(s.name))
       let shopCreated = false
       if (!shop) {
-        shop = marketingRepo.createShop({ name: shop_hint, platform, shopId: `AUTO-${Date.now()}` })
+        shop = marketingRepo.createShop(tenantId, { name: shop_hint, platform, shopId: `AUTO-${Date.now()}` })
         shopCreated = true
       }
 
@@ -73,7 +71,7 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
         return ok({ success: false, message: 'ไม่พบข้อมูลในไฟล์ CSV — ตรวจสอบว่า header ตรงกับรูปแบบที่รองรับ (Shopee)' })
       }
 
-      const fileRecord: any = marketingRepo.createFile({
+      const fileRecord: any = marketingRepo.createFile(tenantId, {
         shopId: shop.id,
         fileName,
         filePath,
@@ -86,7 +84,7 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
 
       const nextDay = new Date(end_date)
       nextDay.setDate(nextDay.getDate() + 1)
-      const lastOrderNumber = marketingRepo.getLastOrderNumber(shop.id, start_date, nextDay.toISOString().split('T')[0])
+      const lastOrderNumber = marketingRepo.getLastOrderNumber(tenantId, shop.id, start_date, nextDay.toISOString().split('T')[0])
 
       const metricsToInsert = parsed.metrics.map((m, i) => ({
         fileId: fileRecord.id,
@@ -119,7 +117,7 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
         extraData: JSON.stringify(m.extraData),
       }))
 
-      marketingRepo.bulkCreateMetrics(metricsToInsert)
+      marketingRepo.bulkCreateMetrics(tenantId, metricsToInsert)
 
       const totalAdCost = parsed.metrics.reduce((s, m) => s + (m.adCost || 0), 0)
       const totalSales = parsed.metrics.reduce((s, m) => s + (m.sales || 0), 0)
@@ -149,7 +147,7 @@ export function registerMarketingTools(server: IMcpServer, tenantId: string): vo
       platform: z.enum(['SHOPEE', 'TIKTOK', 'LAZADA', 'FACEBOOK']).optional().describe('กรองตามแพลตฟอร์ม'),
     },
     async (args) => {
-      const shops = marketingRepo.getAllShops(args.platform) as any[]
+      const shops = marketingRepo.getAllShops(tenantId, args.platform) as any[]
       return ok({ count: shops.length, shops: shops.map(s => ({ id: s.id, name: s.name, platform: s.platform })) })
     }
   )

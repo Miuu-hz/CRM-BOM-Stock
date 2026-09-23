@@ -234,7 +234,7 @@ export const reportsApi = {
     api.get('/reports/balance-sheet', { params }),
   
   // Profit & Loss
-  getProfitLoss: (params: { startDate: string; endDate: string }) =>
+  getProfitLoss: (params: { startDate: string; endDate: string; businessUnit?: string }) =>
     api.get('/reports/profit-loss', { params }),
   
   // Cash Flow

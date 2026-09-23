@@ -31,6 +31,7 @@ export function applySchema(db: any): void {
       address TEXT,
       city TEXT NOT NULL,
       tax_id TEXT,
+      tax_branch TEXT DEFAULT 'สำนักงานใหญ่',
       credit_limit REAL DEFAULT 0,
       status TEXT DEFAULT 'ACTIVE',
       tenant_id TEXT,
@@ -486,11 +487,13 @@ export function applySchema(db: any): void {
     );
 
     -- ใบแจ้งหนี้/ใบกำกับภาษี (Invoices)
+    -- sales_order_id nullable เพราะใบกำกับจากบิล POS (pos_bill_id) ไม่มี sales order ต้นทาง — ต้องมีอย่างใดอย่างหนึ่ง (ดู CHECK)
     CREATE TABLE IF NOT EXISTS invoices (
       id TEXT PRIMARY KEY,
       tenant_id TEXT,
       invoice_number TEXT NOT NULL,
-      sales_order_id TEXT NOT NULL,
+      sales_order_id TEXT,
+      pos_bill_id TEXT,
       customer_id TEXT NOT NULL,
       invoice_date TEXT DEFAULT CURRENT_TIMESTAMP,
       due_date TEXT,
@@ -508,8 +511,10 @@ export function applySchema(db: any): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id),
+      FOREIGN KEY (pos_bill_id) REFERENCES pos_running_bills(id),
       FOREIGN KEY (customer_id) REFERENCES customers(id),
-      UNIQUE(tenant_id, invoice_number)
+      UNIQUE(tenant_id, invoice_number),
+      CHECK (sales_order_id IS NOT NULL OR pos_bill_id IS NOT NULL)
     );
 
     CREATE TABLE IF NOT EXISTS invoice_items (
@@ -1741,18 +1746,6 @@ export function applySchema(db: any): void {
     -- + migrate could never recreate them. Defs copied verbatim from prod
     -- sqlite_master (IF NOT EXISTS added). Do not reorder above tax_transactions
     -- (wht_certificates FK depends on it existing already, see line ~967).
-    CREATE TABLE IF NOT EXISTS ad_spends (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      platform TEXT NOT NULL,
-      channel TEXT,
-      amount REAL NOT NULL,
-      notes TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS backup_logs (
       id          TEXT PRIMARY KEY,
       tenant_id   TEXT,
@@ -1830,37 +1823,6 @@ export function applySchema(db: any): void {
       created_by  TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS platform_imports (
-      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, platform TEXT NOT NULL,
-      shop_id TEXT, filename TEXT NOT NULL, import_date TEXT NOT NULL,
-      total_rows INT DEFAULT 0, matched_rows INT DEFAULT 0, unmatched_rows INT DEFAULT 0,
-      total_items_sold INT DEFAULT 0, total_ad_cost REAL DEFAULT 0, total_revenue REAL DEFAULT 0,
-      status TEXT DEFAULT 'PENDING',
-      notes TEXT, created_by TEXT, created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS platform_import_items (
-      id TEXT PRIMARY KEY, import_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
-      sku TEXT NOT NULL, product_name TEXT NOT NULL, ad_status TEXT,
-      impressions INT DEFAULT 0, clicks INT DEFAULT 0, orders INT DEFAULT 0,
-      items_sold INT DEFAULT 0, direct_items_sold INT DEFAULT 0,
-      revenue REAL DEFAULT 0, direct_revenue REAL DEFAULT 0, ad_cost REAL DEFAULT 0,
-      roas REAL DEFAULT 0,
-      stock_item_id TEXT, stock_item_name TEXT, current_stock INT DEFAULT 0,
-      deduct_status TEXT DEFAULT 'PENDING'
-    );
-
-    CREATE TABLE IF NOT EXISTS platform_pending_je (
-      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
-      import_id TEXT, platform TEXT NOT NULL,
-      description TEXT NOT NULL, amount REAL NOT NULL,
-      import_date TEXT NOT NULL,
-      dr_account_id TEXT, cr_account_id TEXT,
-      status TEXT DEFAULT 'PENDING',
-      journal_entry_id TEXT, notes TEXT,
-      reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS qc_checklists (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
@@ -1889,14 +1851,6 @@ export function applySchema(db: any): void {
       work_order_id TEXT, inspected_qty INTEGER DEFAULT 0, passed_qty INTEGER DEFAULT 0, rejected_qty INTEGER DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_qc_inspections_wo ON qc_inspections(work_order_id);
-
-    CREATE TABLE IF NOT EXISTS sku_mappings (
-      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
-      platform_sku TEXT NOT NULL, platform TEXT NOT NULL,
-      stock_item_id TEXT NOT NULL, stock_item_name TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      UNIQUE(tenant_id, platform_sku, platform)
-    );
 
     CREATE TABLE IF NOT EXISTS wht_certificates (
       id TEXT PRIMARY KEY,

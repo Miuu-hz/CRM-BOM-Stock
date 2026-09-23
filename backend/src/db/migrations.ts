@@ -2261,4 +2261,107 @@ export function runMigrations(db: any): void {
     )`)
     console.log('✅ Migration: platform_settlements พร้อมใช้งาน')
   } catch (e) { console.error('⚠️ platform_settlements migration error:', e) }
+
+  // ==================== เก็บซากสาย import แพลตฟอร์มเก่าทิ้ง (2026-09-22) ====================
+  // เคยมี 2 สายทำงานเดียวกัน: /marketing/platform/* (ตัดสต็อกจากรายงาน ads + ตั้ง JE ค่าโฆษณารออนุมัติ)
+  // กับ /platform-settlement/* (ลงบัญชี 3 ขั้นครบวงจร) — ตกลงเหลือสายหลังสายเดียว
+  // ตารางชุดนี้ไม่เคยมีข้อมูลเลยสักแถว (ยืนยันก่อนลบ) และโค้ดที่สร้าง/อ่านมันถูกลบไปแล้ว
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS platform_import_items;
+      DROP TABLE IF EXISTS platform_imports;
+      DROP TABLE IF EXISTS sku_mappings;
+      DROP TABLE IF EXISTS platform_pending_je;
+      DROP TABLE IF EXISTS ad_spends;
+    `)
+    console.log('✅ Migration: ลบตารางสาย import แพลตฟอร์มเก่าเรียบร้อย')
+  } catch (e) { console.error('⚠️ drop legacy platform import tables error:', e) }
+
+  // ==================== invoices รับใบกำกับจากบิล POS ได้ (2026-09-22) ====================
+  // sales_order_id TEXT NOT NULL REFERENCES sales_orders(id) + PRAGMA foreign_keys=ON มาตลอด
+  // → ออกใบแจ้งหนี้/ใบกำกับภาษีจากบิล POS (ไม่มี sales_order) ไม่ได้เลยในระดับ DB
+  // รื้อเป็น nullable + เพิ่ม pos_bill_id ผูกกลับ pos_running_bills และกำกับด้วย CHECK ว่าต้องมีอย่างใดอย่างหนึ่ง
+  try {
+    const invCols = db.prepare(`PRAGMA table_info(invoices)`).all() as any[]
+    const hasPosBillId = invCols.some((c: any) => c.name === 'pos_bill_id')
+    const soIdNotNull = invCols.find((c: any) => c.name === 'sales_order_id')?.notnull === 1
+
+    if (!hasPosBillId || soIdNotNull) {
+      db.pragma('foreign_keys = OFF')
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS invoices_new (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT,
+          invoice_number TEXT NOT NULL,
+          sales_order_id TEXT,
+          pos_bill_id TEXT,
+          customer_id TEXT NOT NULL,
+          invoice_date TEXT DEFAULT CURRENT_TIMESTAMP,
+          due_date TEXT,
+          subtotal REAL DEFAULT 0,
+          discount_amount REAL DEFAULT 0,
+          tax_rate REAL DEFAULT 7,
+          tax_amount REAL DEFAULT 0,
+          total_amount REAL DEFAULT 0,
+          paid_amount REAL DEFAULT 0,
+          balance_amount REAL DEFAULT 0,
+          status TEXT DEFAULT 'DRAFT',
+          payment_status TEXT DEFAULT 'UNPAID',
+          notes TEXT,
+          created_by TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          currency_code TEXT DEFAULT 'THB',
+          exchange_rate REAL DEFAULT 1,
+          foreign_amount REAL,
+          FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id),
+          FOREIGN KEY (pos_bill_id) REFERENCES pos_running_bills(id),
+          FOREIGN KEY (customer_id) REFERENCES customers(id),
+          UNIQUE(tenant_id, invoice_number),
+          CHECK (sales_order_id IS NOT NULL OR pos_bill_id IS NOT NULL)
+        );
+        INSERT INTO invoices_new (id, tenant_id, invoice_number, sales_order_id, pos_bill_id, customer_id, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, paid_amount, balance_amount, status, payment_status, notes, created_by, created_at, updated_at, currency_code, exchange_rate, foreign_amount)
+          SELECT id, tenant_id, invoice_number, sales_order_id, NULL, customer_id, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, paid_amount, balance_amount, status, payment_status, notes, created_by, created_at, updated_at, currency_code, exchange_rate, foreign_amount FROM invoices;
+        DROP TABLE invoices;
+        ALTER TABLE invoices_new RENAME TO invoices;
+      `)
+      db.pragma('foreign_keys = ON')
+      const left = db.prepare('PRAGMA foreign_key_check(invoices)').all() as any[]
+      if (left.length > 0) console.error('⚠️ invoices rebuild เหลือ FK กำพร้า:', left)
+      else console.log('✅ Migration: rebuilt invoices ให้ sales_order_id nullable + เพิ่ม pos_bill_id (ออกใบจากบิล POS ได้)')
+    }
+  } catch (error) {
+    console.error('⚠️ invoices migration error:', error)
+    db.pragma('foreign_keys = ON')
+  }
+
+  // DROP TABLE invoices ข้างบนพา index 3 ตัวหายไปด้วย (idx_invoices_so/customer/status)
+  // ตัวจริงถูกนิยามไว้ที่ schema.ts ซึ่ง applySchema() รัน "ก่อน" runMigrations() เสมอ
+  // → รอบบูตที่รื้อตาราง ฐานจะไม่มี index เลยจนกว่าจะ restart อีกรอบ สร้างคืนตรงนี้ให้จบในรอบเดียว
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_invoices_so ON invoices(sales_order_id);
+      CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+    `)
+  } catch (e) { console.error('⚠️ invoices index rebuild error:', e) }
+
+  // กันออกใบแจ้งหนี้ซ้ำต่อบิล POS ใบเดียวกัน (ยกเว้นใบที่ยกเลิกแล้ว) สร้างนอก guard ข้างบน เผื่อฐานที่ rebuild ไปแล้วแต่ index หาย ปลอดภัยเพราะมี IF NOT EXISTS
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_pos_bill
+        ON invoices(tenant_id, pos_bill_id)
+        WHERE pos_bill_id IS NOT NULL AND status != 'CANCELLED'
+    `)
+    console.log('✅ Migration: ux_invoices_pos_bill พร้อมใช้งาน')
+  } catch (e) { console.error('⚠️ ux_invoices_pos_bill migration error:', e) }
+
+  // customers ไม่มีช่องสำนักงานใหญ่/สาขาเลย แต่ใบกำกับภาษีเต็มรูปต้องระบุตามกฎหมาย
+  try {
+    const custCols = db.prepare(`PRAGMA table_info(customers)`).all() as any[]
+    if (!custCols.some((c: any) => c.name === 'tax_branch')) {
+      db.exec(`ALTER TABLE customers ADD COLUMN tax_branch TEXT DEFAULT 'สำนักงานใหญ่'`)
+      console.log('✅ Migration: added tax_branch to customers')
+    }
+  } catch (e) { console.error('⚠️ tax_branch migration error:', e) }
 }

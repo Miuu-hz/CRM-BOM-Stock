@@ -3217,6 +3217,7 @@
         "stockAdjustment": "Stock Adjustment",
         "stockChange": "Stock Changes",
         "posVoid": "POS Void / Refund",
+        "posInvoice": "POS Bill Tax Invoice",
         "docEdit": "Edit Issued Documents"
       },
       "roles": {
@@ -3239,6 +3240,7 @@
         "title": "Categories requiring approval",
         "stockChangeHint": "Stock in, stock out and adjustments wait for an approver before anything moves",
         "posVoidHint": "Cancelling a POS bill waits for approval before stock and accounting are reversed",
+        "posInvoiceHint": "Issuing, editing or cancelling a full tax invoice from a POS bill waits for approval",
         "docEditHint": "Issued purchase orders need an approved unlock before they can be edited (single use, 30 minutes)",
         "turnedOn": "Approval enabled for this category",
         "turnedOff": "Approval disabled for this category",

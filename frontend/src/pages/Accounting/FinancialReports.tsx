@@ -29,6 +29,10 @@ const FinancialReports = () => {
   })
   
   // Report data
+  // หน่วยธุรกิจของงบกำไรขาดทุน — '' = รวมทุกหน่วย
+  // ค่าที่ใช้จริงใน journal_entries.business_unit: RETAIL / WHOLESALE / ONLINE / OTHER
+  // (ดู migrations.ts ~1400) ขายผ่านแพลตฟอร์มลง 'ONLINE' มาตลอด แต่ไม่เคยมีรายงานไหนกรองด้วยเลย
+  const [businessUnit, setBusinessUnit] = useState('')
   const [trialBalance, setTrialBalance] = useState<TrialBalanceReport | null>(null)
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null)
   const [profitLoss, setProfitLoss] = useState<ProfitLossReport | null>(null)
@@ -58,6 +62,7 @@ const FinancialReports = () => {
           const plRes = await reportsApi.getProfitLoss({
             startDate: dateRange.start,
             endDate: dateRange.end,
+            businessUnit: businessUnit || undefined,
           })
           setProfitLoss(plRes.data.data)
           break
@@ -162,7 +167,24 @@ const FinancialReports = () => {
               </div>
             </>
           )}
-          
+
+          {activeReport === 'profit-loss' && (
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-1">หน่วยธุรกิจ</label>
+              <select
+                value={businessUnit}
+                onChange={(e) => setBusinessUnit(e.target.value)}
+                className="phopy-input"
+              >
+                <option value="">ทั้งหมด</option>
+                <option value="RETAIL">หน้าร้าน (POS)</option>
+                <option value="WHOLESALE">ขายส่ง / ใบแจ้งหนี้</option>
+                <option value="ONLINE">ขายออนไลน์ (แพลตฟอร์ม)</option>
+                <option value="OTHER">อื่น ๆ</option>
+              </select>
+            </div>
+          )}
+
           <button
             onClick={fetchReport}
             disabled={loading}

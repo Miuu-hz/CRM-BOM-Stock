@@ -44,11 +44,30 @@ interface PreviewResult {
   }
 }
 
+/** แถวประวัติจาก GET /platform-settlement — คืนคอลัมน์ดิบของตาราง platform_settlements */
+interface SettlementRow {
+  id: string
+  platform: string
+  period_start: string
+  period_end: string
+  gross_sales: number
+  fees_json: string | null
+  payout_amount: number | null
+  status: 'PENDING_PAYOUT' | 'COMPLETED'
+}
+
 const PLATFORMS = ['SHOPEE', 'LAZADA', 'TIKTOK'] as const
 
 // ==================== Helpers ====================
 
 const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/** "ควรได้รับ" ของรอบที่ลงไว้แล้ว = ยอดเต็ม − ค่าธรรมเนียมที่หักตอนขั้น 2 (คิดแบบเดียวกับฝั่ง service) */
+const receivableOf = (s: SettlementRow): number => {
+  let fees: Array<{ amount: number }> = []
+  try { fees = JSON.parse(s.fees_json || '[]') } catch { fees = [] }
+  return Number(s.gross_sales) - fees.reduce((t, f) => t + (Number(f.amount) || 0), 0)
+}
 
 // ==================== Main Component ====================
 
@@ -73,6 +92,10 @@ export default function PlatformSettlement() {
   const [feeMappings, setFeeMappings] = useState<FeeMappingRow[]>([])
   const feeTypeOptions = feeMappings.filter((m) => m.targetField === 'FEE')
 
+  const [settlements, setSettlements] = useState<SettlementRow[]>([])
+  const [payoutEdit, setPayoutEdit] = useState<Record<string, string>>({})
+  const [payoutSaving, setPayoutSaving] = useState<string | null>(null)
+
   const loadFeeMappings = async () => {
     try {
       const res = await api.get('/platform-settlement/fee-mappings')
@@ -82,7 +105,16 @@ export default function PlatformSettlement() {
     }
   }
 
-  useEffect(() => { loadFeeMappings() }, [])
+  const loadSettlements = async () => {
+    try {
+      const res = await api.get('/platform-settlement')
+      if (res.data.success) setSettlements(res.data.data)
+    } catch {
+      // ประวัติโหลดไม่ได้ ไม่ควรขวางการลงรอบใหม่ — เงียบไว้
+    }
+  }
+
+  useEffect(() => { loadFeeMappings(); loadSettlements() }, [])
 
   const resetForm = () => {
     setPreview(null)
@@ -154,11 +186,35 @@ export default function PlatformSettlement() {
         toast.success('ยืนยันรอบโอนแล้ว ลงบัญชีเรียบร้อย')
         setFile(null)
         resetForm()
+        loadSettlements()
       }
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'ลงบัญชีไม่สำเร็จ')
     } finally {
       setConfirming(false)
+    }
+  }
+
+  // ขั้น 3 ที่มาทีหลัง — แพลตฟอร์มส่งรายงานก่อน แล้วโอนเงินอีกเป็นสัปดาห์
+  // ไม่มีปุ่มนี้ บัญชีพัก 1181 จะค้างตลอดกาล ปิดรอบไม่ได้
+  const handlePayout = async (id: string) => {
+    const amount = Number(payoutEdit[id])
+    if (!(amount >= 0)) {
+      toast.error('กรอกยอดที่โอนเข้าจริงก่อน')
+      return
+    }
+    try {
+      setPayoutSaving(id)
+      const res = await api.post(`/platform-settlement/${id}/payout`, { payoutAmount: amount })
+      if (res.data.success) {
+        toast.success('บันทึกเงินโอนแล้ว ปิดยอดลูกหนี้การค้า-แพลตฟอร์มเรียบร้อย')
+        setPayoutEdit({ ...payoutEdit, [id]: '' })
+        loadSettlements()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'บันทึกเงินโอนไม่สำเร็จ')
+    } finally {
+      setPayoutSaving(null)
     }
   }
 
@@ -197,10 +253,14 @@ export default function PlatformSettlement() {
           ))}
         </div>
 
+        <p className="text-xs text-[var(--fg-4)]">
+          มีไฟล์รายงานรอบ (CSV) ไหม? แนบมาเพื่อเติมตัวเลขให้อัตโนมัติ — ไม่มีก็กรอกสรุปรอบเองด้านล่างได้เลย
+        </p>
+
         <div className="flex items-center gap-3">
           <label className="flex-1 flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-[var(--border)] text-[var(--fg-3)] cursor-pointer hover:border-[var(--fg-4)]">
             <Upload className="w-4 h-4 shrink-0" />
-            <span className="text-sm truncate">{file ? file.name : 'เลือกไฟล์รายงานยอดขาย/ค่าธรรมเนียม (CSV)'}</span>
+            <span className="text-sm truncate">{file ? file.name : 'แนบไฟล์รายงานรอบ (CSV) — ไม่บังคับ'}</span>
             <input type="file" accept=".csv" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
           <button
@@ -224,17 +284,19 @@ export default function PlatformSettlement() {
         )}
       </div>
 
-      {/* สรุปยอด — เห็นแต่เงิน ไม่เห็นรหัสบัญชี */}
-      {preview && (
+      {/* สรุปยอด — เห็นแต่เงิน ไม่เห็นรหัสบัญชี
+          แสดงตลอด ไม่รอไฟล์: ของจริงที่ร้านได้จากแพลตฟอร์มคือ PDF รายการ order อ่านเข้าระบบไม่ได้
+          ไฟล์ CSV จึงเป็นแค่ทางลัดเติมตัวเลขให้ ไม่ใช่ทางเข้าบังคับ */}
+      {(
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="ช่วงวันที่เริ่ม" value={periodStart} onChange={setPeriodStart} type="date" />
             <Field label="ช่วงวันที่สิ้นสุด" value={periodEnd} onChange={setPeriodEnd} type="date" />
           </div>
 
-          <Field label={`ยอดขายเต็ม (${preview.rowCount} แถว)`} value={grossSales} onChange={setGrossSales} type="number" bold />
+          <Field label={preview ? `ยอดขายเต็ม (${preview.rowCount} แถว)` : 'ยอดขายเต็ม ก่อนหักอะไรทั้งสิ้น'} value={grossSales} onChange={setGrossSales} type="number" bold />
           <Field label="ภาษีขาย (VAT) — เว้นว่างให้คำนวณอัตโนมัติ 7%" value={vatAmount} onChange={setVatAmount} type="number" />
-          <Field label="ต้นทุนสินค้าที่ขายไปรอบนี้" value={cogsAmount} onChange={setCogsAmount} type="number" />
+          <Field label="ต้นทุนสินค้าที่ขายไปรอบนี้ — เว้นว่าง = ยังไม่รับรู้ต้นทุนรอบนี้" value={cogsAmount} onChange={setCogsAmount} type="number" />
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -272,7 +334,7 @@ export default function PlatformSettlement() {
 
           {/* สรุปเป็นภาษาเงิน */}
           <div className="border-t border-[var(--border)] pt-4 space-y-1.5 text-sm">
-            <Row label={`ยอดขายเต็ม (${preview.rowCount} ออเดอร์)`} value={fmt(gross)} bold />
+            <Row label={preview ? `ยอดขายเต็ม (${preview.rowCount} ออเดอร์)` : 'ยอดขายเต็ม'} value={fmt(gross)} bold />
             {fees.filter((f) => f.feeType && f.amount).map((f, i) => (
               <Row key={i} label={`  ${feeTypeOptions.find((o) => o.feeType === f.feeType)?.label || f.feeType}`} value={`−${fmt(f.amount)}`} muted />
             ))}
@@ -292,11 +354,57 @@ export default function PlatformSettlement() {
 
           <button
             onClick={handleConfirm}
-            disabled={confirming}
+            disabled={confirming || !periodStart || !periodEnd || !(gross > 0)}
             className="w-full py-3 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] font-semibold disabled:opacity-50"
           >
             {confirming ? 'กำลังลงบัญชี...' : 'ยืนยันรอบโอนนี้'}
           </button>
+        </div>
+      )}
+
+      {/* ประวัติรอบที่ลงบัญชีแล้ว + ปุ่มบันทึกเงินโอนของรอบที่ยังรอเงิน */}
+      {settlements.length > 0 && (
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-[var(--fg-1)]">ประวัติรอบที่ลงบัญชีแล้ว</h2>
+          {settlements.map((s) => {
+            const receivable = receivableOf(s)
+            return (
+              <div key={s.id} className="border border-[var(--border)] rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--fg-1)]">{s.platform} · {s.period_start} ถึง {s.period_end}</p>
+                    <p className="text-xs text-[var(--fg-3)]">ยอดเต็ม {fmt(Number(s.gross_sales))} · ควรได้รับ {fmt(receivable)}</p>
+                  </div>
+                  {s.status === 'COMPLETED' ? (
+                    <span className="flex items-center gap-1 text-xs text-success">
+                      <CheckCircle2 className="w-4 h-4" /> รับเงินแล้ว {fmt(Number(s.payout_amount))}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-warning">รอเงินโอน</span>
+                  )}
+                </div>
+
+                {s.status === 'PENDING_PAYOUT' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={payoutEdit[s.id] ?? ''}
+                      onChange={(e) => setPayoutEdit({ ...payoutEdit, [s.id]: e.target.value })}
+                      placeholder="ยอดที่โอนเข้าจริง"
+                      className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-1)] text-sm text-right"
+                    />
+                    <button
+                      onClick={() => handlePayout(s.id)}
+                      disabled={payoutSaving === s.id}
+                      className="px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-sm font-medium disabled:opacity-50 shrink-0"
+                    >
+                      {payoutSaving === s.id ? 'กำลังบันทึก...' : 'บันทึกเงินโอน'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

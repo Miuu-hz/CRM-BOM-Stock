@@ -1,6 +1,11 @@
 import db from '../db/sqlite'
 import { randomBytes } from 'crypto'
 
+// ⚠️ ทุกฟังก์ชันในไฟล์นี้รับ tenantId เป็นพารามิเตอร์แรกและกรองด้วยเสมอ
+// เดิมไม่มีคำว่า tenant อยู่ในไฟล์นี้เลย ทั้งที่ทั้ง 3 ตารางมีคอลัมน์ tenant_id
+// (ซึ่งเป็น nullable) — ร้านของทุก tenant จึงถูกเขียนเป็น NULL แล้วเห็นกันหมด
+// ห้ามเพิ่มคิวรีใหม่ในไฟล์นี้โดยไม่มี tenant_id ในเงื่อนไข
+
 // Generate unique ID
 const generateId = () => randomBytes(16).toString('hex')
 
@@ -22,9 +27,9 @@ const snakeToCamel = (obj: any): any => {
 
 // ==================== SHOPS ====================
 
-export const getAllShops = (platform?: string, isActive?: boolean) => {
-  let query = 'SELECT * FROM shops WHERE 1=1'
-  const params: any[] = []
+export const getAllShops = (tenantId: string, platform?: string, isActive?: boolean) => {
+  let query = 'SELECT * FROM shops WHERE tenant_id = ?'
+  const params: any[] = [tenantId]
 
   if (platform) {
     query += ' AND platform = ?'
@@ -40,27 +45,27 @@ export const getAllShops = (platform?: string, isActive?: boolean) => {
   return snakeToCamel(results)
 }
 
-export const getShopById = (id: string) => {
-  const result = db.prepare('SELECT * FROM shops WHERE id = ?').get(id)
+export const getShopById = (tenantId: string, id: string) => {
+  const result = db.prepare('SELECT * FROM shops WHERE id = ? AND tenant_id = ?').get(id, tenantId)
   return snakeToCamel(result)
 }
 
-export const createShop = (data: {
+export const createShop = (tenantId: string, data: {
   name: string
   platform: string
   shopId: string
 }) => {
   const id = generateId()
   const stmt = db.prepare(`
-    INSERT INTO shops (id, name, platform, shop_id, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+    INSERT INTO shops (id, tenant_id, name, platform, shop_id, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
   `)
 
-  stmt.run(id, data.name, data.platform, data.shopId)
-  return getShopById(id) // Already converted by getShopById
+  stmt.run(id, tenantId, data.name, data.platform, data.shopId)
+  return getShopById(tenantId, id) // Already converted by getShopById
 }
 
-export const updateShop = (id: string, data: { name?: string; isActive?: boolean }) => {
+export const updateShop = (tenantId: string, id: string, data: { name?: string; isActive?: boolean }) => {
   const updates: string[] = []
   const params: any[] = []
 
@@ -74,29 +79,29 @@ export const updateShop = (id: string, data: { name?: string; isActive?: boolean
     params.push(data.isActive ? 1 : 0)
   }
 
-  if (updates.length === 0) return getShopById(id)
+  if (updates.length === 0) return getShopById(tenantId, id)
 
   updates.push("updated_at = datetime('now')")
-  params.push(id)
+  params.push(id, tenantId)
 
   const stmt = db.prepare(`
-    UPDATE shops SET ${updates.join(', ')} WHERE id = ?
+    UPDATE shops SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?
   `)
 
   stmt.run(...params)
-  return getShopById(id) // Already converted by getShopById
+  return getShopById(tenantId, id) // Already converted by getShopById
 }
 
-export const deleteShop = (id: string) => {
-  const stmt = db.prepare('DELETE FROM shops WHERE id = ?')
-  return stmt.run(id)
+export const deleteShop = (tenantId: string, id: string) => {
+  const stmt = db.prepare('DELETE FROM shops WHERE id = ? AND tenant_id = ?')
+  return stmt.run(id, tenantId)
 }
 
 // ==================== FILES ====================
 
-export const getAllFiles = (shopId?: string, platform?: string) => {
-  let query = 'SELECT * FROM marketing_files WHERE 1=1'
-  const params: any[] = []
+export const getAllFiles = (tenantId: string, shopId?: string, platform?: string) => {
+  let query = 'SELECT * FROM marketing_files WHERE tenant_id = ?'
+  const params: any[] = [tenantId]
 
   if (shopId) {
     query += ' AND shop_id = ?'
@@ -114,7 +119,7 @@ export const getAllFiles = (shopId?: string, platform?: string) => {
   return snakeToCamel(results)
 }
 
-export const createFile = (data: {
+export const createFile = (tenantId: string, data: {
   shopId: string
   fileName: string
   filePath: string
@@ -127,13 +132,14 @@ export const createFile = (data: {
   const id = generateId()
   const stmt = db.prepare(`
     INSERT INTO marketing_files (
-      id, shop_id, file_name, file_path, platform,
+      id, tenant_id, shop_id, file_name, file_path, platform,
       user_name, report_start, report_end, row_count, uploaded_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `)
 
   stmt.run(
     id,
+    tenantId,
     data.shopId,
     data.fileName,
     data.filePath,
@@ -144,26 +150,26 @@ export const createFile = (data: {
     data.rowCount
   )
 
-  const result = db.prepare('SELECT * FROM marketing_files WHERE id = ?').get(id)
+  const result = db.prepare('SELECT * FROM marketing_files WHERE id = ? AND tenant_id = ?').get(id, tenantId)
   return snakeToCamel(result)
 }
 
-export const deleteFile = (id: string) => {
+export const deleteFile = (tenantId: string, id: string) => {
   // Delete file and related metrics (CASCADE)
-  const stmt = db.prepare('DELETE FROM marketing_files WHERE id = ?')
-  return stmt.run(id)
+  const stmt = db.prepare('DELETE FROM marketing_files WHERE id = ? AND tenant_id = ?')
+  return stmt.run(id, tenantId)
 }
 
 // ==================== METRICS ====================
 
-export const getMetrics = (filters: {
+export const getMetrics = (tenantId: string, filters: {
   shopId?: string
   startDate?: string
   endDate?: string
   platform?: string
 }) => {
-  let query = 'SELECT * FROM marketing_metrics WHERE 1=1'
-  const params: any[] = []
+  let query = 'SELECT * FROM marketing_metrics WHERE tenant_id = ?'
+  const params: any[] = [tenantId]
 
   if (filters.shopId) {
     query += ' AND shop_id = ?'
@@ -187,13 +193,17 @@ export const getMetrics = (filters: {
 
   if (filters.platform) {
     const shopIds = db
-      .prepare('SELECT id FROM shops WHERE platform = ?')
-      .all(filters.platform)
+      .prepare('SELECT id FROM shops WHERE platform = ? AND tenant_id = ?')
+      .all(filters.platform, tenantId)
       .map((s: any) => s.id)
 
     if (shopIds.length > 0) {
       query += ` AND shop_id IN (${shopIds.map(() => '?').join(',')})`
       params.push(...shopIds)
+    } else {
+      // ไม่มีร้านของ tenant นี้บนแพลตฟอร์มที่ขอ = ต้องได้ผลลัพธ์ว่าง
+      // เดิมเงื่อนไขนี้ถูกข้ามไปเฉย ๆ แล้วคืนเมตริกของทุกแพลตฟอร์มกลับมาแทน
+      return []
     }
   }
 
@@ -203,11 +213,11 @@ export const getMetrics = (filters: {
   return snakeToCamel(results)
 }
 
-export const createMetric = (data: any) => {
+export const createMetric = (tenantId: string, data: any) => {
   const id = generateId()
   const stmt = db.prepare(`
     INSERT INTO marketing_metrics (
-      id, file_id, shop_id, date,
+      id, tenant_id, file_id, shop_id, date,
       campaign_name, product_name, sku, ad_status,
       impressions, clicks, ctr,
       orders, direct_orders, order_rate, direct_order_rate,
@@ -218,7 +228,7 @@ export const createMetric = (data: any) => {
       roas, direct_roas, acos, direct_acos,
       conversion_rate, extra_data, created_at
     ) VALUES (
-      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
@@ -233,6 +243,7 @@ export const createMetric = (data: any) => {
 
   stmt.run(
     id,
+    tenantId,
     data.fileId,
     data.shopId,
     data.date,
@@ -268,22 +279,23 @@ export const createMetric = (data: any) => {
 /**
  * Get the last order number for a shop in a specific date range
  */
-export const getLastOrderNumber = (shopId: string, startDate: string, endDate: string): number => {
+export const getLastOrderNumber = (tenantId: string, shopId: string, startDate: string, endDate: string): number => {
   const result: any = db.prepare(`
     SELECT MAX(order_number) as lastOrderNumber
     FROM marketing_metrics
-    WHERE shop_id = ?
+    WHERE tenant_id = ?
+      AND shop_id = ?
       AND date >= ?
       AND date < ?
-  `).get(shopId, startDate, endDate)
+  `).get(tenantId, shopId, startDate, endDate)
 
   return result?.lastOrderNumber || 0
 }
 
-export const bulkCreateMetrics = (metrics: any[]) => {
+export const bulkCreateMetrics = (tenantId: string, metrics: any[]) => {
   const insert = db.prepare(`
     INSERT INTO marketing_metrics (
-      id, file_id, shop_id, date, order_number,
+      id, tenant_id, file_id, shop_id, date, order_number,
       campaign_name, product_name, sku, ad_status,
       impressions, clicks, ctr,
       orders, direct_orders, order_rate, direct_order_rate,
@@ -294,7 +306,7 @@ export const bulkCreateMetrics = (metrics: any[]) => {
       roas, direct_roas, acos, direct_acos,
       conversion_rate, extra_data, created_at
     ) VALUES (
-      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
@@ -307,10 +319,11 @@ export const bulkCreateMetrics = (metrics: any[]) => {
     )
   `)
 
-  const insertMany = db.transaction((metrics: any[]) => {
-    for (const data of metrics) {
+  const insertMany = db.transaction((rows: any[]) => {
+    for (const data of rows) {
       insert.run(
         generateId(),
+        tenantId,
         data.fileId,
         data.shopId,
         data.date,

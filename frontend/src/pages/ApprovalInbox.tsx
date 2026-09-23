@@ -24,6 +24,7 @@ const STATUS_CONFIG: Record<ApprovalStatus, { label: string; bg: string; text: s
 const MODULE_LABELS: Record<string, string> = {
   stock_adjust:      'ปรับ/เปลี่ยนสต็อก',
   pos_void:          'ยกเลิกบิล POS',
+  pos_invoice:       'ใบกำกับภาษีจากบิล POS',
   doc_edit:          'แก้ไขเอกสารที่ออกแล้ว',
   purchase_request:  'ใบขอซื้อ',
   purchase_order:    'ใบสั่งซื้อ',

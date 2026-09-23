@@ -25,7 +25,12 @@ export class SalesBillingError extends Error {
       | 'INVOICE_NOT_FOUND'
       | 'INVOICE_CANCELLED'
       | 'INVALID_AMOUNT'
-      | 'OVER_BALANCE',
+      | 'OVER_BALANCE'
+      | 'POS_BILL_NOT_FOUND'
+      | 'POS_BILL_NOT_PAID'
+      | 'POS_BILL_CANCELLED'
+      | 'CUSTOMER_REQUIRED'
+      | 'CUSTOMER_NOT_FOUND',
     message: string
   ) {
     super(message)
@@ -46,6 +51,13 @@ export function findActiveInvoiceForSO(tenantId: string, salesOrderId: string): 
   return db.prepare(
     "SELECT * FROM invoices WHERE tenant_id = ? AND sales_order_id = ? AND status != 'CANCELLED'"
   ).get(tenantId, salesOrderId)
+}
+
+/** ใบกำกับภาษีของบิล POS นี้ที่ยังไม่ถูกยกเลิก — มีอยู่แล้วห้ามออกซ้ำ (เหมือน findActiveInvoiceForSO) */
+export function findActiveInvoiceForPosBill(tenantId: string, posBillId: string): any {
+  return db.prepare(
+    "SELECT * FROM invoices WHERE tenant_id = ? AND pos_bill_id = ? AND status != 'CANCELLED'"
+  ).get(tenantId, posBillId)
 }
 
 /** ออกใบแจ้งหนี้จากคำสั่งขาย (ทั้งใบ — ยังไม่มี partial-billing ต่องวดส่งของในระบบนี้) */
@@ -138,6 +150,96 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
   const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)
 
   return { invoice, items: invoiceItems }
+}
+
+export interface CreateInvoiceFromPosBillPayload {
+  posBillId: string
+  customerId: string
+  notes?: string
+}
+
+/**
+ * ออกใบกำกับภาษีจากบิล POS ที่ปิดบิลแล้ว — "เอกสารล้วน" ห้ามลงบัญชี/VAT/สต็อกซ้ำเด็ดขาด
+ * เพราะตอนปิดบิล POS (pos-accounting.service.ts recordSale()) ลง journal ไปแล้ว
+ * (Dr 1180 พัก POS / Cr รายได้ขาย / Cr ภาษีขาย + Dr ต้นทุนขาย / Cr สินค้าคงคลัง),
+ * tax.routes.ts syncVatOutputFromPosBills() เก็บ VAT ขายไปแล้ว, และ pos-stock.service.ts
+ * ตัดสต็อกไปแล้ว — ถ้าฟังก์ชันนี้ลงซ้ำอีก รายได้/VAT จะเบิ้ล
+ */
+export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoiceFromPosBillPayload) {
+  const { posBillId, customerId, notes } = payload
+  if (!posBillId) throw new SalesBillingError('POS_BILL_NOT_FOUND', 'POS bill is required')
+
+  // กันออกซ้ำก่อนอย่างอื่นทั้งหมด — เหมือน createInvoiceFromSO ข้างบน
+  const existingInvoice = findActiveInvoiceForPosBill(tenantId, posBillId)
+  if (existingInvoice) {
+    const existingBill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ? AND tenant_id = ?')
+      .get(posBillId, tenantId) as any
+    throw new SalesBillingError(
+      'DUPLICATE_INVOICE',
+      `บิล ${existingBill?.bill_number || posBillId} มีใบกำกับ ${existingInvoice.invoice_number} (สถานะ ${existingInvoice.status}) อยู่แล้ว ออกซ้ำไม่ได้ — ยกเลิกใบเดิมก่อนถ้าต้องออกใหม่`
+    )
+  }
+
+  const bill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(posBillId, tenantId) as any
+  if (!bill) throw new SalesBillingError('POS_BILL_NOT_FOUND', 'ไม่พบบิล POS นี้')
+  if (bill.status === 'CANCELLED') throw new SalesBillingError('POS_BILL_CANCELLED', 'บิลนี้ถูกยกเลิกไปแล้ว ออกใบกำกับไม่ได้')
+  // เงื่อนไขพิเศษที่เจ้าของงานสั่งมาโดยเฉพาะ: ออกใบกำกับได้เฉพาะบิลที่คิดเงินแล้วเท่านั้น
+  if (bill.status !== 'PAID') throw new SalesBillingError('POS_BILL_NOT_PAID', 'ออกใบกำกับได้เฉพาะบิลที่ชำระเงินแล้ว')
+
+  if (!customerId) throw new SalesBillingError('CUSTOMER_REQUIRED', 'ต้องระบุลูกค้าก่อนออกใบกำกับภาษี')
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
+  if (!customer) throw new SalesBillingError('CUSTOMER_NOT_FOUND', 'ไม่พบลูกค้ารายนี้')
+
+  const id = generateId()
+  const invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
+  const now = new Date().toISOString()
+  const invoiceDate = bill.closed_at || now
+
+  const billItems = db.prepare(`
+    SELECT bi.*, pmc.product_id AS stock_item_id
+    FROM pos_bill_items bi
+    LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+    WHERE bi.bill_id = ? AND bi.tenant_id = ?
+    ORDER BY bi.added_at ASC
+  `).all(posBillId, tenantId) as any[]
+
+  db.transaction(() => {
+    // ⚠️ invoices ไม่มีคอลัมน์เก็บค่าบริการแยก ต้องบวก service_charge_amount เข้า subtotal
+    // ไม่งั้น subtotal + tax_amount จะไม่เท่ากับ total_amount แล้วใบพิมพ์ออกมายอดไม่บาลานซ์
+    const subtotal = (bill.subtotal || 0) + (bill.service_charge_amount || 0)
+
+    db.prepare(`
+      INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, pos_bill_id, customer_id, invoice_date, due_date,
+        subtotal, discount_amount, tax_rate, tax_amount, total_amount, paid_amount, balance_amount, status, payment_status, notes, created_at, updated_at,
+        currency_code, exchange_rate, foreign_amount)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 'PAID', 'PAID', ?, ?, ?, 'THB', 1, NULL)
+    `).run(id, tenantId, invoiceNumber, posBillId, customerId, invoiceDate,
+      subtotal, bill.discount_amount || 0, bill.tax_rate || 0, bill.tax_amount || 0,
+      bill.total_amount, bill.total_amount, notes || '', now, now)
+
+    const insertItem = db.prepare(`
+      INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
+      VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)
+    `)
+    for (const item of billItems) {
+      insertItem.run(generateId(), tenantId, id, item.stock_item_id || null, item.product_name, item.quantity, item.unit_price, item.total_price)
+    }
+    // ค่าบริการ (ถ้ามี) ต้องมีรายการของตัวเองด้วย ไม่งั้นผลรวมรายการจะไม่เท่ากับ subtotal ของหัวใบ
+    if ((bill.service_charge_amount || 0) > 0) {
+      insertItem.run(generateId(), tenantId, id, null, `ค่าบริการ ${bill.service_charge_rate}%`, 1, bill.service_charge_amount, bill.service_charge_amount)
+    }
+
+    // ❌❌ ห้ามเรียก createSalesJournal ห้าม insert vat_entries ห้ามแตะสต็อกตรงนี้เด็ดขาด ❌❌
+    // pos-accounting.service.ts recordSale() ลงบัญชี (Dr 1180 พัก POS / Cr รายได้ขาย / Cr ภาษีขาย
+    // + Dr ต้นทุนขาย / Cr สินค้าคงคลัง) และ pos-stock.service.ts ตัดสต็อกไปแล้วตั้งแต่ตอนปิดบิล POS
+    // ใบกำกับนี้เป็นแค่เอกสารที่ออกซ้ำจากของที่ลงบัญชีไปแล้ว ถ้าลงบัญชี/VAT/สต็อกซ้ำตรงนี้อีก
+    // รายได้จะเบิ้ล (double count)
+  })()
+
+  const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+  const items = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)
+
+  return { invoice, items }
 }
 
 export interface RecordPaymentPayload {

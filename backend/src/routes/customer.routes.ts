@@ -46,15 +46,18 @@ router.get('/search', (req: Request, res: Response) => {
     }
 
     const term = `%${q.trim()}%`
+    // ค้นด้วยเลขผู้เสียภาษีได้ด้วย และคืน tax_id/address/tax_branch มาเลย — โมดัล "ออกใบกำกับภาษี"
+    // ในหน้า POS ต้องให้แคชเชียร์ยืนยันข้อมูลผู้ซื้อก่อนกดออกใบ ไม่ใช่เห็นแค่ชื่อกับเบอร์
     const customers = db.prepare(`
       SELECT id, code, name, contact_name, phone, email,
+             tax_id, address, tax_branch,
              loyalty_points, total_spent, status
       FROM customers
       WHERE tenant_id = ? AND status = 'ACTIVE'
-        AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ?)
+        AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ? OR tax_id LIKE ?)
       ORDER BY name ASC
       LIMIT ?
-    `).all(tenantId, term, term, term, term, parseInt(limit as string)) as any[]
+    `).all(tenantId, term, term, term, term, term, parseInt(limit as string)) as any[]
 
     res.json({ success: true, data: customers })
   } catch (error) {
@@ -96,33 +99,53 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, type, contactName, email, phone, city, address, taxId, creditLimit = 0 } = req.body
-    
-    // Validation
-    if (!code || !name || !type || !contactName || !phone) {
+    const { code, name, type, contactName, email, phone, city, address, taxId, taxBranch, creditLimit = 0 } = req.body
+
+    // Validation — ชื่อ/ประเภท/เบอร์โทรยังบังคับเหมือนเดิม แต่ code กับ contactName ผ่อนให้ เพราะ
+    // popup "เพิ่มลูกค้าใหม่" ตอนลูกค้า POS ขอใบกำกับกะทันหัน แคชเชียร์ไม่มีทางรู้จะตั้งรหัสอะไร
+    // และลูกค้านิติบุคคลหน้าร้านมักไม่มีชื่อผู้ติดต่อแยกจากชื่อบริษัท (ห้ามถอด validation ของ name)
+    // phone ก็ผ่อนด้วย: ลูกค้าที่ขอใบกำกับมักไม่ให้เบอร์ ถ้าบังคับแล้วยัด '-' ไปแทน
+    // ใบกำกับจะพิมพ์ "โทร : -" ออกมาบนเอกสารจริง — ปล่อยว่างแล้วให้ template ข้ามแถวนั้นไปดีกว่า
+    if (!name || !type) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
     }
-    
-    // Check duplicate code in this tenant
-    const existing = db.prepare('SELECT id FROM customers WHERE tenant_id = ? AND code = ?')
-      .get(tenantId, code)
-    
-    if (existing) {
-      return res.status(400).json({ success: false, message: 'รหัสลูกค้านี้มีอยู่แล้ว' })
+
+    // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (บุคคลธรรมดาไม่มีเลขนี้)
+    if (taxId && !/^\d{13}$/.test(taxId)) {
+      return res.status(400).json({ success: false, message: 'เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก' })
     }
-    
+
+    const resolvedContactName = contactName || name
+
+    // Auto-generate code เมื่อไม่ส่งมา (แพทเทิร์นเดียวกับที่ใช้ในเทสต์: 'CUS-' + 8 ตัวแรกของ id)
+    // ยังกันรหัสซ้ำในทุก tenant เหมือนเดิม — ถ้าชนโดยบังเอิญให้สุ่มใหม่
+    let resolvedCode = code
+    if (!resolvedCode) {
+      do {
+        resolvedCode = 'CUS-' + randomUUID().replace(/-/g, '').substring(0, 8)
+      } while (db.prepare('SELECT id FROM customers WHERE tenant_id = ? AND code = ?').get(tenantId, resolvedCode))
+    } else {
+      // Check duplicate code in this tenant
+      const existing = db.prepare('SELECT id FROM customers WHERE tenant_id = ? AND code = ?')
+        .get(tenantId, resolvedCode)
+
+      if (existing) {
+        return res.status(400).json({ success: false, message: 'รหัสลูกค้านี้มีอยู่แล้ว' })
+      }
+    }
+
     const id = randomUUID().replace(/-/g, '').substring(0, 25)
     const now = new Date().toISOString()
-    
+
     db.prepare(`
-      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, credit_limit, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, code, name, type, contactName, email || '', phone, city || '', address || null, taxId || null, creditLimit, now, now)
-    
+      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, now, now)
+
     res.status(201).json({
       success: true,
       message: 'สร้างลูกค้าสำเร็จ',
-      data: { id, code, name, type },
+      data: { id, code: resolvedCode, name, type },
     })
   } catch (error) {
     console.error('Create customer error:', error)
@@ -135,8 +158,13 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, contactName, email, phone, city, address, taxId, creditLimit, status } = req.body
-    
+    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status } = req.body
+
+    // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (เหมือนตอนสร้าง)
+    if (taxId && !/^\d{13}$/.test(taxId)) {
+      return res.status(400).json({ success: false, message: 'เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก' })
+    }
+
     // Check if customer exists and belongs to this tenant
     const existing = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?')
       .get(id, tenantId)
@@ -156,11 +184,12 @@ router.put('/:id', (req: Request, res: Response) => {
           city = COALESCE(?, city),
           address = COALESCE(?, address),
           tax_id = COALESCE(?, tax_id),
+          tax_branch = COALESCE(?, tax_branch),
           credit_limit = COALESCE(?, credit_limit),
           status = COALESCE(?, status),
           updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, contactName, email, phone, city, address, taxId, creditLimit, status, now, id, tenantId)
+    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, now, id, tenantId)
     
     res.json({ success: true, message: 'อัปเดตลูกค้าสำเร็จ' })
   } catch (error) {
