@@ -55,7 +55,7 @@ function seedPosBill(tenantId: string, opts: { status?: string; withServiceCharg
 function setup(opts?: { status?: string; withServiceCharge?: boolean }) {
   const user = createTestUser({ role: 'ADMIN' })
   tenants.push(user.tenantId)
-  db.prepare('INSERT INTO company_settings (tenant_id, name, allow_negative_stock) VALUES (?, ?, 0)').run(user.tenantId, 'ร้านทดสอบ')
+  db.prepare('INSERT INTO company_settings (tenant_id, name, tax_id, allow_negative_stock) VALUES (?, ?, ?, 0)').run(user.tenantId, 'ร้านทดสอบ', '0105561234567')
   const seeded = seedPosBill(user.tenantId, opts)
   return { ...user, ...seeded }
 }
@@ -126,5 +126,53 @@ describe('salesBilling.service — createInvoiceFromPosBill', () => {
     const result = createInvoiceFromPosBill(s.tenantId, { posBillId: s.billId, customerId: s.customerId }) as any
     const inv = result.invoice
     expect(inv.subtotal + inv.tax_amount - inv.discount_amount).toBeCloseTo(inv.total_amount, 6)
+  })
+
+  it('กิจการยังไม่ได้กรอกเลขผู้เสียภาษี → ออกใบกำกับไม่ได้ (ม.86/4)', () => {
+    const s = setup()
+    db.prepare('UPDATE company_settings SET tax_id = NULL WHERE tenant_id = ?').run(s.tenantId)
+    try {
+      createInvoiceFromPosBill(s.tenantId, { posBillId: s.billId, customerId: s.customerId })
+      throw new Error('should have thrown')
+    } catch (e: any) {
+      expect(e.code).toBe('SELLER_TAX_ID_REQUIRED')
+    }
+    expect((db.prepare('SELECT COUNT(*) c FROM invoices WHERE pos_bill_id = ?').get(s.billId) as any).c).toBe(0)
+  })
+
+  it('ใบกำกับเต็มรูปต้องอ้างเลขใบกำกับอย่างย่อ (สลิป) ที่ออกแทน', () => {
+    const s = setup()
+    const bill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?').get(s.billId) as any
+    const { invoice } = createInvoiceFromPosBill(s.tenantId, { posBillId: s.billId, customerId: s.customerId }) as any
+    expect(invoice.notes).toContain(bill.bill_number)
+    expect(invoice.notes).toContain('ออกแทนใบกำกับภาษีอย่างย่อ')
+  })
+
+  it('รายงานภาษีขายต้องอ้างเลขใบกำกับ ไม่ใช่เลขบิลหน้าร้าน', () => {
+    const s = setup()
+    db.prepare(`
+      INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date,
+        party_name, base_amount, vat_rate, vat_amount, total_amount, is_output_vat, created_at)
+      VALUES (?, ?, 'SALES', ?, 'POS-เดิม', date('now'), 'ลูกค้า', 130, 7, 9.1, 152.1, 1, datetime('now'))
+    `).run(generateId(), s.tenantId, s.billId)
+
+    const { invoice } = createInvoiceFromPosBill(s.tenantId, { posBillId: s.billId, customerId: s.customerId }) as any
+
+    const vat = db.prepare('SELECT document_number FROM vat_entries WHERE document_id = ?').get(s.billId) as any
+    expect(vat.document_number).toBe(invoice.invoice_number)
+  })
+
+  it('ร้านตั้งราคารวม VAT → รายการในใบกำกับเป็นยอดก่อนภาษี และรวมได้เท่าหัวใบเป๊ะ', () => {
+    const s = setup()
+    // บิลแบบถอดภาษีแล้ว: ลูกค้าจ่าย 130 ในนั้นเป็นภาษี 8.5 ฐาน 121.5 (ไม่มีค่าบริการ)
+    db.prepare(`UPDATE pos_running_bills SET subtotal = 121.5, tax_amount = 8.5,
+      service_charge_amount = 0, total_amount = 130 WHERE id = ?`).run(s.billId)
+
+    const { invoice, items } = createInvoiceFromPosBill(s.tenantId, { posBillId: s.billId, customerId: s.customerId }) as any
+
+    const lines = (items as any[]).reduce((n, i) => n + i.total_price, 0)
+    expect(lines, 'ผลรวมรายการต้องเท่ากับ subtotal ของหัวใบ').toBeCloseTo(invoice.subtotal, 2)
+    expect(invoice.subtotal, 'ต้องเป็นยอดก่อนภาษี ไม่ใช่ราคาป้าย 130').toBeCloseTo(121.5, 2)
+    expect(invoice.subtotal + invoice.tax_amount).toBeCloseTo(invoice.total_amount, 2)
   })
 })

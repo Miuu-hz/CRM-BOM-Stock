@@ -38,6 +38,8 @@ function addBillItem(tenantId: string, billId: string, menuId: string, quantity:
 describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', () => {
   it('applies the default 10% service charge and 7% VAT on top of subtotal, each independently rounded', () => {
     const tenantId = generateId()
+    // กิจการต้องจด VAT ก่อนถึงจะคิดภาษีได้ — ไม่ใส่อัตรา ใช้ค่าตั้งต้น 7/10
+    db.prepare('INSERT INTO company_settings (tenant_id, tax_id) VALUES (?, ?)').run(tenantId, '0105561234567')
     const menuId = seedMenu(tenantId, 33)
     const billId = seedOpenBill(tenantId)
     addBillItem(tenantId, billId, menuId, 3, 33) // subtotal 99 (forces rounding)
@@ -47,15 +49,16 @@ describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', ()
     const bill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ?').get(billId) as any
     expect(bill.subtotal).toBe(99)
     expect(bill.service_charge_amount).toBe(Math.round((99 * 10) / 100)) // 10
-    expect(bill.tax_amount).toBe(Math.round((99 * 7) / 100)) // 7
-    expect(bill.total_amount).toBe(99 + 10 + 7) // 116, subtotal + service + VAT (not compounded)
+    // ฐานภาษีคือทุกอย่างที่เรียกเก็บจากลูกค้า ค่าบริการจึงอยู่ในฐานด้วย: (99 + 10) × 7%
+    expect(bill.tax_amount).toBe(Math.round((109 * 7) / 100)) // 8
+    expect(bill.total_amount).toBe(99 + 10 + 8) // 117
   })
 
   it('honours per-tenant company_settings overrides, including VAT/service disabled entirely', () => {
     const tenantId = generateId()
     db.prepare(`
-      INSERT INTO company_settings (tenant_id, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate)
-      VALUES (?, 0, 15, 0, 20)
+      INSERT INTO company_settings (tenant_id, tax_id, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate)
+      VALUES (?, '0105561234567', 0, 15, 0, 20)
     `).run(tenantId)
 
     const menuId = seedMenu(tenantId, 100)
@@ -74,8 +77,8 @@ describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', ()
   it('applies a custom VAT/service rate from company_settings when enabled', () => {
     const tenantId = generateId()
     db.prepare(`
-      INSERT INTO company_settings (tenant_id, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate)
-      VALUES (?, 1, 15, 1, 5)
+      INSERT INTO company_settings (tenant_id, tax_id, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate)
+      VALUES (?, '0105561234567', 1, 15, 1, 5)
     `).run(tenantId)
 
     const menuId = seedMenu(tenantId, 100)
@@ -85,13 +88,14 @@ describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', ()
     recalculateBillTotals(billId)
 
     const bill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ?').get(billId) as any
-    expect(bill.tax_amount).toBe(15)   // 100 * 15%
     expect(bill.service_charge_amount).toBe(5) // 100 * 5%
-    expect(bill.total_amount).toBe(120)
+    expect(bill.tax_amount).toBe(16)   // (100 + 5) * 15%
+    expect(bill.total_amount).toBe(121)
   })
 
   it('recomputes from the current item set every call (no drift when items change)', () => {
     const tenantId = generateId()
+    db.prepare('INSERT INTO company_settings (tenant_id, tax_id) VALUES (?, ?)').run(tenantId, '0105561234567')
     const menuId = seedMenu(tenantId, 50)
     const billId = seedOpenBill(tenantId)
     addBillItem(tenantId, billId, menuId, 1, 50)
@@ -105,6 +109,28 @@ describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', ()
     recalculateBillTotals(billId)
     bill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ?').get(billId) as any
     expect(bill.subtotal).toBe(150)
-    expect(bill.total_amount).toBe(150 + Math.round(150 * 0.1) + Math.round(150 * 0.07))
+    const service = Math.round(150 * 0.1)
+    expect(bill.total_amount).toBe(150 + service + Math.round((150 + service) * 0.07))
+  })
+
+  it('ค่าขนส่งและส่วนลดบนบิลต้องอยู่ในฐานภาษี ไม่ใช่บวก/ลบทีหลัง', () => {
+    const tenantId = generateId()
+    db.prepare(`
+      INSERT INTO company_settings (tenant_id, tax_id, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate)
+      VALUES (?, '0105561234567', 1, 7, 0, 0)
+    `).run(tenantId)
+
+    const menuId = seedMenu(tenantId, 100)
+    const billId = seedOpenBill(tenantId)
+    addBillItem(tenantId, billId, menuId, 1, 100)
+    db.prepare('UPDATE pos_running_bills SET extra_charge_amount = 50, discount_amount = 20 WHERE id = ?').run(billId)
+
+    recalculateBillTotals(billId)
+
+    const bill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ?').get(billId) as any
+    expect(bill.tax_amount).toBe(9)  // (100 + 50 − 20) × 7% ไม่ใช่ 7
+    expect(bill.total_amount).toBe(139)
+    expect(bill.subtotal + bill.extra_charge_amount - bill.discount_amount + bill.tax_amount)
+      .toBe(bill.total_amount)
   })
 })

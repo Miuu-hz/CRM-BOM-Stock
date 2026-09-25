@@ -106,7 +106,9 @@ function sellerOf(d: any): BillParty {
     address: String(d._companyAddress || d._shopAddress || co.address || ''),
     taxId: String(d._companyTax || d._shopTaxId || co.tax_id || ''),
     tel: String(d._companyPhone || d._shopPhone || co.phone || ''),
-    branch: d._companyBranch || undefined,
+    // ใบกำกับภาษีเต็มรูปต้องระบุสาขาของผู้ขายด้วย ไม่ใช่แค่ของผู้ซื้อ (ม.86/4)
+    // ยังไม่มีระบบสาขาในระบบ ค่าใน company_settings จึงเป็น 'สำนักงานใหญ่' ให้ทุกกิจการ แก้ได้ในหน้าตั้งค่า
+    branch: d._companyBranch || (co as any).tax_branch || undefined,
   }
 }
 
@@ -129,7 +131,16 @@ function partyOf(d: any, side: DocSpec['party']): BillParty {
 export function toBillData(type: PrintDocType, d: any): BillData {
   const spec = DOCS[type]
   const items = toItems(d.items)
-  const subtotal = d.subtotal !== undefined ? n(d.subtotal) : items.reduce((s, x) => s + x.total, 0)
+  // ค่าบริการ/ค่าขนส่งไม่มีแถวของตัวเองในเทมเพลต ถ้าไม่ดันเข้ามาเป็นรายการ
+  // ใบจะพิมพ์ออกมา subtotal + VAT − ส่วนลด ไม่เท่า total (ใบกำกับที่ออกจาก ERP ใส่เป็นรายการอยู่แล้ว)
+  const serviceAmt = n(d.service_charge_amount)
+  const extraAmt = n(d.extra_charge_amount)
+  const chargeRow = (name: string, amount: number) =>
+    items.push({ id: name, no: items.length + 1, name, quantity: 1, unit: '', price: amount, discount: 0, vat: 0, total: amount })
+  if (serviceAmt > 0) chargeRow(`ค่าบริการ ${n(d.service_charge_rate) || ''}%`.trim(), serviceAmt)
+  if (extraAmt > 0) chargeRow(String(d.extra_charge_label || d._extraChargeLabel || 'ค่าขนส่ง'), extraAmt)
+  const subtotal = (d.subtotal !== undefined ? n(d.subtotal) : 0) + serviceAmt + extraAmt
+    || items.reduce((s, x) => s + x.total, 0)
   const total = n(d.total_amount ?? d.net_amount ?? d.amount ?? subtotal)
   return {
     id: String(d.id ?? ''),
@@ -145,6 +156,10 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     subtotal,
     discountTotal: n(d.discount_amount ?? d._discountAmount),
     vatTotal: n(d.tax_amount),
+    // เอกสารทั่วไปใช้ธงของตัวเอง (vat_inclusive) ส่วนสลิป POS ใช้ค่าจากการตั้งค่าหน้าร้าน
+    vatInclusive: !!(d._vatInclusive ?? d.vat_inclusive ?? d.pos_vat_inclusive),
+    vatRate: d.tax_rate ?? d._vatRate ?? undefined,
+    supersededBy: d._supersededBy || undefined,
     whtTotal: d.withholding_tax !== undefined ? n(d.withholding_tax) : undefined,
     total,
     paymentMethod: d.payment_method || d._paymentMethod || undefined,
@@ -152,7 +167,9 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     bankName: d._bankName || undefined,
     bankAccountName: d._bankAccountName || undefined,
     bankAccountNumber: d._bankAccountNumber || undefined,
-    notes: d.notes || d.reason || undefined,
+    // A4 ไม่มีแถวสรุปแบบสลิป ข้อความกำกับจึงไปอยู่ในหมายเหตุ
+    notes: [d._supersededBy && `ออกใบกำกับภาษีเต็มรูปแทนแล้ว เลขที่ ${d._supersededBy}`, d.notes || d.reason]
+      .filter(Boolean).join(' · ') || undefined,
     status: (d.status || 'CONFIRMED') as BillData['status'],
     // QR โอนเงินของร้าน (อัปโหลดที่ Settings → บัญชีธนาคาร / QR รับเงิน)
     qrCode: safeImage(d._bankQrImage) || undefined,
@@ -184,12 +201,25 @@ export function invalidateDocumentSettings() {
 const SIZE: Record<PrintFormat, 'A4' | 'A5' | 'THERMAL'> = { a4: 'A4', a5: 'A5', thermal: 'THERMAL' }
 
 /**
+ * สลิปหน้าร้านที่เก็บ VAT จากลูกค้าคือ "ใบกำกับภาษีอย่างย่อ" ตาม ม.86/6 ไม่ใช่ "ใบเสร็จรับเงิน"
+ * ถ้าไม่ได้เก็บ VAT ก็เป็นใบเสร็จรับเงินธรรมดาตามเดิม เอกสารชนิดอื่นไม่ถูกแตะ
+ */
+export function resolveBillType(type: PrintDocType, data: any): BillType {
+  // ออกใบกำกับเต็มรูปแทนไปแล้ว — การขายครั้งเดียวมีใบกำกับภาษีได้ใบเดียว
+  // สลิปใบนี้กลับไปเป็นใบเสร็จรับเงินธรรมดา พิมพ์ซ้ำได้แต่ไม่ใช่ใบกำกับภาษีอีกต่อไป
+  if (type === 'pos' && !data?._supersededBy && n(data?.tax_amount) > 0) return 'TAX_INVOICE_ABB'
+  return DOCS[type].bill
+}
+
+/**
  * สั่งพิมพ์เอกสาร — ลายเซ็นเดียวกับ printSalesDoc()/printDocument() เดิม
  * ไม่ต้อง await ก็ได้ (ผู้เรียกเป็น onClick) แต่ await ได้ถ้าอยากรอ
  */
 export async function printBill(type: PrintDocType, data: any, format: PrintFormat = 'a4') {
   const spec = DOCS[type]
   if (!spec) return
+
+  const billType = resolveBillType(type, data)
 
   await loadSettings()
   const s: any = settingsCache || {}
@@ -202,7 +232,7 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
 
   const html = renderToStaticMarkup(
     createElement(UnifiedBillTemplate as any, {
-      config: (BILL_CONFIGS as any)[spec.bill],
+      config: (BILL_CONFIGS as any)[billType],
       data: toBillData(type, data || {}),
       size,
       branding,

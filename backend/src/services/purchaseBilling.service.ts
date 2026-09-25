@@ -2,6 +2,7 @@ import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from './accounting.service'
+import { calcVat } from '../utils/vat'
 
 /**
  * ตรรกะ "ออกใบแจ้งหนี้ซื้อ" และ "จ่ายเงินผู้ขาย" ยกออกมาจาก routes/purchase.routes.ts
@@ -47,6 +48,8 @@ export interface CreatePurchaseInvoiceItem {
 }
 
 export interface CreatePurchaseInvoicePayload {
+  /** ส่วนลดท้ายบิล — ไม่ระบุจะสืบทอดจากใบสั่งซื้อ */
+  discountAmount?: number
   purchaseOrderId: string
   goodsReceiptId?: string | null
   goodsReceiptIds?: string[]
@@ -223,13 +226,18 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
   const now = new Date().toISOString()
 
-  const subtotal = items.length > 0
+  let subtotal = items.length > 0
     ? items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) + (extraNeeded ? extraSubtotal : 0)
     : po.subtotal + extraSubtotal
 
   const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
-  const taxAmount = subtotal * (taxRate / 100)
-  const totalAmount = subtotal + taxAmount
+  // ส่วนลดสืบทอดจากใบสั่งซื้อถ้าไม่ได้ระบุมา แล้วหักออกจากฐานก่อนคิดภาษี (ม.79)
+  const reqDiscount = payload.discountAmount != null ? Number(payload.discountAmount) : (po.discount_amount ?? 0)
+  // ใบกำกับซื้อสืบทอดโหมด VAT จากใบสั่งซื้อ ไม่ต้องให้ผู้ใช้เลือกซ้ำ
+  const inclusive = po.vat_inclusive === 1
+  const piCalc = calcVat(subtotal, { rate: taxRate, discountAmount: reqDiscount, inclusive })
+  const { taxAmount, totalAmount, discount } = piCalc
+  subtotal = piCalc.subtotal
 
   // Resolve accounts before transaction (auto-create if not yet in chart of accounts)
   const resolvedDrAccId = drAccountId
@@ -254,12 +262,12 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const transaction = db.transaction(() => {
     db.prepare(`
       INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
-        supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, tax_rate, tax_amount, total_amount,
+        supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive,
         balance_amount, status, payment_status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
     `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
-      grIds[0] || null, grIdsJson, JSON.stringify(allPoIds), invoiceDate || now, dueDate || null, subtotal, taxRate, taxAmount,
-      totalAmount, totalAmount, notes || '', now, now)
+      grIds[0] || null, grIdsJson, JSON.stringify(allPoIds), invoiceDate || now, dueDate || null, subtotal, discount, taxRate, taxAmount,
+      totalAmount, inclusive ? 1 : 0, totalAmount, notes || '', now, now)
 
     if (items.length > 0) {
       const insertItem = db.prepare(`

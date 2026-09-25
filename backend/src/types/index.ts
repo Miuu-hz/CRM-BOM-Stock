@@ -88,6 +88,11 @@ export interface POSBill {
   customer_id?: string | null
   subtotal: number
   service_charge_amount: number
+  /** ค่าขนส่ง/ค่าบริการอื่นที่เรียกเก็บจากลูกค้า — อยู่ในฐานภาษีด้วย */
+  extra_charge_amount?: number
+  extra_charge_label?: string | null
+  /** ส่วนลดท้ายบิล — หักออกจากฐานภาษี */
+  discount_amount?: number
   tax_rate?: number
   tax_amount: number
   total_amount: number

@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import db from '../../db/sqlite'
 import { registerSalesTools } from './sales'
-import { registerBindingTools } from './binding'
 
 /**
  * กติกาที่เทสต์นี้ล็อกไว้ (เจ้าของสั่ง 2026-09-14):
  *   AI กรอกเอกสารให้ได้ แต่ผูกสินค้าให้เฉพาะ "ชื่อตรงเป๊ะ"
- *   ไม่ตรงเป๊ะ = ไม่ผูก คืนตัวเลือกให้คนเลือก และ **ยืนยันเอกสารไม่ได้จนกว่าจะผูกครบ**
+ *   ไม่ตรงเป๊ะ = ไม่ผูก คืนตัวเลือกให้คนเลือก
+ *
+ * เดิมเทสต์ผ่านใบสั่งขาย แต่ 2026-09-25 เจ้าของสั่งถอด tool สร้าง SO/ใบแจ้งหนี้/รับชำระ
+ * ออกจาก MCP (เหลือใบเสนอราคาอย่างเดียว) จึงย้ายมาล็อกกติกาเดียวกันที่ create_quotation
+ * ส่วนกฎ "ยืนยันไม่ได้จนกว่าจะผูกครบ" ยังถูกล็อกไว้ฝั่งจัดซื้อ (ดู purchase.gr.test.ts)
  * เคสจริงที่เป็นต้นเหตุ: "ข้าวโพด" ไปจับ "สลัดทูน่าข้าวโพด" แล้วตัดสต็อกผิดตัวเงียบ ๆ
  */
 function fakeServer() {
@@ -35,59 +38,40 @@ describe('AI กรอกให้ แต่ไม่เดาผูกสิน
     const { server, call } = fakeServer()
     registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
 
-    const res = parse(await call('create_sales_order', {
+    const res = parse(await call('create_quotation', {
       items: [{ description: 'ขนมจีน', quantity: 2, unitPrice: 50 }],
     }))
-    expect(res.items[0].ผูกกับสินค้า).toBe('ขนมจีน')
-    const row = db.prepare('SELECT stock_item_id FROM sales_order_items WHERE sales_order_id = ?').get(res.soId) as any
+    expect(res.รายการ[0].ผูกกับสินค้า).toBe('ขนมจีน')
+    const qt = db.prepare('SELECT id FROM quotations WHERE quotation_number = ? AND tenant_id = ?').get(res.เลขที่ใบเสนอราคา, t) as any
+    const row = db.prepare('SELECT stock_item_id FROM quotation_items WHERE quotation_id = ?').get(qt.id) as any
     expect(row.stock_item_id).toBe(exact)
   })
 
-  it('ชื่อไม่ตรงเป๊ะ → ไม่ผูก คืนตัวเลือก และยืนยันไม่ได้', async () => {
+  it('ชื่อไม่ตรงเป๊ะ → ไม่ผูก คืนตัวเลือกให้คนเลือก', async () => {
     const { t } = seedTenant()
     const { server, call } = fakeServer()
     registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
 
-    const res = parse(await call('create_sales_order', {
+    const res = parse(await call('create_quotation', {
       items: [{ description: 'ขนมจีนน้ำยา', quantity: 2, unitPrice: 50 }],
     }))
-    expect(res.items[0].ผูกกับสินค้า).toBeNull()
-    expect(res.items[0].ตัวเลือก.length).toBeGreaterThan(0)
+    expect(res.รายการ[0].ผูกกับสินค้า).toBeNull()
+    expect(res.รายการ[0].ตัวเลือก.length).toBeGreaterThan(0)
 
-    const row = db.prepare('SELECT stock_item_id FROM sales_order_items WHERE sales_order_id = ?').get(res.soId) as any
-    expect(row.stock_item_id).toBeNull()
-
-    const confirm = parse(await call('update_sales_order_status', { so_id: res.soId, status: 'CONFIRMED' }))
-    expect(confirm.success).toBe(false)
-    expect(confirm.unboundItems).toContain('ขนมจีนน้ำยา')
-    // สถานะต้องไม่ขยับ และสต็อกต้องไม่ถูกแตะ
-    const so = db.prepare('SELECT status FROM sales_orders WHERE id = ?').get(res.soId) as any
-    expect(so.status).toBe('DRAFT')
+    const qt = db.prepare('SELECT id FROM quotations WHERE quotation_number = ? AND tenant_id = ?').get(res.เลขที่ใบเสนอราคา, t) as any
+    const row = db.prepare('SELECT stock_item_id FROM quotation_items WHERE quotation_id = ?').get(qt.id) as any
+    expect(row.stock_item_id, 'เดาผูกให้ไม่ได้ เคยทำ "ข้าวโพด" ไปจับ "สลัดทูน่าข้าวโพด" แล้วตัดสต็อกผิดตัว').toBeNull()
   })
 
-  it('ผูกด้วย bind_document_item แล้วยืนยันได้ สต็อกถูกตัดจากตัวที่คนเลือก', async () => {
-    const { t, similar } = seedTenant()
+  it('ใบเสนอราคาไม่แตะสต็อกไม่ว่ากรณีไหน (เป็นแค่ข้อเสนอ)', async () => {
+    const { t, exact } = seedTenant()
+    const before = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(exact) as any).quantity
     const { server, call } = fakeServer()
     registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
-    registerBindingTools(server, t)
 
-    const res = parse(await call('create_sales_order', {
-      items: [{ description: 'ขนมจีนน้ำยา', quantity: 2, unitPrice: 50, unit: 'g' }],
-    }))
+    await call('create_quotation', { items: [{ description: 'ขนมจีน', quantity: 2, unitPrice: 50, unit: 'g' }] })
 
-    const view = parse(await call('bind_document_item', { doc: res.soNumber }))
-    expect(view.items[0].สถานะ).toContain('ยังไม่ผูก')
-
-    const bound = parse(await call('bind_document_item', {
-      doc: res.soNumber, line: 1, stock_item_id: similar,
-    }))
-    expect(bound.success).toBe(true)
-    expect(bound.unboundRemaining).toBe(0)
-
-    const before = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(similar) as any).quantity
-    const confirm = parse(await call('update_sales_order_status', { so_id: res.soId, status: 'CONFIRMED' }))
-    expect(confirm.success).toBe(true)
-    const after = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(similar) as any).quantity
-    expect(before - after).toBe(2)
+    const after = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(exact) as any).quantity
+    expect(after).toBe(before)
   })
 })

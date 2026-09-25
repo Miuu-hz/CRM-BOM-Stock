@@ -18,6 +18,7 @@ import { UnitPicker } from '../components/common/UnitPicker'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { unitLabel } from '../hooks/useUnits'
 import { timeAgo } from '../utils/timeAgo'
+import { calcVat, calcDocTotals } from '../utils/vat'
 
 // Types
 // รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
@@ -2745,16 +2746,18 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
 }
 
 // ─── Shared: Totals Summary ───────────────────────────────────────────────────
-function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscountAmount }: {
+function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscountAmount, vatInclusive, setVatInclusive, extraCharge, setExtraCharge }: {
   items: LineItem[]
   taxRate: number; setTaxRate: (v: number) => void
   discountAmount: number; setDiscountAmount: (v: number) => void
+  vatInclusive: boolean; setVatInclusive: (v: boolean) => void
+  extraCharge: { label: string; amount: number }; setExtraCharge: (v: { label: string; amount: number }) => void
 }) {
   const { t } = useTranslation()
-  const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice * (1 - it.discountPercent / 100), 0)
-  const afterDiscount = Math.max(0, subtotal - discountAmount)
-  const tax = afterDiscount * (taxRate / 100)
-  const total = afterDiscount + tax
+  const { subtotal, taxAmount: tax, totalAmount: total, discount } =
+    calcDocTotals(items.map(it => ({ quantity: it.quantity, unitPrice: it.unitPrice, discountPercent: it.discountPercent })),
+      { rate: taxRate, discountAmount, inclusive: vatInclusive, extraCharge: extraCharge.amount })
+  const afterDiscount = subtotal - discount
   return (
     <div className="bg-[var(--surface-2)] p-4 rounded-xl space-y-2 text-sm">
       <div className="flex justify-between text-[var(--fg-3)]">
@@ -2766,6 +2769,18 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
           onChange={e => setDiscountAmount(parseFloat(e.target.value) || 0)}
           onFocus={e => e.target.select()}
           className="w-28 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
+      </div>
+      <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
+        <span className="shrink-0">{t('common.extraCharge')}</span>
+        <div className="flex items-center gap-2">
+          <input type="text" value={extraCharge.label} placeholder={t('common.extraChargeLabel')}
+            onChange={e => setExtraCharge({ ...extraCharge, label: e.target.value })}
+            className="w-28 bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] text-xs focus:outline-none focus:border-phopy-indigo" />
+          <input type="number" value={extraCharge.amount} min={0}
+            onChange={e => setExtraCharge({ ...extraCharge, amount: parseFloat(e.target.value) || 0 })}
+            onFocus={e => e.target.select()}
+            className="w-24 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
+        </div>
       </div>
       <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
         <span className="shrink-0">{t('sales.common.tax')} (%)</span>
@@ -2783,8 +2798,16 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
         </div>
       </div>
       {taxRate > 0 && (
+        <label className="flex justify-between items-center gap-4 text-[var(--fg-3)] cursor-pointer">
+          <span className="shrink-0 text-xs">{t('common.vatInclusive')}</span>
+          <input type="checkbox" checked={vatInclusive} onChange={e => setVatInclusive(e.target.checked)}
+            className="w-4 h-4 accent-[var(--primary)]" />
+        </label>
+      )}
+      {taxRate > 0 && (
         <div className="flex justify-between text-warning">
-          <span>{t('sales.common.tax')} ({taxRate}%)</span><span>+฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+          <span>{t('sales.common.tax')} ({taxRate}%)</span>
+          <span>{vatInclusive ? '' : '+'}฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
         </div>
       )}
       <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
@@ -2805,6 +2828,8 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [expiryDate, setExpiryDate] = useState(editData?.expiry_date?.split('T')[0] || '')
   const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
+  const [vatInclusive, setVatInclusive] = useState(editData?.vat_inclusive === 1)
+  const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: editData?.extra_charge_label || '', amount: editData?.extra_charge_amount || 0 })
   const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
   const [notes, setNotes] = useState(editData?.notes || '')
   const [items, setItems] = useState<LineItem[]>(
@@ -2839,6 +2864,9 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         customerId: customer.id,
         expiryDate: expiryDate || undefined,
         taxRate,
+        vatInclusive,
+        extraChargeAmount: extraCharge.amount,
+        extraChargeLabel: extraCharge.label,
         discountAmount,
         notes,
         items: items.filter(it => it.productName || it.productId).map(it => ({
@@ -2911,7 +2939,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
           </div>
 
           <LineItemsEditor items={items} onChange={setItems} products={products} />
-          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} />
+          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} vatInclusive={vatInclusive} setVatInclusive={setVatInclusive} extraCharge={extraCharge} setExtraCharge={setExtraCharge} />
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
@@ -3084,6 +3112,8 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [deliveryDate, setDeliveryDate] = useState(editData?.delivery_date?.split('T')[0] || '')
   const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
+  const [vatInclusive, setVatInclusive] = useState(editData?.vat_inclusive === 1)
+  const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: editData?.extra_charge_label || '', amount: editData?.extra_charge_amount || 0 })
   const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
   const [notes, setNotes] = useState(editData?.notes || '')
   const [items, setItems] = useState<LineItem[]>(
@@ -3154,6 +3184,9 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         quotationId: sourceQuotation?.id,
         deliveryDate: deliveryDate || undefined,
         taxRate,
+        vatInclusive,
+        extraChargeAmount: extraCharge.amount,
+        extraChargeLabel: extraCharge.label,
         discountAmount,
         notes,
         items: items.filter(it => it.productName || it.productId).map(it => ({
@@ -3224,7 +3257,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           </div>
 
           <LineItemsEditor items={items} onChange={setItems} products={products} />
-          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} />
+          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} vatInclusive={vatInclusive} setVatInclusive={setVatInclusive} extraCharge={extraCharge} setExtraCharge={setExtraCharge} />
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
@@ -3881,8 +3914,8 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
   const selectedLines = returnLines.filter(l => l.checked && l.qty > 0)
   const returnSubtotal = selectedLines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
-  const returnTax = returnSubtotal * 0.07
-  const returnTotal = returnSubtotal + returnTax
+  // ponytail: อัตรา 7% ยังฝังอยู่เหมือนเดิม — จะย้ายไปอ่านจาก company_settings ใน Phase 5
+  const { taxAmount: returnTax, totalAmount: returnTotal } = calcVat(returnSubtotal, { rate: 7 })
 
   const handleSave = async () => {
     if (!invoiceId) { toast.error(t('sales.validation.selectInvoice')); return }

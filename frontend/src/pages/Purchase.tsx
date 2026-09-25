@@ -44,6 +44,7 @@ import { useModalClose } from '../hooks/useModalClose'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
 import { unitLabel as unitLabelFor, invalidateUnitsCache } from '../hooks/useUnits'
+import { calcVat } from '../utils/vat'
 
 // Types
 interface Supplier {
@@ -106,6 +107,8 @@ interface PurchaseRequest {
 }
 
 interface PurchaseOrder {
+  /** 1 = ราคาที่กรอกรวม VAT แล้ว */
+  vat_inclusive?: number
   id: string
   po_number: string
   supplier_id: string
@@ -1351,6 +1354,7 @@ const Purchase = () => {
     payment_terms: 30,
     discount: 0,
     tax_rate: 7,
+    vat_inclusive: false,
     notes: '',
     linked_pr_id: '',
     payment_method: '',
@@ -1477,8 +1481,7 @@ const Purchase = () => {
       ? requestForm.items.reduce((s, i) => s + (i.estimated_total_price || 0), 0)
       : (() => {
           const subtotal = orderForm.items.reduce((s, i) => s + i.total_price, 0)
-          const afterDisc = subtotal - (orderForm.discount || 0)
-          return afterDisc + afterDisc * (orderForm.tax_rate / 100)
+          return calcVat(subtotal, { rate: orderForm.tax_rate, discountAmount: orderForm.discount || 0, inclusive: orderForm.vat_inclusive }).totalAmount
         })()
 
     let cancelled = false
@@ -1812,12 +1815,14 @@ const Purchase = () => {
       }))
       const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
       const taxRate  = orderForm.tax_rate
-      const taxAmount = subtotal * (taxRate / 100)
-      const totalAmount = subtotal + taxAmount
+      const discountAmount = orderForm.discount || 0
+      const { taxAmount, totalAmount } = calcVat(subtotal, { rate: taxRate, discountAmount, inclusive: orderForm.vat_inclusive })
       const { data } = await api.post('/purchase-orders', {
         supplierId:   orderForm.supplier_id,
         expectedDate: orderForm.expected_date,
         taxRate,
+        discountAmount,
+        vatInclusive: orderForm.vat_inclusive,
         notes:        orderForm.notes,
         linkedPrId:   orderForm.linked_pr_id || undefined,
         paymentMethod: orderForm.payment_method || undefined,
@@ -1867,12 +1872,14 @@ const Purchase = () => {
       }))
       const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
       const taxRate = orderForm.tax_rate
-      const taxAmount = subtotal * (taxRate / 100)
-      const totalAmount = subtotal + taxAmount
+      const discountAmount = orderForm.discount || 0
+      const { taxAmount, totalAmount } = calcVat(subtotal, { rate: taxRate, discountAmount, inclusive: orderForm.vat_inclusive })
       const { data } = await api.put(`/purchase-orders/${modalData.id}`, {
         supplierId: orderForm.supplier_id,
         expectedDate: orderForm.expected_date,
         taxRate,
+        discountAmount,
+        vatInclusive: orderForm.vat_inclusive,
         notes: orderForm.notes,
         paymentMethod: orderForm.payment_method || undefined,
         paymentReference: orderForm.payment_reference || undefined,
@@ -2162,8 +2169,7 @@ const Purchase = () => {
         total_price: item.quantity * item.unit_price
       }))
       const subtotal = items.reduce((sum, i) => sum + i.total_price, 0)
-      const taxAmount = subtotal * (returnForm.tax_rate / 100)
-      const totalAmount = subtotal + taxAmount
+      const { taxAmount, totalAmount } = calcVat(subtotal, { rate: returnForm.tax_rate })
       const { data } = await api.post('/purchase/returns', { ...returnForm, items, subtotal, taxAmount, totalAmount })
       if (data.success) {
         toast.success(t('purchase.toast.returnCreated'))
@@ -2297,6 +2303,7 @@ const Purchase = () => {
             purchase_order_id: order.id,
             supplier_invoice_number: order.payment_reference || '',
             tax_rate: order.tax_rate ?? 7,
+          vat_inclusive: order.vat_inclusive === 1,
             due_date: order.expected_date || '',
             auto_pay: order.is_paid === 1,
             payment_method: order.payment_method || '',
@@ -2486,6 +2493,7 @@ const Purchase = () => {
           payment_terms: data.payment_terms || 30,
           discount: data.discount || 0,
           tax_rate: data.tax_rate || 7,
+          vat_inclusive: data.vat_inclusive === 1,
           notes: data.notes || '',
           linked_pr_id: data.linked_pr_id || '',
           payment_method: data.payment_method || '',
@@ -2566,7 +2574,7 @@ const Purchase = () => {
       // ล้างเฉพาะฟอร์มของชนิดที่กำลังเปิด — เดิมล้างทุกใบรวด ทำให้เปิดใบแจ้งหนี้
       // ไปทับใบสั่งซื้อที่กรอกค้างไว้ และทำให้ค่าที่ปุ่ม "ขั้นต่อไป" ใส่มาหายเกลี้ยง
       if (type === 'request') setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
-      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
+      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, vat_inclusive: false, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
       if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
       if (type === 'invoice') setInvoiceForm({ purchase_order_id: '', extra_po_ids: [], goods_receipt_ids: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, notes: '', dr_account_id: '', cr_account_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _po_number: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
@@ -3920,9 +3928,9 @@ const Purchase = () => {
 
   const OrderModal = () => {
     const subtotal   = orderForm.items.reduce((s, i) => s + i.total_price, 0)
-    const afterDisc  = subtotal - (orderForm.discount || 0)
-    const taxAmount  = afterDisc * (orderForm.tax_rate / 100)
-    const grandTotal = afterDisc + taxAmount
+    const { taxAmount, totalAmount: grandTotal, discount } =
+      calcVat(subtotal, { rate: orderForm.tax_rate, discountAmount: orderForm.discount || 0, inclusive: orderForm.vat_inclusive })
+    const afterDisc  = subtotal - discount
     return (
     <ModalShell
       title={modalMode === 'create' ? t('purchase.orderModal.titleCreate') : modalMode === 'edit' ? t('purchase.orderModal.titleEdit') : t('purchase.orderModal.titleView')}
@@ -4249,6 +4257,14 @@ const Purchase = () => {
               </div>
             ) : <span className="text-[var(--fg-2)]">VAT {orderForm.tax_rate}% = {formatCurrency(taxAmount)}</span>}
           </div>
+          {orderForm.tax_rate > 0 && modalMode !== 'view' && (
+            <label className="flex justify-between items-center gap-4 cursor-pointer">
+              <span className="text-xs text-[var(--fg-3)]">{t('common.vatInclusive')}</span>
+              <input type="checkbox" checked={orderForm.vat_inclusive}
+                onChange={e => setOrderForm(p => ({ ...p, vat_inclusive: e.target.checked }))}
+                className="w-4 h-4 accent-[var(--primary)]" />
+            </label>
+          )}
           <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2">
             <span>{t('purchase.common.grandTotal')}</span>
             <span className="text-lg text-[var(--primary)]">{formatCurrency(grandTotal)}</span>
@@ -4634,8 +4650,9 @@ const Purchase = () => {
     const extraPOs = invoiceForm.extra_po_ids.map(id => orders.find(o => o.id === id)).filter(Boolean) as PurchaseOrder[]
     const subtotal = isView ? invoiceForm._subtotal
       : (selectedPO?.subtotal ?? 0) + extraPOs.reduce((sum, o) => sum + (o.subtotal || 0), 0)
-    const taxAmt   = isView ? invoiceForm._tax_amount : subtotal * (invoiceForm.tax_rate / 100)
-    const total    = isView ? invoiceForm._total_amount : subtotal + taxAmt
+    const calc     = calcVat(subtotal, { rate: invoiceForm.tax_rate })
+    const taxAmt   = isView ? invoiceForm._tax_amount : calc.taxAmount
+    const total    = isView ? invoiceForm._total_amount : calc.totalAmount
     // supplier/po labels for view mode when PO may not be in orders state
     const displaySupplier = isView ? (selectedPO?.supplier_name || invoiceForm._supplier_name) : selectedPO?.supplier_name
     const displayPO       = isView ? (selectedPO?.po_number || invoiceForm._po_number) : selectedPO?.po_number
@@ -5226,8 +5243,7 @@ const Purchase = () => {
   // ─── 6. Return Modal ────────────────────────────────────────────────────────
   const ReturnModal = () => {
     const subtotal = returnForm.items.reduce((s, i) => s + i.total_price, 0)
-    const taxAmt   = subtotal * (returnForm.tax_rate / 100)
-    const total    = subtotal + taxAmt
+    const { taxAmount: taxAmt, totalAmount: total } = calcVat(subtotal, { rate: returnForm.tax_rate })
     return (
     <ModalShell
       title={t('purchase.returnModal.title')}

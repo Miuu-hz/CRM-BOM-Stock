@@ -7,6 +7,70 @@ import { applyStockMovement, movementGateAmount } from '../../services/stockMove
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 
 export function registerStockTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
+  // ── set_product_image ───────────────────────────────────────────────────────
+  // ขอบเขตที่เจ้าของกำหนด 2026-09-25: AI ใส่รูปได้เฉพาะ "รูปสินค้ารายชิ้น"
+  // การแนบไฟล์เข้าเอกสาร (PO/SO/ใบกำกับ) ยังไม่เปิดให้ AI — รอออกแบบแยก
+  server.tool(
+    'set_product_image',
+    `ใส่/เปลี่ยนรูปสินค้า / Set a product image by URL.
+ใช้เมื่อผู้ใช้ต้องการใส่รูปให้สินค้า เปลี่ยนรูปสินค้า หรือลบรูปสินค้า
+รับเฉพาะ URL ของรูป (http/https, นามสกุล jpg/jpeg/png/gif/webp) — ส่ง image_url ว่างเพื่อลบรูป
+⚠️ ใส่ได้เฉพาะสินค้าในคลัง ไม่ใช่การแนบไฟล์เข้าเอกสาร
+ตัวอย่าง: "ใส่รูปให้หมอนหนุน https://.../pillow.jpg" → set_product_image(product="หมอนหนุน", image_url="https://.../pillow.jpg")`,
+    {
+      product: z.string().describe('ชื่อหรือ SKU ของสินค้า — ต้องตรงเป๊ะพอที่จะชี้ตัวเดียวได้'),
+      image_url: z.string().describe('URL ของรูป (ส่งค่าว่างเพื่อลบรูปเดิม)'),
+    },
+    async (args) => {
+      const { product, image_url } = args
+      const url = String(image_url || '').trim()
+
+      if (url) {
+        if (!/^https?:\/\//i.test(url)) {
+          return ok({ success: false, message: 'รับเฉพาะ URL ที่ขึ้นต้นด้วย http:// หรือ https://' })
+        }
+        if (!/\.(jpe?g|png|gif|webp)(\?|#|$)/i.test(url)) {
+          return ok({ success: false, message: 'รับเฉพาะไฟล์รูป .jpg .jpeg .png .gif .webp' })
+        }
+        if (url.length > 2000) return ok({ success: false, message: 'URL ยาวเกินไป' })
+      }
+
+      // ชี้ตัวเดียวเท่านั้น — ไม่ตรงเป๊ะให้คนเลือก ไม่เดาแทน (กติกาเดียวกับ bind_document_item)
+      const exact = db.prepare(
+        `SELECT id, sku, name, image_url FROM stock_items
+         WHERE tenant_id = ? AND (name = ? OR sku = ?) AND status = 'ACTIVE' LIMIT 2`
+      ).all(tenantId, product, product) as any[]
+
+      if (exact.length === 0) {
+        const near = db.prepare(
+          `SELECT id, sku, name FROM stock_items WHERE tenant_id = ? AND (name LIKE ? OR sku LIKE ?)
+           AND status = 'ACTIVE' ORDER BY length(name) LIMIT 5`
+        ).all(tenantId, `%${product}%`, `%${product}%`) as any[]
+        return ok({
+          success: false,
+          message: `ไม่พบสินค้าชื่อ/รหัส "${product}" แบบตรงเป๊ะ`,
+          ตัวเลือกใกล้เคียง: near.map(r => ({ sku: r.sku, ชื่อ: r.name })),
+        })
+      }
+      if (exact.length > 1) {
+        return ok({ success: false, message: `"${product}" ตรงกับสินค้ามากกว่า 1 รายการ — ระบุ SKU ให้ชัด` })
+      }
+
+      const item = exact[0]
+      db.prepare('UPDATE stock_items SET image_url = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(url || null, new Date().toISOString(), item.id, tenantId)
+
+      return ok({
+        success: true,
+        sku: item.sku,
+        สินค้า: item.name,
+        รูปเดิม: item.image_url || null,
+        รูปใหม่: url || null,
+        message: url ? `ใส่รูปให้ ${item.name} แล้ว` : `ลบรูปของ ${item.name} แล้ว`,
+      })
+    }
+  )
+
   // ── 7. record_stock_movement ────────────────────────────────────────────────
   server.tool(
     'record_stock_movement',

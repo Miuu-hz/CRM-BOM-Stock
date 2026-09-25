@@ -87,6 +87,10 @@ const posBillService = {
     earn_rate?: number
     redeem_points?: number
     bank_account_id?: string
+    /** ส่วนลด/ค่าขนส่งท้ายบิล — ต้องส่งมาด้วย เพราะเป็นส่วนหนึ่งของฐานภาษีและยอดที่ลูกค้าจ่ายจริง */
+    discount_amount?: number
+    extra_charge_amount?: number
+    extra_charge_label?: string
   }) => {
     const response = await api.post(`/pos/bills/${billId}/pay`, data)
     return response.data

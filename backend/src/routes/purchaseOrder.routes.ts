@@ -6,6 +6,8 @@ import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, 
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { z } from 'zod'
+import { calcVat } from '../utils/vat'
+import { resolveVatInclusive } from '../utils/vatSettings'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -140,7 +142,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { supplierId, expectedDate, notes, items, taxRate, linkedPrId, currencyCode, exchangeRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount } = req.body
+    const { supplierId, expectedDate, notes, items, taxRate, discountAmount, linkedPrId, currencyCode, exchangeRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount } = req.body
 
     const itemsCheck = PurchaseOrderItemsSchema.safeParse(items)
     if (!itemsCheck.success) {
@@ -168,8 +170,14 @@ router.post('/', async (req: Request, res: Response) => {
       subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
     }
     const tax = taxRate || 0
-    let taxAmount = subtotal * (tax / 100)
-    let totalAmount = subtotal + taxAmount
+    // ส่วนลดหักออกจากฐานก่อนคิดภาษี (ม.79) — ฟอร์มมีช่องนี้มาตลอดแต่ไม่เคยถูกส่งมาถึงที่นี่
+    const inclusive = resolveVatInclusive(tenantId, req.body.vatInclusive)
+    const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive: !!inclusive })
+    let taxAmount = calc.taxAmount
+    let totalAmount = calc.totalAmount
+    let discount = calc.discount
+    // โหมดรวม VAT: subtotal ที่เก็บคือยอดก่อนภาษี ไม่ใช่ราคาที่กรอก
+    subtotal = calc.subtotal
 
     // ponytail: only the document header (subtotal/tax/total) is converted to THB — line
     // items keep whatever unit price was entered. No ledger/stock changes here; THB (default)
@@ -193,13 +201,14 @@ router.post('/', async (req: Request, res: Response) => {
       subtotal = round2(subtotal * rate)
       taxAmount = round2(taxAmount * rate)
       totalAmount = round2(totalAmount * rate)
+      discount = round2(discount * rate)
     }
 
     const insertPO = db.prepare(`
       INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, order_date, expected_date,
-        subtotal, tax_rate, tax_amount, total_amount, notes, linked_pr_id, created_at, updated_at,
+        subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive, notes, linked_pr_id, created_at, updated_at,
         currency_code, exchange_rate, foreign_amount, payment_method, payment_reference, bank_account_id, is_paid, paid_amount)
-      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertItem = db.prepare(`
@@ -212,7 +221,7 @@ router.post('/', async (req: Request, res: Response) => {
       const isPaidInt = isPaid ? 1 : 0
       const paidAmt = paidAmount != null ? Number(paidAmount) : (isPaidInt ? totalAmount : 0)
       insertPO.run(id, tenantId, poNumber, supplierIdSafe, now, expectedDate || null,
-        subtotal, tax, taxAmount, totalAmount, notes || '', linkedPrId || null, now, now,
+        subtotal, discount, tax, taxAmount, totalAmount, inclusive, notes || '', linkedPrId || null, now, now,
         currency_code, exchange_rate, foreign_amount,
         paymentMethod || (isPaidInt ? 'TRANSFER' : null), paymentReference || null, bankAccountId || null, isPaidInt, paidAmt)
 
@@ -383,7 +392,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         refId: req.params.id,
         amount: editAmount,
         description: `แก้ไขใบสั่งซื้อ ${existing.po_number} (ยอด ฿${editAmount.toLocaleString('th-TH', { maximumFractionDigits: 2 })})`,
-        payload: { before, update: { supplierId, expectedDate, notes, items, taxRate } },
+        payload: { before, update: { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount } },
       }
       const pending = gateOrCreate(gateArgs)
       if (pending) {
@@ -396,7 +405,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount })
+    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount })
     if (gateArgs) recordAutoAction(gateArgs)
     res.json({ success: true, data: result })
   } catch (error) {

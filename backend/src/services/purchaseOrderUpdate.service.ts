@@ -1,5 +1,6 @@
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
+import { calcVat } from '../utils/vat'
 
 /**
  * ตรรกะ "แก้ไข PO ที่ออกไปแล้ว" ยกออกมาจาก routes/purchaseOrder.routes.ts PUT /:id
@@ -52,6 +53,8 @@ export interface PurchaseOrderUpdatePayload {
     notes?: string
   }>
   taxRate?: number
+  /** ส่วนลดท้ายบิลเป็นบาท — หักออกจากฐานก่อนคิดภาษี (ม.79) */
+  discountAmount?: number
   paymentMethod?: string | null
   paymentReference?: string | null
   bankAccountId?: string | null
@@ -106,7 +109,7 @@ export function poBlockingDocuments(
 }
 
 export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload: PurchaseOrderUpdatePayload) {
-  const { expectedDate, notes, items, taxRate, paymentMethod, paymentReference, isPaid, paidAmount } = payload
+  const { expectedDate, notes, items, taxRate, discountAmount, paymentMethod, paymentReference, isPaid, paidAmount } = payload
   const now = new Date().toISOString()
 
   // ตรวจก่อนแตะ DB: ค่าที่ทำ FK พังต้องกลายเป็น 400 ที่บอกเหตุผล ไม่ใช่ 500 กลางทาง
@@ -128,8 +131,11 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
     subtotal = items.reduce((sum: number, item) => sum + (item.quantity * item.unitPrice), 0)
   }
   const tax = taxRate || 0
-  const taxAmount = subtotal * (tax / 100)
-  const totalAmount = subtotal + taxAmount
+  // ส่วนลดหักออกจากฐานก่อนคิดภาษี (ม.79) — เดิมฝั่งซื้อไม่มีที่เก็บส่วนลดเลย
+  const poRow = db.prepare('SELECT vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+  const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive: poRow?.vat_inclusive === 1 })
+  const { taxAmount, totalAmount, discount } = calc
+  subtotal = calc.subtotal
 
   const isPaidInt = isPaid !== undefined && isPaid !== null ? (isPaid ? 1 : 0) : null
   const paidAmt = paidAmount !== undefined ? paidAmount : (isPaidInt === 1 ? totalAmount : null)
@@ -140,6 +146,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
         supplier_id = COALESCE(?, supplier_id),
         expected_date = ?,
         subtotal = ?,
+        discount_amount = ?,
         tax_rate = ?,
         tax_amount = ?,
         total_amount = ?,
@@ -152,7 +159,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
-      supplierId, expectedDate || null, subtotal, tax, taxAmount, totalAmount, notes,
+      supplierId, expectedDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes,
       paymentMethod, paymentReference, bankAccountId, isPaidInt, paidAmt,
       now, poId, tenantId
     )

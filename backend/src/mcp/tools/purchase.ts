@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
 import { formatDocumentNumber } from '../../utils/id'
+import { calcVat } from '../../utils/vat'
 import {
   createGoodsReceipt,
   confirmGoodsReceipt,
@@ -374,9 +375,12 @@ PR ต้องมีสถานะ APPROVED ก่อน
       for (const item of prItems) {
         subtotal += (item.estimated_unit_price || 0) * item.quantity
       }
-      const taxRate = 7
-      const taxAmount = subtotal * (taxRate / 100)
-      const totalAmount = subtotal + taxAmount
+      // เดิมฝัง 7 ตายตัว — กิจการที่ตั้งอัตราอื่นหรือไม่จด VAT จะได้ใบสั่งซื้อผิดทันที
+      const vatCfg = db.prepare('SELECT pos_vat_rate, vat_inclusive FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const taxRate = vatCfg?.pos_vat_rate ?? 7
+      const { taxAmount, totalAmount, subtotal: netSubtotal } =
+        calcVat(subtotal, { rate: taxRate, inclusive: vatCfg?.vat_inclusive === 1 })
+      subtotal = netSubtotal
 
       db.transaction(() => {
         db.prepare(`

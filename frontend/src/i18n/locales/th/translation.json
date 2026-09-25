@@ -183,7 +183,10 @@
     "loading": "กำลังโหลด...",
     "sessionExpired": "Session expired. Please login again.",
     "copy": "คัดลอก",
-    "confirm": "ยืนยัน"
+    "confirm": "ยืนยัน",
+    "vatInclusive": "ราคารวม VAT แล้ว",
+    "extraCharge": "ค่าขนส่ง/ค่าบริการอื่น",
+    "extraChargeLabel": "ชื่อรายการ"
   },
   "workOrders": {
     "title": "ใบสั่งงาน",
@@ -2461,7 +2464,9 @@
         "subtotal": "ยอดสินค้า",
         "serviceCharge": "ค่าบริการ ({{rate}}%)",
         "total": "ยอดสุทธิ",
-        "save": "บันทึกการตั้งค่า"
+        "save": "บันทึกการตั้งค่า",
+        "vatInclusive": "ราคารวม VAT แล้ว",
+        "vatInclusiveSub": "ราคาที่ติดป้าย/ในเมนูรวมภาษีแล้ว ระบบจะถอด VAT ออกมาเป็นฐานภาษีให้เอง"
       },
       "loyalty": {
         "title": "ระบบสะสมแต้มสมาชิก (CRM)",
@@ -2520,7 +2525,12 @@
         "timeLockRule2": "หากเกิน 24 ชั่วโมง จะไม่สามารถแก้ไขหรือลบได้",
         "timeLockRule2Master": " (ยกเว้น Master Account)",
         "timeLockRule3": "ระบบจะคำนวณเวลาจาก <strong>เวลาปัจจุบัน - เวลาสร้าง</strong> โดยอัตโนมัติ",
-        "receiptFooter": "ขอบคุณที่ใช้บริการ"
+        "receiptFooter": "ขอบคุณที่ใช้บริการ",
+        "taxBranch": "สาขา",
+        "taxBranchPlaceholder": "สำนักงานใหญ่",
+        "taxBranchHint": "ใบกำกับภาษีเต็มรูปต้องระบุสาขาของผู้ขาย ถ้ามีสาขาเดียวให้ใช้ \"สำนักงานใหญ่\"",
+        "vatInclusiveCompany": "ราคาที่กรอกรวม VAT แล้ว",
+        "vatInclusiveCompanySub": "ค่าตั้งต้นของทุกเอกสาร — ราคาสินค้าที่กรอกถือว่ารวมภาษีแล้ว ระบบจะถอด VAT ออกมาเป็นฐานภาษีให้เอง (เลือกใหม่รายเอกสารได้)"
       },
       "qcGate": {
         "title": "ควบคุมคุณภาพ (QC Gate)",

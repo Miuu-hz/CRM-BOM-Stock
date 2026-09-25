@@ -7,10 +7,13 @@ export interface CompanySettings {
   phone?: string
   email?: string
   tax_id?: string
+  vat_inclusive?: number | boolean  // ค่าตั้งต้นทั้งกิจการ: ราคาที่กรอกรวม VAT แล้วหรือยัง
+  tax_branch?: string  // สาขาของผู้ขายบนใบกำกับภาษี (ยังไม่มีระบบสาขา → 'สำนักงานใหญ่')
   logo_base64?: string
   pos_bom_deduct?: number | boolean  // 1=ตัด stock ตาม BOM, 0=ไม่ตัด (default 1)
   pos_vat_enabled?: number | boolean
   pos_vat_rate?: number
+  pos_vat_inclusive?: number | boolean  // 1=ราคาที่ติดป้ายรวม VAT แล้ว (ถอดออกเป็นฐานภาษี)
   pos_service_enabled?: number | boolean
   pos_service_rate?: number
   qc_gate_enabled?: number | boolean  // 1=บังคับผ่าน QC ก่อนปิดใบสั่งงาน, 0=ไม่บังคับ (default 0)

@@ -86,3 +86,7 @@ backend/backups/
 tmp_*.js
 tmp_*.ts
 *_tmp.js
+
+# ยอดเอกสารจริงจาก dev.db ที่ใช้เป็น golden fixture — เป็นข้อมูลธุรกิจของลูกค้า ห้ามขึ้น repo
+# สร้างใหม่ได้จากเครื่อง server: ดู backend/src/test/vatGolden.test.ts
+backend/src/test/fixtures/vatGolden.json

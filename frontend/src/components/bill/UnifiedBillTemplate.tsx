@@ -266,9 +266,19 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               <div className="receipt-divider" />
               <div className="receipt-row"><span>มูลค่าก่อน VAT</span><span>{formatCurrency(data.subtotal)}</span></div>
               {columns.vat && data.vatTotal > 0 && (
-                <div className="receipt-row"><span>VAT 7%</span><span>{formatCurrency(data.vatTotal)}</span></div>
+                <div className="receipt-row"><span>VAT {data.vatRate ?? 7}%</span><span>{formatCurrency(data.vatTotal)}</span></div>
               )}
               <div className="receipt-row receipt-total-row"><span>รวมทั้งสิ้น</span><span>{formatCurrency(data.total)}</span></div>
+              {data.supersededBy && (
+                <div className="receipt-row" style={{ fontSize: '0.72rem' }}>
+                  <span>ออกใบกำกับภาษีเต็มรูปแทนแล้ว</span><span>{data.supersededBy}</span>
+                </div>
+              )}
+              {data.vatInclusive && (
+                <div className="receipt-row" style={{ fontSize: '0.72rem' }}>
+                  <span>ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว</span><span />
+                </div>
+              )}
               {data.paymentMethod && (
                 <div className="receipt-row"><span>{data.paymentMethod}</span><span>{formatCurrency(data.total)}</span></div>
               )}
@@ -544,6 +554,12 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                         <div className="summary-line discount">
                           <span className="lbl">ส่วนลดรวม</span>
                           <span>-{formatCurrency(data.discountTotal)} บาท</span>
+                        </div>
+                      )}
+                      {data.vatInclusive && data.vatTotal > 0 && (
+                        <div className="summary-line">
+                          <span className="lbl">ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว</span>
+                          <span />
                         </div>
                       )}
                       {columns.vat && data.vatTotal > 0 && (

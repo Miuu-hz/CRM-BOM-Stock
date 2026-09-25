@@ -20,6 +20,7 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../services/goodsReceipt.service'
+import { calcVat } from '../utils/vat'
 import {
   createPurchaseInvoice,
   paySupplier,
@@ -581,9 +582,12 @@ router.post('/requests/:id/convert-to-po', async (req: Request, res: Response) =
     for (const item of prItems) {
       subtotal += item.estimated_unit_price * item.quantity
     }
-    const taxRate = 7
-    const taxAmount = subtotal * (taxRate / 100)
-    const totalAmount = subtotal + taxAmount
+    // เดิมฝัง 7 ตายตัว — ต้องตามค่าของกิจการ
+    const vatCfg = db.prepare('SELECT pos_vat_rate, vat_inclusive FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+    const taxRate = vatCfg?.pos_vat_rate ?? 7
+    const poCalc = calcVat(subtotal, { rate: taxRate, inclusive: vatCfg?.vat_inclusive === 1 })
+    const { taxAmount, totalAmount } = poCalc
+    subtotal = poCalc.subtotal
 
     const transaction = db.transaction(() => {
       // Create PO
@@ -1386,8 +1390,7 @@ router.post('/returns', async (req: Request, res: Response) => {
       subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
     }
     const taxRate = 7
-    const taxAmount = subtotal * (taxRate / 100)
-    const totalAmount = subtotal + taxAmount
+    const { taxAmount, totalAmount } = calcVat(subtotal, { rate: taxRate })
 
     const transaction = db.transaction(() => {
       db.prepare(`

@@ -8,6 +8,8 @@ export type BillType =
   | 'INVOICE'
   | 'DELIVERY'
   | 'RECEIPT'
+  // ใบกำกับภาษีอย่างย่อ (ม.86/6) — สลิปหน้าร้านที่เก็บ VAT ต้องใช้ชนิดนี้ ไม่ใช่ 'RECEIPT'
+  | 'TAX_INVOICE_ABB'
   | 'CREDIT_NOTE'
   // ฝั่งซื้อ
   | 'PURCHASE_REQUEST'
@@ -172,6 +174,31 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
     },
     themeColor: '#047857', // emerald-700 — ตรงกับ mockup accent-rc
     defaultSignatureSlots: SALES_SIGNATURE_SLOTS,
+  },
+  // ม.86/6 กำหนดรายการขั้นต่ำ: คำว่า "ใบกำกับภาษี" เด่นชัด, ชื่อ+เลขผู้เสียภาษีผู้ขาย,
+  // เลขลำดับใบกำกับ, ชื่อ/ชนิด/ปริมาณ/มูลค่าสินค้า, ราคาที่ระบุชัดว่ารวม VAT แล้ว, วันที่ออก
+  TAX_INVOICE_ABB: {
+    type: 'TAX_INVOICE_ABB',
+    title: { th: 'ใบกำกับภาษีอย่างย่อ', en: 'TAX INVOICE (ABB)' },
+    docPrefix: 'POS',
+    fields: {
+      showBuyerCode: false,
+      showBuyerTaxId: true,
+      showRefNumber: false,
+      showDueDate: false,
+      showPaymentTerms: false,
+      showBankInfo: true,
+      showSignatures: false,   // ใบย่อไม่ต้องมีลายเซ็น
+      showQRCode: true,
+    },
+    labels: {
+      buyer: 'ลูกค้า',
+      buyerCode: 'รหัสลูกค้า',
+      docNumber: 'เลขที่',
+      refNumber: '-',
+    },
+    themeColor: '#047857',
+    defaultSignatureSlots: [],
   },
   CREDIT_NOTE: {
     type: 'CREDIT_NOTE',
@@ -418,6 +445,12 @@ export interface BillData {
   subtotal: number
   discountTotal: number
   vatTotal: number
+  /** ใบกำกับภาษีอย่างย่อ (ม.86/6) ต้องระบุชัดว่าราคาที่แสดงรวม VAT แล้ว */
+  vatInclusive?: boolean
+  /** อัตรา VAT จริงของบิล — สลิปเคยพิมพ์ "VAT 7%" ตายตัวแม้ร้านตั้งอัตราอื่น */
+  vatRate?: number
+  /** เลขใบกำกับภาษีเต็มรูปที่ออกแทนสลิปใบนี้ — สลิปจะเลิกเป็นใบกำกับภาษีเมื่อมีค่านี้ */
+  supersededBy?: string
   whtTotal?: number
   total: number
 

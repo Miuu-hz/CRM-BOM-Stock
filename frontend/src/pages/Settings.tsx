@@ -312,6 +312,8 @@ export function loadShopConfig(): ShopConfig {
 export interface BillingConfig {
   vatEnabled: boolean
   vatRate: number
+  /** true = ราคาที่ติดป้ายรวม VAT แล้ว (ถอด VAT ออกมาเป็นฐานภาษีตอนปิดบิล) */
+  vatInclusive: boolean
   serviceEnabled: boolean
   serviceRate: number
 }
@@ -319,6 +321,7 @@ export interface BillingConfig {
 export const DEFAULT_BILLING: BillingConfig = {
   vatEnabled: false,
   vatRate: 7,
+  vatInclusive: false,
   serviceEnabled: false,
   serviceRate: 10,
 }
@@ -347,6 +350,7 @@ function BillingSettings() {
       await m.default.update({
         pos_vat_enabled: cfg.vatEnabled,
         pos_vat_rate: cfg.vatRate,
+        pos_vat_inclusive: cfg.vatInclusive,
         pos_service_enabled: cfg.serviceEnabled,
         pos_service_rate: cfg.serviceRate,
       })
@@ -418,6 +422,14 @@ function BillingSettings() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="mt-3">
+              <ToggleSwitch
+                enabled={cfg.vatInclusive}
+                onChange={(v) => setCfg({ ...cfg, vatInclusive: v })}
+                label={t('settings.settingsPage.billing.vatInclusive')}
+                sub={t('settings.settingsPage.billing.vatInclusiveSub')}
+              />
             </div>
           </div>
         )}
@@ -696,7 +708,7 @@ function GeneralSettings() {
   const { t } = useTranslation()
   const { tenant, isMaster, user } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', logo_base64: '' })
+  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', tax_branch: 'สำนักงานใหญ่', vat_inclusive: false, logo_base64: '' })
   const [qcGateEnabled, setQcGateEnabled] = useState(false)
   const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
@@ -714,7 +726,7 @@ function GeneralSettings() {
   useEffect(() => {
     import('../services/companySettings.service').then(m => {
       m.default.get().then(d => {
-        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', logo_base64: d.logo_base64 || '' })
+        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', tax_branch: d.tax_branch || 'สำนักงานใหญ่', vat_inclusive: d.vat_inclusive === 1 || d.vat_inclusive === true, logo_base64: d.logo_base64 || '' })
         setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
         setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
         setAllowNegativeStock(Number(d.allow_negative_stock) === 1)
@@ -863,6 +875,24 @@ function GeneralSettings() {
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.taxId')}</label>
             <input type="text" value={co.tax_id} onChange={e => setCo(p => ({ ...p, tax_id: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.taxIdPlaceholder')} />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.taxBranch')}</label>
+            <input type="text" value={co.tax_branch} onChange={e => setCo(p => ({ ...p, tax_branch: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.taxBranchPlaceholder')} />
+            <p className="text-xs text-[var(--fg-4)] mt-1">{t('settings.settingsPage.general.taxBranchHint')}</p>
+          </div>
+          <div className="md:col-span-2">
+            <button type="button"
+              onClick={() => setCo(p => ({ ...p, vat_inclusive: !p.vat_inclusive }))}
+              className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${co.vat_inclusive ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}>
+              <div className="text-left">
+                <p className={`font-medium ${co.vat_inclusive ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.general.vatInclusiveCompany')}</p>
+                <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.general.vatInclusiveCompanySub')}</p>
+              </div>
+              {co.vat_inclusive
+                ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
+                : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+            </button>
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.address')}</label>

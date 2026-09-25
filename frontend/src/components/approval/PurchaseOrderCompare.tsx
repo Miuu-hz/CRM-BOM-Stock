@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../../services/api'
+import { calcVat } from '../../utils/vat'
 
 // ═══════════════════════════════════════════════════════════════
 // ใบสั่งซื้อในโหมดเทียบ — วาดใบเดียว (ฉบับที่จะเป็นหลังอนุมัติ)
@@ -125,8 +126,9 @@ export default function PurchaseOrderCompare({
 
   const oldSub = old.lines.reduce((s, l) => s + l.total, 0)
   const nextSub = next.lines.reduce((s, l) => s + l.total, 0)
-  const oldTotal = oldSub * (1 + old.taxRate / 100)
-  const nextTotal = nextSub * (1 + next.taxRate / 100)
+  // ต้องใช้ตัวคำนวณเดียวกับที่ระบบบันทึกจริง ไม่งั้นจอเทียบก่อน/หลังอนุมัติโชว์คนละยอดกับ PO
+  const oldTotal = calcVat(oldSub, { rate: old.taxRate }).totalAmount
+  const nextTotal = calcVat(nextSub, { rate: next.taxRate }).totalAmount
 
   const dateChanged = old.expectedDate !== next.expectedDate
   const notesChanged = old.notes !== next.notes
@@ -230,7 +232,7 @@ export default function PurchaseOrderCompare({
                 <td colSpan={3} className="py-1.5 text-right text-[var(--fg-3)] text-xs">
                   ภาษี {taxChanged ? <Changed from={`${old.taxRate}%`} to={`${next.taxRate}%`} /> : `${next.taxRate}%`}
                 </td>
-                <td className="py-1.5 text-right tabular-nums">{fmtBaht(nextSub * next.taxRate / 100)}</td>
+                <td className="py-1.5 text-right tabular-nums">{fmtBaht(calcVat(nextSub, { rate: next.taxRate }).taxAmount)}</td>
               </tr>
               <tr className="border-t border-[var(--border)]">
                 <td colSpan={3} className="py-2 text-right font-semibold text-[var(--fg-1)]">ยอดรวมทั้งสิ้น</td>

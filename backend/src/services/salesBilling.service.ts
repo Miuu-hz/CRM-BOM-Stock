@@ -30,7 +30,8 @@ export class SalesBillingError extends Error {
       | 'POS_BILL_NOT_PAID'
       | 'POS_BILL_CANCELLED'
       | 'CUSTOMER_REQUIRED'
-      | 'CUSTOMER_NOT_FOUND',
+      | 'CUSTOMER_NOT_FOUND'
+  | 'SELLER_TAX_ID_REQUIRED',
     message: string
   ) {
     super(message)
@@ -109,12 +110,15 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
   db.transaction(() => {
     db.prepare(`
       INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date,
-        subtotal, discount_amount, tax_rate, tax_amount, total_amount, balance_amount, status, payment_status, notes, created_at, updated_at,
+        subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, balance_amount, status, payment_status, notes, created_at, updated_at,
         currency_code, exchange_rate, foreign_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, invoiceNumber, salesOrderId, salesOrder.customer_id, now, dueDate || null,
-      salesOrder.subtotal, salesOrder.discount_amount, salesOrder.tax_rate, salesOrder.tax_amount,
-      salesOrder.total_amount, salesOrder.total_amount, notes || '', now, now,
+      salesOrder.subtotal, salesOrder.discount_amount,
+      salesOrder.extra_charge_amount || 0, salesOrder.extra_charge_label || null,
+      salesOrder.tax_rate, salesOrder.tax_amount,
+      // ใบแจ้งหนี้เป็นเอกสารต่อจากใบสั่งขาย ยอดคัดลอกมาทั้งชุด ธงโหมด VAT จึงต้องตามมาด้วย
+      salesOrder.total_amount, salesOrder.vat_inclusive ?? 0, salesOrder.total_amount, notes || '', now, now,
       currency_code, exchange_rate, foreign_amount)
 
     const insertItem = db.prepare(`
@@ -125,6 +129,13 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
       insertItem.run(generateId(), tenantId, id, item.id,
         item.stock_item_id || null, null, item.product_name || null,
         item.quantity, item.unit_price, item.total_price)
+    }
+    // ค่าขนส่ง/ค่าบริการอื่นต้องมีบรรทัดของตัวเองบนใบกำกับ ไม่งั้นผลรวมรายการไม่เท่าหัวใบ
+    // (ม.79 ค่าขนส่งที่ผู้ขายเรียกเก็บอยู่ในฐานภาษี ต้องแสดงให้ลูกค้าเห็น)
+    if ((salesOrder.extra_charge_amount || 0) > 0) {
+      insertItem.run(generateId(), tenantId, id, null, null, null,
+        salesOrder.extra_charge_label || 'ค่าขนส่ง',
+        1, salesOrder.extra_charge_amount, salesOrder.extra_charge_amount)
     }
 
     if ((salesOrder.tax_amount || 0) > 0) {
@@ -186,6 +197,16 @@ export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoic
   // เงื่อนไขพิเศษที่เจ้าของงานสั่งมาโดยเฉพาะ: ออกใบกำกับได้เฉพาะบิลที่คิดเงินแล้วเท่านั้น
   if (bill.status !== 'PAID') throw new SalesBillingError('POS_BILL_NOT_PAID', 'ออกใบกำกับได้เฉพาะบิลที่ชำระเงินแล้ว')
 
+  // ใบกำกับภาษีเต็มรูปต้องมีเลขประจำตัวผู้เสียภาษี + สาขาของ "ผู้ขาย" (ประมวลรัษฎากร ม.86/4)
+  // ออกไปโดยไม่มีสองอย่างนี้ = ใบกำกับไม่สมบูรณ์ ลูกค้าเอาไปใช้ไม่ได้ ต้องบล็อกตั้งแต่ต้นทาง
+  const company = db.prepare('SELECT name, tax_id, tax_branch, pos_vat_inclusive FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  if (!company?.tax_id || !String(company.tax_id).trim()) {
+    throw new SalesBillingError(
+      'SELLER_TAX_ID_REQUIRED',
+      'ยังไม่ได้ตั้งเลขประจำตัวผู้เสียภาษีของกิจการ — ไปที่ ตั้งค่า > ข้อมูลบริษัท กรอกก่อนจึงจะออกใบกำกับภาษีได้'
+    )
+  }
+
   if (!customerId) throw new SalesBillingError('CUSTOMER_REQUIRED', 'ต้องระบุลูกค้าก่อนออกใบกำกับภาษี')
   const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
   if (!customer) throw new SalesBillingError('CUSTOMER_NOT_FOUND', 'ไม่พบลูกค้ารายนี้')
@@ -203,31 +224,61 @@ export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoic
     ORDER BY bi.added_at ASC
   `).all(posBillId, tenantId) as any[]
 
+  // การขายครั้งเดียวมีใบกำกับภาษีได้ใบเดียว — ใบเต็มรูปนี้ออกแทนใบกำกับอย่างย่อ (สลิป) ที่ลูกค้าได้ไปแล้ว
+  // จึงต้องอ้างเลขใบย่อเดิมไว้บนใบเต็ม และสลิปใบเดิมจะเลิกเป็นใบกำกับภาษีทันที (ดู resolveBillType ฝั่ง frontend)
+  const supersedeNote = [`ออกแทนใบกำกับภาษีอย่างย่อเลขที่ ${bill.bill_number}`, notes]
+    .filter(Boolean).join(' · ')
+
   db.transaction(() => {
     // ⚠️ invoices ไม่มีคอลัมน์เก็บค่าบริการแยก ต้องบวก service_charge_amount เข้า subtotal
     // ไม่งั้น subtotal + tax_amount จะไม่เท่ากับ total_amount แล้วใบพิมพ์ออกมายอดไม่บาลานซ์
-    const subtotal = (bill.subtotal || 0) + (bill.service_charge_amount || 0)
+    const subtotal = (bill.subtotal || 0) + (bill.service_charge_amount || 0) + (bill.extra_charge_amount || 0)
 
     db.prepare(`
       INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, pos_bill_id, customer_id, invoice_date, due_date,
-        subtotal, discount_amount, tax_rate, tax_amount, total_amount, paid_amount, balance_amount, status, payment_status, notes, created_at, updated_at,
+        subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive, paid_amount, balance_amount, status, payment_status, notes, created_at, updated_at,
         currency_code, exchange_rate, foreign_amount)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 'PAID', 'PAID', ?, ?, ?, 'THB', 1, NULL)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, 'PAID', 'PAID', ?, ?, ?, 'THB', 1, NULL)
     `).run(id, tenantId, invoiceNumber, posBillId, customerId, invoiceDate,
       subtotal, bill.discount_amount || 0, bill.tax_rate || 0, bill.tax_amount || 0,
-      bill.total_amount, bill.total_amount, notes || '', now, now)
+      // บิล POS ถอด VAT ออกจากราคาป้ายไปแล้วหรือยัง ขึ้นกับ pos_vat_inclusive ของกิจการ
+      bill.total_amount, company?.pos_vat_inclusive === 1 ? 1 : 0, bill.total_amount, supersedeNote, now, now)
 
     const insertItem = db.prepare(`
       INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_id, product_name, quantity, unit_price, total_price)
       VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)
     `)
-    for (const item of billItems) {
-      insertItem.run(generateId(), tenantId, id, item.stock_item_id || null, item.product_name, item.quantity, item.unit_price, item.total_price)
-    }
-    // ค่าบริการ (ถ้ามี) ต้องมีรายการของตัวเองด้วย ไม่งั้นผลรวมรายการจะไม่เท่ากับ subtotal ของหัวใบ
+    // โหมด "ราคารวม VAT" เก็บ bill.subtotal เป็นยอดหลังถอด VAT แล้ว แต่รายการยังเป็นราคาป้าย
+    // ใบกำกับต้องแสดงราคาก่อน VAT จึงย่อทุกบรรทัดด้วยอัตราส่วนเดียวกัน
+    // (โหมดปกติ bill.subtotal เท่ากับผลรวมรายการพอดี factor = 1 รายการจึงไม่ถูกแตะเลย)
+    const lineGross = billItems.reduce((n, it) => n + (it.total_price || 0), 0)
+    const factor = lineGross > 0 ? (bill.subtotal || 0) / lineGross : 1
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    let allocated = 0
+    billItems.forEach((item, idx) => {
+      // บรรทัดสุดท้ายรับเศษที่เหลือ เพื่อให้ผลรวมรายการเท่ากับ subtotal ของหัวใบเป๊ะ
+      const lineNet = idx === billItems.length - 1
+        ? r2((bill.subtotal || 0) - allocated)
+        : r2((item.total_price || 0) * factor)
+      allocated = r2(allocated + lineNet)
+      const qty = item.quantity || 1
+      insertItem.run(generateId(), tenantId, id, item.stock_item_id || null, item.product_name, qty, r2(lineNet / qty), lineNet)
+    })
+    // ค่าบริการ/ค่าขนส่ง (ถ้ามี) ต้องมีรายการของตัวเองด้วย ไม่งั้นผลรวมรายการจะไม่เท่ากับ subtotal ของหัวใบ
     if ((bill.service_charge_amount || 0) > 0) {
       insertItem.run(generateId(), tenantId, id, null, `ค่าบริการ ${bill.service_charge_rate}%`, 1, bill.service_charge_amount, bill.service_charge_amount)
     }
+    if ((bill.extra_charge_amount || 0) > 0) {
+      insertItem.run(generateId(), tenantId, id, null, bill.extra_charge_label || 'ค่าขนส่ง', 1, bill.extra_charge_amount, bill.extra_charge_amount)
+    }
+
+    // เลขที่ใช้ยื่นภาษีขายต้องเป็นเลขใบกำกับภาษีเต็มรูป ไม่ใช่เลขบิล POS ที่ลงไว้ตอนปิดบิล
+    // — ไม่ได้ลงภาษีเพิ่ม แค่เปลี่ยนเลขอ้างอิงของรายการเดิมให้ตรงกับเอกสารที่ลูกค้าถืออยู่
+    db.prepare('UPDATE vat_entries SET document_number = ? WHERE tenant_id = ? AND document_id = ? AND is_output_vat = 1')
+      .run(invoiceNumber, tenantId, posBillId)
+    // tax_transactions เป็นตาราง derived (POST /tax/sync สร้างใหม่จากเอกสารต้นทาง) มีช่องของมันเองอยู่แล้ว
+    db.prepare("UPDATE tax_transactions SET tax_invoice_number = ?, tax_invoice_date = ? WHERE tenant_id = ? AND source_type = 'POS_BILL' AND source_id = ?")
+      .run(invoiceNumber, String(invoiceDate).slice(0, 10), tenantId, posBillId)
 
     // ❌❌ ห้ามเรียก createSalesJournal ห้าม insert vat_entries ห้ามแตะสต็อกตรงนี้เด็ดขาด ❌❌
     // pos-accounting.service.ts recordSale() ลงบัญชี (Dr 1180 พัก POS / Cr รายได้ขาย / Cr ภาษีขาย

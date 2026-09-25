@@ -47,7 +47,10 @@
     "loading": "Loading...",
     "sessionExpired": "Session expired. Please login again.",
     "copy": "Copy",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "vatInclusive": "Prices include VAT",
+    "extraCharge": "Shipping / other charge",
+    "extraChargeLabel": "Label"
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -2460,7 +2463,9 @@
         "subtotal": "Subtotal",
         "serviceCharge": "Service Charge ({{rate}}%)",
         "total": "Total",
-        "save": "Save Billing Settings"
+        "save": "Save Billing Settings",
+        "vatInclusive": "Prices include VAT",
+        "vatInclusiveSub": "Menu/shelf prices already include tax; the system backs VAT out as the tax base"
       },
       "loyalty": {
         "title": "Member Loyalty Points (CRM)",
@@ -2519,7 +2524,12 @@
         "timeLockRule2": "After 24 hours, it cannot be edited or deleted",
         "timeLockRule2Master": " (except Master Account)",
         "timeLockRule3": "The system automatically calculates time from <strong>current time - creation time</strong>",
-        "receiptFooter": "Thank you for your service"
+        "receiptFooter": "Thank you for your service",
+        "taxBranch": "Branch",
+        "taxBranchPlaceholder": "Head Office",
+        "taxBranchHint": "A full tax invoice must state the seller branch. Use \"Head Office\" if there is only one.",
+        "vatInclusiveCompany": "Entered prices include VAT",
+        "vatInclusiveCompanySub": "Default for every document — the system backs VAT out as the tax base (overridable per document)"
       },
       "qcGate": {
         "title": "Quality Control (QC Gate)",

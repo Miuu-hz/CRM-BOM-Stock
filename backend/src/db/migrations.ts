@@ -2038,6 +2038,34 @@ export function runMigrations(db: any): void {
     "ALTER TABLE approval_requests ADD COLUMN expires_at TEXT",
     // สิทธิ์ "ทำเลยไม่ต้องขออนุมัติ" ที่ admin มอบให้เป็นรายคน/รายหมวด (ดู approvalGate.service.ts hasBypass)
     "ALTER TABLE user_approval_permissions ADD COLUMN can_bypass INTEGER DEFAULT 0",
+    // ใบกำกับภาษีเต็มรูปต้องระบุสาขาของผู้ขาย (ม.86/4) — ยังไม่มีระบบสาขา ทุกที่จึงเป็นสำนักงานใหญ่
+    // แก้เป็นชื่อสาขาอื่นได้ในหน้าตั้งค่าบริษัท
+    "ALTER TABLE company_settings ADD COLUMN tax_branch TEXT DEFAULT 'สำนักงานใหญ่'",
+    // ราคาที่ติดป้ายรวม VAT แล้วหรือยัง (ร้านอาหาร/ค้าปลีกไทยมักรวมแล้ว) — ใช้เฉพาะสาย POS
+    "ALTER TABLE company_settings ADD COLUMN pos_vat_inclusive INTEGER DEFAULT 0",
+    // ค่าขนส่ง/ค่าบริการอื่นที่แคชเชียร์ใส่หน้าจอ — เดิมไม่เคยถูกบันทึกเลย (ดู recalculateBillTotals)
+    "ALTER TABLE pos_running_bills ADD COLUMN extra_charge_amount REAL DEFAULT 0",
+    "ALTER TABLE pos_running_bills ADD COLUMN extra_charge_label TEXT",
+    // ส่วนลดท้ายบิลฝั่งซื้อ — ฟอร์มมีช่องให้กรอกมาตลอดแต่ไม่เคยมีที่เก็บ ยอดบนจอจึงไม่ตรงกับที่บันทึก
+    // (ม.79 ส่วนลดขณะซื้อขายต้องหักออกจากฐานภาษี)
+    "ALTER TABLE purchase_orders ADD COLUMN discount_amount REAL DEFAULT 0",
+    "ALTER TABLE purchase_invoices ADD COLUMN discount_amount REAL DEFAULT 0",
+    // โหมด "ราคาที่กรอกรวม VAT แล้ว" — ค่าตั้งต้นที่ company_settings แล้ว override ได้รายเอกสาร
+    // DEFAULT 0 = เอกสารเก่าทุกใบยังเป็นโหมดบวกเพิ่มเหมือนเดิม ยอดไม่ขยับ (ดู src/test/vatGolden.test.ts)
+    "ALTER TABLE company_settings ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    "ALTER TABLE quotations ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    "ALTER TABLE sales_orders ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    "ALTER TABLE invoices ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    "ALTER TABLE purchase_orders ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    "ALTER TABLE purchase_invoices ADD COLUMN vat_inclusive INTEGER DEFAULT 0",
+    // ค่าขนส่ง/ค่าบริการอื่นฝั่งขาย — เดิมมีแค่สาย POS (pos_running_bills)
+    // เข้าฐานภาษีเหมือนกัน (ม.79 ค่าขนส่งที่ผู้ขายเรียกเก็บเป็นส่วนหนึ่งของมูลค่าฐานภาษี)
+    "ALTER TABLE quotations ADD COLUMN extra_charge_amount REAL DEFAULT 0",
+    "ALTER TABLE quotations ADD COLUMN extra_charge_label TEXT",
+    "ALTER TABLE sales_orders ADD COLUMN extra_charge_amount REAL DEFAULT 0",
+    "ALTER TABLE sales_orders ADD COLUMN extra_charge_label TEXT",
+    "ALTER TABLE invoices ADD COLUMN extra_charge_amount REAL DEFAULT 0",
+    "ALTER TABLE invoices ADD COLUMN extra_charge_label TEXT",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 
   // ==================== ยุบ materials เข้ากับ stock_items (2026-09-16) ====================

@@ -4,6 +4,8 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
+import { calcVat } from '../../utils/vat'
+import { resolveVatInclusive } from '../../utils/vatSettings'
 
 const router = Router()
 
@@ -93,17 +95,27 @@ router.post('/', async (req: Request, res: Response) => {
     }
     const discount = discountAmount || 0
     const tax = taxRate || 0
-    const afterDiscount = subtotal - discount
-    const taxAmount = afterDiscount * (tax / 100)
-    const totalAmount = afterDiscount + taxAmount
+    // แปลงมาจากใบเสนอราคา → สืบทอดโหมด VAT ของใบนั้น ไม่ใช่กลับไปใช้ค่าตั้งต้นกิจการ
+    const inheritedInclusive = quotationId
+      ? ((db.prepare('SELECT vat_inclusive FROM quotations WHERE id = ? AND tenant_id = ?')
+          .get(quotationId, tenantId) as any)?.vat_inclusive ?? undefined)
+      : undefined
+    const inclusive = resolveVatInclusive(tenantId, req.body.vatInclusive ?? inheritedInclusive)
+    const extraCharge = Math.max(0, Number(req.body.extraChargeAmount) || 0)
+    const extraLabel = extraCharge > 0 ? (req.body.extraChargeLabel || 'ค่าขนส่ง') : null
+    const calc = calcVat(subtotal, { rate: tax, discountAmount: discount, inclusive: !!inclusive, extraCharge })
+    const { taxAmount, totalAmount } = calc
+    // โหมดรวม VAT: subtotal ที่เก็บต้องเป็นยอด "ก่อนภาษี" ไม่ใช่ราคาที่กรอก
+    // เพราะ journal ใช้ค่านี้เป็นรายได้ตรง ๆ และใบกำกับต้องแสดงฐานภาษี
+    subtotal = calc.subtotal
 
     const transaction = db.transaction(() => {
       db.prepare(`
         INSERT INTO sales_orders (id, tenant_id, so_number, quotation_id, customer_id, order_date, delivery_date,
-          subtotal, discount_amount, tax_rate, tax_amount, total_amount, status, payment_status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?)
+          subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, payment_status, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?)
       `).run(id, tenantId, soNumber, quotationId || null, customerId, now, deliveryDate || null,
-        subtotal, discount, tax, taxAmount, totalAmount, notes || '', now, now)
+        subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, notes || '', now, now)
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`

@@ -28,7 +28,7 @@ function setup() {
   const user = createTestUser({ role: 'ADMIN' })
   tenants.push(user.tenantId)
   const t = user.tenantId
-  db.prepare('INSERT INTO company_settings (tenant_id, name, allow_negative_stock) VALUES (?, ?, 0)').run(t, 'ร้านทดสอบ')
+  db.prepare('INSERT INTO company_settings (tenant_id, name, tax_id, allow_negative_stock) VALUES (?, ?, ?, 0)').run(t, 'ร้านทดสอบ', '0105561234567')
 
   const customerId = generateId()
   db.prepare(`

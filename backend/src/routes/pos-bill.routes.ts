@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { calcPosTotals } from '../utils/posVat'
 import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
@@ -458,7 +459,8 @@ router.post('/bills/:id/pay', async (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const userId = (req as any).user!.userId
     const { id } = req.params
-    const { payment_method, received_amount, reference, earn_rate, redeem_points, bank_account_id } = req.body
+    const { payment_method, received_amount, reference, earn_rate, redeem_points, bank_account_id,
+      discount_amount, extra_charge_amount, extra_charge_label } = req.body
 
     if (!payment_method) {
       return res.status(400).json({ success: false, message: 'Payment method required' })
@@ -491,6 +493,16 @@ router.post('/bills/:id/pay', async (req, res) => {
     
     if ((bill as any).item_count === 0) {
       return res.status(400).json({ success: false, message: 'Cannot pay empty bill' })
+    }
+
+    // ส่วนลด/ค่าขนส่งที่แคชเชียร์ใส่หน้าจอต้องลงบิลก่อนคำนวณ ไม่งั้นลูกค้าจ่ายยอดหนึ่ง
+    // แต่บัญชี/VAT/ใบกำกับบันทึกอีกยอดหนึ่ง (เดิมสองค่านี้ไม่เคยถูกส่งมาที่ backend เลย)
+    if (discount_amount !== undefined || extra_charge_amount !== undefined) {
+      db.prepare(`UPDATE pos_running_bills
+        SET discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?
+        WHERE id = ? AND tenant_id = ?`)
+        .run(Math.max(0, Number(discount_amount) || 0), Math.max(0, Number(extra_charge_amount) || 0),
+          extra_charge_label || null, id, tenantId)
     }
 
     // Ensure bill totals are up-to-date with current POS billing settings
@@ -848,45 +860,52 @@ export function recalculateBillTotals(billId: string) {
   const itemsStmt = db.prepare('SELECT * FROM pos_bill_items WHERE bill_id = ?')
   const items = itemsStmt.all(billId)
   
-  const subtotal = (items as any[]).reduce((sum, item) => sum + item.total_price, 0)
+  let subtotal = (items as any[]).reduce((sum, item) => sum + item.total_price, 0)
   
   // Get bill tenant to lookup company POS billing settings
-  const billRow = db.prepare('SELECT tenant_id FROM pos_running_bills WHERE id = ?').get(billId) as any
+  const billRow = db.prepare('SELECT tenant_id, discount_amount, extra_charge_amount FROM pos_running_bills WHERE id = ?').get(billId) as any
   const tenantId = billRow?.tenant_id
   
   // Read POS billing settings from company_settings (fallback to legacy hardcoded values for backward compat)
   let vatEnabled = true
   let vatRate = 7
+  let vatInclusive = false
   let serviceEnabled = true
   let serviceRate = 10
   
   if (tenantId) {
     const settings = db.prepare(`
-      SELECT pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate 
+      SELECT pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate, tax_id
       FROM company_settings 
       WHERE tenant_id = ?
     `).get(tenantId) as any
     
+    // ยังไม่มีเลขผู้เสียภาษี = ยังไม่จด VAT → เก็บภาษีจากลูกค้าไม่ได้ตามกฎหมาย
+    // ไม่ว่าสวิตช์จะเปิดค้างไว้ หรือยังไม่เคยตั้งค่าบริษัทเลยก็ตาม
+    if (!String(settings?.tax_id || '').trim()) vatEnabled = false
+
     if (settings && settings.pos_vat_enabled !== null) {
-      vatEnabled = settings.pos_vat_enabled === 1
+      vatEnabled = vatEnabled && settings.pos_vat_enabled === 1
       vatRate = settings.pos_vat_rate ?? 7
+      vatInclusive = settings.pos_vat_inclusive === 1
       serviceEnabled = settings.pos_service_enabled === 1
       serviceRate = settings.pos_service_rate ?? 10
     }
   }
   
-  // Match frontend calculation logic (Cashier.tsx)
-  const serviceChargeAmount = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0
-  const taxAmount = vatEnabled ? Math.round(subtotal * vatRate / 100) : 0
-  const totalAmount = subtotal + serviceChargeAmount + taxAmount
+  // ต้องตรงกับ calcPosTotals ใน frontend/src/utils/posVat.ts เป๊ะ ๆ ไม่งั้นยอดหน้าจอกับยอดที่บันทึกคนละตัว
+  const t = calcPosTotals(subtotal, { vatEnabled, vatRate, vatInclusive, serviceEnabled, serviceRate },
+    { discount: billRow?.discount_amount || 0, extraCharge: billRow?.extra_charge_amount || 0 })
+  const { serviceChargeAmount, taxAmount, totalAmount } = t
+  subtotal = t.subtotal
   
   const updateStmt = db.prepare(`
     UPDATE pos_running_bills 
     SET subtotal = ?, service_charge_amount = ?, service_charge_rate = ?,
-        tax_amount = ?, tax_rate = ?, total_amount = ?
+        tax_amount = ?, tax_rate = ?, discount_amount = ?, total_amount = ?
     WHERE id = ?
   `)
-  updateStmt.run(subtotal, serviceChargeAmount, serviceRate, taxAmount, vatRate, totalAmount, billId)
+  updateStmt.run(subtotal, serviceChargeAmount, serviceRate, taxAmount, vatRate, t.discount, totalAmount, billId)
 }
 
 export default router

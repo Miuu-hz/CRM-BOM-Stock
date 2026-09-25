@@ -355,18 +355,6 @@ export function applySchema(db: any): void {
     );
 
     -- ==================== SAVED BOMs (Calculator) ====================
-    CREATE TABLE IF NOT EXISTS saved_boms (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT,
-      name TEXT NOT NULL,
-      description TEXT,
-      materials TEXT NOT NULL,
-      operating_cost REAL DEFAULT 0,
-      scrap_value REAL DEFAULT 0,
-      total_cost REAL DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
 
     -- ==================== SALES MODULE ====================
     -- ใบเสนอราคา (Quotations)
@@ -992,96 +980,20 @@ export function applySchema(db: any): void {
     );
 
     -- Tax Incentives (สิทธิประโยชน์ทางภาษี)
-    CREATE TABLE IF NOT EXISTS tax_incentives (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      incentive_type TEXT NOT NULL, -- 'TRAINING_200', 'AUTOMATION', 'EMPLOY_SENIOR', 'EMPLOY_EX_PRISONER', 'SME_DEPRECIATION'
-      description TEXT,
-      multiplier INTEGER DEFAULT 100, -- 100 = 100%, 200 = 200%
-      max_amount REAL,
-      valid_from TEXT,
-      valid_to TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
 
     -- Tax Incentive Claims (การเคลมสิทธิประโยชน์)
-    CREATE TABLE IF NOT EXISTS tax_incentive_claims (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      incentive_id TEXT NOT NULL,
-      period_id TEXT NOT NULL,
-      source_type TEXT NOT NULL,
-      source_id TEXT NOT NULL,
-      base_amount REAL DEFAULT 0,
-      claimable_amount REAL DEFAULT 0, -- base_amount * multiplier / 100
-      document_ref TEXT,
-      status TEXT DEFAULT 'PENDING', -- 'PENDING', 'APPROVED', 'REJECTED'
-      remarks TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (incentive_id) REFERENCES tax_incentives(id),
-      FOREIGN KEY (period_id) REFERENCES tax_periods(id)
-    );
 
     -- Tax Adjustments (รายการปรับปรุงภาษี CIT)
-    CREATE TABLE IF NOT EXISTS tax_adjustments (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      period_id TEXT NOT NULL,
-      adjustment_type TEXT NOT NULL, -- 'ADD_BACK', 'DEDUCTION', 'DOUBLE_DEDUCTION'
-      account_code TEXT NOT NULL,
-      description TEXT,
-      accounting_amount REAL DEFAULT 0,
-      tax_amount REAL DEFAULT 0,
-      reason TEXT,
-      is_permanent INTEGER DEFAULT 1, -- Permanent or Temporary difference
-      created_by TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (period_id) REFERENCES tax_periods(id)
-    );
 
     -- Tax Filing Status (สถานะการยื่นแบบ)
-    CREATE TABLE IF NOT EXISTS tax_filings (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      period_id TEXT NOT NULL,
-      form_type TEXT NOT NULL, -- 'PP30', 'PND3', 'PND53', 'PND50', 'PND51'
-      filing_status TEXT DEFAULT 'DRAFT', -- 'DRAFT', 'READY', 'SUBMITTED', 'PAID'
-      submission_date TEXT,
-      submitted_by TEXT,
-      tax_amount REAL DEFAULT 0,
-      penalty_amount REAL DEFAULT 0,
-      surcharge_amount REAL DEFAULT 0,
-      total_payable REAL DEFAULT 0,
-      paid_amount REAL DEFAULT 0,
-      attachment_path TEXT,
-      notes TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (period_id) REFERENCES tax_periods(id)
-    );
 
     -- Tax Reports (รายงานภาษีที่สร้าง)
-    CREATE TABLE IF NOT EXISTS tax_reports (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      filing_id TEXT,
-      report_type TEXT NOT NULL, -- 'PP30', 'PND3', 'PND53', 'PND50', 'CIT_COMPUTATION'
-      report_period TEXT NOT NULL,
-      file_path TEXT,
-      generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      generated_by TEXT,
-      status TEXT DEFAULT 'GENERATED'
-    );
 
     CREATE INDEX IF NOT EXISTS idx_tax_trans_period ON tax_transactions(period_id);
     CREATE INDEX IF NOT EXISTS idx_tax_trans_type ON tax_transactions(transaction_type);
     CREATE INDEX IF NOT EXISTS idx_tax_trans_date ON tax_transactions(document_date);
     CREATE INDEX IF NOT EXISTS idx_tax_trans_partner ON tax_transactions(partner_tax_id);
     CREATE INDEX IF NOT EXISTS idx_tax_periods_tenant ON tax_periods(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_incentives_tenant ON tax_incentives(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_filings_period ON tax_filings(period_id);
 
     -- ==================== APPROVAL SYSTEM ====================
     -- ตั้งค่าการอนุมัติตาม Role (Master ID ตั้งค่าได้คนเดียว)
@@ -1320,23 +1232,6 @@ export function applySchema(db: any): void {
     );
 
     -- หัก ณ ที่จ่าย (Withholding Tax)
-    CREATE TABLE IF NOT EXISTS withholding_tax_entries (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT,
-      document_type TEXT NOT NULL,           -- PAYMENT, INVOICE
-      document_id TEXT NOT NULL,
-      document_number TEXT NOT NULL,
-      document_date TEXT NOT NULL,
-      party_name TEXT NOT NULL,
-      party_tax_id TEXT,
-      base_amount REAL NOT NULL,             -- ยอดก่อนหัก
-      wht_rate REAL NOT NULL,                -- อัตราหัก ณ ที่จ่าย
-      wht_amount REAL NOT NULL,              -- ยอดหัก
-      wht_type TEXT,                         -- ประเภท หัก ณ ที่จ่าย (เงินเดือน, ค่าบริการ, etc.)
-      journal_entry_id TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id)
-    );
 
     -- ==================== ACCOUNTING INDEXES ====================
     CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(tenant_id, type);
@@ -1346,7 +1241,6 @@ export function applySchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(journal_entry_id);
     CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
     CREATE INDEX IF NOT EXISTS idx_vat_entries_date ON vat_entries(tenant_id, document_date);
-    CREATE INDEX IF NOT EXISTS idx_wht_entries_date ON withholding_tax_entries(tenant_id, document_date);
 
     -- ==================== POS SYSTEM (Cashier) ====================
     -- ❌ ลบ pos_tables ออก - ไม่ใช้โต๊ะแล้ว

@@ -5,6 +5,7 @@ import { ACC, ACC_META } from '../../config/accountCodes'
 import { getOrCreateAccount } from './shared'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
+import { calcVat } from '../../utils/vat'
 
 const router = Router()
 
@@ -271,8 +272,7 @@ router.post('/', async (req: Request, res: Response) => {
       subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
     }
     const tax = taxRate || 7
-    const taxAmount = subtotal * (tax / 100)
-    const totalAmount = subtotal + taxAmount
+    const { taxAmount, totalAmount } = calcVat(subtotal, { rate: tax })
 
     const transaction = db.transaction(() => {
       db.prepare(`

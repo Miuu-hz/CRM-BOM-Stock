@@ -34,8 +34,8 @@ router.put('/company', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const {
-      name, address, phone, email, tax_id, logo_base64, pos_bom_deduct,
-      pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
+      name, address, phone, email, tax_id, tax_branch, vat_inclusive, logo_base64, pos_bom_deduct,
+      pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
       qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift
     } = req.body
 
@@ -54,12 +54,16 @@ router.put('/company', (req, res) => {
     const mergedPhone = phone !== undefined ? (phone || null) : existing.phone
     const mergedEmail = email !== undefined ? (email || null) : existing.email
     const mergedTaxId = tax_id !== undefined ? (tax_id || null) : existing.tax_id
+    // ยังไม่มีระบบสาขา ค่าตั้งต้นเป็นสำนักงานใหญ่ แต่แก้เองได้
+    const mergedTaxBranch = tax_branch !== undefined ? (tax_branch || null) : (existing.tax_branch ?? 'สำนักงานใหญ่')
+    const mergedCompanyVatInclusive = vat_inclusive !== undefined ? (vat_inclusive ? 1 : 0) : (existing.vat_inclusive === 1 ? 1 : 0)
     const mergedLogo = logo_base64 !== undefined ? (logo_base64 || null) : existing.logo_base64
     const mergedBomDeduct = pos_bom_deduct !== undefined
       ? (pos_bom_deduct === false || pos_bom_deduct === 0 ? 0 : 1)
       : (existing.pos_bom_deduct === 0 ? 0 : 1)
     const mergedVatEnabled = pos_vat_enabled !== undefined ? (pos_vat_enabled ? 1 : 0) : existing.pos_vat_enabled
     const mergedVatRate = pos_vat_rate !== undefined ? pos_vat_rate : existing.pos_vat_rate
+    const mergedVatInclusive = pos_vat_inclusive !== undefined ? (pos_vat_inclusive ? 1 : 0) : (existing.pos_vat_inclusive === 1 ? 1 : 0)
     const mergedServiceEnabled = pos_service_enabled !== undefined ? (pos_service_enabled ? 1 : 0) : existing.pos_service_enabled
     const mergedServiceRate = pos_service_rate !== undefined ? pos_service_rate : existing.pos_service_rate
     const mergedQcGateEnabled = qc_gate_enabled !== undefined
@@ -77,21 +81,24 @@ router.put('/company', (req, res) => {
 
     db.prepare(`
       INSERT INTO company_settings (
-        tenant_id, name, address, phone, email, tax_id, logo_base64,
-        pos_bom_deduct, pos_vat_enabled, pos_vat_rate, pos_service_enabled, pos_service_rate,
+        tenant_id, name, address, phone, email, tax_id, tax_branch, vat_inclusive, logo_base64,
+        pos_bom_deduct, pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
         qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(tenant_id) DO UPDATE SET
         name              = excluded.name,
         address           = excluded.address,
         phone             = excluded.phone,
         email             = excluded.email,
         tax_id            = excluded.tax_id,
+        tax_branch        = excluded.tax_branch,
+        vat_inclusive     = excluded.vat_inclusive,
         logo_base64       = excluded.logo_base64,
         pos_bom_deduct    = excluded.pos_bom_deduct,
         pos_vat_enabled   = excluded.pos_vat_enabled,
         pos_vat_rate      = excluded.pos_vat_rate,
+        pos_vat_inclusive = excluded.pos_vat_inclusive,
         pos_service_enabled = excluded.pos_service_enabled,
         pos_service_rate  = excluded.pos_service_rate,
         qc_gate_enabled   = excluded.qc_gate_enabled,
@@ -100,8 +107,8 @@ router.put('/company', (req, res) => {
         require_pos_shift = excluded.require_pos_shift,
         updated_at        = datetime('now')
     `).run(
-      tenantId, mergedName, mergedAddress, mergedPhone, mergedEmail, mergedTaxId, mergedLogo,
-      mergedBomDeduct, mergedVatEnabled, mergedVatRate, mergedServiceEnabled, mergedServiceRate,
+      tenantId, mergedName, mergedAddress, mergedPhone, mergedEmail, mergedTaxId, mergedTaxBranch, mergedCompanyVatInclusive, mergedLogo,
+      mergedBomDeduct, mergedVatEnabled, mergedVatRate, mergedVatInclusive, mergedServiceEnabled, mergedServiceRate,
       mergedQcGateEnabled, mergedShowSubconStockWidget, mergedAllowNegativeStock, mergedRequirePosShift
     )
 

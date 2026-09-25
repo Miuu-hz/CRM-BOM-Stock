@@ -7,11 +7,13 @@ import posService from '../services/pos.service'
 import posBillService from '../services/pos-bill.service'
 import kdsService from '../services/kds.service'
 import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyConfig, loadShopConfig } from './Settings'
+import { billTotals } from '../utils/posVat'
 import { printPOSReceipt } from '../utils/printBill'
 import { useModalClose } from '../hooks/useModalClose'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { accountsApi } from '../services/accounting'
 import api from '../services/api'
+import { getCachedCompanySettings } from '../services/companySettings.service'
 
 // ==================== Types ====================
 
@@ -142,6 +144,9 @@ export default function Cashier() {
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
   const [expandedRow, setExpandedRow] = useState<'discount' | 'extra' | null>(null)
   const [billing, setBilling] = useState<BillingConfig>(loadBillingConfig)
+  // กิจการที่ยังไม่มีเลขผู้เสียภาษี = ยังไม่จด VAT → ออกใบกำกับภาษีไม่ได้ตามกฎหมาย
+  // ซ่อนทางเข้าไปเลย ดีกว่าปล่อยให้กดแล้วเด้ง error (backend กันไว้อีกชั้นที่ SELLER_TAX_ID_REQUIRED)
+  const vatRegistered = !!String(getCachedCompanySettings().tax_id || '').trim()
   const [loyalty, setLoyalty] = useState<LoyaltyConfig>(loadLoyaltyConfig)
 
   // Reload billing & loyalty config when window gains focus (user may have changed settings)
@@ -161,6 +166,7 @@ export default function Cashier() {
       m.default.update({
         pos_vat_enabled: cfg.vatEnabled,
         pos_vat_rate: cfg.vatRate,
+        pos_vat_inclusive: cfg.vatInclusive,
         pos_service_enabled: cfg.serviceEnabled,
         pos_service_rate: cfg.serviceRate,
       }).catch(() => {})
@@ -394,19 +400,28 @@ export default function Cashier() {
     }
   }
 
+  // ส่วนลดเป็น % คิดจากยอดที่เรียกเก็บก่อนภาษี (สินค้า + ค่าบริการ + ค่าขนส่ง)
+  const billDiscountAmount = (bill: any) => {
+    if (discount.value <= 0) return 0
+    if (discount.type !== 'pct') return discount.value
+    const t = billTotals(bill, billing, { extraCharge: extraCharge.amount })
+    return Math.round((t.subtotal + t.serviceChargeAmount + t.extraCharge) * discount.value / 100)
+  }
+
   // Build receipt data for printing
   const buildReceiptData = (bill: any, method: string, cashReceived?: number, discountAmt = 0) => {
     const shop = loadShopConfig()
-    const subtotal = bill.subtotal || 0
-    const serviceAmt = billing.serviceEnabled ? Math.round(subtotal * billing.serviceRate / 100) : 0
-    const vatAmt = billing.vatEnabled ? Math.round(subtotal * billing.vatRate / 100) : 0
-    const total = subtotal + serviceAmt + vatAmt - discountAmt
+    const { subtotal, serviceChargeAmount: serviceAmt, extraCharge: extraAmt, taxAmount: vatAmt, totalAmount: total } =
+      billTotals(bill, billing, { discount: discountAmt, extraCharge: extraCharge.amount })
     // แนบบัญชีหลักเสมอ ไม่ใช่เฉพาะตอนจ่ายด้วย QR — ลูกค้าที่จ่ายสดก็ยังต้องเห็น
     // เลขบัญชี/QR ไว้โอนรอบหน้า และหน้าตั้งค่าก็โฆษณาไว้ว่า "แสดงบนเอกสารขายและ POS"
     const bank = getCachedDefaultBankAccount()
     return {
       ...bill,
+      subtotal,
       service_charge_amount: serviceAmt,
+      extra_charge_amount: extraAmt,
+      extra_charge_label: extraCharge.label,
       tax_amount: vatAmt,
       total_amount: total,
       _shopName: shop.name,
@@ -416,6 +431,8 @@ export default function Cashier() {
       _shopFooter: shop.footer,
       _vatEnabled: billing.vatEnabled,
       _vatRate: billing.vatRate,
+      _vatInclusive: billing.vatInclusive,
+      _supersededBy: bill.invoice?.invoice_number || bill.invoice_number || undefined,
       _serviceEnabled: billing.serviceEnabled,
       _serviceRate: billing.serviceRate,
       _paymentMethod: method,
@@ -438,6 +455,10 @@ export default function Cashier() {
         earn_rate: loyalty.enabled ? loyalty.earnRate : undefined,
         redeem_points: loyalty.enabled && redeemPoints ? redeemPoints : undefined,
         bank_account_id: bankAccountId,
+        // ต้องส่งไปด้วย ไม่งั้น backend คิดยอด/VAT/บัญชีจากบิลเปล่า ๆ คนละยอดกับที่ลูกค้าจ่าย
+        discount_amount: billDiscountAmount(currentBill),
+        extra_charge_amount: extraCharge.amount,
+        extra_charge_label: extraCharge.label,
       })
 
       // ── Actionable response: cannot pay due to stock/conversion issues ──
@@ -458,7 +479,7 @@ export default function Cashier() {
           toast.success(`ชำระเงินสำเร็จ!`, { icon: '<Banknote className="w-4 h-4" />' })
         }
         // Auto-print thermal receipt after payment
-        const receiptData = buildReceiptData(currentBill, method, cashReceived)
+        const receiptData = buildReceiptData(currentBill, method, cashReceived, billDiscountAmount(currentBill))
         printPOSReceipt(receiptData, 'thermal')
         setCurrentBill(null)
         setShowPaymentModal(false)
@@ -687,10 +708,7 @@ export default function Cashier() {
                         </p>
                         <p className="text-xl font-bold text-success mt-2">
                           ฿{(() => {
-                            const s = bill.subtotal || 0
-                            const serviceAmt = billing.serviceEnabled ? Math.round(s * billing.serviceRate / 100) : 0
-                            const vatAmt = billing.vatEnabled ? Math.round(s * billing.vatRate / 100) : 0
-                            return (s + serviceAmt + vatAmt).toLocaleString()
+                            return billTotals(bill, billing).totalAmount.toLocaleString()
                           })()}
                         </p>
                         <div className="flex items-center gap-1 text-xs text-[var(--fg-4)] mt-2">
@@ -928,14 +946,10 @@ export default function Cashier() {
 
               {/* Bill Footer */}
               {(() => {
-                const subtotal = currentBill.subtotal
-                const serviceAmt = billing.serviceEnabled ? Math.round(subtotal * billing.serviceRate / 100) : 0
-                const vatAmt = billing.vatEnabled ? Math.round(subtotal * billing.vatRate / 100) : 0
-                const beforeDiscount = subtotal + serviceAmt + vatAmt
-                const discountAmt = discount.type === 'pct'
-                  ? Math.round(beforeDiscount * discount.value / 100)
-                  : discount.value
-                const finalTotal = Math.max(0, beforeDiscount - discountAmt + extraCharge.amount)
+                const discountAmt = billDiscountAmount(currentBill)
+                const { subtotal, serviceChargeAmount: serviceAmt, taxAmount: vatAmt, totalAmount: finalTotal } =
+                  billTotals(currentBill, billing, { discount: discountAmt, extraCharge: extraCharge.amount })
+                const beforeDiscount = finalTotal + discountAmt
                 return (
                   <>
                   <div className="p-4 border-t border-[var(--border)] space-y-3">
@@ -1126,6 +1140,7 @@ export default function Cashier() {
                         <Printer className="w-4 h-4" />
                         <span className="text-[9px] leading-none">ย่อ</span>
                       </button>
+                      {vatRegistered && (
                       <button
                         onClick={() => setShowInvoiceModal(true)}
                         disabled={currentBill.items.length === 0}
@@ -1135,6 +1150,7 @@ export default function Cashier() {
                         <Printer className="w-4 h-4" />
                         <span className="text-[9px] leading-none">A4</span>
                       </button>
+                      )}
                       <button
                         onClick={() => setShowReceiptQR(true)}
                         disabled={currentBill.items.length === 0 || !currentBill.receipt_qr}
@@ -1233,14 +1249,8 @@ export default function Cashier() {
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
         total={(() => {
-          const subtotal = currentBill?.subtotal || 0
-          const serviceAmt = billing.serviceEnabled ? Math.round(subtotal * billing.serviceRate / 100) : 0
-          const vatAmt = billing.vatEnabled ? Math.round(subtotal * billing.vatRate / 100) : 0
-          const beforeDiscount = subtotal + serviceAmt + vatAmt
-          const discountAmt = discount.type === 'pct'
-            ? Math.round(beforeDiscount * discount.value / 100)
-            : discount.value
-          return Math.max(0, beforeDiscount - discountAmt + extraCharge.amount)
+          return billTotals(currentBill, billing,
+            { discount: billDiscountAmount(currentBill), extraCharge: extraCharge.amount }).totalAmount
         })()}
         onPay={processPayment}
         loyalty={loyalty}

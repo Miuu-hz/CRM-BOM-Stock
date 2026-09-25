@@ -19,6 +19,14 @@ function seedBill(tenantId: string, status: 'OPEN' | 'PAID', total = 500) {
   return id
 }
 
+// กิจการต้องมีเลขผู้เสียภาษีก่อน ไม่งั้นออกใบกำกับไม่ได้ (SELLER_TAX_ID_REQUIRED)
+function createSeller() {
+  const u = createTestUser({ role: 'ADMIN' })
+  db.prepare('INSERT INTO company_settings (tenant_id, name, tax_id) VALUES (?, ?, ?)')
+    .run(u.tenantId, 'ร้านทดสอบ', '0105561234567')
+  return u
+}
+
 function seedCustomer(tenantId: string) {
   const id = generateId()
   db.prepare(`
@@ -37,7 +45,7 @@ function createProductionUser(tenantId: string) {
 
 describe('POST /bills/:id/invoice — ออกใบกำกับภาษีจากบิล POS', () => {
   it('บิล PAID + user มีสิทธิ์ billing → 201 พร้อมเลขใบกำกับ', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'PAID')
     const customerId = seedCustomer(seller.tenantId)
 
@@ -51,7 +59,7 @@ describe('POST /bills/:id/invoice — ออกใบกำกับภาษี
   })
 
   it('ยิงซ้ำบิลเดิม → 409 DUPLICATE_INVOICE', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'PAID')
     const customerId = seedCustomer(seller.tenantId)
 
@@ -66,7 +74,7 @@ describe('POST /bills/:id/invoice — ออกใบกำกับภาษี
   })
 
   it('บิลยัง OPEN (ยังไม่จ่ายเงิน) → 400', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'OPEN')
     const customerId = seedCustomer(seller.tenantId)
 
@@ -77,7 +85,7 @@ describe('POST /bills/:id/invoice — ออกใบกำกับภาษี
   })
 
   it('user ไม่มีสิทธิ์ billing (แผนกผลิต role USER) → 403', async () => {
-    const admin = createTestUser({ role: 'ADMIN' })
+    const admin = createSeller()
     const productionUser = createProductionUser(admin.tenantId)
     const billId = seedBill(admin.tenantId, 'PAID')
     const customerId = seedCustomer(admin.tenantId)
@@ -91,7 +99,7 @@ describe('POST /bills/:id/invoice — ออกใบกำกับภาษี
 
 describe('PATCH /bills/:id/member — แก้ผู้ซื้อหลังจ่ายเงิน', () => {
   it('บิล PAID ที่ยังไม่ออกใบกำกับ → แก้ผู้ซื้อได้สำเร็จ', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'PAID')
     const customerId = seedCustomer(seller.tenantId)
 
@@ -103,7 +111,7 @@ describe('PATCH /bills/:id/member — แก้ผู้ซื้อหลัง
   })
 
   it('บิล PAID ที่ออกใบกำกับไปแล้ว → 409 ห้ามเปลี่ยนผู้ซื้อ', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'PAID')
     const customerId = seedCustomer(seller.tenantId)
     const otherCustomerId = seedCustomer(seller.tenantId)
@@ -120,7 +128,7 @@ describe('PATCH /bills/:id/member — แก้ผู้ซื้อหลัง
 
 describe('GET /bills/:id — ข้อมูลใบกำกับที่ออกแล้ว', () => {
   it('บิลที่ออกใบกำกับแล้ว → data.invoice.invoice_number ตรง และมี customer_tax_branch', async () => {
-    const seller = createTestUser({ role: 'ADMIN' })
+    const seller = createSeller()
     const billId = seedBill(seller.tenantId, 'PAID')
     const customerId = seedCustomer(seller.tenantId)
 

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
+import { calcVat } from '../../utils/vat'
+import { resolveVatInclusive } from '../../utils/vatSettings'
 
 const router = Router()
 
@@ -80,17 +82,22 @@ router.post('/', async (req: Request, res: Response) => {
     }
     const discount = discountAmount || 0
     const tax = taxRate || 0
-    const afterDiscount = subtotal - discount
-    const taxAmount = afterDiscount * (tax / 100)
-    const totalAmount = afterDiscount + taxAmount
+    const inclusive = resolveVatInclusive(tenantId, req.body.vatInclusive)
+    const extraCharge = Math.max(0, Number(req.body.extraChargeAmount) || 0)
+    const extraLabel = extraCharge > 0 ? (req.body.extraChargeLabel || 'ค่าขนส่ง') : null
+    const calc = calcVat(subtotal, { rate: tax, discountAmount: discount, inclusive: !!inclusive, extraCharge })
+    const { taxAmount, totalAmount } = calc
+    // โหมดรวม VAT: subtotal ที่เก็บต้องเป็นยอด "ก่อนภาษี" ไม่ใช่ราคาที่กรอก
+    // เพราะ journal ใช้ค่านี้เป็นรายได้ตรง ๆ และใบกำกับต้องแสดงฐานภาษี
+    subtotal = calc.subtotal
 
     const transaction = db.transaction(() => {
       db.prepare(`
         INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
-          subtotal, discount_amount, tax_rate, tax_amount, total_amount, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+          subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
       `).run(id, tenantId, quotationNumber, customerId, now, expiryDate || null,
-        subtotal, discount, tax, taxAmount, totalAmount, notes || '', now, now)
+        subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, notes || '', now, now)
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`

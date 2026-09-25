@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
+import { calcVat } from '../../utils/vat'
 
 const router = Router()
 
@@ -191,8 +192,7 @@ router.post('/from-template', async (req: Request, res: Response) => {
       subtotal += itemTotal
     }
     const taxRate = 7
-    const taxAmount = subtotal * (taxRate / 100)
-    const totalAmount = subtotal + taxAmount
+    const { taxAmount, totalAmount } = calcVat(subtotal, { rate: taxRate })
 
     const transaction = db.transaction(() => {
       db.prepare(`

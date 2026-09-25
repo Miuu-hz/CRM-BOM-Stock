@@ -215,7 +215,10 @@ class POSAccountingService {
       const entryId = generateId()
       const today = now().split('T')[0]
 
+      // ต้องเท่ากับ total − ภาษี พอดี ไม่งั้น Dr บัญชีพัก POS (= total) ไม่บาลานซ์กับ Cr
+      // ค่าขนส่ง/ค่าบริการอื่นที่เรียกเก็บจากลูกค้าเป็นรายได้ ส่วนลดท้ายบิลหักออกจากรายได้
       const totalRevenue = bill.subtotal + bill.service_charge_amount
+        + (bill.extra_charge_amount || 0) - (bill.discount_amount || 0)
 
       // Insert journal entry header
       const entryStmt = db.prepare(`
