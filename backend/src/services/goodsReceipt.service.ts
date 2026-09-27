@@ -5,7 +5,7 @@ import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
 import { postJournal } from './accounting.service'
 import { ACC } from '../config/accountCodes'
-import { resolveStockItemId, PurchaseOrderUpdateError } from './purchaseOrderUpdate.service'
+import { resolveStockItemId, StockItemRefError } from './stockItem.service'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -108,7 +108,7 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
     try {
       item.materialId = resolveStockItemId(tenantId, item.materialId)
     } catch (e) {
-      if (e instanceof PurchaseOrderUpdateError) throw new GoodsReceiptError('UNBOUND_ITEM', e.message)
+      if (e instanceof StockItemRefError) throw new GoodsReceiptError('UNBOUND_ITEM', e.message)
       throw e
     }
   }

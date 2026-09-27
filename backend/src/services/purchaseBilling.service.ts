@@ -3,7 +3,7 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from './accounting.service'
 import { calcVat } from '../utils/vat'
-import { resolveStockItemId, PurchaseOrderUpdateError } from './purchaseOrderUpdate.service'
+import { resolveStockItemId, StockItemRefError } from './stockItem.service'
 
 /**
  * ตรรกะ "ออกใบแจ้งหนี้ซื้อ" และ "จ่ายเงินผู้ขาย" ยกออกมาจาก routes/purchase.routes.ts
@@ -218,7 +218,7 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     try {
       item.materialId = resolveStockItemId(tenantId, item.materialId)
     } catch (e) {
-      if (e instanceof PurchaseOrderUpdateError) throw new PurchaseBillingError('STOCK_ITEM_INVALID', e.message)
+      if (e instanceof StockItemRefError) throw new PurchaseBillingError('STOCK_ITEM_INVALID', e.message)
       throw e
     }
   }

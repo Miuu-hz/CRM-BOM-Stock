@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { calcVat } from '../utils/vat'
+import { resolveStockItemId, StockItemRefError } from './stockItem.service'
 
 /**
  * ตรรกะ "แก้ไข PO ที่ออกไปแล้ว" ยกออกมาจาก routes/purchaseOrder.routes.ts PUT /:id
@@ -33,20 +34,6 @@ export function resolveSupplierId(tenantId: string, supplierId: unknown): string
     'SELECT 1 FROM suppliers WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)'
   ).get(id, tenantId)
   if (!found) throw new PurchaseOrderUpdateError('ไม่พบผู้ขายที่เลือก — เลือกผู้ขายอีกครั้งก่อนบันทึก')
-  return id
-}
-
-/**
- * `materialId` ของรายการ PO = `stock_items.id` (ชื่อเก่าตั้งแต่ก่อนยุบ materials เข้า stock_items 2026-09-16
- * ยังคงชื่อนี้ไว้เพราะฟอร์ม/MCP ส่งมาด้วยคีย์นี้) — ต้องเป็นสินค้าของเทแนนต์นี้เท่านั้น
- * เดิมเช็คแค่ `WHERE id = ?` ใครรู้ id ก็ผูกสินค้าของบริษัทอื่นเข้า PO ตัวเองได้ แล้ว GR จะไปเพิ่มสต็อกให้บริษัทนั้น
- */
-export function resolveStockItemId(tenantId: string, stockItemId: unknown, label?: string): string | null {
-  const id = blankToNull(stockItemId)
-  if (!id) return null
-  if (!db.prepare('SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId)) {
-    throw new PurchaseOrderUpdateError(`ไม่พบสินค้าในคลังของรายการ "${label || id}" — เลือกสินค้าใหม่อีกครั้ง`)
-  }
   return id
 }
 
@@ -130,7 +117,12 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   const supplierId = resolveSupplierId(tenantId, payload.supplierId)
   const bankAccountId = blankToNull(payload.bankAccountId)
   if (items) {
-    for (const item of items) resolveStockItemId(tenantId, item.materialId, item.description)
+    try {
+      for (const item of items) resolveStockItemId(tenantId, item.materialId, item.description)
+    } catch (e) {
+      if (e instanceof StockItemRefError) throw new PurchaseOrderUpdateError(e.message)
+      throw e
+    }
   }
 
   let subtotal = 0

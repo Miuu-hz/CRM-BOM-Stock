@@ -1095,5 +1095,5 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
   - `bom.routes.ts` เช็ค `AND tenant_id` เองอยู่แล้ว · `resolveMaterialId()` ใน `purchase.routes.ts` (สาย PR หาจาก id/sku/ชื่อ) เช็ค tenant ทุก query
   - ไม่เหลือ DELETE รายการ PO ทั้งใบ นอกจากตอนลบ PO ทั้งใบ (`DELETE /purchase-orders/:id`)
   - ที่ยังอ่าน `stock_items WHERE id = ?` โดยไม่ดู tenant เหลือเฉพาะการอ่านซ้ำหลังจาก id ผ่านการเช็คแล้ว (ดึงชื่อ/หน่วยมาแสดง) ไม่ใช่ทางเข้า
-- ข้อจำกัด: `resolveStockItemId` อยู่ใน `purchaseOrderUpdate.service.ts` และ throw `PurchaseOrderUpdateError` แต่ใบสั่งผลิตก็เรียกใช้ด้วย → ถ้ามีโมดูลอื่นมาใช้อีก ให้ย้ายไป `stockItem.service.ts` พร้อม error class กลาง
+- ✅ ย้ายแล้ว: `resolveStockItemId` + `StockItemRefError` อยู่ที่ `services/stockItem.service.ts` · ผู้เรียกตรง (สร้าง PO, GR, PI, ใบคืนของ, ใบสั่งผลิต) จับ `StockItemRefError` → 400 · `applyPurchaseOrderUpdate` แปลงเป็น `PurchaseOrderUpdateError` ที่เดียว ผู้เรียก service (REST PUT, MCP, ผู้อนุมัติ) จึงไม่ต้องแก้ · 357 ผ่าน
 - เทสต์ใหม่: MCP แก้แค่หมายเหตุแล้ว รายการ/ยอด/ส่วนลด/วันที่/`skip_stock` ต้องอยู่ครบ + ส่งสินค้าบริษัทอื่นต้องถูกปฏิเสธ · ชุดเต็ม 62 ไฟล์ 357 เทสต์ผ่าน · build + restart แล้ว

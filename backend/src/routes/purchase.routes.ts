@@ -21,7 +21,7 @@ import {
   type CreateGoodsReceiptLine,
 } from '../services/goodsReceipt.service'
 import { calcVat } from '../utils/vat'
-import { resolveStockItemId, PurchaseOrderUpdateError } from '../services/purchaseOrderUpdate.service'
+import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 import {
   createPurchaseInvoice,
   paySupplier,
@@ -1384,7 +1384,7 @@ router.post('/returns', async (req: Request, res: Response) => {
     try {
       for (const item of items || []) item.materialId = resolveStockItemId(tenantId, item.materialId, item.description)
     } catch (e) {
-      if (e instanceof PurchaseOrderUpdateError) return res.status(400).json({ success: false, message: e.message })
+      if (e instanceof StockItemRefError) return res.status(400).json({ success: false, message: e.message })
       throw e
     }
 

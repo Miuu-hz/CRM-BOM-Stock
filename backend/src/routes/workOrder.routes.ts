@@ -7,7 +7,7 @@ import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../services/stockMovement.service'
-import { resolveStockItemId, PurchaseOrderUpdateError } from '../services/purchaseOrderUpdate.service'
+import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 
 const router = Router()
 
@@ -99,7 +99,7 @@ router.post('/', async (req: Request, res: Response) => {
     try {
       for (const m of materials || []) m.materialId = resolveStockItemId(tenantId, m.materialId, m.materialName)
     } catch (e) {
-      if (e instanceof PurchaseOrderUpdateError) return res.status(400).json({ success: false, message: e.message })
+      if (e instanceof StockItemRefError) return res.status(400).json({ success: false, message: e.message })
       throw e
     }
     const id = generateId()
