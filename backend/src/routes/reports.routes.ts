@@ -11,11 +11,8 @@ router.use(authenticate)
 // ============================================
 
 // Trial Balance - งบทดลอง
-router.get('/trial-balance', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { startDate, endDate } = req.query
-    
+// แยกออกจาก route เพื่อให้เทสต์ได้ และให้ MCP get_trial_balance (แผนใน carbontome.md) เรียกตัวเดียวกัน
+export function buildTrialBalance(tenantId: string, startDate?: string, endDate?: string) {
     // Get all active accounts with balances
     const accounts = db.prepare(`
       SELECT a.*
@@ -25,22 +22,17 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
     `).all(tenantId) as any[]
     
     const results = accounts.map(account => {
-      // Get opening balance (before startDate)
-      let openingQuery = `
-        SELECT COALESCE(SUM(debit), 0) as total_debit, COALESCE(SUM(credit), 0) as total_credit
-        FROM journal_lines jl
-        JOIN journal_entries je ON jl.journal_entry_id = je.id
-        WHERE jl.account_id = ? AND je.is_posted = 1
-      `
-      const params: any[] = [account.id]
-      
-      if (startDate) {
-        openingQuery += ' AND je.date < ?'
-        params.push(startDate)
-      }
-      
-      const openingBalance = db.prepare(openingQuery).get(...params) as any
-      
+      // ยอดยกมา = ก่อน startDate เท่านั้น ไม่มี startDate = ไม่มียอดยกมา (ความเคลื่อนไหวนับตั้งแต่ต้นอยู่แล้ว)
+      // เดิม query นี้รันโดยไม่มีเงื่อนไขวันที่ → นับทุกรายการซ้ำสองรอบ ยอดคงเหลือเป็น 2 เท่า
+      const openingBalance = startDate
+        ? db.prepare(`
+            SELECT COALESCE(SUM(debit), 0) as total_debit, COALESCE(SUM(credit), 0) as total_credit
+            FROM journal_lines jl
+            JOIN journal_entries je ON jl.journal_entry_id = je.id
+            WHERE jl.account_id = ? AND je.is_posted = 1 AND je.date < ?
+          `).get(account.id, startDate) as any
+        : { total_debit: 0, total_credit: 0 }
+
       // Get period activity (between startDate and endDate)
       let activityQuery = `
         SELECT COALESCE(SUM(debit), 0) as total_debit, COALESCE(SUM(credit), 0) as total_credit
@@ -61,24 +53,13 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
       
       const activity = db.prepare(activityQuery).get(...activityParams) as any
       
-      // Calculate balances
-      const openingDebit = account.normal_balance === 'DEBIT' 
-        ? Number(openingBalance.total_debit) - Number(openingBalance.total_credit)
-        : 0
-      const openingCredit = account.normal_balance === 'CREDIT'
-        ? Number(openingBalance.total_credit) - Number(openingBalance.total_debit)
-        : 0
-      
+      // ยอดสุทธิ (Dr − Cr) แล้ววางตามเครื่องหมาย ไม่ใช่ตาม normal_balance — เดิมยอดที่อยู่ผิดฝั่ง
+      // (เช่น เงินฝากติดลบ) ถูกปัดเป็น 0 ทั้งสองฝั่ง หายไปจากงบทดลองและยอดรวม Dr/Cr ไม่เท่ากัน
+      const openingNet = Number(openingBalance.total_debit) - Number(openingBalance.total_credit)
       const movementDebit = Number(activity.total_debit)
       const movementCredit = Number(activity.total_credit)
-      
-      let endingBalance = 0
-      if (account.normal_balance === 'DEBIT') {
-        endingBalance = (openingDebit - openingCredit) + movementDebit - movementCredit
-      } else {
-        endingBalance = (openingCredit - openingDebit) + movementCredit - movementDebit
-      }
-      
+      const endingNet = openingNet + movementDebit - movementCredit
+
       return {
         id: account.id,
         code: account.code,
@@ -86,12 +67,12 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
         type: account.type,
         category: account.category,
         normalBalance: account.normal_balance,
-        openingDebit: openingDebit > 0 ? openingDebit : 0,
-        openingCredit: openingCredit > 0 ? openingCredit : 0,
+        openingDebit: openingNet > 0 ? openingNet : 0,
+        openingCredit: openingNet < 0 ? -openingNet : 0,
         debit: movementDebit,
         credit: movementCredit,
-        endingDebit: account.normal_balance === 'DEBIT' && endingBalance > 0 ? endingBalance : 0,
-        endingCredit: account.normal_balance === 'CREDIT' && endingBalance > 0 ? endingBalance : 0
+        endingDebit: endingNet > 0 ? endingNet : 0,
+        endingCredit: endingNet < 0 ? -endingNet : 0
       }
     })
     
@@ -109,16 +90,14 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
       endingDebit: acc.endingDebit + r.endingDebit,
       endingCredit: acc.endingCredit + r.endingCredit
     }), { openingDebit: 0, openingCredit: 0, debit: 0, credit: 0, endingDebit: 0, endingCredit: 0 })
-    
-    res.json({
-      success: true,
-      data: {
-        startDate,
-        endDate,
-        accounts: filteredResults,
-        totals
-      }
-    })
+
+    return { startDate, endDate, accounts: filteredResults, totals }
+}
+
+router.get('/trial-balance', async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string }
+    res.json({ success: true, data: buildTrialBalance(req.user!.tenantId, startDate, endDate) })
   } catch (error) {
     console.error('Trial balance error:', error)
     res.status(500).json({ success: false, message: 'Failed to generate trial balance' })

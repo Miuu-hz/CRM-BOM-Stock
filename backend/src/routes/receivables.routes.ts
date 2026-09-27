@@ -33,6 +33,8 @@ interface AgingRow {
   party_name: string
   party_email: string | null
   party_phone: string | null
+  party_address: string | null
+  party_tax_id: string | null
 }
 
 interface Bucket {
@@ -87,6 +89,8 @@ function buildAging(rows: AgingRow[], asOf: string) {
         name: row.party_name,
         email: row.party_email || null,
         phone: row.party_phone || null,
+        address: row.party_address || null,
+        taxId: row.party_tax_id || null,
         total: 0,
         overdue: 0,
         oldestDays: 0,
@@ -147,25 +151,44 @@ const resolveAsOf = (req: Request): string => {
 // GET /api/receivables/ar-aging — ลูกหนี้การค้าแยกตามอายุหนี้
 // หมายเหตุ: ยังไม่หักลดหนี้ (credit notes) ออกจากยอดค้าง — balance_amount
 // บน invoice คือแหล่งความจริงเดียวที่ระบบใช้อยู่ตอนนี้
+// ใช้ร่วมกับ MCP get_ar_aging / get_ap_aging (mcp/tools/finance.ts) — แหล่งเดียว ห้ามเขียน SQL ซ้ำ
+export function arAging(tenantId: string, asOf: string) {
+  const rows = db.prepare(`
+    SELECT i.id, i.invoice_number AS doc_number, i.invoice_date AS doc_date,
+           i.due_date, i.total_amount, i.balance_amount,
+           c.id AS party_id, c.name AS party_name,
+           c.email AS party_email, c.phone AS party_phone,
+           c.address AS party_address, c.tax_id AS party_tax_id
+    FROM invoices i
+    JOIN customers c ON c.id = i.customer_id
+    WHERE i.tenant_id = ?
+      AND i.status NOT IN ('CANCELLED', 'DRAFT')
+      AND i.payment_status <> 'PAID'
+      AND i.balance_amount > 0
+  `).all(tenantId) as AgingRow[]
+  return buildAging(rows, asOf)
+}
+
+export function apAging(tenantId: string, asOf: string) {
+  const rows = db.prepare(`
+    SELECT pi.id, pi.pi_number AS doc_number, pi.invoice_date AS doc_date,
+           pi.due_date, pi.total_amount, pi.balance_amount,
+           s.id AS party_id, s.name AS party_name,
+           s.email AS party_email, s.phone AS party_phone,
+           s.address AS party_address, s.tax_id AS party_tax_id
+    FROM purchase_invoices pi
+    JOIN suppliers s ON s.id = pi.supplier_id
+    WHERE pi.tenant_id = ?
+      AND pi.status NOT IN ('CANCELLED', 'DRAFT')
+      AND pi.payment_status <> 'PAID'
+      AND pi.balance_amount > 0
+  `).all(tenantId) as AgingRow[]
+  return buildAging(rows, asOf)
+}
+
 router.get('/ar-aging', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
-    const asOf = resolveAsOf(req)
-
-    const rows = db.prepare(`
-      SELECT i.id, i.invoice_number AS doc_number, i.invoice_date AS doc_date,
-             i.due_date, i.total_amount, i.balance_amount,
-             c.id AS party_id, c.name AS party_name,
-             c.email AS party_email, c.phone AS party_phone
-      FROM invoices i
-      JOIN customers c ON c.id = i.customer_id
-      WHERE i.tenant_id = ?
-        AND i.status NOT IN ('CANCELLED', 'DRAFT')
-        AND i.payment_status <> 'PAID'
-        AND i.balance_amount > 0
-    `).all(tenantId) as AgingRow[]
-
-    res.json({ success: true, data: buildAging(rows, asOf) })
+    res.json({ success: true, data: arAging(req.user!.tenantId, resolveAsOf(req)) })
   } catch (error) {
     console.error('AR aging error:', error)
     res.status(500).json({ success: false, message: 'Failed to build AR aging' })
@@ -176,23 +199,7 @@ router.get('/ar-aging', async (req: Request, res: Response) => {
 // ใช้ purchase_invoices (หนี้จริงที่ตั้งไว้แล้ว) ไม่ใช่ purchase_orders ที่เป็นแค่ใบสั่งซื้อ
 router.get('/ap-aging', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
-    const asOf = resolveAsOf(req)
-
-    const rows = db.prepare(`
-      SELECT pi.id, pi.pi_number AS doc_number, pi.invoice_date AS doc_date,
-             pi.due_date, pi.total_amount, pi.balance_amount,
-             s.id AS party_id, s.name AS party_name,
-             s.email AS party_email, s.phone AS party_phone
-      FROM purchase_invoices pi
-      JOIN suppliers s ON s.id = pi.supplier_id
-      WHERE pi.tenant_id = ?
-        AND pi.status NOT IN ('CANCELLED', 'DRAFT')
-        AND pi.payment_status <> 'PAID'
-        AND pi.balance_amount > 0
-    `).all(tenantId) as AgingRow[]
-
-    res.json({ success: true, data: buildAging(rows, asOf) })
+    res.json({ success: true, data: apAging(req.user!.tenantId, resolveAsOf(req)) })
   } catch (error) {
     console.error('AP aging error:', error)
     res.status(500).json({ success: false, message: 'Failed to build AP aging' })

@@ -1,0 +1,135 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import db from '../../db/sqlite'
+import { generateId } from '../../utils/id'
+import { registerFinanceTools } from './finance'
+import { arAging } from '../../routes/receivables.routes'
+import { buildTrialBalance } from '../../routes/reports.routes'
+import type { IMcpServer } from '../sdk-compat'
+
+function fakeServer(): { server: IMcpServer; tools: Record<string, (args: any) => Promise<any>> } {
+  const tools: Record<string, (args: any) => Promise<any>> = {}
+  const server: IMcpServer = {
+    tool: (name: string, _desc: string, _schema: any, handler: any) => { tools[name] = handler },
+    connect: async () => {},
+    close: async () => {},
+  }
+  return { server, tools }
+}
+
+const parseOk = (res: any) => JSON.parse(res.content[0].text)
+
+const tenants: string[] = []
+function setupTenant() {
+  const t = 'test_fin_' + generateId()
+  tenants.push(t)
+  return t
+}
+
+afterEach(() => {
+  for (const t of tenants.splice(0)) {
+    for (const tbl of ['journal_lines', 'journal_entries', 'accounts', 'invoices', 'sales_orders', 'customers']) {
+      db.prepare(`DELETE FROM ${tbl} WHERE tenant_id = ?`).run(t)
+    }
+  }
+})
+
+function addCustomer(t: string, name: string) {
+  const id = generateId()
+  db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id)
+              VALUES (?, ?, ?, ?, 'COMPANY', '-', '-', '-', '-', ?, ?)`)
+    .run(id, t, 'C' + id.slice(0, 6), name, `ที่อยู่ ${name}`, '0105555000001')
+  return id
+}
+
+function addInvoice(t: string, customerId: string, balance: number, status = 'ISSUED', dueDate = '2026-01-01') {
+  // invoices มี CHECK ว่าต้องมาจาก SO หรือบิล POS
+  const so = generateId()
+  db.prepare(`INSERT INTO sales_orders (id, tenant_id, so_number, customer_id) VALUES (?, ?, ?, ?)`)
+    .run(so, t, 'SO-' + so.slice(0, 8), customerId)
+  db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date,
+                total_amount, paid_amount, balance_amount, status, payment_status)
+              VALUES (?, ?, ?, ?, ?, '2025-12-01', ?, ?, 0, ?, ?, 'UNPAID')`)
+    .run(generateId(), t, 'INV-' + generateId().slice(0, 8), so, customerId, dueDate, balance, balance, status)
+}
+
+describe('งบทดลอง — ยอดผิดฝั่งต้องไม่หาย', () => {
+  it('เงินฝาก (normal DEBIT) ที่ติดลบ ต้องไปอยู่ฝั่งเครดิต และยอดรวม Dr = Cr', () => {
+    const t = setupTenant()
+    const acc = (code: string, type: string, normal: string) => {
+      const id = generateId()
+      db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active)
+                  VALUES (?, ?, ?, ?, ?, 'X', ?, 1)`).run(id, t, code, code, type, normal)
+      return id
+    }
+    const bank = acc('1102', 'ASSET', 'DEBIT')
+    const expense = acc('5302', 'EXPENSE', 'DEBIT')
+    const je = generateId()
+    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, description, is_posted)
+                VALUES (?, ?, 'JV-T1', '2026-05-01', 'จ่ายค่าเช่าเกินเงินในบัญชี', 1)`).run(je, t)
+    const line = db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?, ?)`)
+    line.run(generateId(), t, je, expense, 1000, 0)
+    line.run(generateId(), t, je, bank, 0, 1000)
+
+    const tb = buildTrialBalance(t)
+    const bankRow = tb.accounts.find((a: any) => a.code === '1102')!
+    expect(bankRow.endingCredit, 'เดิมถูกปัดเป็น 0 ทั้งสองฝั่ง').toBe(1000)
+    expect(bankRow.endingDebit).toBe(0)
+    expect(tb.totals.endingDebit).toBe(tb.totals.endingCredit)
+
+    // ยอดยกมาใช้ตรรกะเดียวกัน
+    const tb2 = buildTrialBalance(t, '2026-06-01')
+    expect(tb2.accounts.find((a: any) => a.code === '1102')!.openingCredit).toBe(1000)
+    expect(tb2.totals.openingDebit).toBe(tb2.totals.openingCredit)
+  })
+})
+
+describe('MCP get_ar_aging — ใช้แหล่งเดียวกับ REST', () => {
+  it('ไม่นับ DRAFT/CANCELLED, ไม่ตัดที่ 50 ใบ, มีที่อยู่/เลขภาษี และยอดตรงกับ arAging()', async () => {
+    const t = setupTenant()
+    const c = addCustomer(t, 'บริษัท ทดสอบ')
+    for (let i = 0; i < 55; i++) addInvoice(t, c, 100)
+    addInvoice(t, c, 9999, 'DRAFT')
+    addInvoice(t, c, 8888, 'CANCELLED')
+
+    const { server, tools } = fakeServer()
+    registerFinanceTools(server, t)
+    const res = parseOk(await tools['get_ar_aging']({ as_of: '2026-03-01' }))
+
+    expect(res.totals.docCount).toBe(55)
+    expect(res.totals.outstanding).toBe(5500)
+    expect(res.parties[0].address).toBe('ที่อยู่ บริษัท ทดสอบ')
+    expect(res.parties[0].taxId).toBe('0105555000001')
+    expect(res).toEqual(arAging(t, '2026-03-01'))
+  })
+
+  it('กรอง overdue_only / ชื่อลูกค้า แล้วยอดรวมตรงกับรายการที่เหลือ', async () => {
+    const t = setupTenant()
+    addInvoice(t, addCustomer(t, 'ร้านเอ'), 100, 'ISSUED', '2026-01-01')     // เกินกำหนด
+    addInvoice(t, addCustomer(t, 'ร้านบี'), 200, 'ISSUED', '2026-12-31')     // ยังไม่ถึง
+
+    const { server, tools } = fakeServer()
+    registerFinanceTools(server, t)
+    const overdue = parseOk(await tools['get_ar_aging']({ as_of: '2026-03-01', overdue_only: true }))
+    expect(overdue.totals).toMatchObject({ outstanding: 100, overdue: 100, docCount: 1, partyCount: 1 })
+
+    const byName = parseOk(await tools['get_ar_aging']({ as_of: '2026-03-01', customer_name: 'บี' }))
+    expect(byName.parties.map((p: any) => p.name)).toEqual(['ร้านบี'])
+    expect(byName.totals.outstanding).toBe(200)
+  })
+})
+
+describe('MCP get_financial_summary', () => {
+  it('ยอดลูกหนี้คงค้างไม่รวมใบ DRAFT/CANCELLED', async () => {
+    const t = setupTenant()
+    const c = addCustomer(t, 'ร้านซี')
+    addInvoice(t, c, 300)
+    addInvoice(t, c, 5000, 'DRAFT')
+    addInvoice(t, c, 7000, 'CANCELLED')
+
+    const { server, tools } = fakeServer()
+    registerFinanceTools(server, t)
+    const res = parseOk(await tools['get_financial_summary']({ period: 'ytd' }))
+    expect(res.accounts_receivable.total_outstanding).toBe(300)
+    expect(res.accounts_receivable.overdue_count).toBe(1)
+  })
+})

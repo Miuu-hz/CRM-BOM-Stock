@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: 20 กรกฎาคม 2026
+> อัปเดตล่าสุด: 27 กันยายน 2026
 
 ---
 
@@ -58,6 +58,7 @@
 |--------|--------|------------|
 | **MRP** | 🚧 | Material Requirements Planning |
 | **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
+| **MCP รายงานบัญชี (TB/Ledger)** | 🚧 | ต่อ prompt บัญชี 24 ตัวเข้า ERP — แผนอยู่ใน Session Log 27 ก.ย. 2026 |
 | ~~**POS KDS**~~ | ✅ | ใช้งาน production แล้ว (ticket-based, polling 3 วิ, เสียง+notification) — ย้ายขึ้นหัวข้อพร้อมใช้งานได้ |
 | **Sales Journal Preview** | 🚧 | Dr/Cr preview + เลือก account ก่อนบันทึก (3 จุด: Invoice/Receipt/CreditNote) |
 
@@ -1001,3 +1002,71 @@ DB: /root/dev.db.bak-20260913-do, -loyalty, -prebackfill
 - ApprovalInbox ยัง render สรุป PO เอง ไม่ได้ใช้ `OrderModal` ของหน้าจัดซื้อ
 - **ยังไม่เคยเห็นหน้าจริงด้วยตา** — ไม่มีรหัสล็อกอินของเจ้าของ ตรวจถึงระดับ query/HTTP เท่านั้น
 - ตรวจ flow รอบใหญ่ (สายซื้อ PR→PO→GR→PI, แผนที่สต็อกทั้งระบบ, บัญชีทั้ง 2 สาย) — สั่ง agent ไว้ 3 ตัว ผลยังไม่ออก
+
+---
+
+## 📅 Session Log — 27 กันยายน 2026 (งบทดลองนับซ้ำ/ยอดหาย + MCP ลูกหนี้-เจ้าหนี้เขียน SQL ซ้ำ + แผนต่อ prompt บัญชี)
+
+จุดเริ่ม: อยากให้ชุด prompt บัญชี 24 ตัว (เดิมมาจาก Uthen Power ต้องแนบไฟล์ Excel/PDF เอง) ดึงข้อมูลจาก ERP ได้โดยตรง
+ตอนไล่ดูจุดเชื่อมเจอว่า ERP มี REST รายงานกับ MCP อยู่แล้ว **แต่ตัวเลขที่ส่งออกไปผิด** เลยแก้บั๊กก่อน ส่วน tool ตัวใหม่เก็บไว้เป็นแผน (ข้อ 4)
+
+### 1. งบทดลอง (`routes/reports.routes.ts` → `buildTrialBalance()`)
+- **ยอดผิดฝั่งหายจากงบ:** เดิมวางยอดตาม `normal_balance` (`DEBIT && x>0 ? x : 0`) ทำให้บัญชีเดบิตที่ติดลบถูกปัดเป็น 0 **ทั้งสองฝั่ง**
+  ของจริง: tenant_bb_pillow ธนาคาร 1102 = **−6,965.34** ไม่ขึ้นในงบทดลองเลย ทั้งที่เป็นเคสที่ต้องจับที่สุด ("เงินฝากติดลบ")
+  → แก้เป็นใช้ `net = Dr − Cr` แล้ววางตามเครื่องหมาย (response shape เดิม frontend ไม่ต้องแก้)
+- **ไม่ส่ง startDate แล้วยอดเป็น 2 เท่า:** query ยอดยกมาไม่มีเงื่อนไขวันที่ → นับทุกรายการ แล้วนับความเคลื่อนไหวทุกรายการซ้ำอีกรอบ (เทสต์จับได้: เงินฝากติดลบ 1,000 ได้ 2,000)
+  → ไม่มี startDate = ไม่มียอดยกมา (ไม่รัน query ยกมาเลย)
+- แยก body ของ route ออกมาเป็น `export function buildTrialBalance(tenantId, startDate?, endDate?)` ให้เทสต์และ MCP ในอนาคตเรียกตัวเดียวกัน
+
+### 2. MCP `get_ar_aging` / `get_ap_aging` (`mcp/tools/finance.ts`)
+เดิมเขียน SQL เองแยกจาก REST `/api/receivables/ar-aging` แล้วหลุดไป 4 อย่าง:
+| ปัญหา | ผลจริง (Testshop) |
+|---|---|
+| ไม่กรอง DRAFT/CANCELLED | ใบแจ้งหนี้ DRAFT 6 ใบถูกนับเป็นหนี้ |
+| `LIMIT 50` | บิลค้างมี 111 ใบ → ยอดรวมและรายชื่อลูกหนี้ขาด |
+| bucket/วันที่คนละแบบกับ REST (`julianday('now')`) | MCP กับหน้าเว็บให้ตัวเลขไม่ตรงกัน |
+| ไม่มีที่อยู่/เลขผู้เสียภาษี | ทำจดหมายยืนยันยอดไม่ได้ |
+
+→ `receivables.routes.ts` export `arAging()` / `apAging()` (SELECT เดิม + `address`, `tax_id`) ให้ทั้ง REST และ MCP เรียก **ลบ SQL และ bucket ชุดเก่าใน MCP ทิ้ง** เพิ่ม param `as_of` ส่วน `overdue_only` / `*_name` กรองบนผลลัพธ์แล้วคำนวณยอดรวมใหม่
+(grep แล้วไม่มีใครใช้ output key เก่า `aging_buckets` / `invoices` / `total_unpaid_invoices`)
+
+### 3. MCP `get_financial_summary`
+ยอด AR/AP คงค้างและเกินกำหนด 4 query ไม่กรอง DRAFT/CANCELLED (ขณะที่ revenue/expense ในฟังก์ชันเดียวกันกรองแล้ว) → เพิ่มเงื่อนไข
+⚠️ ยังไม่แก้: `gross_profit = เงินรับ − เงินจ่าย` เป็นเกณฑ์เงินสด แต่ตั้งชื่อว่ากำไรขั้นต้น ยังไม่เปลี่ยนชื่อ key เพราะเสี่ยงให้ consumer พัง ถ้าจะแก้ให้ใช้ journal (4101/5101) แบบ Phopy Board
+
+### เทสต์ — `mcp/tools/finance.test.ts` (4 เทสต์, ใช้ test.db)
+เงินฝากติดลบไปอยู่ฝั่งเครดิตและ ΣDr=ΣCr (มีและไม่มี startDate) · aging 55 ใบ + DRAFT + CANCELLED นับได้ 55 และ MCP = `arAging()` · กรอง overdue/ชื่อแล้วยอดตรงกับรายการ · summary ไม่รวม DRAFT
+
+### ข้อมูลเพี้ยน (ไม่ใช่บั๊กโค้ด — ไม่ patch DB ให้นักบัญชีแก้ผ่าน UI)
+- **Testshop — GL ลูกหนี้ไม่ตรงกับรายตัว:** GL 1104 = 1,215,065.47 แต่ใบแจ้งหนี้ค้าง = 2,049,032.88 (ต่าง 833,967)
+  ตรวจโค้ดแล้วลงบัญชีถูก (`salesBilling.service.ts:150/362`, `routes/sales/shared.ts:86/102`: ออกบิล Dr ลูกหนี้ / รับเงิน Cr ลูกหนี้)
+  สาเหตุคือข้อมูล seed: ใบ UNPAID 49 ใบลง Dr เงินสด/ธนาคาร (1.22M) และใบ PAID 34 ใบลง Dr ลูกหนี้โดยไม่มี JE รับชำระ (390k) · วันที่เป็นเที่ยงคืนเป๊ะแบบ seed
+  → ถ้าจะใช้ Testshop สาธิตการยืนยันยอดลูกหนี้ ต้อง seed ใหม่ให้ตรง ไม่งั้นจดหมายไม่ตรงกับงบ
+- **tenant_bb_pillow — `JV-FIX-0001`** (ซ่อม POS-2026-00007 ด้วยมือ): บรรทัด Dr 17.655 / Cr 16.155 แต่ header บอก 17.655/17.655 → งบทดลองต่าง 1.50 → ทำรายการปรับปรุงหรือกลับรายการผ่านหน้า Journal
+- **tenant_msqy2xbn (F&B เบดดิ้ง):** ยังไม่มี journal · ลูกค้า 257/381 ไม่มีเลขผู้เสียภาษี, 77 ไม่มีที่อยู่ → จดหมายยืนยันยอดจะเว้นว่าง
+
+### 4. แผนพัฒนาต่อ: ต่อ prompt บัญชี 24 ตัวเข้า MCP (ยังไม่ทำ)
+prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPUT/INSTRUCTION/VALIDATION/OUTPUT) **ส่วนเดียวที่ผูกกับไฟล์แนบคือ INPUT** → ไม่ต้องเขียน prompt ใหม่ แค่ให้ tool ส่งข้อมูลแทนไฟล์
+
+| prompt | ข้อมูลที่ต้องใช้ | แหล่งใน ERP | tool |
+|---|---|---|---|
+| AD001 ตรวจงบทดลองผิดปกติ · กระดาษทำการ 12 ช่อง · วิเคราะห์งบย่อส่วน · อัตราส่วน | TB + type/category | `buildTrialBalance()` | ❌ ต้องเพิ่ม `get_trial_balance` |
+| AD004 ยืนยันยอดลูกหนี้ · AD005 กระดาษทำการ AR · จดหมายติดตามหนี้ | AR รายบิล + ที่อยู่/เลขภาษี | `arAging()` | ✅ `get_ar_aging` (แก้แล้ว) |
+| AD002 ยืนยันยอดเจ้าหนี้ | AP รายบิล + ที่อยู่ | `apAging()` | ✅ `get_ap_aging` (แก้แล้ว) |
+| งบพิสูจน์ยอดธนาคาร | GL ธนาคาร (statement แนบเอง) | route `/ledger/:accountId` | ❌ ต้องเพิ่ม `get_ledger` |
+| หัวจดหมายทุกฉบับ | ชื่อ/ที่อยู่/เลขภาษีบริษัท | `company_settings` | แนบเป็น `company` block ใน tool ข้างบน |
+
+**ทำอย่างไร (ห้ามเขียน SQL ชุดใหม่):**
+1. `get_trial_balance(start_date?, end_date?)` → เรียก `buildTrialBalance()` + แนบ `company`
+2. `get_ledger(account_code, start_date?, end_date?)` → แยก `/ledger/:accountId` เป็น `buildLedger()` แบบเดียวกับ TB หา id จาก `accounts.code` + tenant
+3. งบย่อส่วน/อัตราส่วนคำนวณจาก TB + `accounts.type/category` ได้ (มี COGS, DEPRECIATION, ACCUM_DEPRECIATION ฯลฯ ครบ) **ยังไม่ต้องมี tool งบดุล/กำไรขาดทุนแยก** จะเพิ่มก็ต่อเมื่อต้องการ OCF ratio จริง (แยก `/cash-flow` แบบเดียวกัน)
+4. **pre-flight ก่อนรัน prompt กลุ่ม AR/AP:** เทียบ GL 1104/2101 จาก TB กับ `totals.outstanding` ของ aging ถ้าไม่ตรงให้หยุดแล้วรายงานผลต่าง (กันกรณีแบบ Testshop)
+5. ฝั่ง prompt: skill เดียวทำหน้าที่แมป prompt → tool → คอลัมน์ในส่วน INPUT และตัดข้อความขยะจาก UI Uthen Power (~110 บรรทัดแรกของทุกไฟล์: "Back / Uthen Power / My Space / … / Toggle show tool calls") ก่อนใช้
+
+**prompt ที่ไม่ควรต่อ (ERP ไม่มีข้อมูล หรือเป็นงาน legal/design/OCR):** สัญญาเช่า, ผังงานเงินเดือน (ไม่มี employees/payroll), ผังงาน WHT, วิเคราะห์เอกสาร, ตรวจคุณภาพเอกสาร, ค้ำประกันเกินสิทธิ์, เชิญประชุมผู้ถือหุ้น (ไม่มี shareholders), วิเคราะห์การลงทุน, ซื้อสินทรัพย์ (**ไม่มี fixed_assets / ค่าเสื่อม**), ผลิต/ต้นทุน, ระบบจัดเอกสาร, วิเคราะห์กระบวนการขาย, ร่างจดหมายติดตามหนี้ (เทมเพลต)
+→ ถ้าจะต่อ ต้องสร้างโมดูลใน ERP ก่อน: ทะเบียนสินทรัพย์+ค่าเสื่อม, bank statement import, payroll
+
+### สถานะ
+- แก้ 3 ไฟล์ + เทสต์ใหม่ 1 ไฟล์ · `tsc --noEmit` ผ่าน (รอบแรก)
+- ⏳ ต้องรันเทสต์ `vitest run src/mcp/tools/finance.test.ts` + ทั้งชุด, `npm run build`, `pm2 restart crm-backend` แล้วตรวจ: TB ของ tenant_bb_pillow ต้องขึ้น 1102 ฝั่งเครดิต 6,965.34 · `get_ar_aging` ของ Testshop ต้องได้ 111 ใบ ยอดเท่ากับ `/api/receivables/ar-aging`
+- ยังไม่ commit (branch `ui`)
