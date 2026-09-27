@@ -1067,6 +1067,14 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 → ถ้าจะต่อ ต้องสร้างโมดูลใน ERP ก่อน: ทะเบียนสินทรัพย์+ค่าเสื่อม, bank statement import, payroll
 
 ### สถานะ
-- แก้ 3 ไฟล์ + เทสต์ใหม่ 1 ไฟล์ · `tsc --noEmit` ผ่าน (รอบแรก)
-- ⏳ ต้องรันเทสต์ `vitest run src/mcp/tools/finance.test.ts` + ทั้งชุด, `npm run build`, `pm2 restart crm-backend` แล้วตรวจ: TB ของ tenant_bb_pillow ต้องขึ้น 1102 ฝั่งเครดิต 6,965.34 · `get_ar_aging` ของ Testshop ต้องได้ 111 ใบ ยอดเท่ากับ `/api/receivables/ar-aging`
-- ยังไม่ commit (branch `ui`)
+- แก้ 3 ไฟล์ + เทสต์ใหม่ 1 ไฟล์ · `tsc` สะอาด · **เทสต์ 62 ไฟล์ 355 เทสต์ผ่าน** · `npm run build` + `pm2 restart crm-backend` แล้ว (online)
+- commit `5d28685` บน branch `ui`
+- ยังไม่ได้ดูตัวเลขบนหน้าจอจริง (ต้องใช้ token ผู้ใช้): งบทดลอง tenant_bb_pillow ต้องขึ้น 1102 ฝั่งเครดิต 6,965.34 · งบทดลองที่ไม่เลือกวันเริ่มต้นจะเหลือครึ่งจากเดิม (ตัวเลขที่ถูกแล้ว)
+
+### ไล่ `Update PO error: FOREIGN KEY constraint failed` ที่ค้างใน `crm-backend-error.log`
+เห็นหลัง restart เลยไล่ต่อ สรุปว่า**เป็น log เก่า แก้ไปแล้ว ไม่ต้องแก้โค้ด**
+- 8 ครั้งในไฟล์ log (ไฟล์เขียนล่าสุด 20 ก.ย.) ตรงกับเคส PO-2026-00033 เมื่อ 18 ก.ย. (แก้ครั้งสุดท้ายเวลา 09:32 ตามที่บันทึกไว้ในคอมเมนต์ของ service)
+- stack ชี้ `purchaseOrderUpdate.service.ts:113` / `:130` ซึ่งไม่ตรงกับไฟล์ปัจจุบัน (`transaction()` ย้ายไปอยู่ราว ๆ บรรทัด 250) = โค้ดรุ่นก่อน commit `1afa68a` (19 ก.ย.) ที่เพิ่ม `blankToNull` / `resolveSupplierId` / ตรวจ `materialId` / แก้แถวเดิมแทนลบ-ใส่ใหม่
+- ไล่ FK ครบทุกเส้นของการแก้ PO: `purchase_orders.supplier_id` (ตรวจแล้ว), `purchase_order_items.material_id` (ตรวจแล้ว), `goods_receipt_items` / `purchase_invoice_items` → `purchase_order_items` (กันลบแถวที่ถูกอ้างแล้ว) · `bank_account_id` ไม่มี FK
+- มีเทสต์ครอบคลุมอยู่แล้วที่ `services/purchaseOrderUpdate.test.ts` (อยู่ใน 355 ที่ผ่าน)
+- หมายเหตุข้างทาง (ยังไม่แก้): `materialId` ตรวจ `stock_items WHERE id = ?` โดยไม่เช็ค tenant → อ้างสินค้าของบริษัทอื่นได้ถ้ารู้ id · `PRAGMA foreign_key_check` เจอ `pos_daily_sales` ชี้ไปที่ `users` ที่ไม่มีอยู่แล้ว (ข้อมูลกำพร้า)
