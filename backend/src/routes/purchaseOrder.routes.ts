@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs } from '../services/approvalGate.service'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments } from '../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, resolveStockItemId, poBlockingDocuments } from '../services/purchaseOrderUpdate.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { z } from 'zod'
@@ -153,6 +153,7 @@ router.post('/', async (req: Request, res: Response) => {
     let supplierIdSafe: string | null
     try {
       supplierIdSafe = resolveSupplierId(tenantId, supplierId)
+      for (const item of items || []) item.materialId = resolveStockItemId(tenantId, item.materialId, item.description)
     } catch (e) {
       if (e instanceof PurchaseOrderUpdateError) {
         return res.status(400).json({ success: false, message: e.message })

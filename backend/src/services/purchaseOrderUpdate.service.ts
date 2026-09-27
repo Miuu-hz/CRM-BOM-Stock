@@ -36,6 +36,20 @@ export function resolveSupplierId(tenantId: string, supplierId: unknown): string
   return id
 }
 
+/**
+ * `materialId` ของรายการ PO = `stock_items.id` (ชื่อเก่าตั้งแต่ก่อนยุบ materials เข้า stock_items 2026-09-16
+ * ยังคงชื่อนี้ไว้เพราะฟอร์ม/MCP ส่งมาด้วยคีย์นี้) — ต้องเป็นสินค้าของเทแนนต์นี้เท่านั้น
+ * เดิมเช็คแค่ `WHERE id = ?` ใครรู้ id ก็ผูกสินค้าของบริษัทอื่นเข้า PO ตัวเองได้ แล้ว GR จะไปเพิ่มสต็อกให้บริษัทนั้น
+ */
+export function resolveStockItemId(tenantId: string, stockItemId: unknown, label?: string): string | null {
+  const id = blankToNull(stockItemId)
+  if (!id) return null
+  if (!db.prepare('SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId)) {
+    throw new PurchaseOrderUpdateError(`ไม่พบสินค้าในคลังของรายการ "${label || id}" — เลือกสินค้าใหม่อีกครั้ง`)
+  }
+  return id
+}
+
 export interface PurchaseOrderUpdatePayload {
   supplierId?: string | null
   expectedDate?: string | null
@@ -116,14 +130,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   const supplierId = resolveSupplierId(tenantId, payload.supplierId)
   const bankAccountId = blankToNull(payload.bankAccountId)
   if (items) {
-    for (const item of items) {
-      const mid = blankToNull(item.materialId)
-      if (mid && !db.prepare('SELECT 1 FROM stock_items WHERE id = ?').get(mid)) {
-        throw new PurchaseOrderUpdateError(
-          `ไม่พบสินค้าในคลังของรายการ "${item.description || mid}" — เลือกสินค้าใหม่อีกครั้ง`
-        )
-      }
-    }
+    for (const item of items) resolveStockItemId(tenantId, item.materialId, item.description)
   }
 
   let subtotal = 0

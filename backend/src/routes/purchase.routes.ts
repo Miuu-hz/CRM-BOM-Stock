@@ -21,6 +21,7 @@ import {
   type CreateGoodsReceiptLine,
 } from '../services/goodsReceipt.service'
 import { calcVat } from '../utils/vat'
+import { resolveStockItemId, PurchaseOrderUpdateError } from '../services/purchaseOrderUpdate.service'
 import {
   createPurchaseInvoice,
   paySupplier,
@@ -1378,6 +1379,13 @@ router.post('/returns', async (req: Request, res: Response) => {
     const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
     if (!po) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
+    }
+
+    try {
+      for (const item of items || []) item.materialId = resolveStockItemId(tenantId, item.materialId, item.description)
+    } catch (e) {
+      if (e instanceof PurchaseOrderUpdateError) return res.status(400).json({ success: false, message: e.message })
+      throw e
     }
 
     const id = generateId()

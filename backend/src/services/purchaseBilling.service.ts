@@ -3,6 +3,7 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount } from './accounting.service'
 import { calcVat } from '../utils/vat'
+import { resolveStockItemId, PurchaseOrderUpdateError } from './purchaseOrderUpdate.service'
 
 /**
  * ตรรกะ "ออกใบแจ้งหนี้ซื้อ" และ "จ่ายเงินผู้ขาย" ยกออกมาจาก routes/purchase.routes.ts
@@ -33,7 +34,8 @@ export class PurchaseBillingError extends Error {
       | 'OVER_BALANCE'
   | 'PO_SUPPLIER_MISMATCH'
   | 'CR_ACCOUNT_INVALID'
-  | 'PO_CANCELLED',
+  | 'PO_CANCELLED'
+  | 'STOCK_ITEM_INVALID',
     message: string
   ) {
     super(message)
@@ -211,6 +213,15 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   //   3. รายการจากใบสั่งซื้อทุกใบที่รวมอยู่ในบิล  <-- ทางนี้เพิ่งเพิ่ม
   // เดิมไม่มีข้อ 3 ใบแจ้งหนี้ที่สร้างจาก dropdown ใบสั่งซื้อจึงไม่มีรายการสินค้าเลยสักบรรทัด
   // (เช็คข้อมูลจริงแล้ว: 13 จาก 13 ใบว่างทั้งหมด) และยอดก็มาจาก po.subtotal ดิบ ๆ
+  // materialId (= stock_items.id) ที่ส่งมาเองต้องเป็นของเทแนนต์นี้ (ที่ derive จาก GR/PO ผ่านการเช็คตอนสร้างเอกสารนั้นแล้ว)
+  for (const item of payload.items || []) {
+    try {
+      item.materialId = resolveStockItemId(tenantId, item.materialId)
+    } catch (e) {
+      if (e instanceof PurchaseOrderUpdateError) throw new PurchaseBillingError('STOCK_ITEM_INVALID', e.message)
+      throw e
+    }
+  }
   let items = (payload.items && payload.items.length > 0)
     ? payload.items
     : deriveItemsFromGoodsReceipts(tenantId, userPickedGrs)

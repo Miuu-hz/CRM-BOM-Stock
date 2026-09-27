@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { createTestUser } from '../test/testAuth'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError } from './purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveStockItemId } from './purchaseOrderUpdate.service'
+import { createGoodsReceipt, GoodsReceiptError } from './goodsReceipt.service'
 
 /**
  * แก้ไขใบสั่งซื้อแล้วได้ 500 "FOREIGN KEY constraint failed" (PO-2026-00033 · 2026-09-18)
@@ -178,5 +179,24 @@ describe('applyPurchaseOrderUpdate — ใบที่มีใบรับข�
       items: [{ id: poItemId, materialId: stockId, description: 'ของที่รับมาแล้ว', quantity: 2, unit: 'pcs', unitPrice: 10 }],
       taxRate: 0,
     })).toThrow(/รับของมาแล้ว/)
+  })
+
+  it('ผูกสินค้าของบริษัทอื่น (materialId = stock_items.id ข้ามเทแนนต์) ต้องไม่ได้ ทั้งแก้ PO และสร้างใบรับของ', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const other = createTestUser({ role: 'ADMIN' })
+    const { poId } = seedPo(user.tenantId)
+    const { stockId: foreignStockId } = seedPo(other.tenantId)
+
+    // เดิมเช็คแค่ `WHERE id = ?` → ผ่าน
+    expect(() => applyPurchaseOrderUpdate(user.tenantId, poId, {
+      items: [{ materialId: foreignStockId, description: 'ของบริษัทอื่น', quantity: 1, unit: 'pcs', unitPrice: 1 }],
+      taxRate: 0,
+    })).toThrow(PurchaseOrderUpdateError)
+    expect(resolveStockItemId(other.tenantId, foreignStockId)).toBe(foreignStockId)
+
+    expect(() => createGoodsReceipt(user.tenantId, 'a@b.c', {
+      purchaseOrderId: poId,
+      items: [{ poItemId: null as any, materialId: foreignStockId, orderedQty: 1, receivedQty: 1, acceptedQty: 1, rejectedQty: 0 }] as any,
+    })).toThrow(GoodsReceiptError)
   })
 })

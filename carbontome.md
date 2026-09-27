@@ -1077,4 +1077,12 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - stack ชี้ `purchaseOrderUpdate.service.ts:113` / `:130` ซึ่งไม่ตรงกับไฟล์ปัจจุบัน (`transaction()` ย้ายไปอยู่ราว ๆ บรรทัด 250) = โค้ดรุ่นก่อน commit `1afa68a` (19 ก.ย.) ที่เพิ่ม `blankToNull` / `resolveSupplierId` / ตรวจ `materialId` / แก้แถวเดิมแทนลบ-ใส่ใหม่
 - ไล่ FK ครบทุกเส้นของการแก้ PO: `purchase_orders.supplier_id` (ตรวจแล้ว), `purchase_order_items.material_id` (ตรวจแล้ว), `goods_receipt_items` / `purchase_invoice_items` → `purchase_order_items` (กันลบแถวที่ถูกอ้างแล้ว) · `bank_account_id` ไม่มี FK
 - มีเทสต์ครอบคลุมอยู่แล้วที่ `services/purchaseOrderUpdate.test.ts` (อยู่ใน 355 ที่ผ่าน)
-- หมายเหตุข้างทาง (ยังไม่แก้): `materialId` ตรวจ `stock_items WHERE id = ?` โดยไม่เช็ค tenant → อ้างสินค้าของบริษัทอื่นได้ถ้ารู้ id · `PRAGMA foreign_key_check` เจอ `pos_daily_sales` ชี้ไปที่ `users` ที่ไม่มีอยู่แล้ว (ข้อมูลกำพร้า)
+- หมายเหตุข้างทาง (ยังไม่แก้): `PRAGMA foreign_key_check` เจอ `pos_daily_sales` ชี้ไปที่ `users` ที่ไม่มีอยู่แล้ว (ข้อมูลกำพร้า)
+
+### ✅ `materialId` ข้ามบริษัทได้ — ปิดแล้ว
+`materialId` ของรายการซื้อ = `stock_items.id` (ชื่อเก่าจากก่อนยุบ materials เข้า stock_items 16 ก.ย. ยังคงชื่อคีย์ไว้เพราะฟอร์ม/MCP ส่งมาด้วยชื่อนี้)
+เดิมมีทางเข้า 6 ทางที่รับ id จากผู้ใช้โดยไม่เช็คเทแนนต์: แก้ PO (`WHERE id = ?` อย่างเดียว), สร้าง PO, MCP `update_purchase_order`, สร้างใบรับของ, ออกใบแจ้งหนี้ซื้อที่ส่ง items มาเอง, ใบคืนของ
+ตัวที่ขยับสต็อก (ยืนยัน GR / ใบคืนของ) เช็ค `tenant_id` อยู่แล้ว สต็อกบริษัทอื่นจึงไม่ถูกแตะ แต่ id ต่างบริษัทยังเข้าไปอยู่ในเอกสารได้ แล้ว `LEFT JOIN stock_items` ที่ไม่มี tenant ก็เอาชื่อ/SKU ของบริษัทอื่นมาแสดง
+→ helper เดียว `resolveStockItemId(tenantId, id, label?)` ใน `purchaseOrderUpdate.service.ts` (ข้างๆ `resolveSupplierId`) ใช้ครบทั้ง 6 ทาง · ตอบ 400 พร้อมข้อความ (GR ใช้ code `UNBOUND_ITEM`, PI ใช้ code ใหม่ `STOCK_ITEM_INVALID`)
+เทสต์ข้ามเทแนนต์เพิ่มใน `purchaseOrderUpdate.test.ts` · ชุดเต็ม 62 ไฟล์ 356 เทสต์ผ่าน · build + restart แล้ว
+ค้าง: MCP `update_purchase_order` ยังลบรายการทั้งใบแล้วใส่ใหม่ และคิด VAT แบบแยกนอกเสมอ (ซ้ำกับ `applyPurchaseOrderUpdate` ที่แก้ไปแล้ว) · ใช้ได้เฉพาะ PO ที่เป็น DRAFT ความเสี่ยงเลยต่ำ แต่ควรให้เรียก service ตัวเดียวกัน

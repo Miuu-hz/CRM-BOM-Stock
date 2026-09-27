@@ -14,6 +14,7 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
+import { resolveStockItemId, PurchaseOrderUpdateError } from '../../services/purchaseOrderUpdate.service'
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -543,6 +544,13 @@ items ถ้าส่งมาจะแทนที่รายการทั�
           SELECT id FROM suppliers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1
         `).get(tenantId, `%${supplier_hint}%`, `%${supplier_hint}%`) as any
         if (sup) supplierId = sup.id
+      }
+
+      try {
+        for (const it of items || []) it.materialId = resolveStockItemId(tenantId, it.materialId, it.description) ?? undefined
+      } catch (e) {
+        if (e instanceof PurchaseOrderUpdateError) return ok({ success: false, message: e.message })
+        throw e
       }
 
       const taxPct = tax_rate ?? po.tax_rate ?? 7

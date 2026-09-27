@@ -5,6 +5,7 @@ import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
 import { postJournal } from './accounting.service'
 import { ACC } from '../config/accountCodes'
+import { resolveStockItemId, PurchaseOrderUpdateError } from './purchaseOrderUpdate.service'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -101,6 +102,16 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
   if (!po) throw new GoodsReceiptError('PO_NOT_FOUND', 'Purchase order not found')
   if (po.status === 'RECEIVED') throw new GoodsReceiptError('PO_RECEIVED', 'ใบสั่งซื้อนี้รับสินค้าครบแล้ว')
   if (po.status === 'CANCELLED') throw new GoodsReceiptError('PO_CANCELLED', 'ใบสั่งซื้อนี้ถูกยกเลิกไปแล้ว')
+
+  // materialId (= stock_items.id) มาจากฟอร์ม ต้องเป็นของเทแนนต์นี้
+  for (const item of items || []) {
+    try {
+      item.materialId = resolveStockItemId(tenantId, item.materialId)
+    } catch (e) {
+      if (e instanceof PurchaseOrderUpdateError) throw new GoodsReceiptError('UNBOUND_ITEM', e.message)
+      throw e
+    }
+  }
 
   const existingDraft = db.prepare(
     "SELECT id, gr_number FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ? AND status = 'DRAFT'"
