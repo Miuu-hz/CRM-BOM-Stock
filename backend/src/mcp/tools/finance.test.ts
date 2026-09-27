@@ -133,3 +133,56 @@ describe('MCP get_financial_summary', () => {
     expect(res.accounts_receivable.overdue_count).toBe(1)
   })
 })
+
+describe('MCP get_trial_balance / get_ledger — เฉพาะ MASTER/ADMIN', () => {
+  function seedBankJournal(t: string) {
+    const acc = (code: string, type: string) => {
+      const id = generateId()
+      db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance, is_active)
+                  VALUES (?, ?, ?, ?, ?, 'X', 'DEBIT', 1)`).run(id, t, code, code, type)
+      return id
+    }
+    const bank = acc('1102', 'ASSET')
+    const exp = acc('5302', 'EXPENSE')
+    const line = db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?, ?)`)
+    for (const [date, amt] of [['2026-04-01', 500], ['2026-05-01', 300]] as const) {
+      const je = generateId()
+      db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, description, is_posted)
+                  VALUES (?, ?, ?, ?, 'ค่าเช่า', 1)`).run(je, t, 'JV-' + je.slice(0, 6), date)
+      line.run(generateId(), t, je, exp, amt, 0)
+      line.run(generateId(), t, je, bank, 0, amt)
+    }
+  }
+
+  it('USER มองไม่เห็น tool · ADMIN/MASTER เห็น', () => {
+    for (const [role, visible] of [['USER', false], ['ADMIN', true], ['MASTER', true]] as const) {
+      const { server, tools } = fakeServer()
+      registerFinanceTools(server, 'tenant_x', role)
+      expect(!!tools['get_trial_balance'], role).toBe(visible)
+      expect(!!tools['get_ledger'], role).toBe(visible)
+      expect(tools['get_ar_aging'], 'AR/AP ยังเห็นทุก role').toBeTypeOf('function')
+    }
+  })
+
+  it('get_ledger ไม่ส่ง start_date ยอดปิดต้องไม่เป็น 2 เท่า · ส่ง start_date แล้วยอดยกมาถูก', async () => {
+    const t = setupTenant()
+    seedBankJournal(t)
+    const { server, tools } = fakeServer()
+    registerFinanceTools(server, t, 'ADMIN')
+
+    const all = parseOk(await tools['get_ledger']({ account_code: '1102' }))
+    expect(all.openingBalance).toBe(0)
+    expect(all.closingBalance, 'เดิมได้ -1600').toBe(-800)
+
+    const may = parseOk(await tools['get_ledger']({ account_code: '1102', start_date: '2026-05-01' }))
+    expect(may.openingBalance).toBe(-500)
+    expect(may.transactions).toHaveLength(1)
+    expect(may.closingBalance).toBe(-800)
+
+    expect(parseOk(await tools['get_ledger']({ account_code: '9999' })).success).toBe(false)
+
+    const tb = parseOk(await tools['get_trial_balance']({}))
+    expect(tb.accounts.find((a: any) => a.code === '1102').endingCredit).toBe(800)
+    expect(tb.totals.endingDebit).toBe(tb.totals.endingCredit)
+  })
+})

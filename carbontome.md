@@ -58,7 +58,7 @@
 |--------|--------|------------|
 | **MRP** | 🚧 | Material Requirements Planning |
 | **COGS Recording** | 🚧 | Cost of Goods Sold auto-calculation |
-| **MCP รายงานบัญชี (TB/Ledger)** | 🚧 | ต่อ prompt บัญชี 24 ตัวเข้า ERP — แผนอยู่ใน Session Log 27 ก.ย. 2026 |
+| **MCP รายงานบัญชี (TB/Ledger)** | ✅ | ต่อ prompt บัญชี 24 ตัวเข้า ERP — แผนอยู่ใน Session Log 27 ก.ย. 2026 |
 | ~~**POS KDS**~~ | ✅ | ใช้งาน production แล้ว (ticket-based, polling 3 วิ, เสียง+notification) — ย้ายขึ้นหัวข้อพร้อมใช้งานได้ |
 | **Sales Journal Preview** | 🚧 | Dr/Cr preview + เลือก account ก่อนบันทึก (3 จุด: Invoice/Receipt/CreditNote) |
 
@@ -1050,10 +1050,10 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 
 | prompt | ข้อมูลที่ต้องใช้ | แหล่งใน ERP | tool |
 |---|---|---|---|
-| AD001 ตรวจงบทดลองผิดปกติ · กระดาษทำการ 12 ช่อง · วิเคราะห์งบย่อส่วน · อัตราส่วน | TB + type/category | `buildTrialBalance()` | ❌ ต้องเพิ่ม `get_trial_balance` |
+| AD001 ตรวจงบทดลองผิดปกติ · กระดาษทำการ 12 ช่อง · วิเคราะห์งบย่อส่วน · อัตราส่วน | TB + type/category | `buildTrialBalance()` | ✅ `get_trial_balance` (MASTER/ADMIN) |
 | AD004 ยืนยันยอดลูกหนี้ · AD005 กระดาษทำการ AR · จดหมายติดตามหนี้ | AR รายบิล + ที่อยู่/เลขภาษี | `arAging()` | ✅ `get_ar_aging` (แก้แล้ว) |
 | AD002 ยืนยันยอดเจ้าหนี้ | AP รายบิล + ที่อยู่ | `apAging()` | ✅ `get_ap_aging` (แก้แล้ว) |
-| งบพิสูจน์ยอดธนาคาร | GL ธนาคาร (statement แนบเอง) | route `/ledger/:accountId` | ❌ ต้องเพิ่ม `get_ledger` |
+| งบพิสูจน์ยอดธนาคาร | GL ธนาคาร (statement แนบเอง) | `buildLedger()` | ✅ `get_ledger` (MASTER/ADMIN) |
 | หัวจดหมายทุกฉบับ | ชื่อ/ที่อยู่/เลขภาษีบริษัท | `company_settings` | แนบเป็น `company` block ใน tool ข้างบน |
 
 **ทำอย่างไร (ห้ามเขียน SQL ชุดใหม่):**
@@ -1097,3 +1097,11 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
   - ที่ยังอ่าน `stock_items WHERE id = ?` โดยไม่ดู tenant เหลือเฉพาะการอ่านซ้ำหลังจาก id ผ่านการเช็คแล้ว (ดึงชื่อ/หน่วยมาแสดง) ไม่ใช่ทางเข้า
 - ✅ ย้ายแล้ว: `resolveStockItemId` + `StockItemRefError` อยู่ที่ `services/stockItem.service.ts` · ผู้เรียกตรง (สร้าง PO, GR, PI, ใบคืนของ, ใบสั่งผลิต) จับ `StockItemRefError` → 400 · `applyPurchaseOrderUpdate` แปลงเป็น `PurchaseOrderUpdateError` ที่เดียว ผู้เรียก service (REST PUT, MCP, ผู้อนุมัติ) จึงไม่ต้องแก้ · 357 ผ่าน
 - เทสต์ใหม่: MCP แก้แค่หมายเหตุแล้ว รายการ/ยอด/ส่วนลด/วันที่/`skip_stock` ต้องอยู่ครบ + ส่งสินค้าบริษัทอื่นต้องถูกปฏิเสธ · ชุดเต็ม 62 ไฟล์ 357 เทสต์ผ่าน · build + restart แล้ว
+
+### ✅ MCP `get_trial_balance` / `get_ledger` (แผนข้อ 4 ข้อ 1–2)
+- **เห็นเฉพาะ MASTER (master key) และ ADMIN** — `registerFinanceTools(server, tenantId, callerRole)` ไม่ลงทะเบียน 2 tool นี้ให้ role อื่นเลย AI ของ USER จึงมองไม่เห็น (AR/AP aging ยังเห็นทุก role เหมือนเดิม)
+- `get_trial_balance(start_date?, end_date?)` → `buildTrialBalance()` + `company` (ชื่อ ที่อยู่ เลขภาษี สาขา)
+- `get_ledger(account_code, start_date?, end_date?)` → หา id จาก `accounts.code` + tenant แล้วเรียก `buildLedger()` (แยกออกจาก `/reports/ledger/:accountId` ให้ route ใช้ร่วมกัน response เดิม)
+- 🐛 **เจอบั๊กเดียวกับงบทดลองใน ledger:** ไม่ส่ง startDate → ยอดยกมารวมทุกรายการแล้วบวกรายการซ้ำ ยอดปิดเป็น 2 เท่า → แก้แล้ว (ไม่มี startDate = ยอดยกมา 0)
+- เทสต์: role ที่มองเห็น tool · ledger ไม่เป็น 2 เท่า + ยอดยกมาเมื่อระบุวัน · TB ผ่าน MCP ดุล · ชุดเต็ม 62 ไฟล์ 359 ผ่าน · build + restart แล้ว
+- ยังไม่ได้ทำ (แผนข้อ 4 ข้อ 4–5): pre-flight เทียบ GL 1104/2101 กับ aging ก่อนออกจดหมาย และ skill ฝั่ง prompt

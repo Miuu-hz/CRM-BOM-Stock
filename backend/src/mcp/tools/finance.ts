@@ -3,8 +3,12 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { ok } from './shared'
 import { arAging, apAging } from '../../routes/receivables.routes'
+import { buildTrialBalance, buildLedger } from '../../routes/reports.routes'
 
-export function registerFinanceTools(server: IMcpServer, tenantId: string): void {
+// ตัวเลขบัญชีทั้งเล่ม — ให้เห็นเฉพาะเจ้าของ (MASTER = master key) และ ADMIN
+const LEDGER_ROLES = ['MASTER', 'ADMIN']
+
+export function registerFinanceTools(server: IMcpServer, tenantId: string, callerRole = 'USER'): void {
   // ── 19–20. get_ar_aging / get_ap_aging ──────────────────────────────────────
   // เรียก arAging/apAging ตัวเดียวกับ REST /api/receivables — เดิมเขียน SQL ซ้ำเองแล้วหลุด:
   // นับใบ DRAFT/CANCELLED, ตัดที่ LIMIT 50, bucket ไม่ตรง REST, ไม่มีที่อยู่/เลขภาษี (แก้ 2026-09-27)
@@ -158,6 +162,45 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string): void
           overdue_count: apOverdue.count,
         },
       })
+    }
+  )
+
+  // ── get_trial_balance / get_ledger — ไม่ลงทะเบียนเลยถ้า role ไม่ถึง (AI ของ USER มองไม่เห็น tool นี้) ──
+  if (!LEDGER_ROLES.includes(callerRole)) return
+
+  const company = () => db.prepare(
+    'SELECT name, address, tax_id, tax_branch, phone, email FROM company_settings WHERE tenant_id = ?'
+  ).get(tenantId) ?? null
+  const dateArg = (d: string) => z.string().regex(/^d{4}-d{2}-d{2}$/).optional().describe(d)
+
+  server.tool(
+    'get_trial_balance',
+    `งบทดลอง (Trial Balance) จากสมุดรายวันที่ผ่านรายการแล้ว / Trial balance from posted journals.
+ใช้เมื่อถาม "งบทดลองดุลไหม" "ยอดคงเหลือแต่ละบัญชี" หรือทำงานตรวจงบทดลอง/กระดาษทำการ/วิเคราะห์งบการเงิน
+แสดง: รายบัญชี (รหัส ชื่อ ประเภท หมวด) ยอดยกมา Dr/Cr, ความเคลื่อนไหว, ยอดคงเหลือ Dr/Cr + ยอดรวม + ข้อมูลบริษัท
+ไม่ระบุ start_date = ไม่มียอดยกมา (นับทุกรายการตั้งแต่ต้น)`,
+    {
+      start_date: dateArg('วันเริ่มงวด YYYY-MM-DD (ยอดก่อนวันนี้เป็นยอดยกมา)'),
+      end_date: dateArg('วันสิ้นงวด YYYY-MM-DD'),
+    },
+    async (args) => ok({ company: company(), ...buildTrialBalance(tenantId, args.start_date, args.end_date) })
+  )
+
+  server.tool(
+    'get_ledger',
+    `บัญชีแยกประเภท (General Ledger) ของบัญชีเดียว / Ledger of one account with running balance.
+ใช้เมื่อถาม "บัญชีเงินฝากเคลื่อนไหวอะไรบ้าง" "ลูกหนี้การค้าเดือนนี้" หรือทำงบพิสูจน์ยอดเงินฝาก
+account_code คือรหัสบัญชี เช่น 1102 (เงินฝากธนาคาร), 1104 (ลูกหนี้การค้า), 2101 (เจ้าหนี้การค้า)`,
+    {
+      account_code: z.string().describe('รหัสบัญชี เช่น 1102 หรือ 1102-01'),
+      start_date: dateArg('วันเริ่ม YYYY-MM-DD (ยอดก่อนวันนี้เป็นยอดยกมา)'),
+      end_date: dateArg('วันสิ้นสุด YYYY-MM-DD'),
+    },
+    async (args) => {
+      const acc = db.prepare('SELECT id FROM accounts WHERE code = ? AND tenant_id = ?').get(args.account_code.trim(), tenantId) as any
+      const data = acc && buildLedger(tenantId, acc.id, args.start_date, args.end_date)
+      if (!data) return ok({ success: false, message: `ไม่พบรหัสบัญชี ${args.account_code}` })
+      return ok({ company: company(), ...data })
     }
   )
 }

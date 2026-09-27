@@ -368,44 +368,29 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   }
 })
 
-// Account Ledger - รายละเอียดบัญชี
-router.get('/ledger/:accountId', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { startDate, endDate } = req.query
-    
+// แยกออกจาก route ให้ MCP get_ledger เรียกตัวเดียวกัน · ไม่พบบัญชีในเทแนนต์นี้ = null
+export function buildLedger(tenantId: string, accountId: string, startDate?: string, endDate?: string) {
     // accounts table columns are snake_case; alias to camelCase so this
-    // response matches the frontend's Account type (was previously unused by
-    // any page, so no existing consumer depends on the raw snake_case shape).
+    // response matches the frontend's Account type
     const account = db.prepare(`
       SELECT id, code, name, name_en as nameEn, type, category, parent_id as parentId, level,
              is_active as isActive, is_system as isSystem, normal_balance as normalBalance,
              description, tax_related as taxRelated
       FROM accounts WHERE id = ? AND tenant_id = ?
-    `).get(req.params.accountId, tenantId) as any
-    if (!account) {
-      return res.status(404).json({ success: false, message: 'Account not found' })
-    }
+    `).get(accountId, tenantId) as any
+    if (!account) return null
 
-    // Calculate opening balance
-    let openingQuery = `
-      SELECT COALESCE(SUM(CASE
-        WHEN ? = 'DEBIT' THEN debit - credit
-        ELSE credit - debit
-      END), 0) as balance
-      FROM journal_lines jl
-      JOIN journal_entries je ON jl.journal_entry_id = je.id
-      WHERE jl.account_id = ? AND je.is_posted = 1
-    `
-    const openingParams: any[] = [account.normalBalance, req.params.accountId]
-    
-    if (startDate) {
-      openingQuery += ' AND je.date < ?'
-      openingParams.push(startDate)
-    }
-    
-    const openingBalance = db.prepare(openingQuery).get(...openingParams) as any
-    
+    // ยอดยกมา = ก่อน startDate เท่านั้น ไม่มี startDate = 0 (รายการนับตั้งแต่ต้นอยู่แล้ว)
+    // เดิมรัน query นี้โดยไม่มีเงื่อนไขวันที่ → ยอดยกมารวมทุกรายการแล้วบวกรายการซ้ำอีกรอบ ยอดปิดเป็น 2 เท่า (บั๊กเดียวกับงบทดลอง)
+    const openingBalance = startDate
+      ? Number((db.prepare(`
+          SELECT COALESCE(SUM(CASE WHEN ? = 'DEBIT' THEN debit - credit ELSE credit - debit END), 0) as balance
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id
+          WHERE jl.account_id = ? AND je.is_posted = 1 AND je.date < ?
+        `).get(account.normalBalance, accountId, startDate) as any).balance)
+      : 0
+
     // Get transactions
     let transactionsQuery = `
       SELECT
@@ -421,8 +406,8 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id = ? AND je.is_posted = 1
     `
-    const transactionsParams: any[] = [req.params.accountId]
-    
+    const transactionsParams: any[] = [accountId]
+
     if (startDate) {
       transactionsQuery += ' AND je.date >= ?'
       transactionsParams.push(startDate)
@@ -431,13 +416,13 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
       transactionsQuery += ' AND je.date <= ?'
       transactionsParams.push(endDate)
     }
-    
+
     transactionsQuery += ' ORDER BY je.date, je.created_at'
-    
+
     const transactions = db.prepare(transactionsQuery).all(...transactionsParams) as any[]
-    
+
     // Calculate running balance
-    let runningBalance = Number(openingBalance.balance)
+    let runningBalance = openingBalance
     const transactionsWithBalance = transactions.map(t => {
       if (account.normalBalance === 'DEBIT') {
         runningBalance += (t.debit - t.credit)
@@ -446,16 +431,19 @@ router.get('/ledger/:accountId', async (req: Request, res: Response) => {
       }
       return { ...t, balance: runningBalance }
     })
-    
-    res.json({
-      success: true,
-      data: {
-        account,
-        openingBalance: Number(openingBalance.balance),
-        transactions: transactionsWithBalance,
-        closingBalance: runningBalance
-      }
-    })
+
+    return { account, openingBalance, transactions: transactionsWithBalance, closingBalance: runningBalance }
+}
+
+// Account Ledger - รายละเอียดบัญชี
+router.get('/ledger/:accountId', async (req: Request, res: Response) => {
+  try {
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string }
+    const data = buildLedger(req.user!.tenantId, req.params.accountId, startDate, endDate)
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'Account not found' })
+    }
+    res.json({ success: true, data })
   } catch (error) {
     console.error('Ledger error:', error)
     res.status(500).json({ success: false, message: 'Failed to generate ledger' })
