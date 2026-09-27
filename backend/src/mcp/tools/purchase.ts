@@ -14,7 +14,7 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
-import { resolveStockItemId, PurchaseOrderUpdateError } from '../../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError } from '../../services/purchaseOrderUpdate.service'
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -536,8 +536,6 @@ items ถ้าส่งมาจะแทนที่รายการทั�
       if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })
       if (po.status !== 'DRAFT') return ok({ success: false, message: `ไม่สามารถแก้ไขได้ — PO สถานะ ${po.status} (ต้องเป็น DRAFT เท่านั้น)` })
 
-      const now = new Date().toISOString()
-
       let supplierId: string | null = null
       if (supplier_hint) {
         const sup = db.prepare(`
@@ -546,46 +544,33 @@ items ถ้าส่งมาจะแทนที่รายการทั�
         if (sup) supplierId = sup.id
       }
 
+      // เรียก applyPurchaseOrderUpdate ตัวเดียวกับ REST PUT /purchase-orders/:id — เดิมเขียนเองแล้ว
+      // ลบรายการทั้งใบแล้ว INSERT ใหม่ (ทิ้ง skip_stock/notes, id แถวเปลี่ยน), คิด VAT แยกนอกเสมอ,
+      // ไม่หักส่วนลด, ไม่เช็คสินค้าข้ามเทแนนต์ (แก้ 2026-09-27)
+      // service เขียนทับ ยอด/วันที่/ภาษี/ส่วนลด เสมอ → ช่องที่ AI ไม่ได้ส่งมาต้องส่งค่าเดิมเข้าไป
+      const itemsForUpdate = items ?? (db.prepare(
+        'SELECT id, material_id, description, quantity, unit, unit_price, skip_stock, notes FROM purchase_order_items WHERE purchase_order_id = ?'
+      ).all(po.id) as any[]).map(r => ({
+        id: r.id, materialId: r.material_id, description: r.description, quantity: r.quantity,
+        unit: r.unit, unitPrice: r.unit_price, skipStock: r.skip_stock, notes: r.notes,
+      }))
+
+      let result: any
       try {
-        for (const it of items || []) it.materialId = resolveStockItemId(tenantId, it.materialId, it.description) ?? undefined
+        result = applyPurchaseOrderUpdate(tenantId, po.id, {
+          supplierId,
+          expectedDate: expected_date ?? po.expected_date,
+          notes,
+          items: itemsForUpdate,
+          taxRate: tax_rate ?? po.tax_rate ?? 7,
+          discountAmount: po.discount_amount ?? 0,
+        })
       } catch (e) {
         if (e instanceof PurchaseOrderUpdateError) return ok({ success: false, message: e.message })
         throw e
       }
 
-      const taxPct = tax_rate ?? po.tax_rate ?? 7
-      const mappedItems = items?.map((i: { description: string; quantity: number; unit: string; unitPrice: number; materialId?: string }) => ({ ...i, totalPrice: i.quantity * i.unitPrice }))
-      const subtotal = mappedItems ? mappedItems.reduce((s: number, i: { totalPrice: number }) => s + i.totalPrice, 0) : po.subtotal
-      const taxAmount = subtotal * (taxPct / 100)
-      const totalAmount = subtotal + taxAmount
-
-      db.transaction(() => {
-        db.prepare(`
-          UPDATE purchase_orders
-          SET supplier_id = COALESCE(?, supplier_id), expected_date = COALESCE(?, expected_date),
-              notes = COALESCE(?, notes), tax_rate = ?, subtotal = ?, tax_amount = ?, total_amount = ?, updated_at = ?
-          WHERE id = ? AND tenant_id = ?
-        `).run(supplierId, expected_date ?? null, notes ?? null, taxPct, subtotal, taxAmount, totalAmount, now, po.id, tenantId)
-
-        if (mappedItems) {
-          db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(po.id)
-          const ins = db.prepare(`
-            INSERT INTO purchase_order_items
-              (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `)
-          for (const it of mappedItems) {
-            ins.run(randomUUID(), tenantId, po.id, it.materialId || null, it.description, it.quantity, it.unit, it.unitPrice, it.totalPrice)
-          }
-        }
-      })()
-
-      const updated = db.prepare(`
-        SELECT po.*, s.name as supplier_name FROM purchase_orders po
-        LEFT JOIN suppliers s ON po.supplier_id = s.id
-        WHERE po.id = ?
-      `).get(po.id) as any
-      const updatedItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(po.id)
+      const { items: updatedItems, ...updated } = result
       return ok({ message: `แก้ไข ${updated.po_number} สำเร็จ`, po: updated, items: updatedItems })
     }
   )

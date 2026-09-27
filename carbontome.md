@@ -1085,4 +1085,15 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 ตัวที่ขยับสต็อก (ยืนยัน GR / ใบคืนของ) เช็ค `tenant_id` อยู่แล้ว สต็อกบริษัทอื่นจึงไม่ถูกแตะ แต่ id ต่างบริษัทยังเข้าไปอยู่ในเอกสารได้ แล้ว `LEFT JOIN stock_items` ที่ไม่มี tenant ก็เอาชื่อ/SKU ของบริษัทอื่นมาแสดง
 → helper เดียว `resolveStockItemId(tenantId, id, label?)` ใน `purchaseOrderUpdate.service.ts` (ข้างๆ `resolveSupplierId`) ใช้ครบทั้ง 6 ทาง · ตอบ 400 พร้อมข้อความ (GR ใช้ code `UNBOUND_ITEM`, PI ใช้ code ใหม่ `STOCK_ITEM_INVALID`)
 เทสต์ข้ามเทแนนต์เพิ่มใน `purchaseOrderUpdate.test.ts` · ชุดเต็ม 62 ไฟล์ 356 เทสต์ผ่าน · build + restart แล้ว
-ค้าง: MCP `update_purchase_order` ยังลบรายการทั้งใบแล้วใส่ใหม่ และคิด VAT แบบแยกนอกเสมอ (ซ้ำกับ `applyPurchaseOrderUpdate` ที่แก้ไปแล้ว) · ใช้ได้เฉพาะ PO ที่เป็น DRAFT ความเสี่ยงเลยต่ำ แต่ควรให้เรียก service ตัวเดียวกัน
+✅ ปิดแล้ว (รอบถัดมา): MCP `update_purchase_order` เรียก `applyPurchaseOrderUpdate` ตัวเดียวกับ REST — ดูหัวข้อถัดไป
+
+### ✅ MCP `update_purchase_order` ใช้ service ตัวเดียวกับ REST + ค้นทั้ง backend หาทางเข้า materialId ที่เหลือ
+- `mcp/tools/purchase.ts` เลิกเขียน UPDATE/DELETE+INSERT เอง แล้วเรียก `applyPurchaseOrderUpdate` เลย ได้ครบในทีเดียว: แก้ที่แถวเดิม (id ไม่เปลี่ยน, `received_qty` ไม่หาย), VAT แบบรวมใน/แยกนอกตามใบ, หักส่วนลด, เช็คผู้ขาย/สินค้าข้ามเทแนนต์
+  service เขียนทับ ยอด/วันที่/ภาษี/ส่วนลด ทุกครั้ง → ช่องที่ AI ไม่ได้ส่งมา tool จะส่งค่าเดิมเข้าไปแทน (ไม่ส่ง items = ส่งรายการเดิมพร้อม id)
+- ค้นทั้ง `src/` (ไม่นับเทสต์) ด้วย grep: `*.materialId ||/??/,` · `FROM stock_items WHERE id = ?'` ที่ไม่มี tenant · `DELETE FROM purchase_order_items WHERE purchase_order_id`
+  - ทุกจุดที่เขียน `materialId` จากฟอร์มลง DB ผ่าน `resolveStockItemId` แล้ว: สร้าง/แก้ PO, MCP แก้ PO, สร้าง GR, ออก PI, ใบคืนของ, **สร้างใบสั่งผลิต (`workOrder.routes.ts` — ค้นแล้วเจอเพิ่ม)**
+  - `bom.routes.ts` เช็ค `AND tenant_id` เองอยู่แล้ว · `resolveMaterialId()` ใน `purchase.routes.ts` (สาย PR หาจาก id/sku/ชื่อ) เช็ค tenant ทุก query
+  - ไม่เหลือ DELETE รายการ PO ทั้งใบ นอกจากตอนลบ PO ทั้งใบ (`DELETE /purchase-orders/:id`)
+  - ที่ยังอ่าน `stock_items WHERE id = ?` โดยไม่ดู tenant เหลือเฉพาะการอ่านซ้ำหลังจาก id ผ่านการเช็คแล้ว (ดึงชื่อ/หน่วยมาแสดง) ไม่ใช่ทางเข้า
+- ข้อจำกัด: `resolveStockItemId` อยู่ใน `purchaseOrderUpdate.service.ts` และ throw `PurchaseOrderUpdateError` แต่ใบสั่งผลิตก็เรียกใช้ด้วย → ถ้ามีโมดูลอื่นมาใช้อีก ให้ย้ายไป `stockItem.service.ts` พร้อม error class กลาง
+- เทสต์ใหม่: MCP แก้แค่หมายเหตุแล้ว รายการ/ยอด/ส่วนลด/วันที่/`skip_stock` ต้องอยู่ครบ + ส่งสินค้าบริษัทอื่นต้องถูกปฏิเสธ · ชุดเต็ม 62 ไฟล์ 357 เทสต์ผ่าน · build + restart แล้ว

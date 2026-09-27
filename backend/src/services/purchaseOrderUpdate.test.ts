@@ -4,6 +4,7 @@ import { generateId } from '../utils/id'
 import { createTestUser } from '../test/testAuth'
 import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveStockItemId } from './purchaseOrderUpdate.service'
 import { createGoodsReceipt, GoodsReceiptError } from './goodsReceipt.service'
+import { registerPurchaseTools } from '../mcp/tools/purchase'
 
 /**
  * แก้ไขใบสั่งซื้อแล้วได้ 500 "FOREIGN KEY constraint failed" (PO-2026-00033 · 2026-09-18)
@@ -198,5 +199,33 @@ describe('applyPurchaseOrderUpdate — ใบที่มีใบรับข�
       purchaseOrderId: poId,
       items: [{ poItemId: null as any, materialId: foreignStockId, orderedQty: 1, receivedQty: 1, acceptedQty: 1, rejectedQty: 0 }] as any,
     })).toThrow(GoodsReceiptError)
+  })
+
+  it('MCP update_purchase_order ใช้ service เดียวกัน — ไม่ลบแถวเดิม ไม่ล้าง skip_stock/ส่วนลด และเช็คสินค้าข้ามเทแนนต์', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const other = createTestUser({ role: 'ADMIN' })
+    const { poId, stockId } = seedPo(user.tenantId)
+    const { stockId: foreignStockId } = seedPo(other.tenantId)
+    applyPurchaseOrderUpdate(user.tenantId, poId, {
+      items: [{ materialId: stockId, description: 'ของเข้าคลัง', quantity: 2, unit: 'pcs', unitPrice: 50, skipStock: 1, notes: 'n' }],
+      taxRate: 7, discountAmount: 10, expectedDate: '2026-12-01',
+    })
+    const before = db.prepare('SELECT id FROM purchase_order_items WHERE purchase_order_id = ?').all(poId) as any[]
+    const totalBefore = (db.prepare('SELECT total_amount FROM purchase_orders WHERE id = ?').get(poId) as any).total_amount
+
+    const tools: Record<string, (a: any) => Promise<any>> = {}
+    registerPurchaseTools({ tool: (n: string, _d: string, _s: any, h: any) => { tools[n] = h } } as any, user.tenantId, 'u', 'ทดสอบ', 'ADMIN')
+
+    // แก้แค่หมายเหตุ: รายการ/ยอด/ส่วนลด/วันที่ ต้องอยู่ครบ
+    await tools['update_purchase_order']({ po_id: poId, notes: 'แก้ผ่าน AI' })
+    const po = db.prepare('SELECT notes, discount_amount, expected_date, total_amount, tax_rate FROM purchase_orders WHERE id = ?').get(poId) as any
+    expect(po).toMatchObject({ notes: 'แก้ผ่าน AI', discount_amount: 10, expected_date: '2026-12-01', total_amount: totalBefore, tax_rate: 7 })
+    const after = db.prepare('SELECT id, skip_stock FROM purchase_order_items WHERE purchase_order_id = ?').all(poId) as any[]
+    expect(after).toEqual([{ id: before[0].id, skip_stock: 1 }])
+
+    const res = JSON.parse((await tools['update_purchase_order']({
+      po_id: poId, items: [{ description: 'x', quantity: 1, unit: 'pcs', unitPrice: 1, materialId: foreignStockId }],
+    })).content[0].text)
+    expect(res.success).toBe(false)
   })
 })

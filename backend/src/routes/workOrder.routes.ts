@@ -7,6 +7,7 @@ import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../services/stockMovement.service'
+import { resolveStockItemId, PurchaseOrderUpdateError } from '../services/purchaseOrderUpdate.service'
 
 const router = Router()
 
@@ -95,6 +96,12 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { bomId, productName, quantity, priority, dueDate, assignedTo, notes, materials, unit } = req.body
+    try {
+      for (const m of materials || []) m.materialId = resolveStockItemId(tenantId, m.materialId, m.materialName)
+    } catch (e) {
+      if (e instanceof PurchaseOrderUpdateError) return res.status(400).json({ success: false, message: e.message })
+      throw e
+    }
     const id = generateId()
     const woNumber = generateWONumber(tenantId)
     const now = new Date().toISOString()
@@ -133,7 +140,7 @@ router.post('/', async (req: Request, res: Response) => {
         for (const m of materials) {
           let unit = m.unit || ''
           if (!unit && m.materialId) {
-            const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ?').get(m.materialId) as any
+            const stockItem = db.prepare('SELECT unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.materialId, tenantId) as any
             unit = stockItem?.unit || ''
           }
           insertMaterial.run(generateId(), tenantId, id, m.materialId || null, m.materialName || '', m.requiredQty, unit)
