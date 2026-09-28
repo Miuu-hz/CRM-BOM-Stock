@@ -15,6 +15,7 @@ import { formatDocumentNumber } from '../utils/id'
 import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
+import { aliasConflictMessage, dropAlias } from '../services/stockItem.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -276,6 +277,12 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'SKU, name and unit are required' })
     }
 
+    // ชื่อนี้เป็นชื่อรองของสินค้าอื่นอยู่ (ยี่ห้อ B ที่ผูกเข้า SKU ยี่ห้อ A) → ถามก่อนว่าจะแยกเป็นสินค้าใหม่ไหม
+    const aliasMsg = aliasConflictMessage(tenantId, name)
+    if (aliasMsg && !req.body.aliasOverride) {
+      return res.status(409).json({ success: false, code: 'ALIAS_CONFLICT', message: aliasMsg })
+    }
+
     // Subscription: จำกัดจำนวนสินค้าตามแพ็กเกจ (MASTER bypass)
     // ponytail: gate เฉพาะ create path หลักนี้ — path อื่น (เช่น import) ยังไม่ถูกจำกัด
     if (req.user!.role !== 'MASTER') {
@@ -340,6 +347,7 @@ router.post('/', async (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
     `).run(id, tenantId, sku, gs1Barcode || null, name, category, quantity, normUnit, effectiveBaseUnit, effectiveSaleUnit, effectiveDisplayUnit, finalUnitCost, unitPrice ? Number(unitPrice) : 0, finalPurchasePrice, finalPurchaseUnit, minStock, maxStock, location || 'Main Warehouse', isPosEnabled ? 1 : 0, now, now)
 
+    if (aliasMsg) dropAlias(tenantId, name) // ผู้ใช้เลือกแยกเป็นสินค้าใหม่ — ชื่อนี้เลิกเป็นชื่อรอง
     const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id)
     
     res.status(201).json({

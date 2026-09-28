@@ -3,6 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import db from '../../db/sqlite'
 import { approvalDenyReason } from '../../services/approvalGate.service'
+import { normName, findAliasTarget } from '../../services/stockItem.service'
 
 export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
 
@@ -129,9 +130,9 @@ export interface StockCandidate {
 export interface StockMatch {
   exact: StockCandidate | null
   candidates: StockCandidate[]
+  /** ผูกจากชื่อรอง — เลขเอกสารที่ยืนยันครั้งแรก (ไม่ใช่ชื่อตรงของสินค้า) */
+  viaAlias?: string
 }
-
-const normName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
 
 /**
  * @param rawOnly true = เอาเฉพาะวัตถุดิบ (สายซื้อ) ไม่เอาเมนูที่ขายหน้าร้าน
@@ -145,15 +146,24 @@ export function matchStockItem(tenantId: string, description: string, rawOnly = 
   const rows = db.prepare(`
     SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity
     FROM stock_items
-    WHERE tenant_id = ? AND status = 'ACTIVE' AND name LIKE ? ${rawFilter}
+    WHERE tenant_id = ? AND status != 'INACTIVE' AND name LIKE ? ${rawFilter}
     ORDER BY CASE WHEN LOWER(TRIM(name)) = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END, length(name)
     LIMIT 8
   `).all(tenantId, `%${trimmed}%`, want, `${trimmed}%`) as StockCandidate[]
+  // status: เดิมกรอง = 'ACTIVE' ของที่ของหมด (OUT/LOW) จึงผูกไม่ได้ทั้งที่ชื่อตรง — INACTIVE คือสถานะปิดใช้ตัวเดียว
 
   const exactRows = rows.filter(r => normName(r.name) === want)
   // ชื่อตรงเป๊ะแต่มีมากกว่า 1 ตัว = ยังเลือกแทนคนไม่ได้ ต้องให้คนชี้
   const exact = exactRows.length === 1 ? exactRows[0] : null
-  return { exact, candidates: rows }
+  if (exact || exactRows.length > 1 || !rawOnly) return { exact, candidates: rows }
+
+  // ฝั่งซื้อ: ไม่มีชื่อตรง → ลองชื่อรองที่เคยยืนยันตอนรับของ (ยี่ห้อ B → SKU ยี่ห้อ A)
+  const alias = findAliasTarget(tenantId, description)
+  if (!alias) return { exact, candidates: rows }
+  const target = db.prepare(`
+    SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity FROM stock_items WHERE id = ? AND tenant_id = ?
+  `).get(alias.stockItemId, tenantId) as StockCandidate
+  return { exact: target, candidates: [target, ...rows.filter(r => r.id !== target.id)], viaAlias: alias.sourceRef || 'ชื่อรอง' }
 }
 
 /** แถวสำหรับโชว์เป็นตารางกลับไปให้ผู้ใช้ตรวจก่อนยืนยัน */
@@ -163,7 +173,9 @@ export function bindingRow(description: string, match: StockMatch, unit: string)
     หน่วย: unit,
     ผูกกับสินค้า: match.exact ? match.exact.name : null,
     คงเหลือ: match.exact ? `${match.exact.quantity} ${match.exact.baseUnit}` : null,
-    สถานะ: match.exact ? 'ผูกแล้ว (ชื่อตรงเป๊ะ)' : 'ยังไม่ผูก — ต้องเลือกก่อนยืนยัน',
+    สถานะ: !match.exact ? 'ยังไม่ผูก — ต้องเลือกก่อนยืนยัน'
+      : match.viaAlias ? `ผูกจากความจำ — ใช้แทน "${match.exact.name}" (ยืนยันครั้งแรกใน ${match.viaAlias}) ถ้าไม่ใช่ให้ผูกใหม่`
+      : 'ผูกแล้ว (ชื่อตรงเป๊ะ)',
     ตัวเลือก: match.exact ? undefined : match.candidates.map(c => ({
       stock_item_id: c.id, ชื่อ: c.name, คงเหลือ: `${c.quantity} ${c.baseUnit}`,
     })),

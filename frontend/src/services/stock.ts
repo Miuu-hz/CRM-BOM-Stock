@@ -1,4 +1,4 @@
-import api from './api'
+import api, { postWithAliasCheck } from './api'
 
 export interface StockItem {
   id: string
@@ -204,7 +204,7 @@ export const stockService = {
 
   // Create stock item
   create: async (input: CreateStockInput): Promise<StockItem> => {
-    const response = await api.post<any>('/stock', input)
+    const response = await postWithAliasCheck('/stock', input)
     if (!response.data?.data) {
       throw new Error('Failed to create stock item')
     }

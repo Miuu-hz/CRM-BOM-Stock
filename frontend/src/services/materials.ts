@@ -1,4 +1,4 @@
-import api from './api'
+import api, { postWithAliasCheck } from './api'
 
 export interface MaterialCategory {
   id: string
@@ -123,7 +123,7 @@ export const materialsService = {
 
   // Create new material
   create: async (input: CreateMaterialInput): Promise<Material> => {
-    const response = await api.post<any>('/materials', input)
+    const response = await postWithAliasCheck('/materials', input)
     if (!response.data?.data) {
       throw new Error('Failed to create material')
     }

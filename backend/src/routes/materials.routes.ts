@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { aliasConflictMessage, dropAlias } from '../services/stockItem.service'
 import { randomUUID } from 'crypto'
 import {
   listConversions,
@@ -595,6 +596,12 @@ router.post('/', (req: Request, res: Response) => {
       })
     }
 
+    // ชื่อนี้เป็นชื่อรองของสินค้าอื่นอยู่ (ยี่ห้อ B ที่ผูกเข้า SKU ยี่ห้อ A) → ถามก่อนว่าจะแยกเป็นสินค้าใหม่ไหม
+    const aliasMsg = aliasConflictMessage(tenantId, name)
+    if (aliasMsg && !req.body.aliasOverride) {
+      return res.status(409).json({ success: false, code: 'ALIAS_CONFLICT', message: aliasMsg })
+    }
+
     // Get category to determine unit
     const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(categoryId, tenantId) as any
     if (!category) {
@@ -632,6 +639,7 @@ router.post('/', (req: Request, res: Response) => {
       now, now
     )
 
+    if (aliasMsg) dropAlias(tenantId, name) // ผู้ใช้เลือกแยกเป็นสินค้าใหม่ — ชื่อนี้เลิกเป็นชื่อรอง
     const material = db.prepare('SELECT *, sku as code FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId)
 
     res.json({

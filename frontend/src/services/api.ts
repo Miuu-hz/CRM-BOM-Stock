@@ -82,3 +82,17 @@ api.interceptors.response.use(
 )
 
 export default api
+
+/**
+ * สร้างสินค้าใหม่ที่ชื่อชนกับ "ชื่อรอง" (ยี่ห้อ B ที่ผูกเข้า SKU ยี่ห้อ A ไว้ตอนรับของ)
+ * backend ตอบ 409 ALIAS_CONFLICT → ถามผู้ใช้: OK = แยกเป็นสินค้าใหม่ (ส่งซ้ำพร้อม aliasOverride) · Cancel = ใช้เป็นชื่อรองต่อ ไม่สร้าง
+ */
+export async function postWithAliasCheck(url: string, body: any) {
+  try {
+    return await api.post<any>(url, body)
+  } catch (e: any) {
+    if (e?.response?.data?.code !== 'ALIAS_CONFLICT') throw e
+    if (!window.confirm(e.response.data.message)) throw new Error('ไม่ได้สร้างสินค้า — ชื่อนี้ยังเป็นชื่อรองของสินค้าเดิม')
+    return api.post<any>(url, { ...body, aliasOverride: true })
+  }
+}

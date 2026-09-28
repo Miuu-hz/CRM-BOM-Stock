@@ -2392,4 +2392,22 @@ export function runMigrations(db: any): void {
       console.log('✅ Migration: added tax_branch to customers')
     }
   } catch (e) { console.error('⚠️ tax_branch migration error:', e) }
+
+  // ชื่อรองของสินค้า (ยี่ห้อ B ใช้แทน SKU ยี่ห้อ A) — จำตอนยืนยันใบรับของ ให้ PR/PO ครั้งหน้าผูกเอง
+  // ดู services/stockItem.service.ts (findAliasTarget / rememberAlias)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS stock_item_aliases (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      name_norm TEXT NOT NULL,
+      name TEXT NOT NULL,
+      stock_item_id TEXT NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+      source_ref TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (tenant_id, name_norm)
+    )`)
+    console.log('✅ Migration: stock_item_aliases พร้อมใช้งาน')
+  } catch (e) { console.error('⚠️ stock_item_aliases migration error:', e) }
 }

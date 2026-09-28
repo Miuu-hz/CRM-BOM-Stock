@@ -21,7 +21,7 @@ import {
   type CreateGoodsReceiptLine,
 } from '../services/goodsReceipt.service'
 import { calcVat } from '../utils/vat'
-import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
+import { resolveStockItemId, StockItemRefError, findAliasTarget } from '../services/stockItem.service'
 import {
   createPurchaseInvoice,
   paySupplier,
@@ -54,6 +54,9 @@ function resolveMaterialId(tenantId: string, item: any): string | null {
     if (m) return m.id
     m = materialByName.get(desc, tenantId) as any
     if (m) return m.id
+    // ชื่อรองที่เคยยืนยันตอนรับของ (ยี่ห้อ B → SKU ยี่ห้อ A)
+    const alias = findAliasTarget(tenantId, desc)
+    if (alias) return alias.stockItemId
   }
   return null
 }

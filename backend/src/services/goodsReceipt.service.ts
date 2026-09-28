@@ -5,7 +5,7 @@ import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
 import { postJournal } from './accounting.service'
 import { ACC } from '../config/accountCodes'
-import { resolveStockItemId, StockItemRefError } from './stockItem.service'
+import { resolveStockItemId, StockItemRefError, normName, rememberAlias } from './stockItem.service'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -237,12 +237,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         }
       }
       if (item.material_id && item.accepted_qty > 0) {
-        let poItem: any
-        try {
-          poItem = db.prepare('SELECT unit_price, unit FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
-        } catch (e) {
-          poItem = db.prepare('SELECT unit_price FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
-        }
+        const poItem = db.prepare('SELECT unit_price, unit, description FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
         const unitPrice = poItem?.unit_price || 0
         const poUnit = normalizeUnit(poItem?.unit || '')
 
@@ -319,6 +314,13 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
 
         if (stockItem) {
           accruedValue += (Number(item.accepted_qty) || 0) * (Number(unitPrice) || 0)
+          // ชื่อตามใบของผู้ขายไม่ตรงกับชื่อสินค้า (เช่น ยี่ห้อ B เข้า SKU ยี่ห้อ A) → จำเป็นชื่อรอง
+          // และจดชื่อจริงไว้ใน stock log ให้ย้อนได้ว่ารอบไหนรับยี่ห้อไหนเข้ามา
+          const lineName = String(poItem?.description || '').trim()
+          if (lineName && normName(lineName) !== normName(stockItem.name)) {
+            rememberAlias(tenantId, lineName, stockItem.id, gr.gr_number, userId)
+            movementNotes = `รับ "${lineName}" · ${movementNotes}`
+          }
           db.prepare(`
             INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
