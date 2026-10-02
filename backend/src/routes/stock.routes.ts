@@ -354,7 +354,15 @@ router.post('/', async (req: Request, res: Response) => {
       success: true,
       data: enrichStockItem(item, tenantId),
     })
-  } catch (error) {
+  } catch (error: any) {
+    // รหัสสินค้าซ้ำ (UNIQUE tenant_id+sku) — เดิมตอบ 500 ผู้ใช้เห็นแค่ "บันทึกไม่สำเร็จ" ไม่รู้ว่าต้องเปลี่ยนรหัส
+    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE' && String(error.message).includes('stock_items.sku')) {
+      const dup = db.prepare('SELECT name FROM stock_items WHERE tenant_id = ? AND sku = ?').get(req.user!.tenantId, req.body?.sku) as any
+      return res.status(409).json({
+        success: false, code: 'SKU_DUPLICATE',
+        message: `รหัสสินค้า "${req.body?.sku}" ถูกใช้แล้ว${dup?.name ? ` กับ "${dup.name}"` : ''} — เปลี่ยนรหัสแล้วบันทึกใหม่`,
+      })
+    }
     console.error('Create stock item error:', error)
     res.status(500).json({ success: false, message: 'Failed to create stock item' })
   }
