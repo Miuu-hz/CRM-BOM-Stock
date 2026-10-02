@@ -7,6 +7,9 @@ import { useTranslation } from 'react-i18next'
 import { useUnits, unitLabelOf, unitCategoryOf, type UnitCategory, type UnitOption, type UnitSpecial } from '../../hooks/useUnits'
 import { normalizeUnit, canonicalUnitCode } from '../../utils/unitNormalize'
 
+/** หน่วยนับที่มีมาตราสากลต่อกันเอง (STANDARD_CONVERSIONS ฝั่ง backend) */
+const STD_COUNT = new Set(['pcs', 'dozen', 'gross', 'pair'])
+
 interface UnitPickerProps {
   value: string
   onChange: (unit: string) => void
@@ -100,6 +103,13 @@ export function UnitPicker({
     return m
   }, [specials])
 
+  const specialEdges = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    const add = (x: string, y: string) => { if (!m.has(x)) m.set(x, new Set()); m.get(x)!.add(y) }
+    for (const sp of specials) { add(sp.code, sp.baseUnit); add(sp.baseUnit, sp.code) }
+    return m
+  }, [specials])
+
   const unitByCode = useMemo(() => {
     const m = new Map<string, UnitOption>()
     for (const u of units) m.set(u.value, u)
@@ -146,20 +156,36 @@ export function UnitPicker({
    *  - มี special ของหน่วยนี้ที่ baseUnit ตรงกับหน่วยฐานเป้าหมายเป๊ะ → ถึงได้ (1 hop)
    *  - หรือ special นั้นมี baseUnit อยู่ category เดียวกับหน่วยฐานเป้าหมาย → ถึงได้ (multi-hop ผ่าน category เดียวกัน)
    */
+  // หมวดเดียวกัน = แปลงถึงกันได้ด้วยมาตราสากล — จริงเฉพาะ น้ำหนัก/ปริมาตร/ความยาว/พื้นที่
+  // หมวด "นับ" มีมาตราสากลแค่ ชิ้น/โหล/กุรอส/คู่ · ชุด/แพ็ค/ถุง ต้องมีกฎเอง ไม่งั้นช่องนี้บอกผ่าน
+  // แต่ backend ตีกลับตอนรับของ (เจอ 15 คู่ 2026-09-28 เช่น ชุด→ชิ้น)
+  const sameScale = useCallback((code: string, cat: UnitCategory | undefined): boolean => {
+    if (!baseUnitCategory || cat !== baseUnitCategory || cat === 'other') return false
+    return cat !== 'count' || (STD_COUNT.has(code) && STD_COUNT.has(baseUnitCode))
+  }, [baseUnitCategory, baseUnitCode])
+
   const isReachable = useCallback(
     (code: string, category?: UnitCategory, sp?: UnitSpecial): boolean => {
       if (!restrictActive || !baseUnitCode) return true
       if (code === baseUnitCode) return true
       const cat = category ?? categoryOfCode(code)
-      if (baseUnitCategory && cat === baseUnitCategory) return true
-      const special = sp ?? specialByCode.get(code)
-      if (special) {
-        if (special.baseUnit === baseUnitCode) return true
-        if (baseUnitCategory && categoryOfCode(special.baseUnit) === baseUnitCategory) return true
+      if (sameScale(code, cat)) return true
+      // เดินกราฟหน่วยพิเศษทุกทอด (สองทาง เหมือน convertQuantityBidirectional ฝั่ง backend)
+      // เดิมดูแค่ทอดเดียว: แพ็ค→ขวด→ml (โซดา) เลยขึ้นเตือนว่าแปลงไม่ได้ ทั้งที่ backend แปลงได้ 1,950
+      const seen = new Set<string>([code])
+      const queue = [code]
+      if (sp && !seen.has(sp.baseUnit)) { seen.add(sp.baseUnit); queue.push(sp.baseUnit) }
+      while (queue.length > 0) {
+        const cur = queue.shift()!
+        if (cur === baseUnitCode) return true
+        if (sameScale(cur, categoryOfCode(cur))) return true
+        for (const next of specialEdges.get(cur) ?? []) {
+          if (!seen.has(next)) { seen.add(next); queue.push(next) }
+        }
       }
       return false
     },
-    [restrictActive, baseUnitCode, baseUnitCategory, categoryOfCode, specialByCode]
+    [restrictActive, baseUnitCode, categoryOfCode, specialEdges, sameScale]
   )
 
   /** จัดกลุ่ม: หน่วยพิเศษของสินค้านี้ → หน่วยพิเศษทั้งระบบ → ตาม category */
