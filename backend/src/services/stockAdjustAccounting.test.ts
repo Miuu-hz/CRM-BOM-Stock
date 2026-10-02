@@ -186,7 +186,7 @@ function debitCodeOf(tenantId: string, stockItemId: string) {
 }
 function creditCodeOf(tenantId: string, stockItemId: string) {
   return db.prepare(`
-    SELECT a.code FROM journal_entries je
+    SELECT a.code, a.type FROM journal_entries je
     JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.credit > 0
     JOIN accounts a ON a.id = jl.account_id
     WHERE je.tenant_id = ? AND je.reference_type = 'STOCK_ADJUST' AND je.reference_id = ?
@@ -234,12 +234,25 @@ describe('ปรับสต็อก — เหตุผลพาเงิน�
     expect(creditCodeOf(user.tenantId, id)?.code).toBe('5902')
   })
 
-  it('ปรับเพิ่มเพราะรับเพิ่มไม่ผ่านใบ ยังเข้ารายได้อื่นตามเดิม', () => {
+  it('ปรับเพิ่มเพราะรับเพิ่มไม่ผ่านใบ เข้าค่าปรับปรุงสต็อก ไม่ใช่รายได้อื่น', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
     applyStockMovement(user.tenantId, user.email, {
       stockItemId: id, type: 'ADJUST', quantity: 110, unit: 'ชิ้น', adjustReason: 'รับเพิ่มไม่ผ่านใบ',
     })
-    expect(creditCodeOf(user.tenantId, id)?.code).toBe('4203')
+    expect(creditCodeOf(user.tenantId, id)?.code).toBe('5902')
+  })
+
+  // ปรับสต็อกขึ้นไม่ใช่การขาย ถ้าขาปลายทางหลุดไปอยู่กลุ่ม REVENUE ยอดขายบน
+  // dashboard/งบกำไรขาดทุนจะบวมตามมูลค่าของที่ปรับ ซึ่งเคยเกิดขึ้นจริงมาแล้ว
+  it('ปรับเพิ่มด้วยเหตุผลที่ไม่รู้จัก ก็ยังห้ามแตะบัญชีกลุ่มรายได้', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
+    applyStockMovement(user.tenantId, user.email, {
+      stockItemId: id, type: 'ADJUST', quantity: 110, unit: 'ชิ้น', adjustReason: 'เหตุผลที่ไม่เคยมีในระบบ',
+    })
+    const credit = creditCodeOf(user.tenantId, id)
+    expect(credit?.code).toBe('5902')
+    expect(credit?.type).not.toBe('REVENUE')
   })
 })

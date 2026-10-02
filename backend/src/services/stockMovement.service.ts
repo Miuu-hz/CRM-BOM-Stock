@@ -59,6 +59,7 @@ export class StockMovementError extends Error {
  * เหตุผลที่เลือกตอนปรับสต็อก = ตัวบอกว่าเงินก้อนนี้ควรลงบัญชีตัวไหน
  * ของเสียเป็นผลขาดทุนจริง · ของหายเป็นสินค้าสูญหาย · เบิกไปใช้เป็นต้นทุนวัตถุดิบ ·
  * "นับผิดรอบก่อน" ของไม่เคยหาย แค่ตัวเลขเคยผิด จึงเข้าค่าปรับปรุงสต็อกตามเดิม
+ * "รับเพิ่มไม่ผ่านใบ" ของเกินที่เพิ่งเจอ ไม่ใช่รายได้ — ร้านไม่ได้ขายอะไรเพิ่ม
  * เหตุผลที่ไม่รู้จัก/ไม่ได้กรอก ตกมาที่ 5902 เหมือนพฤติกรรมเดิม
  * ต้องตรงกับชุดเหตุผลใน AdjustModal (frontend/src/pages/Stock.tsx) — ที่นั่นโชว์ชื่อบัญชีให้ดูก่อนกด
  */
@@ -68,6 +69,7 @@ export const ADJUST_REASON_ACCOUNT: Record<string, string> = {
   'ของหาย': ACC.STOCK_SHRINKAGE,
   'เบิกใช้ไม่ได้บันทึก': ACC.COGS_RAW_MATERIAL,
   'นับผิดรอบก่อน': ACC.STOCK_ADJUSTMENT,
+  'รับเพิ่มไม่ผ่านใบ': ACC.STOCK_ADJUSTMENT,
 }
 
 /**
@@ -250,8 +252,11 @@ export function applyStockMovement(
           const reasonAcc = ADJUST_REASON_ACCOUNT[String(adjustReason || '').trim()]
 
           if (diffValue > 0) {
-            // Adjust up: Dr Inventory / Cr บัญชีตามเหตุผล (ไม่มีเหตุผล -> รายได้อื่น)
-            const incomeAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.OTHER_REVENUE)
+            // Adjust up: Dr Inventory / Cr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก)
+            // ห้าม fallback ไปบัญชีกลุ่ม REVENUE: dashboard กับงบกำไรขาดทุนกวาดทุกบัญชี
+            // type=REVENUE มารวมเป็น "ยอดขาย" การปรับสต็อกจึงโผล่เป็นยอดขายที่ไม่มีอยู่จริง
+            // (เคสจริง Kids House: ยอดขายปีนี้อ่านได้ 120,745 บาท แต่ขายจริง 126 บาท)
+            const incomeAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
             db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
               VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
               .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
