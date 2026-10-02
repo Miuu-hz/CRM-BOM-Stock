@@ -2,6 +2,7 @@ import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC_META } from '../config/accountCodes'
 import type { Account, AccountType, NormalBalance } from '../types'
+import { normalizeVatFields, vatModeOf } from '../utils/vat'
 
 /**
  * Get a full account row by chart-of-accounts code.
@@ -97,6 +98,34 @@ export interface PostJournalInput {
 }
 
 export class JournalError extends Error {}
+
+/**
+ * กิจการจดทะเบียน VAT แล้วหรือยัง (company_settings.vat_registered, ไม่มีแถว/คอลัมน์ = จดแล้ว ตามพฤติกรรมเดิม)
+ * ยังไม่จด = ภาษีซื้อขอคืนไม่ได้ → เป็นต้นทุนของที่ซื้อ ไม่ใช่สินทรัพย์ 1110 และไม่เข้าทะเบียนภาษีซื้อ
+ */
+export function isVatRegistered(tenantId: string): boolean {
+  const row = db.prepare('SELECT * FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  return row?.vat_registered !== 0
+}
+
+/**
+ * จำโหมด VAT ล่าสุดที่ใช้กับคู่ค้า (ลูกค้า/ผู้ขาย) รายนี้ — เอกสารถัดไปจะ default ให้ถูกโดยไม่ต้องเลือกใหม่
+ * เรียกจากทุกจุดที่บันทึกเอกสารขาย/ซื้อสำเร็จ (ดู project_erp_vat_mode 2026-09-29) — ห้ามก๊อป SQL ซ้ำ
+ * รับ tax_rate/vat_inclusive ดิบของเอกสารมาตรง ๆ แล้ว normalize เป็นโหมดเองที่นี่ที่เดียว
+ */
+export function rememberContactVatMode(
+  tenantId: string,
+  kind: 'customer' | 'supplier',
+  contactId: string | null | undefined,
+  taxRate: number | null | undefined,
+  vatInclusive: boolean | number | null | undefined
+): void {
+  if (!contactId) return
+  const { rate, inclusive } = normalizeVatFields(taxRate, vatInclusive)
+  const mode = vatModeOf(rate, inclusive)
+  const table = kind === 'customer' ? 'customers' : 'suppliers'
+  db.prepare(`UPDATE ${table} SET vat_mode = ? WHERE id = ? AND tenant_id = ?`).run(mode, contactId, tenantId)
+}
 
 /** ปัดทศนิยม 2 ตำแหน่งก่อนเทียบเสมอ ไม่งั้นเศษ floating point ทำให้ดุลหลุดเอง */
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100

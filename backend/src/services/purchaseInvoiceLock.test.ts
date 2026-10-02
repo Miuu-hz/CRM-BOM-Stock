@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { createPurchaseInvoice, paySupplier, PurchaseBillingError } from './purchaseBilling.service'
-import { createGoodsReceipt, confirmGoodsReceipt } from './goodsReceipt.service'
+import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from './goodsReceipt.service'
 import { createTestUser } from '../test/testAuth'
 
 /**
@@ -31,7 +31,13 @@ function seedPoWithConfirmedGr(tenantId: string, userEmail: string) {
     VALUES (?, ?, ?, ?, 'ของทดสอบ', 10, 'pcs', 10, 100, 0)
   `).run(generateId(), tenantId, poId, materialId)
 
-  const created = createGoodsReceipt(tenantId, userEmail, { purchaseOrderId: poId }) as any
+  // ต้องส่ง items จริง (ไม่ใช่ปล่อยว่าง) ไม่งั้น goods_receipt_items จะไม่มีแถวเลย แล้วใบแจ้งหนี้
+  // (ที่ตอนนี้ derive ยอด/รายการจาก GR item เท่านั้น) จะได้ยอด 0 — สะท้อนของที่ "รับจริง" ตามใบ
+  const pending = getPendingPoItems(tenantId, poId)
+  const created = createGoodsReceipt(tenantId, userEmail, {
+    purchaseOrderId: poId,
+    items: pending.map(p => ({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })),
+  }) as any
   const gr = confirmGoodsReceipt(tenantId, 'u1', created.id) as any
   return { poId, grId: gr.id }
 }
@@ -76,7 +82,10 @@ describe('ใบแจ้งหนี้ซื้อ — ล็อกใบร�
     })).toThrow(PurchaseBillingError)
   })
 
-  it('PO ที่ไม่มี GR เลย ยังออกใบได้ตามเดิม และกันใบซ้ำได้', () => {
+  // 2026-09-29: เดิม PO ที่ไม่มี GR เลยยังออกใบแจ้งหนี้ได้ (Dr สต็อกตรงจาก PO) — เจอบั๊กว่าถ้า GR
+  // มายืนยันตามหลัง จะ Dr สต็อกซ้ำ + 2109 ค้างถาวร จึงตัดทางนี้ทิ้ง: ไม่มี GR ที่ยืนยันแล้ว = ออก
+  // ใบแจ้งหนี้ไม่ได้เลย (ดู project_erp_purchase_redesign / bug #2 ในสรุปงาน 2026-09-29)
+  it('PO ที่ไม่มี GR ที่ยืนยันแล้วเลย ออกใบแจ้งหนี้ไม่ได้ (NO_GR)', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const supplierId = generateId()
     db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, 'Sup', 'C')")
@@ -88,13 +97,9 @@ describe('ใบแจ้งหนี้ซื้อ — ล็อกใบร�
       VALUES (?, ?, ?, ?, 'APPROVED', 50, 7, 3.5, 53.5, ?, ?)
     `).run(poId, user.tenantId, 'PO-' + poId.slice(0, 6), supplierId, now, now)
 
-    const inv = createPurchaseInvoice(user.tenantId, user.email, {
-      purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-005',
-    }) as any
-    expect(inv.subtotal).toBe(50)
     expect(() => createPurchaseInvoice(user.tenantId, user.email, {
-      purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-006',
-    })).toThrow(/มีใบแจ้งหนี้อยู่แล้ว/)
+      purchaseOrderId: poId, supplierInvoiceNumber: 'TAX-005',
+    })).toThrow(/ต้องยืนยันรับของ \(GR\) ก่อนออกใบแจ้งหนี้/)
   })
 })
 

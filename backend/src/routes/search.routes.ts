@@ -29,6 +29,7 @@ router.get('/', (req: Request, res: Response) => {
           sales_orders: [],
           quotations: [],
           invoices: [],
+          documents: [],
         },
       })
     }
@@ -136,7 +137,7 @@ router.get('/', (req: Request, res: Response) => {
 
     // Search purchase orders
     const purchaseOrders = db.prepare(`
-      SELECT po.id, po.po_number, po.status, po.total_amount, s.name as supplier_name
+      SELECT po.id, 'PURCHASE_ORDER' AS docKind, po.po_number, po.status, po.total_amount, s.name as supplier_name
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
       WHERE po.tenant_id = ? AND (
@@ -160,7 +161,7 @@ router.get('/', (req: Request, res: Response) => {
 
     // Search sales orders
     const salesOrders = db.prepare(`
-      SELECT so.id, so.so_number, so.status, so.total_amount, c.name as customer_name
+      SELECT so.id, 'SALES_ORDER' AS docKind, so.so_number, so.status, so.total_amount, c.name as customer_name
       FROM sales_orders so
       JOIN customers c ON so.customer_id = c.id
       WHERE so.tenant_id = ? AND (
@@ -184,7 +185,7 @@ router.get('/', (req: Request, res: Response) => {
 
     // Search invoices
     const invoices = db.prepare(`
-      SELECT i.id, i.invoice_number, i.status, i.total_amount, c.name as customer_name
+      SELECT i.id, 'INVOICE' AS docKind, i.invoice_number, i.status, i.total_amount, c.name as customer_name
       FROM invoices i
       JOIN customers c ON i.customer_id = c.id
       WHERE i.tenant_id = ? AND (
@@ -194,9 +195,29 @@ router.get('/', (req: Request, res: Response) => {
       LIMIT 5
     `).all(tenantId, searchTerm, searchTerm) as any[]
 
+    // ponytail: ค้นแค่เลขที่เอกสาร (ไม่ค้นชื่อคู่ค้า) ใบละ 3 รายการ — พอสำหรับ "พิมพ์เลขแล้วเปิดสายเอกสาร"
+    const DOC_SEARCH: { kind: string; label: string; sql: string; params: number }[] = [
+      { kind: 'PURCHASE_REQUEST', label: 'ใบขอซื้อ', params: 1, sql: `SELECT id, pr_number AS num, requester_name AS party, total_amount AS total, status FROM purchase_requests WHERE tenant_id = ? AND LOWER(pr_number) LIKE ?` },
+      { kind: 'GOODS_RECEIPT', label: 'ใบรับสินค้า', params: 1, sql: `SELECT gr.id, gr.gr_number AS num, s.name AS party, NULL AS total, gr.status FROM goods_receipts gr LEFT JOIN suppliers s ON s.id = gr.supplier_id WHERE gr.tenant_id = ? AND LOWER(gr.gr_number) LIKE ?` },
+      { kind: 'PURCHASE_INVOICE', label: 'ใบแจ้งหนี้ซื้อ', params: 2, sql: `SELECT pi.id, pi.pi_number AS num, s.name AS party, pi.total_amount AS total, pi.status FROM purchase_invoices pi LEFT JOIN suppliers s ON s.id = pi.supplier_id WHERE pi.tenant_id = ? AND (LOWER(pi.pi_number) LIKE ? OR LOWER(COALESCE(pi.supplier_invoice_number, '')) LIKE ?)` },
+      { kind: 'SUPPLIER_PAYMENT', label: 'ใบจ่ายเงิน', params: 1, sql: `SELECT sp.id, sp.payment_number AS num, s.name AS party, sp.net_amount AS total, sp.status FROM supplier_payments sp LEFT JOIN suppliers s ON s.id = sp.supplier_id WHERE sp.tenant_id = ? AND LOWER(sp.payment_number) LIKE ?` },
+      { kind: 'PAYMENT', label: 'ใบเสร็จรับเงิน', params: 1, sql: `SELECT r.id, r.receipt_number AS num, c.name AS party, r.amount AS total, NULL AS status FROM receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE r.tenant_id = ? AND LOWER(r.receipt_number) LIKE ?` },
+      { kind: 'CREDIT_NOTE', label: 'ใบลดหนี้', params: 1, sql: `SELECT cn.id, cn.cn_number AS num, c.name AS party, cn.total_amount AS total, cn.status FROM credit_notes cn LEFT JOIN customers c ON c.id = cn.customer_id WHERE cn.tenant_id = ? AND LOWER(cn.cn_number) LIKE ?` },
+      { kind: 'POS_SALE', label: 'บิลขายหน้าร้าน', params: 1, sql: `SELECT id, bill_number AS num, COALESCE(display_name, customer_name) AS party, total_amount AS total, status FROM pos_running_bills WHERE tenant_id = ? AND LOWER(bill_number) LIKE ?` },
+    ]
+    const documents = DOC_SEARCH.flatMap(d =>
+      (db.prepare(d.sql + ' ORDER BY num DESC LIMIT 3').all(tenantId, ...Array(d.params).fill(searchTerm)) as any[]).map(r => ({
+        id: r.id,
+        type: 'document',
+        docKind: d.kind,
+        label: r.num,
+        subtitle: [d.label, r.party, r.total != null ? `฿${Number(r.total).toLocaleString()}` : null, r.status].filter(Boolean).join(' · '),
+      })))
+
     res.json({
       success: true,
       data: {
+        documents,
         customers: customers.map((c) => ({
           ...c,
           type: 'customer',

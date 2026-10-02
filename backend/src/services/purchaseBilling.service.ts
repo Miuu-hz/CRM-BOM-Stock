@@ -1,67 +1,71 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
-import { getOrCreateAccount } from './accounting.service'
+import { getOrCreateAccount, isVatRegistered, rememberContactVatMode } from './accounting.service'
 import { calcVat } from '../utils/vat'
-import { resolveStockItemId, StockItemRefError } from './stockItem.service'
+import { closedPeriodLabel } from '../routes/journal.routes'
 
 /**
- * ตรรกะ "ออกใบแจ้งหนี้ซื้อ" และ "จ่ายเงินผู้ขาย" ยกออกมาจาก routes/purchase.routes.ts
- * (ตัวที่ครบสุด — มี lock กันออกใบซ้ำ, รองรับหลาย GR ต่อใบแจ้งหนี้, ลง journal ครบ) เพื่อให้
- * routes/purchase.routes.ts (REST) และ mcp/tools/purchaseBilling.ts (MCP) เรียกตัวเดียวกัน
- * — ตามแพทเทิร์นของ goodsReceipt.service.ts (2026-09-13/14) ห้ามมีสำเนาที่สองของตรรกะนี้
+ * ตรรกะ "ออกใบแจ้งหนี้ซื้อ" / "แก้ไขใบแจ้งหนี้ซื้อ" และ "จ่ายเงินผู้ขาย" ยกออกมาจาก
+ * routes/purchase.routes.ts (ตัวที่ครบสุด — มี lock กันออกใบซ้ำ, รองรับหลาย GR ต่อใบแจ้งหนี้,
+ * ลง journal ครบ) เพื่อให้ routes/purchase.routes.ts (REST) และ mcp/tools/purchaseBilling.ts
+ * (MCP) เรียกตัวเดียวกัน — ตามแพทเทิร์นของ goodsReceipt.service.ts (2026-09-13/14) ห้ามมีสำเนา
+ * ที่สองของตรรกะนี้
  *
- * ส่วนที่เพิ่มเข้ามาใหม่ (ไม่มีใน route เดิม): เมื่อสร้างใบแจ้งหนี้โดยไม่ส่ง items มาแต่ระบุ
- * goodsReceiptIds มา จะ derive รายการ+ยอดจาก goods_receipt_items ของ GR เหล่านั้นเอง (join
- * ราคาจาก purchase_order_items) แทนการ fallback ไปใช้ po.subtotal (ยอดทั้ง PO) แบบเดิม —
- * จำเป็นสำหรับเคส "รับของหลายรอบ ออกใบแจ้งหนี้แยกตาม GR" ที่ MCP เป็นผู้เรียกหลัก (ผู้ใช้พูด
- * ผ่าน AI ไม่พิมพ์ items เอง) มิฉะนั้นยอดใบแจ้งหนี้จะผิด (เท่ากับยอดทั้ง PO ทุกครั้ง)
+ * ยกเครื่อง 2026-09-29 (รวม PO หลายใบ + ห้ามออกบิลไม่มี GR + แก้ไขใบแจ้งหนี้ได้):
+ *   เดิมใบแจ้งหนี้เป็น "PO-centric" (purchaseOrderId หลัก + purchaseOrderIds เสริม) เลือก GR
+ *   ได้แค่ของ PO หลัก ส่วน PO เสริมบวกยอดดิบจาก po.subtotal แล้ว GR ของมันไม่ถูกล็อกเลย
+ *   (ออกซ้ำได้ + 2109 ค้างตลอดไป) และยังออกบิลได้โดยไม่มี GR เลย (ถ้า GR ตามมาทีหลังจะ
+ *   Dr สต็อกซ้ำ) — ตอนนี้ใบแจ้งหนี้เป็น "GR-centric": ต้องมี GR เสมอ (หรือ derive มาจาก
+ *   PO ให้อัตโนมัติแบบ backward-compat) และ GR แต่ละใบจะพา PO ของมันเข้ามารวมเองไม่จำกัดจำนวน
+ *   PO ตราบใดที่เป็นผู้ขายรายเดียวกัน — ล็อกครบทุก GR ที่ใช้เสมอ
  */
 
 export class PurchaseBillingError extends Error {
   constructor(
     public code:
       | 'PO_REQUIRED'
-      | 'PO_NOT_FOUND'
       | 'GR_NOT_FOUND'
-      | 'GR_MISMATCH_PO'
       | 'GR_NOT_CONFIRMED'
       | 'GR_ALREADY_INVOICED'
-      | 'INVOICE_EXISTS_NO_GR'
+      | 'NO_GR'
+      | 'PO_SUPPLIER_MISMATCH'
       | 'SUPPLIER_REQUIRED'
       | 'AMOUNT_REQUIRED'
       | 'INVOICE_NOT_FOUND'
+      | 'INVOICE_CANCELLED'
+      | 'ITEM_NOT_FOUND'
       | 'OVER_BALANCE'
-  | 'PO_SUPPLIER_MISMATCH'
-  | 'CR_ACCOUNT_INVALID'
-  | 'PO_CANCELLED'
-  | 'STOCK_ITEM_INVALID',
+      | 'OVER_PAID'
+      | 'CR_ACCOUNT_INVALID'
+      | 'PERIOD_CLOSED',
     message: string
   ) {
     super(message)
   }
 }
 
-export interface CreatePurchaseInvoiceItem {
-  poItemId?: string
-  materialId?: string | null
-  quantity: number
-  unitPrice: number
+export interface CreatePurchaseInvoiceItemOverride {
+  /** goods_receipt_items.id — ใช้จับคู่กับรายการที่ derive จาก GR เพื่อแก้ราคา/จำนวนให้ตรงบิลผู้ขาย */
+  grItemId: string
+  unitPrice?: number
+  quantity?: number
 }
 
 export interface CreatePurchaseInvoicePayload {
-  /** ส่วนลดท้ายบิล — ไม่ระบุจะสืบทอดจากใบสั่งซื้อ */
+  /** ส่วนลดท้ายบิล — ไม่ระบุจะสืบทอดเป็นผลรวมส่วนลดของทุกใบสั่งซื้อที่เกี่ยวข้อง */
   discountAmount?: number
-  purchaseOrderId: string
+  /** legacy/optional — ใช้ตอน goodsReceiptIds ว่างเพื่อ backward-compat เท่านั้น ปกติไม่ต้องส่ง */
+  purchaseOrderId?: string
+  purchaseOrderIds?: string[]
   goodsReceiptId?: string | null
   goodsReceiptIds?: string[]
-  /** รวมหลายใบสั่งซื้อไว้ในบิลเดียว — ต้องเป็นผู้ขายรายเดียวกัน */
-  purchaseOrderIds?: string[]
   supplierInvoiceNumber?: string
   invoiceDate?: string
   dueDate?: string
   notes?: string
-  items?: CreatePurchaseInvoiceItem[]
+  /** override ราคา/จำนวนรายบรรทัด ผูกกับ GR item ไม่ใช่ป้อนรายการใหม่เอง */
+  items?: CreatePurchaseInvoiceItemOverride[]
   drAccountId?: string | null
   // บัญชีปลายทางของหนี้ (ฝั่ง Cr) — ไม่ส่งมา = ใช้เจ้าหนี้การค้าตามผังบัญชี
   crAccountId?: string | null
@@ -72,192 +76,62 @@ export interface CreatePurchaseInvoicePayload {
   bankAccountId?: string | null
 }
 
-/** รายการจาก GR (join ราคาจาก PO item) — ใช้ derive items เมื่อผู้เรียกไม่ส่ง items มา */
-function deriveItemsFromGoodsReceipts(tenantId: string, grIds: string[]): CreatePurchaseInvoiceItem[] {
+interface DerivedGrItem {
+  grItemId: string
+  poItemId: string | null
+  materialId: string | null
+  quantity: number
+  unitPrice: number
+}
+
+/** รายการจาก GR (join ราคาจาก PO item) ของ GR ทุกใบที่ระบุ — ใช้ derive items ของใบแจ้งหนี้ */
+function deriveItemsFromGoodsReceipts(grIds: string[]): DerivedGrItem[] {
   if (grIds.length === 0) return []
   const placeholders = grIds.map(() => '?').join(',')
   return db.prepare(`
-    SELECT gri.purchase_order_item_id as poItemId, gri.material_id as materialId,
+    SELECT gri.id as grItemId, gri.purchase_order_item_id as poItemId, gri.material_id as materialId,
       gri.accepted_qty as quantity, poi.unit_price as unitPrice
     FROM goods_receipt_items gri
     JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
     WHERE gri.goods_receipt_id IN (${placeholders}) AND gri.accepted_qty > 0
-  `).all(...grIds) as CreatePurchaseInvoiceItem[]
+  `).all(...grIds) as DerivedGrItem[]
+}
+
+interface PurchaseInvoiceTotals {
+  subtotal: number
+  discount: number
+  taxAmount: number
+  totalAmount: number
+  resolvedDrAccId: string | null
+  inventoryAccId: string
+  payableAccId: string
+  vatAccId: string | null
+  vatClaimable: boolean
 }
 
 /**
- * ดึงรายการสินค้าจากใบสั่งซื้อโดยตรง — ใช้เมื่อออกบิลคลุมทั้งใบ (ไม่ได้เจาะจงใบรับสินค้า)
- * ตรวจกับข้อมูลจริงแล้ว: purchase_orders.subtotal เท่ากับ SUM(items.total_price) ครบทั้ง 56 ใบ
- * (ตารางนี้ไม่มีคอลัมน์ส่วนลด) จึงใช้ผลรวมรายการเป็นยอดได้โดยไม่เพี้ยน
+ * คำนวณยอด VAT/ส่วนลด + resolve บัญชีปลายทางทั้งหมด — ทำนอก transaction เสมอ (auto-create
+ * บัญชีในผังบัญชีถ้ายังไม่มี + throw ก่อนแตะ DB ถ้าบัญชีปลายทางที่เลือกไม่ถูกต้อง)
  */
-function deriveItemsFromPurchaseOrders(tenantId: string, poIds: string[]): CreatePurchaseInvoiceItem[] {
-  if (poIds.length === 0) return []
-  const placeholders = poIds.map(() => '?').join(',')
-  return db.prepare(`
-    SELECT id as poItemId, material_id as materialId, quantity, unit_price as unitPrice
-    FROM purchase_order_items
-    WHERE tenant_id = ? AND purchase_order_id IN (${placeholders}) AND quantity > 0
-  `).all(tenantId, ...poIds) as CreatePurchaseInvoiceItem[]
-}
-
-/**
- * สร้างใบแจ้งหนี้ซื้อจากใบสั่งซื้อ + (ถ้ามี) ใบรับสินค้าที่ยืนยันแล้ว ลง journal ทันที
- * (Dr สต็อกวัตถุดิบ/บัญชีที่เลือก + Dr ภาษีซื้อ = Cr เจ้าหนี้การค้า) พร้อม vat_entries
- */
-export function createPurchaseInvoice(tenantId: string, actorEmail: string, payload: CreatePurchaseInvoicePayload) {
-  const { purchaseOrderId, supplierInvoiceNumber, invoiceDate, dueDate, notes, drAccountId, crAccountId, taxRate: reqTaxRate } = payload
-  if (!purchaseOrderId) throw new PurchaseBillingError('PO_REQUIRED', 'Purchase order is required')
-
-  const grIds: string[] = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
-    ? payload.goodsReceiptIds
-    : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
-
-  const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
-  if (!po) throw new PurchaseBillingError('PO_NOT_FOUND', 'Purchase order not found')
-
-  // รวมหลายใบสั่งซื้อไว้ในบิลเดียวได้ แต่ต้องเป็นผู้ขายรายเดียวกันเท่านั้น
-  // เพราะหนี้และใบกำกับภาษีต้องแยกตามนิติบุคคล — เทียบเลขผู้เสียภาษีก่อน ไม่ใช่ชื่อร้าน
-  const extraPoIds: string[] = Array.isArray(payload.purchaseOrderIds)
-    ? payload.purchaseOrderIds.filter((x: string) => x && x !== purchaseOrderId)
-    : []
-  const allPoIds = [purchaseOrderId, ...extraPoIds]
-  let extraSubtotal = 0
-  if (extraPoIds.length > 0) {
-    const ph = extraPoIds.map(() => '?').join(',')
-    const others = db.prepare(
-      `SELECT id, po_number, supplier_id, subtotal, status FROM purchase_orders WHERE tenant_id = ? AND id IN (${ph})`
-    ).all(tenantId, ...extraPoIds) as any[]
-    if (others.length !== extraPoIds.length) {
-      throw new PurchaseBillingError('PO_NOT_FOUND', 'มีใบสั่งซื้อบางใบที่เลือกไม่พบในระบบ')
-    }
-    const taxOf = (sid: string) =>
-      ((db.prepare('SELECT tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(sid, tenantId) as any)?.tax_id || '').trim()
-    const baseTax = taxOf(po.supplier_id)
-    for (const o of others) {
-      const sameParty = baseTax && taxOf(o.supplier_id)
-        ? taxOf(o.supplier_id) === baseTax
-        : o.supplier_id === po.supplier_id
-      if (!sameParty) {
-        throw new PurchaseBillingError(
-          'PO_SUPPLIER_MISMATCH',
-          `ใบสั่งซื้อ ${o.po_number} เป็นของผู้ขายคนละราย รวมเข้าบิลเดียวกันไม่ได้ — หนี้และใบกำกับภาษีต้องแยกตามนิติบุคคล`
-        )
-      }
-      if (o.status === 'CANCELLED') {
-        throw new PurchaseBillingError('PO_CANCELLED', `ใบสั่งซื้อ ${o.po_number} ถูกยกเลิกไปแล้ว`)
-      }
-      extraSubtotal += Number(o.subtotal) || 0
-    }
-  }
-  const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(po.supplier_id, tenantId) as any
-
-  // กันดึง GR เดิมมาออกใบแจ้งหนี้ซ้ำ — ต้องยืนยันแล้ว, อยู่ใน PO เดียวกัน, ยังไม่ถูกใช้ออกใบไปก่อน
-  if (grIds.length > 0) {
-    const placeholders = grIds.map(() => '?').join(',')
-    const grRows = db.prepare(
-      `SELECT id, status, invoiced_at, purchase_order_id FROM goods_receipts WHERE tenant_id = ? AND id IN (${placeholders})`
-    ).all(tenantId, ...grIds) as any[]
-    for (const grId of grIds) {
-      const row = grRows.find((r: any) => r.id === grId)
-      if (!row) throw new PurchaseBillingError('GR_NOT_FOUND', `ไม่พบใบรับสินค้า: ${grId}`)
-      if (row.purchase_order_id !== purchaseOrderId) {
-        throw new PurchaseBillingError('GR_MISMATCH_PO', 'ใบรับสินค้าที่เลือกไม่ตรงกับใบสั่งซื้อนี้')
-      }
-      if (row.status !== 'CONFIRMED') {
-        throw new PurchaseBillingError('GR_NOT_CONFIRMED', 'ใบรับสินค้าต้องยืนยันแล้วก่อนสร้างใบแจ้งหนี้')
-      }
-      if (row.invoiced_at) {
-        throw new PurchaseBillingError('GR_ALREADY_INVOICED', 'ใบรับสินค้านี้ถูกใช้สร้างใบแจ้งหนี้ไปแล้ว กรุณาเลือกใบอื่นหรือยกเลิกใบแจ้งหนี้เดิมก่อน')
-      }
-    }
-  } else {
-    // ไม่ได้เลือกใบรับสินค้า = ออกใบแจ้งหนี้คลุมทั้ง PO
-    // ต้องล็อก GR ที่ยืนยันแล้วของ PO นั้นไปด้วย ไม่งั้น GR จะค้างสถานะ "ยังไม่ออกใบ" ตลอดไป
-    // แล้ว PO จะโผล่ในตัวเลือกสร้างใบแจ้งหนี้ทั้งที่กดไปก็ถูกเด้งว่าซ้ำ (เจอจริงที่ PO-2026-00029)
-    // ยอดยังคิดจาก PO เหมือนเดิม — id พวกนี้ใช้เพื่อล็อก/ปลดล็อกตอนยกเลิกเท่านั้น
-    // ล็อกใบรับสินค้าของ "ทุกใบสั่งซื้อที่รวมอยู่ในบิลนี้" ไม่ใช่แค่ใบหลัก
-    // เดิมล็อกเฉพาะใบหลัก ใบที่เอามารวมจึงค้างสถานะ "ยังไม่ออกใบ" แล้วโผล่ให้เลือกซ้ำได้ตลอด
-    const poPlaceholders = allPoIds.map(() => '?').join(',')
-    const confirmedGrs = db.prepare(
-      `SELECT id, invoiced_at, purchase_order_id FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id IN (${poPlaceholders}) AND status = 'CONFIRMED'`
-    ).all(tenantId, ...allPoIds) as any[]
-    const freeGrs = confirmedGrs.filter((r: any) => !r.invoiced_at)
-
-    if (freeGrs.length > 0) {
-      for (const row of freeGrs) grIds.push(row.id)
-    } else if (confirmedGrs.length > 0) {
-      // ใบรับสินค้าทุกใบของ PO ที่เลือกถูกใช้ออกใบแจ้งหนี้ไปหมดแล้ว
-      throw new PurchaseBillingError('GR_ALREADY_INVOICED', 'ใบรับสินค้าของใบสั่งซื้อที่เลือกถูกใช้สร้างใบแจ้งหนี้ไปหมดแล้ว')
-    } else {
-      // ไม่มีใบรับสินค้าเลยสักใบ — กันออกบิลคลุมซ้ำ ต้องดูทั้งใบหลักเดิมและลิสต์ใบที่รวมเข้ามา
-      const dup = (db.prepare(
-        `SELECT pi_number, purchase_order_id, purchase_order_ids FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED'`
-      ).all(tenantId) as any[]).find((inv: any) => {
-        if (allPoIds.includes(inv.purchase_order_id)) return true
-        try { return (JSON.parse(inv.purchase_order_ids || '[]') as string[]).some(x => allPoIds.includes(x)) } catch { return false }
-      })
-      if (dup) throw new PurchaseBillingError('INVOICE_EXISTS_NO_GR', `ใบสั่งซื้อที่เลือกมีใบแจ้งหนี้อยู่แล้ว (${dup.pi_number})`)
-    }
-  }
-
-  // คำนวณหลัง grIds ครบแล้ว (สาย "คลุมทั้ง PO" เติม id เข้ามาทีหลัง)
-  const grIdsJson = JSON.stringify(grIds)
-
-  // ลำดับ fallback ยอด/รายการ: items ที่ผู้เรียกส่งมาก่อน > derive จาก GR ที่ระบุ > ยอดทั้ง PO (ไม่มี GR)
-  const userPickedGrs = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
-    ? payload.goodsReceiptIds
-    : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
-  // ที่มาของรายการสินค้า เรียงตามความเจาะจง:
-  //   1. items ที่ผู้เรียกส่งมาเอง
-  //   2. ใบรับสินค้าที่ผู้ใช้เจาะจงเลือก (คลุมเฉพาะใบสั่งซื้อหลัก)
-  //   3. รายการจากใบสั่งซื้อทุกใบที่รวมอยู่ในบิล  <-- ทางนี้เพิ่งเพิ่ม
-  // เดิมไม่มีข้อ 3 ใบแจ้งหนี้ที่สร้างจาก dropdown ใบสั่งซื้อจึงไม่มีรายการสินค้าเลยสักบรรทัด
-  // (เช็คข้อมูลจริงแล้ว: 13 จาก 13 ใบว่างทั้งหมด) และยอดก็มาจาก po.subtotal ดิบ ๆ
-  // materialId (= stock_items.id) ที่ส่งมาเองต้องเป็นของเทแนนต์นี้ (ที่ derive จาก GR/PO ผ่านการเช็คตอนสร้างเอกสารนั้นแล้ว)
-  for (const item of payload.items || []) {
-    try {
-      item.materialId = resolveStockItemId(tenantId, item.materialId)
-    } catch (e) {
-      if (e instanceof StockItemRefError) throw new PurchaseBillingError('STOCK_ITEM_INVALID', e.message)
-      throw e
-    }
-  }
-  let items = (payload.items && payload.items.length > 0)
-    ? payload.items
-    : deriveItemsFromGoodsReceipts(tenantId, userPickedGrs)
-  // รายการจากใบรับสินค้าคลุมแค่ใบหลัก ยอดใบที่รวมเข้ามาจึงต้องบวก extraSubtotal ต่างหาก
-  // แต่รายการจากใบสั่งซื้อคลุมครบทุกใบอยู่แล้ว ถ้าบวกซ้ำจะได้ยอดเกิน
-  let extraNeeded = true
-  if (items.length === 0) {
-    const poItems = deriveItemsFromPurchaseOrders(tenantId, allPoIds)
-    if (poItems.length > 0) { items = poItems; extraNeeded = false }
-  }
-
-  const id = generateId()
-  const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
-  const now = new Date().toISOString()
-
-  let subtotal = items.length > 0
-    ? items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) + (extraNeeded ? extraSubtotal : 0)
-    : po.subtotal + extraSubtotal
-
-  const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (po.tax_rate ?? 7)
-  // ส่วนลดสืบทอดจากใบสั่งซื้อถ้าไม่ได้ระบุมา แล้วหักออกจากฐานก่อนคิดภาษี (ม.79)
-  const reqDiscount = payload.discountAmount != null ? Number(payload.discountAmount) : (po.discount_amount ?? 0)
-  // ใบกำกับซื้อสืบทอดโหมด VAT จากใบสั่งซื้อ ไม่ต้องให้ผู้ใช้เลือกซ้ำ
-  const inclusive = po.vat_inclusive === 1
-  const piCalc = calcVat(subtotal, { rate: taxRate, discountAmount: reqDiscount, inclusive })
+function calcPurchaseInvoiceTotals(
+  tenantId: string,
+  subtotalRaw: number,
+  taxRate: number,
+  discountAmount: number,
+  inclusive: boolean,
+  drAccountId?: string | null,
+  crAccountId?: string | null
+): PurchaseInvoiceTotals {
+  const piCalc = calcVat(subtotalRaw, { rate: taxRate, discountAmount, inclusive })
   const { taxAmount, totalAmount, discount } = piCalc
-  subtotal = piCalc.subtotal
+  const subtotal = piCalc.subtotal
 
-  // Resolve accounts before transaction (auto-create if not yet in chart of accounts)
   const resolvedDrAccId = drAccountId
     ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(drAccountId, tenantId) as any)?.id ?? null
     : null
   const inventoryAccId = resolvedDrAccId
     ?? getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
   // ปลายทางของหนี้: ถ้าผู้ใช้เลือกมาต้องเป็นบัญชีหนี้สินของ tenant นี้จริง ๆ
-  // เลือกผิดประเภท (เช่นไปลงบัญชีรายได้) งบจะเพี้ยนเงียบ ๆ จึงเช็ค type ก่อนรับ
   const pickedCrAcc = crAccountId
     ? (db.prepare("SELECT id FROM accounts WHERE id = ? AND tenant_id = ? AND type = 'LIABILITY'").get(crAccountId, tenantId) as any)?.id ?? null
     : null
@@ -266,9 +140,194 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   }
   const payableAccId = pickedCrAcc
     ?? getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
-  const vatAccId = taxAmount > 0 ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : null
+  // ยังไม่จด VAT: ภาษีที่จ่ายผู้ขายขอคืนไม่ได้ → Dr บัญชีเดียวกับตัวของ (รวมเป็นต้นทุน) และไม่ลงทะเบียนภาษีซื้อ
+  const vatClaimable = isVatRegistered(tenantId)
+  const vatAccId = taxAmount > 0 ? (vatClaimable ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : inventoryAccId) : null
+
+  return { subtotal, discount, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable }
+}
+
+/**
+ * ลง journal_entries + journal_lines + vat_entries ของใบแจ้งหนี้ซื้อ — ส่วน "โพสต์บัญชี" ที่
+ * createPurchaseInvoice และ updatePurchaseInvoice เรียกร่วมกัน (ต้องเรียกอยู่ใน db.transaction
+ * ของผู้เรียกเสมอ ตัวมันเองไม่เปิด transaction ซ้ำ)
+ */
+function postPurchaseInvoiceJournal(
+  tenantId: string,
+  actorEmail: string,
+  params: {
+    piId: string
+    piNumber: string
+    invoiceDate: string
+    notes?: string | null
+    grIds: string[]
+    totals: PurchaseInvoiceTotals
+    taxRate: number
+    supplierName?: string | null
+    supplierTaxId?: string | null
+  }
+) {
+  const { piId, piNumber, invoiceDate, notes, grIds, totals, taxRate, supplierName, supplierTaxId } = params
+  const { subtotal, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable } = totals
+  const now = new Date().toISOString()
   const journalId = generateId()
-  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(invoiceDate || now).getFullYear(), 5)
+  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(invoiceDate).getFullYear(), 5)
+
+  db.prepare(`
+    INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
+      description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
+  `).run(journalId, tenantId, journalNumber, invoiceDate.substring(0, 10),
+    piId, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, now, actorEmail, notes || null,
+    actorEmail, now, now)
+
+  const insertLine = db.prepare(`
+    INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  let lineNo = 1
+  const drAccLabel = resolvedDrAccId
+    ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
+    : 'สต็อกวัตถุดิบ'
+  // ของที่ใบนี้อ้างอิงถูกตั้งค้างรับไว้แล้วตอนยืนยันใบรับสินค้า (Dr สต็อก / Cr 2109)
+  // ใบแจ้งหนี้จึงมาปิด 2109 ไม่ใช่ Dr สต็อกซ้ำอีกรอบ — grIds ตรงนี้ต้องเป็น "ทุก GR" ที่ใบนี้อ้างอิง
+  // (รวม PO หลายใบ) ไม่ใช่แค่ GR ของ PO หลัก ไม่งั้นยอดปิด 2109 จะขาดเป็นส่วนของ PO ที่เอามารวม
+  const accruedForGRs = grIds.length > 0
+    ? (db.prepare(`
+        SELECT COALESCE(SUM(l.credit), 0) AS total
+        FROM journal_lines l
+        JOIN journal_entries je ON je.id = l.journal_entry_id
+        JOIN accounts a ON a.id = l.account_id
+        WHERE je.tenant_id = ? AND je.reference_type = 'GOODS_RECEIPT' AND a.code = ?
+          AND je.reference_id IN (${grIds.map(() => '?').join(', ')})
+      `).get(tenantId, ACC.GRNI, ...grIds) as any).total as number
+    : 0
+  const grniPortion = Math.min(Math.round(accruedForGRs * 100) / 100, subtotal)
+  const inventoryPortion = Math.round((subtotal - grniPortion) * 100) / 100
+  if (grniPortion > 0.005) {
+    const grniAccId = getOrCreateAccount(tenantId, ACC.GRNI)
+    insertLine.run(generateId(), tenantId, journalId, grniAccId, lineNo++, `ปิดค้างรับของ - ${piNumber}`, grniPortion, 0)
+  }
+  if (inventoryPortion > 0.005) {
+    insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, inventoryPortion, 0)
+  }
+  if (vatAccId && taxAmount > 0) {
+    insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${piNumber}`, taxAmount, 0)
+  }
+  insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
+
+  // VAT Entry (Input VAT) — เฉพาะกิจการที่จด VAT แล้ว
+  if (taxAmount > 0 && vatClaimable) {
+    db.prepare(`
+      INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, journal_entry_id, created_at)
+      VALUES (?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+    `).run(generateId(), tenantId, piId, piNumber, invoiceDate.substring(0, 10),
+      supplierName || '', supplierTaxId || null,
+      subtotal, taxRate, taxAmount, totalAmount, journalId, now)
+  }
+
+  return { journalId, journalNumber }
+}
+
+/**
+ * สร้างใบแจ้งหนี้ซื้อจากใบรับสินค้า (GR) ที่ยืนยันแล้วเท่านั้น ลง journal ทันที
+ * (Dr สต็อกวัตถุดิบ/บัญชีที่เลือก + Dr ภาษีซื้อ (ถ้ามี) = Cr เจ้าหนี้การค้า) พร้อม vat_entries
+ *
+ * GR ที่ระบุมาไม่จำเป็นต้องมาจาก PO เดียวกัน — รวมได้หลาย PO ในบิลเดียวตราบใดที่เป็นผู้ขาย
+ * รายเดียวกันทุกใบ (เทียบเลขผู้เสียภาษีก่อนชื่อ/id) purchase_order_id ของใบแจ้งหนี้ = PO ของ
+ * GR ใบแรกที่ระบุมา, purchase_order_ids = PO ทุกใบที่เกี่ยวข้อง (distinct)
+ */
+export function createPurchaseInvoice(tenantId: string, actorEmail: string, payload: CreatePurchaseInvoicePayload) {
+  const { supplierInvoiceNumber, invoiceDate, dueDate, notes, drAccountId, crAccountId, taxRate: reqTaxRate } = payload
+
+  // ── 1) ตกลง GR ที่จะใช้ — ไม่มีมาให้ backward-compat ขยายจาก purchaseOrderId/purchaseOrderIds ──
+  let grIds: string[] = Array.isArray(payload.goodsReceiptIds) && payload.goodsReceiptIds.length > 0
+    ? [...new Set(payload.goodsReceiptIds)]
+    : (payload.goodsReceiptId ? [payload.goodsReceiptId] : [])
+
+  if (grIds.length === 0) {
+    const poIds = [...new Set([
+      ...(payload.purchaseOrderId ? [payload.purchaseOrderId] : []),
+      ...(Array.isArray(payload.purchaseOrderIds) ? payload.purchaseOrderIds : []),
+    ])]
+    if (poIds.length === 0) throw new PurchaseBillingError('PO_REQUIRED', 'ต้องระบุใบรับสินค้า (GR) หรือใบสั่งซื้อ')
+    const poPh = poIds.map(() => '?').join(',')
+    const freeGrs = db.prepare(
+      `SELECT id FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id IN (${poPh}) AND status = 'CONFIRMED' AND invoiced_at IS NULL`
+    ).all(tenantId, ...poIds) as any[]
+    if (freeGrs.length === 0) {
+      throw new PurchaseBillingError('NO_GR', 'ต้องยืนยันรับของ (GR) ก่อนออกใบแจ้งหนี้ — ใบแจ้งหนี้ออกจากของที่รับจริงเท่านั้น')
+    }
+    grIds = freeGrs.map((r: any) => r.id)
+  }
+
+  // ── 2) โหลด+ตรวจ GR ทุกใบ (join PO เอา supplier/tax_rate/vat_inclusive/discount/is_paid มาด้วย) ──
+  const grPh = grIds.map(() => '?').join(',')
+  const grRowsRaw = db.prepare(`
+    SELECT gr.id, gr.gr_number, gr.status, gr.invoiced_at, gr.purchase_order_id,
+      po.po_number, po.supplier_id, po.tax_rate as po_tax_rate, po.vat_inclusive as po_vat_inclusive,
+      po.discount_amount as po_discount_amount, po.is_paid as po_is_paid
+    FROM goods_receipts gr
+    JOIN purchase_orders po ON po.id = gr.purchase_order_id
+    WHERE gr.tenant_id = ? AND gr.id IN (${grPh})
+  `).all(tenantId, ...grIds) as any[]
+
+  const orderedGrRows = grIds.map(grId => {
+    const row = grRowsRaw.find(r => r.id === grId)
+    if (!row) throw new PurchaseBillingError('GR_NOT_FOUND', `ไม่พบใบรับสินค้า: ${grId}`)
+    if (row.status !== 'CONFIRMED') throw new PurchaseBillingError('GR_NOT_CONFIRMED', `ใบรับสินค้า ${row.gr_number} ต้องยืนยันแล้วก่อนสร้างใบแจ้งหนี้`)
+    if (row.invoiced_at) throw new PurchaseBillingError('GR_ALREADY_INVOICED', `ใบรับสินค้า ${row.gr_number} ถูกใช้สร้างใบแจ้งหนี้ไปแล้ว กรุณาเลือกใบอื่นหรือยกเลิกใบแจ้งหนี้เดิมก่อน`)
+    return row
+  })
+
+  // ── 3) ทุก GR ต้องเป็นผู้ขายรายเดียวกัน — เทียบเลขผู้เสียภาษีก่อน (ไม่ใช่ชื่อร้าน) ──
+  const taxIdOf = (sid: string) => ((db.prepare('SELECT tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(sid, tenantId) as any)?.tax_id || '').trim()
+  const baseSupplierId = orderedGrRows[0].supplier_id
+  const baseTaxId = taxIdOf(baseSupplierId)
+  for (const row of orderedGrRows.slice(1)) {
+    const rowTaxId = taxIdOf(row.supplier_id)
+    const sameParty = baseTaxId && rowTaxId ? rowTaxId === baseTaxId : row.supplier_id === baseSupplierId
+    if (!sameParty) {
+      throw new PurchaseBillingError(
+        'PO_SUPPLIER_MISMATCH',
+        `ใบรับสินค้า ${row.gr_number} (${row.po_number}) เป็นของผู้ขายคนละราย รวมเข้าบิลเดียวกันไม่ได้ — หนี้และใบกำกับภาษีต้องแยกตามนิติบุคคล`
+      )
+    }
+  }
+
+  const purchaseOrderId = orderedGrRows[0].purchase_order_id
+  const allPoIds = [...new Set(orderedGrRows.map(r => r.purchase_order_id))]
+  const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(baseSupplierId, tenantId) as any
+
+  // ── 4) รายการสินค้า — derive จาก goods_receipt_items ของทุก GR แล้ว override ราคา/จำนวนตาม grItemId ถ้าผู้เรียกส่งมา ──
+  const derivedItems = deriveItemsFromGoodsReceipts(grIds)
+  const overrideByGrItem = new Map((payload.items || []).map(o => [o.grItemId, o]))
+  const items = derivedItems.map(d => {
+    const ov = overrideByGrItem.get(d.grItemId)
+    return {
+      poItemId: d.poItemId,
+      materialId: d.materialId,
+      quantity: ov?.quantity != null ? Number(ov.quantity) : d.quantity,
+      unitPrice: ov?.unitPrice != null ? Number(ov.unitPrice) : d.unitPrice,
+    }
+  })
+  const subtotalRaw = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+
+  // ── 5) VAT/ส่วนลด สืบทอดจาก PO — อัตราภาษี/โหมดรวม VAT จาก PO ของ GR ใบแรก, ส่วนลดรวมทุก PO ที่เกี่ยวข้อง ──
+  const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (orderedGrRows[0].po_tax_rate ?? 7)
+  const inclusive = orderedGrRows[0].po_vat_inclusive === 1
+  const discountAmount = payload.discountAmount != null
+    ? Number(payload.discountAmount)
+    : allPoIds.reduce((sum, poId) => sum + (Number(orderedGrRows.find(r => r.purchase_order_id === poId)!.po_discount_amount) || 0), 0)
+
+  // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
+  const id = generateId()
+  const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
+  const now = new Date().toISOString()
+  const finalInvoiceDate = invoiceDate || now
+
+  // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId)
 
   const transaction = db.transaction(() => {
     db.prepare(`
@@ -276,9 +335,10 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
         supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive,
         balance_amount, status, payment_status, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
-    `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, po.supplier_id,
-      grIds[0] || null, grIdsJson, JSON.stringify(allPoIds), invoiceDate || now, dueDate || null, subtotal, discount, taxRate, taxAmount,
-      totalAmount, inclusive ? 1 : 0, totalAmount, notes || '', now, now)
+    `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, baseSupplierId,
+      grIds[0], JSON.stringify(grIds), JSON.stringify(allPoIds), finalInvoiceDate, dueDate || null,
+      totals.subtotal, totals.discount, taxRate, totals.taxAmount, totals.totalAmount, inclusive ? 1 : 0,
+      totals.totalAmount, notes || '', now, now)
 
     if (items.length > 0) {
       const insertItem = db.prepare(`
@@ -287,99 +347,48 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       for (const item of items) {
-        const total = item.quantity * item.unitPrice
-        // FK ผิดตาราง (ชี้ materials ทั้งที่ค่าจริงเป็น stock_items) ถูก migrate ออกแล้ว 2026-09-14
-        // จึงเขียนค่าจริงได้ — GET /invoices/:id join คอลัมน์นี้กับ stock_items อยู่แล้ว
         insertItem.run(generateId(), tenantId, id, item.poItemId || null, item.materialId || null,
-          item.quantity, item.unitPrice, total)
+          item.quantity, item.unitPrice, item.quantity * item.unitPrice)
       }
     }
 
-    // Lock the goods receipts this invoice draws on so they can't be pulled into another one
-    if (grIds.length > 0) {
-      const markInvoiced = db.prepare('UPDATE goods_receipts SET invoiced_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-      for (const grId of grIds) markInvoiced.run(now, now, grId, tenantId)
-    }
+    // Lock ทุก GR ที่ใบนี้ใช้ — กันดึงไปออกใบซ้ำ
+    const markInvoiced = db.prepare('UPDATE goods_receipts SET invoiced_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+    for (const grId of grIds) markInvoiced.run(now, now, grId, tenantId)
 
-    // === POST JOURNAL ENTRY ===
-    // Dr สต็อกวัตถุดิบ (1107, หรือบัญชีที่เลือก) + Dr ภาษีซื้อ (1110) ถ้ามี VAT
-    // Cr เจ้าหนี้การค้า (2101)
-    db.prepare(`
-      INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
-    `).run(journalId, tenantId, journalNumber, (invoiceDate || now).substring(0, 10),
-      id, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, now, actorEmail, notes || null,
-      actorEmail, now, now)
-
-    const insertLine = db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    let lineNo = 1
-    const drAccLabel = resolvedDrAccId
-      ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
-      : 'สต็อกวัตถุดิบ'
-    // ของที่ใบนี้อ้างอิงถูกตั้งค้างรับไว้แล้วตอนยืนยันใบรับสินค้า (Dr สต็อก / Cr 2109)
-    // ใบแจ้งหนี้จึงมาปิด 2109 ไม่ใช่ Dr สต็อกซ้ำอีกรอบ — ไม่งั้นสินค้าคงเหลือเบิ้ล
-    // ดึงยอดที่ตั้งค้างไว้จริงจาก journal แทนการเดาจาก subtotal เพราะราคาบนใบแจ้งหนี้
-    // อาจไม่เท่าราคาใบสั่งซื้อ ส่วนต่างที่เหลือค้างใน 2109 คือผลต่างราคา ซึ่งควรเห็นได้
-    const accruedForGRs = grIds.length > 0
-      ? (db.prepare(`
-          SELECT COALESCE(SUM(l.credit), 0) AS total
-          FROM journal_lines l
-          JOIN journal_entries je ON je.id = l.journal_entry_id
-          JOIN accounts a ON a.id = l.account_id
-          WHERE je.tenant_id = ? AND je.reference_type = 'GOODS_RECEIPT' AND a.code = ?
-            AND je.reference_id IN (${grIds.map(() => '?').join(', ')})
-        `).get(tenantId, ACC.GRNI, ...grIds) as any).total as number
-      : 0
-    const grniPortion = Math.min(Math.round(accruedForGRs * 100) / 100, subtotal)
-    const inventoryPortion = Math.round((subtotal - grniPortion) * 100) / 100
-    if (grniPortion > 0.005) {
-      const grniAccId = getOrCreateAccount(tenantId, ACC.GRNI)
-      insertLine.run(generateId(), tenantId, journalId, grniAccId, lineNo++, `ปิดค้างรับของ - ${piNumber}`, grniPortion, 0)
-    }
-    if (inventoryPortion > 0.005) {
-      insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, inventoryPortion, 0)
-    }
-    if (vatAccId && taxAmount > 0) {
-      insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${piNumber}`, taxAmount, 0)
-    }
-    insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
-
-    // VAT Entry (Input VAT)
-    if (taxAmount > 0) {
-      db.prepare(`
-        INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date, party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
-      `).run(generateId(), tenantId, 'PURCHASE_INVOICE', id, piNumber, (invoiceDate || now).substring(0, 10),
-        supplier?.name || '', supplier?.tax_id || null,
-        subtotal, taxRate, taxAmount, totalAmount, now)
-    }
+    postPurchaseInvoiceJournal(tenantId, actorEmail, {
+      piId: id, piNumber, invoiceDate: finalInvoiceDate, notes, grIds, totals, taxRate,
+      supplierName: supplier?.name, supplierTaxId: supplier?.tax_id,
+    })
   })
 
   transaction()
 
-  let invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+  // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — ใบแจ้งหนี้ซื้อถัดไปจะ default ให้ถูกโดยไม่ต้องเลือกใหม่
+  rememberContactVatMode(tenantId, 'supplier', baseSupplierId, taxRate, inclusive)
 
-  // Auto-settle payment if autoPay is requested, or if PO was already paid (is_paid === 1) and autoPay !== false
-  const shouldAutoPay = payload.autoPay !== undefined
-    ? payload.autoPay
-    : (po && po.is_paid === 1)
+  let invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+  const primaryPo = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
+
+  // Auto-settle payment if autoPay is requested, or if every PO involved was already paid (is_paid === 1)
+  const posPaidPh = allPoIds.map(() => '?').join(',')
+  const unpaidPoCount = (db.prepare(
+    `SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ? AND id IN (${posPaidPh}) AND is_paid != 1`
+  ).get(tenantId, ...allPoIds) as any).c
+  const shouldAutoPay = payload.autoPay !== undefined ? payload.autoPay : (unpaidPoCount === 0)
 
   let paymentResult: any = null
   if (shouldAutoPay && invoice && invoice.balance_amount > 0) {
     try {
       paymentResult = paySupplier(tenantId, actorEmail, {
-        supplierId: po.supplier_id,
+        supplierId: baseSupplierId,
         purchaseInvoiceId: id,
-        paymentDate: invoiceDate || now,
-        paymentMethod: payload.paymentMethod || po.payment_method || 'TRANSFER',
-        paymentReference: payload.paymentReference || po.payment_reference || '',
-        bankAccountId: payload.bankAccountId || po.bank_account_id || null,
+        paymentDate: finalInvoiceDate,
+        paymentMethod: payload.paymentMethod || primaryPo?.payment_method || 'TRANSFER',
+        paymentReference: payload.paymentReference || primaryPo?.payment_reference || '',
+        bankAccountId: payload.bankAccountId || primaryPo?.bank_account_id || null,
         amount: invoice.total_amount,
-        notes: `[Auto-Settle from ${po.po_number}] ${notes || ''}`.trim(),
+        notes: `[Auto-Settle from ${primaryPo?.po_number || ''}] ${notes || ''}`.trim(),
       })
       invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
     } catch (payErr) {
@@ -389,6 +398,203 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
 
   const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
   return { ...invoice, items: invoiceItems, payment: paymentResult }
+}
+
+/**
+ * กลับรายการ journal + vat_entries ปัจจุบันของใบแจ้งหนี้ซื้อ — ใช้เฉพาะตอนแก้ไข (updatePurchaseInvoice)
+ * ต่างจาก reverseJournalEntryForReference ของ routes/purchase.routes.ts (ที่ใช้ตอนยกเลิก) ตรงที่
+ * ต้อง "กลับได้ซ้ำหลายรอบ" (แก้ไขซ้ำได้เรื่อย ๆ ไม่ใช่ครั้งเดียวจบแบบยกเลิก) — ตัวนั้นกันออกซ้ำด้วยการ
+ * เช็คว่ามี reversal อยู่แล้วหรือไม่ (ใช้ไม่ได้กับที่นี่เพราะจะบล็อกการแก้ไขครั้งที่ 2 เป็นต้นไป)
+ * จึง relabel journal/vat_entries เดิมเป็น _SUPERSEDED ทันทีหลังกลับรายการ เพื่อให้รอบถัดไป (ทั้ง
+ * การแก้ไขซ้ำและปุ่มยกเลิกในอนาคต) query reference_type/document_type = 'PURCHASE_INVOICE' เจอ
+ * แถวปัจจุบันแถวเดียวเสมอ ไม่มีของเก่าค้างมาปนให้กลับซ้ำหรือกลับผิดตัว
+ */
+function reverseCurrentPurchaseInvoiceJournal(tenantId: string, actorEmail: string, piId: string, piNumber: string, dateStr: string) {
+  const now = new Date().toISOString()
+
+  const original = db.prepare(
+    "SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = 'PURCHASE_INVOICE' AND reference_id = ?"
+  ).get(tenantId, piId) as any
+  if (original) {
+    const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ?').all(original.id) as any[]
+    const journalId = generateId()
+    const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(dateStr).getFullYear(), 5)
+
+    db.prepare(`
+      INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
+        description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE_EDIT', ?, ?, ?, ?, 1, 1, ?, ?, NULL, ?, ?, ?)
+    `).run(journalId, tenantId, journalNumber, dateStr, piId,
+      `แก้ไขใบแจ้งหนี้ซื้อ ${piNumber} — กลับรายการเดิม`, original.total_credit, original.total_debit,
+      now, actorEmail, actorEmail, now, now)
+
+    const insertLine = db.prepare(`
+      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    let lineNo = 1
+    for (const line of lines) {
+      insertLine.run(generateId(), tenantId, journalId, line.account_id, lineNo++, `กลับรายการ: ${line.description || ''}`, line.credit, line.debit)
+    }
+
+    // relabel journal เดิม — ไม่งั้นรอบถัดไป (แก้ไขซ้ำ/ยกเลิก) จะ query reference_type='PURCHASE_INVOICE'
+    // เจอ 2 แถว (เดิม + ที่โพสต์ใหม่) แล้วหยิบผิดตัว
+    db.prepare("UPDATE journal_entries SET reference_type = 'PURCHASE_INVOICE_SUPERSEDED' WHERE id = ?").run(original.id)
+  }
+
+  const vatEntry = db.prepare(
+    "SELECT * FROM vat_entries WHERE tenant_id = ? AND document_type = 'PURCHASE_INVOICE' AND document_id = ?"
+  ).get(tenantId, piId) as any
+  if (vatEntry) {
+    db.prepare(`
+      INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date,
+        party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, created_at)
+      VALUES (?, ?, 'PURCHASE_INVOICE_EDIT', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+    `).run(generateId(), tenantId, piId, piNumber, dateStr,
+      vatEntry.party_name, vatEntry.party_tax_id, -vatEntry.base_amount, vatEntry.vat_rate,
+      -vatEntry.vat_amount, -vatEntry.total_amount, now)
+    db.prepare("UPDATE vat_entries SET document_type = 'PURCHASE_INVOICE_SUPERSEDED' WHERE id = ?").run(vatEntry.id)
+  }
+}
+
+export interface UpdatePurchaseInvoiceItemInput {
+  /** purchase_invoice_items.id ที่มีอยู่แล้ว — แก้ไขไม่เปลี่ยนชุด GR/รายการ เปลี่ยนได้แค่ราคา/จำนวน */
+  id: string
+  unitPrice?: number
+  quantity?: number
+}
+
+export interface UpdatePurchaseInvoicePayload {
+  // ── ฟิลด์หัวบิล — แก้แล้วไม่แตะ journal ──
+  supplierInvoiceNumber?: string
+  dueDate?: string
+  notes?: string
+  // ── ฟิลด์การเงิน — แก้แล้ว reverse journal เดิมทั้งใบ + ลงใหม่ทั้งใบ ──
+  items?: UpdatePurchaseInvoiceItemInput[]
+  invoiceDate?: string
+  taxRate?: number
+  discountAmount?: number
+  drAccountId?: string | null
+  crAccountId?: string | null
+}
+
+/**
+ * แก้ไขใบแจ้งหนี้ซื้อที่ออกไปแล้ว (รวมใบที่จ่ายเงินแล้วบางส่วน/เต็มจำนวน) — ชุด GR ที่ผูกไว้แก้ไม่ได้
+ * (ยกเลิกแล้วออกใหม่แทน) เปลี่ยนได้แค่ราคา/จำนวนต่อบรรทัด วันที่ อัตราภาษี ส่วนลด และบัญชีปลายทาง
+ *
+ * ฟิลด์หัวบิลอย่างเดียว (supplierInvoiceNumber/dueDate/notes) → UPDATE ตรง ๆ ไม่แตะ journal
+ * ฟิลด์การเงินตัวใดตัวหนึ่ง → reverse journal+vat_entries เดิมทั้งใบ แล้วโพสต์ใหม่ทั้งใบด้วยตัวเลขใหม่
+ * (ใช้ postPurchaseInvoiceJournal ตัวเดียวกับตอนสร้าง — ไม่มีสำเนาที่สอง)
+ */
+export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: string, payload: UpdatePurchaseInvoicePayload) {
+  const pi = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+  if (!pi) throw new PurchaseBillingError('INVOICE_NOT_FOUND', 'ไม่พบใบแจ้งหนี้ซื้อ')
+  if (pi.status === 'CANCELLED') throw new PurchaseBillingError('INVOICE_CANCELLED', 'ใบแจ้งหนี้นี้ถูกยกเลิกไปแล้ว แก้ไขไม่ได้')
+
+  const now = new Date().toISOString()
+  const hasFinancialChange = payload.items !== undefined || payload.invoiceDate !== undefined
+    || payload.taxRate !== undefined || payload.discountAmount !== undefined
+    || payload.drAccountId !== undefined || payload.crAccountId !== undefined
+
+  // งวดปิดบัญชี: เช็คทั้งวันที่เดิมของใบ (แก้ใบเก่าที่อยู่ในงวดปิดไม่ได้เลย) และวันที่ใหม่ถ้าเปลี่ยน
+  const oldClosed = closedPeriodLabel(tenantId, pi.invoice_date)
+  if (oldClosed) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${oldClosed} ปิดแล้ว แก้ไขใบแจ้งหนี้นี้ไม่ได้`)
+  const newInvoiceDate = payload.invoiceDate || pi.invoice_date
+  if (hasFinancialChange) {
+    const newClosed = closedPeriodLabel(tenantId, newInvoiceDate)
+    if (newClosed) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${newClosed} ปิดแล้ว บันทึกวันที่นี้ไม่ได้`)
+  }
+
+  if (!hasFinancialChange) {
+    db.prepare(`
+      UPDATE purchase_invoices SET supplier_invoice_number = COALESCE(?, supplier_invoice_number),
+        due_date = COALESCE(?, due_date), notes = COALESCE(?, notes), updated_at = ?
+      WHERE id = ? AND tenant_id = ?
+    `).run(payload.supplierInvoiceNumber ?? null, payload.dueDate ?? null, payload.notes ?? null, now, id, tenantId)
+    return {
+      ...db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId),
+      items: db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id),
+    }
+  }
+
+  // ── ฟิลด์การเงิน — คำนวณยอดใหม่ก่อน แล้วค่อยตรวจ over-paid ก่อนแตะ DB ──
+  const existingItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id) as any[]
+  const overrideById = new Map((payload.items || []).map(o => [o.id, o]))
+  for (const ov of payload.items || []) {
+    if (!existingItems.find(e => e.id === ov.id)) {
+      throw new PurchaseBillingError('ITEM_NOT_FOUND', `ไม่พบรายการ ${ov.id} ในใบแจ้งหนี้นี้`)
+    }
+  }
+  const newItems = existingItems.map(e => {
+    const ov = overrideById.get(e.id)
+    return {
+      poItemId: e.purchase_order_item_id,
+      materialId: e.material_id,
+      quantity: ov?.quantity != null ? Number(ov.quantity) : e.quantity,
+      unitPrice: ov?.unitPrice != null ? Number(ov.unitPrice) : e.unit_price,
+    }
+  })
+  const subtotalRaw = newItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+
+  const taxRate = payload.taxRate != null ? Number(payload.taxRate) : pi.tax_rate
+  const discountAmount = payload.discountAmount != null ? Number(payload.discountAmount) : pi.discount_amount
+  const inclusive = pi.vat_inclusive === 1
+  const drAccountId = payload.drAccountId !== undefined ? payload.drAccountId : undefined
+  const crAccountId = payload.crAccountId !== undefined ? payload.crAccountId : undefined
+
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId)
+
+  if (totals.totalAmount < (pi.paid_amount || 0) - 0.005) {
+    throw new PurchaseBillingError(
+      'OVER_PAID',
+      `ยอดใหม่ (฿${totals.totalAmount.toLocaleString()}) น้อยกว่ายอดที่จ่ายไปแล้ว (฿${(pi.paid_amount || 0).toLocaleString()}) — กรุณายกเลิกการจ่ายเงินก่อนแล้วค่อยแก้ไขยอด`
+    )
+  }
+
+  const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(pi.supplier_id, tenantId) as any
+  let grIds: string[] = []
+  try { grIds = JSON.parse(pi.goods_receipt_ids || '[]') } catch { grIds = [] }
+  if (grIds.length === 0 && pi.goods_receipt_id) grIds = [pi.goods_receipt_id]
+
+  const transaction = db.transaction(() => {
+    reverseCurrentPurchaseInvoiceJournal(tenantId, actorEmail, pi.id, pi.pi_number, now.substring(0, 10))
+
+    db.prepare('DELETE FROM purchase_invoice_items WHERE purchase_invoice_id = ?').run(id)
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_invoice_items (id, tenant_id, purchase_invoice_id, purchase_order_item_id, material_id, quantity, unit_price, total_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const it of newItems) {
+      insertItem.run(generateId(), tenantId, id, it.poItemId || null, it.materialId || null, it.quantity, it.unitPrice, it.quantity * it.unitPrice)
+    }
+
+    const paidAmount = pi.paid_amount || 0
+    const newBalance = Math.round((totals.totalAmount - paidAmount) * 100) / 100
+    const newPaymentStatus = newBalance <= 0.005 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'UNPAID')
+    db.prepare(`
+      UPDATE purchase_invoices SET supplier_invoice_number = COALESCE(?, supplier_invoice_number),
+        due_date = COALESCE(?, due_date), notes = COALESCE(?, notes),
+        invoice_date = ?, tax_rate = ?, discount_amount = ?, subtotal = ?, tax_amount = ?, total_amount = ?,
+        balance_amount = ?, payment_status = ?, updated_at = ?
+      WHERE id = ? AND tenant_id = ?
+    `).run(payload.supplierInvoiceNumber ?? null, payload.dueDate ?? null, payload.notes ?? null,
+      newInvoiceDate, taxRate, totals.discount, totals.subtotal, totals.taxAmount, totals.totalAmount,
+      newBalance, newPaymentStatus, now, id, tenantId)
+
+    postPurchaseInvoiceJournal(tenantId, actorEmail, {
+      piId: id, piNumber: pi.pi_number, invoiceDate: newInvoiceDate, notes: payload.notes ?? pi.notes,
+      grIds, totals, taxRate, supplierName: supplier?.name, supplierTaxId: supplier?.tax_id,
+    })
+  })
+  transaction()
+
+  // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — เฉพาะรอบที่มีการเปลี่ยนแปลงทางการเงินจริง (hasFinancialChange)
+  rememberContactVatMode(tenantId, 'supplier', pi.supplier_id, taxRate, inclusive)
+
+  return {
+    ...db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId),
+    items: db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id),
+  }
 }
 
 export interface PaySupplierPayload {

@@ -2,7 +2,7 @@ import api from './api'
 
 export interface SearchResultItem {
   id: string
-  type: 'customer' | 'order' | 'product' | 'material' | 'bom' | 'stock' | 'supplier' | 'purchase_order' | 'work_order' | 'sales_order' | 'quotation' | 'invoice'
+  type: 'customer' | 'order' | 'product' | 'material' | 'bom' | 'stock' | 'supplier' | 'purchase_order' | 'work_order' | 'sales_order' | 'quotation' | 'invoice' | 'document'
   label: string
   subtitle: string
   [key: string]: any
@@ -21,6 +21,7 @@ export interface SearchResults {
   sales_orders: SearchResultItem[]
   quotations: SearchResultItem[]
   invoices: SearchResultItem[]
+  documents: SearchResultItem[]
 }
 
 export const searchService = {
@@ -39,6 +40,7 @@ export const searchService = {
         sales_orders: [],
         quotations: [],
         invoices: [],
+        documents: [],
       }
     }
 

@@ -24,6 +24,8 @@ import {
 } from 'lucide-react'
 import { accountsApi, reportsApi, ACCOUNT_TYPES, Account, AccountType } from '../../services/accounting'
 import toast from 'react-hot-toast'
+import { useModalClose } from '../../hooks/useModalClose'
+import { SourceDocModal } from '../../components/accounting/SourceDocModal'
 
 const fmtMoney = (n: number) =>
   (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -168,6 +170,8 @@ interface LedgerTransaction {
   credit: number
   lineDescription?: string
   balance: number
+  journalEntryId?: string
+  sourceNumber?: string
 }
 
 interface LedgerData {
@@ -219,6 +223,7 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<LedgerData | null>(null)
+  const [viewingEntry, setViewingEntry] = useState<{ id: string; entryNumber: string; date: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -319,17 +324,35 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
                   <p className="text-sm text-[var(--fg-4)] text-center py-8">ไม่มีรายการในช่วง 6 เดือนที่ผ่านมา</p>
                 ) : (
                   <div className="space-y-2">
-                    {recentLines.map((t, i) => (
-                      <div key={i} className="p-3 rounded-lg bg-[var(--surface-2)] flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm text-[var(--fg-1)] truncate">{t.lineDescription || t.entryDescription}</p>
-                          <p className="text-xs text-[var(--fg-4)]">{t.entryNumber} • {t.date}</p>
+                    {recentLines.map((t, i) => {
+                      const rowBody = (
+                        <>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[var(--fg-1)] truncate">{t.lineDescription || t.entryDescription}</p>
+                            <p className="text-xs text-[var(--fg-4)]">
+                              {t.entryNumber}{t.sourceNumber ? ` • ${t.sourceNumber}` : ''} • {t.date}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold shrink-0 num text-[var(--fg-1)]">
+                            {t.impact >= 0 ? '+' : '−'}{fmtMoney(Math.abs(t.impact))}
+                          </p>
+                        </>
+                      )
+                      return t.journalEntryId ? (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setViewingEntry({ id: t.journalEntryId!, entryNumber: t.entryNumber, date: t.date })}
+                          className="w-full text-left p-3 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--surface)] flex items-center justify-between gap-3"
+                        >
+                          {rowBody}
+                        </button>
+                      ) : (
+                        <div key={i} className="p-3 rounded-lg bg-[var(--surface-2)] flex items-center justify-between gap-3">
+                          {rowBody}
                         </div>
-                        <p className="text-sm font-semibold shrink-0 num text-[var(--fg-1)]">
-                          {t.impact >= 0 ? '+' : '−'}{fmtMoney(Math.abs(t.impact))}
-                        </p>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -347,6 +370,16 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
           </>
         )}
       </motion.div>
+      <AnimatePresence>
+        {viewingEntry && (
+          <SourceDocModal
+            entryId={viewingEntry.id}
+            title={viewingEntry.entryNumber}
+            subtitle={viewingEntry.date}
+            onClose={() => setViewingEntry(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

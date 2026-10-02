@@ -698,7 +698,9 @@
       "invoiceCancelled": "Purchase invoice cancelled",
       "invoiceCancelFailed": "Failed to cancel purchase invoice",
       "paymentVoided": "Payment reversed",
-      "paymentVoidFailed": "Failed to reverse payment"
+      "paymentVoidFailed": "Failed to reverse payment",
+      "invoiceUpdated": "Invoice updated",
+      "invoiceUpdateFailed": "Failed to update invoice"
     },
     "search": {
       "material": "Search code / material name...",
@@ -726,7 +728,8 @@
       "selectPOFirst": "— Select PO first —",
       "allGRsAdded": "All GRs added",
       "noReceiptFound": "No goods receipts found",
-      "grCountHint": "{{count}} items (click to add)"
+      "grCountHint": "{{count}} items (click to add)",
+      "selectSupplierFirst": "Select a supplier first"
     },
     "empty": {
       "order": "No purchase orders found",
@@ -993,8 +996,8 @@
       "mergeMore": "Merge other orders into this bill",
       "mergeHint": "Only orders from {{name}} are listed — different vendors cannot share one bill",
       "mergeTotal": "{{count}} orders = {{amount}}",
-      "step1": "Pick the purchase orders to bill",
-      "step1Hint": "You can merge several, but only from the same supplier",
+      "step1": "Pick the supplier and the goods receipts to bill",
+      "step1Hint": "Tick as many confirmed GRs of this supplier as needed — they can span several POs",
       "step2": "Enter the details from the supplier bill",
       "step2Hint": "The tax invoice number is used when filing input VAT",
       "step3": "Check the amounts",
@@ -1008,7 +1011,15 @@
       "itemCount": "{{count}} items",
       "receivedVia": "received ({{docs}})",
       "noReceiptYet": "no goods receipt yet",
-      "beforeVat": "before VAT {{amount}}"
+      "beforeVat": "before VAT {{amount}}",
+      "titleEdit": "Edit Supplier Invoice",
+      "stepLines": "Check the line items",
+      "stepLinesHint": "Adjust price/quantity to match the supplier's actual bill",
+      "noBillableReceipts": "No confirmed goods receipts awaiting invoice for this supplier yet — confirm a receipt first",
+      "selectAll": "Select all",
+      "lineDescription": "Item",
+      "grLockedHint": "To change the linked goods receipts, cancel this invoice and issue a new one",
+      "editPaidHint": "This invoice already has {{amount}} paid — if the new total is lower, void the payment first"
     },
     "paymentModal": {
       "title": "Record Payment",
@@ -1159,6 +1170,14 @@
         "needFactor": "Enter how many sub-units are in one pack (greater than 0)"
       }
     },
+    "receivable": {
+      "confirmTitle": "{{count}} line(s) cannot be received into stock:",
+      "cannotSubmit": "This PO can't be submitted/approved until items are linked or unit conversions exist.\nOK = save as draft · Cancel = keep editing",
+      "saveDraft": "You can save a draft, but it can't be submitted until fixed.\nOK = save draft · Cancel = keep editing",
+      "backToDraft": "This PO will go back to draft (resubmit after fixing).\nOK = save as draft · Cancel = keep editing",
+      "savedAsDraft": "Saved as draft — fix the unreceivable lines before submitting",
+      "payNotReceived": "Goods on this bill are not fully received: {{pos}} line(s) pending\n\nPay before receiving everything?"
+    },
     "trail": {
       "title": "Document trail",
       "request": "Request",
@@ -1178,7 +1197,20 @@
         "RECEIVED": "Received"
       },
       "noOrderYet": "No purchase order yet, so there is no document trail to show",
-      "noTrail": "No source document found, so there is no trail to show"
+      "noTrail": "No source document found, so there is no trail to show",
+      "receiptList": {
+        "open": "View goods receipts",
+        "close": "Close",
+        "title": "{{count}} goods receipt(s)",
+        "gap": "{{po}}: {{count}} line(s) not fully received",
+        "gapHint": "Only confirmed receipts count — drafts are not in stock yet",
+        "none": "No goods receipts yet",
+        "draft": "Draft · not in stock",
+        "confirmed": "Confirmed",
+        "item": "Item",
+        "receivedOfOrdered": "Received / ordered",
+        "billedNotReceived": "Billed, but {{pos}} not fully received — check before paying"
+      }
     },
     "selfApprove": {
       "readyNote": "Skips the waiting-for-approval step because you can approve this yourself — recorded as approved by you",
@@ -1202,6 +1234,7 @@
       "noPermissionApprove": "No permission to approve",
       "cycleClosed": "Cycle complete",
       "confirmReceipt": "Confirm receipt",
+      "draftReceiptPending": "{{number}} awaiting confirmation in Receipts",
       "stockedIn": "Stocked in",
       "fullyPaid": "Fully paid",
       "posted": "Posted to ledger",
@@ -1631,7 +1664,9 @@
     "totals": {
       "discountLabel": "Discount (฿)",
       "vatLabel": "VAT ({{rate}}%)",
-      "discountAmount": "Discount (฿)"
+      "discountAmount": "Discount (฿)",
+      "sellWithVat": "Charge VAT",
+      "vatNotRegistered": "Business is not VAT-registered — cannot charge VAT (change in Settings > Company)"
     },
     "quotationModal": {
       "titleCreate": "Create quotation",
@@ -2528,6 +2563,9 @@
         "taxBranch": "Branch",
         "taxBranchPlaceholder": "Head Office",
         "taxBranchHint": "A full tax invoice must state the seller branch. Use \"Head Office\" if there is only one.",
+        "vatRegistered": "VAT registered",
+        "vatRegisteredOn": "Input VAT is claimable · can issue tax invoices and charge VAT",
+        "vatRegisteredOff": "Not registered: input VAT is added to cost and POS VAT is turned off",
         "vatInclusiveCompany": "Entered prices include VAT",
         "vatInclusiveCompanySub": "Default for every document — the system backs VAT out as the tax base (overridable per document)"
       },
@@ -2663,7 +2701,8 @@
         "qc": "QC",
         "marketing": "Marketing",
         "ceo": "CEO",
-        "it": "IT"
+        "it": "IT",
+        "pos": "Cashier (POS)"
       },
       "toast": {
         "nameEmailRequired": "Please enter name and email",
@@ -2905,7 +2944,9 @@
         "ceo": "CEO / Owner",
         "ceoDesc": "Admin-level access — read, edit and delete any document across all departments and modules, no restrictions",
         "it": "IT / Admin",
-        "itDesc": "Access all areas including Settings"
+        "itDesc": "Access all areas including Settings",
+        "pos": "Cashier (POS)",
+        "posDesc": "Cashier screen and kitchen display only"
       },
       "customPermissions": {
         "accountingDelete": "Delete accounting data",

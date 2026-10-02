@@ -5,6 +5,8 @@ import api from '../../services/api'
 import { stripNonAscii } from '../../utils/email'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
+import { ROLE_PRESETS } from '../../config/rolePresets'
+import { HelpLink } from '../../components/common/HelpLink'
 
 interface TenantUser {
   id: string
@@ -17,7 +19,7 @@ interface TenantUser {
 
 const ROLE_VALUES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER'] as const
 
-const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'CEO', 'IT'] as const
+const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'POS', 'CEO', 'IT'] as const
 
 function RoleBadge({ role }: { role: string }) {
   const { t } = useTranslation()
@@ -66,14 +68,6 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
   const toggleDept = (d: string) =>
     setDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
 
-  const presets = [
-    { key: 'sales', depts: ['SALES'] },
-    { key: 'cashier', depts: [] },
-    { key: 'accountant', depts: ['ACCOUNTING', 'PURCHASE'] },
-    { key: 'warehouseManager', depts: ['STOCK', 'PURCHASE'] },
-    { key: 'factoryManager', depts: ['PRODUCTION', 'QC', 'STOCK'] },
-    { key: 'ceo', depts: ['CEO'] },
-  ]
 
   const applyPreset = (deptList: string[]) => setDepts(deptList)
 
@@ -140,7 +134,10 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 block">{t('settings.adminUserManagement.modal.roleLabel')}</label>
+            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 inline-flex items-center gap-1.5">
+              {t('settings.adminUserManagement.modal.roleLabel')}
+              <HelpLink anchor="roles" />
+            </label>
             <div className="grid grid-cols-3 gap-2">
               {ROLE_VALUES.map(r => (
                 <button key={r} onClick={() => setRole(r)}
@@ -163,16 +160,22 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 block">{t('settings.adminUserManagement.modal.presetLabel')}</label>
+            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 inline-flex items-center gap-1.5">
+              {t('settings.adminUserManagement.modal.presetLabel')}
+              <HelpLink anchor="presets" />
+            </label>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {presets.map(p => (
-                <button key={p.key} onClick={() => applyPreset(p.depts)}
+              {ROLE_PRESETS.map(p => (
+                <button key={p.key} type="button" onClick={() => applyPreset(p.departments)}
                   className="px-2.5 py-1 rounded-full text-xs border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-2)] hover:border-[var(--primary)]/60 hover:bg-[var(--primary-soft)] transition-colors cursor-pointer">
                   {t(`settings.adminUserManagement.presets.${p.key}`)}
                 </button>
               ))}
             </div>
-            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 block">{t('settings.adminUserManagement.modal.departmentsLabel')}</label>
+            <label className="text-xs font-medium text-[var(--fg-3)] mb-2 inline-flex items-center gap-1.5">
+              {t('settings.adminUserManagement.modal.departmentsLabel')}
+              <HelpLink anchor="departments" />
+            </label>
             <div className="flex flex-wrap gap-1.5">
               {DEPT_VALUES.map(d => (
                 <button key={d} onClick={() => toggleDept(d)}

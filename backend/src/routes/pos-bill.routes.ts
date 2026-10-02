@@ -291,6 +291,7 @@ router.delete('/bills/:id', (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     
+    // ได้เลขบิลไปแล้วตั้งแต่เปิดโต๊ะ = ห้ามหาย → ยกเลิกแทนการลบ (เลขบิลไม่ขาดช่วง)
     // Check if bill has items (scoped to tenant)
     const checkStmt = db.prepare(`
       SELECT COUNT(*) as count FROM pos_bill_items bi
@@ -307,7 +308,8 @@ router.delete('/bills/:id', (req, res) => {
     }
     
     const stmt = db.prepare(`
-      DELETE FROM pos_running_bills 
+      UPDATE pos_running_bills SET status = 'CANCELLED', closed_at = datetime('now'),
+        notes = TRIM(COALESCE(notes, '') || ' [ยกเลิกบิลเปล่า]')
       WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
     `)
     
@@ -317,7 +319,7 @@ router.delete('/bills/:id', (req, res) => {
       return res.status(400).json({ success: false, message: 'Bill not found or already closed' })
     }
     
-    res.json({ success: true, message: 'Bill deleted successfully' })
+    res.json({ success: true, message: 'ยกเลิกบิลเปล่าแล้ว (เก็บเลขบิลไว้)' })
   } catch (error) {
     console.error('Error deleting bill:', error)
     res.status(500).json({ success: false, message: 'Failed to delete bill' })

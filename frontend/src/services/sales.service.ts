@@ -10,6 +10,8 @@ export interface Customer {
   phone?: string
   email?: string
   address?: string
+  /** โหมด VAT ล่าสุดที่ใช้กับลูกค้ารายนี้ — backend อัปเดตอัตโนมัติจากเอกสารล่าสุด, แก้มือได้ที่ฟอร์มลูกค้า */
+  vat_mode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
 }
 
 export interface Product {
@@ -79,6 +81,7 @@ const salesService = {
   createCustomer: async (payload: {
     code: string; name: string; type: string
     contactName: string; phone: string; email?: string
+    vatMode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
   }): Promise<Customer> => {
     const { data } = await api.post('/customers', payload)
     return data.data

@@ -4,6 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
+import { formatDocumentNumber } from '../../utils/id'
 import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../../services/stockMovement.service'
 import { ok } from './shared'
 
@@ -28,8 +29,7 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
       const { bom_id, product_name, quantity, unit, priority, due_date, notes } = args
 
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      const count = (db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any).count
-      const woNumber = `WO-${String(count + 1).padStart(5, '0')}`
+      const woNumber = formatDocumentNumber('WO', tenantId, 'WORK_ORDER', undefined, 5)
       const now = new Date().toISOString()
 
       let materials: any[] = []

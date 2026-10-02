@@ -4,6 +4,7 @@ import {Truck, Plus, Search, Edit2, Trash2, X, Star, Loader2, Phone, Mail, MapPi
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
 import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
+import { VatModeField } from '../common/VatModeSelector'
 
 export default function SupplierTab() {
   const { t } = useTranslation()
@@ -254,6 +255,7 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
   const [form, setForm] = useState({
     code: '', name: '', type: 'RAW_MATERIAL', contactName: '', email: '', phone: '',
     address: '', city: '', taxId: '', paymentTerms: 'NET30', notes: '',
+    vatMode: null as 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null,
   })
   const [saving, setSaving] = useState(false)
 
@@ -264,10 +266,11 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
         contactName: supplier.contact_name, email: supplier.email, phone: supplier.phone,
         address: supplier.address || '', city: supplier.city || '', taxId: supplier.tax_id || '',
         paymentTerms: supplier.payment_terms, notes: supplier.notes || '',
+        vatMode: supplier.vat_mode ?? null,
       })
     } else {
       setForm({ code: '', name: '', type: 'RAW_MATERIAL', contactName: '', email: '', phone: '',
-        address: '', city: '', taxId: '', paymentTerms: 'NET30', notes: '' })
+        address: '', city: '', taxId: '', paymentTerms: 'NET30', notes: '', vatMode: null })
     }
   }, [supplier, open])
 
@@ -389,6 +392,8 @@ function SupplierModal({ open, supplier, onClose, onSave }: {
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   className="phopy-input w-full" rows={3} />
               </div>
+
+              <VatModeField value={form.vatMode} onChange={(vatMode) => setForm({ ...form, vatMode })} />
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={onClose}

@@ -8,6 +8,9 @@ const router = Router()
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
 
+// โหมด VAT ที่ยอมรับตอนตั้ง/แก้ผู้ขาย — ค่าอื่นถือเป็นข้อมูลผิด ปฏิเสธด้วย 400
+const VALID_VAT_MODES = ['NONE', 'INCLUSIVE', 'EXCLUSIVE']
+
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
@@ -90,7 +93,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, type, contactName, email, phone, address, city, taxId, paymentTerms, notes } = req.body
+    const { code, name, type, contactName, email, phone, address, city, taxId, paymentTerms, notes, vatMode } = req.body
+    if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
+      return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
+    }
     
     // Validate required fields
     if (!code || !name || !contactName) {
@@ -113,9 +119,9 @@ router.post('/', async (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO suppliers (id, tenant_id, code, name, type, contact_name, email, phone, address, city, tax_id, payment_terms, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, tenantId, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', now, now)
+      INSERT INTO suppliers (id, tenant_id, code, name, type, contact_name, email, phone, address, city, tax_id, payment_terms, notes, vat_mode, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, type || 'RAW_MATERIAL', contactName, email || '', phone || '', address || '', city || '', taxId || '', paymentTerms || 'NET30', notes || '', vatMode || null, now, now)
 
     const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.status(201).json({ success: true, data: supplier })
@@ -129,7 +135,10 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes } = req.body
+    const { name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, vatMode } = req.body
+    if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
+      return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
+    }
     const now = new Date().toISOString()
 
     // Check if supplier exists and belongs to this tenant
@@ -144,9 +153,10 @@ router.put('/:id', async (req: Request, res: Response) => {
         email = COALESCE(?, email), phone = COALESCE(?, phone), address = COALESCE(?, address),
         city = COALESCE(?, city), tax_id = COALESCE(?, tax_id), payment_terms = COALESCE(?, payment_terms),
         rating = COALESCE(?, rating), status = COALESCE(?, status), notes = COALESCE(?, notes),
+        vat_mode = COALESCE(?, vat_mode),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, now, req.params.id, tenantId)
+    `).run(name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, vatMode, now, req.params.id, tenantId)
 
     const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: supplier })

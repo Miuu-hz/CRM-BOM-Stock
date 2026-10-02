@@ -9,6 +9,7 @@ import { deductStockForSO, restoreStockForSO, soStockAlreadyDeducted, createDeli
 import { formatDocumentNumber } from '../../utils/id'
 import { calcDocTotals } from '../../utils/vat'
 import { tenantVatInclusive } from '../../utils/vatSettings'
+import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
 
@@ -103,6 +104,12 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
       const now = new Date().toISOString()
       const { customer, created } = resolveCustomer(tenantId, customer_hint)
 
+      // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
+      // (กติกาเดียวกับ routes/sales/quotations.ts — สาย MCP เดิมไม่มีการ์กนี้เลย)
+      if (tax_rate > 0 && !isVatRegistered(tenantId)) {
+        return ok({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
+      }
+
       const inclusive = tenantVatInclusive(tenantId)
       const { subtotal, taxAmount, totalAmount } = computeTotals(items, discount_amount, tax_rate, inclusive)
       const id = genId()
@@ -129,6 +136,9 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
           resultItems.push(bindingRow(item.description, match, item.unit ?? ''))
         }
       })()
+
+      // จำโหมด VAT ของใบนี้ไว้กับลูกค้ารายนี้ — ใบเสนอราคาถัดไป (ทั้งฝั่งเว็บและ AI) จะ default ให้ถูก
+      rememberContactVatMode(tenantId, 'customer', customer.id, tax_rate, inclusive)
 
       return ok({
         success: true,

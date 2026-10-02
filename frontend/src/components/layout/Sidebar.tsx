@@ -197,7 +197,7 @@ function Sidebar({ mode }: SidebarProps) {
   // purchase endpoint never blocks the unrelated stats above, and so it can be
   // skipped entirely for roles that can't see the Purchase menu at all.
   useEffect(() => {
-    if (!canViewMenu(user?.role, '/purchase')) {
+    if (!canViewMenu(user?.role, '/purchase', user?.departments)) {
       setPendingPurchase(0)
       return
     }
@@ -216,7 +216,7 @@ function Sidebar({ mode }: SidebarProps) {
 
   // Sales category badge — same pattern as the Purchase badge above.
   useEffect(() => {
-    if (!canViewMenu(user?.role, '/sales')) {
+    if (!canViewMenu(user?.role, '/sales', user?.departments)) {
       setPendingSales(0)
       return
     }
@@ -327,8 +327,8 @@ function Sidebar({ mode }: SidebarProps) {
       <nav className="flex-1 py-4 overflow-y-auto phopy-scrollbar" role="navigation" aria-label={t('sidebar.mainMenu')}>
         <div className={`space-y-1 ${isRail ? 'px-1.5' : 'px-2'}`}>
           {menuItems
-            .filter((item) => canViewMenu(user?.role, item.path))
-            .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.filter((sub) => canViewMenu(user?.role, sub.path)) } : item)
+            .filter((item) => canViewMenu(user?.role, item.path, user?.departments))
+            .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.filter((sub) => canViewMenu(user?.role, sub.path, user?.departments)) } : item)
             .filter((item) => !item.subMenu || item.subMenu.length > 0)
             .map((item) => {
             const label = t(item.tKey)

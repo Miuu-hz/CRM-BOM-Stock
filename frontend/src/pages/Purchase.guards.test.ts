@@ -59,3 +59,26 @@ describe('Purchase.tsx — จอรับสินค้าต้องใช�
     expect(SRC).toContain('receiptModal.noConversionHint')
   })
 })
+
+describe('Purchase.tsx — ใบแจ้งหนี้ผู้ขาย: GR-centric + แก้ไขได้ (2026-09-29)', () => {
+  it('ห้ามมี tax_rate || 7 ในฟอร์มใบแจ้งหนี้ — 0% คือผู้ขายไม่เก็บ VAT ไม่ใช่ค่าที่ยังไม่ได้ตั้ง', () => {
+    expect(SRC).not.toContain('tax_rate || 7')
+  })
+
+  it('โมดัลต้องเรียก GET /purchase/invoices/billable-receipts แทนการไล่ทีละ PO', () => {
+    expect(SRC).toContain('/purchase/invoices/billable-receipts')
+  })
+
+  it('ต้องมี PUT ไป /purchase/invoices/ สำหรับโหมดแก้ไข', () => {
+    expect(SRC).toMatch(/api\.put\(\s*['"`]\/purchase\/invoices\//)
+  })
+})
+
+// 2026-10-01: PO ที่มีใบรับร่างค้าง ปุ่ม "รับสินค้า" ยังกดได้ (backend ปฏิเสธใบที่ 2) คนเลยไม่รู้ว่ารับไปแล้ว
+describe('poNextStep — มี GR ร่างแล้วต้องล็อกปุ่มรับสินค้า', () => {
+  it('เช็ค DRAFT GR ก่อนคืนปุ่ม receiveGoods', () => {
+    const body = SRC.slice(SRC.indexOf('const poNextStep'), SRC.indexOf('const grNextStep'))
+    expect(body.indexOf("draftReceiptPending")).toBeGreaterThan(-1)
+    expect(body.indexOf("draftReceiptPending")).toBeLessThan(body.indexOf("purchase.actions.receiveGoods"))
+  })
+})

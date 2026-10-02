@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
+import { formatDocumentNumber } from '../utils/id'
 import { normalizeUnit } from './unitConversion.service'
 
 // ─── BOM Command Parser ───────────────────────────────────────────────────────
@@ -70,12 +71,7 @@ export function parsePRCommand(text: string): { supplierName: string; items: str
 
 // ─── PR Number Generator ──────────────────────────────────────────────────────
 function generatePRNumber(tenantId: string): string {
-    const db = getDb()
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const count = (db.prepare(
-        "SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ? AND pr_number LIKE ?"
-    ).get(tenantId, `PR-${today}-%`) as any).c + 1
-    return `PR-${today}-${String(count).padStart(3, '0')}`
+    return formatDocumentNumber('PR', tenantId, 'PURCHASE_REQUEST', new Date().getFullYear(), 5)
 }
 
 let Client: any

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield, Search, Check, AlertTriangle, X } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
+import { ROLE_PRESETS } from '../../config/rolePresets'
+import { HelpLink } from '../../components/common/HelpLink'
 
 interface TenantUser {
   id: string
@@ -14,7 +16,7 @@ interface TenantUser {
   status: string
 }
 
-const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'CEO', 'IT'] as const
+const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'POS', 'CEO', 'IT'] as const
 
 const ROLE_VALUES = ['MANAGER', 'POWERUSER', 'USER'] as const
 
@@ -132,14 +134,6 @@ export default function PermissionSettings() {
   const [showCeoConfirm, setShowCeoConfirm] = useState(false)
   const [pendingCeoDept, setPendingCeoDept] = useState<string | null>(null)
 
-  const presets: { key: string; departments: string[]; customPermissions: Record<string, boolean> }[] = [
-    { key: 'sales', departments: ['SALES'], customPermissions: {} },
-    { key: 'cashier', departments: [], customPermissions: { 'cashier:read': true, 'cashier:write': true } },
-    { key: 'accountant', departments: ['ACCOUNTING', 'PURCHASE'], customPermissions: {} },
-    { key: 'warehouseManager', departments: ['STOCK', 'PURCHASE'], customPermissions: {} },
-    { key: 'factoryManager', departments: ['PRODUCTION', 'QC', 'STOCK'], customPermissions: {} },
-    { key: 'ceo', departments: ['CEO'], customPermissions: {} },
-  ]
 
   const load = async () => {
     setLoading(true)
@@ -190,9 +184,9 @@ export default function PermissionSettings() {
     })
   }
 
-  function applyPreset(preset: typeof presets[0]) {
+  // พรีเซ็ตกำหนดแค่แผนก — ไม่ล้างสิทธิ์รายคน (custom) ที่ตั้งไว้แล้ว
+  function applyPreset(preset: typeof ROLE_PRESETS[0]) {
     setDraftDepts(preset.departments)
-    setDraftCustom(preset.customPermissions)
   }
 
   async function save() {
@@ -236,9 +230,12 @@ export default function PermissionSettings() {
           {selected ? (
             <div className="space-y-5">
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.presets')}</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                  {t('settings.permission.presets')}
+                  <HelpLink anchor="presets" />
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {presets.map(p => (
+                  {ROLE_PRESETS.map(p => (
                     <button key={p.key} onClick={() => applyPreset(p)}
                       className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all cursor-pointer">
                       {t(`settings.permission.presetsList.${p.key}`)}
@@ -248,7 +245,10 @@ export default function PermissionSettings() {
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.roleSection')}</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                  {t('settings.permission.roleSection')}
+                  <HelpLink anchor="roles" />
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {ROLE_VALUES.map(r => (
                     <label key={r}
@@ -265,7 +265,10 @@ export default function PermissionSettings() {
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('settings.permission.departmentSection')}</p>
+                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                  {t('settings.permission.departmentSection')}
+                  <HelpLink anchor="departments" />
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {DEPT_VALUES.map(d => (
                     <label key={d}
@@ -282,12 +285,15 @@ export default function PermissionSettings() {
               </div>
 
               <div>
-                <button onClick={() => setShowCustom(v => !v)}
-                  className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors cursor-pointer">
-                  {showCustom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                  <Shield className="w-3.5 h-3.5" />
-                  {t('settings.permission.customOverrides')}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setShowCustom(v => !v)}
+                    className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors cursor-pointer">
+                    {showCustom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    <Shield className="w-3.5 h-3.5" />
+                    {t('settings.permission.customOverrides')}
+                  </button>
+                  <HelpLink anchor="custom" />
+                </div>
                 {showCustom && (
                   <div className="mt-3 space-y-2 pl-4 border-l border-[var(--border)]">
                     {CUSTOM_PERM_KEYS.map(cp => (

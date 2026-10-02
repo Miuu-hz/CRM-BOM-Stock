@@ -2,13 +2,14 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs } from '../services/approvalGate.service'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments } from '../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments, receiptIssuesForItems, poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
 import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { z } from 'zod'
 import { calcVat } from '../utils/vat'
 import { resolveVatInclusive } from '../utils/vatSettings'
+import { rememberContactVatMode } from '../services/accounting.service'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -68,7 +69,7 @@ router.get('/', async (req: Request, res: Response) => {
       SELECT po.*, s.name as supplier_name, s.code as supplier_code,
         ba.bank_name, ba.account_number as bank_account_number,
         (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id) as item_count,
-        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '')) as unbound_count
+        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '') AND COALESCE(skip_stock, 0) = 0) as unbound_count
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
       LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
@@ -119,7 +120,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT po.*, s.name as supplier_name, s.code as supplier_code, s.email as supplier_email, s.phone as supplier_phone,
         s.tax_id as supplier_tax_id,
         ba.bank_name, ba.account_number as bank_account_number,
-        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '')) as unbound_count
+        (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = po.id AND (material_id IS NULL OR material_id = '') AND COALESCE(skip_stock, 0) = 0) as unbound_count
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
       LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
@@ -243,6 +244,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     transaction()
 
+    // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — PO ถัดไปจะ default ให้ถูกโดยไม่ต้องเลือกใหม่
+    rememberContactVatMode(tenantId, 'supplier', supplierIdSafe, tax, !!inclusive)
+
     const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(id)
 
@@ -251,6 +255,18 @@ router.post('/', async (req: Request, res: Response) => {
     console.error('Create PO error:', error)
     res.status(500).json({ success: false, message: 'Failed to create purchase order' })
   }
+})
+
+// POST ตรวจรายการในฟอร์มก่อนบันทึก — ฟอร์มเตือนได้ตั้งแต่ตอนแก้ ไม่ต้องรอไปพังตอนรับสินค้า
+router.post('/receipt-check', (req: Request, res: Response) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : []
+  const issues = receiptIssuesForItems(req.user!.tenantId, items.map((i: any) => ({
+    material_id: typeof i?.materialId === 'string' ? i.materialId : null,
+    unit: typeof i?.unit === 'string' ? i.unit : null,
+    skip_stock: !!i?.skipStock,
+    description: typeof i?.description === 'string' ? i.description : null,
+  })))
+  res.json({ success: true, data: { issues } })
 })
 
 // PUT update PO status
@@ -267,6 +283,11 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!po) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
+    }
+
+    if (status === 'SUBMITTED' || status === 'APPROVED') {
+      const notReceivable = poNotReceivableMessage(tenantId, req.params.id)
+      if (notReceivable) return res.status(400).json({ success: false, message: notReceivable })
     }
 
     // อนุมัติ PO ต้องผ่านเกณฑ์เดียวกับ POST /purchase-orders/:id/approve
@@ -433,9 +454,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Can only delete draft purchase orders' })
     }
 
-    db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    db.prepare('DELETE FROM purchase_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    res.json({ success: true, message: 'Purchase order deleted' })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
+    db.prepare("UPDATE purchase_orders SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), req.params.id, tenantId)
+    res.json({ success: true, message: 'ยกเลิกใบสั่งซื้อแล้ว (เก็บเลขที่ไว้)' })
   } catch (error) {
     console.error('Delete PO error:', error)
     res.status(500).json({ success: false, message: 'Failed to delete purchase order' })
@@ -453,6 +475,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
 
     const denied = approvalDenyReason(tenantId, req.user!, 'purchase_order', po.total_amount || 0, 'PO')
     if (denied) return res.status(403).json({ success: false, message: denied })
+    const notReceivable = poNotReceivableMessage(tenantId, po.id)
+    if (notReceivable) return res.status(400).json({ success: false, message: notReceivable })
 
     const now = new Date().toISOString()
     db.prepare("UPDATE purchase_orders SET status = 'APPROVED', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")

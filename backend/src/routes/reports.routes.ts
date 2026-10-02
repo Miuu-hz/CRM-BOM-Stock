@@ -395,6 +395,8 @@ export function buildLedger(tenantId: string, accountId: string, startDate?: str
     let transactionsQuery = `
       SELECT
         je.date,
+        je.id as journalEntryId,
+        je.source_number as sourceNumber,
         je.entry_number as entryNumber,
         je.description as entryDescription,
         je.reference_type as referenceType,

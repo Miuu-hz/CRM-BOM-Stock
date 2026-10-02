@@ -5,6 +5,7 @@ import { ok } from './shared'
 import { canHandleBillingByUserId } from '../../services/rbac.service'
 import {
   createPurchaseInvoice,
+  updatePurchaseInvoice,
   paySupplier,
   PurchaseBillingError,
 } from '../../services/purchaseBilling.service'
@@ -30,12 +31,13 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
   server.tool(
     'create_purchase_invoice',
     `ออกใบแจ้งหนี้ซื้อ (Purchase Invoice) จากใบรับสินค้า (GR) ที่ยืนยันแล้ว / Create a purchase invoice from one or more confirmed goods receipts.
-รับได้หลาย GR ต่อ 1 ใบแจ้งหนี้ (goods_receipt_ids) — ทุก GR ต้องมาจาก PO เดียวกัน ยืนยันแล้ว และยังไม่ถูกออกใบแจ้งหนี้มาก่อน
+รับได้หลาย GR ต่อ 1 ใบแจ้งหนี้ (goods_receipt_ids) — GR แต่ละใบจะพา PO ของมันมารวมด้วยอัตโนมัติ ไม่จำกัดว่าต้องเป็น PO เดียวกัน
+แต่ทุก GR ต้องเป็นผู้ขายรายเดียวกัน ยืนยันแล้ว และยังไม่ถูกออกใบแจ้งหนี้มาก่อน (ไม่มี GR ที่ใช้ได้ = ออกใบแจ้งหนี้ไม่ได้ ต้องยืนยันรับของก่อน)
 ระบบจะลงบัญชีอัตโนมัติ: Dr สต็อกวัตถุดิบ + Dr ภาษีซื้อ (ถ้ามี) = Cr เจ้าหนี้การค้า
 ตัวอย่าง: "ออกใบแจ้งหนี้จาก GR-2026-00003" → create_purchase_invoice(goods_receipt_ids=["GR-2026-00003"])
-ตัวอย่าง: "รวม GR-2026-00003 กับ GR-2026-00004 ออกใบแจ้งหนี้เดียว" → create_purchase_invoice(goods_receipt_ids=["GR-2026-00003","GR-2026-00004"])`,
+ตัวอย่าง: "รวม GR-2026-00003 กับ GR-2026-00004 ออกใบแจ้งหนี้เดียว (ถึงจะมาจาก PO คนละใบ)" → create_purchase_invoice(goods_receipt_ids=["GR-2026-00003","GR-2026-00004"])`,
     {
-      goods_receipt_ids: z.array(z.string()).min(1).describe('ID หรือเลขที่ GR (gr_number) อย่างน้อย 1 ใบ — ทุกใบต้องมาจาก PO เดียวกัน'),
+      goods_receipt_ids: z.array(z.string()).min(1).describe('ID หรือเลขที่ GR (gr_number) อย่างน้อย 1 ใบ — รวมได้จากหลาย PO ถ้าเป็นผู้ขายรายเดียวกัน'),
       supplier_invoice_number: z.string().optional().describe('เลขที่ใบแจ้งหนี้ของผู้ขาย (ถ้ามี)'),
       invoice_date: z.string().optional().describe('วันที่ใบแจ้งหนี้ (YYYY-MM-DD) — default วันนี้'),
       due_date: z.string().optional().describe('วันครบกำหนดจ่าย (YYYY-MM-DD)'),
@@ -51,11 +53,9 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
         if (!gr) return ok({ success: false, message: `ไม่พบใบรับสินค้า: ${idOrNumber}` })
         grRows.push(gr)
       }
-      const purchaseOrderId = grRows[0].purchase_order_id
 
       try {
         const invoice = createPurchaseInvoice(tenantId, callerName, {
-          purchaseOrderId,
           goodsReceiptIds: grRows.map(g => g.id),
           supplierInvoiceNumber: supplier_invoice_number,
           invoiceDate: invoice_date,
@@ -92,6 +92,71 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
       } catch (error: any) {
         if (error instanceof PurchaseBillingError) return ok({ success: false, message: error.message })
         return ok({ success: false, message: error.message || 'ออกใบแจ้งหนี้ซื้อไม่สำเร็จ' })
+      }
+    }
+  )
+
+  // ── edit_purchase_invoice ───────────────────────────────────────────────────
+  // trivial parity ตาม services/purchaseBilling.service.ts updatePurchaseInvoice ตัวเดียวกับ
+  // ที่ REST PUT /purchase/invoices/:id ใช้ — ไม่มีสำเนาที่สอง เปลี่ยนชุด GR ทางนี้ไม่ได้
+  server.tool(
+    'edit_purchase_invoice',
+    `แก้ไขใบแจ้งหนี้ซื้อที่ออกไปแล้ว (แก้ได้แม้จ่ายเงินไปแล้วบางส่วน/เต็มจำนวน) / Edit an already-issued purchase invoice.
+แก้ได้: เลขที่ใบแจ้งหนี้ผู้ขาย/วันครบกำหนด/หมายเหตุ (ไม่กระทบบัญชี) และราคา/จำนวนต่อบรรทัด วันที่ อัตราภาษี ส่วนลด (กลับ journal เดิม + ลงใหม่ทั้งใบอัตโนมัติ)
+แก้ "ชุดใบรับสินค้า (GR)" ที่ผูกกับใบนี้ไม่ได้ — ถ้าต้องเปลี่ยนต้องยกเลิกใบนี้แล้วออกใหม่
+⚠️ ยอดใหม่ต้องไม่น้อยกว่ายอดที่จ่ายไปแล้ว — ต้องมีสิทธิ์ ADMIN/MANAGER/MASTER/POWERUSER หรือฝ่ายจัดซื้อ/บัญชี
+ตัวอย่าง: "แก้ราคาบรรทัดที่ 2 ของ PI-2026-00010 เป็น 120" → edit_purchase_invoice(purchase_invoice_id="PI-2026-00010", items=[{id:"<purchase_invoice_items.id>", unit_price:120}])`,
+    {
+      purchase_invoice_id: z.string().describe('ID หรือเลขที่ใบแจ้งหนี้ซื้อ (pi_number) ที่จะแก้'),
+      supplier_invoice_number: z.string().optional(),
+      due_date: z.string().optional().describe('YYYY-MM-DD'),
+      notes: z.string().optional(),
+      invoice_date: z.string().optional().describe('YYYY-MM-DD — แก้แล้วลง journal ใหม่ทั้งใบ'),
+      tax_rate: z.number().min(0).max(30).optional(),
+      discount_amount: z.number().min(0).optional(),
+      items: z.array(z.object({
+        id: z.string().describe('purchase_invoice_items.id เดิม'),
+        unit_price: z.number().min(0).optional(),
+        quantity: z.number().positive().optional(),
+      })).optional().describe('override ราคา/จำนวนต่อบรรทัด — ไม่ส่งบรรทัดไหนแปลว่าบรรทัดนั้นไม่เปลี่ยน'),
+    },
+    async (args) => {
+      if (!canHandleBillingByUserId(userId, callerRole, 'purchase')) {
+        return ok({ success: false, message: 'ไม่มีสิทธิ์แก้ไขใบแจ้งหนี้ซื้อ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+      }
+      const { purchase_invoice_id, supplier_invoice_number, due_date, notes, invoice_date, tax_rate, discount_amount, items } = args
+
+      const invoice = findPurchaseInvoice(tenantId, purchase_invoice_id)
+      if (!invoice) return ok({ success: false, message: `ไม่พบใบแจ้งหนี้ซื้อ: ${purchase_invoice_id}` })
+
+      try {
+        const updated = updatePurchaseInvoice(tenantId, callerName, invoice.id, {
+          supplierInvoiceNumber: supplier_invoice_number,
+          dueDate: due_date,
+          notes,
+          invoiceDate: invoice_date,
+          taxRate: tax_rate,
+          discountAmount: discount_amount,
+          items: items?.map((it: { id: string; unit_price?: number; quantity?: number }) => ({ id: it.id, unitPrice: it.unit_price, quantity: it.quantity })),
+        }) as any
+
+        return ok({
+          success: true,
+          piNumber: updated.pi_number,
+          piId: updated.id,
+          สรุปยอด: {
+            มูลค่าก่อนภาษี: updated.subtotal,
+            ภาษีมูลค่าเพิ่ม: updated.tax_amount,
+            ยอดรวม: updated.total_amount,
+            จ่ายไปแล้ว: updated.paid_amount,
+            ค้างจ่าย: updated.balance_amount,
+            สถานะการจ่าย: updated.payment_status,
+          },
+          message: `แก้ไขใบแจ้งหนี้ซื้อ ${updated.pi_number} แล้ว ยอดรวมใหม่ ฿${updated.total_amount.toLocaleString()}`,
+        })
+      } catch (error: any) {
+        if (error instanceof PurchaseBillingError) return ok({ success: false, message: error.message })
+        return ok({ success: false, message: error.message || 'แก้ไขใบแจ้งหนี้ซื้อไม่สำเร็จ' })
       }
     }
   )

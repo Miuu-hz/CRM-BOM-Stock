@@ -8,6 +8,7 @@ export interface CompanySettings {
   email?: string
   tax_id?: string
   vat_inclusive?: number | boolean  // ค่าตั้งต้นทั้งกิจการ: ราคาที่กรอกรวม VAT แล้วหรือยัง
+  vat_registered?: number | boolean  // 0 = ยังไม่จด VAT: ภาษีซื้อรวมเป็นต้นทุน และห้ามเก็บ VAT ที่ POS
   tax_branch?: string  // สาขาของผู้ขายบนใบกำกับภาษี (ยังไม่มีระบบสาขา → 'สำนักงานใหญ่')
   logo_base64?: string
   pos_bom_deduct?: number | boolean  // 1=ตัด stock ตาม BOM, 0=ไม่ตัด (default 1)

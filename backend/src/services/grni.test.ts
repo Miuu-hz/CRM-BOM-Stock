@@ -91,19 +91,17 @@ describe('ของรับแล้วยังไม่ได้รับใ�
     expect(balanceOf(user.tenantId, ACC.AP), 'เจ้าหนี้การค้าเกิดตอนได้ใบแจ้งหนี้').toBe(-value)
   })
 
-  it('ไม่มีใบรับสินค้า (ซื้อแล้ววางบิลตรง) ยังลง Dr สต็อกตามเดิม', () => {
+  // 2026-09-29: เดิมออกใบแจ้งหนี้ได้โดยไม่มี GR เลย (Dr สต็อกตรงจาก PO) — ตัดทางนี้ทิ้งแล้ว
+  // (ดู bug #2 ในสรุปงาน 2026-09-29) ต้องมี GR ที่ยืนยันแล้วเสมอก่อนออกใบแจ้งหนี้
+  it('ไม่มีใบรับสินค้าที่ยืนยันแล้วเลย ออกใบแจ้งหนี้ไม่ได้', () => {
     const user = createTestUser({ role: 'ADMIN' })
     tenants.push(user.tenantId)
-    const { poId, poItemId, value } = seedPoAndGr(user.tenantId)
+    const { poId } = seedPoAndGr(user.tenantId)
 
-    createPurchaseInvoice(user.tenantId, user.email, {
+    expect(() => createPurchaseInvoice(user.tenantId, user.email, {
       purchaseOrderId: poId,
       supplierInvoiceNumber: 'INV-ตรง-001',
       taxRate: 0,
-      items: [{ poItemId, quantity: 10, unitPrice: 100 }],
-    })
-
-    expect(balanceOf(user.tenantId, ACC.GRNI), 'ไม่เคยรับของผ่าน GR ก็ไม่ต้องมีบัญชีพัก').toBe(0)
-    expect(balanceOf(user.tenantId, ACC.RAW_MATERIAL)).toBe(value)
+    })).toThrow(/ต้องยืนยันรับของ \(GR\) ก่อนออกใบแจ้งหนี้/)
   })
 })

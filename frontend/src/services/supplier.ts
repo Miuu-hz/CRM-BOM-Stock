@@ -20,6 +20,8 @@ export interface Supplier {
   created_at: string
   updated_at: string
   purchaseOrders?: any[]
+  /** โหมด VAT ล่าสุดที่ใช้กับผู้ขายรายนี้ — backend อัปเดตอัตโนมัติจากเอกสารล่าสุด, แก้มือได้ที่ฟอร์มผู้ขาย */
+  vat_mode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
 }
 
 export interface SupplierStats {

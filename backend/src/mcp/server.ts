@@ -125,6 +125,10 @@ export function setupMcpRoutes(app: Router): void {
       res.status(204).end()
       return
     }
+    // log ทุกคำขอ MCP (ไม่ log key/args) — ไว้ไล่เคส "สั่งแล้วไม่เข้าระบบ"
+    const rpc = req.body && typeof req.body === 'object' ? req.body : {}
+    const what = rpc.method === 'tools/call' ? `tools/call:${rpc.params?.name ?? '?'}` : (rpc.method ?? '')
+    res.on('finish', () => console.log('[mcp]', req.method, req.path, what, res.statusCode, req.headers['mcp-session-id'] ? 'session' : 'new'))
     next()
   })
 

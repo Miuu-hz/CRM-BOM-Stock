@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { createPurchaseInvoice, PurchaseBillingError } from './purchaseBilling.service'
-import { createGoodsReceipt, confirmGoodsReceipt } from './goodsReceipt.service'
+import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from './goodsReceipt.service'
 import { createTestUser } from '../test/testAuth'
 
 /**
@@ -38,7 +38,12 @@ function seedPo(tenantId: string, userEmail: string, supplierId: string, qty: nu
     VALUES (?, ?, ?, ?, 'ของทดสอบ', ?, 'pcs', ?, ?, 0)
   `).run(generateId(), tenantId, poId, materialId, qty, price, sub)
 
-  const created = createGoodsReceipt(tenantId, userEmail, { purchaseOrderId: poId }) as any
+  // ต้องส่ง items จริง ไม่งั้น goods_receipt_items ไม่มีแถวเลย — ใบแจ้งหนี้ derive ยอดจาก GR item เท่านั้นแล้ว
+  const pending = getPendingPoItems(tenantId, poId)
+  const created = createGoodsReceipt(tenantId, userEmail, {
+    purchaseOrderId: poId,
+    items: pending.map(p => ({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })),
+  }) as any
   const gr = confirmGoodsReceipt(tenantId, 'u1', created.id) as any
   return { poId, grId: gr.id }
 }

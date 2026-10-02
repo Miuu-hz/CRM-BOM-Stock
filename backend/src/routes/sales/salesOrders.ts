@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
+import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES } from './shared'
@@ -81,6 +82,11 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
+    // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
+    if ((Number(taxRate) || 0) > 0 && !isVatRegistered(tenantId)) {
+      return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
+    }
+
     const id = generateId()
     const soNumber = formatDocumentNumber('SO', tenantId, 'SALES_ORDER', new Date().getFullYear(), 5)
     const now = new Date().toISOString()
@@ -140,6 +146,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     transaction()
 
+    // จำโหมด VAT ของใบนี้ไว้กับลูกค้ารายนี้ — ใบสั่งขายถัดไปจะ default ให้ถูกโดยไม่ต้องเลือกใหม่
+    rememberContactVatMode(tenantId, 'customer', customerId, tax, inclusive)
+
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(id)
 
@@ -171,6 +180,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     const discount = discountAmount || 0
     const tax = taxRate ?? existing.tax_rate ?? 0
+    // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) — หน้าเว็บล็อกปุ่มไว้แล้ว ตรงนี้กันทาง API/MCP
+    if (tax > 0 && !isVatRegistered(tenantId)) {
+      return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
+    }
     const afterDiscount = subtotal - discount
     const taxAmount = afterDiscount * (tax / 100)
     const totalAmount = afterDiscount + taxAmount
@@ -199,6 +212,9 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     })
     transaction()
+
+    // จำโหมด VAT ของใบนี้ไว้กับลูกค้ารายนี้ — เอกสารนี้ไม่แก้ vat_inclusive จึงยังใช้ค่าเดิมของใบ
+    rememberContactVatMode(tenantId, 'customer', customerId || existing.customer_id, tax, existing.vat_inclusive === 1)
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(req.params.id)

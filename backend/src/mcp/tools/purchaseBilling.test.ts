@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
 import { registerPurchaseBillingTools } from './purchaseBilling'
-import { createGoodsReceipt, confirmGoodsReceipt } from '../../services/goodsReceipt.service'
+import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from '../../services/goodsReceipt.service'
 import { createTestUser } from '../../test/testAuth'
 import type { IMcpServer } from '../sdk-compat'
 
@@ -52,9 +52,15 @@ function seedApprovedPo(tenantId: string, lines: { description: string; qty: num
   return { poId, supplierId }
 }
 
-/** สร้าง+ยืนยัน GR ครบทุกรายการที่ค้างรับของ PO — คืน GR ที่ CONFIRMED แล้ว */
+/** สร้าง+ยืนยัน GR ครบทุกรายการที่ค้างรับของ PO — คืน GR ที่ CONFIRMED แล้ว
+ * ต้องส่ง items จริง (ไม่ปล่อยว่าง) ไม่งั้น goods_receipt_items จะไม่มีแถวเลย แล้วใบแจ้งหนี้
+ * (ที่ derive ยอด/รายการจาก GR item เท่านั้นแล้ว) จะได้ยอด 0 */
 function receiveWholePo(tenantId: string, userEmail: string, poId: string) {
-  const created = createGoodsReceipt(tenantId, userEmail, { purchaseOrderId: poId }) as any
+  const pending = getPendingPoItems(tenantId, poId)
+  const created = createGoodsReceipt(tenantId, userEmail, {
+    purchaseOrderId: poId,
+    items: pending.map(p => ({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })),
+  }) as any
   return confirmGoodsReceipt(tenantId, 'u1', created.id) as any
 }
 

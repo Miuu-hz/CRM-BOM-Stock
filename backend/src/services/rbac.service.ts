@@ -13,6 +13,8 @@ const departmentResources: Record<Department, Resource[]> = {
   MARKETING:  ['marketing'],
   QC:         ['qc'],
   PRODUCTION: ['production'],
+  // แคชเชียร์ออกใบกำกับเต็มรูปจากบิล POS ได้ (canHandleBilling ฝั่งขาย) — ขอบเขตที่เหลือคุมโดย cashierScope
+  POS:        ['orders'],
 }
 
 const SYSTEM_RESOURCES = ['backup', 'mcp', 'system']

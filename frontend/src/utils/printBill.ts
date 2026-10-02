@@ -211,6 +211,44 @@ export function resolveBillType(type: PrintDocType, data: any): BillType {
   return DOCS[type].bill
 }
 
+// ── อ้างอิงเอกสารต้นสาย (Phase 2) ──────────────────────────────────────────
+// เดิมช่อง "อ้างอิง" หยิบเลขได้ตัวเดียวจากข้อมูลที่หน้านั้นส่งมา (GR เห็นแค่ PO ไม่เห็น PR)
+// ตอนนี้ถามสายเอกสารจากหลังบ้าน (/journal/source — ตัวเดียวกับหน้าบัญชี) แล้วพิมพ์เลขต้นสายทุกใบ
+// ใกล้สุดก่อน เช่น GR → "PO-2026-00031 · PR-2026-00004" · ถามไม่ได้ (ไม่มีแพ็กเกจบัญชี/เน็ตหลุด) = ใช้ช่องเดิม
+const CHAIN_KIND: Partial<Record<PrintDocType, string>> = {
+  pr: 'PURCHASE_REQUEST', po: 'PURCHASE_ORDER', gr: 'GOODS_RECEIPT', pi: 'PURCHASE_INVOICE', payment: 'SUPPLIER_PAYMENT',
+  so: 'SALES_ORDER', inv: 'INVOICE', rc: 'PAYMENT', cn: 'CREDIT_NOTE',
+}
+const CHAIN_STAGE: Record<string, number> = {
+  PURCHASE_REQUEST: 0, PURCHASE_ORDER: 1, GOODS_RECEIPT: 2, PURCHASE_INVOICE: 3, SUPPLIER_PAYMENT: 4,
+  SALES_ORDER: 0, POS_SALE: 0, POS_CANCEL: 0, INVOICE: 1, PAYMENT: 2, CREDIT_NOTE: 2,
+}
+const MAX_REFS = 4
+
+/** เลขเอกสารต้นสาย (ไม่นับใบที่ยกเลิก) · คืน kinds ด้วยเพื่อรู้ว่าปนหลายชนิดไหม */
+export function upstreamRefs(kind: string, chain: { kind: string; number: string | null; status: string | null }[]) {
+  const me = CHAIN_STAGE[kind]
+  if (me === undefined) return null
+  const ups = chain
+    .filter(c => c.number && c.status !== 'CANCELLED' && (CHAIN_STAGE[c.kind] ?? 99) < me)
+    .sort((a, b) => CHAIN_STAGE[b.kind] - CHAIN_STAGE[a.kind])
+  const nums = [...new Set(ups.map(c => c.number as string))]
+  if (!nums.length) return null
+  const text = nums.slice(0, MAX_REFS).join(' · ') + (nums.length > MAX_REFS ? ` +${nums.length - MAX_REFS}` : '')
+  return { text, mixedKinds: new Set(ups.map(c => c.kind)).size > 1 }
+}
+
+async function chainRefs(type: PrintDocType, d: any) {
+  const kind = CHAIN_KIND[type]
+  if (!kind || !d?.id) return null
+  try {
+    const res = await api.get(`/journal/source/${kind}/${d.id}`, { timeout: 4000 })
+    return upstreamRefs(kind, res.data?.data?.chain ?? [])
+  } catch {
+    return null
+  }
+}
+
 /**
  * สั่งพิมพ์เอกสาร — ลายเซ็นเดียวกับ printSalesDoc()/printDocument() เดิม
  * ไม่ต้อง await ก็ได้ (ผู้เรียกเป็น onClick) แต่ await ได้ถ้าอยากรอ
@@ -221,7 +259,12 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
 
   const billType = resolveBillType(type, data)
 
-  await loadSettings()
+  // เปิดหน้าต่างก่อน await ใด ๆ — ถ้ารอโหลดก่อนเปิด เบราว์เซอร์ถือว่าไม่ได้มาจากการคลิกแล้วบล็อก pop-up
+  const w = window.open('', '_blank', format === 'thermal' ? 'width=340,height=700' : 'width=900,height=1200')
+  if (!w) { alert('กรุณาอนุญาต pop-up เพื่อพิมพ์เอกสาร'); return }
+  w.document.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body style="font-family:sans-serif;color:#888;padding:24px">กำลังเตรียมเอกสาร…</body></html>')
+
+  const [, refs] = await Promise.all([loadSettings(), chainRefs(type, data)])
   const s: any = settingsCache || {}
   const size = SIZE[format] || 'A4'
 
@@ -230,10 +273,19 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
     isFreePlan: !!s?.branding?.isFreePlan,
   }
 
+  const baseConfig = (BILL_CONFIGS as any)[billType]
+  const billData = toBillData(type, data || {})
+  let config = baseConfig
+  if (refs) {
+    billData.refNumber = refs.text
+    // ป้ายเดิมเจาะจงชนิดเดียว ("อ้างอิงใบสั่งซื้อ") — ถ้าเลขปนหลายชนิดให้ใช้คำกลาง
+    if (refs.mixedKinds) config = { ...baseConfig, labels: { ...baseConfig.labels, refNumber: 'อ้างอิง' } }
+  }
+
   const html = renderToStaticMarkup(
     createElement(UnifiedBillTemplate as any, {
-      config: (BILL_CONFIGS as any)[billType],
-      data: toBillData(type, data || {}),
+      config,
+      data: billData,
       size,
       branding,
       settings: settingsCache || undefined,
@@ -241,9 +293,9 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
     })
   )
 
-  const w = window.open('', '_blank', size === 'THERMAL' ? 'width=340,height=700' : 'width=900,height=1200')
-  if (!w) { alert('กรุณาอนุญาต pop-up เพื่อพิมพ์เอกสาร'); return }
+  if (w.closed) return
   // CSS ติดมากับ output ของ template เองแล้ว (<style>{BILL_CSS}</style>) ไม่ต้องใส่ซ้ำ
+  w.document.open()
   w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body>${html}</body></html>`)
   w.document.close()
   w.focus()

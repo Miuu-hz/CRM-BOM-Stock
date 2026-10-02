@@ -2,6 +2,8 @@
 // Plain object of functions. No classes, no decorators, no DI.
 
 import { AgentContext, AgentCommand } from './types'
+import { formatDocumentNumber } from '../utils/id'
+import { poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
 
 const commands: Record<string, AgentCommand> = {
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -71,7 +73,7 @@ const commands: Record<string, AgentCommand> = {
   // ── Mutations ────────────────────────────────────────────────────────────
   async create_pr(ctx: AgentContext, payload: { description: string; items?: Array<{ name: string; qty: number; unit: string }> }) {
     const id = crypto.randomUUID().replace(/-/g, '').substring(0, 25)
-    const prNumber = `PR-${new Date().getFullYear()}-${String((ctx.db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(ctx.tenantId) as any).c + 1).padStart(5, '0')}`
+    const prNumber = formatDocumentNumber('PR', ctx.tenantId, 'PURCHASE_REQUEST', new Date().getFullYear(), 5)
     const now = new Date().toISOString()
     ctx.db.prepare(
       `INSERT INTO purchase_requests (id, tenant_id, pr_number, requester_id, requester_name, supplier_name, source, status, notes, created_at, updated_at)
@@ -82,7 +84,7 @@ const commands: Record<string, AgentCommand> = {
 
   async create_wo(ctx: AgentContext, payload: { description: string; productId?: string; quantity?: number }) {
     const id = crypto.randomUUID().replace(/-/g, '').substring(0, 25)
-    const woNumber = `WO-${new Date().getFullYear()}-${String((ctx.db.prepare('SELECT COUNT(*) as c FROM work_orders WHERE tenant_id = ?').get(ctx.tenantId) as any).c + 1).padStart(5, '0')}`
+    const woNumber = formatDocumentNumber('WO', ctx.tenantId, 'WORK_ORDER', undefined, 5)
     const now = new Date().toISOString()
     ctx.db.prepare(
       `INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, notes, created_at, updated_at)
@@ -95,6 +97,8 @@ const commands: Record<string, AgentCommand> = {
     const existing = ctx.db.prepare('SELECT id, status FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(payload.poId, ctx.tenantId) as any
     if (!existing) throw new Error('PO not found')
     if (existing.status === 'APPROVED') return { type: 'po_approve', status: 'already_approved', poId: payload.poId }
+    const notReceivable = poNotReceivableMessage(ctx.tenantId, payload.poId)
+    if (notReceivable) throw new Error(notReceivable)
     ctx.db.prepare(`UPDATE purchase_orders SET status = 'APPROVED', updated_at = ? WHERE id = ?`).run(new Date().toISOString(), payload.poId)
     return { type: 'po_approved', poId: payload.poId }
   },

@@ -11,6 +11,8 @@ interface User {
   name: string
   role: string
   tenant_id: string
+  /** จาก login — ใช้ซ่อนเมนูของบัญชีแคชเชียร์ (เปลี่ยนแผนกแล้วต้องเข้าระบบใหม่) */
+  departments?: string[]
   parent_id?: string
 }
 

@@ -1,9 +1,9 @@
 ﻿import { ReactNode } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Clock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { canViewMenu } from './config/menuPermissions'
+import { canViewMenu, isCashierOnly } from './config/menuPermissions'
 import Login from './pages/Login'
 import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
@@ -22,6 +22,7 @@ import Settings from './pages/Settings'
 import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard, PeriodClosing, BudgetVsActual, ClearingReconcile, PlatformSettlement } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
+import PermissionsHelp from './pages/help/PermissionsHelp'
 import KDS from './pages/KDS'
 import POSClearing from './pages/Accounting/POSClearing'
 import { UserManagement } from './pages/Users'
@@ -33,8 +34,18 @@ import ApprovalInbox from './pages/ApprovalInbox'
 // Sidebar visibility alone doesn't stop that; this reads the same template.
 function Guard({ path, children }: { path: string; children: ReactNode }) {
   const { user } = useAuth()
-  if (!canViewMenu(user?.role, path)) return <Navigate to="/" replace />
+  if (!canViewMenu(user?.role, path, user?.departments)) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+// บัญชีแคชเชียร์พิมพ์ URL หน้าอื่นเอง → พากลับหน้าร้าน (backend ตอบ 403 อยู่แล้ว ตรงนี้กันจอว่าง/error)
+function CashierScope() {
+  const { user } = useAuth()
+  const { pathname } = useLocation()
+  if (isCashierOnly(user?.role, user?.departments) && !canViewMenu(user?.role, pathname, user?.departments)) {
+    return <Navigate to="/cashier" replace />
+  }
+  return null
 }
 
 function AppContent() {
@@ -57,6 +68,7 @@ function AppContent() {
   return (
     <>
     <Layout>
+      <CashierScope />
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/crm" element={<CRM />} />
@@ -87,6 +99,7 @@ function AppContent() {
         {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />
         <Route path="/kds" element={<KDS />} />
+        <Route path="/help/permissions" element={<PermissionsHelp />} />
 
         {/* POS Clearing Route */}
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />

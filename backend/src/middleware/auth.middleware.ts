@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
+import { isCashierOnly, cashierAllowed } from './cashierScope'
 import { getDb } from '../db/sqlite'
 import { can } from '../services/rbac.service'
 import { Role, Department } from '../config/roles'
@@ -108,6 +109,12 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       departments,
       customPermissions,
       tenantId: decoded.tenantId,
+    }
+
+    // บัญชีแคชเชียร์ใช้ได้เฉพาะ API งานหน้าร้าน — ตรวจที่นี่ที่เดียวเพราะทุก route ผ่าน authenticate
+    if (isCashierOnly(req.user.role, departments) && !cashierAllowed(req.method, req.originalUrl)) {
+      res.status(403).json({ success: false, code: 'CASHIER_SCOPE', message: 'บัญชีแคชเชียร์ใช้ได้เฉพาะงานหน้าร้าน (POS)' })
+      return
     }
 
     next()

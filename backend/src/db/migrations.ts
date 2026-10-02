@@ -1,3 +1,7 @@
+// docSeq.ts ไม่ import อะไรเลย จึงไม่โดนกับดัก require วงกลมของ db/sqlite ที่อธิบายไว้ด้านล่าง
+import { docSeqOf, MAX_DOC_SEQ } from '../utils/docSeq'
+// vat.ts เป็นฟังก์ชันล้วน ไม่ import db/sqlite เลย จึงไม่โดนกับดัก require วงกลมเหมือน docSeq.ts ข้างบน
+import { vatModeOf } from '../utils/vat'
 export function runMigrations(db: any): void {
   // FK ที่ชี้ตาราง products — products เป็นแคตตาล็อกตาย 12 แถว ของจริงอยู่ที่ stock_items
   // FK พวกนี้ทำ feature ตายเงียบมาแล้ว 4 ตาราง (credit_note_items / delivery_order_items /
@@ -630,6 +634,13 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: company_settings.pos_bom_deduct added')
   } catch { /* column already exists */ }
 
+  // จดทะเบียน VAT แล้วหรือยัง — แยกจากเลขผู้เสียภาษี (นิติบุคคลทุกแห่งมีเลข แม้ไม่ได้จด VAT)
+  // ค่าเริ่มต้น 1 = พฤติกรรมเดิม · 0 = ภาษีซื้อขอคืนไม่ได้ รวมเป็นต้นทุน และห้ามเก็บ VAT ที่ POS
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN vat_registered INTEGER DEFAULT 1`)
+    console.log('✅ Migration: company_settings.vat_registered added')
+  } catch { /* column already exists */ }
+
   // Migration: add POS billing settings to company_settings
   try {
     db.exec(`ALTER TABLE company_settings ADD COLUMN pos_vat_enabled INTEGER`)
@@ -1186,10 +1197,8 @@ export function runMigrations(db: any): void {
         const rows = db.prepare(`SELECT tenant_id, ${numCol.name} AS num FROM ${table}`).all() as any[]
         const maxByTenant = new Map<string, number>()
         for (const r of rows) {
-          if (!r.num) continue
-          const parts = String(r.num).split('-')
-          const tail = parseInt(parts[parts.length - 1], 10)
-          if (isNaN(tail)) continue
+          const tail = docSeqOf(r.num)
+          if (tail === null) continue
           const cur = maxByTenant.get(r.tenant_id) || 0
           if (tail > cur) maxByTenant.set(r.tenant_id, tail)
         }
@@ -1197,7 +1206,9 @@ export function runMigrations(db: any): void {
           INSERT INTO document_sequences (tenant_id, doc_type, year, last_number, updated_at)
           VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(tenant_id, doc_type, year) DO UPDATE SET
-            last_number = MAX(last_number, excluded.last_number),
+            -- ตัวนับ >= MAX_DOC_SEQ = โดนบั๊กเก่าอ่านวันที่เป็นลำดับ (180926) → ซ่อมลงมาเป็นค่าจริง
+            last_number = CASE WHEN last_number >= ${MAX_DOC_SEQ} THEN excluded.last_number
+                               ELSE MAX(last_number, excluded.last_number) END,
             updated_at = CURRENT_TIMESTAMP
         `)
         // ponytail: generateNumber() call sites are split — some pass no year segment
@@ -2066,6 +2077,10 @@ export function runMigrations(db: any): void {
     "ALTER TABLE sales_orders ADD COLUMN extra_charge_label TEXT",
     "ALTER TABLE invoices ADD COLUMN extra_charge_amount REAL DEFAULT 0",
     "ALTER TABLE invoices ADD COLUMN extra_charge_label TEXT",
+    // โหมด VAT ล่าสุดที่ใช้กับคู่ค้ารายนี้ (NONE/INCLUSIVE/EXCLUSIVE) — เอกสารใหม่ default ตามนี้
+    // NULL = ยังไม่เคยมีเอกสารเลย (ดู backfill ท้ายไฟล์นี้)
+    "ALTER TABLE customers ADD COLUMN vat_mode TEXT",
+    "ALTER TABLE suppliers ADD COLUMN vat_mode TEXT",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 
   // ==================== ยุบ materials เข้ากับ stock_items (2026-09-16) ====================
@@ -2410,4 +2425,47 @@ export function runMigrations(db: any): void {
     )`)
     console.log('✅ Migration: stock_item_aliases พร้อมใช้งาน')
   } catch (e) { console.error('⚠️ stock_item_aliases migration error:', e) }
+
+  // ==================== backfill customers/suppliers.vat_mode (2026-09-29) ====================
+  // one-time: เติมโหมด VAT ให้คู่ค้าที่ยังเป็น NULL จากเอกสารล่าสุดของเขา (ไม่แตะแถวที่ตั้งมาแล้ว)
+  // คู่ค้าที่ไม่มีเอกสารเลยปล่อย NULL ไว้ต่อไป (ยังไม่มีข้อมูลให้เดา)
+  try {
+    const customersToFill = db.prepare(`SELECT id, tenant_id FROM customers WHERE vat_mode IS NULL`).all() as any[]
+    const latestCustomerDoc = db.prepare(`
+      SELECT tax_rate, vat_inclusive FROM (
+        SELECT tax_rate, vat_inclusive, created_at FROM quotations WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+        UNION ALL
+        SELECT tax_rate, vat_inclusive, created_at FROM sales_orders WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+        UNION ALL
+        SELECT tax_rate, vat_inclusive, created_at FROM invoices WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+      ) ORDER BY created_at DESC LIMIT 1
+    `)
+    const setCustomerVatMode = db.prepare('UPDATE customers SET vat_mode = ? WHERE id = ?')
+    const customerCountByTenant: Record<string, number> = {}
+    for (const c of customersToFill) {
+      const doc = latestCustomerDoc.get(c.id, c.tenant_id, c.id, c.tenant_id, c.id, c.tenant_id) as any
+      if (!doc) continue
+      setCustomerVatMode.run(vatModeOf(doc.tax_rate, doc.vat_inclusive === 1), c.id)
+      customerCountByTenant[c.tenant_id] = (customerCountByTenant[c.tenant_id] || 0) + 1
+    }
+    console.log('✅ Migration: backfill customers.vat_mode ต่อ tenant:', customerCountByTenant)
+  } catch (e) { console.error('⚠️ customers.vat_mode backfill error:', e) }
+
+  try {
+    const suppliersToFill = db.prepare(`SELECT id, tenant_id FROM suppliers WHERE vat_mode IS NULL`).all() as any[]
+    const latestSupplierDoc = db.prepare(`
+      SELECT tax_rate, vat_inclusive FROM purchase_orders
+      WHERE supplier_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+      ORDER BY created_at DESC LIMIT 1
+    `)
+    const setSupplierVatMode = db.prepare('UPDATE suppliers SET vat_mode = ? WHERE id = ?')
+    const supplierCountByTenant: Record<string, number> = {}
+    for (const sup of suppliersToFill) {
+      const doc = latestSupplierDoc.get(sup.id, sup.tenant_id) as any
+      if (!doc) continue
+      setSupplierVatMode.run(vatModeOf(doc.tax_rate, doc.vat_inclusive === 1), sup.id)
+      supplierCountByTenant[sup.tenant_id] = (supplierCountByTenant[sup.tenant_id] || 0) + 1
+    }
+    console.log('✅ Migration: backfill suppliers.vat_mode ต่อ tenant:', supplierCountByTenant)
+  } catch (e) { console.error('⚠️ suppliers.vat_mode backfill error:', e) }
 }

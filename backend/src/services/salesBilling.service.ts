@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { createSalesJournal } from '../routes/sales/shared'
+import { rememberContactVatMode } from './accounting.service'
 
 /**
  * ตรรกะ "ออกใบแจ้งหนี้จาก SO" และ "รับชำระเงิน" ยกออกมาจาก routes/sales/invoices.ts และ
@@ -156,6 +157,10 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
       salesOrder.total_amount, salesOrder.tax_amount || 0,
       undefined, invoiceNumber, salesOrder.so_number)
   })()
+
+  // ใบแจ้งหนี้คัดลอกโหมด VAT มาจาก SO เต็ม ๆ อยู่แล้ว — จำซ้ำอีกครั้งไม่เสียหาย (เผื่อ SO เดิม
+  // ถูกสร้างก่อนที่ระบบจะเริ่มจำโหมด VAT ของลูกค้า)
+  rememberContactVatMode(tenantId, 'customer', salesOrder.customer_id, salesOrder.tax_rate, salesOrder.vat_inclusive === 1)
 
   const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
   const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(id)

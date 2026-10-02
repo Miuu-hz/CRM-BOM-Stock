@@ -36,10 +36,10 @@ router.put('/company', (req, res) => {
     const {
       name, address, phone, email, tax_id, tax_branch, vat_inclusive, logo_base64, pos_bom_deduct,
       pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
-      qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift
+      qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, vat_registered
     } = req.body
 
-    if (allow_negative_stock !== undefined || require_pos_shift !== undefined) {
+    if (allow_negative_stock !== undefined || require_pos_shift !== undefined || vat_registered !== undefined) {
       const callerRole = (req as any).user!.role
       if (callerRole !== 'ADMIN' && callerRole !== 'MASTER') {
         return res.status(403).json({ success: false, message: 'เฉพาะ Master และ Admin เท่านั้นที่เปลี่ยนการตั้งค่านี้ได้' })
@@ -61,7 +61,10 @@ router.put('/company', (req, res) => {
     const mergedBomDeduct = pos_bom_deduct !== undefined
       ? (pos_bom_deduct === false || pos_bom_deduct === 0 ? 0 : 1)
       : (existing.pos_bom_deduct === 0 ? 0 : 1)
-    const mergedVatEnabled = pos_vat_enabled !== undefined ? (pos_vat_enabled ? 1 : 0) : existing.pos_vat_enabled
+    // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) → บังคับปิด VAT ที่ POS ไปด้วย
+    const mergedVatRegistered = vat_registered !== undefined ? (vat_registered ? 1 : 0) : (existing.vat_registered === 0 ? 0 : 1)
+    const mergedVatEnabled = mergedVatRegistered === 0 ? 0
+      : pos_vat_enabled !== undefined ? (pos_vat_enabled ? 1 : 0) : existing.pos_vat_enabled
     const mergedVatRate = pos_vat_rate !== undefined ? pos_vat_rate : existing.pos_vat_rate
     const mergedVatInclusive = pos_vat_inclusive !== undefined ? (pos_vat_inclusive ? 1 : 0) : (existing.pos_vat_inclusive === 1 ? 1 : 0)
     const mergedServiceEnabled = pos_service_enabled !== undefined ? (pos_service_enabled ? 1 : 0) : existing.pos_service_enabled
@@ -111,6 +114,8 @@ router.put('/company', (req, res) => {
       mergedBomDeduct, mergedVatEnabled, mergedVatRate, mergedVatInclusive, mergedServiceEnabled, mergedServiceRate,
       mergedQcGateEnabled, mergedShowSubconStockWidget, mergedAllowNegativeStock, mergedRequirePosShift
     )
+
+    db.prepare('UPDATE company_settings SET vat_registered = ? WHERE tenant_id = ?').run(mergedVatRegistered, tenantId)
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)
     res.json({ success: true, data: updated })

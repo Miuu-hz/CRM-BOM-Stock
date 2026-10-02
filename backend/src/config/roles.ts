@@ -11,6 +11,7 @@ export type Department =
   | 'MARKETING'
   | 'QC'
   | 'PRODUCTION'
+  | 'POS'        // แคชเชียร์หน้าร้าน — มีแผนกนี้แผนกเดียว = ใช้ได้แค่ POS (middleware/cashierScope.ts)
 
 export type Action = 'read' | 'write' | 'approve' | 'delete' | 'admin'
 

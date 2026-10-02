@@ -77,3 +77,34 @@ export function calcDocTotals(
 ): VatTotals {
   return calcVat(sumLines(lines), cfg)
 }
+
+// ── โหมด VAT ระดับเอกสาร (2026-09-29) ─────────────────────────────────────────
+// ทุกเอกสารเลือกโหมดเดียวที่หัวเอกสาร: NONE | INCLUSIVE | EXCLUSIVE
+// เก็บลง field เดิม (tax_rate + vat_inclusive) เพื่อไม่ต้อง migrate schema
+// ⚠️ ต้องตรงกับ frontend/src/utils/vat.ts (ฝั่ง frontend มีชุดนี้อยู่แล้ว — ห้ามแก้ค่าที่นี่ให้เพี้ยนไปจากกัน)
+export const VAT_RATE = 7
+export type VatMode = 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE'
+
+/** อ่านโหมดจาก field ที่เก็บจริง — ใช้ ?? เสมอ ห้าม || (0 ต้องเป็น NONE ไม่ใช่ถูกแทนด้วย 7) */
+export function vatModeOf(rate: number | undefined | null, inclusive: boolean | undefined | null): VatMode {
+  return (rate ?? 0) <= 0 ? 'NONE' : inclusive ? 'INCLUSIVE' : 'EXCLUSIVE'
+}
+
+/** แปลงโหมดกลับเป็น field ที่เอกสารส่งจริง */
+export function vatModeToFields(mode: VatMode): { rate: number; inclusive: boolean } {
+  if (mode === 'NONE') return { rate: 0, inclusive: false }
+  if (mode === 'INCLUSIVE') return { rate: VAT_RATE, inclusive: true }
+  return { rate: VAT_RATE, inclusive: false }
+}
+
+/**
+ * ทำ tax_rate/vat_inclusive ดิบให้เข้ารูปโหมดที่ระบบรู้จักเสมอ (rate<=0 หรือไม่มีค่า → NONE,
+ * rate>0 → ปัดเป็น VAT_RATE คงที่ ตาม inclusive ที่ระบุ) — ใช้ก่อนจะ "จำ" โหมดของคู่ค้าไว้
+ * ป้องกันไม่ให้ค่าประหลาด (เช่น rate=15 จากเอกสารเก่า) เพี้ยนเข้าไปเป็นโหมดที่ไม่มีจริง
+ */
+export function normalizeVatFields(
+  rate: number | undefined | null,
+  inclusive: boolean | number | undefined | null
+): { rate: number; inclusive: boolean } {
+  return vatModeToFields(vatModeOf(rate, !!inclusive))
+}

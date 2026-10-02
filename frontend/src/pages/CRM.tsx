@@ -13,6 +13,7 @@ import customerRecommendationsApi from '../services/customerRecommendations'
 import { useModalClose } from '../hooks/useModalClose'
 import { useTranslation } from 'react-i18next'
 import { unitLabel } from '../hooks/useUnits'
+import { VatModeField } from '../components/common/VatModeSelector'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -36,6 +37,8 @@ interface Customer {
   daysSinceLastOrder?: number
   creditUsed?: number
   loyalty_points?: number
+  /** โหมด VAT ล่าสุดที่ใช้กับลูกค้ารายนี้ */
+  vat_mode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
 }
 
 interface ActivityLog {
@@ -687,7 +690,8 @@ function CustomerModal({ open, customer, onClose, onSave }: {
   useModalClose(onClose)
   const [form, setForm] = useState({
     code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
-    city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE'
+    city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE',
+    vatMode: null as 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null,
   })
   const [saving, setSaving] = useState(false)
 
@@ -696,11 +700,12 @@ function CustomerModal({ open, customer, onClose, onSave }: {
       setForm({
         code: customer.code, name: customer.name, type: customer.type,
         contactName: customer.contactName, email: customer.email, phone: customer.phone,
-        city: customer.city, address: customer.address ?? '', taxId: customer.taxId ?? '', creditLimit: customer.creditLimit, status: customer.status
+        city: customer.city, address: customer.address ?? '', taxId: customer.taxId ?? '', creditLimit: customer.creditLimit, status: customer.status,
+        vatMode: customer.vat_mode ?? null,
       })
     } else {
       setForm({ code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
-        city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE' })
+        city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE', vatMode: null })
     }
   }, [customer, open])
 
@@ -827,6 +832,8 @@ function CustomerModal({ open, customer, onClose, onSave }: {
                     className="phopy-input w-full" min="0" placeholder="0" />
                 </div>
               </div>
+
+              <VatModeField value={form.vatMode} onChange={(vatMode) => setForm({ ...form, vatMode })} />
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={onClose}

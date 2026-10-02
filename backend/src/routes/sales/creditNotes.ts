@@ -365,9 +365,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const cn = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!cn) return res.status(404).json({ success: false, message: 'Credit note not found' })
     if (cn.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบลดหนี้สถานะ DRAFT เท่านั้น' })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
     db.transaction(() => {
-      db.prepare('DELETE FROM credit_note_items WHERE credit_note_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-      db.prepare('DELETE FROM credit_notes WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare("UPDATE credit_notes SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(new Date().toISOString(), req.params.id, tenantId)
       // Restore the invoice balance that was reduced when this credit note was created
       if (cn.invoice_id && cn.total_amount) {
         db.prepare('UPDATE invoices SET balance_amount = balance_amount + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')

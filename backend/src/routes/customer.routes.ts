@@ -5,6 +5,9 @@ import { randomUUID } from 'crypto'
 
 const router = Router()
 
+// โหมด VAT ที่ยอมรับตอนตั้ง/แก้ลูกค้า — ค่าอื่นถือเป็นข้อมูลผิด ปฏิเสธด้วย 400
+const VALID_VAT_MODES = ['NONE', 'INCLUSIVE', 'EXCLUSIVE']
+
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
 
@@ -50,7 +53,7 @@ router.get('/search', (req: Request, res: Response) => {
     // ในหน้า POS ต้องให้แคชเชียร์ยืนยันข้อมูลผู้ซื้อก่อนกดออกใบ ไม่ใช่เห็นแค่ชื่อกับเบอร์
     const customers = db.prepare(`
       SELECT id, code, name, contact_name, phone, email,
-             tax_id, address, tax_branch,
+             tax_id, address, tax_branch, vat_mode,
              loyalty_points, total_spent, status
       FROM customers
       WHERE tenant_id = ? AND status = 'ACTIVE'
@@ -99,7 +102,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, type, contactName, email, phone, city, address, taxId, taxBranch, creditLimit = 0 } = req.body
+    const { code, name, type, contactName, email, phone, city, address, taxId, taxBranch, creditLimit = 0, vatMode } = req.body
 
     // Validation — ชื่อ/ประเภท/เบอร์โทรยังบังคับเหมือนเดิม แต่ code กับ contactName ผ่อนให้ เพราะ
     // popup "เพิ่มลูกค้าใหม่" ตอนลูกค้า POS ขอใบกำกับกะทันหัน แคชเชียร์ไม่มีทางรู้จะตั้งรหัสอะไร
@@ -113,6 +116,9 @@ router.post('/', (req: Request, res: Response) => {
     // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (บุคคลธรรมดาไม่มีเลขนี้)
     if (taxId && !/^\d{13}$/.test(taxId)) {
       return res.status(400).json({ success: false, message: 'เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก' })
+    }
+    if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
+      return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
     }
 
     const resolvedContactName = contactName || name
@@ -138,9 +144,9 @@ router.post('/', (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, now, now)
+      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, vat_mode, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, vatMode || null, now, now)
 
     res.status(201).json({
       success: true,
@@ -158,11 +164,14 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status } = req.body
+    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, vatMode } = req.body
 
     // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (เหมือนตอนสร้าง)
     if (taxId && !/^\d{13}$/.test(taxId)) {
       return res.status(400).json({ success: false, message: 'เลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก' })
+    }
+    if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
+      return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
     }
 
     // Check if customer exists and belongs to this tenant
@@ -186,10 +195,11 @@ router.put('/:id', (req: Request, res: Response) => {
           tax_id = COALESCE(?, tax_id),
           tax_branch = COALESCE(?, tax_branch),
           credit_limit = COALESCE(?, credit_limit),
+          vat_mode = COALESCE(?, vat_mode),
           status = COALESCE(?, status),
           updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, now, id, tenantId)
+    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, vatMode, status, now, id, tenantId)
     
     res.json({ success: true, message: 'อัปเดตลูกค้าสำเร็จ' })
   } catch (error) {

@@ -51,8 +51,20 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
 // system only controls navigation visibility, not data access. Real
 // authorization for reads/writes still lives in the backend (rbac.service.ts,
 // requireRole, requireMaster, etc.) and must not be relaxed based on this file.
-export function canViewMenu(role: string | undefined, path: string): boolean {
+/**
+ * บัญชีแคชเชียร์ = แผนก POS แผนกเดียว (Admin/Master ไม่เข้าข่าย) → เห็นแค่หน้าร้าน
+ * ต้องตรงกับ backend/src/middleware/cashierScope.ts ซึ่งเป็นตัวกันจริง (ที่นี่แค่ซ่อนเมนู/พากลับหน้าร้าน)
+ */
+export const CASHIER_PATHS = ['/cashier', '/kds']
+export function isCashierOnly(role: string | undefined, departments: string[] | undefined): boolean {
+  if (!role || role === 'MASTER' || role === 'ADMIN') return false
+  return !!departments && departments.length > 0 && departments.every(d => d === 'POS')
+}
+
+export function canViewMenu(role: string | undefined, path: string, departments?: string[]): boolean {
   if (!role) return false
+  if (path.startsWith('/help')) return true // หน้าคำอธิบายเปิดได้ทุกคน
+  if (isCashierOnly(role, departments)) return CASHIER_PATHS.includes(path)
   const allowed = MENU_PERMISSIONS[path]
   if (!allowed) return true
   return allowed.includes(role as Role)

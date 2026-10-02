@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Trash2, Pencil, AlertTriangle, Check} from 'lucide-react'
@@ -14,11 +14,13 @@ import { normalizeUnit } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
+import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
+import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { unitLabel } from '../hooks/useUnits'
 import { timeAgo } from '../utils/timeAgo'
-import { calcVat, calcDocTotals } from '../utils/vat'
+import { calcVat, calcDocTotals, type VatMode, vatModeOf, vatModeToFields, defaultVatMode, vatModeWarning, VAT_MODE_LABEL } from '../utils/vat'
 
 // Types
 // รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
@@ -2393,6 +2395,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [type, setType] = useState('INDIVIDUAL')
+  const [vatMode, setVatMode] = useState<VatMode | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Auto-generate code from name
@@ -2417,6 +2420,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
         contactName: name.trim(),
         phone: phone.trim(),
         email: email.trim() || undefined,
+        vatMode,
       })
       toast.success(t('sales.toast.customerAdded'))
       onCreated(customer)
@@ -2472,6 +2476,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com"
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
           </div>
+          <VatModeField value={vatMode} onChange={setVatMode} />
         </div>
         <div className="p-4 border-t border-[var(--border)] flex gap-2">
           <button onClick={onClose} className="px-3 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
@@ -2746,18 +2751,24 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
 }
 
 // ─── Shared: Totals Summary ───────────────────────────────────────────────────
-function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscountAmount, vatInclusive, setVatInclusive, extraCharge, setExtraCharge }: {
+// ใบขายใหม่เปิด VAT 7% เป็นค่าเริ่มต้น — ยกเว้นกิจการที่ยังไม่จด VAT ซึ่งเก็บ VAT จากลูกค้าไม่ได้ตามกฎหมาย
+const vatRegisteredCo = () => {
+  const v = (getCachedCompanySettings() as any)?.vat_registered
+  return v !== 0 && v !== false
+}
+
+function TotalsSummary({ items, mode, discountAmount, setDiscountAmount, extraCharge, setExtraCharge, onEditVat }: {
   items: LineItem[]
-  taxRate: number; setTaxRate: (v: number) => void
+  mode: VatMode
   discountAmount: number; setDiscountAmount: (v: number) => void
-  vatInclusive: boolean; setVatInclusive: (v: boolean) => void
   extraCharge: { label: string; amount: number }; setExtraCharge: (v: { label: string; amount: number }) => void
+  onEditVat: () => void
 }) {
   const { t } = useTranslation()
-  const { subtotal, taxAmount: tax, totalAmount: total, discount } =
+  const { rate, inclusive } = vatModeToFields(mode)
+  const { subtotal, taxAmount: tax, totalAmount: total } =
     calcDocTotals(items.map(it => ({ quantity: it.quantity, unitPrice: it.unitPrice, discountPercent: it.discountPercent })),
-      { rate: taxRate, discountAmount, inclusive: vatInclusive, extraCharge: extraCharge.amount })
-  const afterDiscount = subtotal - discount
+      { rate, discountAmount, inclusive, extraCharge: extraCharge.amount })
   return (
     <div className="bg-[var(--surface-2)] p-4 rounded-xl space-y-2 text-sm">
       <div className="flex justify-between text-[var(--fg-3)]">
@@ -2782,32 +2793,18 @@ function TotalsSummary({ items, taxRate, setTaxRate, discountAmount, setDiscount
             className="w-24 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
         </div>
       </div>
-      <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
-        <span className="shrink-0">{t('sales.common.tax')} (%)</span>
-        <div className="flex items-center gap-2">
-          {[0, 7].map(r => (
-            <button key={r} type="button" onClick={() => setTaxRate(r)}
-              className={`px-2 py-0.5 rounded text-xs border ${taxRate === r ? 'border-phopy-indigo text-[var(--primary)]' : 'border-[var(--border)] text-[var(--fg-4)]'}`}>
-              {r}%
-            </button>
-          ))}
-          <input type="number" value={taxRate} min={0} max={100}
-            onChange={e => setTaxRate(parseFloat(e.target.value) || 0)}
-            onFocus={e => e.target.select()}
-            className="w-16 text-right bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] text-xs focus:outline-none focus:border-phopy-indigo" />
-        </div>
+      <div className="flex justify-between items-center text-[var(--fg-3)]">
+        <span className="flex items-center gap-1.5">
+          {t('common.vatMode', { defaultValue: 'โหมด VAT' })}: {VAT_MODE_LABEL[mode]}
+          <button type="button" onClick={onEditVat} aria-label="แก้ไขโหมด VAT" className="text-[var(--primary)] hover:opacity-70">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </span>
       </div>
-      {taxRate > 0 && (
-        <label className="flex justify-between items-center gap-4 text-[var(--fg-3)] cursor-pointer">
-          <span className="shrink-0 text-xs">{t('common.vatInclusive')}</span>
-          <input type="checkbox" checked={vatInclusive} onChange={e => setVatInclusive(e.target.checked)}
-            className="w-4 h-4 accent-[var(--primary)]" />
-        </label>
-      )}
-      {taxRate > 0 && (
+      {mode !== 'NONE' && (
         <div className="flex justify-between text-warning">
-          <span>{t('sales.common.tax')} ({taxRate}%)</span>
-          <span>{vatInclusive ? '' : '+'}฿{tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+          <span>{mode === 'INCLUSIVE' ? 'แยก VAT 7%' : 'VAT 7%'}</span>
+          <span>{mode === 'INCLUSIVE' ? `(฿${tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })})` : `+฿${tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`}</span>
         </div>
       )}
       <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
@@ -2827,8 +2824,10 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [expiryDate, setExpiryDate] = useState(editData?.expiry_date?.split('T')[0] || '')
-  const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
-  const [vatInclusive, setVatInclusive] = useState(editData?.vat_inclusive === 1)
+  const registered = vatRegisteredCo()
+  const [vatMode, setVatMode] = useState<VatMode>(() => isEdit ? vatModeOf(editData?.tax_rate, editData?.vat_inclusive === 1) : 'EXCLUSIVE')
+  const [vatModeTouched, setVatModeTouched] = useState(isEdit)
+  const vatSelectorRef = useRef<HTMLDivElement>(null)
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: editData?.extra_charge_label || '', amount: editData?.extra_charge_amount || 0 })
   const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
   const [notes, setNotes] = useState(editData?.notes || '')
@@ -2848,6 +2847,20 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
 
+  const contactMode = customer?.vat_mode ?? null
+  const { locked: vatLocked, hint: vatHint } = defaultVatMode({ side: 'sale', registered, contactMode })
+  const effectiveVatMode: VatMode = vatLocked ? 'NONE' : vatMode
+  const vatWarning = vatModeWarning(effectiveVatMode, { side: 'sale', registered, contactMode })
+  const handleCustomerChange = (c: Customer | null) => {
+    setCustomer(c)
+    if (!vatModeTouched) setVatMode(defaultVatMode({ side: 'sale', registered, contactMode: c?.vat_mode ?? null }).mode)
+  }
+  const handleVatModeChange = (m: VatMode) => { setVatMode(m); setVatModeTouched(true) }
+  const scrollToVatSelector = () => {
+    vatSelectorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    vatSelectorRef.current?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.focus()
+  }
+
   useEffect(() => {
     salesService.getProducts().then(setProducts).catch(() => {})
     if (isEdit && editData?.customer_name) {
@@ -2860,11 +2873,12 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
     if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
     setSaving(true)
     try {
+      const { rate, inclusive } = vatModeToFields(effectiveVatMode)
       const payload = {
         customerId: customer.id,
         expiryDate: expiryDate || undefined,
-        taxRate,
-        vatInclusive,
+        taxRate: rate,
+        vatInclusive: inclusive,
         extraChargeAmount: extraCharge.amount,
         extraChargeLabel: extraCharge.label,
         discountAmount,
@@ -2918,13 +2932,17 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
                   <Plus className="w-3.5 h-3.5" /> {t('sales.actions.addCustomer')}
                 </button>
               </div>
-              <CustomerSearch value={customer} onChange={setCustomer} />
+              <CustomerSearch value={customer} onChange={handleCustomerChange} />
               {showQuickAddCust && (
                 <QuickAddCustomerModal
                   onClose={() => setShowQuickAddCust(false)}
-                  onCreated={c => { setCustomer(c); setShowQuickAddCust(false) }}
+                  onCreated={c => { handleCustomerChange(c); setShowQuickAddCust(false) }}
                 />
               )}
+            </div>
+            <div className="col-span-2" ref={vatSelectorRef}>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('common.vatMode', { defaultValue: 'โหมด VAT' })}</label>
+              <VatModeSelector value={effectiveVatMode} onChange={handleVatModeChange} locked={vatLocked} sourceHint={vatHint} warning={vatWarning} />
             </div>
             <div>
               <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.expiryDate')}</label>
@@ -2939,7 +2957,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
           </div>
 
           <LineItemsEditor items={items} onChange={setItems} products={products} />
-          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} vatInclusive={vatInclusive} setVatInclusive={setVatInclusive} extraCharge={extraCharge} setExtraCharge={setExtraCharge} />
+          <TotalsSummary items={items} mode={effectiveVatMode} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} extraCharge={extraCharge} setExtraCharge={setExtraCharge} onEditVat={scrollToVatSelector} />
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
@@ -3111,8 +3129,10 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [deliveryDate, setDeliveryDate] = useState(editData?.delivery_date?.split('T')[0] || '')
-  const [taxRate, setTaxRate] = useState(editData?.tax_rate ?? 0)
-  const [vatInclusive, setVatInclusive] = useState(editData?.vat_inclusive === 1)
+  const registered = vatRegisteredCo()
+  const [vatMode, setVatMode] = useState<VatMode>(() => isEdit ? vatModeOf(editData?.tax_rate, editData?.vat_inclusive === 1) : 'EXCLUSIVE')
+  const [vatModeTouched, setVatModeTouched] = useState(isEdit || !!sourceQuotation)
+  const vatSelectorRef = useRef<HTMLDivElement>(null)
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: editData?.extra_charge_label || '', amount: editData?.extra_charge_amount || 0 })
   const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
   const [notes, setNotes] = useState(editData?.notes || '')
@@ -3132,6 +3152,20 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   const [saving, setSaving] = useState(false)
   const [showQuickAddCust, setShowQuickAddCust] = useState(false)
 
+  const contactMode = customer?.vat_mode ?? null
+  const { locked: vatLocked, hint: vatHint } = defaultVatMode({ side: 'sale', registered, contactMode })
+  const effectiveVatMode: VatMode = vatLocked ? 'NONE' : vatMode
+  const vatWarning = vatModeWarning(effectiveVatMode, { side: 'sale', registered, contactMode })
+  const handleCustomerChange = (c: Customer | null) => {
+    setCustomer(c)
+    if (!vatModeTouched) setVatMode(defaultVatMode({ side: 'sale', registered, contactMode: c?.vat_mode ?? null }).mode)
+  }
+  const handleVatModeChange = (m: VatMode) => { setVatMode(m); setVatModeTouched(true) }
+  const scrollToVatSelector = () => {
+    vatSelectorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    vatSelectorRef.current?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.focus()
+  }
+
   useEffect(() => {
     salesService.getProducts().then(prods => {
       setProducts(prods)
@@ -3140,7 +3174,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         salesService.getQuotation(sourceQuotation.id).then(r => {
           const qt = r.data
           if (qt) {
-            setTaxRate(qt.tax_rate || 0)
+            setVatMode(vatModeOf(qt.tax_rate, qt.vat_inclusive === 1))
             setDiscountAmount(qt.discount_amount || 0)
             if (qt.items?.length) {
               setItems(qt.items.map((it: any) => {
@@ -3179,12 +3213,13 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
     if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
     setSaving(true)
     try {
+      const { rate, inclusive } = vatModeToFields(effectiveVatMode)
       const payload = {
         customerId: customer.id,
         quotationId: sourceQuotation?.id,
         deliveryDate: deliveryDate || undefined,
-        taxRate,
-        vatInclusive,
+        taxRate: rate,
+        vatInclusive: inclusive,
         extraChargeAmount: extraCharge.amount,
         extraChargeLabel: extraCharge.label,
         discountAmount,
@@ -3236,13 +3271,17 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
                   <Plus className="w-3.5 h-3.5" /> {t('sales.actions.addCustomer')}
                 </button>
               </div>
-              <CustomerSearch value={customer} onChange={setCustomer} />
+              <CustomerSearch value={customer} onChange={handleCustomerChange} />
               {showQuickAddCust && (
                 <QuickAddCustomerModal
                   onClose={() => setShowQuickAddCust(false)}
-                  onCreated={c => { setCustomer(c); setShowQuickAddCust(false) }}
+                  onCreated={c => { handleCustomerChange(c); setShowQuickAddCust(false) }}
                 />
               )}
+            </div>
+            <div className="col-span-2" ref={vatSelectorRef}>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('common.vatMode', { defaultValue: 'โหมด VAT' })}</label>
+              <VatModeSelector value={effectiveVatMode} onChange={handleVatModeChange} locked={vatLocked} sourceHint={vatHint} warning={vatWarning} />
             </div>
             <div>
               <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.deliveryDate')}</label>
@@ -3257,7 +3296,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           </div>
 
           <LineItemsEditor items={items} onChange={setItems} products={products} />
-          <TotalsSummary items={items} taxRate={taxRate} setTaxRate={setTaxRate} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} vatInclusive={vatInclusive} setVatInclusive={setVatInclusive} extraCharge={extraCharge} setExtraCharge={setExtraCharge} />
+          <TotalsSummary items={items} mode={effectiveVatMode} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} extraCharge={extraCharge} setExtraCharge={setExtraCharge} onEditVat={scrollToVatSelector} />
         </div>
 
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
@@ -3332,6 +3371,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [creatingInv, setCreatingInv] = useState(false)
+  const [showSourceDoc, setShowSourceDoc] = useState(false)
 
   useEffect(() => {
     salesService.getSalesOrder(salesOrder.id).then(r => { setDetail(r.data); setLoading(false) })
@@ -3466,6 +3506,10 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               <Printer className="w-4 h-4" />
             </button>
           )}
+          <button onClick={() => setShowSourceDoc(true)} title="สายเอกสาร"
+            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
+            <FileText className="w-4 h-4" />
+          </button>
           {salesOrder.status === 'PENDING_APPROVAL' ? (
             <div className="flex-1 py-2 px-3 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-lg text-sm font-medium text-center">
               รออนุมัติจาก Approver
@@ -3491,6 +3535,9 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
           )}
         </div>
       </motion.div>
+      {showSourceDoc && (
+        <SourceDocModal kind="SALES_ORDER" refId={salesOrder.id} title={salesOrder.so_number} onClose={() => setShowSourceDoc(false)} />
+      )}
     </div>
   )
 }
@@ -3514,6 +3561,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const [payRef, setPayRef] = useState('')
   const [payNote, setPayNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [sourceDocModal, setSourceDocModal] = useState<{ kind: string; refId: string; title: string } | null>(null)
 
   const loadDetail = () => {
     salesService.getInvoice(invoice.id).then(r => { setDetail(r.data); setLoading(false) })
@@ -3731,6 +3779,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                               className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
                               <Printer className="w-3 h-3" /> 80mm
                             </button>
+                            <button onClick={() => setSourceDocModal({ kind: 'PAYMENT', refId: r.id, title: r.receipt_number })}
+                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
+                              <FileText className="w-3 h-3" /> สายเอกสาร
+                            </button>
                             {canCancelDoc && (
                               <button onClick={() => handleVoidReceipt(r.id)} title={t('sales.actions.voidReceipt')}
                                 className="px-2 py-1 text-danger hover:text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg text-xs flex items-center gap-1">
@@ -3827,6 +3879,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               className="px-3 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-sm flex items-center gap-1">
               <Printer className="w-3.5 h-3.5" /> 80mm
             </button>
+            <button onClick={() => setSourceDocModal({ kind: 'INVOICE', refId: invoice.id, title: invoice.invoice_number })}
+              className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors flex items-center gap-1.5 text-sm">
+              <FileText className="w-4 h-4" /> สายเอกสาร
+            </button>
             {canCancelDoc && (detail?.status || invoice.status) !== 'CANCELLED' && (
               <button onClick={handleCancelInvoice} disabled={saving} title={t('sales.actions.cancelInvoice')}
                 className="px-3 py-2 text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg hover:bg-red-500/20 transition-colors flex items-center gap-1.5 text-sm disabled:opacity-50">
@@ -3844,6 +3900,14 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
         )}
       </motion.div>
     </div>
+    {sourceDocModal && (
+      <SourceDocModal
+        kind={sourceDocModal.kind}
+        refId={sourceDocModal.refId}
+        title={sourceDocModal.title}
+        onClose={() => setSourceDocModal(null)}
+      />
+    )}
     </>
   )
 }
@@ -4067,6 +4131,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   const { t } = useTranslation()
   useModalClose(onClose)
   const [saving, setSaving] = useState(false)
+  const [showSourceDoc, setShowSourceDoc] = useState(false)
   const fmt = (v: number) => `฿${Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (d: string) => d ? new Date(d).toLocaleDateString('th-TH') : '-'
 
@@ -4100,6 +4165,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
@@ -4147,6 +4213,10 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
             className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
             <Printer className="w-4 h-4" />
           </button>
+          <button onClick={() => setShowSourceDoc(true)} title="สายเอกสาร"
+            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
+            <FileText className="w-4 h-4" />
+          </button>
           {creditNote.status === 'DRAFT' && (
             <button onClick={handleIssue} disabled={saving}
               className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-2">
@@ -4157,6 +4227,10 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
         </div>
       </motion.div>
     </div>
+    {showSourceDoc && (
+      <SourceDocModal kind="CREDIT_NOTE" refId={creditNote.id} title={creditNote.cn_number} onClose={() => setShowSourceDoc(false)} />
+    )}
+    </>
   )
 }
 

@@ -5,7 +5,8 @@ import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
 import { formatDocumentNumber } from '../../utils/id'
-import { calcVat } from '../../utils/vat'
+import { calcVat, vatModeToFields, type VatMode } from '../../utils/vat'
+import { rememberContactVatMode } from '../../services/accounting.service'
 import {
   createGoodsReceipt,
   confirmGoodsReceipt,
@@ -14,7 +15,7 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError } from '../../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, poNotReceivableMessage } from '../../services/purchaseOrderUpdate.service'
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -37,8 +38,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       const desc = args.description ?? ''
       const items = args.items ?? []
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_requests WHERE tenant_id = ?').get(tenantId) as { c: number }).c
-      const prNumber = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+      const prNumber = formatDocumentNumber('PR', tenantId, 'PURCHASE_REQUEST', new Date().getFullYear(), 5)
       const now = new Date().toISOString()
 
       db.transaction(() => {
@@ -74,6 +74,8 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
     'create_draft_po',
     `สร้างใบสั่งซื้อ (PO) แบบร่างจากรูปภาพหรือรายการที่อ่านได้ / Create a DRAFT Purchase Order from image or list.
 ใช้เมื่อผู้ใช้ส่งรูปใบสั่งซื้อ รายการสินค้า หรือบอกรายการที่ต้องการสั่งซื้อพร้อมปริมาณและราคา
+ราคา/ยอดที่กรอก (unitPrice, lineTotal, billTotal) คือตัวเลขตามที่พิมพ์อยู่บนบิลจริง — ห้ามคำนวณ VAT เอง
+ระบบจะคิด VAT ให้อัตโนมัติตามโหมดล่าสุดที่เคยใช้กับผู้ขายรายนี้ (ไม่มีประวัติ = ไม่มี VAT)
 ระบบจะสร้าง PO สถานะ DRAFT ให้ผู้ใช้ไปยืนยันและแก้ไขต่อใน ERP web ก่อน submit
 ตัวอย่าง: "สั่งหมูสับ 5 กก. ราคา 120 บาท/กก., ไข่ไก่ 30 ฟอง ราคา 4 บาท" → create_draft_po(items=[...], notes="จากรูปภาพ")`,
     {
@@ -122,8 +124,8 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         image_base64, image_name,
       } = args
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ?').get(tenantId) as { c: number }).c
-      const poNumber = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+      // เดิม COUNT+1 เอง: ไม่ตามค่าตั้งเลขที่เอกสาร และชนเลขเดิมได้เมื่อมีการลบ
+      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', new Date().getFullYear(), 5)
       const now = new Date().toISOString()
 
       // ── Auto-find or create supplier ────────────────────────────────────────
@@ -159,11 +161,21 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         if (i.lineTotal != null && i.quantity > 0) return i.lineTotal / i.quantity
         return 0
       }
-      const subtotal = items.reduce((s: number, i: { quantity: number; lineTotal?: number; unitPrice?: number }) => s + resolveLineTotal(i), 0)
+      const enteredTotal = items.reduce((s: number, i: { quantity: number; lineTotal?: number; unitPrice?: number }) => s + resolveLineTotal(i), 0)
+
+      // VAT ของ PO นี้: ตามโหมด VAT ล่าสุดที่เคยใช้กับผู้ขายรายนี้ (fallback NONE ถ้าไม่เคยมีประวัติ
+      // หรือยังไม่รู้จักผู้ขาย) — ราคาที่ AI อ่านมาคือ "ตามที่พิมพ์บนบิล" เสมอ ไม่ใช่ราคาก่อนภาษี
+      const supplierVatMode: VatMode = (supplierId
+        ? (db.prepare('SELECT vat_mode FROM suppliers WHERE id = ? AND tenant_id = ?').get(supplierId, tenantId) as any)?.vat_mode
+        : null) || 'NONE'
+      const { rate: draftTaxRate, inclusive: draftVatInclusive } = vatModeToFields(supplierVatMode)
+      const vatCalc = calcVat(enteredTotal, { rate: draftTaxRate, inclusive: draftVatInclusive })
+      const subtotal = vatCalc.subtotal
+      const totalAmount = vatCalc.totalAmount
 
       // ── Resolve payment & cash purchase status ───────────────────────────
       const resolvedIsPaid = is_paid ?? (Boolean(payment_reference) || Boolean(payment_method))
-      const resolvedPaidAmount = paid_amount ?? (resolvedIsPaid ? subtotal : 0)
+      const resolvedPaidAmount = paid_amount ?? (resolvedIsPaid ? totalAmount : 0)
       const resolvedPaymentMethod = payment_method || (payment_reference ? 'โอนเงิน' : null)
       const resolvedPaymentRef = payment_reference || null
 
@@ -186,15 +198,18 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
 
       db.prepare(`
         INSERT INTO purchase_orders
-          (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, notes,
+          (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, vat_inclusive, notes,
            payment_method, payment_reference, bank_account_id, is_paid, paid_amount,
            created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, poNumber, supplierId, now, subtotal, subtotal,
+        VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, tenantId, poNumber, supplierId, now, subtotal, draftTaxRate, vatCalc.taxAmount, totalAmount, draftVatInclusive ? 1 : 0,
         `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`,
         resolvedPaymentMethod, resolvedPaymentRef, resolvedBankAccountId,
         resolvedIsPaid ? 1 : 0, resolvedPaidAmount,
         now, now)
+
+      // จำโหมด VAT ไว้กับผู้ขายรายนี้อีกครั้ง (เผื่อ supplier ถูกสร้างใหม่ตรงนี้และยังไม่มี vat_mode)
+      rememberContactVatMode(tenantId, 'supplier', supplierId, draftTaxRate, draftVatInclusive)
 
       // ── Save attached slip/bill image if provided ─────────────────────────
       let attachedEvidence: any = null
@@ -259,7 +274,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         })
       }
 
-      const billTotalMismatch = billTotal != null && Math.abs(subtotal - billTotal) / Math.max(billTotal, 1) > 0.05
+      const billTotalMismatch = billTotal != null && Math.abs(totalAmount - billTotal) / Math.max(billTotal, 1) > 0.05
       const unboundCount = items.length - boundCount
       const statusNote = unboundCount === 0
         ? 'ผูกสินค้าครบถ้วนตามชื่อสินค้า 100%'
@@ -272,7 +287,8 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         itemCount: items.length,
         boundCount,
         unboundCount,
-        totalAmount: subtotal,
+        vatMode: supplierVatMode,
+        totalAmount,
         billTotal: billTotal ?? null,
         billTotalMismatch: billTotalMismatch || null,
         supplier: supplierId ? { id: supplierId, name: supplier_hint, isNew: supplierCreated } : null,
@@ -290,7 +306,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         },
         items: resultItems,
         message: [
-          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${subtotal.toLocaleString()}) — ${statusNote}`,
+          `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${totalAmount.toLocaleString()}) — ${statusNote}`,
           unboundCount > 0 ? 'รายการที่ยังไม่ผูกสามารถผูกต่อในหน้าเว็บหรือใช้ bind_document_item' : '',
           supplierCreated ? `— สร้าง Supplier "${supplier_hint}" ใหม่` : '',
           billTotalMismatch ? `⚠️ ยอดรวมที่คำนวณ ฿${subtotal.toLocaleString()} ต่างจากยอดในบิล ฿${billTotal!.toLocaleString()} — กรุณาตรวจสอบ` : '',
@@ -651,6 +667,10 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       }
       if (status === 'SUBMITTED' && po.status !== 'DRAFT') {
         return ok({ success: false, message: `ส่งขออนุมัติได้เฉพาะ PO สถานะ DRAFT (ปัจจุบัน: ${po.status})` })
+      }
+      if (status === 'SUBMITTED' || status === 'APPROVED') {
+        const notReceivable = poNotReceivableMessage(tenantId, po.id)
+        if (notReceivable) return ok({ success: false, message: notReceivable })
       }
       if (status === 'APPROVED') {
         const check = checkApprovalPermission(tenantId, userId, callerRole, 'purchase_order', po.total_amount || 0)

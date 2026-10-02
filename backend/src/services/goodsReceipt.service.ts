@@ -3,7 +3,7 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from './unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
-import { postJournal } from './accounting.service'
+import { postJournal, isVatRegistered } from './accounting.service'
 import { ACC } from '../config/accountCodes'
 import { resolveStockItemId, StockItemRefError, normName, rememberAlias } from './stockItem.service'
 
@@ -215,6 +215,36 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
   // นับเฉพาะบรรทัดที่เข้าสต็อกจริง บรรทัด skip_stock (ปากกา ของใช้สำนักงาน) ไม่ใช่สินทรัพย์
   let accruedValue = 0
 
+  // เคสข้อมูลเก่า (ก่อน 2026-09-29): เคยออกใบแจ้งหนี้ซื้อได้โดยไม่มี GR เลย (Dr สต็อกตรงจาก PO)
+  // ถ้า PO นั้นมี GR มายืนยันตามหลัง (ของมาจริงแต่ผู้ใช้วางบิลไปก่อนโดยไม่รอ GR) การรับของรอบนี้
+  // ต้องเข้าคลัง+ตัด received_qty ตามปกติ แต่ห้ามลง Dr สต็อก/Cr 2109 ซ้ำ เพราะใบแจ้งหนี้เดิม
+  // Dr สต็อกไปเต็มจำนวนแล้ว — ลงอีกรอบ = สต็อกเบิ้ล + 2109 ค้างถาวรไม่มีวันปิด
+  const legacyNoGrPi = (db.prepare(
+    `SELECT id, goods_receipt_ids, purchase_order_id, purchase_order_ids FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED'
+     AND (goods_receipt_ids IS NULL OR goods_receipt_ids = '' OR goods_receipt_ids = '[]')`
+  ).all(tenantId) as any[]).find((inv: any) => {
+    if (inv.purchase_order_id === gr.purchase_order_id) return true
+    try { return (JSON.parse(inv.purchase_order_ids || '[]') as string[]).includes(gr.purchase_order_id) } catch { return false }
+  })
+
+  // ทุนที่บันทึกใน stock_items ต้องเป็น "ต้นทุนจริงของร้าน" ไม่ใช่ราคาที่เขียนในใบสั่งซื้อเฉย ๆ
+  // จดทะเบียน VAT แล้ว: VAT ซื้อขอคืนได้ → ทุนคือราคาไม่รวม VAT (ถอด VAT ออกถ้าราคาที่กรอกรวม VAT มาแล้ว)
+  // ยังไม่จดทะเบียน VAT: VAT ซื้อขอคืนไม่ได้ → กลายเป็นต้นทุนจริงของร้าน (บวก VAT เข้าไปถ้าราคาที่กรอกยังไม่รวม)
+  // แปลงตรงนี้ก่อนแปลงหน่วย (unit_cost เก็บต่อหน่วยฐานเสมอ) — purchase_price ยังคงเป็นราคาดิบตามที่กรอก
+  // เพราะเป็นช่องที่เจ้าของร้าน "รู้" ว่าจ่ายเท่าไรต่อหน่วยซื้อ ฝั่ง frontend จะแปลงกลับเองตอน prefill
+  // ราคาใบสั่งซื้อใหม่จากต้นทุนที่จำไว้ (ดู prefillUnitPriceFromCost ใน frontend/src/utils/vat.ts)
+  const grPo = db.prepare('SELECT tax_rate, vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?')
+    .get(gr.purchase_order_id, tenantId) as any
+  const grPoTaxRate = Number(grPo?.tax_rate) || 0
+  const grPoVatInclusive = grPo?.vat_inclusive === 1
+  const grCompanyRegistered = isVatRegistered(tenantId)
+  const purchasePriceToRealCost = (price: number): number => {
+    if (!grPoTaxRate || !(price > 0)) return price
+    if (grCompanyRegistered && grPoVatInclusive) return price / (1 + grPoTaxRate / 100)
+    if (!grCompanyRegistered && !grPoVatInclusive) return price * (1 + grPoTaxRate / 100)
+    return price
+  }
+
   db.transaction(() => {
     db.prepare("UPDATE goods_receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(now, gr.id, tenantId)
@@ -239,6 +269,8 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
       if (item.material_id && item.accepted_qty > 0) {
         const poItem = db.prepare('SELECT unit_price, unit, description FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
         const unitPrice = poItem?.unit_price || 0
+        // ต้นทุนจริง (หัก/บวก VAT ตามกฎด้านบน) — ใช้แทน unitPrice เฉพาะตอนคำนวณ unit_cost
+        const costUnitPrice = purchasePriceToRealCost(unitPrice)
         const poUnit = normalizeUnit(poItem?.unit || '')
 
         // material_id = id ของ stock_items แล้ว ไม่ต้องลองหาสองชั้นอีก
@@ -291,13 +323,13 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
             // ต่อ base_unit เสมอ ไม่ว่าตัวเลข quantity จะพักอยู่หน่วยไหนก็ตาม
             const sealedCostFactor = displayToBaseChain?.factor ?? 1
             const sealedUnitCost = unitPrice
-              ? priceToBaseUnitCost(unitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
+              ? priceToBaseUnitCost(costUnitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
             db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(sealedPacks, stockQty, sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
           } else {
             const newUnitCost = unitPrice
-              ? priceToBaseUnitCost(unitPrice, appliedFactor, `${poUnit || stockUnit}→${stockUnit} (material ${item.material_id})`)
+              ? priceToBaseUnitCost(costUnitPrice, appliedFactor, `${poUnit || stockUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
             db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(stockQty, newUnitCost, unitPrice || null, unitPrice ? (poUnit || stockUnit || null) : null, now, stockItem.id, tenantId)
@@ -370,7 +402,9 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
     // ไม่มีใบแจ้งหนี้ลอยอยู่นอกงบ (ตรวจ 19 ก.ย. 2026 พบค้างอยู่ 30 ใบ รวม ฿128,659)
     //
     // อยู่ใน transaction เดียวกับการรับของ — ลงบัญชีไม่ได้ก็ห้ามรับของเข้าคลัง
-    if (accruedValue > 0.005) {
+    // ยกเว้นเคส legacyNoGrPi (ดูคอมเมนต์ด้านบน) — ใบแจ้งหนี้เดิม Dr สต็อกไปเต็มจำนวนแล้ว
+    // การรับของรอบนี้จึงล็อก GR ไว้เฉย ๆ (กันออกใบซ้ำ) ไม่ลง Dr สต็อก/Cr 2109 ซ้ำ
+    if (accruedValue > 0.005 && !legacyNoGrPi) {
       postJournal({
         tenantId,
         date: (gr.receipt_date || now).substring(0, 10),
@@ -384,6 +418,14 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           { code: ACC.GRNI, description: `ค้างรับใบแจ้งหนี้ ${gr.gr_number}`, credit: accruedValue },
         ],
       })
+    }
+    if (legacyNoGrPi) {
+      db.prepare('UPDATE goods_receipts SET invoiced_at = ? WHERE id = ? AND tenant_id = ?').run(now, gr.id, tenantId)
+      let lockedIds: string[] = []
+      try { lockedIds = JSON.parse(legacyNoGrPi.goods_receipt_ids || '[]') } catch { lockedIds = [] }
+      if (!lockedIds.includes(gr.id)) lockedIds.push(gr.id)
+      db.prepare('UPDATE purchase_invoices SET goods_receipt_ids = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(JSON.stringify(lockedIds), now, legacyNoGrPi.id, tenantId)
     }
   })()
 

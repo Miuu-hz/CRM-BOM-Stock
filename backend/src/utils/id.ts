@@ -44,12 +44,6 @@ export function formatDocumentNumber(
   segment?: number | string,
   pad = 5
 ): string {
-  const seq = getNextDocumentNumber(
-    tenantId,
-    docType,
-    segment !== undefined ? Number(segment) : 0
-  )
-
   // Custom format override (Settings → เลขที่เอกสาร): {PREFIX}{sep}{SEQ}{sep}{DATE}
   let fmt: any
   try {
@@ -57,6 +51,14 @@ export function formatDocumentNumber(
       'SELECT * FROM document_number_formats WHERE tenant_id = ? AND doc_type = ? AND enabled = 1'
     ).get(tenantId, docType)
   } catch { /* table not migrated yet */ }
+
+  // รูปแบบกำหนดเองไม่มีปีในเลข → ต้องนับถังเดียว (year=0) ไม่งั้นเส้นทางที่ส่งปี (purchase.routes)
+  // กับที่ไม่ส่ง (purchaseOrder.routes) นับคนละถัง แล้วออกเลข PO-042-280926 ซ้ำกันได้
+  const seq = getNextDocumentNumber(
+    tenantId,
+    docType,
+    fmt ? 0 : segment !== undefined ? Number(segment) : 0
+  )
 
   if (fmt) {
     const p = fmt.prefix || prefix

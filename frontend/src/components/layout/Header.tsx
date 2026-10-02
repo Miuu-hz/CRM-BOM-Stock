@@ -30,6 +30,7 @@ import searchService from '../../services/search'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { SourceDocModal } from '../accounting/SourceDocModal'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -47,6 +48,7 @@ function Header({ onMenuClick }: HeaderProps) {
   const [showResults, setShowResults] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [sourceDocModal, setSourceDocModal] = useState<{ kind: string; refId: string; title: string } | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
@@ -154,6 +156,9 @@ function Header({ onMenuClick }: HeaderProps) {
         case 'invoice':
           navigate('/sales', { state: { highlightInvoice: item.id } })
           break
+        case 'document':
+          setSourceDocModal({ kind: item.docKind, refId: item.id, title: item.label })
+          break
       }
     },
     [navigate]
@@ -180,7 +185,8 @@ function Header({ onMenuClick }: HeaderProps) {
       (searchResults.work_orders || []).length > 0 ||
       (searchResults.sales_orders || []).length > 0 ||
       (searchResults.quotations || []).length > 0 ||
-      (searchResults.invoices || []).length > 0)
+      (searchResults.invoices || []).length > 0 ||
+      (searchResults.documents || []).length > 0)
 
   const totalResults = searchResults
     ? (searchResults.customers || []).length +
@@ -194,7 +200,8 @@ function Header({ onMenuClick }: HeaderProps) {
       (searchResults.work_orders || []).length +
       (searchResults.sales_orders || []).length +
       (searchResults.quotations || []).length +
-      (searchResults.invoices || []).length
+      (searchResults.invoices || []).length +
+      (searchResults.documents || []).length
     : 0
 
   const sectionConfig = [
@@ -210,9 +217,11 @@ function Header({ onMenuClick }: HeaderProps) {
     { key: 'salesOrders', items: searchResults?.sales_orders, icon: FileCheck, color: 'text-success' },
     { key: 'quotations', items: searchResults?.quotations, icon: FileText, color: 'text-[var(--primary)]' },
     { key: 'invoices', items: searchResults?.invoices, icon: Receipt, color: 'text-danger' },
+    { key: 'documents', items: searchResults?.documents, icon: FileText, color: 'text-[var(--primary)]' },
   ]
 
   return (
+    <>
     <header className="phopy-header border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
       <div className="flex items-center justify-between h-full">
         {/* Left Section */}
@@ -285,7 +294,7 @@ function Header({ onMenuClick }: HeaderProps) {
                         items && items.length > 0 ? (
                           <ResultSection
                             key={key}
-                            title={t(`header.${key}`)}
+                            title={key === 'documents' ? 'เอกสาร' : t(`header.${key}`)}
                             icon={icon}
                             items={items}
                             onItemClick={handleResultClick}
@@ -409,6 +418,17 @@ function Header({ onMenuClick }: HeaderProps) {
         </div>
       </div>
     </header>
+    <AnimatePresence>
+      {sourceDocModal && (
+        <SourceDocModal
+          kind={sourceDocModal.kind}
+          refId={sourceDocModal.refId}
+          title={sourceDocModal.title}
+          onClose={() => setSourceDocModal(null)}
+        />
+      )}
+    </AnimatePresence>
+    </>
   )
 }
 

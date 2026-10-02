@@ -21,7 +21,7 @@ interface UserRecord {
   created_at: string
 }
 
-const ALL_DEPARTMENTS = ['CEO', 'IT', 'CTO', 'SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'MARKETING', 'QC', 'PRODUCTION']
+const ALL_DEPARTMENTS = ['CEO', 'IT', 'CTO', 'SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'MARKETING', 'QC', 'PRODUCTION', 'POS']
 const ALL_RESOURCES = ['customers', 'suppliers', 'orders', 'purchase', 'stock', 'accounting', 'marketing', 'production', 'qc', 'users', 'settings']
 const ALL_ACTIONS = ['read', 'write', 'approve', 'delete']
 

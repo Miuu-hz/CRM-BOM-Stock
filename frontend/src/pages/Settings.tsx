@@ -708,7 +708,7 @@ function GeneralSettings() {
   const { t } = useTranslation()
   const { tenant, isMaster, user } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', tax_branch: 'สำนักงานใหญ่', vat_inclusive: false, logo_base64: '' })
+  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', tax_branch: 'สำนักงานใหญ่', vat_registered: true, vat_inclusive: false, logo_base64: '' })
   const [qcGateEnabled, setQcGateEnabled] = useState(false)
   const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
@@ -726,7 +726,7 @@ function GeneralSettings() {
   useEffect(() => {
     import('../services/companySettings.service').then(m => {
       m.default.get().then(d => {
-        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', tax_branch: d.tax_branch || 'สำนักงานใหญ่', vat_inclusive: d.vat_inclusive === 1 || d.vat_inclusive === true, logo_base64: d.logo_base64 || '' })
+        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', tax_branch: d.tax_branch || 'สำนักงานใหญ่', vat_registered: d.vat_registered !== 0 && d.vat_registered !== false, vat_inclusive: d.vat_inclusive === 1 || d.vat_inclusive === true, logo_base64: d.logo_base64 || '' })
         setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
         setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
         setAllowNegativeStock(Number(d.allow_negative_stock) === 1)
@@ -880,6 +880,20 @@ function GeneralSettings() {
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.taxBranch')}</label>
             <input type="text" value={co.tax_branch} onChange={e => setCo(p => ({ ...p, tax_branch: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.taxBranchPlaceholder')} />
             <p className="text-xs text-[var(--fg-4)] mt-1">{t('settings.settingsPage.general.taxBranchHint')}</p>
+          </div>
+          <div className="md:col-span-2">
+            <button type="button"
+              onClick={() => setCo(p => ({ ...p, vat_registered: !p.vat_registered }))}
+              aria-pressed={co.vat_registered}
+              className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${co.vat_registered ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}>
+              <div className="text-left">
+                <p className={`font-medium ${co.vat_registered ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{t('settings.settingsPage.general.vatRegistered')}</p>
+                <p className="text-xs text-[var(--fg-4)] mt-0.5">{t(co.vat_registered ? 'settings.settingsPage.general.vatRegisteredOn' : 'settings.settingsPage.general.vatRegisteredOff')}</p>
+              </div>
+              {co.vat_registered
+                ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
+                : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+            </button>
           </div>
           <div className="md:col-span-2">
             <button type="button"

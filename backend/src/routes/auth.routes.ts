@@ -210,7 +210,10 @@ router.post('/login', loginIpLimiter, async (req, res) => {
     res.json({
       success: true,
       data: {
-        user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id },
+        user: {
+          id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id,
+          departments: (() => { try { return JSON.parse(user.departments || '[]') } catch { return [] } })(),
+        },
         token,
         refreshToken,
       },

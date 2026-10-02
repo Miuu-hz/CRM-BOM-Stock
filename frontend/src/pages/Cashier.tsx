@@ -10,6 +10,7 @@ import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyC
 import { billTotals } from '../utils/posVat'
 import { printPOSReceipt } from '../utils/printBill'
 import { useModalClose } from '../hooks/useModalClose'
+import { VatModeField } from '../components/common/VatModeSelector'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { accountsApi } from '../services/accounting'
 import api from '../services/api'
@@ -1572,12 +1573,12 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
   const [saving, setSaving] = useState(false)
   const [issuing, setIssuing] = useState(false)
   const [issueError, setIssueError] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', taxId: '', address: '', branchMode: 'HQ' as 'HQ' | 'BRANCH', branchNo: '', phone: '' })
+  const [form, setForm] = useState({ name: '', taxId: '', address: '', branchMode: 'HQ' as 'HQ' | 'BRANCH', branchNo: '', phone: '', vatMode: null as 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null })
 
   useEffect(() => {
     if (isOpen) {
       setTab('search'); setQuery(''); setResults([]); setEditingCustomer(false); setIssueError(null)
-      setForm({ name: '', taxId: '', address: '', branchMode: 'HQ', branchNo: '', phone: '' })
+      setForm({ name: '', taxId: '', address: '', branchMode: 'HQ', branchNo: '', phone: '', vatMode: null })
     }
   }, [isOpen, bill.id])
 
@@ -1630,6 +1631,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
         // เว้นว่างได้ — ไม่ยัด '-' เพราะมันจะพิมพ์ออกมาเป็น "โทร : -" บนใบกำกับภาษีจริง
         phone: form.phone.trim(),
         type: 'RETAIL',
+        vatMode: form.vatMode,
       })
       const customerId = res.data?.data?.id
       if (customerId) await assignCustomer(customerId)
@@ -1814,6 +1816,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
                     className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
                   />
                 </div>
+                <VatModeField value={form.vatMode} onChange={(vatMode) => setForm(f => ({ ...f, vatMode }))} />
                 <button
                   onClick={handleCreateAndAssign}
                   disabled={saving}

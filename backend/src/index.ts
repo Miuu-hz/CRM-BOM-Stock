@@ -382,6 +382,8 @@ app.use('/api/import', express.urlencoded({ extended: true, limit: '10mb' }))
 
 
 app.use(cookieParser())
+// ponytail: MCP รับรูปบิลเป็น image_base64 (มือถือ ~2-8MB หลัง base64) — 1mb ทำ create_draft_po โดน 413 เงียบ
+app.use(['/mcp', '/mcp/*'], express.json({ limit: '15mb' }))
 app.use(express.json({ limit: '1mb' }))
 
 

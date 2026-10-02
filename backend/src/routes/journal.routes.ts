@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import type { JournalEntry, JournalLineWithAccount } from '../types'
@@ -7,6 +7,10 @@ import type { JournalEntry, JournalLineWithAccount } from '../types'
 const router = Router()
 
 router.use(authenticate)
+
+// ดูได้ทุกคน · สร้าง/แก้/ลบ/ลงบัญชี ต้องมีสิทธิ์เขียนหมวดบัญชี (Admin, แผนกบัญชี/CEO/IT, ผู้ใช้ระดับสูง)
+// เดิมไม่ตรวจเลย พนักงานคนไหนก็ลงสมุดรายวันเองได้ — กระทบงบการเงินตรง (ตรวจสิทธิ์ 2026-09-29)
+router.use((req, res, next) => (req.method === 'GET' ? next() : requirePermission('accounting', 'write')(req, res, next)))
 
 interface JournalLineInput {
   accountId: string
@@ -18,7 +22,7 @@ interface JournalLineInput {
 // Period-closing guard: reject writes dated inside a CLOSED tax_period. The year-end closing
 // entry itself is written directly by period-closing.routes.ts (not through this endpoint),
 // so it never hits this check.
-function closedPeriodLabel(tenantId: string, dateStr: string): string | null {
+export function closedPeriodLabel(tenantId: string, dateStr: string): string | null {
   const ymd = String(dateStr).includes('T') ? String(dateStr).split('T')[0] : String(dateStr)
   const [year, month] = ymd.split('-').map(Number)
   const period = db.prepare(

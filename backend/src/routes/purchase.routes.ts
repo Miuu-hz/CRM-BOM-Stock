@@ -13,7 +13,7 @@ import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 // กันเลขทศนิยมลอยตัว (2.9999999 ต้องนับเป็น 3 แพ็ค ไม่ใช่ 2)
 const PACK_EPS = 1e-9
 import { ACC, ACC_META } from '../config/accountCodes'
-import { getOrCreateAccount } from '../services/accounting.service'
+import { getOrCreateAccount, isVatRegistered, rememberContactVatMode } from '../services/accounting.service'
 import {
   createGoodsReceipt,
   confirmGoodsReceipt,
@@ -24,6 +24,7 @@ import { calcVat } from '../utils/vat'
 import { resolveStockItemId, StockItemRefError, findAliasTarget } from '../services/stockItem.service'
 import {
   createPurchaseInvoice,
+  updatePurchaseInvoice,
   paySupplier,
   PurchaseBillingError,
 } from '../services/purchaseBilling.service'
@@ -142,7 +143,7 @@ function hasReversalJournal(tenantId: string, reversalReferenceType: string, ref
 // line's debit/credit swapped, filed under reversalReferenceType so it's traceable and
 // double-reversal-safe. Returns the new journal entry id, or null if there was nothing
 // posted to reverse (e.g. GR confirm never posts a journal) or it was already reversed.
-function reverseJournalEntryForReference(
+export function reverseJournalEntryForReference(
   tenantId: string,
   originalReferenceType: string,
   reversalReferenceType: string,
@@ -370,11 +371,10 @@ router.delete('/requests/:id', (req: Request, res: Response) => {
     const pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!pr) return res.status(404).json({ success: false, message: 'Purchase request not found' })
     if (pr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT requests can be deleted' })
-    db.transaction(() => {
-      db.prepare('DELETE FROM purchase_request_items WHERE purchase_request_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-      db.prepare('DELETE FROM purchase_requests WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    })()
-    res.json({ success: true, message: 'Purchase request deleted' })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
+    db.prepare("UPDATE purchase_requests SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), req.params.id, tenantId)
+    res.json({ success: true, message: 'ยกเลิกใบขอซื้อแล้ว (เก็บเลขที่ไว้)' })
   } catch (error) {
     console.error('Delete purchase request error:', error)
     res.status(500).json({ success: false, message: 'Failed to delete purchase request' })
@@ -733,6 +733,7 @@ router.get('/goods-receipts/:id', async (req: Request, res: Response) => {
         gri.*,
         poi.description,
         poi.unit_price,
+        poi.unit as po_unit,
         si.name as material_name,
         si.sku as material_code,
         COALESCE(si.base_unit, si.unit) as unit
@@ -795,11 +796,10 @@ router.delete('/goods-receipts/:id', async (req: Request, res: Response) => {
     const gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!gr) return res.status(404).json({ success: false, message: 'Not found' })
     if (gr.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะ GR ที่ยังเป็นร่างเท่านั้น' })
-    db.transaction(() => {
-      db.prepare('DELETE FROM goods_receipt_items WHERE goods_receipt_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-      db.prepare('DELETE FROM goods_receipts WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    })()
-    res.json({ success: true })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
+    db.prepare("UPDATE goods_receipts SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), req.params.id, tenantId)
+    res.json({ success: true, message: 'ยกเลิกใบรับสินค้าแล้ว (เก็บเลขที่ไว้)' })
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to delete goods receipt' })
   }
@@ -924,6 +924,62 @@ router.get('/invoices', async (req: Request, res: Response) => {
   }
 })
 
+// GET GR ที่ยืนยันแล้ว ยังไม่ถูกใช้ออกใบแจ้งหนี้ — ให้หน้าออกใบแจ้งหนี้ (ใหม่ = GR-centric) เลือกได้
+// ต้องประกาศก่อน '/invoices/:id' ไม่งั้น express จะจับ 'billable-receipts' เป็นค่า :id ไปก่อน
+router.get('/invoices/billable-receipts', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const supplierId = typeof req.query.supplierId === 'string' ? req.query.supplierId : undefined
+
+    const grRows = db.prepare(`
+      SELECT gr.id, gr.gr_number, gr.receipt_date, gr.purchase_order_id,
+        po.po_number, po.supplier_id, po.tax_rate as po_tax_rate, po.is_paid as po_is_paid,
+        s.name as supplier_name, s.tax_id as supplier_tax_id
+      FROM goods_receipts gr
+      JOIN purchase_orders po ON po.id = gr.purchase_order_id
+      LEFT JOIN suppliers s ON s.id = po.supplier_id
+      WHERE gr.tenant_id = ? AND gr.status = 'CONFIRMED' AND gr.invoiced_at IS NULL
+        ${supplierId ? 'AND po.supplier_id = ?' : ''}
+      ORDER BY gr.receipt_date ASC
+    `).all(...(supplierId ? [tenantId, supplierId] : [tenantId])) as any[]
+
+    const grIds = grRows.map(r => r.id)
+    const itemsByGr = new Map<string, any[]>()
+    if (grIds.length > 0) {
+      const ph = grIds.map(() => '?').join(',')
+      const itemRows = db.prepare(`
+        SELECT gri.id as grItemId, gri.goods_receipt_id, gri.accepted_qty as quantity,
+          poi.unit_price as unitPrice, poi.unit, poi.description
+        FROM goods_receipt_items gri
+        JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
+        WHERE gri.goods_receipt_id IN (${ph}) AND gri.accepted_qty > 0
+      `).all(...grIds) as any[]
+      for (const row of itemRows) {
+        const arr = itemsByGr.get(row.goods_receipt_id) || []
+        arr.push({ grItemId: row.grItemId, description: row.description, quantity: row.quantity, unit: row.unit, unitPrice: row.unitPrice })
+        itemsByGr.set(row.goods_receipt_id, arr)
+      }
+    }
+
+    const data = grRows.map(r => {
+      const items = itemsByGr.get(r.id) || []
+      const amount = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+      return {
+        id: r.id, gr_number: r.gr_number, receipt_date: r.receipt_date,
+        purchase_order_id: r.purchase_order_id, po_number: r.po_number,
+        supplier_id: r.supplier_id, supplier_name: r.supplier_name, supplier_tax_id: r.supplier_tax_id,
+        po_tax_rate: r.po_tax_rate, po_is_paid: r.po_is_paid,
+        amount, items,
+      }
+    })
+
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('Get billable receipts error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch billable receipts' })
+  }
+})
+
 // GET single purchase invoice
 router.get('/invoices/:id', async (req: Request, res: Response) => {
   try {
@@ -986,6 +1042,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
       items,
       drAccountId,
       taxRate: reqTaxRate,
+      discountAmount: req.body.discountAmount,  // เดิมหลุด: หน้าเว็บส่งส่วนลดมาแต่ไม่ถูกส่งต่อ
       autoPay,
       paymentMethod,
       paymentReference,
@@ -995,7 +1052,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
     res.status(201).json({ success: true, data: invoice })
   } catch (error: any) {
     if (error instanceof PurchaseBillingError) {
-      const status = error.code === 'PO_NOT_FOUND' ? 404 : 400
+      const status = error.code === 'GR_NOT_FOUND' ? 404 : 400
       return res.status(status).json({ success: false, message: error.message })
     }
     console.error('Create purchase invoice error:', error)
@@ -1003,8 +1060,34 @@ router.post('/invoices', async (req: Request, res: Response) => {
   }
 })
 
+// PUT edit purchase invoice — header-only fields update ตรง ๆ, ฟิลด์การเงิน reverse+repost journal
+// ทั้งใบ (logic อยู่ที่ services/purchaseBilling.service.ts updatePurchaseInvoice — ไม่มีสำเนาที่สอง)
+// ชุด GR ที่ผูกไว้แก้ไม่ได้ทางนี้ — ยกเลิกแล้วออกใหม่แทนถ้าต้องเปลี่ยน GR
+router.put('/invoices/:id', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    if (!canHandleBilling(req.user!, 'purchase')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
+    const { supplierInvoiceNumber, dueDate, notes, items, invoiceDate, taxRate, discountAmount, drAccountId, crAccountId } = req.body
+
+    const invoice = updatePurchaseInvoice(tenantId, req.user!.email, req.params.id, {
+      supplierInvoiceNumber, dueDate, notes, items, invoiceDate, taxRate, discountAmount, drAccountId, crAccountId,
+    })
+
+    res.json({ success: true, data: invoice })
+  } catch (error: any) {
+    if (error instanceof PurchaseBillingError) {
+      const status = error.code === 'INVOICE_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
+    console.error('Update purchase invoice error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update purchase invoice' })
+  }
+})
+
 // PUT cancel purchase invoice (reverse its AP journal + reported input VAT)
-function reverseSupplierPayment(tenantId: string, payment: any, actorEmail: string, date: string) {
+export function reverseSupplierPayment(tenantId: string, payment: any, actorEmail: string, date: string) {
   reverseJournalEntryForReference(
     tenantId, 'SUPPLIER_PAYMENT', 'SUPPLIER_PAYMENT_CANCEL', payment.id,
     `กลับรายการจ่ายชำระ ${payment.payment_number}`, actorEmail, date
@@ -1140,20 +1223,45 @@ router.get('/doc-trail/:poId', (req: Request, res: Response) => {
       ? db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(po.linked_pr_id, tenantId) as any
       : null
 
-    const receipts = db.prepare(`
-      SELECT id, gr_number, receipt_date, status, invoiced_at
-      FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ?
-      ORDER BY receipt_date ASC
-    `).all(poId, tenantId) as any[]
-    const liveReceipts = receipts.filter((r: any) => r.status !== 'CANCELLED')
-
+    // ใบแจ้งหนี้รวมบิลเก็บ PO อื่นไว้ใน purchase_order_ids — ต้องนับด้วย ไม่งั้น PO ที่ถูกรวมมองไม่เห็นบิลตัวเอง
     const invoices = db.prepare(`
       SELECT id, pi_number, supplier_invoice_number, invoice_date, due_date,
-             total_amount, paid_amount, balance_amount, status, payment_status
-      FROM purchase_invoices WHERE purchase_order_id = ? AND tenant_id = ?
+             total_amount, paid_amount, balance_amount, status, payment_status, purchase_order_id, purchase_order_ids
+      FROM purchase_invoices
+      WHERE tenant_id = ? AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
       ORDER BY invoice_date ASC
-    `).all(poId, tenantId) as any[]
+    `).all(tenantId, poId, `%"${poId}"%`) as any[]
     const liveInvoices = invoices.filter((i: any) => i.status !== 'CANCELLED')
+
+    // PO ทุกใบที่อยู่ในบิลเดียวกัน — ขั้นรับสินค้าต้องดูครบทุกใบ ไม่ใช่แค่ใบที่เปิดอยู่
+    const poIds = new Set<string>([poId])
+    for (const inv of liveInvoices) {
+      if (inv.purchase_order_id) poIds.add(inv.purchase_order_id)
+      try { for (const id of JSON.parse(inv.purchase_order_ids || '[]')) poIds.add(id) } catch { /* JSON เสีย = ใช้แค่หัวใบ */ }
+    }
+    const poIdList = [...poIds]
+    const inPOs = poIdList.map(() => '?').join(', ')
+    const relatedPOs = db.prepare(`
+      SELECT id, po_number, total_amount FROM purchase_orders
+      WHERE tenant_id = ? AND id IN (${inPOs}) AND status != 'CANCELLED'
+    `).all(tenantId, ...poIdList) as any[]
+
+    const receipts = db.prepare(`
+      SELECT gr.id, gr.gr_number, gr.receipt_date, gr.status, gr.invoiced_at, po.po_number
+      FROM goods_receipts gr LEFT JOIN purchase_orders po ON po.id = gr.purchase_order_id
+      WHERE gr.tenant_id = ? AND gr.purchase_order_id IN (${inPOs})
+      ORDER BY gr.receipt_date ASC
+    `).all(tenantId, ...poIdList) as any[]
+    const liveReceipts = receipts.filter((r: any) => r.status !== 'CANCELLED')
+
+    // received_qty ขยับเฉพาะตอนยืนยัน GR — ใบร่างยังไม่นับว่ารับ · บรรทัด skip_stock ไม่ต้องรับเข้าคลัง
+    const receiptGaps = db.prepare(`
+      SELECT po.po_number, COUNT(*) AS pending_lines
+      FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
+      WHERE poi.tenant_id = ? AND poi.purchase_order_id IN (${inPOs}) AND po.status != 'CANCELLED'
+        AND COALESCE(poi.skip_stock, 0) = 0 AND COALESCE(poi.received_qty, 0) < poi.quantity
+      GROUP BY po.id ORDER BY po.po_number
+    `).all(tenantId, ...poIdList) as any[]
 
     const invIds = liveInvoices.map((i: any) => i.id)
     const payments = invIds.length
@@ -1185,12 +1293,16 @@ router.get('/doc-trail/:poId', (req: Request, res: Response) => {
       },
       {
         key: 'order', done: true, docNumber: po.po_number, date: po.order_date,
-        amount: po.total_amount, status: po.status, count: 1,
+        amount: relatedPOs.length > 1 ? sum(relatedPOs, 'total_amount') : po.total_amount,
+        status: po.status, count: relatedPOs.length || 1,
       },
       {
-        key: 'receipt', done: liveReceipts.length > 0,
+        // ครบ = ทุก PO ในบิลรับของ (ยืนยันแล้ว) ครบทุกบรรทัด · มีใบรับแต่ยังขาด = ส้ม
+        key: 'receipt', done: liveReceipts.length > 0 && receiptGaps.length === 0,
+        partial: liveReceipts.length > 0 && receiptGaps.length > 0,
         docNumber: liveReceipts[0]?.gr_number ?? null, date: liveReceipts[0]?.receipt_date ?? null,
         amount: null, status: liveReceipts[0]?.status ?? null, count: liveReceipts.length,
+        docs: liveReceipts, gaps: receiptGaps,
       },
       {
         key: 'invoice', done: liveInvoices.length > 0,
@@ -1427,6 +1539,10 @@ router.post('/returns', async (req: Request, res: Response) => {
 
     transaction()
 
+    // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — purchase_returns ยังไม่มีคอลัมน์ vat_inclusive จึงถือว่า
+    // ไม่รวม VAT เสมอ (ตรงกับ taxRate = 7 คงที่ด้านบน)
+    rememberContactVatMode(tenantId, 'supplier', po.supplier_id, taxRate, false)
+
     const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const retItems = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id)
 
@@ -1445,11 +1561,10 @@ router.delete('/returns/:id', async (req: Request, res: Response) => {
     const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!ret) return res.status(404).json({ success: false, message: 'Not found' })
     if (ret.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบคืนสินค้าที่ยังเป็นร่างเท่านั้น' })
-    db.transaction(() => {
-      db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-      db.prepare('DELETE FROM purchase_returns WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
-    })()
-    res.json({ success: true })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
+    db.prepare("UPDATE purchase_returns SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), req.params.id, tenantId)
+    res.json({ success: true, message: 'ยกเลิกใบคืนสินค้าแล้ว (เก็บเลขที่ไว้)' })
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to delete purchase return' })
   }
@@ -1514,7 +1629,9 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
     const postJournal   = retTotal > 0 && !alreadyPosted
     const inventoryAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
     const payableAccId   = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
-    const vatAccId       = retTax > 0 ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : null
+    // ยังไม่จด VAT: ตอนซื้อ VAT ถูกรวมเข้าต้นทุนของ ตอนคืนจึงลดต้นทุนของ ไม่ใช่ลด 1110
+    const vatClaimable   = isVatRegistered(tenantId)
+    const vatAccId       = retTax > 0 ? (vatClaimable ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : inventoryAccId) : null
     const journalId      = generateId()
     const journalNumber  = generateEntryNumber(tenantId, ret.return_date || now)
     const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(ret.supplier_id, tenantId) as any
@@ -1575,11 +1692,11 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
           insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `สต็อกวัตถุดิบ - ${ret.pr_number}`, 0, retSubtotal)
         }
         if (vatAccId && retTax > 0) {
-          insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `ภาษีซื้อ - ${ret.pr_number}`, 0, retTax)
+          insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${ret.pr_number}`, 0, retTax)
 
           // Negative input-VAT entry so the VAT report doesn't keep claiming tax on
           // goods that went back to the supplier (same shape as the PI-cancel reversal).
-          db.prepare(`
+          if (vatClaimable) db.prepare(`
             INSERT INTO vat_entries (id, tenant_id, document_type, document_id, document_number, document_date,
               party_name, party_tax_id, base_amount, vat_rate, vat_amount, total_amount, is_input_vat, is_output_vat, journal_entry_id, created_at)
             VALUES (?, ?, 'PURCHASE_RETURN', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)

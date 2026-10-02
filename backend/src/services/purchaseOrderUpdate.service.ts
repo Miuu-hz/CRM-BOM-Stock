@@ -2,6 +2,8 @@ import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { calcVat } from '../utils/vat'
 import { resolveStockItemId, StockItemRefError } from './stockItem.service'
+import { rememberContactVatMode } from './accounting.service'
+import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from './unitConversion.service'
 
 /**
  * ตรรกะ "แก้ไข PO ที่ออกไปแล้ว" ยกออกมาจาก routes/purchaseOrder.routes.ts PUT /:id
@@ -107,6 +109,49 @@ export function poBlockingDocuments(
   }
 
   return null
+}
+
+// ── บรรทัดที่ "รับเข้าคลังไม่ได้" — ใช้บล็อกตั้งแต่ส่งอนุมัติ ไม่ต้องรอไปพังตอนยืนยันใบรับสินค้า ──
+// ponytail: กฎชุดเดียวกับที่ confirmGoodsReceipt (goodsReceipt.service) โยน UNBOUND_ITEM / NO_CONVERSION
+//   ถ้าแก้กฎฝั่งนั้น (เช่นทางแพ็คปิดผนึก) ต้องแก้ตรงนี้ด้วย — วางไว้ที่นี่เพราะ goodsReceipt.service
+//   import ไฟล์นี้ไม่ได้โดยไม่วน
+export type ReceivableItem = { material_id?: string | null; unit?: string | null; skip_stock?: number | boolean | null; description?: string | null }
+
+export function receiptIssuesForItems(tenantId: string, items: ReceivableItem[]): string[] {
+  const issues: string[] = []
+  for (const it of items) {
+    const label = it.description || it.material_id || '(ไม่มีชื่อ)'
+    if (!it.material_id) {
+      if (!it.skip_stock && it.description) issues.push(`"${label}" ยังไม่ได้ผูกสินค้าในคลัง — ผูกสินค้า หรือติ๊ก "ไม่นับสต็อก" ถ้าเป็นของใช้สิ้นเปลือง`)
+      continue
+    }
+    const si = db.prepare('SELECT name, base_unit, unit, display_unit FROM stock_items WHERE id = ? AND tenant_id = ?')
+      .get(it.material_id, tenantId) as any
+    if (!si) { issues.push(`"${label}" ผูกกับสินค้าที่ไม่มีในคลังแล้ว — ผูกสินค้าใหม่`); continue }
+    const poUnit = normalizeUnit(it.unit || '')
+    const stockUnit = normalizeUnit(si.base_unit || si.unit || '')
+    if (!poUnit || poUnit === stockUnit) continue
+    const displayUnit = normalizeUnit(si.display_unit || '')
+    if (displayUnit && displayUnit !== stockUnit && poUnit === displayUnit
+      && findConversionChain(displayUnit, stockUnit, tenantId, it.material_id)) continue
+    if (!convertQuantityBidirectional(1, poUnit, stockUnit, tenantId, it.material_id)) {
+      issues.push(`"${si.name || label}" สั่งเป็น ${poUnit} แต่คลังนับเป็น ${stockUnit} และยังไม่มีกฎแปลงหน่วย ${poUnit} → ${stockUnit}`)
+    }
+  }
+  return issues
+}
+
+export function poReceiptIssues(tenantId: string, poId: string): string[] {
+  const items = db.prepare('SELECT material_id, unit, skip_stock, description FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?')
+    .all(poId, tenantId) as ReceivableItem[]
+  return receiptIssuesForItems(tenantId, items)
+}
+
+// ข้อความ 400 เดียวกันทุกทาง (หน้าเว็บ / อนุมัติ / MCP / agent)
+export function poNotReceivableMessage(tenantId: string, poId: string): string | null {
+  const issues = poReceiptIssues(tenantId, poId)
+  if (issues.length === 0) return null
+  return `ส่งอนุมัติ/อนุมัติไม่ได้ — มี ${issues.length} รายการที่รับเข้าคลังไม่ได้:\n• ${issues.join('\n• ')}`
 }
 
 export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload: PurchaseOrderUpdatePayload) {
@@ -254,7 +299,23 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
     LEFT JOIN suppliers s ON po.supplier_id = s.id
     LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
     WHERE po.id = ? AND po.tenant_id = ?
-  `).get(poId, tenantId)
+  `).get(poId, tenantId) as any
   const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(poId)
-  return { ...(po as any), items: poItems }
+
+  // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — อ่านค่าหลังอัปเดตเสมอ เผื่อ supplierId/tax ไม่ได้ถูกส่งมา
+  // ในรอบนี้แล้วยังใช้ของเดิมอยู่ (COALESCE ในคำสั่ง UPDATE ด้านบน)
+  rememberContactVatMode(tenantId, 'supplier', po?.supplier_id, po?.tax_rate, po?.vat_inclusive === 1)
+
+  // แก้ใบที่ส่ง/อนุมัติไปแล้วจนมีบรรทัดที่รับเข้าคลังไม่ได้ = ถอยกลับเป็นร่าง ให้แก้ให้ครบแล้วส่งใหม่
+  // (ไม่งั้นใบอนุมัติแล้วจะไปพังตอนยืนยันใบรับสินค้า) — PUT ล็อกใบที่มี GR/ใบแจ้งหนี้ไว้แล้ว จึงไม่มีเอกสารลูกค้าง
+  const receiptIssues = receiptIssuesForItems(tenantId, poItems as ReceivableItem[])
+  if (receiptIssues.length > 0 && (po?.status === 'SUBMITTED' || po?.status === 'APPROVED')) {
+    db.prepare("UPDATE purchase_orders SET status = 'DRAFT', approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ? AND tenant_id = ?")
+      .run(new Date().toISOString(), poId, tenantId)
+    po.status = 'DRAFT'
+    po.approved_by = null
+    po.approved_at = null
+  }
+
+  return { ...(po as any), items: poItems, receipt_issues: receiptIssues }
 }
