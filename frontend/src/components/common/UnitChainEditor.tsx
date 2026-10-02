@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Network, ArrowRight, X, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { unitLabel } from '../../hooks/useUnits'
+import { UnitPicker } from './UnitPicker'
 
 type NodePos = { x: number; y: number }
 
@@ -14,7 +15,13 @@ export interface UnitConversionRow {
 
 interface Props {
   conversions: UnitConversionRow[]
-  availableUnits: Array<{ value: string; label: string }>
+  /**
+   * ไม่ได้ใช้วาดลิสต์แล้ว — ช่องเพิ่มหน่วยย้ายไปใช้ UnitPicker ที่ดึง catalog เอง
+   * คงไว้เพื่อให้ที่เรียกเดิมยังคอมไพล์ผ่าน
+   */
+  availableUnits?: Array<{ value: string; label: string }>
+  /** id ของสินค้า — ส่งต่อให้ UnitPicker เพื่อให้เห็นหน่วยพิเศษเฉพาะสินค้านั้นด้วย */
+  materialId?: string | null
   onAdd: (from: string, to: string, factor: number) => Promise<void>
   onDelete: (id: string) => Promise<void>
   onClose: () => void
@@ -108,7 +115,7 @@ export function autoLayout(
 
 export default function UnitChainEditor({
   conversions,
-  availableUnits,
+  materialId = null,
   onAdd,
   onDelete,
   onClose,
@@ -456,17 +463,20 @@ export default function UnitChainEditor({
         <div className="px-4 py-3 border-t border-[var(--border)] flex items-center gap-2 flex-shrink-0 flex-wrap">
           {addingUnit ? (
             <>
-              <select
-                value={newUnitValue}
-                onChange={e => setNewUnitValue(e.target.value)}
-                className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-[var(--uce-input-bg)] border border-[var(--border-strong)]/50 rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-[var(--uce-accent)]/50"
-                autoFocus
-              >
-                <option value="">เลือกหน่วย</option>
-                {availableUnits.filter(u => !nodePositions[u.value]).map(u => (
-                  <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                ))}
-              </select>
+              {/* ตัวเลือกหน่วยชุดเดียวกับโมดูลอื่น (ค้นหาได้ + จัดกลุ่ม + เห็นหน่วยพิเศษ)
+                  exclude = หน่วยที่วางบนผังแล้ว แทนการ filter ลิสต์เองเหมือน select เดิม
+                  ไม่ส่ง baseUnit เข้าไปตั้งใจ: restrict จะเตือน "แปลงไม่ถึงหน่วยฐาน" ซึ่งที่นี่
+                  คือหน่วยที่ผู้ใช้กำลังจะมาเพิ่มกฎให้พอดี เตือนไปก็ได้แต่เสียงรบกวน */}
+              <div className="flex-1 min-w-[160px]">
+                <UnitPicker
+                  value={newUnitValue}
+                  onChange={setNewUnitValue}
+                  materialId={materialId}
+                  exclude={activeUnits}
+                  placeholder="ค้นหาหรือเลือกหน่วย"
+                  size="sm"
+                />
+              </div>
               <button type="button" onClick={handleAddNode} disabled={!newUnitValue} className="px-3 py-1.5 bg-[var(--uce-accent-btn)] hover:bg-[var(--uce-accent-btn-hover)] disabled:opacity-40 text-white rounded-lg text-xs font-medium min-h-[44px]">
                 เพิ่ม
               </button>

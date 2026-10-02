@@ -27,6 +27,11 @@ interface UnitPickerProps {
    * 'strict'= เหมือน warn แต่หน่วยที่แปลงไม่ถึงเลือกไม่ได้ (disabled)
    */
   restrict?: 'none' | 'warn' | 'strict'
+  /**
+   * รหัสหน่วยที่ไม่ต้องเสนอในลิสต์ (เช่น หน่วยที่ถูกวางบนผังไปแล้ว) — เทียบแบบ normalize
+   * จึงส่งเป็นชื่อไทยหรือ alias มาก็ได้ · ไม่ส่งมา = ไม่กรองอะไรเลย (พฤติกรรมเดิม)
+   */
+  exclude?: string[]
 }
 
 /** แถวที่เลือกได้ในลิสต์ */
@@ -57,6 +62,7 @@ export function UnitPicker({
   size = 'md',
   baseUnit,
   restrict = 'warn',
+  exclude,
 }: UnitPickerProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -99,6 +105,21 @@ export function UnitPicker({
     for (const u of units) m.set(u.value, u)
     return m
   }, [units])
+
+  // ---- หน่วยที่ผู้เรียกสั่งไม่ให้เสนอ (exclude) ----
+  // คิดจากสตริงที่ join แล้ว เพราะผู้เรียกมักส่ง array ก้อนใหม่ทุก render
+  // ถ้าผูก useMemo กับตัว array ตรง ๆ groups จะถูกคิดใหม่ทุกครั้งโดยไม่จำเป็น
+  const excludeKey = (exclude ?? []).join('|')
+  const excludeSet = useMemo(
+    () => new Set(
+      excludeKey ? excludeKey.split('|').filter(Boolean).map(u => canonicalUnitCode(normalizeUnit(u))) : []
+    ),
+    [excludeKey]
+  )
+  const isExcluded = useCallback(
+    (code: string) => excludeSet.size > 0 && excludeSet.has(canonicalUnitCode(normalizeUnit(String(code)))),
+    [excludeSet]
+  )
 
   // ---- ความเข้ากันได้กับหน่วยฐาน (baseUnit) — สำหรับกรอง/เตือนหน่วยที่แปลงไม่ถึง ----
   const baseUnitCode = useMemo(
@@ -154,6 +175,7 @@ export function UnitPicker({
       for (const sp of specials) {
         if (sp.scope !== scope) continue
         if (usedInSpecial.has(sp.code)) continue
+        if (isExcluded(sp.code)) continue
         const u = unitByCode.get(sp.code) ?? {
           value: sp.code, label: sp.label, category: sp.category, scope, aliases: [],
         }
@@ -177,6 +199,7 @@ export function UnitPicker({
     const byCategory = new Map<UnitCategory, Row[]>()
     for (const u of units) {
       if (specialByCode.has(u.value)) continue
+      if (isExcluded(u.value)) continue
       if (!matches(u)) continue
       const cat = (u.category ?? 'other') as UnitCategory
       if (!byCategory.has(cat)) byCategory.set(cat, [])
@@ -187,7 +210,7 @@ export function UnitPicker({
       if (rows && rows.length) out.push({ key: cat, title: categoryTitle(cat), rows })
     }
     return out
-  }, [units, specials, query, specialByCode, unitByCode, searchTextOf, categoryTitle, t])
+  }, [units, specials, query, specialByCode, unitByCode, searchTextOf, categoryTitle, isExcluded, t])
 
   /**
    * เมื่อมี baseUnit + restrict !== 'none': แยกหน่วยที่แปลงถึงหน่วยฐานได้จริงขึ้นมาเป็นกลุ่มบนสุด

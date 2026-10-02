@@ -39,3 +39,30 @@ describe('UnitChainEditor — ภาษาและสี', () => {
     expect(raw).toEqual([])
   })
 })
+
+describe('UnitChainEditor — ช่องเพิ่มหน่วยต้องค้นหาได้ แบบเดียวกับโมดูลอื่น', () => {
+  // หมุดท้ายต้องเป็นปุ่ม "เพิ่มหน่วย" ตอนยังไม่ได้กด ไม่ใช่คำว่า "เพิ่มหน่วย" เฉย ๆ
+  // เพราะคำนั้นโผล่ก่อนหน้าในข้อความ "ยังไม่มีหน่วย — เพิ่มหน่วยด้านล่าง" แล้ว indexOf
+  // จะคืนตำแหน่งผิดจน slice ได้สตริงว่าง แล้วเทสต์ผ่านแบบหลอก ๆ
+  const a = SRC.indexOf('{addingUnit ? (')
+  const b = SRC.indexOf('onClick={() => setAddingUnit(true)}')
+  if (a < 0 || b < 0 || b <= a) throw new Error('ขอบเขตช่องเพิ่มหน่วยเปลี่ยน หาหมุดไม่เจอ')
+  const ADD_UNIT_ROW = SRC.slice(a, b)
+
+  it('ใช้ UnitPicker ไม่ใช่ select ธรรมดา', () => {
+    // select ที่ไล่ availableUnits ทั้งก้อน พิมพ์ค้นหาไม่ได้ รายการหน่วยยาวหลายสิบตัว
+    // และไม่เห็นกลุ่มหมวด/หน่วยพิเศษเหมือนช่องเลือกหน่วยที่อื่นในระบบ
+    expect(ADD_UNIT_ROW, 'ยังเหลือ select ธรรมดาในช่องเพิ่มหน่วย').not.toContain('<select')
+    expect(ADD_UNIT_ROW).toContain('<UnitPicker')
+  })
+
+  it('ยังไม่เสนอหน่วยที่วางบนผังไปแล้ว', () => {
+    // เดิมกรองเองด้วย availableUnits.filter(u => !nodePositions[u.value]) ซึ่งเทียบรหัสตรง ๆ
+    // ย้ายมาใช้ prop exclude ที่ normalize ก่อนเทียบ จึงกันหน่วยชื่อไทยที่ซ้ำกับรหัสได้ด้วย
+    expect(ADD_UNIT_ROW).toContain('exclude={activeUnits}')
+  })
+
+  it('ปุ่มเพิ่มยังกดไม่ได้ถ้ายังไม่เลือกหน่วย', () => {
+    expect(ADD_UNIT_ROW).toContain('disabled={!newUnitValue}')
+  })
+})

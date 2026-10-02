@@ -15,6 +15,11 @@ const slice = (from: string, to: string) => {
 // ถ้าหมุดหาย indexOf คืน -1 แล้ว slice จะกินไปจนจบไฟล์โดยไม่มีอะไรเตือน
 const EDIT_MODAL = slice('export function EditModal({', 'function FilterButton({')
 const DETAIL_MODAL = slice('function DetailModal({', 'export function EditModal({')
+// AddStockModal เป็นคอมโพเนนต์ตัวท้ายไฟล์ จึงไม่มีหมุดท้ายให้ยึด — ตัดถึงท้ายไฟล์เลย
+// แต่หมุดหัวต้องล้มเสียงดังเหมือน slice() ตัวอื่น ไม่ใช่เงียบแล้วได้สตริงว่าง
+const addModalStart = SRC.indexOf('function AddStockModal({')
+if (addModalStart < 0) throw new Error('หาหมุดหัวไม่เจอ: function AddStockModal({')
+const ADD_MODAL = SRC.slice(addModalStart)
 
 describe('Stock.tsx — ห้าม JSX รั่วออกมาเป็นข้อความ', () => {
   it('ไม่มีสตริงไหนขึ้นต้นด้วยแท็ก JSX', () => {
@@ -102,5 +107,33 @@ describe('Stock.tsx — ผังหน่วยสองจอต้องต�
     for (const k of ['pathBetween', 'standardConversions.forEach', 'fmtFactor']) {
       expect(EDIT_MODAL, 'ขาด "' + k + '"').toContain(k)
     }
+  })
+})
+
+describe('Stock.tsx — ราคาซื้อต้องขยับตามหน่วย ทั้งสองทางเข้า', () => {
+  // โมดัลเพิ่มสินค้าเคยไม่มีตรรกะคูณราคาเลย (โมดัลแก้ไขมี) เปลี่ยนหน่วยซื้อแล้วราคาค้างหน่วยเดิม
+  // สินค้าใหม่จึงเกิดมาพร้อมทุนผิดตั้งแต่แถวแรก เพราะ backend หาร unit_cost = purchase_price / factor
+  const MODALS = [['โมดัลแก้ไข', EDIT_MODAL], ['โมดัลเพิ่มสินค้า', ADD_MODAL]] as const
+
+  for (const [name, src] of MODALS) {
+    it(name + ' เปลี่ยนหน่วยซื้อผ่าน repriceTo ไม่ใช่เขียนทับตรง ๆ', () => {
+      expect(src, 'ขาดการคูณราคาตอนสลับหน่วยซื้อ').toContain('repriceTo(prev, unit)')
+      expect(src, 'เหลือจุดที่เขียนหน่วยซื้อทับโดยไม่คูณราคา').not.toMatch(/purchaseUnit:\s*unit\b/)
+    })
+
+    it(name + ' เปลี่ยนหน่วยนับ/หน่วยบรรจุ แล้วหน่วยซื้อขยับตาม', () => {
+      // เหลือหน่วยซื้อค้างไว้ = สายขาดสูตรแปลง แล้ว backend ตีกลับ UNIT_CONVERSION_MISSING
+      // ตอนกดบันทึก ทั้งที่บนจอดูเหมือนเปลี่ยนครบแล้ว
+      for (const k of ['changeBaseUnit', 'changeDisplayUnit']) {
+        expect(src, 'ขาด "' + k + '"').toContain(k)
+      }
+    })
+  }
+
+  it('กราฟกฎแปลงหน่วยต้องมาจาก utils/unitGraph ชุดเดียว ไม่ก๊อปซ้ำในไฟล์นี้', () => {
+    // เคยมี BFS เขียนไว้ใน EditModal เอง โมดัลเพิ่มสินค้าจึงไม่มีอะไรเลย
+    // และผังหน่วยสองจอมีโอกาสเพี้ยนไม่ตรงกันเพราะสร้างกราฟคนละชุด
+    expect(SRC, 'ไม่ได้ import กราฟกลาง').toContain("from '../utils/unitGraph'")
+    expect(SRC, 'ย้าย BFS ไป utils/unitGraph แล้ว ห้ามสร้างกราฟซ้ำที่นี่').not.toContain('addUnitEdge')
   })
 })

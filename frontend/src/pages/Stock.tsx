@@ -47,6 +47,7 @@ import { unitLabel } from '../hooks/useUnits'
 import { useModalClose } from '../hooks/useModalClose'
 import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
 import { normalizeUnit } from '../utils/unitNormalize'
+import { buildUnitGraph, pathBetween as unitPathBetween, repriceForUnit, type ConvRule } from '../utils/unitGraph'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -58,6 +59,21 @@ import { useTranslation } from 'react-i18next'
  * The backend sends availableTotal; the local fallback keeps this page honest
  * against a backend that predates that field.
  */
+// มูลค่าสต็อก = จำนวนคงเหลือ (นับเป็นหน่วยฐาน) × ทุน "ต่อหน่วยฐาน"
+// ห้ามใช้ purchasePrice ตรง ๆ เพราะนั่นคือราคาต่อ "หน่วยซื้อ" — ของที่ซื้อเป็นลัง/กระสอบ
+// แต่เก็บเป็นกรัม จะอ่านมูลค่าเกินจริงเท่าตัวคูณทั้งก้อน (Kids House เคยอ่านรวมได้
+// ฿22,230,244 จากของจริง ฿30,036 เพราะเมล็ดกาแฟ 5,000 ก. ถูกคูณด้วยราคาต่อลัง ฿2,737)
+// backend คิด totalValue = quantity × unit_cost อยู่แล้ว (stock.routes.ts) ต้องให้ตรงกัน
+function costPerBaseOf(item: StockItem): number {
+  if (item.unitCost != null && item.unitCost > 0) return item.unitCost
+  // ไม่มี unitCost แต่หน่วยซื้อเป็นตัวเดียวกับหน่วยฐาน ราคาซื้อก็คือทุนต่อหน่วยฐานอยู่แล้ว
+  const base = item.baseUnit || item.unit || ''
+  if (!item.purchaseUnit || normalizeUnit(item.purchaseUnit) === normalizeUnit(base)) {
+    return item.purchasePrice ?? 0
+  }
+  return 0 // หน่วยต่างกันแต่ไม่มีทุนต่อหน่วยฐาน = ตีมูลค่าไม่ได้ ดีกว่าโชว์เลขที่ผิด
+}
+
 function availableOf(item: StockItem): number {
   if (typeof item.availableTotal === 'number') return item.availableTotal
   const packFactor = item.packFactor
@@ -274,7 +290,7 @@ function Stock() {
       case 'name': aVal = a.name; bVal = b.name; break
       case 'category': aVal = getCategoryGroup(a.category); bVal = getCategoryGroup(b.category); break
       case 'quantity': aVal = availableOf(a); bVal = availableOf(b); break
-      case 'value': aVal = availableOf(a) * (a.purchasePrice ?? 0); bVal = availableOf(b) * (b.purchasePrice ?? 0); break
+      case 'value': aVal = availableOf(a) * costPerBaseOf(a); bVal = availableOf(b) * costPerBaseOf(b); break
       case 'purchasePrice': aVal = a.purchasePrice ?? 0; bVal = b.purchasePrice ?? 0; break
       case 'unitPrice': aVal = a.unitPrice ?? 0; bVal = b.unitPrice ?? 0; break
       case 'location': aVal = a.location || ''; bVal = b.location || ''; break
@@ -611,7 +627,8 @@ function Stock() {
                   const status = getItemStatus(item)
                   const available = availableOf(item)
                   const baseUnit = unitLabel(item.baseUnit || item.unit)
-                  const cost = item.purchasePrice ?? 0
+                  const cost = item.purchasePrice ?? 0          // ต่อหน่วยซื้อ — ใช้โชว์คอลัมน์ "ทุน/หน่วย"
+                  const stockValue = availableOf(item) * costPerBaseOf(item) // ต่อหน่วยฐาน — ใช้คิดมูลค่า
                   const price = item.unitPrice ?? 0
                   // แถบระดับสต็อก: เทียบเพดานที่ตั้งไว้ · ไม่ได้ตั้งเพดานก็เทียบจุดสั่งซื้อ x2
                   // ไม่ได้ตั้งอะไรเลย = ไม่มีอะไรให้เทียบ ถือว่าของที่มีอยู่คือเต็ม
@@ -705,8 +722,8 @@ function Stock() {
 
                       {visibleCols.value && (
                         <td className="hidden lg:table-cell text-right whitespace-nowrap">
-                          <span className={`text-[13px] tabular-nums ${cost ? 'text-[var(--fg-1)]' : 'text-[var(--fg-4)]'}`}>
-                            {cost ? `฿${(available * cost).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '—'}
+                          <span className={`text-[13px] tabular-nums ${stockValue ? 'text-[var(--fg-1)]' : 'text-[var(--fg-4)]'}`}>
+                            {stockValue ? `฿${stockValue.toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '—'}
                           </span>
                         </td>
                       )}
@@ -1602,6 +1619,7 @@ function DetailModal({
       {showChain && (
         <UnitChainEditor
           conversions={convs}
+          materialId={item.id}
           availableUnits={chainUnits}
           onAdd={async (from, to, factor) => {
             await api.post('/materials/unit-conversions', {
@@ -1684,8 +1702,18 @@ export function EditModal({
 
   const fetchStandardConversions = async () => {
     try {
-      const res = await api.get('/materials/unit-conversions/standards')
-      setStandardConversions(res.data.data ?? [])
+      // กฎกลางของร้าน (material_id IS NULL) ต้องอยู่ในกราฟด้วย เหมือน buildConversionGraph ฝั่ง backend
+      // เดิมมีแค่มาตราสากล — ม้วน→หลา→เมตร ซึ่งเป็นกฎกลางของร้านจึงขาดสายไปทั้งเส้น
+      // ใส่ก่อนมาตราสากลเพื่อให้ BFS เจอกฎร้านก่อน (priority tenant > standard)
+      // ใช้ /unit-conversions (ไม่ส่ง materialId) ที่คืนเฉพาะกฎกลางมาให้ตรง ๆ แทน /all ที่คืน
+      // ทั้งตารางรวม per-material มาแล้วต้องกรองทิ้งเกือบหมด
+      const [std, shop] = await Promise.all([
+        api.get('/materials/unit-conversions/standards'),
+        api.get('/materials/unit-conversions'),
+      ])
+      const tenant = ((shop.data.data ?? []) as any[])
+        .map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: Number(c.conversion_factor) }))
+      setStandardConversions([...tenant, ...(std.data.data ?? [])])
     } catch { /* silent */ }
   }
 
@@ -1800,11 +1828,24 @@ export function EditModal({
   // เปลี่ยน "หน่วยที่คลังนับ" แล้วหน่วยซื้อ/หน่วยบรรจุที่เคยเป็นตัวเดียวกันต้องขยับตามทันที
   // ไม่งั้น ชิ้น→ขีด จะเหลือหน่วยซื้อค้างเป็น "ชิ้น" = สายขาดสูตรแปลง แล้ว backend ตีกลับ
   // 400 UNIT_CONVERSION_MISSING ตอนกดบันทึก ทั้งที่บนจอดูเหมือนเปลี่ยนครบแล้ว
+  // ราคาที่ซื้อมาผูกกับหน่วยซื้อ — เปลี่ยนหน่วยแล้วต้องคูณราคาตาม ไม่งั้น ฿10/ขวด กลายเป็น ฿10/แพ็ค
+  // แล้ว backend หารเป็นทุนต่อ ml ผิดไป 6 เท่าเงียบๆ (โซดา Kids House 2026-09-28)
+  // แปลงไม่ได้ = คงราคาเดิม (backend ตีกลับ UNIT_CONVERSION_MISSING อยู่แล้ว)
+  // กราฟกฎแปลงหน่วยชุดเดียวของโมดัลนี้ ใช้ทั้งตอนคูณราคาและตอนวาดผังหน่วยด้านล่าง
+  // เดิมสร้างไว้ท้ายคอมโพเนนต์ (หลัง early return) ทำให้ repriceTo ต้องอ้างถึงของที่ยังไม่ประกาศ
+  const unitGraph = useMemo(() => buildUnitGraph([
+    { rules: itemConversions.map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: Number(c.conversion_factor) })), shared: false },
+    { rules: standardConversions, shared: true },
+  ]), [itemConversions, standardConversions])
+  const pathBetween = (from: string, to: string) => unitPathBetween(unitGraph, from, to)
+
+  const repriceTo = <T extends { purchasePrice: number; purchaseUnit: string }>(p: T, next: string): T =>
+    ({ ...p, purchaseUnit: next, purchasePrice: repriceForUnit(unitGraph, p.purchasePrice, p.purchaseUnit, next) })
   const changeBaseUnit = (next: string) => {
     setFormData(prev => {
       const prevBase = normalizeUnit(prev.baseUnit || prev.unit)
-      const out = { ...prev, baseUnit: next }
-      if (prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevBase) out.purchaseUnit = next
+      let out = { ...prev, baseUnit: next }
+      if (prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevBase) out = repriceTo(out, next)
       if (prev.displayUnit && normalizeUnit(prev.displayUnit) === prevBase) out.displayUnit = next
       return out
     })
@@ -1812,8 +1853,8 @@ export function EditModal({
   const changeDisplayUnit = (next: string) => {
     setFormData(prev => {
       const prevPack = prev.displayUnit ? normalizeUnit(prev.displayUnit) : ''
-      const out = { ...prev, displayUnit: next }
-      if (prevPack && prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevPack) out.purchaseUnit = next
+      let out = { ...prev, displayUnit: next }
+      if (prevPack && prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevPack) out = repriceTo(out, next)
       return out
     })
   }
@@ -1853,48 +1894,6 @@ export function EditModal({
   // ── สายหน่วย: ลากตามกฎแปลงจริง ชุดเดียวกับผังเต็มจอ ──
   // เดิมโชว์แค่หน่วยที่ตั้งไว้ 3 ช่อง คนเลยเห็น "ลัง → กรัม" ทั้งที่ผังเต็มจอมี "กิโลกรัม" คั่นอยู่
   // และไม่มีตัวคูณให้ดูเลย — สองจอบอกคนละเรื่องทั้งที่เป็นข้อมูลชุดเดียวกัน
-  const uGraph: Record<string, Array<{ to: string; factor: number; shared: boolean }>> = {}
-  const addUnitEdge = (a: string, b: string, f: number, shared: boolean) => {
-    if (!a || !b || !f || f <= 0 || !isFinite(f)) return
-    const na = normalizeUnit(a); const nb = normalizeUnit(b)
-    if (na === nb) return
-    if (!uGraph[na]) uGraph[na] = []
-    if (!uGraph[nb]) uGraph[nb] = []
-    uGraph[na].push({ to: nb, factor: f, shared })
-    uGraph[nb].push({ to: na, factor: 1 / f, shared })
-  }
-  itemConversions.forEach(c => addUnitEdge(c.from_unit, c.to_unit, Number(c.conversion_factor), false))
-  standardConversions.forEach(c => addUnitEdge(c.from_unit, c.to_unit, Number(c.factor), true))
-
-  // เส้นทางน้อยทอดที่สุดจาก a ไป b พร้อมตัวคูณรายช่วง · null = แปลงไม่ได้จริง
-  const pathBetween = (from: string, to: string): Array<{ unit: string; factor: number; shared: boolean }> | null => {
-    const a = normalizeUnit(from); const b = normalizeUnit(to)
-    if (!a || !b) return null
-    if (a === b) return []
-    const prev: Record<string, { unit: string; factor: number; shared: boolean }> = {}
-    const seen = new Set<string>([a])
-    const queue = [a]
-    while (queue.length > 0) {
-      const cur = queue.shift()!
-      if (cur === b) break
-      for (const e of uGraph[cur] ?? []) {
-        if (seen.has(e.to)) continue
-        seen.add(e.to)
-        prev[e.to] = { unit: cur, factor: e.factor, shared: e.shared }
-        queue.push(e.to)
-      }
-    }
-    if (!seen.has(b)) return null
-    const out: Array<{ unit: string; factor: number; shared: boolean }> = []
-    let cur = b
-    while (cur !== a) {
-      const step = prev[cur]
-      out.unshift({ unit: cur, factor: step.factor, shared: step.shared })
-      cur = step.unit
-    }
-    return out
-  }
-
   // หน่วยเดียวอาจสวมหลายบทบาท (ซื้อเป็นลัง เก็บเป็นลัง) — ต้องเขียนรวมไว้ที่โหนดเดียว
   const roleOf: Record<string, string[]> = {}
   const anchors: string[] = []
@@ -1935,18 +1934,46 @@ export function EditModal({
   const cost = Number(formData.purchasePrice) || 0
   const sell = Number(formData.unitPrice) || 0
   const available = availableOf(item)
-  const baseLabel = unitLabel(formData.baseUnit || formData.unit)
+  const baseUnitEff = formData.baseUnit || formData.unit
+  const baseLabel = unitLabel(baseUnitEff)
   const money = (n: number) => '฿' + n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // ทุนต่อหน่วยฐานของของถูกเหลือทศนิยมหลายตำแหน่ง (กรัมละ 0.0003) ปัด 2 ตำแหน่งจะกลายเป็น ฿0.00
+  const moneyFine = (n: number) => '฿' + n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+
+  // ราคาที่กรอกผูกกับ "หน่วยซื้อ" แต่สต็อก/ราคาขาย/BOM คิดเป็น "หน่วยฐาน"
+  // ซื้อหมู 1 กก. 100 บาท = กรัมละ 0.10 บาท — ตัวหลังคือตัวที่ backend เก็บเป็น unit_cost
+  // (unit_cost = purchase_price / factor(purchase_unit → base_unit)) จึงคิดด้วยสูตรเดียวกันเป๊ะ
+  // แปลงไม่ได้ = null ไม่ใช่เอาราคาดิบมาใช้แทน ไม่งั้นตัวเลขจะโกหกว่าเป็นทุนต่อหน่วยฐาน
+  const purchaseUnitEff = formData.purchaseUnit || baseUnitEff
+  const costPerBase = cost && unitPathBetween(unitGraph, purchaseUnitEff, baseUnitEff) !== null
+    ? repriceForUnit(unitGraph, cost, purchaseUnitEff, baseUnitEff)
+    : null
+  const costUnitDiffers = normalizeUnit(purchaseUnitEff) !== normalizeUnit(baseUnitEff)
   // การ์ดสรุปแบบเดียวกับหน้ารายละเอียด แต่คิดจากค่าที่กำลังพิมพ์อยู่ จะได้เห็นผลก่อนกดบันทึก
   const kpis = [
     { label: 'คงเหลือ', value: available.toLocaleString('th-TH'), sub: baseLabel, tone: available === 0 ? 'bad' : available <= formData.minStock ? 'warn' : 'plain' },
-    { label: 'ทุน/หน่วย', value: cost ? money(cost) : '—', sub: formData.purchaseUnit ? 'ต่อ ' + unitLabel(formData.purchaseUnit) : 'ยังไม่ได้ตั้งหน่วยซื้อ', tone: 'plain' },
+    {
+      label: 'ทุน/หน่วย',
+      value: cost ? money(cost) : '—',
+      // โชว์ทุนต่อหน่วยฐานต่อท้ายด้วย เพราะตัวนั้นคือตัวที่ระบบเอาไปคิดต้นทุนจริง
+      // และทำให้เห็นว่าราคาที่ขยับเองตอนสลับหน่วยยังสมเหตุสมผลอยู่
+      sub: !formData.purchaseUnit ? 'ยังไม่ได้ตั้งหน่วยซื้อ'
+        : !costUnitDiffers ? 'ต่อ ' + unitLabel(formData.purchaseUnit)
+        : costPerBase !== null ? 'ต่อ ' + unitLabel(formData.purchaseUnit) + ' · ' + moneyFine(costPerBase) + '/' + baseLabel
+        : 'ต่อ ' + unitLabel(formData.purchaseUnit) + ' · ยังไม่มีสูตรแปลงเป็น ' + baseLabel,
+      tone: 'plain',
+    },
     { label: 'ราคาขาย', value: sell ? money(sell) : '—', sub: 'ต่อ ' + baseLabel, tone: 'plain' },
     {
+      // ราคาขายคิดต่อหน่วยฐาน ทุนที่กรอกคิดต่อหน่วยซื้อ — เดิมเอามาลบกันตรง ๆ
+      // ซื้อหมูกิโลละ 100 ขายกรัมละ 0.15 เคยอ่านได้ว่าขาดทุน 99.85 บาท/หน่วย
+      // ต้องแปลงทุนลงหน่วยฐานก่อนเทียบ แปลงไม่ได้ก็บอกไปตรง ๆ ว่าเทียบไม่ได้
       label: 'กำไร/หน่วย',
-      value: sell && cost ? (sell - cost >= 0 ? '+' : '') + money(sell - cost) : '—',
-      sub: sell && cost ? ((sell - cost) / sell * 100).toFixed(1) + '%' : 'ยังตั้งราคาไม่ครบ',
-      tone: !sell || !cost ? 'plain' : sell - cost >= 0 ? 'good' : 'bad',
+      value: sell && costPerBase !== null ? (sell - costPerBase >= 0 ? '+' : '') + moneyFine(sell - costPerBase) : '—',
+      sub: sell && costPerBase !== null ? ((sell - costPerBase) / sell * 100).toFixed(1) + '% · ต่อ ' + baseLabel
+        : cost && costPerBase === null ? 'แปลงทุนเป็น ' + baseLabel + ' ไม่ได้'
+        : 'ยังตั้งราคาไม่ครบ',
+      tone: !sell || costPerBase === null ? 'plain' : sell - costPerBase >= 0 ? 'good' : 'bad',
     },
   ]
 
@@ -2106,7 +2133,7 @@ export function EditModal({
                       <div className="w-24 shrink-0">
                         <UnitPicker
                           value={formData.purchaseUnit}
-                          onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
+                          onChange={(unit) => setFormData(prev => repriceTo(prev, unit))}
                           materialId={item?.id}
                           baseUnit={formData.baseUnit || formData.unit}
                           restrict="warn"
@@ -2383,6 +2410,7 @@ export function EditModal({
       {showChainEditor && item && (
         <UnitChainEditor
           conversions={itemConversions}
+          materialId={item.id}
           availableUnits={availableUnits}
           onAdd={async (from, to, factor) => {
             await api.post('/materials/unit-conversions', {
@@ -3196,9 +3224,74 @@ function AddStockModal({
   const [saving, setSaving] = useState(false)
   const { units: availableUnits } = useUnits()
 
+  // กฎแปลงหน่วยที่ใช้ได้กับสินค้าที่ยังไม่เกิด = กฎกลางของร้าน + มาตราสากล
+  // (ยังไม่มีกฎเฉพาะสินค้าให้ดึง เพราะ id ยังไม่มี) ใส่กฎร้านก่อนให้ BFS เจอก่อนมาตราสากล
+  const [shopConversions, setShopConversions] = useState<ConvRule[]>([])
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    void (async () => {
+      try {
+        const [std, shop] = await Promise.all([
+          api.get('/materials/unit-conversions/standards'),
+          api.get('/materials/unit-conversions'),
+        ])
+        if (!alive) return
+        const tenant = ((shop.data.data ?? []) as any[])
+          .map(c => ({ from_unit: c.from_unit, to_unit: c.to_unit, factor: Number(c.conversion_factor) }))
+        setShopConversions([...tenant, ...((std.data.data ?? []) as ConvRule[])])
+      } catch { /* silent */ }
+    })()
+    return () => { alive = false }
+  }, [open])
+
+  const unitGraph = useMemo(() => buildUnitGraph([{ rules: shopConversions, shared: true }]), [shopConversions])
+
+  // ราคาที่ซื้อมาผูกกับหน่วยซื้อ — ตรรกะชุดเดียวกับโมดัลแก้ไข (utils/unitGraph)
+  // เดิมโมดัลนี้ไม่มีเลย เปลี่ยนหน่วยซื้อแล้วราคาค้างหน่วยเดิม สินค้าใหม่จึงเกิดมาพร้อมทุนผิด
+  const repriceTo = <T extends { purchasePrice: number; purchaseUnit: string }>(p: T, next: string): T =>
+    ({ ...p, purchaseUnit: next, purchasePrice: repriceForUnit(unitGraph, p.purchasePrice, p.purchaseUnit, next) })
+
+  // เปลี่ยนหน่วยนับ/หน่วยบรรจุ แล้วหน่วยซื้อที่เคยเป็นตัวเดียวกันต้องขยับตามทันที พร้อมคูณราคาให้
+  // ไม่งั้นเหลือหน่วยซื้อค้างไว้ = สายขาดสูตรแปลง แล้ว backend ตีกลับ UNIT_CONVERSION_MISSING
+  const changeBaseUnit = (next: string) => {
+    setFormData(prev => {
+      const prevBase = normalizeUnit(prev.baseUnit || prev.unit)
+      let out = { ...prev, baseUnit: next }
+      if (prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevBase) out = repriceTo(out, next)
+      if (prev.displayUnit && normalizeUnit(prev.displayUnit) === prevBase) out.displayUnit = next
+      return out
+    })
+  }
+  const changeDisplayUnit = (next: string) => {
+    setFormData(prev => {
+      const prevPack = prev.displayUnit ? normalizeUnit(prev.displayUnit) : ''
+      let out = { ...prev, displayUnit: next }
+      if (prevPack && prev.purchaseUnit && normalizeUnit(prev.purchaseUnit) === prevPack) out = repriceTo(out, next)
+      return out
+    })
+  }
+
+  // ราคาที่กรอกผูกกับหน่วยซื้อ แต่ระบบเก็บต้นทุนเป็นต่อหน่วยฐาน (unit_cost) — โชว์ให้เห็นทั้งคู่
+  // ซื้อหมู 1 กก. 100 บาท = กรัมละ 0.10 บาท · แปลงไม่ได้ก็บอกไปว่ายังขาดสูตร
+  const addCostPerBase = (() => {
+    const price = Number(formData.purchasePrice) || 0
+    const base = formData.baseUnit || formData.unit
+    if (!price || !formData.purchaseUnit || !base) return null
+    if (normalizeUnit(formData.purchaseUnit) === normalizeUnit(base)) return null
+    if (unitPathBetween(unitGraph, formData.purchaseUnit, base) === null) {
+      return 'ยังไม่มีสูตรแปลง ' + (UNIT_LABELS_MAP[formData.purchaseUnit] || formData.purchaseUnit) + ' → ' + (UNIT_LABELS_MAP[base] || base)
+    }
+    const perBase = repriceForUnit(unitGraph, price, formData.purchaseUnit, base)
+    return '= ฿' + perBase.toLocaleString('th-TH', { maximumFractionDigits: 6 }) + ' ต่อ ' + (UNIT_LABELS_MAP[base] || base)
+  })()
+
   const addConversionWarning = (() => {
     if (!formData.baseUnit || !formData.displayUnit) return null
     if (formData.baseUnit === formData.displayUnit) return null
+    // แปลงกันได้อยู่แล้วก็ไม่ต้องเตือน — เดิมเตือนทุกครั้งที่หน่วยต่างกัน แม้แต่ kg กับ g
+    // ที่ระบบแปลงเองได้ คนเลยชินกับการกดข้ามคำเตือนนี้จนไม่อ่าน
+    if (unitPathBetween(unitGraph, formData.displayUnit, formData.baseUnit) !== null) return null
     return `หน่วยนับ (${UNIT_LABELS_MAP[formData.baseUnit] || formData.baseUnit}) กับหน่วยบรรจุ (${UNIT_LABELS_MAP[formData.displayUnit] || formData.displayUnit}) ต่างกัน — สร้างสินค้าเสร็จแล้วอย่าลืมไปตั้งสูตรแปลงหน่วยที่แท็บ "หน่วย"`
   })()
 
@@ -3358,7 +3451,7 @@ function AddStockModal({
                   <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยฐาน</label>
                   <select
                     value={formData.baseUnit || ''}
-                    onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                    onChange={(e) => changeBaseUnit(e.target.value)}
                     className="phopy-input w-full"
                   >
                     <option value="">— ยังไม่ได้เลือก —</option>
@@ -3372,7 +3465,7 @@ function AddStockModal({
                   <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยบรรจุ</label>
                   <select
                     value={formData.displayUnit || ''}
-                    onChange={(e) => setFormData({ ...formData, displayUnit: e.target.value })}
+                    onChange={(e) => changeDisplayUnit(e.target.value)}
                     className="phopy-input w-full"
                   >
                     <option value="">— ยังไม่ได้เลือก —</option>
@@ -3411,13 +3504,16 @@ function AddStockModal({
                     <div className="w-24 shrink-0">
                       <UnitPicker
                         value={formData.purchaseUnit}
-                        onChange={(unit) => setFormData({ ...formData, purchaseUnit: unit })}
+                        onChange={(unit) => setFormData(prev => repriceTo(prev, unit))}
                         baseUnit={formData.baseUnit || formData.unit}
                         restrict="warn"
                         size="sm"
                       />
                     </div>
                   </div>
+                  {addCostPerBase && (
+                    <p className="text-[10px] text-[var(--fg-4)] mt-1">{addCostPerBase}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-[var(--fg-3)] mb-1">ราคาขาย/หน่วยฐาน (฿)</label>
