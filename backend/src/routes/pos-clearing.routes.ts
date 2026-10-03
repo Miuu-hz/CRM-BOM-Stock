@@ -216,48 +216,6 @@ router.post('/clearing/transfer', (req, res) => {
   }
 })
 
-// Get transfer details
-router.get('/clearing/transfers/:id', (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { id } = req.params
-    
-    // Get transfer
-    const transferStmt = db.prepare(`
-      SELECT t.*, u.name as created_by_name
-      FROM pos_clearing_transfers t
-      LEFT JOIN users u ON t.created_by = u.id
-      WHERE t.id = ? AND t.tenant_id = ?
-    `)
-    const transfer = transferStmt.get(id, tenantId)
-    
-    if (!transfer) {
-      return res.status(404).json({ success: false, message: 'Transfer not found' })
-    }
-    
-    // Get linked bills
-    const billsStmt = db.prepare(`
-      SELECT 
-        b.bill_number,
-        b.display_name,
-        b.total_amount,
-        b.closed_at
-      FROM pos_clearing_transfer_items cti
-      JOIN pos_running_bills b ON cti.bill_id = b.id
-      WHERE cti.transfer_id = ?
-    `)
-    const bills = billsStmt.all(id)
-    
-    res.json({
-      success: true,
-      data: { ...transfer, bills }
-    })
-  } catch (error) {
-    console.error('Error fetching transfer:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch transfer' })
-  }
-})
-
 // Get all transfers
 router.get('/clearing/transfers', (req, res) => {
   try {

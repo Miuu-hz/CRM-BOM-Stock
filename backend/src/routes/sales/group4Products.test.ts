@@ -74,21 +74,4 @@ describe('เลิกใช้ตาราง products — 3 จุดที่
     expect(res.body.data.items[0].product_name).toBe('สินค้าในเทมเพลต')
     expect(res.body.data.items[0].product_code).toBeTruthy()
   })
-
-  it('ตัวเลือกสินค้า (variants): ชื่อสินค้าแม่ต้องไม่เป็น null', async () => {
-    const user = createTestUser({ role: 'ADMIN' })
-    const stockId = mkStockItem(user.tenantId, 'เสื้อยืดทดสอบ')
-
-    db.prepare(`INSERT INTO product_variants (id, tenant_id, product_id, sku, variant_name, attributes, unit_price)
-      VALUES (?, ?, ?, ?, 'ไซส์ M', '{"size":"M"}', 120)`)
-      .run(generateId(), user.tenantId, stockId, 'VAR-' + stockId.slice(0, 8))
-
-    const res = await request(app).get('/api/sales/product-variants')
-      .set('Authorization', `Bearer ${user.token}`)
-
-    expect(res.status).toBe(200)
-    const mine = (res.body.data as any[]).filter(v => v.product_id === stockId)
-    expect(mine).toHaveLength(1)
-    expect(mine[0].product_name).toBe('เสื้อยืดทดสอบ')
-  })
 })

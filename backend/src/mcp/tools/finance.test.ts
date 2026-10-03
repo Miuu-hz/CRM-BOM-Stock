@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import { z } from 'zod'
 import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
 import { registerFinanceTools } from './finance'
@@ -6,14 +7,17 @@ import { arAging } from '../../routes/receivables.routes'
 import { buildTrialBalance } from '../../routes/reports.routes'
 import type { IMcpServer } from '../sdk-compat'
 
-function fakeServer(): { server: IMcpServer; tools: Record<string, (args: any) => Promise<any>> } {
+function fakeServer() {
   const tools: Record<string, (args: any) => Promise<any>> = {}
+  const schemas: Record<string, any> = {}
   const server: IMcpServer = {
-    tool: (name: string, _desc: string, _schema: any, handler: any) => { tools[name] = handler },
+    tool: (name: string, _desc: string, schema: any, handler: any) => { tools[name] = handler; schemas[name] = schema },
     connect: async () => {},
     close: async () => {},
   }
-  return { server, tools }
+  // ตรวจ args ด้วย schema จริงแบบที่ SDK ทำ — เรียก handler ตรงๆ จะข้าม zod ไป (regex วันที่เคยพังแบบนี้)
+  const valid = (name: string, args: any) => z.object(schemas[name]).safeParse(args).success
+  return { server, tools, valid }
 }
 
 const parseOk = (res: any) => JSON.parse(res.content[0].text)
@@ -184,5 +188,41 @@ describe('MCP get_trial_balance / get_ledger — เฉพาะ MASTER/ADMIN', 
     const tb = parseOk(await tools['get_trial_balance']({}))
     expect(tb.accounts.find((a: any) => a.code === '1102').endingCredit).toBe(800)
     expect(tb.totals.endingDebit).toBe(tb.totals.endingCredit)
+  })
+})
+
+describe('MCP finance — schema รับวันที่ YYYY-MM-DD', () => {
+  it('get_trial_balance / get_ledger / get_ar_aging รับวันที่จริง และปฏิเสธรูปแบบผิด', () => {
+    const { server, valid } = fakeServer()
+    registerFinanceTools(server, 'tenant_x', 'ADMIN')
+    expect(valid('get_trial_balance', { start_date: '2026-09-01', end_date: '2026-09-30' }), 'เดิม regex ขาด \\d').toBe(true)
+    expect(valid('get_ledger', { account_code: '1102', start_date: '2026-09-01' })).toBe(true)
+    expect(valid('get_ar_aging', { as_of: '2026-09-30' })).toBe(true)
+    expect(valid('get_trial_balance', { start_date: 'dddd-dd-dd' })).toBe(false)
+    expect(valid('get_trial_balance', { start_date: '1/9/2026' })).toBe(false)
+  })
+})
+
+describe('MCP get_financial_summary — ช่วงเวลาและชื่อช่อง', () => {
+  it('mtd นับตั้งแต่วันที่ 1 ของเดือน · ส่ง net_cash_flow แทน gross_profit', async () => {
+    const t = setupTenant()
+    const c = addCustomer(t, 'ร้านดี')
+    const so = generateId()
+    db.prepare(`INSERT INTO sales_orders (id, tenant_id, so_number, customer_id) VALUES (?, ?, ?, ?)`).run(so, t, 'SO-' + so.slice(0, 8), c)
+    const firstOfMonth = (db.prepare(`SELECT date('now','start of month') d`).get() as any).d
+    const lastMonth = (db.prepare(`SELECT date('now','start of month','-1 day') d`).get() as any).d
+    for (const [date, amt] of [[firstOfMonth, 400], [lastMonth, 900]] as const) {
+      db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date,
+                    total_amount, paid_amount, balance_amount, status, payment_status)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ISSUED', 'PAID')`)
+        .run(generateId(), t, 'INV-' + generateId().slice(0, 8), so, c, date, date, amt, amt)
+    }
+    const { server, tools, valid } = fakeServer()
+    registerFinanceTools(server, t)
+    expect(valid('get_financial_summary', { period: 'mtd' })).toBe(true)
+    const res = parseOk(await tools['get_financial_summary']({ period: 'mtd' }))
+    expect(res.income.total_invoiced).toBe(400)
+    expect(res.net_cash_flow).toBe(400)
+    expect(res).not.toHaveProperty('gross_profit')
   })
 })

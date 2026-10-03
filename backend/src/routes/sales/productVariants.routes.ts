@@ -1,71 +1,10 @@
-import { Router, Request, Response } from 'express'
-import db from '../../db/sqlite'
-import { generateId } from '../../utils/id'
+import { Router } from 'express'
 
+// ponytail: all 3 routes that lived here (GET /, GET /product/:productId, POST /) were
+// removed 2026-10-03 (orphan-endpoint cleanup — product_variants has 0 rows in production,
+// no frontend page, service, or MCP tool ever reads/writes it or the word "variant").
+// This file is mounted at /sales/product-variants in sales/index.ts (shared mount file)
+// and is kept — empty — rather than deleting the file/mount per cleanup rules.
 const router = Router()
-
-// GET all product variants
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    
-    const variants = db.prepare(`
-      SELECT pv.*, p.name as product_name, p.sku as product_code
-      FROM product_variants pv
-      -- product_id ชี้ stock_items ไม่ใช่ products ที่เลิกใช้แล้ว (ตาราง 0 แถว แก้ไว้ก่อนเปิดใช้)
-      LEFT JOIN stock_items p ON pv.product_id = p.id AND p.tenant_id = pv.tenant_id
-      WHERE pv.tenant_id = ?
-      ORDER BY pv.created_at DESC
-    `).all(tenantId)
-
-    res.json({ success: true, data: variants })
-  } catch (error) {
-    console.error('Get product variants error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch product variants' })
-  }
-})
-
-// GET variants by product
-router.get('/product/:productId', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    
-    const variants = db.prepare(`
-      SELECT * FROM product_variants 
-      WHERE product_id = ? AND tenant_id = ? AND status = 'ACTIVE'
-    `).all(req.params.productId, tenantId)
-
-    res.json({ success: true, data: variants })
-  } catch (error) {
-    console.error('Get product variants error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch product variants' })
-  }
-})
-
-// POST create product variant
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { productId, sku, variantName, attributes, unitPrice, costPrice } = req.body
-    
-    if (!productId || !sku || !variantName) {
-      return res.status(400).json({ success: false, message: 'Product, SKU and variant name are required' })
-    }
-
-    const id = generateId()
-    const now = new Date().toISOString()
-
-    db.prepare(`
-      INSERT INTO product_variants (id, tenant_id, product_id, sku, variant_name, attributes, unit_price, cost_price, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, productId, sku, variantName, JSON.stringify(attributes || {}), unitPrice || 0, costPrice || 0, now, now)
-
-    const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    res.status(201).json({ success: true, data: variant })
-  } catch (error) {
-    console.error('Create product variant error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create product variant' })
-  }
-})
 
 export default router

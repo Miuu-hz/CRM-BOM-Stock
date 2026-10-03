@@ -666,7 +666,8 @@ class LineBotService {
     private async handleOrderCommand(tenantId: string, replyToken: string, client: any) {
         const db = getDb()
         const orders = db.prepare(
-            "SELECT order_number, status, total_amount, created_at FROM orders WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 5"
+            // ตาราง orders ไม่มี tenant_id เคย throw ทุกครั้ง — ใช้ sales_orders (alias so_number ให้ recentOrdersCard เดิม)
+            "SELECT so_number AS order_number, status, total_amount, created_at FROM sales_orders WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 5"
         ).all(tenantId) as any[]
         const msg = flexTemplates.recentOrdersCard(orders) as any
         msg.quickReply = { items: quickReplyItems(false) }

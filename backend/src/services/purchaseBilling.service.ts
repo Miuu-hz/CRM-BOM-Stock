@@ -1,7 +1,7 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
-import { getOrCreateAccount, isVatRegistered, rememberContactVatMode } from './accounting.service'
+import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, type JournalLineInput } from './accounting.service'
 import { calcVat } from '../utils/vat'
 import { closedPeriodLabel } from '../routes/journal.routes'
 
@@ -170,22 +170,7 @@ function postPurchaseInvoiceJournal(
   const { piId, piNumber, invoiceDate, notes, grIds, totals, taxRate, supplierName, supplierTaxId } = params
   const { subtotal, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable } = totals
   const now = new Date().toISOString()
-  const journalId = generateId()
-  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(invoiceDate).getFullYear(), 5)
-
-  db.prepare(`
-    INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-      description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
-  `).run(journalId, tenantId, journalNumber, invoiceDate.substring(0, 10),
-    piId, `รับใบแจ้งหนี้ซื้อ ${piNumber}`, totalAmount, totalAmount, now, actorEmail, notes || null,
-    actorEmail, now, now)
-
-  const insertLine = db.prepare(`
-    INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  let lineNo = 1
+  const r2 = (n: number) => Math.round(n * 100) / 100
   const drAccLabel = resolvedDrAccId
     ? (db.prepare('SELECT name FROM accounts WHERE id = ?').get(resolvedDrAccId) as any)?.name ?? 'ค่าใช้จ่าย'
     : 'สต็อกวัตถุดิบ'
@@ -202,19 +187,35 @@ function postPurchaseInvoiceJournal(
           AND je.reference_id IN (${grIds.map(() => '?').join(', ')})
       `).get(tenantId, ACC.GRNI, ...grIds) as any).total as number
     : 0
-  const grniPortion = Math.min(Math.round(accruedForGRs * 100) / 100, subtotal)
-  const inventoryPortion = Math.round((subtotal - grniPortion) * 100) / 100
+  // ลงบัญชีเป็นสตางค์เสมอ แล้วให้ฝั่งเดบิตของสินค้า = เจ้าหนี้ − ภาษี พอดี (ไม่ใช้ subtotal ตรง ๆ)
+  // เพราะ calcVat โหมดแยก VAT คืน subtotal แบบไม่ปัด (เช่น 168.585) แต่ total ปัดแล้ว (180.39)
+  // เดิม Dr 168.58 + 11.80 ≠ Cr 180.39 (PI-025-021026) / Dr 976.916 (PI-018-021026) — เศษสตางค์
+  // ที่เหลือหลังปิด 2109 ลงบัญชีสต็อก/บัญชีที่เลือก ไม่ทิ้งหาย (และ subtotal ฝั่ง EXCLUSIVE คือยอดก่อนหัก
+  // ส่วนลดท้ายบิล ถ้าใช้ตรง ๆ จะไม่ดุลทุกครั้งที่มีส่วนลด)
+  const payableTotal = r2(totalAmount)
+  const vatDebit = vatAccId && taxAmount > 0 ? r2(taxAmount) : 0
+  const goodsDebit = r2(payableTotal - vatDebit)
+  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), goodsDebit))
+  const inventoryPortion = r2(goodsDebit - grniPortion)
+
+  const lines: JournalLineInput[] = []
   if (grniPortion > 0.005) {
-    const grniAccId = getOrCreateAccount(tenantId, ACC.GRNI)
-    insertLine.run(generateId(), tenantId, journalId, grniAccId, lineNo++, `ปิดค้างรับของ - ${piNumber}`, grniPortion, 0)
+    lines.push({ accountId: getOrCreateAccount(tenantId, ACC.GRNI), description: `ปิดค้างรับของ - ${piNumber}`, debit: grniPortion })
   }
   if (inventoryPortion > 0.005) {
-    insertLine.run(generateId(), tenantId, journalId, inventoryAccId, lineNo++, `${drAccLabel} - ${piNumber}`, inventoryPortion, 0)
+    lines.push({ accountId: inventoryAccId, description: `${drAccLabel} - ${piNumber}`, debit: inventoryPortion })
   }
-  if (vatAccId && taxAmount > 0) {
-    insertLine.run(generateId(), tenantId, journalId, vatAccId, lineNo++, `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${piNumber}`, taxAmount, 0)
+  if (vatDebit > 0) {
+    lines.push({ accountId: vatAccId!, description: `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${piNumber}`, debit: vatDebit })
   }
-  insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${piNumber}`, 0, totalAmount)
+  lines.push({ accountId: payableAccId, description: `เจ้าหนี้การค้า - ${piNumber}`, credit: payableTotal })
+
+  // postJournal ปัดทุกบรรทัด, หัวรายการ = ผลรวมบรรทัด และ throw ถ้าเดบิต ≠ เครดิต (> 0.005)
+  const journalId = postJournal({
+    tenantId, date: invoiceDate.substring(0, 10), referenceType: 'PURCHASE_INVOICE', referenceId: piId,
+    description: `รับใบแจ้งหนี้ซื้อ ${piNumber}`, lines, createdBy: actorEmail, notes: notes || null,
+  })
+  const journalNumber = (db.prepare('SELECT entry_number FROM journal_entries WHERE id = ?').get(journalId) as any)?.entry_number as string
 
   // VAT Entry (Input VAT) — เฉพาะกิจการที่จด VAT แล้ว
   if (taxAmount > 0 && vatClaimable) {
@@ -320,11 +321,15 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     ? Number(payload.discountAmount)
     : allPoIds.reduce((sum, poId) => sum + (Number(orderedGrRows.find(r => r.purchase_order_id === poId)!.po_discount_amount) || 0), 0)
 
+  // งวดปิดบัญชี — กติกาเดียวกับ updatePurchaseInvoice (ห้ามลง journal ย้อนเข้างวดที่ปิดแล้ว)
+  const finalInvoiceDate = invoiceDate || new Date().toISOString()
+  const closedLabel = closedPeriodLabel(tenantId, finalInvoiceDate)
+  if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกใบแจ้งหนี้วันที่นี้ไม่ได้`)
+
   // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
   const id = generateId()
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
   const now = new Date().toISOString()
-  const finalInvoiceDate = invoiceDate || now
 
   // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
   const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId)
@@ -622,8 +627,15 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   if (purchaseInvoiceId) {
     invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(purchaseInvoiceId, tenantId)
     if (!invoice) throw new PurchaseBillingError('INVOICE_NOT_FOUND', 'Purchase invoice not found')
-    if (amount > invoice.balance_amount) throw new PurchaseBillingError('OVER_BALANCE', 'Payment amount exceeds invoice balance')
+    // เดิมเช็คแค่ใน MCP tool — REST จ่ายใบที่ยกเลิกแล้วได้ ย้ายมาไว้ที่ service ให้ทุกทางเข้าโดนเหมือนกัน
+    if (invoice.status === 'CANCELLED') throw new PurchaseBillingError('INVOICE_CANCELLED', 'ใบแจ้งหนี้นี้ถูกยกเลิกไปแล้ว จ่ายเงินไม่ได้')
+    // เผื่อเศษ float ครึ่งสตางค์ (เช่นยอดคงค้าง 180.38999999 แต่จ่าย 180.39)
+    if (amount > (invoice.balance_amount || 0) + 0.005) throw new PurchaseBillingError('OVER_BALANCE', 'Payment amount exceeds invoice balance')
   }
+
+  // งวดปิดบัญชี — กติกาเดียวกับ updatePurchaseInvoice
+  const closedLabel = closedPeriodLabel(tenantId, paymentDate || new Date().toISOString())
+  if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกการจ่ายเงินวันที่นี้ไม่ได้`)
 
   const id = generateId()
   const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', new Date().getFullYear(), 5)
@@ -656,9 +668,10 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
       paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, now, now)
 
     if (invoice) {
-      const newPaid = invoice.paid_amount + amount
-      const newBalance = invoice.total_amount - newPaid
-      const newPaymentStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL'
+      const r2 = (n: number) => Math.round(n * 100) / 100
+      const newPaid = r2((invoice.paid_amount || 0) + amount)
+      const newBalance = Math.max(0, r2(invoice.total_amount - newPaid))
+      const newPaymentStatus = newBalance <= 0.005 ? 'PAID' : 'PARTIAL'
 
       db.prepare(`
         UPDATE purchase_invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
@@ -669,12 +682,15 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     // === POST JOURNAL ENTRY ===
     // Dr เจ้าหนี้การค้า (2101)
     // Cr เงินสด/ธนาคาร (1101/1102) + Cr ภาษีหัก ณ ที่จ่าย (2105) ถ้ามี WHT
+    // หัวรายการ = ผลรวมของบรรทัดจริง (ไม่ใช่ amount ตรง ๆ) — บรรทัดเครดิตคือ netAmount + wht
+    const headerDebit = Math.round(amount * 100) / 100
+    const headerCredit = Math.round((netAmount + (whtAccId && wht > 0 ? wht : 0)) * 100) / 100
     db.prepare(`
       INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
         description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
     `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
-      id, `จ่ายชำระ ${paymentNumber}`, amount, amount, now, actorEmail, notes || null,
+      id, `จ่ายชำระ ${paymentNumber}`, headerDebit, headerCredit, now, actorEmail, notes || null,
       actorEmail, now, now)
 
     const insertLine = db.prepare(`

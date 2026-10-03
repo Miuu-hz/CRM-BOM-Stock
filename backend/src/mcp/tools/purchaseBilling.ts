@@ -10,9 +10,11 @@ import {
   PurchaseBillingError,
 } from '../../services/purchaseBilling.service'
 
-// เงินออกจากบริษัทเป็นเรื่องใหญ่ — เจ้าของตัดสินใจ 2026-09-14 ว่า pay_supplier ต้องเช็คสิทธิ์
-// REST เดิม (POST /payments) ไม่เช็ค role เลย (รายงานไว้แล้วในสรุปงาน) จึงยึดตาม role ที่ REST
-// ใช้เช็คจุดที่ใกล้เคียงที่สุดในไฟล์เดียวกัน (ยกเลิกใบแจ้งหนี้ซื้อ / ยกเลิกการจ่ายเงิน)
+// เงินเข้า-ออกเป็นเรื่องใหญ่ — เจ้าของตัดสินใจ 2026-09-14 ว่าต้องเช็คสิทธิ์ "แตะเงิน"
+// ทุก tool ในไฟล์นี้ (create/edit_purchase_invoice, pay_supplier) ใช้ canHandleBillingByUserId(…, 'purchase')
+// ตัวเดียวกับ canHandleBilling ที่ REST POST /purchase/invoices และ /purchase/payments ใช้ (rbac.service.ts):
+// ผ่านถ้า ADMIN/MASTER · แผนก CEO/IT · มีสิทธิ์เขียน purchase (แผนกจัดซื้อ) หรือ accounting (แผนกบัญชี)
+// — POWERUSER ผ่านเสมอ, MANAGER/USER ต้องอยู่แผนกจัดซื้อ/บัญชี (หรือได้ custom_permissions)
 
 function findGoodsReceipt(tenantId: string, idOrNumber: string): any {
   let gr = db.prepare('SELECT * FROM goods_receipts WHERE id = ? AND tenant_id = ?').get(idOrNumber, tenantId) as any
@@ -34,6 +36,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
 รับได้หลาย GR ต่อ 1 ใบแจ้งหนี้ (goods_receipt_ids) — GR แต่ละใบจะพา PO ของมันมารวมด้วยอัตโนมัติ ไม่จำกัดว่าต้องเป็น PO เดียวกัน
 แต่ทุก GR ต้องเป็นผู้ขายรายเดียวกัน ยืนยันแล้ว และยังไม่ถูกออกใบแจ้งหนี้มาก่อน (ไม่มี GR ที่ใช้ได้ = ออกใบแจ้งหนี้ไม่ได้ ต้องยืนยันรับของก่อน)
 ระบบจะลงบัญชีอัตโนมัติ: Dr สต็อกวัตถุดิบ + Dr ภาษีซื้อ (ถ้ามี) = Cr เจ้าหนี้การค้า
+⚠️ ต้องมีสิทธิ์จัดการบิลฝั่งซื้อ: ADMIN/MASTER/POWERUSER, แผนก CEO/IT, หรืออยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี
 ตัวอย่าง: "ออกใบแจ้งหนี้จาก GR-2026-00003" → create_purchase_invoice(goods_receipt_ids=["GR-2026-00003"])
 ตัวอย่าง: "รวม GR-2026-00003 กับ GR-2026-00004 ออกใบแจ้งหนี้เดียว (ถึงจะมาจาก PO คนละใบ)" → create_purchase_invoice(goods_receipt_ids=["GR-2026-00003","GR-2026-00004"])`,
     {
@@ -45,6 +48,10 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
       notes: z.string().optional().describe('หมายเหตุ'),
     },
     async (args) => {
+      // parity กับ REST POST /purchase/invoices — เช็คก่อนแตะ DB ใด ๆ
+      if (!canHandleBillingByUserId(userId, callerRole, 'purchase')) {
+        return ok({ success: false, message: 'ไม่มีสิทธิ์ออกใบแจ้งหนี้ซื้อ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+      }
       const { goods_receipt_ids, supplier_invoice_number, invoice_date, due_date, tax_rate, notes } = args
 
       const grRows: any[] = []
@@ -104,7 +111,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
     `แก้ไขใบแจ้งหนี้ซื้อที่ออกไปแล้ว (แก้ได้แม้จ่ายเงินไปแล้วบางส่วน/เต็มจำนวน) / Edit an already-issued purchase invoice.
 แก้ได้: เลขที่ใบแจ้งหนี้ผู้ขาย/วันครบกำหนด/หมายเหตุ (ไม่กระทบบัญชี) และราคา/จำนวนต่อบรรทัด วันที่ อัตราภาษี ส่วนลด (กลับ journal เดิม + ลงใหม่ทั้งใบอัตโนมัติ)
 แก้ "ชุดใบรับสินค้า (GR)" ที่ผูกกับใบนี้ไม่ได้ — ถ้าต้องเปลี่ยนต้องยกเลิกใบนี้แล้วออกใหม่
-⚠️ ยอดใหม่ต้องไม่น้อยกว่ายอดที่จ่ายไปแล้ว — ต้องมีสิทธิ์ ADMIN/MANAGER/MASTER/POWERUSER หรือฝ่ายจัดซื้อ/บัญชี
+⚠️ ยอดใหม่ต้องไม่น้อยกว่ายอดที่จ่ายไปแล้ว — ต้องมีสิทธิ์ ADMIN/MASTER/POWERUSER, แผนก CEO/IT, หรืออยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี
 ตัวอย่าง: "แก้ราคาบรรทัดที่ 2 ของ PI-2026-00010 เป็น 120" → edit_purchase_invoice(purchase_invoice_id="PI-2026-00010", items=[{id:"<purchase_invoice_items.id>", unit_price:120}])`,
     {
       purchase_invoice_id: z.string().describe('ID หรือเลขที่ใบแจ้งหนี้ซื้อ (pi_number) ที่จะแก้'),
@@ -166,7 +173,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
     'pay_supplier',
     `บันทึกจ่ายเงินให้ผู้ขาย (Supplier Payment) ตัดกับใบแจ้งหนี้ซื้อ / Record a payment to a supplier against a purchase invoice.
 รองรับจ่ายบางส่วน (amount น้อยกว่ายอดค้าง) และภาษีหัก ณ ที่จ่าย (withholding_tax)
-⚠️ เงินออกจากบริษัทจริง — ต้องมีสิทธิ์ ADMIN/MANAGER/MASTER/POWERUSER เท่านั้น
+⚠️ เงินออกจากบริษัทจริง — ต้องมีสิทธิ์ ADMIN/MASTER/POWERUSER, แผนก CEO/IT, หรืออยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี (MANAGER/USER ต้องอยู่แผนกเหล่านี้)
 ตัวอย่าง: "จ่ายเงิน PI-2026-00002 เต็มจำนวน โอนธนาคาร" → pay_supplier(purchase_invoice_id="PI-2026-00002", amount=<ยอดค้าง>, payment_method="TRANSFER")
 ตัวอย่าง: "จ่าย PI-2026-00002 ไปก่อน 5000 บาท หัก ณ ที่จ่าย 150" → pay_supplier(purchase_invoice_id="PI-2026-00002", amount=5000, withholding_tax=150)`,
     {

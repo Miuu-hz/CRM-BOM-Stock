@@ -25,7 +25,7 @@ export function registerSummaryTools(server: IMcpServer, tenantId: string): void
 
       const purchase = db.prepare(
         `SELECT COUNT(*) as pos, COALESCE(SUM(total_amount), 0) as committed
-         FROM purchase_orders WHERE tenant_id = ? AND status IN ('APPROVED','PARTIAL')`
+         FROM purchase_orders WHERE tenant_id = ? AND status IN ('SUBMITTED','APPROVED','PARTIAL')`
       ).get(tenantId) as { pos: number; committed: number }
 
       const work = db.prepare(
@@ -58,7 +58,7 @@ export function registerSummaryTools(server: IMcpServer, tenantId: string): void
     'ดูยอดขายและรายได้แยกตามช่วงเวลา / Query sales revenue over a time period. ใช้เมื่อถามยอดขาย รายได้ ออเดอร์',
     {
       period: z.enum(['7d', '30d', '90d']).optional()
-        .describe('ช่วงเวลา: 7d=7วัน 30d=เดือนนี้ 90d=3เดือน (default: 30d)'),
+        .describe('ช่วงเวลา: 7d=7วัน 30d=30วันย้อนหลัง 90d=3เดือน (default: 30d)'),
     },
     async (args) => {
       const period = args.period ?? '30d'
@@ -85,7 +85,7 @@ export function registerSummaryTools(server: IMcpServer, tenantId: string): void
 type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ ไม่ระบุ=ทั้งคู่`,
     {
       type: z.enum(['wo', 'po']).optional().describe('"wo"=work orders, "po"=purchase orders, ไม่ระบุ=ทั้งคู่'),
-      status: z.string().optional().describe('สถานะ: WO=PLANNED/IN_PROGRESS/COMPLETED/CANCELLED, PO=DRAFT/PENDING/APPROVED/PARTIAL/RECEIVED/CANCELLED'),
+      status: z.string().optional().describe('สถานะ: WO=PLANNED/IN_PROGRESS/COMPLETED/CANCELLED, PO=DRAFT/SUBMITTED/APPROVED/PARTIAL/RECEIVED/REJECTED/CANCELLED (ไม่ระบุ PO = SUBMITTED/APPROVED/PARTIAL ที่ยังเปิดอยู่)'),
     },
     async (args) => {
       const { type, status } = args
@@ -108,7 +108,7 @@ type: "wo"=ใบสั่งผลิต "po"=ใบสั่งซื้อ �
       if (!type || type === 'po') {
         const statusFilter = status
           ? 'AND po.status = ?'
-          : "AND po.status IN ('PENDING','APPROVED','PARTIAL')"
+          : "AND po.status IN ('SUBMITTED','APPROVED','PARTIAL')"
         const params = status ? [tenantId, status] : [tenantId]
         result.purchase_orders = db.prepare(
           `SELECT po.po_number, s.name as supplier, po.total_amount, po.status,

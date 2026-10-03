@@ -861,7 +861,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               </button>
                               <button
                                 type="button"
-                                onClick={() => window.open('/settings/unit-conversions', '_blank')}
+                                onClick={() => window.open('/settings?tab=units', '_blank')}
                                 className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
                               >
                                 {t('bomModal.globalUnitSettings')}

@@ -73,25 +73,4 @@ router.post('/', (req: Request, res: Response) => {
   }
 })
 
-// Delete activity log
-router.delete('/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-    const tenantId = req.user!.tenantId
-    
-    // ตรวจสอบว่า activity เป็นของ tenant นี้
-    const activity = db.prepare('SELECT id FROM activity_logs WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    if (!activity) {
-      return res.status(404).json({ success: false, message: 'ไม่พบกิจกรรม' })
-    }
-    
-    db.prepare('DELETE FROM activity_logs WHERE id = ? AND tenant_id = ?').run(id, tenantId)
-    
-    res.json({ success: true, message: 'ลบกิจกรรมสำเร็จ' })
-  } catch (error) {
-    console.error('Delete activity error:', error)
-    res.status(500).json({ success: false, message: 'ไม่สามารถลบกิจกรรมได้' })
-  }
-})
-
 export default router

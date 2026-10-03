@@ -92,6 +92,13 @@ function buildServer(tenantId: string, userId: string) {
   return server
 }
 
+// จำนวน tool ที่ผู้เรียกคนนี้เห็นจริง (ขึ้นกับ role) — เดิม hardcode 23
+function countTools(tenantId: string, userId: string): number {
+  let n = 0
+  registerTools({ tool: () => { n++ }, connect: async () => {}, close: async () => {} }, tenantId, userId)
+  return n
+}
+
 // ── Route setup ───────────────────────────────────────────────────────────────
 
 
@@ -148,7 +155,7 @@ export function setupMcpRoutes(app: Router): void {
     if (!key) { res.status(401).json({ ok: false, error: 'Missing API key' }); return }
     const ctx = resolveTenant(key)
     if (!ctx) { res.status(401).json({ ok: false, error: 'Invalid API key' }); return }
-    res.json({ ok: true, tools: 23, server: 'mini-erp', tenantId: ctx.tenantId })
+    res.json({ ok: true, tools: countTools(ctx.tenantId, ctx.userId), server: 'mini-erp', tenantId: ctx.tenantId })
   })
 
   // ── POST /mcp & /mcp/sse — Streamable HTTP ──────────────────────────────────
@@ -211,7 +218,7 @@ export function setupMcpRoutes(app: Router): void {
           transport: 'streamable-http',
           status: 'ready',
           tenantId: ctx.tenantId,
-          tools: 23
+          tools: countTools(ctx.tenantId, ctx.userId)
         })
         return
       }

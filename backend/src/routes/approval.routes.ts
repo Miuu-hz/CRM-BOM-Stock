@@ -3,7 +3,6 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { deductStockForSO, soStockAlreadyDeducted } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
-import { formatDocumentNumber } from '../utils/id'
 import { approvalDenyReason, canApprove as canApproveRequests } from '../services/approvalGate.service'
 import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
@@ -15,17 +14,6 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
-}
-
-function generateNumber(prefix: string, tenantId: string, table: string) {
-  const docTypeMap: Record<string, string> = {
-    approval_requests: 'APPROVAL_REQUEST',
-  }
-  const docType = docTypeMap[table]
-  if (!docType) {
-    throw new Error('Invalid table for number generation')
-  }
-  return formatDocumentNumber(prefix, tenantId, docType, new Date().getFullYear(), 5)
 }
 
 // ============================================
@@ -395,103 +383,6 @@ router.get('/requests/:id/detail', async (req: Request, res: Response) => {
   }
 })
 
-// GET single approval request
-router.get('/requests/:id', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    
-    const request = db.prepare(`
-      SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?
-    `).get(req.params.id, tenantId)
-
-    if (!request) {
-      return res.status(404).json({ success: false, message: 'Approval request not found' })
-    }
-
-    const logs = db.prepare(`
-      SELECT * FROM approval_logs 
-      WHERE approval_request_id = ?
-      ORDER BY created_at ASC
-    `).all(req.params.id)
-
-    res.json({ success: true, data: { ...request, logs } })
-  } catch (error) {
-    console.error('Get approval request error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch request' })
-  }
-})
-
-// POST create approval request
-router.post('/requests', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { moduleType, referenceType, referenceId, amount, description, metadata } = req.body
-    
-    if (!moduleType || !referenceType || !referenceId) {
-      return res.status(400).json({ success: false, message: 'Module type, reference type and ID are required' })
-    }
-
-    // Check if already has pending request
-    const existing = db.prepare(`
-      SELECT * FROM approval_requests 
-      WHERE tenant_id = ? AND reference_type = ? AND reference_id = ? AND status = 'PENDING'
-    `).get(tenantId, referenceType, referenceId)
-
-    if (existing) {
-      return res.status(400).json({ success: false, message: 'Already has pending approval request', data: existing })
-    }
-
-    const id = generateId()
-    const requestNumber = generateNumber('APR', tenantId, 'approval_requests')
-    const now = new Date().toISOString()
-
-    const transaction = db.transaction(() => {
-      // Create approval request
-      db.prepare(`
-        INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id,
-          requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-      `).run(id, tenantId, requestNumber, moduleType, referenceType, referenceId,
-        req.user!.userId, req.user!.email, req.user!.role, amount || 0, description || '', now, now)
-
-      // Log creation
-      db.prepare(`
-        INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role, 
-          comment, old_status, new_status, metadata, created_at)
-        VALUES (?, ?, ?, 'CREATE', ?, ?, ?, ?, NULL, 'PENDING', ?, ?)
-      `).run(generateId(), tenantId, id, req.user!.userId, req.user!.email, req.user!.role,
-        'Created approval request', JSON.stringify(metadata || {}), now)
-
-      // Update reference record status
-      if (referenceType === 'work_orders') {
-        db.prepare("UPDATE work_orders SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
-      } else if (referenceType === 'supplier_payments') {
-        db.prepare("UPDATE supplier_payments SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
-      } else if (referenceType === 'receipts') {
-        db.prepare("UPDATE receipts SET status = 'PENDING_APPROVAL' WHERE id = ? AND tenant_id = ?").run(referenceId, tenantId)
-      }
-    })
-
-    transaction()
-
-    const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-
-    try {
-      const { lineBotService } = require('../services/line-bot.service')
-      lineBotService.notifyApprovalRequest(tenantId, request).catch((err: any) => {
-        console.error('[approval.routes] notifyApprovalRequest error:', err)
-      })
-    } catch (lineErr) {
-      console.error('[approval.routes] lineBotService error:', lineErr)
-    }
-
-    res.status(201).json({ success: true, data: request, message: 'Approval request created' })
-  } catch (error) {
-    console.error('Create approval request error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create approval request' })
-  }
-})
-
 // PUT approve/reject request
 router.put('/requests/:id/decision', async (req: Request, res: Response) => {
   try {
@@ -690,30 +581,5 @@ function revertReferenceStatus(request: any) {
       .run(new Date().toISOString(), request.reference_id, request.tenant_id)
   }
 }
-
-// ============================================
-// STOCK ADJUSTMENTS (Manual)
-// ============================================
-
-// GET all stock adjustments
-router.get('/stock-adjustments', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    
-    const adjustments = db.prepare(`
-      -- วัตถุดิบกับสินค้าในคลังเป็นแถวเดียวกันแล้ว ไม่ต้อง join หาชื่อจากอีกตาราง
-      SELECT sa.*, si.sku, si.name as stock_name, si.name as material_name, si.sku as material_code
-      FROM stock_adjustments sa
-      LEFT JOIN stock_items si ON sa.stock_item_id = si.id
-      WHERE sa.tenant_id = ?
-      ORDER BY sa.created_at DESC
-    `).all(tenantId)
-
-    res.json({ success: true, data: adjustments })
-  } catch (error) {
-    console.error('Get stock adjustments error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch adjustments' })
-  }
-})
 
 export default router

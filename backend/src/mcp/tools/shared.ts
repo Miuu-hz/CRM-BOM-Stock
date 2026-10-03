@@ -187,7 +187,7 @@ export const REF_TYPE_DOCS: Record<string, { table: string; numCol?: string; lab
   PURCHASE_ORDER: { table: 'purchase_orders', numCol: 'po_number', label: 'ใบสั่งซื้อ' },
   PURCHASE_REQUEST: { table: 'purchase_requests', numCol: 'pr_number', label: 'ใบขอซื้อ' },
   GOODS_RECEIPT: { table: 'goods_receipts', numCol: 'gr_number', label: 'ใบรับสินค้า' },
-  PURCHASE_INVOICE: { table: 'purchase_invoices', numCol: 'invoice_number', label: 'ใบแจ้งหนี้เจ้าหนี้' },
+  PURCHASE_INVOICE: { table: 'purchase_invoices', numCol: 'pi_number', label: 'ใบแจ้งหนี้เจ้าหนี้' },
   SUPPLIER_PAYMENT: { table: 'supplier_payments', numCol: 'payment_number', label: 'ใบสำคัญจ่าย' },
   INVOICE: { table: 'invoices', numCol: 'invoice_number', label: 'ใบแจ้งหนี้/ใบกำกับภาษี' },
   RECEIPT: { table: 'receipts', numCol: 'receipt_number', label: 'ใบเสร็จรับเงิน' },

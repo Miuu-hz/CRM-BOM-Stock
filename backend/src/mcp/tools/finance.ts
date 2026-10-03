@@ -7,6 +7,7 @@ import { buildTrialBalance, buildLedger } from '../../routes/reports.routes'
 
 // ตัวเลขบัญชีทั้งเล่ม — ให้เห็นเฉพาะเจ้าของ (MASTER = master key) และ ADMIN
 const LEDGER_ROLES = ['MASTER', 'ADMIN']
+const YMD = /^\d{4}-\d{2}-\d{2}$/
 
 export function registerFinanceTools(server: IMcpServer, tenantId: string, callerRole = 'USER'): void {
   // ── 19–20. get_ar_aging / get_ap_aging ──────────────────────────────────────
@@ -15,7 +16,7 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string, calle
   const agingArgs = (partyLabel: string) => ({
     overdue_only: z.boolean().optional().describe('true=เฉพาะบิลที่เกินกำหนดแล้ว (default: false)'),
     [`${partyLabel}_name`]: z.string().optional().describe(`กรองเฉพาะ ${partyLabel} ที่ชื่อมีคำนี้`),
-    as_of: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('นับอายุหนี้ ณ วันที่ YYYY-MM-DD (default: วันนี้)'),
+    as_of: z.string().regex(YMD).optional().describe('นับอายุหนี้ ณ วันที่ YYYY-MM-DD (default: วันนี้)'),
   })
 
   const agingHandler = (build: typeof arAging, partyLabel: string) => async (args: any) => {
@@ -63,16 +64,18 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string, calle
   // ── 21. get_financial_summary ───────────────────────────────────────────────
   server.tool(
     'get_financial_summary',
-    `สรุปภาพรวมการเงิน — รายรับ รายจ่าย กำไรขั้นต้น ยอด AR/AP / Financial P&L and balance summary.
-ใช้เมื่อถาม "สรุปบัญชีเดือนนี้" "รายรับรายจ่ายเป็นยังไง" "กำไรเดือนนี้เท่าไหร่" "ภาพรวมการเงิน"`,
+    `สรุปภาพรวมการเงินจากบิลขาย/บิลซื้อ — ยอดออกบิล เงินรับ เงินจ่าย ยอด AR/AP / Invoice-based cash & balance summary.
+ใช้เมื่อถาม "สรุปบัญชีเดือนนี้" "รายรับรายจ่ายเป็นยังไง" "ภาพรวมการเงิน" "เงินเข้าออกเท่าไหร่"
+net_cash_flow = เงินรับจากบิลขาย − เงินจ่ายบิลซื้อ (เกณฑ์เงินสด) — ไม่ใช่กำไรทางบัญชี เพราะไม่ได้หักต้นทุนขาย/ค่าใช้จ่ายที่ไม่ผ่านบิลซื้อ
+ถ้าผู้ใช้ถามว่า "เดือนนี้" ให้ใช้ period=mtd (ไม่ใช่ 30d)`,
     {
-      period: z.enum(['7d', '30d', '90d', 'ytd']).optional()
-        .describe('ช่วงเวลา: 7d=7วัน, 30d=เดือนนี้, 90d=3เดือน, ytd=ตั้งแต่ต้นปี (default: 30d)'),
+      period: z.enum(['7d', '30d', '90d', 'mtd', 'ytd']).optional()
+        .describe('ช่วงเวลา: 7d/30d/90d = ย้อนหลัง 7/30/90 วันจากวันนี้, mtd=ตั้งแต่วันที่ 1 ของเดือนนี้, ytd=ตั้งแต่ต้นปี (default: 30d)'),
     },
     async (args) => {
       const { period = '30d' } = args
-      const dateFilter = period === 'ytd'
-        ? `date('now','start of year')`
+      const dateFilter = period === 'ytd' ? `date('now','start of year')`
+        : period === 'mtd' ? `date('now','start of month')`
         : `date('now', '-${({ '7d': 7, '30d': 30, '90d': 90 } as Record<string, number>)[period] ?? 30} days')`
 
       // รายรับจากบิลขาย (invoices ที่ออกในช่วง)
@@ -132,7 +135,8 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string, calle
           AND due_date IS NOT NULL AND date(due_date) < date('now')
       `).get(tenantId) as any
 
-      const grossProfit = revenue.collected - expense.paid
+      // เกณฑ์เงินสด: เงินรับ − เงินจ่าย (เดิมชื่อ gross_profit ทำให้ AI ตอบว่าเป็นกำไร)
+      const netCashFlow = revenue.collected - expense.paid
 
       return ok({
         period,
@@ -148,7 +152,7 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string, calle
           outstanding: expense.outstanding,
           invoice_count: expense.invoice_count,
         },
-        gross_profit: grossProfit,
+        net_cash_flow: netCashFlow,
         accounts_receivable: {
           total_outstanding: arTotal.total,
           invoice_count: arTotal.count,
@@ -171,7 +175,7 @@ export function registerFinanceTools(server: IMcpServer, tenantId: string, calle
   const company = () => db.prepare(
     'SELECT name, address, tax_id, tax_branch, phone, email FROM company_settings WHERE tenant_id = ?'
   ).get(tenantId) ?? null
-  const dateArg = (d: string) => z.string().regex(/^d{4}-d{2}-d{2}$/).optional().describe(d)
+  const dateArg = (d: string) => z.string().regex(YMD).optional().describe(d)
 
   server.tool(
     'get_trial_balance',

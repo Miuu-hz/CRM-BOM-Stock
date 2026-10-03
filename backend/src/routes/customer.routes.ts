@@ -605,29 +605,4 @@ router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
   }
 })
 
-// POST /customers/:id/loyalty/adjust (admin correction with note)
-router.post('/:id/loyalty/adjust', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { id } = req.params
-    const { points, note } = req.body
-    const pts = parseInt(points)
-    if (isNaN(pts) || pts === 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มไม่ถูกต้อง' })
-    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
-      .get(id, tenantId) as any
-    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
-    const balanceAfter = Math.max(0, (customer.loyalty_points || 0) + pts)
-    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
-    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
-    db.prepare(`
-      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
-      VALUES (?, ?, ?, 'ADJUST', ?, ?, 'MANUAL', NULL, ?, ?, ?)
-    `).run(txId, tenantId, id, pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
-    res.json({ success: true, data: { points: balanceAfter } })
-  } catch (error) {
-    console.error('Adjust loyalty error:', error)
-    res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
-  }
-})
-
 export default router

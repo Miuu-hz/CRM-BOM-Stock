@@ -166,14 +166,55 @@ describe('MCP create_purchase_invoice', () => {
   })
 })
 
+describe('MCP create_purchase_invoice — สิทธิ์ (parity กับ REST POST /purchase/invoices)', () => {
+  async function seedGr() {
+    const owner = createTestUser({ role: 'ADMIN' })
+    const { poId } = seedApprovedPo(owner.tenantId, [{ description: 'นมสด', qty: 3, unitPrice: 20 }])
+    const gr = receiveWholePo(owner.tenantId, owner.email, poId)
+    return { tenantId: owner.tenantId, gr }
+  }
+
+  it('USER ที่ไม่ได้อยู่ฝ่ายจัดซื้อ/บัญชี ออกใบแจ้งหนี้ไม่ได้ และไม่เขียนอะไรลง DB', async () => {
+    const { tenantId, gr } = await seedGr()
+    const user = createTestUser({ role: 'USER', tenantId })
+    const { server, tools } = fakeServer()
+    registerPurchaseBillingTools(server, tenantId, user.userId, user.email, 'USER')
+
+    const res = parseOk(await tools['create_purchase_invoice']({ goods_receipt_ids: [gr.gr_number] }))
+    expect(res.success).toBe(false)
+    expect(res.message).toContain('ไม่มีสิทธิ์')
+    const count = (db.prepare('SELECT COUNT(*) as c FROM purchase_invoices WHERE tenant_id = ?').get(tenantId) as any).c
+    expect(count).toBe(0)
+    const grRow = db.prepare('SELECT invoiced_at FROM goods_receipts WHERE id = ?').get(gr.id) as any
+    expect(grRow.invoiced_at).toBeFalsy()
+  })
+
+  it('USER ในแผนกจัดซื้อ (PURCHASE) ออกใบแจ้งหนี้ได้', async () => {
+    const { tenantId, gr } = await seedGr()
+    const user = createTestUser({ role: 'USER', tenantId })
+    db.prepare('UPDATE users SET departments = ? WHERE id = ?').run(JSON.stringify(['PURCHASE']), user.userId)
+    const { server, tools } = fakeServer()
+    registerPurchaseBillingTools(server, tenantId, user.userId, user.email, 'USER')
+
+    const res = parseOk(await tools['create_purchase_invoice']({ goods_receipt_ids: [gr.gr_number] }))
+    expect(res.success, res.message).toBe(true)
+    expect(res.piNumber).toBeTruthy()
+  })
+})
+
 describe('MCP pay_supplier', () => {
   async function setupInvoice(role = 'ADMIN') {
-    const user = createTestUser({ role: role as any })
+    // ออกใบแจ้งหนี้ด้วย ADMIN เสมอ (create_purchase_invoice เช็คสิทธิ์แล้ว) แล้วคืน tools ของ role ที่ขอ
+    const admin = createTestUser({ role: 'ADMIN' })
+    const adminSrv = fakeServer()
+    registerPurchaseBillingTools(adminSrv.server, admin.tenantId, admin.userId, admin.email, 'ADMIN')
+    const { poId } = seedApprovedPo(admin.tenantId, [{ description: 'ไข่ไก่', qty: 10, unitPrice: 50 }])
+    const gr = receiveWholePo(admin.tenantId, admin.email, poId)
+    const invRes = parseOk(await adminSrv.tools['create_purchase_invoice']({ goods_receipt_ids: [gr.gr_number] }))
+    if (role === 'ADMIN') return { user: admin, tools: adminSrv.tools, invRes }
+    const user = createTestUser({ role: role as any, tenantId: admin.tenantId })
     const { server, tools } = fakeServer()
     registerPurchaseBillingTools(server, user.tenantId, user.userId, user.email, role)
-    const { poId } = seedApprovedPo(user.tenantId, [{ description: 'ไข่ไก่', qty: 10, unitPrice: 50 }])
-    const gr = receiveWholePo(user.tenantId, user.email, poId)
-    const invRes = parseOk(await tools['create_purchase_invoice']({ goods_receipt_ids: [gr.gr_number] }))
     return { user, tools, invRes }
   }
 

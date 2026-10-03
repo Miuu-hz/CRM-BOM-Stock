@@ -725,62 +725,6 @@ router.post('/bills/:id/invoice', (req, res) => {
   }
 })
 
-// ==================== STOCK CHECK & REPORTS ====================
-
-// Check stock availability for menu item
-router.get('/menu-configs/:id/stock', async (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { id } = req.params
-    const { quantity } = req.query
-    const qty = parseInt(quantity as string) || 1
-
-    const result = await posStockService.checkStockAvailability(id, qty, tenantId)
-    res.json({ success: true, data: result })
-  } catch (error: any) {
-    console.error('Error checking stock:', error)
-    res.status(500).json({ success: false, message: error.message || 'Failed to check stock' })
-  }
-})
-
-// Get low stock menus
-router.get('/stock/low-stock', async (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const items = await posStockService.getLowStockMenus(tenantId)
-    res.json({ success: true, data: items })
-  } catch (error) {
-    console.error('Error fetching low stock:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch low stock' })
-  }
-})
-
-// Get menu stock level (how many can be made)
-router.get('/menu-configs/:id/stock-level', async (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { id } = req.params
-    const maxCanMake = await posStockService.getMenuStockLevel(id, tenantId)
-    res.json({ success: true, data: { menu_id: id, max_can_make: maxCanMake } })
-  } catch (error) {
-    console.error('Error getting stock level:', error)
-    res.status(500).json({ success: false, message: 'Failed to get stock level' })
-  }
-})
-
-// Get daily sales report
-router.get('/reports/daily-sales', async (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { date } = req.query
-    const report = await posAccountingService.getDailySalesSummary(tenantId, date as string)
-    res.json({ success: true, data: report })
-  } catch (error) {
-    console.error('Error getting daily sales:', error)
-    res.status(500).json({ success: false, message: 'Failed to get daily sales' })
-  }
-})
-
 // ==================== GS1 BARCODE SEARCH ====================
 
 // Search menu by GS1 barcode

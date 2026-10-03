@@ -236,8 +236,9 @@ class POSAccountingService {
         'POS_SALE',
         bill.id,
         `ขายหน้าร้าน - ${bill.bill_number} (${bill.display_name})`,
-        bill.total_amount,
-        bill.total_amount,
+        // หัวรายการ = ผลรวมของบรรทัดจริง (Dr 1180 = total / Cr รายได้ + ภาษีขาย) ไม่ใช่ total ซ้ำสองช่อง
+        Math.round(bill.total_amount * 100) / 100,
+        Math.round((totalRevenue + (bill.tax_amount > 0 ? bill.tax_amount : 0)) * 100) / 100,
         userId,
         now()
       )

@@ -95,11 +95,6 @@ const posService = {
 
   // ==================== Ingredients ====================
   
-  getMenuIngredients: async (menuId: string) => {
-    const response = await api.get(`/pos/menu-configs/${menuId}/ingredients`)
-    return response.data
-  },
-
   addMenuIngredient: async (menuId: string, data: {
     stock_item_id: string
     quantity_used: number

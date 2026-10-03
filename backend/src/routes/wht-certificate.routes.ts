@@ -154,17 +154,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const cert = db.prepare('SELECT * FROM wht_certificates WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    if (!cert) return res.status(404).json({ success: false, message: 'ไม่พบหนังสือรับรอง' })
-    res.json({ success: true, data: cert })
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message })
-  }
-})
-
 router.post('/:id/cancel', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
