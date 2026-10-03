@@ -109,35 +109,6 @@ router.get('/shops', (req: Request, res: Response) => {
 })
 
 /**
- * GET /api/marketing/shops/:id
- * ดึงข้อมูลร้านค้าตาม ID
- */
-router.get('/shops/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-    const shop = marketingRepo.getShopById(req.user!.tenantId, id)
-
-    if (!shop) {
-      return res.status(404).json({
-        success: false,
-        message: 'Shop not found',
-      })
-    }
-
-    res.json({
-      success: true,
-      data: shop,
-    })
-  } catch (error) {
-    console.error('Get shop error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch shop',
-    })
-  }
-})
-
-/**
  * POST /api/marketing/shops
  * เพิ่มร้านค้าใหม่
  */
@@ -170,67 +141,6 @@ router.post('/shops', (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to create shop',
-    })
-  }
-})
-
-/**
- * PUT /api/marketing/shops/:id
- * แก้ไขข้อมูลร้านค้า
- */
-router.put('/shops/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-    const { name, isActive } = req.body
-
-    const updatedShop = marketingRepo.updateShop(req.user!.tenantId, id, { name, isActive })
-
-    if (!updatedShop) {
-      return res.status(404).json({
-        success: false,
-        message: 'Shop not found',
-      })
-    }
-
-    res.json({
-      success: true,
-      data: updatedShop,
-      message: 'Shop updated successfully',
-    })
-  } catch (error) {
-    console.error('Update shop error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update shop',
-    })
-  }
-})
-
-/**
- * DELETE /api/marketing/shops/:id
- * ลบร้านค้า
- */
-router.delete('/shops/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-    const result = marketingRepo.deleteShop(req.user!.tenantId, id)
-
-    if (result.changes === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Shop not found',
-      })
-    }
-
-    res.json({
-      success: true,
-      message: 'Shop deleted successfully',
-    })
-  } catch (error) {
-    console.error('Delete shop error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete shop',
     })
   }
 })
@@ -359,33 +269,6 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
 })
 
 /**
- * GET /api/marketing/files
- * ดึงรายการไฟล์ที่อัพโหลด
- */
-router.get('/files', (req: Request, res: Response) => {
-  try {
-    const { shopId, platform } = req.query
-
-    const files = marketingRepo.getAllFiles(
-      req.user!.tenantId,
-      shopId as string,
-      platform as string
-    )
-
-    res.json({
-      success: true,
-      data: files,
-    })
-  } catch (error) {
-    console.error('Get files error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch files',
-    })
-  }
-})
-
-/**
  * GET /api/marketing/metrics
  * ดึงข้อมูล metrics พร้อม filter
  */
@@ -509,46 +392,6 @@ router.get('/analytics/summary', (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch analytics summary',
-    })
-  }
-})
-
-/**
- * DELETE /api/marketing/files/:id
- * ลบไฟล์และ metrics ที่เกี่ยวข้อง
- */
-router.delete('/files/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-
-    // Get file info before deleting
-    const files: any[] = marketingRepo.getAllFiles(req.user!.tenantId)
-    const file = files.find((f: any) => f.id === id)
-
-    if (!file) {
-      return res.status(404).json({
-        success: false,
-        message: 'File not found',
-      })
-    }
-
-    // Delete physical file
-    if (fs.existsSync(file.filePath)) {
-      fs.unlinkSync(file.filePath)
-    }
-
-    // Delete from database (CASCADE will delete related metrics)
-    marketingRepo.deleteFile(req.user!.tenantId, id)
-
-    res.json({
-      success: true,
-      message: 'File and related metrics deleted successfully',
-    })
-  } catch (error) {
-    console.error('Delete file error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete file',
     })
   }
 })

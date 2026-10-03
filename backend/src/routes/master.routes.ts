@@ -178,16 +178,6 @@ router.patch('/tenant/:tenantId/quota', authenticate, requireMaster, (req: Reque
   res.json({ success: true, data: { tenantId, mcpUserLimit } })
 })
 
-// PATCH /api/master/tenant/:tenantId/info
-router.patch('/tenant/:tenantId/info', authenticate, requireMaster, (req: Request, res: Response) => {
-  const db = getDb()
-  const { tenantId } = req.params
-  const { name } = req.body
-  if (!name?.trim()) { res.status(400).json({ success: false, message: 'name required' }); return }
-  db.prepare('UPDATE company_settings SET name = ? WHERE tenant_id = ?').run(name.trim(), tenantId)
-  res.json({ success: true })
-})
-
 // DELETE /api/master/tenant/:tenantId — soft deactivate all users
 router.delete('/tenant/:tenantId', authenticate, requireMaster, (req: Request, res: Response) => {
   const db = getDb()

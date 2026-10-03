@@ -208,38 +208,4 @@ router.delete('/link/:userId', authenticate, requireMaster, (req: Request, res: 
     }
 });
 
-// ==========================================
-// 4. Group Management
-// ==========================================
-
-// List all active groups for this tenant
-router.get('/groups', authenticate, (req: Request, res: Response) => {
-    try {
-        const { tenantId } = req.user!;
-        const db = getDb();
-        const groups = db.prepare(
-            'SELECT id, group_id, group_name, is_active, joined_at FROM line_group_mappings WHERE tenant_id = ? ORDER BY joined_at DESC'
-        ).all(tenantId);
-        res.json({ success: true, data: groups });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch groups' });
-    }
-});
-
-// Toggle group active status
-router.patch('/groups/:groupId', authenticate, requireMaster, (req: Request, res: Response) => {
-    try {
-        const { tenantId } = req.user!;
-        const { groupId } = req.params;
-        const { is_active } = req.body;
-        const db = getDb();
-        db.prepare(
-            'UPDATE line_group_mappings SET is_active = ? WHERE tenant_id = ? AND group_id = ?'
-        ).run(is_active ? 1 : 0, tenantId, groupId);
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to update group' });
-    }
-});
-
 export default router
