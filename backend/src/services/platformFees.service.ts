@@ -207,30 +207,3 @@ export function comparePlatforms(
 
   return results
 }
-
-/**
- * หาราคาขายที่เหมาะสมเพื่อให้ได้กำไรตามเป้า
- */
-export function calculateTargetPrice(
-  productionCost: number,
-  targetProfitMargin: number, // % กำไรที่ต้องการ เช่น 30% = 30
-  platform: PlatformType,
-  quantity: number = 1
-): number {
-  const config = PLATFORM_FEE_CONFIGS[platform]
-
-  // สูตร: Selling Price = (Cost + Target Profit) / (1 - Total Fee Rate)
-  const totalFeeRate =
-    config.commissionRate +
-    config.transactionFeeRate +
-    config.paymentGatewayFee
-
-  // Target Profit Margin คือ % ของ selling price
-  // Selling Price × (1 - Margin%) = Cost + Fees
-  // Selling Price = Cost / ((1 - Margin%) - Fee Rate)
-
-  const targetProfitDecimal = targetProfitMargin / 100
-  const sellingPrice = productionCost / ((1 - targetProfitDecimal) - totalFeeRate)
-
-  return Math.ceil(sellingPrice) // ปัดขึ้น
-}

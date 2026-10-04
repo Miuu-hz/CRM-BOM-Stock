@@ -154,12 +154,6 @@ export const createFile = (tenantId: string, data: {
   return snakeToCamel(result)
 }
 
-export const deleteFile = (tenantId: string, id: string) => {
-  // Delete file and related metrics (CASCADE)
-  const stmt = db.prepare('DELETE FROM marketing_files WHERE id = ? AND tenant_id = ?')
-  return stmt.run(id, tenantId)
-}
-
 // ==================== METRICS ====================
 
 export const getMetrics = (tenantId: string, filters: {

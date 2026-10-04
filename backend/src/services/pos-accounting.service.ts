@@ -47,19 +47,6 @@ interface AccountBalanceEntry {
   credit: number
 }
 
-interface DailySalesSummary {
-  date: string
-  summary: {
-    bill_count: number
-    total_subtotal: number
-    total_service_charge: number
-    total_tax: number
-    total_revenue: number
-    avg_bill_value: number
-  }
-  paymentBreakdown: unknown[]
-}
-
 class POSAccountingService {
   /**
    * Generate journal entry number
@@ -511,50 +498,6 @@ class POSAccountingService {
     }
   }
 
-  /**
-   * Get daily sales summary
-   */
-  async getDailySalesSummary(tenantId: string, date?: string): Promise<DailySalesSummary> {
-    const targetDate = date || now().split('T')[0]
-
-    const stmt = db.prepare(`
-      SELECT
-        COUNT(*) as bill_count,
-        SUM(subtotal) as total_subtotal,
-        SUM(service_charge_amount) as total_service_charge,
-        SUM(tax_amount) as total_tax,
-        SUM(total_amount) as total_revenue,
-        AVG(total_amount) as avg_bill_value
-      FROM pos_running_bills
-      WHERE tenant_id = ?
-        AND status = 'PAID'
-        AND DATE(closed_at) = ?
-    `)
-
-    const summary = stmt.get(tenantId, targetDate) as DailySalesSummary['summary']
-
-    // Get payment method breakdown
-    const paymentStmt = db.prepare(`
-      SELECT 
-        payment_method,
-        COUNT(*) as count,
-        SUM(amount) as total
-      FROM pos_payments p
-      JOIN pos_running_bills b ON p.bill_id = b.id
-      WHERE b.tenant_id = ? 
-        AND b.status = 'PAID'
-        AND DATE(b.closed_at) = ?
-      GROUP BY payment_method
-    `)
-
-    const paymentBreakdown = paymentStmt.all(tenantId, targetDate)
-
-    return {
-      date: targetDate,
-      summary,
-      paymentBreakdown
-    }
-  }
 }
 
 export default new POSAccountingService()
