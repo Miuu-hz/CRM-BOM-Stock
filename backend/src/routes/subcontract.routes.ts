@@ -4,6 +4,7 @@ import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
+import { SubcontractError, sumQtyByStockItem, getOutstandingMaterialQty } from '../services/subcontract.service'
 
 const router = Router()
 router.use(authenticate)
@@ -100,7 +101,7 @@ router.get('/subcon-stock', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const rows = db.prepare(
-      `SELECT * FROM subcon_stock WHERE tenant_id = ? AND quantity > 0 ORDER BY supplier_name, item_name`
+      `SELECT * FROM subcon_stock WHERE tenant_id = ? AND quantity <> 0 ORDER BY supplier_name, item_name`
     ).all(tenantId) as any[]
 
     const bySupplier = new Map<string, { supplier_id: string; supplier_name: string; value: number; items: number }>()
@@ -225,14 +226,14 @@ router.post('/', (req: Request, res: Response) => {
   }
 })
 
-// PUT /api/subcontracts/:id — แก้ได้เฉพาะตอนยังไม่มี billed_qty
+// PUT /api/subcontracts/:id — แก้ได้เฉพาะตอนสถานะยังเป็น OPEN (ยังไม่เริ่มส่งวัตถุดิบ/คิดค่าแรง)
 router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const contract = db.prepare('SELECT * FROM wo_subcontracts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!contract) return void res.status(404).json({ success: false, message: 'ไม่พบสัญญาจ้างเหมา' })
-    if (contract.billed_qty > 0) {
-      return void res.status(400).json({ success: false, message: 'ไม่สามารถแก้ไขสัญญาที่มีการคิดค่าแรงไปแล้ว' })
+    if (contract.status !== 'OPEN') {
+      return void res.status(400).json({ success: false, message: 'แก้ไขได้เฉพาะตอนสัญญายังเป็น OPEN เท่านั้น (เริ่มส่งวัตถุดิบ/คิดค่าแรงไปแล้ว)' })
     }
 
     const { rate_per_unit, agreed_qty, due_date, notes } = req.body
@@ -280,21 +281,15 @@ router.post('/:id/issue-materials', (req: Request, res: Response) => {
       return void res.status(400).json({ success: false, message: 'ต้องระบุรายการวัตถุดิบอย่างน้อย 1 รายการ' })
     }
 
-    // Validate & preload stock items first (fail fast before mutating anything)
-    const plan: Array<{ stockItem: any; qty: number }> = []
+    // Shape-only validation here (cheap, no DB reads). Availability must be checked with a FRESH
+    // read inside the transaction below — a stale pre-transaction read would let two duplicate
+    // stock_item_id rows in the same request (or a concurrent request) each pass individually and
+    // drive stock negative.
     for (const it of items) {
       const qty = Number(it?.quantity)
       if (!it?.stock_item_id || !(qty > 0)) {
         return void res.status(400).json({ success: false, message: 'ข้อมูลรายการวัตถุดิบไม่ถูกต้อง' })
       }
-      const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(it.stock_item_id, tenantId) as any
-      if (!stockItem) {
-        return void res.status(404).json({ success: false, message: `ไม่พบสินค้าคงคลัง (${it.stock_item_id})` })
-      }
-      if (Number(stockItem.quantity) < qty) {
-        return void res.status(400).json({ success: false, message: `สต็อกไม่พอสำหรับ ${stockItem.name} (คงเหลือ ${stockItem.quantity} ${stockItem.unit})` })
-      }
-      plan.push({ stockItem, qty })
     }
 
     const now = new Date().toISOString()
@@ -303,7 +298,24 @@ router.post('/:id/issue-materials', (req: Request, res: Response) => {
     const issuedItems: any[] = []
 
     const tx = db.transaction(() => {
-      for (const { stockItem, qty } of plan) {
+      // Aggregate requested qty by stock_item_id (dedupe duplicate rows), then check availability
+      // against a fresh read of stock_items — inside the transaction, before any mutation.
+      const requested = sumQtyByStockItem(items.map((it: any) => ({ stock_item_id: it?.stock_item_id, qty: Number(it?.quantity) || 0 })))
+      const freshStockById = new Map<string, any>()
+      for (const [stockItemId, qty] of requested) {
+        const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+        if (!stockItem) {
+          throw new SubcontractError('STOCK_ITEM_NOT_FOUND', `ไม่พบสินค้าคงคลัง (${stockItemId})`)
+        }
+        if (Number(stockItem.quantity) < qty) {
+          throw new SubcontractError('INSUFFICIENT_STOCK', `สต็อกไม่พอสำหรับ ${stockItem.name} (คงเหลือ ${stockItem.quantity} ${stockItem.unit}, ขอเบิกรวม ${qty})`)
+        }
+        freshStockById.set(stockItemId, stockItem)
+      }
+
+      for (const it of items) {
+        const stockItem = freshStockById.get(it.stock_item_id)
+        const qty = Number(it.quantity)
         const unitCost = Number(stockItem.unit_cost) || 0
         const value = Math.round(qty * unitCost * 100) / 100
         totalValue = Math.round((totalValue + value) * 100) / 100
@@ -391,6 +403,10 @@ router.post('/:id/issue-materials', (req: Request, res: Response) => {
       message: 'บันทึกการส่งวัตถุดิบสำเร็จ'
     })
   } catch (error) {
+    if (error instanceof SubcontractError) {
+      const status = error.code === 'STOCK_ITEM_NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Issue materials error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to issue materials' })
   }
@@ -419,29 +435,10 @@ router.post('/:id/receipts', (req: Request, res: Response) => {
       return void res.status(400).json({ success: false, message: 'ต้องระบุจำนวนที่รับหรือรายการเคลียร์วัตถุดิบอย่างน้อยหนึ่งอย่าง' })
     }
 
-    // Validate every material line against subcon_stock before mutating anything
-    const matPlan: Array<{ stockRow: any; consumed: number; returned: number; shortage: number; total: number; avgCost: number; stockItemId: string }> = []
-    for (const m of materials) {
-      const consumed = Number(m?.consumed_qty) || 0
-      const returned = Number(m?.returned_qty) || 0
-      const shortage = Number(m?.shortage_qty) || 0
-      const total = consumed + returned + shortage
-      if (total <= 0) continue
-
-      const stockRow = db.prepare(
-        'SELECT * FROM subcon_stock WHERE tenant_id = ? AND supplier_id = ? AND stock_item_id = ?'
-      ).get(tenantId, contract.supplier_id, m.stock_item_id) as any
-      const available = stockRow ? Number(stockRow.quantity) : 0
-      if (total > available + 0.0001) {
-        const itemName = stockRow?.item_name || m.stock_item_id
-        return void res.status(400).json({
-          success: false,
-          message: `จำนวนเคลียร์เกินยอดวัตถุดิบค้างที่ผู้รับเหมา (${itemName}: ค้าง ${available}, ขอเคลียร์ ${total})`
-        })
-      }
-      const avgCost = available > 0 ? Number(stockRow.total_value) / available : 0
-      matPlan.push({ stockRow, consumed, returned, shortage, total, avgCost, stockItemId: m.stock_item_id })
-    }
+    // Availability against subcon_stock + the received_qty-vs-agreed_qty check are both done with
+    // FRESH reads INSIDE the transaction below (not here) — a stale pre-transaction read would let
+    // two duplicate stock_item_id rows in one request each pass individually and drive subcon_stock
+    // negative (same class of bug as issue-materials above).
 
     const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(contract.work_order_id, tenantId) as any
 
@@ -453,6 +450,49 @@ router.post('/:id/receipts', (req: Request, res: Response) => {
     let qcInspectionId: string | null = null
 
     const tx = db.transaction(() => {
+      // Fresh read — guards both the agreed_qty cap and (later below) the SETTLED transition against
+      // a stale pre-transaction snapshot of received_qty/paid_amount/billed_qty.
+      const freshContract = db.prepare('SELECT * FROM wo_subcontracts WHERE id = ? AND tenant_id = ?').get(contract.id, tenantId) as any
+      if (!freshContract) throw new SubcontractError('NOT_FOUND', 'ไม่พบสัญญาจ้างเหมา')
+
+      const newReceived = (Number(freshContract.received_qty) || 0) + received_qty
+      if (newReceived > Number(freshContract.agreed_qty) + 0.0001) {
+        throw new SubcontractError(
+          'OVER_AGREED_QTY',
+          `จำนวนรับรวมเกินจำนวนที่ตกลง (ตกลง ${freshContract.agreed_qty}, รับแล้ว ${freshContract.received_qty}, ครั้งนี้ ${received_qty})`
+        )
+      }
+
+      // Aggregate requested consumed/returned/shortage qty by stock_item_id (dedupe duplicate rows),
+      // then validate against a fresh read of subcon_stock — before any mutation.
+      const consumedByItem = sumQtyByStockItem(materials.map((m: any) => ({ stock_item_id: m?.stock_item_id, qty: Number(m?.consumed_qty) || 0 })))
+      const returnedByItem = sumQtyByStockItem(materials.map((m: any) => ({ stock_item_id: m?.stock_item_id, qty: Number(m?.returned_qty) || 0 })))
+      const shortageByItem = sumQtyByStockItem(materials.map((m: any) => ({ stock_item_id: m?.stock_item_id, qty: Number(m?.shortage_qty) || 0 })))
+      const stockItemIds = new Set<string>([...consumedByItem.keys(), ...returnedByItem.keys(), ...shortageByItem.keys()])
+
+      const matPlan: Array<{ stockRow: any; consumed: number; returned: number; shortage: number; total: number; avgCost: number; stockItemId: string }> = []
+      for (const stockItemId of stockItemIds) {
+        const consumed = consumedByItem.get(stockItemId) || 0
+        const returned = returnedByItem.get(stockItemId) || 0
+        const shortage = shortageByItem.get(stockItemId) || 0
+        const total = consumed + returned + shortage
+        if (total <= 0) continue
+
+        const stockRow = db.prepare(
+          'SELECT * FROM subcon_stock WHERE tenant_id = ? AND supplier_id = ? AND stock_item_id = ?'
+        ).get(tenantId, contract.supplier_id, stockItemId) as any
+        const available = stockRow ? Number(stockRow.quantity) : 0
+        if (total > available + 0.0001) {
+          const itemName = stockRow?.item_name || stockItemId
+          throw new SubcontractError(
+            'INSUFFICIENT_SUBCON_STOCK',
+            `จำนวนเคลียร์เกินยอดวัตถุดิบค้างที่ผู้รับเหมา (${itemName}: ค้าง ${available}, ขอเคลียร์ ${total})`
+          )
+        }
+        const avgCost = available > 0 ? Number(stockRow.total_value) / available : 0
+        matPlan.push({ stockRow, consumed, returned, shortage, total, avgCost, stockItemId })
+      }
+
       for (const p of matPlan) {
         const consumedValue = Math.round(p.consumed * p.avgCost * 100) / 100
         const returnedValue = Math.round(p.returned * p.avgCost * 100) / 100
@@ -578,8 +618,22 @@ router.post('/:id/receipts', (req: Request, res: Response) => {
         qcInspectionId, JSON.stringify(reconcileDetail), notes || '', now, req.user!.email
       )
 
-      const newReceived = (Number(contract.received_qty) || 0) + received_qty
-      const newStatus = newReceived >= contract.agreed_qty ? 'RECEIVED' : 'PARTIAL_RECEIVED'
+      // มูลค่าวัตถุดิบที่ใช้ไปจริง (totalConsumedValue) ต้องเข้า WO.actual_cost เหมือนค่าแรงเหมา
+      // (subcontract.service.ts accrueSubcontractLabor ทำแบบเดียวกันกับ 5106) — ไม่งั้นต้นทุน WO ขาด
+      if (totalConsumedValue > 0) {
+        db.prepare(`UPDATE work_orders SET actual_cost = actual_cost + ?, updated_at = ? WHERE id = ? AND tenant_id = ?`)
+          .run(totalConsumedValue, now, contract.work_order_id, tenantId)
+      }
+
+      // ต้อง SETTLE เฉพาะตอนจ่ายครบ + บิลครบ + ไม่มีวัตถุดิบค้างที่ผู้รับเหมาแล้วเท่านั้น (fix 2) —
+      // outstanding คำนวณหลัง insert subcon_receipts ด้านล่าง จึงเห็นการเคลียร์ของรอบนี้ด้วย
+      const outstandingAfter = getOutstandingMaterialQty(tenantId, contract.id)
+      const fullyPaid = Number(freshContract.paid_amount) >= Number(freshContract.labor_amount) - 0.01
+      const fullyBilled = Number(freshContract.billed_qty) >= Number(freshContract.agreed_qty)
+      const newStatus = (fullyPaid && fullyBilled && outstandingAfter <= 0.0001)
+        ? 'SETTLED'
+        : (newReceived >= Number(freshContract.agreed_qty) ? 'RECEIVED' : 'PARTIAL_RECEIVED')
+
       db.prepare(`
         UPDATE wo_subcontracts SET received_qty = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?
       `).run(newReceived, newStatus, now, contract.id, tenantId)
@@ -593,6 +647,10 @@ router.post('/:id/receipts', (req: Request, res: Response) => {
       message: 'บันทึกการรับของสำเร็จ'
     })
   } catch (error) {
+    if (error instanceof SubcontractError) {
+      const status = error.code === 'NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Subcontract receipt error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to record receipt' })
   }
@@ -676,26 +734,10 @@ router.post('/:id/pay', (req: Request, res: Response) => {
       return void res.status(400).json({ success: false, message: 'สัญญานี้ถูกยกเลิกแล้ว' })
     }
 
-    const outstanding = Math.round((contract.labor_amount - contract.paid_amount) * 100) / 100
-    if (outstanding <= 0) {
-      return void res.status(400).json({ success: false, message: 'ไม่มียอดค้างจ่ายสำหรับสัญญานี้' })
-    }
-
     const { payment_method, amount } = req.body
     if (!['CASH', 'BANK'].includes(payment_method)) {
       return void res.status(400).json({ success: false, message: 'ช่องทางชำระต้องเป็น CASH หรือ BANK' })
     }
-
-    const payAmount = amount !== undefined && amount !== null && amount !== ''
-      ? Math.round(Number(amount) * 100) / 100
-      : outstanding
-
-    if (!(payAmount > 0) || payAmount > outstanding + 0.01) {
-      return void res.status(400).json({ success: false, message: 'จำนวนเงินที่จ่ายไม่ถูกต้อง' })
-    }
-
-    const whtAmount = Math.round(payAmount * (Number(contract.wht_rate) || 0) / 100 * 100) / 100
-    const netAmount = Math.round((payAmount - whtAmount) * 100) / 100
 
     const accruedAccId = getOrCreateAccount(
       tenantId, ACC.ACCRUED,
@@ -708,20 +750,38 @@ router.post('/:id/pay', (req: Request, res: Response) => {
       ACC_META[cashBankCode]!.name, ACC_META[cashBankCode]!.type,
       ACC_META[cashBankCode]!.category, ACC_META[cashBankCode]!.normalBalance
     )
-    const whtAccId = whtAmount > 0
-      ? getOrCreateAccount(
-          tenantId, ACC.WHT_PAYABLE,
-          ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type,
-          ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance
-        )
-      : null
-
     const now = new Date().toISOString()
     const journalId = generateId()
     const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5)
     const desc = `จ่ายค่าจ้างเหมา ${contract.contract_number} - ${contract.supplier_name}`
 
     const tx = db.transaction(() => {
+      // Fresh read of paid_amount/labor_amount/outstanding INSIDE the transaction — two /pay calls
+      // racing on the same contract must not both see the same stale outstanding and both succeed.
+      const fresh = db.prepare('SELECT * FROM wo_subcontracts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+      if (!fresh) throw new SubcontractError('NOT_FOUND', 'ไม่พบสัญญาจ้างเหมา')
+      if (fresh.status === 'CANCELLED') throw new SubcontractError('PAY_INVALID', 'สัญญานี้ถูกยกเลิกแล้ว')
+
+      const outstanding = Math.round((fresh.labor_amount - fresh.paid_amount) * 100) / 100
+      if (outstanding <= 0) throw new SubcontractError('PAY_INVALID', 'ไม่มียอดค้างจ่ายสำหรับสัญญานี้')
+
+      const payAmount = amount !== undefined && amount !== null && amount !== ''
+        ? Math.round(Number(amount) * 100) / 100
+        : outstanding
+      if (!(payAmount > 0) || payAmount > outstanding + 0.01) {
+        throw new SubcontractError('PAY_INVALID', 'จำนวนเงินที่จ่ายไม่ถูกต้อง')
+      }
+
+      const whtAmount = Math.round(payAmount * (Number(fresh.wht_rate) || 0) / 100 * 100) / 100
+      const netAmount = Math.round((payAmount - whtAmount) * 100) / 100
+      const whtAccId = whtAmount > 0
+        ? getOrCreateAccount(
+            tenantId, ACC.WHT_PAYABLE,
+            ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type,
+            ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance
+          )
+        : null
+
       db.prepare(`
         INSERT INTO journal_entries
           (id, tenant_id, entry_number, date, reference_type, reference_id, description,
@@ -746,10 +806,12 @@ router.post('/:id/pay', (req: Request, res: Response) => {
         insertLine.run(generateId(), tenantId, journalId, whtAccId, lineNo++, `ภาษีหัก ณ ที่จ่าย - ${contract.contract_number}`, 0, whtAmount)
       }
 
-      const newPaid = Math.round((contract.paid_amount + payAmount) * 100) / 100
-      const fullyPaid = newPaid >= contract.labor_amount - 0.01
-      const fullyBilled = contract.billed_qty >= contract.agreed_qty
-      const newStatus = fullyPaid && fullyBilled ? 'SETTLED' : contract.status
+      const newPaid = Math.round((fresh.paid_amount + payAmount) * 100) / 100
+      const fullyPaid = newPaid >= fresh.labor_amount - 0.01
+      const fullyBilled = fresh.billed_qty >= fresh.agreed_qty
+      // fix 2: ต้องไม่มีวัตถุดิบค้างอยู่ที่ผู้รับเหมาด้วย ไม่งั้นจ่ายครบแล้วรับของไม่ได้อีกตลอดไป
+      const outstandingMaterial = getOutstandingMaterialQty(tenantId, fresh.id)
+      const newStatus = fullyPaid && fullyBilled && outstandingMaterial <= 0.0001 ? 'SETTLED' : fresh.status
 
       db.prepare(`
         UPDATE wo_subcontracts SET paid_amount = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?
@@ -760,12 +822,16 @@ router.post('/:id/pay', (req: Request, res: Response) => {
     const row = db.prepare('SELECT * FROM wo_subcontracts WHERE id = ? AND tenant_id = ?').get(contract.id, tenantId)
     res.json({ success: true, data: row, message: 'บันทึกการจ่ายเงินสำเร็จ' })
   } catch (error) {
+    if (error instanceof SubcontractError) {
+      const status = error.code === 'NOT_FOUND' ? 404 : 400
+      return res.status(status).json({ success: false, message: error.message })
+    }
     console.error('Pay subcontract error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to pay subcontract' })
   }
 })
 
-// POST /api/subcontracts/:id/cancel — ยกเลิกได้เฉพาะ billed_qty = 0
+// POST /api/subcontracts/:id/cancel — ยกเลิกได้เฉพาะ billed_qty = 0 และไม่มีวัตถุดิบค้างที่ผู้รับเหมา
 router.post('/:id/cancel', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -773,6 +839,13 @@ router.post('/:id/cancel', (req: Request, res: Response) => {
     if (!contract) return void res.status(404).json({ success: false, message: 'ไม่พบสัญญาจ้างเหมา' })
     if (contract.billed_qty > 0) {
       return void res.status(400).json({ success: false, message: 'ไม่สามารถยกเลิกสัญญาที่มีการคิดค่าแรงไปแล้ว' })
+    }
+    const outstandingMaterial = getOutstandingMaterialQty(tenantId, contract.id)
+    if (outstandingMaterial > 0.0001) {
+      return void res.status(400).json({
+        success: false,
+        message: `ไม่สามารถยกเลิกสัญญาได้ ยังมีวัตถุดิบค้างอยู่ที่ผู้รับเหมา (${outstandingMaterial} หน่วย) ต้องรับคืนหรือเคลียร์ให้หมดก่อน`
+      })
     }
 
     const now = new Date().toISOString()

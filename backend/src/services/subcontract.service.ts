@@ -11,6 +11,63 @@ export interface SubcontractAccrualResult {
   journalEntryId: string
 }
 
+/** ข้อผิดพลาดที่ผู้เรียก (route) ต้องแปลงเป็น 400/404 ให้ผู้ใช้ (ไม่ใช่ 500) — ตามแบบ StockMovementError */
+export class SubcontractError extends Error {
+  constructor(
+    public code:
+      | 'NOT_FOUND'
+      | 'STOCK_ITEM_NOT_FOUND'
+      | 'INSUFFICIENT_STOCK'
+      | 'INSUFFICIENT_SUBCON_STOCK'
+      | 'OVER_AGREED_QTY'
+      | 'MATERIALS_OUTSTANDING'
+      | 'NOT_OPEN'
+      | 'PAY_INVALID',
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+export interface StockQtyLine { stock_item_id: string; qty: number }
+
+/**
+ * รวมจำนวนตาม stock_item_id ก่อนเช็ค availability — กันแถวซ้ำ item เดียวกันในคำขอเดียว
+ * (issue-materials/receipts) ทำสต็อกติดลบเพราะเช็คทีละแถวแยกกันไม่เห็นผลรวม
+ */
+export function sumQtyByStockItem(rows: StockQtyLine[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.stock_item_id) continue
+    out.set(r.stock_item_id, (out.get(r.stock_item_id) || 0) + (Number(r.qty) || 0))
+  }
+  return out
+}
+
+/**
+ * วัตถุดิบที่ยังค้างอยู่ที่ผู้รับเหมาของสัญญานี้โดยเฉพาะ (ไม่ใช่ของทั้ง supplier เพราะ supplier
+ * เดียวอาจมีหลายสัญญา) = ยอดที่ส่งออก (subcon_material_issues) ลบยอดที่เคลียร์แล้ว (consumed+
+ * returned+shortage สะสมจาก subcon_receipts.material_reconcile) ของสัญญานี้
+ */
+export function getOutstandingMaterialQty(tenantId: string, contractId: string): number {
+  const issued = (db.prepare(
+    `SELECT COALESCE(SUM(quantity), 0) as q FROM subcon_material_issues WHERE tenant_id = ? AND subcontract_id = ?`
+  ).get(tenantId, contractId) as any).q as number
+
+  const receipts = db.prepare(
+    `SELECT material_reconcile FROM subcon_receipts WHERE tenant_id = ? AND subcontract_id = ?`
+  ).all(tenantId, contractId) as any[]
+
+  let cleared = 0
+  for (const r of receipts) {
+    const detail = JSON.parse(r.material_reconcile || '[]') as any[]
+    for (const d of detail) {
+      cleared += (Number(d.consumed_qty) || 0) + (Number(d.returned_qty) || 0) + (Number(d.shortage_qty) || 0)
+    }
+  }
+  return Math.round((issued - cleared) * 1000) / 1000
+}
+
 /**
  * เรียกจาก QC complete hook (qc.routes.ts) เมื่อ inspection ที่ผูกกับ Work Order มี passed_qty > 0
  *
