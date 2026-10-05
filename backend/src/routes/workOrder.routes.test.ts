@@ -29,12 +29,12 @@ function seedFinishedStock(tenantId: string, quantity = 0) {
   return id
 }
 
-function seedWO(tenantId: string, opts: { bomId?: string | null } = {}) {
+function seedWO(tenantId: string, opts: { bomId?: string | null; status?: string; quantity?: number; completedQty?: number } = {}) {
   const id = generateId()
   db.prepare(`
-    INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status)
-    VALUES (?, ?, ?, ?, 'สินค้าทดสอบ', 10, 'PLANNED')
-  `).run(id, tenantId, 'WO-TEST-' + id.slice(0, 8), opts.bomId || null)
+    INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, completed_qty)
+    VALUES (?, ?, ?, ?, 'สินค้าทดสอบ', ?, ?, ?)
+  `).run(id, tenantId, 'WO-TEST-' + id.slice(0, 8), opts.bomId || null, opts.quantity ?? 10, opts.status || 'PLANNED', opts.completedQty ?? 0)
   return id
 }
 
@@ -129,5 +129,48 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
       "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'IN' AND notes = 'Finished goods from production'"
     ).get(user.tenantId, finishedId) as any
     expect(inMovements.c).toBe(1)
+  })
+
+  it('GET /stats นับสถานะใบสั่งผลิตครบทุกตัว (DRAFT, PLANNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED)', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    seedWO(user.tenantId, { status: 'DRAFT' })
+    seedWO(user.tenantId, { status: 'PLANNED' })
+    seedWO(user.tenantId, { status: 'IN_PROGRESS' })
+    seedWO(user.tenantId, { status: 'ON_HOLD' })
+    seedWO(user.tenantId, { status: 'COMPLETED', quantity: 15, completedQty: 15 })
+    seedWO(user.tenantId, { status: 'CANCELLED' })
+
+    const res = await request(app).get('/api/work-orders/stats')
+      .set('Authorization', `Bearer ${user.token}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.totalOrders).toBe(6)
+    expect(res.body.data.draft).toBe(1)
+    expect(res.body.data.planned).toBe(1)
+    expect(res.body.data.inProgress).toBe(1)
+    expect(res.body.data.onHold).toBe(1)
+    expect(res.body.data.completed).toBe(1)
+    expect(res.body.data.cancelled).toBe(1)
+    expect(res.body.data.totalProduced).toBe(15)
+  })
+
+  it('MASTER role สามารถเข้าถึงและดูงานของ tenant อื่นได้ (Cross-tenant access)', async () => {
+    const master = createTestUser({ role: 'MASTER' })
+    const otherTenantId = generateId()
+    const otherWoId = seedWO(otherTenantId, { status: 'PLANNED' })
+
+    // MASTER สามารถดูสถิติของ otherTenant ได้ผ่าน ?tenantId=...
+    const resStats = await request(app).get(`/api/work-orders/stats?tenantId=${otherTenantId}`)
+      .set('Authorization', `Bearer ${master.token}`)
+    expect(resStats.status).toBe(200)
+    expect(resStats.body.data.totalOrders).toBe(1)
+    expect(resStats.body.data.planned).toBe(1)
+
+    // MASTER สามารถดูใบสั่งผลิตของ otherTenant ได้ผ่าน GET /:id
+    const resGet = await request(app).get(`/api/work-orders/${otherWoId}`)
+      .set('Authorization', `Bearer ${master.token}`)
+    expect(resGet.status).toBe(200)
+    expect(resGet.body.data.id).toBe(otherWoId)
   })
 })

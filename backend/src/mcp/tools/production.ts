@@ -3,12 +3,15 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
-import { roundQty } from '../../utils/qty'
+import { roundQty, isPositiveQty } from '../../utils/qty'
 import { formatDocumentNumber } from '../../utils/id'
-import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../../services/stockMovement.service'
+import {
+  restockCancelledWorkOrderMaterials, workOrderStatusError,
+  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion,
+} from '../../services/stockMovement.service'
 import { ok } from './shared'
 
-export function registerProductionTools(server: IMcpServer, tenantId: string, userId: string): void {
+export function registerProductionTools(server: IMcpServer, tenantId: string, userId: string, callerRole: string): void {
   // ── 8. create_work_order ────────────────────────────────────────────────────
   server.tool(
     'create_work_order',
@@ -19,7 +22,7 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
     {
       bom_id: z.string().optional().describe('ID ของ BOM (optional)'),
       product_name: z.string().describe('ชื่อสินค้าที่ต้องการผลิต'),
-      quantity: z.number().describe('จำนวนที่ต้องการผลิต'),
+      quantity: z.number().positive().describe('จำนวนที่ต้องการผลิต (ต้องมากกว่า 0)'),
       unit: z.string().optional().describe('หน่วยของ quantity (ถ้าไม่ระบุ ใช้หน่วยของสินค้าสำเร็จรูปจาก BOM)'),
       priority: z.enum(['URGENT', 'HIGH', 'NORMAL', 'LOW']).optional().describe('ความสำคัญ (default: NORMAL)'),
       due_date: z.string().optional().describe('กำหนดเสร็จ (ISO date)'),
@@ -27,6 +30,11 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
     },
     async (args) => {
       const { bom_id, product_name, quantity, unit, priority, due_date, notes } = args
+      // zod .positive() กัน schema ที่เข้าทาง MCP SDK จริงอยู่แล้ว เช็คซ้ำตรงนี้ไว้เผื่อ
+      // เรียกตรงจากที่อื่น (เช่นเทสต์) ที่ไม่ผ่านการ validate schema
+      if (!isPositiveQty(quantity)) {
+        return ok({ success: false, message: 'จำนวนที่ต้องการผลิตต้องเป็นตัวเลขมากกว่า 0' })
+      }
 
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
       const woNumber = formatDocumentNumber('WO', tenantId, 'WORK_ORDER', undefined, 5)
@@ -130,11 +138,22 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
       const seqError = workOrderStatusError(wo.status, status)
       if (seqError) return ok({ success: false, message: seqError })
 
+      // RBAC: เหมือน workOrder.routes.ts (REST) — CANCELLED คืนวัตถุดิบ / COMPLETED รับสินค้า
+      // สำเร็จรูป ทั้งคู่แก้สต็อกจริง เดิมทาง MCP ไม่เช็ค role เลย (ดู project_erp_rbac_cancel_gap)
+      if ((status === 'CANCELLED' || status === 'COMPLETED') && !WO_PRIVILEGED_ROLES.includes(callerRole)) {
+        return ok({ success: false, message: `ไม่มีสิทธิ์${status === 'CANCELLED' ? 'ยกเลิก' : 'ปิด'}ใบสั่งผลิต — ต้องเป็น ${WO_PRIVILEGED_ROLES.join('/')}` })
+      }
+
       const now = new Date().toISOString()
       const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(wo.id) as any[]
 
-      // When starting production - deduct materials from stock
-      if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
+      // When starting production - deduct materials from stock. woMaterialsIssued() คือ
+      // หลักฐานจริงจาก stock_movements — เดิมเช็คแค่ wo.status !== 'IN_PROGRESS' ซึ่งเป็นจริง
+      // ตอน resume จาก ON_HOLD ด้วย ทำให้เบิกวัตถุดิบซ้ำรอบที่สอง (เบิกแค่ตอนเริ่มครั้งแรกจาก PLANNED)
+      if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS' && woMaterialsIssued(tenantId, wo.wo_number)) {
+        db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(status, now, wo.id, tenantId)
+      } else if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
         // ทั้งก้อนต้อง atomic: เดิมถ้าวัตถุดิบตัวที่ 3 พัง ตัวที่ 1-2 ถูกตัดสต็อกไปแล้วและค้างอยู่
         const issueMaterials = db.transaction(() => {
         for (const m of materials) {
@@ -198,11 +217,23 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
         } catch (err: any) {
           return ok({ success: false, message: err?.message || 'เบิกวัตถุดิบไม่สำเร็จ' })
         }
-      } else if (status === 'COMPLETED') {
+      } else if (status === 'COMPLETED' && wo.status !== 'COMPLETED') {
+        // เดิมไม่เช็ค wo.status !== 'COMPLETED' เลย (ต่างจาก REST ที่แก้ไปแล้ว 2026-09-13) —
+        // ยิง COMPLETED ซ้ำ (seqError อนุญาต from===to) บวกสินค้าสำเร็จรูปเข้าสต็อกซ้ำทุกครั้ง
+        //
+        // QC gate + จำนวนที่ปิดงานจริง — ใช้ฟังก์ชันร่วมกับ workOrder.routes.ts (REST) เดิม MCP
+        // ไม่เช็ค QC gate เลยทั้งที่ REST บล็อกไว้ และปิดงานเต็ม wo.quantity เสมอไม่ว่า QC จะผ่าน
+        // เท่าไหร่ (เดิม completed_qty = quantity ตรงๆ ที่ SQL ด้านล่าง)
+        const qcResult = resolveWorkOrderCompletion(tenantId, wo.id, wo.quantity)
+        if (qcResult.error) {
+          return ok({ success: false, message: qcResult.error })
+        }
+        const finalCompletedQty = qcResult.completedQty
+
         // หาแปลงหน่วยผลผลิตให้เสร็จก่อนเขียน DB ใดๆ (ต่างจากเดิมที่ตั้ง status COMPLETED
         // ก่อนเสมอ) เพื่อไม่ให้ใบสั่งงานถูกปิดไปแล้วแต่สต็อกเข้าไม่ได้เพราะแปลงหน่วยไม่ได้
         let finishedStock: any = null
-        let addQty = Number(wo.quantity)
+        let addQty = Number(finalCompletedQty)
         let movementUnit: string | null = null
         let movementQuantity: number | null = null
 
@@ -230,8 +261,8 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
         }
 
         db.transaction(() => {
-          db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = quantity, updated_at = ? WHERE id = ? AND tenant_id = ?")
-            .run(status, now, now, wo.id, tenantId)
+          db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+            .run(status, now, finalCompletedQty, now, wo.id, tenantId)
 
           // Add finished product to stock
           if (finishedStock) {

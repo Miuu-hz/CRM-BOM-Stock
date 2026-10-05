@@ -459,3 +459,56 @@ export function restockCancelledWorkOrderMaterials(
   })
   restock()
 }
+
+/**
+ * ยกออกมาจาก workOrder.routes.ts + mcp/tools/production.ts 2026-10-05: ยกเลิก/ปิด WO
+ * (CANCELLED คืนวัตถุดิบ, COMPLETED รับสินค้าสำเร็จรูป) ไม่มี role check ที่ backend เลย
+ * ทั้งสองทาง — user ธรรมดายิง PUT/MCP ตรงได้ ใช้ role tier เดียวกับยกเลิก PO
+ * (purchaseOrder.routes.ts, แก้ 2026-08-12 ดู project_erp_rbac_cancel_gap) เพราะ WO เป็น
+ * เอกสารฝั่งสต็อก/การผลิตเหมือน PO ไม่ใช่ฝั่งขาย (Sales cancel แคบกว่า ไม่มี POWERUSER)
+ */
+export const WO_PRIVILEGED_ROLES = ['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER']
+
+/**
+ * หลักฐานว่า WO นี้เบิกวัตถุดิบไปแล้วหรือยัง (มี stock_movements type='OUT' อ้างอิง WO
+ * นี้) — ใช้แทนการเดาจาก wo.status เพื่อกันเบิกซ้ำตอน resume ON_HOLD -> IN_PROGRESS
+ * (เดิมเช็คแค่ wo.status !== 'IN_PROGRESS' ซึ่งเป็นจริงตอน ON_HOLD ด้วย ทำให้เบิกซ้ำ)
+ * เหมือน woMaterialsRestocked() ด้านบนที่กันคืนซ้ำด้วยหลักฐานใน stock_movements เช่นกัน
+ */
+export function woMaterialsIssued(tenantId: string, woNumber: string): boolean {
+  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
+    .get(tenantId, `WO: ${woNumber}`)
+}
+
+/**
+ * ตัดสินใจจำนวนที่ "ปิดงานสำเร็จ" ของ WO ตอน COMPLETED — ใช้ร่วม REST (workOrder.routes.ts)
+ * และ MCP (mcp/tools/production.ts) กันลอกตรรกะ QC gate ไปคนละชุด (เดิม MCP ไม่เช็ค QC
+ * gate เลย ปิดงานผ่านได้ทั้งที่ REST บล็อกไว้)
+ *
+ * คืน error ถ้า tenant เปิด qc_gate_enabled แล้วยังไม่มี qc_inspections ที่ PASS ของ WO นี้
+ * ไม่งั้นคืนจำนวนที่ควรรับเข้าสต็อก: ถ้ามีข้อมูล QC (SUM(passed_qty) > 0) ใช้ยอดที่ผ่าน QC
+ * จริง (ไม่ใช่ wo.completed_qty ที่ยังเป็น 0 ตอนนี้เพราะยังไม่ถูกเขียน — เดิมใช้ค่านี้ทำให้
+ * ปิดงานได้ 0 ชิ้นเงียบๆ ทุกครั้งที่มีข้อมูล QC) คร่อมไม่ให้เกิน requestedQty; ถ้าไม่มีข้อมูล
+ * QC เลยใช้ requestedQty เดิม (พฤติกรรมเดิมตอน QC gate ปิด/ไม่มีใครตรวจ QC)
+ */
+export function resolveWorkOrderCompletion(
+  tenantId: string,
+  woId: string,
+  requestedQty: number
+): { error: string | null; completedQty: number } {
+  const companySettings = db.prepare('SELECT qc_gate_enabled FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  const qcGateEnabled = Number(companySettings?.qc_gate_enabled) === 1
+  if (qcGateEnabled) {
+    const passCount = db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ? AND status = 'PASS'")
+      .get(tenantId, woId) as any
+    if (!passCount || passCount.c === 0) {
+      return { error: 'ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน', completedQty: 0 }
+    }
+  }
+
+  const qcSum = db.prepare('SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ?')
+    .get(tenantId, woId) as any
+  const hasQcData = Number(qcSum?.total) > 0
+  const completedQty = hasQcData ? Math.min(requestedQty, Number(qcSum.total)) : requestedQty
+  return { error: null, completedQty }
+}

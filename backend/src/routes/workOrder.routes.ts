@@ -5,8 +5,11 @@ import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
 import { lineBotService } from '../services/line-bot.service'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../services/unitConversion.service'
-import { roundQty } from '../utils/qty'
-import { restockCancelledWorkOrderMaterials, workOrderStatusError } from '../services/stockMovement.service'
+import { roundQty, isPositiveQty } from '../utils/qty'
+import {
+  restockCancelledWorkOrderMaterials, workOrderStatusError,
+  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion,
+} from '../services/stockMovement.service'
 import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 
 const router = Router()
@@ -25,17 +28,29 @@ function generateWONumber(tenantId: string) {
 // GET all work orders
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    const queryTenant = req.query.tenantId ? String(req.query.tenantId) : undefined
+    const tenantId = (isMaster && queryTenant && queryTenant !== 'all') ? queryTenant : req.user!.tenantId
+    const filterAll = isMaster && queryTenant === 'all'
 
-    const orders = db.prepare(`
-      SELECT wo.*,
-        (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
-      FROM work_orders wo
-      WHERE wo.tenant_id = ?
-      ORDER BY
-        CASE wo.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 WHEN 'LOW' THEN 4 END,
-        wo.created_at DESC
-    `).all(tenantId)
+    const orders = filterAll
+      ? db.prepare(`
+          SELECT wo.*,
+            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
+          FROM work_orders wo
+          ORDER BY
+            CASE wo.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 WHEN 'LOW' THEN 4 END,
+            wo.created_at DESC
+        `).all()
+      : db.prepare(`
+          SELECT wo.*,
+            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
+          FROM work_orders wo
+          WHERE wo.tenant_id = ?
+          ORDER BY
+            CASE wo.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 WHEN 'LOW' THEN 4 END,
+            wo.created_at DESC
+        `).all(tenantId)
 
     res.json({ success: true, data: orders })
   } catch (error) {
@@ -47,22 +62,52 @@ router.get('/', async (req: Request, res: Response) => {
 // GET work order stats
 router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    const queryTenant = req.query.tenantId ? String(req.query.tenantId) : undefined
+    const tenantId = (isMaster && queryTenant && queryTenant !== 'all') ? queryTenant : req.user!.tenantId
+    const filterAll = isMaster && queryTenant === 'all'
 
-    const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ?').get(tenantId) as any
-    const inProgress = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'IN_PROGRESS'").get(tenantId) as any
-    const planned = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'PLANNED'").get(tenantId) as any
-    const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE tenant_id = ? AND status = 'COMPLETED'").get(tenantId) as any
-    const completedQty = db.prepare("SELECT COALESCE(SUM(completed_qty), 0) as total FROM work_orders WHERE tenant_id = ? AND status = 'COMPLETED'").get(tenantId) as any
+    // ปรับคำสั่ง SQL ให้นับสถานะใบสั่งผลิตให้ครบทุกตัว (DRAFT, PLANNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED)
+    // เพื่อให้ totalOrders สอดคล้องกับสถานะจริง
+    const row = filterAll
+      ? db.prepare(`
+          SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN UPPER(status) = 'DRAFT' THEN 1 ELSE 0 END) as draft,
+            SUM(CASE WHEN UPPER(status) = 'PLANNED' THEN 1 ELSE 0 END) as planned,
+            SUM(CASE WHEN UPPER(status) = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN UPPER(status) = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold,
+            SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN UPPER(status) = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled,
+            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty ELSE 0 END), 0) as total_produced
+          FROM work_orders
+          WHERE UPPER(status) IN ('DRAFT', 'PLANNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED')
+        `).get() as any
+      : db.prepare(`
+          SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN UPPER(status) = 'DRAFT' THEN 1 ELSE 0 END) as draft,
+            SUM(CASE WHEN UPPER(status) = 'PLANNED' THEN 1 ELSE 0 END) as planned,
+            SUM(CASE WHEN UPPER(status) = 'IN_PROGRESS' THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN UPPER(status) = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold,
+            SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN UPPER(status) = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled,
+            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty ELSE 0 END), 0) as total_produced
+          FROM work_orders
+          WHERE tenant_id = ? AND UPPER(status) IN ('DRAFT', 'PLANNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED')
+        `).get(tenantId) as any
 
     res.json({
       success: true,
       data: {
-        totalOrders: total.count,
-        inProgress: inProgress.count,
-        planned: planned.count,
-        completed: completed.count,
-        totalProduced: completedQty.total,
+        totalOrders: row?.total || 0,
+        draft: row?.draft || 0,
+        planned: row?.planned || 0,
+        inProgress: row?.in_progress || 0,
+        onHold: row?.on_hold || 0,
+        completed: row?.completed || 0,
+        cancelled: row?.cancelled || 0,
+        totalProduced: row?.total_produced || 0,
       },
     })
   } catch (error) {
@@ -74,15 +119,20 @@ router.get('/stats', async (req: Request, res: Response) => {
 // GET single work order with materials
 router.get('/:id', async (req: Request, res: Response) => {
   try {
+    const isMaster = req.user?.role === 'MASTER'
     const tenantId = req.user!.tenantId
 
-    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const wo = (isMaster
+      ? db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+      : db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
+
     if (!wo) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
     }
 
+    const effectiveTenantId = wo.tenant_id
     const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id)
-    const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC').all(req.params.id, tenantId)
+    const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC').all(req.params.id, effectiveTenantId)
 
     res.json({ success: true, data: { ...wo, materials, inspections } })
   } catch (error) {
@@ -94,8 +144,15 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST create work order
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    const tenantId = (isMaster && (req.body.tenantId || req.query.tenantId))
+      ? String(req.body.tenantId || req.query.tenantId)
+      : req.user!.tenantId
+
     const { bomId, productName, quantity, priority, dueDate, assignedTo, notes, materials, unit } = req.body
+    if (!isPositiveQty(quantity)) {
+      return res.status(400).json({ success: false, message: 'จำนวนที่ต้องการผลิตต้องเป็นตัวเลขมากกว่า 0' })
+    }
     try {
       for (const m of materials || []) m.materialId = resolveStockItemId(tenantId, m.materialId, m.materialName)
     } catch (e) {
@@ -166,29 +223,56 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT update work order status (with stock deduction)
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    let tenantId = req.user!.tenantId
     const { status } = req.body
     const validStatuses = ['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD']
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
-    const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const wo = (isMaster
+      ? db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id)
+      : db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
+
+    if (!wo) {
+      return res.status(404).json({ success: false, message: 'Work order not found' })
+    }
+
+    if (isMaster && wo.tenant_id) {
+      tenantId = wo.tenant_id
+    }
+
     // ตรวจลำดับสถานะด้วยลิสต์เดียวกับฝั่ง MCP — เดิม REST ยิงข้ามขั้นได้ (DRAFT -> COMPLETED
     // = ได้สินค้าสำเร็จรูปเข้าสต็อกโดยไม่เคยเบิกวัตถุดิบ)
     if (wo) {
       const seqError = workOrderStatusError(wo.status, status)
       if (seqError) return res.status(400).json({ success: false, message: seqError })
     }
-    if (!wo) {
-      return res.status(404).json({ success: false, message: 'Work order not found' })
+
+    // RBAC: CANCELLED คืนวัตถุดิบเข้าสต็อก / COMPLETED รับสินค้าสำเร็จรูปเข้าสต็อก — ทั้งคู่
+    // แก้ไขสต็อกจริง (MASTER bypasses always 100%)
+    if ((status === 'CANCELLED' || status === 'COMPLETED') && !isMaster && !WO_PRIVILEGED_ROLES.includes(req.user!.role)) {
+      return res.status(403).json({ success: false, message: `ไม่มีสิทธิ์${status === 'CANCELLED' ? 'ยกเลิก' : 'ปิด'}ใบสั่งผลิต — ต้องเป็น ${WO_PRIVILEGED_ROLES.join('/')}` })
     }
 
+    // ponytail: ความปลอดภัยจากยิงซ้ำ (double-click / double-request) ของทั้ง endpoint นี้
+    // พึ่ง better-sqlite3 แบบ synchronous ในโปรเซสเดียว (ไม่มี await ก่อน db.prepare/transaction
+    // ไหนเลยในแฮนด์เลอร์นี้ + pm2 รันโหมด fork ไม่ cluster) ทำให้สอง request เรียงคิวกันเดี่ยวๆ
+    // ไม่สลับกันกลางทาง — ถ้าเปลี่ยนไปเป็น cluster mode หรือ async driver (เช่น better-sqlite3
+    // เวอร์ชัน async หรือ Postgres) ต้องเพิ่ม `AND status = ?` (สถานะเดิมที่อ่านมา) เข้าไปใน
+    // UPDATE work_orders ทุกจุดด้านล่าง เพื่อให้ race แพ้แล้ว rowCount=0 แทนที่จะเขียนทับกัน
     const now = new Date().toISOString()
     const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id) as any[]
 
-    // When starting production (IN_PROGRESS) - deduct materials from stock
-    if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
+    // When starting production (IN_PROGRESS) - deduct materials from stock.
+    // woMaterialsIssued() คือหลักฐานจริงจาก stock_movements (ไม่ใช่เดาจาก wo.status) — เดิมเช็ค
+    // แค่ wo.status !== 'IN_PROGRESS' ซึ่งเป็นจริงตอน resume จาก ON_HOLD ด้วย ทำให้เบิกวัตถุดิบซ้ำ
+    // รอบที่สอง (ON_HOLD -> IN_PROGRESS ต้องไม่เบิกซ้ำ เบิกแค่ตอนเริ่มครั้งแรกจาก PLANNED)
+    if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS' && woMaterialsIssued(tenantId, wo.wo_number)) {
+      db.prepare("UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+        .run(status, now, req.params.id, tenantId)
+    } else if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
       // When enabled, issuing materials is allowed to push stock negative
       // instead of throwing "Insufficient stock" and blocking the status change.
       const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
@@ -261,22 +345,14 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       // เดิมเช็คแค่ status === 'COMPLETED' — ยิง PUT status=COMPLETED ซ้ำ (สถานะเดิมอยู่แล้ว)
       // ก็ไหลเข้ามาบวกสินค้าสำเร็จรูปเข้าสต็อกซ้ำทุกครั้ง เพิ่มเงื่อนไข wo.status !== 'COMPLETED'
       // ให้เหมือนแพทเทิร์นที่ใช้กับ IN_PROGRESS ด้านบน (idempotent ตาม status เดิม)
-      // QC gate: ถ้า tenant เปิดใช้งาน qc_gate_enabled ต้องมี qc_inspections ของ WO นี้อย่างน้อย 1 รายการ status = 'PASS'
-      const companySettings = db.prepare('SELECT qc_gate_enabled FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
-      const qcGateEnabled = Number(companySettings?.qc_gate_enabled) === 1
-      if (qcGateEnabled) {
-        const passCount = db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ? AND status = 'PASS'")
-          .get(tenantId, req.params.id) as any
-        if (!passCount || passCount.c === 0) {
-          return res.status(400).json({ success: false, message: 'ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน' })
-        }
+      // QC gate + จำนวนที่ปิดงานจริง — ยกเป็นฟังก์ชันร่วมกับ mcp/tools/production.ts
+      // (เดิม MCP ไม่เช็ค QC gate เลย และ REST เองก็คำนวณ qcSum มาแล้วทิ้ง ใช้ wo.completed_qty
+      // ซึ่งยังเป็น 0 ตอนนี้แทน ทำให้ปิดงานได้ 0 ชิ้นเงียบๆ ทุกครั้งที่มีข้อมูล QC)
+      const qcResult = resolveWorkOrderCompletion(tenantId, req.params.id, wo.quantity)
+      if (qcResult.error) {
+        return res.status(400).json({ success: false, message: qcResult.error })
       }
-
-      // ถ้ามีข้อมูล QC (passed_qty รวม > 0) ใช้จำนวนที่สะสมจาก QC แทนการปิดยอดเต็มจำนวนแบบเดิม
-      const qcSum = db.prepare("SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ?")
-        .get(tenantId, req.params.id) as any
-      const hasQcData = Number(qcSum?.total) > 0
-      const finalCompletedQty = hasQcData ? Math.min(wo.quantity, wo.completed_qty || 0) : wo.quantity
+      const finalCompletedQty = qcResult.completedQty
 
       const completeTransaction = db.transaction(() => {
         db.prepare("UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -365,14 +441,21 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 // PUT update work order
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    let tenantId = req.user!.tenantId
     const { productName, quantity, priority, dueDate, assignedTo, notes, unit } = req.body
     const now = new Date().toISOString()
 
     // Check if work order exists and belongs to tenant
-    const existing = db.prepare('SELECT id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = (isMaster
+      ? db.prepare('SELECT id, tenant_id FROM work_orders WHERE id = ?').get(req.params.id)
+      : db.prepare('SELECT id, tenant_id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
+
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
+    }
+    if (isMaster && existing.tenant_id) {
+      tenantId = existing.tenant_id
     }
 
     // หน่วยของ WO เดิมรับเฉพาะตอนสร้าง กรอกผิดแล้วแก้ไม่ได้เลย ต้องลบทิ้งสร้างใหม่
@@ -398,14 +481,21 @@ router.put('/:id', async (req: Request, res: Response) => {
 // DELETE work order (only DRAFT)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const isMaster = req.user?.role === 'MASTER'
+    let tenantId = req.user!.tenantId
 
-    const wo = db.prepare('SELECT status FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    const wo = (isMaster
+      ? db.prepare('SELECT status, tenant_id FROM work_orders WHERE id = ?').get(req.params.id)
+      : db.prepare('SELECT status, tenant_id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
+
     if (!wo) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
     }
     if (wo.status !== 'DRAFT') {
       return res.status(400).json({ success: false, message: 'Can only delete draft work orders' })
+    }
+    if (isMaster && wo.tenant_id) {
+      tenantId = wo.tenant_id
     }
 
     db.prepare('DELETE FROM work_order_materials WHERE work_order_id = ?').run(req.params.id)

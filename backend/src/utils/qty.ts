@@ -57,3 +57,13 @@ export function isWholeQty(n: number): boolean {
   const v = Number(n)
   return Number.isFinite(v) && Math.abs(v - Math.round(v)) <= EPS
 }
+
+/**
+ * True when `n` is a finite number > 0 — the one check every "quantity to
+ * create/produce" field needs at the API boundary (create WO, REST + MCP).
+ * NaN, Infinity, 0, negative, and non-numeric strings all fail this.
+ */
+export function isPositiveQty(n: unknown): boolean {
+  const v = Number(n)
+  return Number.isFinite(v) && v > 0
+}

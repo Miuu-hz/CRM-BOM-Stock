@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
+import toast from 'react-hot-toast'
 import {
   AlertTriangle,
   ArrowRight,
@@ -385,7 +386,10 @@ function CreateWOModal({ open, onClose, onSave }: {
       const items: any[] = res.data?.data || []
       const map: Record<string, { qty: number; unit: string }> = {}
       for (const item of items) {
-        const mid = item.material_id || item.materialId
+        // /stock คืน stock_items.* ตรงๆ (si.*) — primary key คือ id เสมอ ไม่มีคอลัมน์
+        // material_id/materialId เลย ของเดิมหา mid ไม่เจอตลอด stockMap จึงว่างเปล่าเสมอ
+        // (เลขสต็อก + ปุ่ม Auto-PR ไม่ทำงาน)
+        const mid = item.id
         if (mid && ids.includes(mid)) {
           map[mid] = { qty: Number(item.quantity ?? item.qty ?? 0), unit: item.unit || 'pcs' }
         }
@@ -1368,16 +1372,24 @@ function IssueMaterialsModal({ contract, onClose, onSaved }: {
   const addRow = () => setRows(prev => [...prev, { stock_item_id: '', quantity: 0 }])
   const removeRow = (i: number) => setRows(prev => prev.filter((_, idx) => idx !== i))
 
+  // ของเกินสต็อกที่มีจริง — ใช้ทั้งโชว์คำเตือน (เดิม sr-only มองไม่เห็น) และบล็อกปุ่มส่ง
+  // (เดิมไม่บล็อก กดส่งทะลุ insufficient stock ได้เงียบๆ)
+  const isRowShort = (row: { stock_item_id: string; quantity: number }) => {
+    const selected = stockItems.find(s => s.id === row.stock_item_id)
+    return !!selected && row.quantity > selected.quantity
+  }
+  const hasShortRow = rows.some(isRowShort)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const items = rows.filter(r => r.stock_item_id && r.quantity > 0)
-    if (items.length === 0) return
+    if (items.length === 0 || hasShortRow) return
     setSaving(true)
     try {
       await subcontractService.issueMaterials(contract.id, { items })
       onSaved(); onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || t('workOrders.subcontract.issueFailed'))
+      toast.error(err.response?.data?.message || t('workOrders.subcontract.issueFailed'))
     } finally { setSaving(false) }
   }
 
@@ -1397,23 +1409,29 @@ function IssueMaterialsModal({ contract, onClose, onSaved }: {
               <div className="space-y-2">
                 {rows.map((row, i) => {
                   const selected = stockItems.find(s => s.id === row.stock_item_id)
+                  const short = isRowShort(row)
                   return (
-                    <div key={i} className="flex gap-2 items-start">
-                      <select value={row.stock_item_id} onChange={(e) => updateRow(i, { stock_item_id: e.target.value })}
-                        className="phopy-input flex-1 text-sm">
-                        <option value="">{t('workOrders.subcontract.selectItem')}</option>
-                        {stockItems.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.quantity} {unitLabel(s.unit)})</option>
-                        ))}
-                      </select>
-                      <input type="number" min="0" step="0.01" value={row.quantity || ''}
-                        onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
-                        placeholder={t('workOrders.subcontract.quantity')}
-                        className="phopy-input w-28 text-sm" />
-                      <button type="button" onClick={() => removeRow(i)} disabled={rows.length <= 1}
-                        className="p-2 text-danger disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
-                      {selected && row.quantity > selected.quantity && (
-                        <span className="sr-only">{t('workOrders.subcontract.insufficientStock')}</span>
+                    <div key={i} className="space-y-1">
+                      <div className="flex gap-2 items-start">
+                        <select value={row.stock_item_id} onChange={(e) => updateRow(i, { stock_item_id: e.target.value })}
+                          className="phopy-input flex-1 text-sm">
+                          <option value="">{t('workOrders.subcontract.selectItem')}</option>
+                          {stockItems.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name} ({s.quantity} {unitLabel(s.unit)})</option>
+                          ))}
+                        </select>
+                        <input type="number" min="0" step="0.01" value={row.quantity || ''}
+                          onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
+                          placeholder={t('workOrders.subcontract.quantity')}
+                          className="phopy-input w-28 text-sm" />
+                        <button type="button" onClick={() => removeRow(i)} disabled={rows.length <= 1}
+                          className="p-2 text-danger disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                      {short && (
+                        <div className="flex items-center gap-1.5 text-xs text-danger bg-[var(--danger-soft)] border border-danger/20 rounded-lg px-3 py-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          {t('workOrders.subcontract.insufficientStock')} ({selected?.quantity} {unitLabel(selected?.unit)})
+                        </div>
                       )}
                     </div>
                   )
@@ -1425,7 +1443,7 @@ function IssueMaterialsModal({ contract, onClose, onSaved }: {
                 <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
                   {t('common.cancel')}
                 </button>
-                <button type="submit" disabled={saving} className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                <button type="submit" disabled={saving || hasShortRow} className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
                   {t('common.save')}
                 </button>
