@@ -3,6 +3,7 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 import { getOrCreateAccount } from './accounting.service'
 import { resolveBankAccountGL, ACC, ACC_META } from '../config/accountCodes'
 import { convertQuantityBidirectional, normalizeUnit } from './unitConversion.service'
+import { isServiceItem } from './stockItem.service'
 import type { POSBill, POSPayment } from '../types'
 
 const now = () => new Date().toISOString()
@@ -13,6 +14,12 @@ interface POSBillItem {
   product_name: string
   quantity: number
   bom_id?: string | null
+  product_id?: string | null
+  menu_sale_unit?: string | null
+  product_base_unit?: string | null
+  product_stock_unit?: string | null
+  product_unit_cost?: number | null
+  product_category?: string | null
 }
 
 interface BomCostItem {
@@ -92,15 +99,25 @@ class POSAccountingService {
     items: CogsItem[]
   }> {
     // Get bill items with their BOM info
+    // เพิ่ม pmc.product_id/sale_unit + si.base_unit/unit/unit_cost/category ของสินค้าเมนูเอง
+    // ไว้ใช้ตอนเมนูไม่มีทั้ง bom_id และ pos_menu_ingredients (ดูสาขาที่ 3 ด้านล่าง — มิเรอร์
+    // pos-stock.service.ts ที่ตัดสต็อกตรงจาก product_id ของเมนูตรงๆ ในเคสนี้)
     const itemsStmt = db.prepare(`
       SELECT
         bi.id as bill_item_id,
         bi.pos_menu_id,
         bi.product_name,
         bi.quantity,
-        pmc.bom_id
+        pmc.bom_id,
+        pmc.product_id,
+        pmc.sale_unit as menu_sale_unit,
+        si.base_unit as product_base_unit,
+        si.unit as product_stock_unit,
+        si.unit_cost as product_unit_cost,
+        si.category as product_category
       FROM pos_bill_items bi
       JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+      LEFT JOIN stock_items si ON pmc.product_id = si.id AND pmc.tenant_id = si.tenant_id
       WHERE bi.bill_id = ? AND bi.tenant_id = ?
     `)
     const items = itemsStmt.all(billId, tenantId) as POSBillItem[]
@@ -154,16 +171,36 @@ class POSAccountingService {
         `)
         const ingredients = ingStmt.all(item.pos_menu_id, tenantId) as PosMenuIngredient[]
 
-        for (const ing of ingredients) {
-          const qty = this.toBaseQty(
-            ing.quantity_used,
-            ing.unit_id,
-            ing.stock_base_unit || ing.stock_unit,
+        if (ingredients.length > 0) {
+          for (const ing of ingredients) {
+            const qty = this.toBaseQty(
+              ing.quantity_used,
+              ing.unit_id,
+              ing.stock_base_unit || ing.stock_unit,
+              tenantId,
+              ing.stock_item_id,
+              `bill ${billId} menu ${item.pos_menu_id} stock item ${ing.stock_item_id}`
+            )
+            itemCost += (qty * ing.unit_cost)
+          }
+        } else if (item.product_id && !isServiceItem({ category: item.product_category })) {
+          // เมนูไม่มีสูตรเลย (ไม่มี bom_id และไม่มีแถว pos_menu_ingredients) — ตัดต้นทุนตรง
+          // จากสินค้าของเมนูเอง (product_id) มิเรอร์ pos-stock.service.ts ที่ตัดสต็อกทางนี้
+          // เหมือนกัน (เมนูไม่มีสูตร → ตัดสต็อกตรงจาก product เอง, ~L254-261): 1 หน่วยขาย
+          // (sale_unit ถ้าตั้งไว้ ไม่งั้น base_unit) ต่อ 1 หน่วยเมนู แปลงเป็น base_unit แล้ว
+          // ค่อยคูณ unit_cost (unit_cost เก็บเป็น "ต่อ 1 หน่วยฐาน" เสมอ)
+          // ponytail: ข้ามรายการหมวด SERVICE (ค่าบริการ/ค่าขนส่งที่ขายเป็นเมนูได้แต่ไม่มี
+          // ต้นทุนสต็อกจริง) ตาม isServiceItem() เดียวกับจุดอื่นที่ตัด/คืนสต็อก
+          const stockBaseUnit = item.product_base_unit || item.product_stock_unit
+          const qtyPerUnit = this.toBaseQty(
+            1,
+            item.menu_sale_unit || stockBaseUnit,
+            stockBaseUnit,
             tenantId,
-            ing.stock_item_id,
-            `bill ${billId} menu ${item.pos_menu_id} stock item ${ing.stock_item_id}`
+            item.product_id,
+            `bill ${billId} menu ${item.pos_menu_id} product ${item.product_id} (no recipe)`
           )
-          itemCost += (qty * ing.unit_cost)
+          itemCost += qtyPerUnit * (item.product_unit_cost || 0)
         }
       }
 

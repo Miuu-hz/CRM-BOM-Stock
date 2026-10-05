@@ -2,6 +2,7 @@ import { Router } from 'express'
 import db from '../db/sqlite'
 import { authenticate } from '../middleware/auth.middleware'
 import { convertQuantityBidirectional } from '../services/unitConversion.service'
+import { isSellableItem } from '../services/stockItem.service'
 
 const router = Router()
 
@@ -254,12 +255,27 @@ router.post('/menu-configs', (req, res) => {
     } = req.body
     
     if (!product_id || !pos_price) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Product ID and POS price are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Product ID and POS price are required'
       })
     }
-    
+
+    // สินค้าหมวดวัตถุดิบ (raw) ขายเป็นเมนู POS ไม่ได้ — เช็คก่อนสร้างเมนู ไม่ใช่ปล่อยให้
+    // ไปพังตอนตัดสต็อก/คิดต้นทุนทีหลัง (isSellableItem: FINISHED/WIP/SERVICE เท่านั้น)
+    const product = db.prepare('SELECT id, name, category FROM stock_items WHERE id = ? AND tenant_id = ?')
+      .get(product_id, tenantId) as { id: string; name: string; category: string | null } | undefined
+    if (!product) {
+      return res.status(400).json({ success: false, message: 'ไม่พบสินค้านี้ในระบบ' })
+    }
+    if (!isSellableItem(product)) {
+      return res.status(400).json({
+        success: false,
+        code: 'ITEM_NOT_SELLABLE',
+        message: `"${product.name}" อยู่ในหมวด "${product.category || '-'}" ขายเป็นเมนู POS ไม่ได้ (ขายได้เฉพาะสินค้าสำเร็จรูป/กึ่งสำเร็จรูป/บริการเท่านั้น)`
+      })
+    }
+
     // Check if product already exists in POS
     const checkStmt = db.prepare(`
       SELECT id FROM pos_menu_configs 
@@ -385,87 +401,6 @@ router.delete('/menu-configs/:id', (req, res) => {
   } catch (error) {
     console.error('Error deleting POS menu config:', error)
     res.status(500).json({ success: false, message: 'Failed to delete menu config' })
-  }
-})
-
-// ==================== POS MENU INGREDIENTS ====================
-
-// Add ingredient to menu
-router.post('/menu-configs/:id/ingredients', (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { id } = req.params
-    const { stock_item_id, quantity_used, unit_id, is_optional } = req.body
-    
-    if (!stock_item_id || !quantity_used) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Stock item ID and quantity are required' 
-      })
-    }
-    
-    const ingId = generateId()
-    const stmt = db.prepare(`
-      INSERT INTO pos_menu_ingredients 
-      (id, tenant_id, pos_menu_id, stock_item_id, quantity_used, unit_id, is_optional)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-    
-    stmt.run(
-      ingId, tenantId, id, stock_item_id, quantity_used, 
-      unit_id || null, is_optional ? 1 : 0
-    )
-    
-    res.json({ 
-      success: true, 
-      message: 'Ingredient added successfully',
-      data: { id: ingId }
-    })
-  } catch (error) {
-    console.error('Error adding ingredient:', error)
-    res.status(500).json({ success: false, message: 'Failed to add ingredient' })
-  }
-})
-
-// Update ingredient
-router.put('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { ingId } = req.params
-    const { quantity_used, unit_id, is_optional } = req.body
-    
-    const stmt = db.prepare(`
-      UPDATE pos_menu_ingredients 
-      SET quantity_used = ?, unit_id = ?, is_optional = ?
-      WHERE id = ? AND tenant_id = ?
-    `)
-    
-    stmt.run(quantity_used, unit_id || null, is_optional ? 1 : 0, ingId, tenantId)
-    
-    res.json({ success: true, message: 'Ingredient updated successfully' })
-  } catch (error) {
-    console.error('Error updating ingredient:', error)
-    res.status(500).json({ success: false, message: 'Failed to update ingredient' })
-  }
-})
-
-// Delete ingredient
-router.delete('/menu-configs/:menuId/ingredients/:ingId', (req, res) => {
-  try {
-    const tenantId = (req as any).user!.tenantId
-    const { ingId } = req.params
-    
-    const stmt = db.prepare(`
-      DELETE FROM pos_menu_ingredients 
-      WHERE id = ? AND tenant_id = ?
-    `)
-    
-    stmt.run(ingId, tenantId)
-    
-    res.json({ success: true, message: 'Ingredient removed successfully' })
-  } catch (error) {
-    console.error('Error removing ingredient:', error)
-    res.status(500).json({ success: false, message: 'Failed to remove ingredient' })
   }
 })
 

@@ -15,7 +15,7 @@ import { formatDocumentNumber } from '../utils/id'
 import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
-import { aliasConflictMessage, dropAlias } from '../services/stockItem.service'
+import { aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES } from '../services/stockItem.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -191,7 +191,15 @@ router.get('/adjustments', async (req: Request, res: Response) => {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    
+
+    // sellable=1 (Sales/POS menu product picker) → only items a sale/menu may point at
+    // (FINISHED/WIP/SERVICE, isSellableItem's own rule — SELLABLE_CATEGORIES is the one
+    // place that rule lives). No param = old behaviour, unchanged for Stock/Purchase pages.
+    const sellableOnly = req.query.sellable === '1'
+    const sellableFilter = sellableOnly
+      ? `AND UPPER(TRIM(si.category)) IN (${SELLABLE_CATEGORIES.map(() => '?').join(',')})`
+      : ''
+
     const stockItems = db.prepare(`
       -- ตัด product_name/product_code ทิ้ง 2026-09-15: si.product_id ว่างทั้ง 1,541 แถว
       -- คอลัมน์จึงเป็น null เสมอ และไม่มีหน้าไหนอ่าน (Stock.tsx ใช้ si.name / si.sku)
@@ -202,8 +210,9 @@ router.get('/', async (req: Request, res: Response) => {
       -- วัตถุดิบกับสินค้าในคลังเป็นแถวเดียวกันแล้ว ชื่อ/รหัส/ต้นทุนอ่านจาก si ได้ตรง ๆ
       LEFT JOIN material_categories mc ON si.category_id = mc.id
       WHERE si.tenant_id = ?
+      ${sellableFilter}
       ORDER BY si.updated_at DESC
-    `).all(tenantId) as any[]
+    `).all(...(sellableOnly ? [tenantId, ...SELLABLE_CATEGORIES] : [tenantId])) as any[]
 
     for (const item of stockItems) {
       item.movements = db.prepare(`

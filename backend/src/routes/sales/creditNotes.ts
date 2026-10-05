@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { ACC, ACC_META } from '../../config/accountCodes'
 import { getOrCreateAccount } from './shared'
+import { postJournal } from '../../services/accounting.service'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
 import { calcVat } from '../../utils/vat'
@@ -94,6 +95,11 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
     const already = db.prepare('SELECT 1 FROM stock_movements WHERE tenant_id = ? AND reference = ? LIMIT 1').get(tenantId, reference)
     if (already) return // already restored once — never double count on re-issue/retry
 
+    // Valued at the cost the goods were ISSUED at (sales_order_items.issued_unit_cost,
+    // frozen at the moment shared.ts's deductStockForSO cut the stock) — not at
+    // stock_items.unit_cost today, which may have moved since the original sale.
+    let totalReturnCost = 0
+
     // Wrapped in a transaction, same as shared.ts's restoreStockForSO — all lines of this
     // credit note restore atomically or not at all (a mid-loop unit-conversion throw must
     // not leave some stock rows already bumped while others aren't).
@@ -120,9 +126,11 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
         if (!stockItem) continue
 
         let cnUnit = ''
+        let issuedUnitCost = 0
         if (invItem?.sales_order_item_id) {
-          const soItem = db.prepare('SELECT unit FROM sales_order_items WHERE id = ?').get(invItem.sales_order_item_id) as any
+          const soItem = db.prepare('SELECT unit, issued_unit_cost FROM sales_order_items WHERE id = ?').get(invItem.sales_order_item_id) as any
           cnUnit = soItem?.unit || ''
+          issuedUnitCost = Number(soItem?.issued_unit_cost || 0)
         }
         // stock_items.quantity is stored in base_unit, not the legacy `unit` column —
         // fall back to `unit` only when base_unit is empty (old rows), same as
@@ -151,9 +159,33 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
           INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
           VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, ?)
         `).run(generateId(), tenantId, stockItem.id, gained, reference, movementNotes, now, userId)
+
+        // ไม่มี issued_unit_cost (เอกสารเก่า/ไม่ได้ผูก SO) = ไม่รู้ต้นทุนจริง ข้ามไป
+        // แทนการเดา — ไม่งั้นได้ตัวเลขที่ผู้ตรวจสอบย้อนกลับไปเอกสารต้นทางไม่ได้
+        totalReturnCost += gained * issuedUnitCost
       }
     })
     restore()
+
+    // รับคืนสินค้าเข้าสต็อก → กลับรายการต้นทุนขายด้วย Dr สต็อก / Cr ต้นทุนขาย เดียวกับที่
+    // deductStockForSO ลงไว้ตอนขาย (shared.ts, ACC.COGS_PRODUCT / ACC.INVENTORY) มูลค่าตาม
+    // ต้นทุน ณ ตอนขายจริง (issued_unit_cost) ไม่ใช่ unit_cost ปัจจุบันของสต็อก
+    if (totalReturnCost > 0.005) {
+      postJournal({
+        tenantId,
+        date: now.substring(0, 10),
+        referenceType: 'CREDIT_NOTE_COGS',
+        referenceId: cn.id,
+        description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`,
+        lines: [
+          { code: ACC.INVENTORY, description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`, debit: totalReturnCost },
+          { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - CN ${cn.cn_number}`, credit: totalReturnCost },
+        ],
+        createdBy: userId,
+        businessUnit: 'WHOLESALE',
+        sourceNumber: cn.cn_number,
+      })
+    }
   } catch (err) {
     console.error('⚠️ restoreCreditNoteStock error:', err)
     // Non-fatal — don't block the status update if stock restore fails
