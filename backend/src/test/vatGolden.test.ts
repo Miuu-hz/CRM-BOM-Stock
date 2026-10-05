@@ -25,7 +25,8 @@ describe.skipIf(!existsSync(DEV_DB) || !existsSync(FIXTURE))('ยอดของ
   for (const table of Object.keys(golden)) {
     it(`${table} — ${rows(table).length} ใบ`, () => {
       const live = db.prepare(
-        `SELECT id, subtotal, tax_rate, tax_amount, total_amount FROM ${table}`
+        // บิล POS ที่ยังเปิดอยู่ (OPEN) เพิ่มรายการได้ตามปกติ — ล็อกเฉพาะบิลที่ปิดแล้ว
+        `SELECT id, subtotal, tax_rate, tax_amount, total_amount, ${table === 'pos_running_bills' ? 'status' : 'NULL AS status'} FROM ${table}`
       ).all() as any[]
       const byId = new Map(live.map(r => [r.id, r]))
 
@@ -33,6 +34,7 @@ describe.skipIf(!existsSync(DEV_DB) || !existsSync(FIXTURE))('ยอดของ
       for (const g of rows(table)) {
         const cur = byId.get(g.id)
         if (!cur) { changed.push(`${g.doc_number}: หายไปจากฐานข้อมูล`); continue }
+        if (cur.status === 'OPEN') continue
         for (const f of ['subtotal', 'tax_rate', 'tax_amount', 'total_amount'] as const) {
           if (Math.abs((cur[f] ?? 0) - (g[f] ?? 0)) > 0.005) {
             changed.push(`${g.doc_number}.${f}: ${g[f]} → ${cur[f]}`)
