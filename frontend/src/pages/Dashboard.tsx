@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
@@ -38,23 +38,41 @@ interface Pipeline {
   monthly: { month: string; ordered: number; invoiced: number }[]
 }
 interface TopCustomer { id: string; name: string; revenue: number; invoice_count: number }
-interface LowStock { id: string; name: string; quantity: number; min_stock: number; unit: string }
+interface LowStock { id: string; name: string; quantity: number; available?: number; min_stock: number; minStock?: number; unit: string }
 
 // ---- Helpers ----
-const fmt = (n: number) =>
-  n >= 1_000_000 ? `฿${(n / 1_000_000).toFixed(2)}M`
-  : n >= 1_000 ? `฿${(n / 1_000).toFixed(1)}K`
-  : `฿${n.toLocaleString()}`
+const fmt = (n: number | null | undefined) => {
+  if (n === null || n === undefined || isNaN(n)) return '฿0'
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `${sign}฿${(abs / 1_000_000).toFixed(2)}M`
+  if (abs >= 1_000) return `${sign}฿${(abs / 1_000).toFixed(1)}K`
+  return `${sign}฿${abs.toLocaleString()}`
+}
 
-const fmtShort = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
-  : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K`
-  : n.toLocaleString()
+const fmtShort = (n: number | null | undefined) => {
+  if (n === null || n === undefined || isNaN(n)) return '0'
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(0)}K`
+  return `${sign}${abs.toLocaleString()}`
+}
 
 const daysLeft = (dateStr: string) => {
   if (!dateStr) return null
-  const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000)
-  return diff
+  const parts = dateStr.slice(0, 10).split('-').map(Number)
+  let targetTime: number
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    targetTime = new Date(parts[0], parts[1] - 1, parts[2]).getTime()
+  } else {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    targetTime = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  }
+  const now = new Date()
+  const todayTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return Math.round((targetTime - todayTime) / 86_400_000)
 }
 
 const PERIOD_KEYS: Record<Period, string> = { day: 'dashboard.today', week: 'dashboard.7days', month: 'dashboard.30days', year: 'dashboard.year' }
@@ -167,15 +185,20 @@ export default function Dashboard() {
   const [revLoading, setRevLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
+  const periodRef = useRef(period)
+  useEffect(() => {
+    periodRef.current = period
+  }, [period])
+
   const loadRevenue = useCallback(async (p: Period) => {
     setRevLoading(true)
     try {
-      const [rev, top] = await Promise.all([
+      const [revRes, topRes] = await Promise.allSettled([
         api.get(`/dashboard/revenue?period=${p}`),
         api.get(`/dashboard/top-customers?period=${p}`),
       ])
-      setRevenue(rev.data.data)
-      setTopCustomers(top.data.data)
+      if (revRes.status === 'fulfilled') setRevenue(revRes.value.data.data)
+      if (topRes.status === 'fulfilled') setTopCustomers(topRes.value.data.data)
     } catch {}
     setRevLoading(false)
   }, [])
@@ -183,38 +206,52 @@ export default function Dashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [cf, fn, pl, ls] = await Promise.all([
+      const [cfRes, fnRes, plRes, lsRes] = await Promise.allSettled([
         api.get('/dashboard/cashflow-forecast'),
         api.get('/dashboard/funnel'),
         api.get('/dashboard/pipeline'),
         api.get('/dashboard/low-stock'),
       ])
-      setCashflow(cf.data.data)
-      setFunnel(fn.data.data)
-      setPipeline(pl.data.data)
-      setLowStock(ls.data.data)
+      if (cfRes.status === 'fulfilled') setCashflow(cfRes.value.data.data)
+      if (fnRes.status === 'fulfilled') setFunnel(fnRes.value.data.data)
+      if (plRes.status === 'fulfilled') setPipeline(plRes.value.data.data)
+      if (lsRes.status === 'fulfilled') setLowStock(lsRes.value.data.data)
       setLastUpdated(new Date())
     } catch {}
     setLoading(false)
   }, [])
 
-  useEffect(() => { loadAll(); loadRevenue(period) }, [])
-  useEffect(() => { loadRevenue(period) }, [period, loadRevenue])
+  useEffect(() => {
+    loadAll()
+    const timer = setInterval(() => {
+      loadAll()
+      loadRevenue(periodRef.current)
+    }, 5 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [loadAll, loadRevenue])
+
+  useEffect(() => {
+    loadRevenue(period)
+  }, [period, loadRevenue])
 
   const cf = cashflow
-  // แท็บช่วงเวลาเป็นแบบสะสม ให้ตรงกับป้าย ("7 วัน" = ภายใน 7 วัน ไม่ใช่เฉพาะวันที่ 2-7)
+  // แท็บช่วงเวลาเป็นแบบสะสม ให้ตรงกับป้าย ("7 วัน" = ภายใน 7 วัน รวมวันนี้)
   // และตรงกับ weekTotal/monthTotal ที่ backend คิดแบบสะสมอยู่แล้ว
-  // เกินกำหนด/เกิน 30 วัน เป็นสถานะเฉพาะ ไม่สะสม
-  // แต่ละแท็บแยกขาดจากกัน ใบหนึ่งอยู่ได้ช่องเดียว (union ไม่ซ้ำ)
-  // ช่อง later (ครบกำหนดเกิน 30 วันข้างหน้า) ยุบรวมเข้า "30 วัน" เพราะตัดปุ่มนั้นออกแล้ว
-  // — ยุบแทนที่จะทิ้ง ไม่งั้นเงินก้อนนั้นจะไม่โผล่ที่แท็บไหนเลยเหมือนบั๊กเดิม
-  const cfItems = (g: CFGroup | undefined, tab: CFTab): CFItem[] =>
-    !g ? [] : tab === 'month' ? [...g.month, ...g.later] : g[tab]
+  // เกินกำหนดเป็นสถานะเฉพาะ ไม่สะสม
+  // แท็บ 30 วันครอบคลุมหนี้ภายใน 30 วัน โดยไม่ปนหนี้ที่เกิน 30 วัน (later)
+  const cfItems = (g: CFGroup | undefined, tab: CFTab): CFItem[] => {
+    if (!g) return []
+    if (tab === 'overdue') return g.overdue
+    if (tab === 'today') return g.today
+    if (tab === 'week') return [...g.today, ...g.week]
+    if (tab === 'month') return [...g.today, ...g.week, ...g.month]
+    return []
+  }
   const cfCounts = (g: CFGroup | undefined): Record<CFTab, number> => ({
     overdue: g?.overdue.length ?? 0,
     today:   g?.today.length ?? 0,
-    week:    g?.week.length ?? 0,
-    month:   (g?.month.length ?? 0) + (g?.later.length ?? 0),
+    week:    (g?.today.length ?? 0) + (g?.week.length ?? 0),
+    month:   (g?.today.length ?? 0) + (g?.week.length ?? 0) + (g?.month.length ?? 0),
   })
   const arItems = cfItems(cf?.ar, arTab)
   const apItems = cfItems(cf?.ap, apTab)
@@ -309,7 +346,7 @@ export default function Dashboard() {
               <p className={`text-3xl font-bold mt-1 ${revenue.current.grossProfit >= 0 ? 'text-success' : 'text-danger'}`}>
                 {fmt(revenue.current.grossProfit)}
               </p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.marginCost', { margin: revenue.grossMargin.toFixed(1), cost: fmt(revenue.current.cost) })}</p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.marginCost', { margin: (revenue.grossMargin ?? 0).toFixed(1), cost: fmt(revenue.current.cost) })}</p>
             </>
           )}
         </div>
@@ -408,7 +445,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.salesPipeline')}</h3>
-            {pipeline && pipeline.winRate !== null && (
+            {pipeline && typeof pipeline.winRate === 'number' && (
               <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
                 {t('dashboard.winRate', { percent: pipeline.winRate.toFixed(0) })}
               </span>
@@ -531,7 +568,7 @@ export default function Dashboard() {
             <>
               <p className="text-2xl font-bold text-warning">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
               {lowStock.slice(0, 2).map(s => (
-                <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · {t('dashboard.remaining', { quantity: s.quantity, unit: s.unit })}</p>
+                <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · {t('dashboard.remaining', { quantity: s.available ?? s.quantity, unit: s.unit })}</p>
               ))}
             </>
           )}

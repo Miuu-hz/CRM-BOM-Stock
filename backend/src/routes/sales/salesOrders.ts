@@ -187,15 +187,23 @@ router.put('/:id', async (req: Request, res: Response) => {
         return sum + item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100)
       }, 0)
     }
-    const discount = discountAmount || 0
+    const discount = discountAmount !== undefined ? (Number(discountAmount) || 0) : (existing.discount_amount || 0)
     const tax = taxRate ?? existing.tax_rate ?? 0
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) — หน้าเว็บล็อกปุ่มไว้แล้ว ตรงนี้กันทาง API/MCP
     if (tax > 0 && !isVatRegistered(tenantId)) {
       return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
     }
-    const afterDiscount = subtotal - discount
-    const taxAmount = afterDiscount * (tax / 100)
-    const totalAmount = afterDiscount + taxAmount
+    const inclusive = req.body.vatInclusive !== undefined
+      ? resolveVatInclusive(tenantId, req.body.vatInclusive)
+      : (existing.vat_inclusive === 1 ? 1 : 0)
+    const extraCharge = req.body.extraChargeAmount !== undefined
+      ? Math.max(0, Number(req.body.extraChargeAmount) || 0)
+      : (existing.extra_charge_amount || 0)
+    const extraLabel = extraCharge > 0 ? (req.body.extraChargeLabel ?? existing.extra_charge_label ?? 'ค่าขนส่ง') : null
+
+    const calc = calcVat(subtotal, { rate: tax, discountAmount: discount, inclusive: !!inclusive, extraCharge })
+    const { taxAmount, totalAmount } = calc
+    subtotal = calc.subtotal
 
     const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLineUpd) {
@@ -206,10 +214,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       db.prepare(`
         UPDATE sales_orders
         SET customer_id = COALESCE(?, customer_id), delivery_date = ?,
-            subtotal = ?, discount_amount = ?, tax_rate = ?, tax_amount = ?, total_amount = ?,
+            subtotal = ?, discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?,
+            tax_rate = ?, tax_amount = ?, total_amount = ?, vat_inclusive = ?,
             notes = COALESCE(?, notes), updated_at = ?
         WHERE id = ? AND tenant_id = ?
-      `).run(customerId || null, deliveryDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes ?? null, now, req.params.id, tenantId)
+      `).run(customerId || null, deliveryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
         db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
@@ -228,7 +237,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     transaction()
 
     // จำโหมด VAT ของใบนี้ไว้กับลูกค้ารายนี้ — เอกสารนี้ไม่แก้ vat_inclusive จึงยังใช้ค่าเดิมของใบ
-    rememberContactVatMode(tenantId, 'customer', customerId || existing.customer_id, tax, existing.vat_inclusive === 1)
+    rememberContactVatMode(tenantId, 'customer', customerId || existing.customer_id, tax, !!inclusive)
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(req.params.id)

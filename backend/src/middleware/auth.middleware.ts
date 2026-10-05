@@ -130,6 +130,12 @@ export const requireRole = (...roles: string[]) => {
       return
     }
 
+    // MASTER role is the system owner ??? always allowed across all operations and tenants
+    if (req.user.role === 'MASTER') {
+      next()
+      return
+    }
+
     if (!roles.includes(req.user.role)) {
       res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
       return

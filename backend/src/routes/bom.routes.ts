@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional } from '../services/unitConversion.service'
@@ -627,7 +627,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 })
 
 // Delete BOM
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('ADMIN', 'MASTER'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     

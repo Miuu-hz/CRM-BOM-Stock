@@ -115,8 +115,11 @@ export function approvalDenyReason(
     'SELECT * FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ?'
   ).get(tenantId, user.userId, moduleType) as any
   if (!perm || perm.can_approve !== 1) return `ไม่มีสิทธิ์อนุมัติ ${label} กรุณาติดต่อ Admin`
-  if (perm.can_approve_unlimited !== 1 && perm.approval_limit > 0 && amount > perm.approval_limit) {
-    return `วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ${perm.approval_limit.toLocaleString()}, ยอด ${label}: ${amount.toLocaleString()})`
+  if (perm.can_approve_unlimited !== 1) {
+    const limit = Number(perm.approval_limit) || 0
+    if (amount > limit) {
+      return `วงเงินอนุมัติของคุณไม่เพียงพอ (limit: ${limit.toLocaleString()}, ยอด ${label}: ${amount.toLocaleString()})`
+    }
   }
   return null
 }

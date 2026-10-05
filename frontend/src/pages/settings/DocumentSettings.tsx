@@ -91,7 +91,7 @@ export default function DocumentSettings() {
     try {
       const { branding, ...payload } = settings
       const updated = await documentSettingsService.update(payload)
-      setSettings(updated)
+      setSettings(prev => ({ ...updated, branding: updated.branding || prev.branding }))
       setLoadError(false)
       toast.success(t('settings.documents.saveSuccess'))
     } catch (err: any) {

@@ -11,6 +11,35 @@ router.use(authenticate)
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 
+// ช่วงเวลาปัจจุบัน (offset=0) และช่วงเทียบก่อนหน้า (offset=1) — ต้อง "ยาวเท่ากันเสมอ"
+// ทั้งสองฝั่ง ไม่งั้น % เปลี่ยนแปลงจะเพี้ยน (บั๊ก B3 เดิม: 'month' เทียบเดือนปฏิทิน
+// ปัจจุบันที่ยังไม่จบกับเดือนก่อนที่จบเต็มเดือน). ป้ายบนหน้าเว็บคือ
+// วันนี้/7 วัน/30 วัน/ปีนี้ ดังนั้น 'week'/'month' ต้องเป็น rolling window ย้อนหลังจริง
+// ไม่ใช่สัปดาห์/เดือนปฏิทิน — ตรงกับสิ่งที่ผู้ใช้เห็นบนแท็บ
+function getRange(period: string, offset: number = 0): { start: string; end: string } {
+  const now = new Date()
+  if (period === 'day') {
+    const d = new Date(now); d.setDate(d.getDate() - offset)
+    const s = ymd(d)
+    return { start: s, end: s }
+  } else if (period === 'week') {
+    // 7 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 7 วันก่อนหน้านั้น (ยาวเท่ากัน)
+    const end = new Date(now); end.setDate(end.getDate() - offset * 7)
+    const start = new Date(end); start.setDate(start.getDate() - 6)
+    return { start: ymd(start), end: ymd(end) }
+  } else if (period === 'month') {
+    // 30 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 30 วันก่อนหน้านั้น (ยาวเท่ากัน)
+    const end = new Date(now); end.setDate(end.getDate() - offset * 30)
+    const start = new Date(end); start.setDate(start.getDate() - 29)
+    return { start: ymd(start), end: ymd(end) }
+  } else { // year: year-to-date เทียบกับช่วงเดียวกันของปีก่อน (ไม่ใช่ทั้งปีเต็ม)
+    const y = now.getFullYear() - offset
+    const start = new Date(y, 0, 1)
+    const end = new Date(y, now.getMonth(), now.getDate())
+    return { start: ymd(start), end: ymd(end) }
+  }
+}
+
 // ยอดขาย/ต้นทุนขายจริง — คำนวณจาก journal_lines (ledger) แบบเดียวกับ
 // GET /reports/profit-loss ทุกประการ (type=REVENUE / EXPENSE+category=COGS,
 // is_posted=1, level>=1) เพื่อให้ Dashboard กับหน้า P&L Report ไม่มีวันเลขไม่ตรงกัน
@@ -19,7 +48,7 @@ const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.
 // ขาย POS ที่ผ่านบัญชีจริง (reference_type=POS_SALE) โดยไม่นับซ้ำ เพราะ POS ไม่ได้
 // สร้างแถวใน invoices/orders เลย (ตรวจโค้ด sales/pos.routes.ts แล้ว)
 // startDate/endDate เป็นรูปแบบ 'YYYY-MM-DD' ตรงกับ journal_entries.date เป๊ะ (ไม่มีเวลา)
-function getLedgerTotals(tenantId: string, startDate: string, endDate: string): { revenue: number; cogs: number } {
+function getLedgerTotals(tenantId: string, startDate: string, endDate: string, role = ''): { revenue: number; cogs: number } {
   const row = db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN
@@ -31,23 +60,27 @@ function getLedgerTotals(tenantId: string, startDate: string, endDate: string): 
     FROM journal_lines jl
     JOIN journal_entries je ON jl.journal_entry_id = je.id
     JOIN accounts a ON jl.account_id = a.id
-    WHERE a.tenant_id = ? AND jl.tenant_id = ? AND je.tenant_id = ?
+    WHERE (a.tenant_id = ? OR ? = 'MASTER')
+      AND (jl.tenant_id = ? OR ? = 'MASTER')
+      AND (je.tenant_id = ? OR ? = 'MASTER')
       AND a.is_active = 1 AND a.level >= 1
       AND je.is_posted = 1
+      AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
       AND je.date >= ? AND je.date <= ?
-  `).get(tenantId, tenantId, tenantId, startDate, endDate) as any
-  return { revenue: row.revenue || 0, cogs: row.cogs || 0 }
+  `).get(tenantId, role, tenantId, role, tenantId, role, startDate, endDate) as any
+  return { revenue: row?.revenue || 0, cogs: row?.cogs || 0 }
 }
 
 // Get low stock items
 router.get('/low-stock', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
     const rows = db.prepare(`
       SELECT id, name, sku, quantity, min_stock, unit, base_unit, display_unit, sealed_qty
       FROM stock_items
-      WHERE tenant_id = ? AND quantity <= min_stock
-    `).all(tenantId) as any[]
+      WHERE (tenant_id = ? OR ? = 'MASTER') AND quantity <= min_stock AND min_stock > 0
+    `).all(tenantId, role) as any[]
 
     // An unopened pack is still stock. Items whose loose quantity is low but
     // that still hold sealed packs are not actually short, so drop them here
@@ -62,7 +95,7 @@ router.get('/low-stock', async (req: Request, res: Response) => {
           if (c && c.factor > 0) packFactor = c.factor
         }
         const available = r.quantity + (packFactor ? (r.sealed_qty || 0) * packFactor : 0)
-        return { ...r, available, pack_factor: packFactor }
+        return { ...r, minStock: r.min_stock, available, pack_factor: packFactor }
       })
       .filter((r: any) => r.available <= r.min_stock)
       .sort((a: any, b: any) => (a.available / (a.min_stock || 1)) - (b.available / (b.min_stock || 1)))
@@ -79,46 +112,17 @@ router.get('/low-stock', async (req: Request, res: Response) => {
 router.get('/revenue', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
     const period = (req.query.period as string) || 'month'
 
-    const now = new Date()
-
-    // ช่วงเวลาปัจจุบัน (offset=0) และช่วงเทียบก่อนหน้า (offset=1) — ต้อง "ยาวเท่ากันเสมอ"
-    // ทั้งสองฝั่ง ไม่งั้น % เปลี่ยนแปลงจะเพี้ยน (บั๊ก B3 เดิม: 'month' เทียบเดือนปฏิทิน
-    // ปัจจุบันที่ยังไม่จบกับเดือนก่อนที่จบเต็มเดือน). ป้ายบนหน้าเว็บคือ
-    // วันนี้/7 วัน/30 วัน/ปีนี้ ดังนั้น 'week'/'month' ต้องเป็น rolling window ย้อนหลังจริง
-    // ไม่ใช่สัปดาห์/เดือนปฏิทิน — ตรงกับสิ่งที่ผู้ใช้เห็นบนแท็บ
-    const getRange = (offset: number): { start: string; end: string } => {
-      if (period === 'day') {
-        const d = new Date(now); d.setDate(d.getDate() - offset)
-        const s = ymd(d)
-        return { start: s, end: s }
-      } else if (period === 'week') {
-        // 7 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 7 วันก่อนหน้านั้น (ยาวเท่ากัน)
-        const end = new Date(now); end.setDate(end.getDate() - offset * 7)
-        const start = new Date(end); start.setDate(start.getDate() - 6)
-        return { start: ymd(start), end: ymd(end) }
-      } else if (period === 'month') {
-        // 30 วันล่าสุด (รวมวันนี้), ช่วงก่อนหน้า = 30 วันก่อนหน้านั้น (ยาวเท่ากัน)
-        const end = new Date(now); end.setDate(end.getDate() - offset * 30)
-        const start = new Date(end); start.setDate(start.getDate() - 29)
-        return { start: ymd(start), end: ymd(end) }
-      } else { // year: year-to-date เทียบกับช่วงเดียวกันของปีก่อน (ไม่ใช่ทั้งปีเต็ม)
-        const y = now.getFullYear() - offset
-        const start = new Date(y, 0, 1)
-        const end = new Date(y, now.getMonth(), now.getDate())
-        return { start: ymd(start), end: ymd(end) }
-      }
-    }
-
-    const cur = getRange(0)
-    const prev = getRange(1)
+    const cur = getRange(period, 0)
+    const prev = getRange(period, 1)
 
     // รายได้/ต้นทุนขาย: ledger-based (getLedgerTotals) — เดียวกับ /reports/profit-loss
     // เป๊ะ แก้บั๊ก B1 (ต้นทุนขายเดิมเอายอด PO ที่รับของมาใช้ผิด) และ B2 (ไม่นับ POS)
     // ไปพร้อมกัน เพราะ ledger รวมทั้งใบแจ้งหนี้และ POS ที่ผ่านบัญชีจริงอยู่แล้ว
-    const curTotals  = getLedgerTotals(tenantId, cur.start, cur.end)
-    const prevTotals = getLedgerTotals(tenantId, prev.start, prev.end)
+    const curTotals  = getLedgerTotals(tenantId, cur.start, cur.end, role)
+    const prevTotals = getLedgerTotals(tenantId, prev.start, prev.end, role)
     const curRev = curTotals.revenue, prevRev = prevTotals.revenue
     const curCost = curTotals.cogs, prevCost = prevTotals.cogs
 
@@ -148,12 +152,15 @@ router.get('/revenue', async (req: Request, res: Response) => {
 router.get('/cashflow-forecast', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const today = new Date()
-    const todayStr = today.toISOString().slice(0, 10)
-    const week7  = new Date(today); week7.setDate(today.getDate() + 7)
-    const month30 = new Date(today); month30.setDate(today.getDate() + 30)
-    const week7Str  = week7.toISOString().slice(0, 10)
-    const month30Str = month30.toISOString().slice(0, 10)
+    const role = req.user?.role || ''
+
+    // เวลาไทย (Asia/Bangkok = UTC+7) ป้องกันบั๊กก่อน 7 โมงเช้าบนเซิร์ฟเวอร์ UTC
+    const thaiNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+    const todayStr = ymd(thaiNow)
+    const week7  = new Date(thaiNow); week7.setDate(thaiNow.getDate() + 7)
+    const month30 = new Date(thaiNow); month30.setDate(thaiNow.getDate() + 30)
+    const week7Str  = ymd(week7)
+    const month30Str = ymd(month30)
 
     // AR: unpaid invoices
     const arRows = db.prepare(`
@@ -161,11 +168,13 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
         i.due_date, i.balance_amount as amount,
         c.name as party_name
       FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE c.tenant_id = ? AND i.payment_status NOT IN ('PAID')
+      WHERE (c.tenant_id = ? OR ? = 'MASTER')
+        AND (i.tenant_id = ? OR ? = 'MASTER')
+        AND i.payment_status NOT IN ('PAID')
         AND i.status NOT IN ('CANCELLED','DRAFT')
         AND i.balance_amount > 0
       ORDER BY i.due_date ASC
-    `).all(tenantId) as any[]
+    `).all(tenantId, role, tenantId, role) as any[]
 
     // AP: หนี้การค้าจริงจาก purchase_invoices ที่ยังค้างจ่าย
     // (เดิมใช้ purchase_orders ซึ่งเป็นแค่ใบสั่งซื้อ ยังไม่ใช่ภาระหนี้ และนับยอดเต็มใบ
@@ -175,12 +184,12 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
         pi.due_date, pi.balance_amount as amount,
         s.name as party_name
       FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id
-      WHERE pi.tenant_id = ?
+      WHERE (pi.tenant_id = ? OR ? = 'MASTER')
         AND pi.status NOT IN ('CANCELLED','DRAFT')
         AND pi.payment_status <> 'PAID'
         AND pi.balance_amount > 0
       ORDER BY pi.due_date ASC
-    `).all(tenantId) as any[]
+    `).all(tenantId, role) as any[]
 
     // เอกสารที่ไม่ได้ระบุ due_date ถือว่า "ต้องจ่าย/เก็บวันนี้" ตามนโยบายที่เจ้าของ
     // ระบบเลือกเอง (ซ่อนไว้ผู้ใช้จะลืม ต้องโชว์ขึ้นมาเลย) — แต่ต้องติด dueUnspecified=true
@@ -237,26 +246,27 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
 router.get('/funnel', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
 
     const qt = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM quotations WHERE tenant_id = ? AND status NOT IN ('CANCELLED','REJECTED')
-    `).get(tenantId) as any
+      FROM quotations WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','REJECTED')
+    `).get(tenantId, role) as any
 
     const so = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED')
-    `).get(tenantId) as any
+      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED')
+    `).get(tenantId, role) as any
 
     const inv = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM invoices WHERE tenant_id = ? AND status NOT IN ('CANCELLED')
-    `).get(tenantId) as any
+      FROM invoices WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED')
+    `).get(tenantId, role) as any
 
     const pending = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM sales_orders WHERE tenant_id = ? AND status IN ('CONFIRMED','PROCESSING','APPROVED')
-    `).get(tenantId) as any
+      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status IN ('CONFIRMED','PROCESSING','APPROVED')
+    `).get(tenantId, role) as any
 
     res.json({
       success: true,
@@ -277,28 +287,21 @@ router.get('/funnel', async (req: Request, res: Response) => {
 router.get('/top-customers', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
     const period = (req.query.period as string) || 'month'
 
-    const now = new Date()
-    let dateFilter = ''
-    if (period === 'day') {
-      dateFilter = `AND date(i.invoice_date) = date('now')`
-    } else if (period === 'week') {
-      dateFilter = `AND i.invoice_date >= date('now', '-7 days')`
-    } else if (period === 'month') {
-      dateFilter = `AND strftime('%Y-%m', i.invoice_date) = '${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}'`
-    } else {
-      dateFilter = `AND strftime('%Y', i.invoice_date) = '${now.getFullYear()}'`
-    }
+    const range = getRange(period, 0)
 
     const rows = db.prepare(`
       SELECT c.id, c.name, COUNT(i.id) as invoice_count,
         COALESCE(SUM(i.total_amount), 0) as revenue
       FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE c.tenant_id = ? AND i.status NOT IN ('CANCELLED','DRAFT')
-        ${dateFilter}
+      WHERE (c.tenant_id = ? OR ? = 'MASTER')
+        AND (i.tenant_id = ? OR ? = 'MASTER')
+        AND i.status NOT IN ('CANCELLED','DRAFT')
+        AND date(i.invoice_date) >= ? AND date(i.invoice_date) <= ?
       GROUP BY c.id ORDER BY revenue DESC LIMIT 5
-    `).all(tenantId)
+    `).all(tenantId, role, tenantId, role, range.start, range.end)
 
     res.json({ success: true, data: rows })
   } catch (error) {
@@ -319,12 +322,13 @@ const PIPELINE_MONTHS = 6
 router.get('/pipeline', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
 
     const quotations = db.prepare(`
       SELECT q.id, q.status, q.total_amount,
-        EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id) AS has_so
-      FROM quotations q WHERE q.tenant_id = ?
-    `).all(tenantId) as any[]
+        EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id AND so.status NOT IN ('CANCELLED')) AS has_so
+      FROM quotations q WHERE (q.tenant_id = ? OR ? = 'MASTER') AND q.status <> 'DRAFT'
+    `).all(tenantId, role) as any[]
 
     const stages = {
       quoting:  { count: 0, value: 0 }, // ยื่นไปแล้ว ยังไม่รู้ผล
@@ -353,35 +357,35 @@ router.get('/pipeline', async (req: Request, res: Response) => {
     const linkage = db.prepare(`
       SELECT COUNT(*) AS soTotal,
         COALESCE(SUM(CASE WHEN quotation_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS soFromQuotation
-      FROM sales_orders WHERE tenant_id = ? AND status <> 'CANCELLED'
-    `).get(tenantId) as any
+      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status <> 'CANCELLED'
+    `).get(tenantId, role) as any
 
     // เงินไหลถึงไหนแล้ว: รับออเดอร์ → วางบิล → เก็บเงินได้จริง
     const ordered = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS value
-      FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
-    `).get(tenantId) as any
+      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId, role) as any
 
     const billing = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS invoiced,
              COALESCE(SUM(paid_amount), 0) AS collected,
              COALESCE(SUM(balance_amount), 0) AS outstanding
-      FROM invoices WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
-    `).get(tenantId) as any
+      FROM invoices WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId, role) as any
 
     const orderedByMonth = db.prepare(`
       SELECT substr(order_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
       FROM sales_orders
-      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND order_date IS NOT NULL
+      WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT') AND order_date IS NOT NULL
       GROUP BY month
-    `).all(tenantId) as any[]
+    `).all(tenantId, role) as any[]
 
     const invoicedByMonth = db.prepare(`
       SELECT substr(invoice_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
       FROM invoices
-      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND invoice_date IS NOT NULL
+      WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT') AND invoice_date IS NOT NULL
       GROUP BY month
-    `).all(tenantId) as any[]
+    `).all(tenantId, role) as any[]
 
     const orderedMap = new Map(orderedByMonth.map(r => [r.month, r.value]))
     const invoicedMap = new Map(invoicedByMonth.map(r => [r.month, r.value]))
@@ -427,6 +431,87 @@ router.get('/pipeline', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Dashboard pipeline error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch pipeline' })
+  }
+})
+
+// Recent sales orders
+router.get('/recent-orders', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
+    const limit = Math.min(Number(req.query.limit) || 5, 50)
+
+    const rows = db.prepare(`
+      SELECT so.id, so.so_number, so.order_date, so.delivery_date,
+             so.total_amount, so.status, so.payment_status,
+             c.id as customer_id, c.name as customer_name
+      FROM sales_orders so
+      LEFT JOIN customers c ON so.customer_id = c.id
+      WHERE (so.tenant_id = ? OR ? = 'MASTER')
+      ORDER BY so.created_at DESC, so.order_date DESC
+      LIMIT ?
+    `).all(tenantId, role, limit)
+
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('Dashboard recent-orders error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch recent orders' })
+  }
+})
+
+// Production / Work Order status summary
+router.get('/production', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const role = req.user?.role || ''
+
+    const rows = db.prepare(`
+      SELECT 
+        status,
+        COUNT(*) as count,
+        COALESCE(SUM(quantity), 0) as total_qty,
+        COALESCE(SUM(completed_qty), 0) as completed_qty
+      FROM work_orders
+      WHERE (tenant_id = ? OR ? = 'MASTER')
+      GROUP BY status
+    `).all(tenantId, role) as any[]
+
+    const summary: Record<string, number> = {
+      draft: 0,
+      planned: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0,
+      total: 0,
+    }
+
+    let totalQuantity = 0
+    let totalCompletedQuantity = 0
+
+    for (const r of rows) {
+      const c = Number(r.count) || 0
+      summary.total += c
+      totalQuantity += Number(r.total_qty) || 0
+      totalCompletedQuantity += Number(r.completed_qty) || 0
+      if (r.status === 'DRAFT') summary.draft = c
+      else if (r.status === 'PLANNED') summary.planned = c
+      else if (r.status === 'IN_PROGRESS') summary.inProgress = c
+      else if (r.status === 'COMPLETED') summary.completed = c
+      else if (r.status === 'CANCELLED') summary.cancelled = c
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...summary,
+        totalQuantity,
+        totalCompletedQuantity,
+        byStatus: rows
+      }
+    })
+  } catch (error) {
+    console.error('Dashboard production summary error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch production summary' })
   }
 })
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 
 // THB is always the accounting base currency (exchange_rate = 1, fixed). Foreign currencies
@@ -64,7 +64,7 @@ router.get('/', async (req: Request, res: Response) => {
 })
 
 // PUT /api/currencies/:code — update rate/name/active
-router.put('/:code', async (req: Request, res: Response) => {
+router.put('/:code', requireRole('ADMIN', 'MASTER'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const code = String(req.params.code).toUpperCase()

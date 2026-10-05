@@ -128,6 +128,7 @@ router.get('/menu-configs', (req, res) => {
         pmc.*,
         p.name as product_name,
         p.sku as product_code,
+        p.gs1_barcode as product_barcode,
         p.category as product_category,
         pc.name as category_name,
         pc.color as category_color,

@@ -41,6 +41,7 @@ interface POSMenu {
   product_id: string
   product_name: string
   product_code: string
+  product_barcode?: string
   bom_id?: string
   bom_version?: string
   category_id?: string
@@ -131,7 +132,8 @@ export default function POSMenuSettings() {
     const matchesSearch =
       menu.product_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       menu.product_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      menu.quick_code?.toLowerCase().includes(searchQuery.toLowerCase())
+      menu.quick_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      menu.product_barcode?.toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesCategory = selectedCategory === 'all' || menu.category_id === selectedCategory
 

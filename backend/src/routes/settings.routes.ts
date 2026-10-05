@@ -30,7 +30,7 @@ router.get('/company', (req, res) => {
 })
 
 // PUT /api/settings/company — บันทึกข้อมูลบริษัท
-router.put('/company', (req, res) => {
+router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const {
@@ -292,7 +292,20 @@ router.put('/documents', requireRole('ADMIN', 'MASTER'), (req, res) => {
         updated_at    = excluded.updated_at
     `).run(tenantId, JSON.stringify(merged))
 
-    res.json({ success: true, data: merged })
+    const company = db.prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+    const subRow = db.prepare('SELECT plan_code FROM tenant_subscriptions WHERE tenant_id = ?').get(tenantId) as any
+    const isFreePlan = !subRow || subRow.plan_code === 'free'
+
+    res.json({
+      success: true,
+      data: {
+        ...merged,
+        branding: {
+          logoBase64: company?.logo_base64 || null,
+          isFreePlan,
+        },
+      },
+    })
   } catch (error) {
     console.error('Error saving document settings:', error)
     res.status(500).json({ success: false, message: 'Failed to save document settings' })

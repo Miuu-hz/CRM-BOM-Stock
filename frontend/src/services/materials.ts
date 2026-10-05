@@ -6,6 +6,7 @@ export interface MaterialCategory {
   name: string
   defaultUnit: string
   description?: string
+  itemType?: 'raw' | 'wip' | 'finished' | 'service'
 }
 
 export interface Material {
@@ -79,13 +80,13 @@ export const materialsService = {
   },
 
   // Create new category (admin only)
-  createCategory: async (input: { code: string; name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
+  createCategory: async (input: { code: string; name: string; defaultUnit: string; description?: string; itemType?: string }): Promise<MaterialCategory> => {
     const response = await api.post<any>('/materials/categories', input)
     return response.data?.data
   },
 
   // Update category
-  updateCategory: async (id: string, input: { name: string; defaultUnit: string; description?: string }): Promise<MaterialCategory> => {
+  updateCategory: async (id: string, input: { name: string; defaultUnit: string; description?: string; itemType?: string }): Promise<MaterialCategory> => {
     const response = await api.put<any>(`/materials/categories/${id}`, input)
     return response.data?.data
   },

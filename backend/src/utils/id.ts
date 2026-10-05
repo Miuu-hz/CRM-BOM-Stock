@@ -52,12 +52,12 @@ export function formatDocumentNumber(
     ).get(tenantId, docType)
   } catch { /* table not migrated yet */ }
 
-  // รูปแบบกำหนดเองไม่มีปีในเลข → ต้องนับถังเดียว (year=0) ไม่งั้นเส้นทางที่ส่งปี (purchase.routes)
-  // กับที่ไม่ส่ง (purchaseOrder.routes) นับคนละถัง แล้วออกเลข PO-042-280926 ซ้ำกันได้
+  const currentYear = new Date().getFullYear()
+  const fmtHasYear = !!(fmt && fmt.date_format && fmt.date_format !== 'NONE')
   const seq = getNextDocumentNumber(
     tenantId,
     docType,
-    fmt ? 0 : segment !== undefined ? Number(segment) : 0
+    fmt ? (fmtHasYear ? currentYear : 0) : segment !== undefined ? Number(segment) : 0
   )
 
   if (fmt) {

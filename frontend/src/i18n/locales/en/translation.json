@@ -2892,7 +2892,8 @@
         "descriptionPlaceholder": "e.g. Used for main production materials",
         "cancel": "Cancel",
         "saving": "Saving...",
-        "save": "Save"
+        "save": "Save",
+        "typeLabel": "Item type"
       },
       "toast": {
         "loadFailed": "Failed to load categories",
@@ -2902,6 +2903,12 @@
         "deleteConfirm": "Delete category \"{{label}}\"?",
         "deleteSuccess": "Deleted",
         "deleteFailed": "Delete failed"
+      },
+      "type": {
+        "raw": "Raw Material",
+        "wip": "Work in progress (WIP)",
+        "finished": "Finished Goods",
+        "service": "Service"
       }
     },
     "permission": {
@@ -3451,6 +3458,9 @@
       "sealedHint": "Unopened packs/cases, counted in the packing unit. Click to unpack.",
       "totalInline": "Total {{value}} {{unit}}",
       "totalUnchangedHint": "The grand total stays the same at {{value}} {{unit}} — this just moves stock from sealed packs to loose, it doesn't add anything new."
+    },
+    "adjust": {
+      "photosNotSaved": "The attached photos were not saved. You'll need to retake them after this is approved."
     }
   },
   "receivables": {

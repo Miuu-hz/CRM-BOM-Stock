@@ -160,19 +160,6 @@ export default function Cashier() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  // Sync billing config to backend on mount so recalculateBillTotals uses correct settings
-  useEffect(() => {
-    const cfg = loadBillingConfig()
-    import('../services/companySettings.service').then(m => {
-      m.default.update({
-        pos_vat_enabled: cfg.vatEnabled,
-        pos_vat_rate: cfg.vatRate,
-        pos_vat_inclusive: cfg.vatInclusive,
-        pos_service_enabled: cfg.serviceEnabled,
-        pos_service_rate: cfg.serviceRate,
-      }).catch(() => {})
-    })
-  }, [])
   // Prime the bank-account cache (used for the QR payment step + receipt printing)
   useEffect(() => { bankAccountsService.list().catch(() => {}) }, [])
 

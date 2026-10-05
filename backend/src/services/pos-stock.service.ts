@@ -75,7 +75,7 @@ class POSStockService {
         SELECT 
           bi.id as ingredient_id,
           bi.material_id as stock_item_id,
-          bi.quantity as quantity_used,
+          bi.quantity / COALESCE(NULLIF(bo.output_qty, 0), 1) as quantity_used,
           bi.unit as ingredient_unit,
           si.name as stock_item_name,
           si.quantity as current_stock,
@@ -83,6 +83,7 @@ class POSStockService {
           si.base_unit as stock_base_unit,
           0 as is_optional
         FROM bom_items bi
+              JOIN boms bo ON bo.id = bi.bom_id
         JOIN stock_items si ON bi.material_id = si.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
       `)
@@ -229,11 +230,12 @@ class POSStockService {
               SELECT
                 bi.id,
                 bi.material_id as stock_item_id,
-                bi.quantity as quantity_used,
+                bi.quantity / COALESCE(NULLIF(bo.output_qty, 0), 1) as quantity_used,
                 bi.unit as ingredient_unit,
                 si.base_unit as stock_base_unit,
                 si.unit as stock_unit
               FROM bom_items bi
+              JOIN boms bo ON bo.id = bi.bom_id
               JOIN stock_items si ON bi.material_id = si.id
               WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
             `)

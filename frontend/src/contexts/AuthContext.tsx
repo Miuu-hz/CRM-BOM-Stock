@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ขึ้นชื่อและโลโก้ Kids House Cafe ที่ค้างจาก session ก่อน)
   // เลขบัญชีธนาคารข้ามบริษัทคือเคสที่เสียหายที่สุด — ลูกค้าโอนเงินผิดร้าน
   const clearTenantScopedCache = useCallback(() => {
-    for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings']) {
+    for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings', 'pos_billing_settings', 'pos_loyalty_settings']) {
       localStorage.removeItem(k)
     }
     // ตั้งค่าเอกสาร (โลโก้/ตราประทับ/คอลัมน์) ไม่ได้อยู่ใน localStorage แต่เป็นตัวแปร

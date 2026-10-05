@@ -3,191 +3,225 @@ import { AlertTriangle, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { unitLabel } from '../../hooks/useUnits'
 
-interface StockAlert {
+export interface StockAlert {
   id: string
-  item: string
-  category: string
-  current: number
-  minimum: number
-  unit: string
-  level: 'critical' | 'warning' | 'low'
+  item?: string
+  name?: string
+  category?: string
+  current?: number
+  available?: number
+  quantity?: number
+  minimum?: number
+  minStock?: number
+  min_stock?: number
+  unit?: string
+  level?: 'critical' | 'warning' | 'low'
 }
 
-const alerts: StockAlert[] = [
+export interface StockAlertsProps {
+  alerts?: StockAlert[]
+}
+
+const defaultAlerts: StockAlert[] = [
   {
     id: '1',
     item: 'Foam Material',
+    name: 'Foam Material',
     category: 'Raw Material',
     current: 150,
+    available: 150,
     minimum: 500,
+    minStock: 500,
     unit: 'kg',
     level: 'critical',
   },
   {
     id: '2',
     item: 'Spring Coils',
+    name: 'Spring Coils',
     category: 'Component',
     current: 300,
+    available: 300,
     minimum: 400,
+    minStock: 400,
     unit: 'units',
     level: 'warning',
   },
   {
     id: '3',
     item: 'Fabric Cover',
+    name: 'Fabric Cover',
     category: 'Raw Material',
     current: 80,
+    available: 80,
     minimum: 100,
+    minStock: 100,
     unit: 'meters',
     level: 'warning',
   },
   {
     id: '4',
     item: 'Thread',
+    name: 'Thread',
     category: 'Consumable',
     current: 20,
+    available: 20,
     minimum: 50,
+    minStock: 50,
     unit: 'rolls',
     level: 'critical',
   },
   {
     id: '5',
     item: 'Zipper',
+    name: 'Zipper',
     category: 'Component',
     current: 450,
+    available: 450,
     minimum: 500,
+    minStock: 500,
     unit: 'units',
     level: 'low',
   },
 ]
 
-function StockAlerts() {
+function StockAlerts({ alerts: propAlerts }: StockAlertsProps = {}) {
   const { t } = useTranslation()
+  const displayAlerts = propAlerts || defaultAlerts
+
   return (
     <div className="phopy-card p-6">
       <div className="flex items-center gap-3 mb-6">
         <AlertTriangle className="w-6 h-6 text-warning" />
         <h2 className="text-xl font-bold text-[var(--fg-1)]">
-          {t('dashboard.stockAlerts.title')}
+          {t('dashboard.stockAlerts.title', 'แจ้งเตือนสต็อก')}
         </h2>
       </div>
 
       <div className="space-y-3 max-h-[500px] overflow-y-auto phopy-scrollbar">
-        {(alerts || []).map((alert, index) => (
-          <motion.div
-            key={alert.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="p-4 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)] hover:border-phopy-indigo/30 transition-all"
-          >
-            <div className="flex items-start gap-3">
-              <div
-                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  alert.level === 'critical'
-                    ? 'bg-[var(--danger-soft)] border border-danger/30'
-                    : alert.level === 'warning'
-                    ? 'bg-[var(--warning-soft)] border border-warning/30'
-                    : 'bg-[var(--warning-soft)] border border-warning/30'
-                }`}
-              >
-                <Package
-                  className={`w-5 h-5 ${
-                    alert.level === 'critical'
-                      ? 'text-danger'
-                      : alert.level === 'warning'
-                      ? 'text-warning'
-                      : 'text-warning'
+        {(displayAlerts || []).map((alert, index) => {
+          const itemName = alert.name || alert.item || 'ไม่ระบุชื่อ'
+          const category = alert.category || 'ทั่วไป'
+          const available = Number(alert.available ?? alert.quantity ?? alert.current ?? 0)
+          const minStock = Number(alert.minStock ?? alert.min_stock ?? alert.minimum ?? 0)
+          const unit = alert.unit || 'ชิ้น'
+          const pct = Math.min(100, Math.max(0, (available / (minStock || 1)) * 100))
+          const level = alert.level || (available <= 0 ? 'critical' : available < minStock ? 'warning' : 'low')
+
+          return (
+            <motion.div
+              key={alert.id || index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="p-4 rounded-lg bg-[var(--surface-2)]/50 border border-[var(--border)] hover:border-phopy-indigo/30 transition-all"
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    level === 'critical'
+                      ? 'bg-[var(--danger-soft)] border border-danger/30'
+                      : 'bg-[var(--warning-soft)] border border-warning/30'
                   }`}
-                />
-              </div>
-
-              <div className="flex-1">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--fg-2)]">
-                      {alert.item}
-                    </h3>
-                    <p className="text-xs text-[var(--fg-4)]">{alert.category}</p>
-                  </div>
-                  <LevelBadge level={alert.level} />
+                >
+                  <Package
+                    className={`w-5 h-5 ${
+                      level === 'critical'
+                        ? 'text-danger'
+                        : 'text-warning'
+                    }`}
+                  />
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[var(--fg-3)]">{t('dashboard.stockAlerts.currentStock')}</span>
-                    <span
-                      className={`font-semibold ${
-                        alert.level === 'critical'
-                          ? 'text-danger'
-                          : alert.level === 'warning'
-                          ? 'text-warning'
-                          : 'text-warning'
-                      }`}
-                    >
-                      {alert.current} {unitLabel(alert.unit)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[var(--fg-3)]">{t('dashboard.stockAlerts.minimumRequired')}</span>
-                    <span className="text-[var(--fg-2)] font-semibold">
-                      {alert.minimum} {unitLabel(alert.unit)}
-                    </span>
+                <div className="flex-1">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-[var(--fg-2)]">
+                        {itemName}
+                      </h3>
+                      <p className="text-xs text-[var(--fg-4)]">{category}</p>
+                    </div>
+                    <LevelBadge level={level} />
                   </div>
 
-                  {/* Progress Bar */}
-                  <div className="w-full h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{
-                        width: `${(alert.current / alert.minimum) * 100}%`,
-                      }}
-                      transition={{ delay: index * 0.1, duration: 0.5 }}
-                      className={`h-full ${
-                        alert.level === 'critical'
-                          ? 'bg-red-500'
-                          : alert.level === 'warning'
-                          ? 'bg-yellow-500'
-                          : 'bg-orange-500'
-                      }`}
-                    />
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[var(--fg-3)]">
+                        {t('dashboard.stockAlerts.currentStock', 'สต็อกพร้อมใช้')}
+                      </span>
+                      <span
+                        className={`font-semibold ${
+                          level === 'critical'
+                            ? 'text-danger'
+                            : 'text-warning'
+                        }`}
+                      >
+                        {available} {unitLabel(unit)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[var(--fg-3)]">
+                        {t('dashboard.stockAlerts.minimumRequired', 'สต็อกขั้นต่ำ')}
+                      </span>
+                      <span className="text-[var(--fg-2)] font-semibold">
+                        {minStock} {unitLabel(unit)}
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full h-2 bg-[var(--surface-2)] rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{
+                          width: `${pct}%`,
+                        }}
+                        transition={{ delay: index * 0.1, duration: 0.5 }}
+                        className={`h-full ${
+                          level === 'critical'
+                            ? 'bg-red-500'
+                            : level === 'warning'
+                            ? 'bg-yellow-500'
+                            : 'bg-orange-500'
+                        }`}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function LevelBadge({ level }: { level: StockAlert['level'] }) {
+function LevelBadge({ level }: { level?: string }) {
   const { t } = useTranslation()
-  const config = {
+  const config: Record<string, { className: string; labelKey: string; defaultLabel: string }> = {
     critical: {
       className: 'bg-[var(--danger-soft)] text-danger border-danger/30',
+      labelKey: 'dashboard.stockAlerts.level.critical',
+      defaultLabel: 'วิกฤต',
     },
     warning: {
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
+      labelKey: 'dashboard.stockAlerts.level.warning',
+      defaultLabel: 'เตือน',
     },
     low: {
       className: 'bg-[var(--warning-soft)] text-warning border-warning/30',
+      labelKey: 'dashboard.stockAlerts.level.low',
+      defaultLabel: 'ต่ำ',
     },
   }
 
-  const labels = {
-    critical: t('dashboard.stockAlerts.level.critical'),
-    warning: t('dashboard.stockAlerts.level.warning'),
-    low: t('dashboard.stockAlerts.level.low'),
-  }
-
-  const selected = config[level]
+  const selected = (level && config[level]) || config.warning
 
   return (
     <span className={`status-badge ${selected.className}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-      {labels[level]}
+      {t(selected.labelKey, selected.defaultLabel)}
     </span>
   )
 }

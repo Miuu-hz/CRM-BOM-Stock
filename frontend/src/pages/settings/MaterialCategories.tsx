@@ -25,6 +25,7 @@ export default function MaterialCategories() {
   const [name, setName] = useState('')
   const [defaultUnit, setDefaultUnit] = useState('')
   const [description, setDescription] = useState('')
+  const [itemType, setItemType] = useState<'raw' | 'wip' | 'finished' | 'service'>('raw')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
@@ -47,6 +48,7 @@ export default function MaterialCategories() {
     setName('')
     setDefaultUnit('')
     setDescription('')
+    setItemType('raw')
     setShowForm(true)
   }
 
@@ -56,6 +58,7 @@ export default function MaterialCategories() {
     setName(c.name)
     setDefaultUnit(c.defaultUnit)
     setDescription(c.description || '')
+    setItemType(c.itemType || 'raw')
     setShowForm(true)
   }
 
@@ -72,6 +75,7 @@ export default function MaterialCategories() {
           name: name.trim(),
           defaultUnit,
           description: description.trim() || undefined,
+          itemType,
         })
         toast.success(t('settings.materialCategories.toast.updateSuccess'))
       } else {
@@ -80,6 +84,7 @@ export default function MaterialCategories() {
           name: name.trim(),
           defaultUnit,
           description: description.trim() || undefined,
+          itemType,
         })
         toast.success(t('settings.materialCategories.toast.createSuccess'))
       }
@@ -193,6 +198,14 @@ export default function MaterialCategories() {
                     <div className="flex items-center gap-2">
                       <span className="text-[var(--fg-2)] font-medium text-sm">{c.name}</span>
                       <span className="px-2 py-0.5 bg-[var(--primary-soft)] border border-phopy-indigo/30 rounded text-[11px] text-[var(--primary)] font-mono font-bold tracking-wide">{c.code}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        c.itemType === 'finished' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30' :
+                        c.itemType === 'wip' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30' :
+                        c.itemType === 'service' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/30' :
+                        'bg-blue-500/10 text-blue-500 border border-blue-500/30'
+                      }`}>
+                        {c.itemType || 'raw'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-[var(--fg-4)] mt-0.5">
                       <span>{t('settings.materialCategories.defaultUnit', { unit: ul(c.defaultUnit) })}</span>
@@ -273,6 +286,20 @@ export default function MaterialCategories() {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-[var(--fg-3)] mb-1.5">{t('settings.materialCategories.modal.typeLabel', 'ประเภทสินค้า')}</label>
+                  <select
+                    value={itemType}
+                    onChange={e => setItemType(e.target.value as any)}
+                    className="phopy-input w-full"
+                  >
+                    <option value="raw">{t('settings.materialCategories.type.raw', 'วัตถุดิบ (Raw Material)')}</option>
+                    <option value="wip">{t('settings.materialCategories.type.wip', 'สินค้ากึ่งสำเร็จรูป (WIP)')}</option>
+                    <option value="finished">{t('settings.materialCategories.type.finished', 'สินค้าสำเร็จรูป (Finished Goods)')}</option>
+                    <option value="service">{t('settings.materialCategories.type.service', 'บริการ (Service)')}</option>
+                  </select>
                 </div>
 
                 <div>

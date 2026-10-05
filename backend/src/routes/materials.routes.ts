@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { aliasConflictMessage, dropAlias } from '../services/stockItem.service'
 import { randomUUID } from 'crypto'
@@ -36,7 +36,7 @@ router.get('/categories', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const categories = db.prepare(`
-      SELECT id, code, name, default_unit as defaultUnit, description
+      SELECT id, code, name, default_unit as defaultUnit, description, item_type as itemType
       FROM material_categories 
       WHERE tenant_id = ? OR tenant_id IS NULL
       ORDER BY name ASC
@@ -53,14 +53,16 @@ router.get('/categories', (req: Request, res: Response) => {
 router.post('/categories', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, defaultUnit, description } = req.body
+    const { code, name, defaultUnit, description, itemType } = req.body
+    const validItemTypes = ['raw', 'wip', 'finished', 'service']
+    const finalItemType = validItemTypes.includes(itemType) ? itemType : 'raw'
     
     if (!code || !name || !defaultUnit) {
       return res.status(400).json({ success: false, message: 'Code, name, and defaultUnit are required' })
     }
     
     // Validate unit
-    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle']
+    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle', 'ml', 'bag', 'sachet', 'can', 'tube']
     if (!validUnits.includes(defaultUnit)) {
       return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
     }
@@ -69,9 +71,9 @@ router.post('/categories', (req: Request, res: Response) => {
     const now = new Date().toISOString()
     
     db.prepare(`
-      INSERT INTO material_categories (id, tenant_id, code, name, default_unit, description, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, tenantId, code, name, defaultUnit, description || '', now, now)
+      INSERT INTO material_categories (id, tenant_id, code, name, default_unit, description, item_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, code, name, defaultUnit, description || '', finalItemType, now, now)
     
     const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.json({ success: true, data: category })
@@ -86,7 +88,9 @@ router.put('/categories/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, defaultUnit, description } = req.body
+    const { name, defaultUnit, description, itemType } = req.body
+    const validItemTypes = ['raw', 'wip', 'finished', 'service']
+    const finalItemType = itemType && validItemTypes.includes(itemType) ? itemType : undefined
 
     if (!name || !defaultUnit) {
       return res.status(400).json({ success: false, message: 'Name and defaultUnit are required' })
@@ -104,11 +108,11 @@ router.put('/categories/:id', (req: Request, res: Response) => {
 
     db.prepare(`
       UPDATE material_categories
-      SET name = ?, default_unit = ?, description = ?, updated_at = ?
+      SET name = ?, default_unit = ?, description = ?, item_type = COALESCE(?, item_type), updated_at = ?
       WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)
-    `).run(name, defaultUnit, description || '', new Date().toISOString(), id, tenantId)
+    `).run(name, defaultUnit, description || '', finalItemType || null, new Date().toISOString(), id, tenantId)
 
-    const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description FROM material_categories WHERE id = ?').get(id)
+    const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description, item_type as itemType FROM material_categories WHERE id = ?').get(id)
     res.json({ success: true, data: category })
   } catch (error) {
     console.error('Update category error:', error)
@@ -117,7 +121,7 @@ router.put('/categories/:id', (req: Request, res: Response) => {
 })
 
 // DELETE /api/materials/categories/:id — ลบหมวดหมู่
-router.delete('/categories/:id', (req: Request, res: Response) => {
+router.delete('/categories/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
@@ -631,9 +635,9 @@ router.post('/', (req: Request, res: Response) => {
     const qty = initialStock || 0
     db.prepare(`
       INSERT INTO stock_items (id, tenant_id, sku, name, category, category_id, quantity, unit, base_unit, unit_cost, min_stock, max_stock, location, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'RAW_MATERIAL', ?, ?, ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAREHOUSE', ?, ?, ?)
     `).run(
-      id, tenantId, code, name, categoryId, qty, unit, unit, unitCost,
+      id, tenantId, code, name, (category.item_type && category.item_type !== 'raw') ? (category.item_type === 'service' ? 'SERVICE' : category.item_type) : 'RAW_MATERIAL', categoryId, qty, unit, unit, unitCost,
       minStock || 0, maxStock || 1000,
       qty > (minStock || 0) ? 'ADEQUATE' : (qty === 0 ? 'OUT' : 'LOW'),
       now, now
@@ -721,7 +725,7 @@ router.put('/:id', (req: Request, res: Response) => {
 })
 
 // Delete material
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     

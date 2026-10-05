@@ -107,6 +107,11 @@ router.put('/:id', async (req, res) => {
     return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์แก้ไขบัญชี MASTER' })
   }
 
+  // ponytail: ADMIN cannot touch other ADMINs; MASTER can touch anyone
+  if (req.user!.role !== 'MASTER' && ['ADMIN', 'MASTER'].includes(existing.role) && id !== req.user!.userId) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot manage ADMIN accounts' })
+  }
+
   // Nobody may promote a user to MASTER via API (master lives only in .env).
   if (role === 'MASTER') {
     return res.status(403).json({ success: false, message: 'ไม่สามารถกำหนด role เป็น MASTER ผ่าน API ได้' })
@@ -158,6 +163,11 @@ router.patch('/:id/permissions', async (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ? AND tenant_id = ?').get(id, req.user!.tenantId) as any
   if (!existing) return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' })
 
+  // ponytail: ADMIN cannot touch other ADMINs; MASTER can touch anyone
+  if (req.user!.role !== 'MASTER' && ['ADMIN', 'MASTER'].includes(existing.role) && id !== req.user!.userId) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot manage ADMIN accounts' })
+  }
+
   if (id === req.user!.userId) {
     return res.status(403).json({ success: false, message: 'ไม่สามารถแก้ไขสิทธิ์ของตัวเองได้' })
   }
@@ -200,8 +210,13 @@ router.delete('/:id', (req, res) => {
   }
 
   const db = getDb()
-  const existing = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(id, req.user!.tenantId)
+  const existing = db.prepare('SELECT id, role FROM users WHERE id = ? AND tenant_id = ?').get(id, req.user!.tenantId) as any
   if (!existing) return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' })
+
+  // ponytail: ADMIN cannot touch other ADMINs; MASTER can touch anyone
+  if (req.user!.role !== 'MASTER' && ['ADMIN', 'MASTER'].includes(existing.role) && id !== req.user!.userId) {
+    return res.status(403).json({ success: false, message: 'Forbidden: cannot manage ADMIN accounts' })
+  }
 
   db.prepare('DELETE FROM users WHERE id = ?').run(id)
   res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' })
