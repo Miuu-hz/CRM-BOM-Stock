@@ -50,6 +50,7 @@ import {
   VAT_MODE_LABEL, prefillUnitPriceFromCost,
 } from '../utils/vat'
 import { getCachedCompanySettings } from '../services/companySettings.service'
+import { fetchStockAliases, type StockAlias } from '../services/sales.service'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
 
 // ร้านจด VAT แล้วหรือยัง — ใบขายใหม่ ใบซื้อใหม่ ใช้ตัดสินโหมด VAT เริ่มต้น
@@ -392,17 +393,28 @@ const SubmitSplitButton = ({
   </div>
 )
 
-const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onAddNew }: {
-  materials: Material[]; value: string; onChange: (id: string, mat?: Material) => void; disabled?: boolean
+/** ต้นทุนเริ่มต้นต่อหน่วยของบรรทัด: ชื่อเรียกแทนที่ผูกหน่วย = ต้นทุนต่อหน่วยฐาน × ตัวคูณของชื่อนั้น (ราคาซื้อ ไม่ใช่ราคาขาย) */
+const aliasCost = (mat?: Material, alias?: StockAlias) =>
+  Math.round((mat?.unitCost || 0) * (alias?.unit && alias.factor ? alias.factor : 1) * 100) / 100
+
+const MaterialSearchInput = ({ materials, aliases = [], value, onChange, disabled = false, onAddNew }: {
+  materials: Material[]; value: string; onChange: (id: string, mat?: Material, alias?: StockAlias) => void; disabled?: boolean
   onAddNew?: (query: string) => void
+  /** ชื่อเรียกแทน SKU (ตัวเดียวกับหน้าขาย) — ปิดฟีเจอร์ที่ ตั้งค่า = ว่าง ไม่มีแถวพวกนี้ */
+  aliases?: StockAlias[]
 }) => {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const selected = materials.find(m => m.id === value)
+  const q = query.toLowerCase()
   const filtered = materials.filter(m =>
-    !query || m.name.toLowerCase().includes(query.toLowerCase()) || m.code.toLowerCase().includes(query.toLowerCase())
+    !query || m.name.toLowerCase().includes(q) || m.code.toLowerCase().includes(q)
   ).slice(0, 40)
+  // ชื่อเรียกแทนโผล่เมื่อพิมพ์ค้นชื่อเท่านั้น (ไม่งั้นรายการว่างก็ล้นด้วยชื่อรอง) · ปลายทางต้องอยู่ในรายการสินค้า
+  const aliasHits = query ? aliases.filter(a => a.name.toLowerCase().includes(q))
+    .map(a => ({ alias: a, mat: materials.find(m => m.id === a.stock_item_id) }))
+    .filter((h): h is { alias: StockAlias; mat: Material } => !!h.mat).slice(0, 20) : []
   return (
     <div className="relative">
       <div className="relative">
@@ -425,7 +437,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
       </div>
       {open && (
         <div className="absolute z-40 left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-          {filtered.length === 0 ? (
+          {filtered.length + aliasHits.length === 0 ? (
             <div className="px-3 py-3 text-center">
               <p className="text-xs text-[var(--fg-4)] mb-2">{t('purchase.search.noMaterialFound', { query })}</p>
               {onAddNew && (
@@ -438,7 +450,7 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
           ) : (
             <>
               <div className="px-3 py-1.5 border-b border-[var(--border)]/50 text-xs text-[var(--fg-4)] flex items-center justify-between">
-                <span>{t('purchase.common.countItems', { count: filtered.length })}</span>
+                <span>{t('purchase.common.countItems', { count: filtered.length + aliasHits.length })}</span>
                 {onAddNew && (
                   <button onMouseDown={() => { onAddNew(query); setOpen(false) }}
                     className="flex items-center gap-1 text-success hover:text-success/80 transition-colors">
@@ -460,6 +472,19 @@ const MaterialSearchInput = ({ materials, value, onChange, disabled = false, onA
                     'text-[var(--fg-4)] bg-gray-500/10'
                   }`}>
                     {m.currentStock ?? 0} {unitLabelFor(m.unit)}
+                  </span>
+                </button>
+              ))}
+              {aliasHits.map(({ alias: a, mat: m }) => (
+                <button key={`alias:${a.id}`} onMouseDown={() => { onChange(m.id, m, a); setOpen(false) }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[var(--bg)] text-left transition-colors">
+                  <span className="text-xs font-mono text-[var(--primary)] w-20 shrink-0">{m.code}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-[var(--fg-1)] truncate">{a.name}</span>
+                    <span className="block text-xs text-[var(--fg-4)] truncate">
+                      {t('stock.alias.aliasOf', { name: m.name })}
+                      {a.unit && a.factor ? ` (${t('stock.alias.binding', { unit: unitLabelFor(a.unit), factor: a.factor, base: unitLabelFor(m.baseUnit || m.unit) })})` : ''}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -1367,6 +1392,7 @@ const Purchase = () => {
   const [quickAddStockPrefill, setQuickAddStockPrefill] = useState<{ name?: string; unitCost?: number } | undefined>()
   const [quickAddStockCallback, setQuickAddStockCallback] = useState<((item: { id: string; code: string; name: string; unit: string; unitCost: number }) => void) | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
+  const [stockAliases, setStockAliases] = useState<StockAlias[]>([])
   const [drAccounts, setDrAccounts] = useState<Account[]>([])
   // บัญชีหนี้สิน สำหรับเลือกปลายทางของหนี้ (เดิมยึดเจ้าหนี้การค้าตายตัว ปรับไม่ได้)
   const [crAccounts, setCrAccounts] = useState<Account[]>([])
@@ -1656,6 +1682,7 @@ const Purchase = () => {
   }
 
   const fetchMaterials = async () => {
+    fetchStockAliases().then(setStockAliases)
     try {
       const stockItems = await stockService.getAll()
       const mapped = stockItems.map(s => {
@@ -4063,14 +4090,15 @@ const Purchase = () => {
             <div key={index} className="p-3 bg-[var(--bg)] rounded-xl space-y-2 border border-[var(--border)]/40">
               {/* Row 1: material + description */}
               <div className="grid grid-cols-2 gap-2">
-                <MaterialSearchInput materials={materials}
+                <MaterialSearchInput materials={materials} aliases={stockAliases}
                   value={item.material_id}
                   disabled={modalMode === 'view'}
-                  onChange={(id, mat) => updateRequestItemFields(index, {
+                  onChange={(id, mat, alias) => updateRequestItemFields(index, {
                     material_id: id,
-                    unit: item.unit || mat?.unit,
+                    // เลือกชื่อเรียกแทน → หน่วยที่ผูกกับชื่อนั้น + ชื่อบรรทัด = ชื่อเรียกแทน (ตอนรับของระบบใช้ตัวคูณของชื่อนี้)
+                    unit: alias?.unit || item.unit || mat?.unit,
                     // ผูก SKU ไม่ทับชื่อจากบิล — ชื่อย่อยจับคู่ได้อยู่แล้ว เติมชื่อ SKU เฉพาะบรรทัดที่ยังว่าง
-                    description: item.description || mat?.name || ''
+                    description: alias?.name || item.description || mat?.name || ''
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
                     (newItem) => updateRequestItemFields(index, {
@@ -4166,14 +4194,19 @@ const Purchase = () => {
         const want = norm(it.description)
         if (!want) return it
         const exact = materials.filter(m => norm(m.name) === want)
-        if (exact.length === 1) {
+        // ไม่มีชื่อ SKU ตรงเป๊ะ → ลองชื่อเรียกแทนที่ตรงเป๊ะ (ชื่อ SKU ชนะเสมอ กติกาเดียวกับ backend)
+        const alias = exact.length === 0 ? stockAliases.find(a => norm(a.name) === want) : undefined
+        const hit = exact.length === 1 ? exact : materials.filter(m => m.id === alias?.stock_item_id)
+        if (hit.length === 1) {
           matched++
-          const m = exact[0]
-          const price = m.unitCost && (!it.unit_price || it.unit_price === 0) ? prefillUnitPriceFromCost(m.unitCost, mode, registered) : it.unit_price
+          const m = hit[0]
+          // บรรทัดระบุหน่วยอื่นมาเอง → ไม่ใช้ตัวคูณของชื่อเรียกแทนคิดราคา
+          const cost = aliasCost(m, it.unit && normalizeUnit(it.unit) !== alias?.unit ? undefined : alias)
+          const price = cost && (!it.unit_price || it.unit_price === 0) ? prefillUnitPriceFromCost(cost, mode, registered) : it.unit_price
           return {
             ...it,
             material_id: m.id,
-            unit: it.unit || m.unit,
+            unit: it.unit || alias?.unit || m.unit,
             unit_price: price,
             total_price: it.quantity * price,
           }
@@ -4424,13 +4457,14 @@ const Purchase = () => {
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <MaterialSearchInput materials={materials} value={item.material_id} disabled={modalMode === 'view'}
-                  onChange={(id, mat) => updateOrderItemFields(index, {
+                <MaterialSearchInput materials={materials} aliases={stockAliases} value={item.material_id} disabled={modalMode === 'view'}
+                  onChange={(id, mat, alias) => updateOrderItemFields(index, {
                     material_id: id,
                     // ผูก SKU ไม่ทับชื่อจากบิล — ชื่อย่อยจับคู่ได้อยู่แล้ว เติมชื่อ SKU เฉพาะบรรทัดที่ยังว่าง
-                    description: item.description || mat?.name || '',
-                    unit: item.unit || mat?.unit,
-                    unit_price: mat?.unitCost && item.unit_price === 0 ? prefillUnitPriceFromCost(mat.unitCost, effectiveOrderVatMode, registered) : item.unit_price,
+                    // เลือกชื่อเรียกแทน → ชื่อบรรทัด = ชื่อเรียกแทน + หน่วยที่ผูก (ตอนรับของใช้ตัวคูณของชื่อนี้)
+                    description: alias?.name || item.description || mat?.name || '',
+                    unit: alias?.unit || item.unit || mat?.unit,
+                    unit_price: mat?.unitCost && item.unit_price === 0 ? prefillUnitPriceFromCost(aliasCost(mat, alias), effectiveOrderVatMode, registered) : item.unit_price,
                     skip_stock: id ? false : item.skip_stock,
                   })}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(

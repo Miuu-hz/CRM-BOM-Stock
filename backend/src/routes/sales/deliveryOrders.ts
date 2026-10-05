@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
-import { isServiceItem } from '../../services/stockItem.service'
+import { isServiceItem, soldAsNote } from '../../services/stockItem.service'
 import { roundQty } from '../../utils/qty'
 import { soStockAlreadyDeducted } from './shared'
 
@@ -184,6 +184,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             }
 
             const needed = roundQty(Number(deductQty))
+            // ขายด้วยชื่อเรียกแทน → จำชื่อรอง + จดชื่อใน stock log แบบเดียวกับยืนยัน SO
+            // (ถ้า SO ตัดไปแล้ว ไม่เข้าบล็อกนี้เลย → ไม่จำ/ไม่จดซ้ำ)
+            movementNotes = soldAsNote(tenantId, soItem?.product_name, stockItem, deliveryOrder.do_number, req.user!.userId) + movementNotes
             // auto-unpack ถ้า quantity ไม่พอ
             if (stockItem.quantity < needed && (stockItem.sealed_qty ?? 0) > 0) {
               const unpack = autoUnpackIfNeeded(stockItem, needed, tenantId)

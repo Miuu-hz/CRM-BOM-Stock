@@ -82,3 +82,15 @@ describe('poNextStep — มี GR ร่างแล้วต้องล็อ
     expect(body.indexOf("draftReceiptPending")).toBeLessThan(body.indexOf("purchase.actions.receiveGoods"))
   })
 })
+
+describe('Purchase.tsx — ชื่อเรียกแทน SKU (เหมือนหน้าขาย)', () => {
+  it('ใบขอซื้อ + ใบสั่งซื้อ ส่งรายการชื่อเรียกแทนเข้าช่องค้นหาสินค้า (โหลดจากตัวเดียวกับหน้าขาย)', () => {
+    expect(SRC).toMatch(/import \{ fetchStockAliases, type StockAlias \} from '\.\.\/services\/sales\.service'/)
+    expect((SRC.match(/<MaterialSearchInput materials=\{materials\} aliases=\{stockAliases\}/g) || []).length).toBe(2)
+  })
+  it('ราคาซื้อเริ่มต้นคิดจากต้นทุน (unitCost) × ตัวคูณของชื่อ — ไม่ใช้ราคาขาย', () => {
+    const fn = SRC.slice(SRC.indexOf('const aliasCost'), SRC.indexOf('const MaterialSearchInput'))
+    expect(fn).toContain('unitCost')
+    expect(fn).not.toMatch(/sell_price|unit_price/)
+  })
+})

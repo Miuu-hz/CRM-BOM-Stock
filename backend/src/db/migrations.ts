@@ -1077,47 +1077,9 @@ export function runMigrations(db: any): void {
 
   // Migration: make purchase_orders.supplier_id nullable (needed for AI-generated draft POs)
   try {
-    const poSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_orders'`).get() as any
-    if (poSQL?.sql && /supplier_id\s+TEXT\s+NOT\s+NULL/i.test(poSQL.sql)) {
-      db.pragma('foreign_keys = OFF')
-      const cols = db.prepare(`PRAGMA table_info(purchase_orders)`).all() as any[]
-      const hasLinkedPrId = cols.some((c: any) => c.name === 'linked_pr_id')
-      const baseColsCsv = 'id, tenant_id, po_number, supplier_id, status, order_date, expected_date, received_date, subtotal, tax_rate, tax_amount, total_amount, notes, created_by, approved_by, created_at, updated_at'
-      const allColsCsv = hasLinkedPrId ? `${baseColsCsv}, linked_pr_id` : baseColsCsv
-      db.exec(`
-        CREATE TABLE purchase_orders_new (
-          id TEXT PRIMARY KEY,
-          tenant_id TEXT,
-          po_number TEXT NOT NULL,
-          supplier_id TEXT,
-          status TEXT DEFAULT 'DRAFT',
-          order_date TEXT DEFAULT CURRENT_TIMESTAMP,
-          expected_date TEXT,
-          received_date TEXT,
-          subtotal REAL DEFAULT 0,
-          tax_rate REAL DEFAULT 0,
-          tax_amount REAL DEFAULT 0,
-          total_amount REAL DEFAULT 0,
-          notes TEXT,
-          created_by TEXT,
-          approved_by TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          ${hasLinkedPrId ? 'linked_pr_id TEXT,' : ''}
-          FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
-          UNIQUE(tenant_id, po_number)
-        );
-        INSERT OR IGNORE INTO purchase_orders_new (${allColsCsv})
-          SELECT ${allColsCsv} FROM purchase_orders;
-        DROP TABLE purchase_orders;
-        ALTER TABLE purchase_orders_new RENAME TO purchase_orders;
-      `)
-      db.pragma('foreign_keys = ON')
-      console.log('✅ Migration: purchase_orders.supplier_id is now nullable')
-    }
+    if (makePoSupplierNullable(db)) console.log('✅ Migration: purchase_orders.supplier_id is now nullable')
   } catch (e) {
     console.error('⚠️ purchase_orders supplier_id nullable migration error:', e)
-    db.pragma('foreign_keys = ON')
   }
 
   // Migration: add department column and normalize legacy roles
@@ -2482,4 +2444,65 @@ export function runMigrations(db: any): void {
     }
     console.log('✅ Migration: backfill suppliers.vat_mode ต่อ tenant:', supplierCountByTenant)
   } catch (e) { console.error('⚠️ suppliers.vat_mode backfill error:', e) }
+}
+
+/**
+ * สร้าง purchase_orders ใหม่ให้ supplier_id เป็น NULL ได้ (PO ร่างจาก AI ยังไม่รู้ผู้ขาย) — ทำเฉพาะตอนยังเป็น NOT NULL
+ * ทั้งก้อนอยู่ในทรานแซกชันเดียว พังกลางทาง = rollback ตารางเดิมไม่หาย · PRAGMA foreign_keys ต้องตั้งนอกทรานแซกชัน
+ * (ข้างในเป็น no-op) · DROP TABLE ทิ้ง index ไปด้วย ต้องสร้างคืนให้ตรง schema.ts
+ * คืน true = rebuild แล้ว
+ */
+export function makePoSupplierNullable(db: any): boolean {
+  const poSQL = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_orders'`).get() as any
+  if (!poSQL?.sql || !/supplier_id\s+TEXT\s+NOT\s+NULL/i.test(poSQL.sql)) return false
+  const cols = db.prepare(`PRAGMA table_info(purchase_orders)`).all() as any[]
+  // พกคอลัมน์ที่เพิ่มด้วย ALTER มาก่อนหน้านี้ไปด้วยทุกตัว — เดิมพกแค่ linked_pr_id
+  // DB ใหม่เลยเสีย approved_at / payment_method / is_paid ฯลฯ ที่ migration schema drift
+  // เพิ่งเพิ่ม (สร้าง PO ครั้งแรกพัง "no column named payment_method" จนกว่าจะรีสตาร์ตรอบสอง)
+  const baseCols = ['id', 'tenant_id', 'po_number', 'supplier_id', 'status', 'order_date', 'expected_date', 'received_date', 'subtotal', 'tax_rate', 'tax_amount', 'total_amount', 'notes', 'created_by', 'approved_by', 'created_at', 'updated_at']
+  const extraCols = cols.filter((c: any) => !baseCols.includes(c.name))
+  const allColsCsv = [...baseCols, ...extraCols.map((c: any) => c.name)].join(', ')
+  const extraColDefs = extraCols
+    .map((c: any) => `${c.name} ${c.type || ''}${c.dflt_value != null ? ` DEFAULT ${c.dflt_value}` : ''},`)
+    .join(' ')
+  const rebuild = db.transaction(() => {
+    db.exec(`
+      DROP TABLE IF EXISTS purchase_orders_new;
+      CREATE TABLE purchase_orders_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        po_number TEXT NOT NULL,
+        supplier_id TEXT,
+        status TEXT DEFAULT 'DRAFT',
+        order_date TEXT DEFAULT CURRENT_TIMESTAMP,
+        expected_date TEXT,
+        received_date TEXT,
+        subtotal REAL DEFAULT 0,
+        tax_rate REAL DEFAULT 0,
+        tax_amount REAL DEFAULT 0,
+        total_amount REAL DEFAULT 0,
+        notes TEXT,
+        created_by TEXT,
+        approved_by TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        ${extraColDefs}
+        FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        UNIQUE(tenant_id, po_number)
+      );
+      INSERT OR IGNORE INTO purchase_orders_new (${allColsCsv})
+        SELECT ${allColsCsv} FROM purchase_orders;
+      DROP TABLE purchase_orders;
+      ALTER TABLE purchase_orders_new RENAME TO purchase_orders;
+      CREATE INDEX IF NOT EXISTS idx_po_supplier ON purchase_orders(supplier_id);
+      CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status);
+    `)
+  })
+  db.pragma('foreign_keys = OFF')
+  try {
+    rebuild()
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
+  return true
 }

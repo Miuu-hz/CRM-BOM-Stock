@@ -31,6 +31,31 @@ export interface Product {
   alias_factor?: number
 }
 
+/** ชื่อเรียกแทน SKU จาก GET /stock/aliases — ปิดฟีเจอร์ที่ ตั้งค่า = backend คืนว่าง (ไม่ต้องเช็คเอง) */
+export interface StockAlias {
+  id: string
+  name: string
+  stock_item_id: string
+  stock_item_name: string
+  /** หน่วยที่ผูก (normalize แล้ว) + จำนวนหน่วยฐานต่อ 1 หน่วยนั้น — ไม่ผูก = undefined */
+  unit?: string
+  factor?: number
+}
+
+/** ใช้ร่วมกันทั้งหน้าขาย (Sales) และหน้าซื้อ (Purchase) · โหลดไม่ได้ = ไม่มีชื่อเรียกแทน (ไม่บล็อกหน้า) */
+export async function fetchStockAliases(): Promise<StockAlias[]> {
+  try {
+    const { data } = await api.get('/stock/aliases')
+    return (data?.data || []).map((a: any) => ({
+      id: a.id, name: a.name, stock_item_id: a.stock_item_id, stock_item_name: a.stock_item_name,
+      unit: a.unit && Number(a.factor) > 0 ? normalizeUnit(a.unit) : undefined,
+      factor: a.unit && Number(a.factor) > 0 ? Number(a.factor) : undefined,
+    }))
+  } catch {
+    return []
+  }
+}
+
 export interface QuotationItem {
   productId?: string
   productName?: string
@@ -93,9 +118,9 @@ const salesService = {
   // Products (stock_items with sell price) — เฉพาะที่ขายได้ (FINISHED/WIP/SERVICE) ไม่ใช่วัตถุดิบ
   // + ชื่อเรียกแทน SKU (ต่อท้าย สินค้าจริงมาก่อนเสมอ — find ตาม id จะได้ตัวจริง) ปิดฟีเจอร์ = backend คืนว่าง
   getProducts: async (): Promise<Product[]> => {
-    const [{ data }, aliasRes] = await Promise.all([
+    const [{ data }, aliasRows] = await Promise.all([
       api.get('/stock?limit=500&sellable=1'),
-      api.get('/stock/aliases').catch(() => ({ data: { data: [] } })),
+      fetchStockAliases(),
     ])
     const products: Product[] = (data.data || []).map((p: any) => ({
       id: p.id,
@@ -107,14 +132,14 @@ const salesService = {
       sell_price: p.unit_price || p.unitCost || 0,
     }))
     const byId = new Map(products.map(p => [p.id, p]))
-    const aliases: Product[] = (aliasRes.data?.data || [])
-      .filter((a: any) => byId.has(a.stock_item_id)) // เฉพาะปลายทางที่ขายได้ (อยู่ในรายการด้านบน)
-      .map((a: any) => ({
+    const aliases: Product[] = aliasRows
+      .filter(a => byId.has(a.stock_item_id)) // เฉพาะปลายทางที่ขายได้ (อยู่ในรายการด้านบน)
+      .map(a => ({
         ...byId.get(a.stock_item_id)!,
         name: a.name,
         alias_of: a.stock_item_name,
-        alias_unit: a.unit ? normalizeUnit(a.unit) : undefined,
-        alias_factor: a.factor ? Number(a.factor) : undefined,
+        alias_unit: a.unit,
+        alias_factor: a.factor,
       }))
     return [...products, ...aliases]
   },

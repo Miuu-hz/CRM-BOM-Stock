@@ -443,27 +443,18 @@ export default function UnitConversions() {
     return result
   }, [allConversions, catalogUnits])
 
-  const handleChainAdd = async (from: string, to: string, factor: number) => {
-    const submit = async (force: boolean) => {
-      await api.post('/materials/unit-conversions', {
-        from_unit: from,
-        to_unit: to,
-        conversion_factor: factor,
-        material_id: chainEditorCtx?.id ?? undefined,
-        ...(force ? { force: true } : {}),
-      })
-      invalidateUnitsCache()
-      await fetchAll()
-    }
-    try {
-      await submit(false)
-    } catch (err: any) {
-      const info = err?.response?.status === 409 && err?.response?.data?.code === 'UNIT_CONVERSION_CONFLICT'
-        ? (err.response.data.data as ConversionConflict)
-        : null
-      if (!info) throw err
-      setConflict({ info, retry: () => submit(true) })
-    }
+  // กฎขัดกัน (409) ให้ UnitChainEditor จัดการเอง (ถาม → onAdd(..., force=true)) — เดิมจับไว้ตรงนี้แล้ว
+  // คืนปกติ editor เลยขึ้น "เพิ่มแล้ว" ซ้อนกับหน้าต่างเตือนของหน้านี้
+  const handleChainAdd = async (from: string, to: string, factor: number, force?: boolean) => {
+    await api.post('/materials/unit-conversions', {
+      from_unit: from,
+      to_unit: to,
+      conversion_factor: factor,
+      material_id: chainEditorCtx?.id ?? undefined,
+      ...(force ? { force: true } : {}),
+    })
+    invalidateUnitsCache()
+    await fetchAll()
   }
 
   const handleChainDelete = async (id: string) => {

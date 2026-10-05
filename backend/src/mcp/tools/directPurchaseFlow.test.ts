@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import db from '../../db/sqlite'
 import { registerPurchaseTools } from './purchase'
+import { invoiceUploadDir } from '../../routes/sales/shared'
 import { createGoodsReceipt, confirmGoodsReceipt } from '../../services/goodsReceipt.service'
 import { createPurchaseInvoice } from '../../services/purchaseBilling.service'
 
@@ -79,7 +80,7 @@ describe('Direct Purchase Flow (Cash Purchase Memory & Evidence Lineage)', () =>
     const attRow = db.prepare('SELECT * FROM payment_attachments WHERE ref_type = ? AND ref_id = ?').get('PURCHASE_ORDER', poRes.poId) as any
     expect(attRow).toBeDefined()
     expect(attRow.original_name).toBe('makro_receipt.jpg')
-    const fullPath = path.resolve('/opt/crm/backend/storage/payment-attachments', attRow.file_path)
+    const fullPath = path.resolve(invoiceUploadDir, attRow.file_path)
     expect(fs.existsSync(fullPath)).toBe(true)
 
     // 2. Test universal MCP tool: attach_document_evidence

@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest'
+import express from 'express'
+import request from 'supertest'
 import db from '../db/sqlite'
+import { authenticate } from '../middleware/auth.middleware'
+import deliveryOrdersRouter from '../routes/sales/deliveryOrders'
 import { generateId } from '../utils/id'
 import { createTestUser } from '../test/testAuth'
 import { createGoodsReceipt, confirmGoodsReceipt } from './goodsReceipt.service'
 import { saveAlias, findAliasTarget, rememberAlias, listAliases, aliasConflictMessage, StockItemRefError } from './stockItem.service'
 import { createConversion, convertQuantityBidirectional } from './unitConversion.service'
-import { deductStockForSO, restoreStockForSO } from '../routes/sales/shared'
+import { deductStockForSO, restoreStockForSO, issuedBasePerUnit } from '../routes/sales/shared'
 import { matchStockItem } from '../mcp/tools/shared'
 
 /**
@@ -185,5 +189,130 @@ describe('ชื่อเรียกแทน SKU ผูกหน่วย (น
     db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
                 VALUES (?, ?, ?, 'ไข่', 'raw', 0, 'pcs', 'pcs', 1, 'STOCK', 'ACTIVE')`).run(id, user.tenantId, 'SKU-' + id.slice(0, 8))
     expect(rememberAlias(user.tenantId, 'ไข่ฟาร์ม B', id, 'GR-1', user.userId)).toBe(true)
+  })
+
+  it('รายการรวม (ช่องค้นหา) ไม่เอาชื่อรองที่ชนชื่อ SKU ที่ยังใช้งาน · รายการของสินค้าตัวเดียวยังโชว์ให้ลบได้', () => {
+    const { user, t, water } = setup()
+    saveAlias(t, { name: 'โซดา', stockItemId: water, unit: 'pack', factor: 15 }, user.userId)
+    const soda = generateId()
+    db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
+                VALUES (?, ?, ?, 'โซดา', 'FINISHED', 0, 'bottle', 'bottle', 5, 'STOCK', 'ACTIVE')`).run(soda, t, 'SKU-' + soda.slice(0, 8))
+    expect(listAliases(t).map((a: any) => a.name)).not.toContain('โซดา')
+    expect(listAliases(t, water).map((a: any) => a.name)).toContain('โซดา')
+  })
+})
+
+// ── ใบส่งของ (DO) ตัดสต็อกเอง (SO ยังไม่ได้ตัด) ต้องทำเหมือนยืนยัน SO: ตัวคูณชื่อเรียกแทน + จำชื่อ + จดชื่อใน log ──
+const doApp = express()
+doApp.use(express.json())
+doApp.use('/api/delivery-orders', authenticate, deliveryOrdersRouter)
+
+function doFor(t: string, soId: string) {
+  const so = db.prepare('SELECT customer_id FROM sales_orders WHERE id = ?').get(soId) as any
+  const doId = generateId()
+  const doNumber = 'DO-AL-' + doId.slice(0, 6)
+  db.prepare(`INSERT INTO delivery_orders (id, tenant_id, do_number, sales_order_id, customer_id, status) VALUES (?, ?, ?, ?, ?, 'SHIPPED')`)
+    .run(doId, t, doNumber, soId, so.customer_id)
+  for (const line of db.prepare('SELECT id, quantity FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]) {
+    db.prepare('INSERT INTO delivery_order_items (id, tenant_id, delivery_order_id, sales_order_item_id, quantity) VALUES (?, ?, ?, ?, ?)')
+      .run(generateId(), t, doId, line.id, line.quantity)
+  }
+  return { doId, doNumber }
+}
+
+describe('ใบส่งของ (DO) กับชื่อเรียกแทน SKU', () => {
+  it('SO ยังไม่ตัดสต็อก → DO ตัดตามตัวคูณของชื่อ · จดชื่อ · จำชื่อใหม่เป็นชื่อรอง', async () => {
+    const { user, t, water } = setup()
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'pack', factor: 15 }, user.userId)
+    const { soId } = soWith(t, water, [
+      { name: 'น้ำดื่มสิงห์', qty: 2, unit: 'pack' },
+      { name: 'น้ำดื่มตราใหม่', qty: 1, unit: 'pack' },
+      { name: 'น้ำดื่ม', qty: 1, unit: 'pack' },
+    ])
+    const { doId, doNumber } = doFor(t, soId)
+
+    const res = await request(doApp).put(`/api/delivery-orders/${doId}/status`)
+      .set('Authorization', 'Bearer ' + user.token).send({ status: 'DELIVERED' })
+    expect(res.status).toBe(200)
+    expect(qtyOf(water).quantity).toBe(1000 - 30 - 12 - 12)
+
+    const notes = (db.prepare("SELECT notes FROM stock_movements WHERE stock_item_id = ? AND type = 'OUT' AND reference = ?")
+      .all(water, 'DO: ' + doNumber) as any[]).map(r => r.notes)
+    expect(notes.filter(n => n.startsWith('ขาย "น้ำดื่มสิงห์" · '))).toHaveLength(1)
+    expect(notes.filter(n => n.startsWith('ขาย "น้ำดื่มตราใหม่" · '))).toHaveLength(1)
+    expect(notes.filter(n => n.startsWith('ขาย "'))).toHaveLength(2) // ชื่อตรง SKU ไม่ต้องจด
+    expect(matchStockItem(t, 'น้ำดื่มตราใหม่').viaAlias).toBe(doNumber)
+    expect(findAliasTarget(t, 'น้ำดื่มสิงห์')?.factor).toBe(15) // จำซ้ำชื่อเดิม หน่วยที่ผูกไม่หาย
+  })
+
+  it('SO ตัดสต็อกไปแล้ว → DO ไม่ตัด/ไม่จด/ไม่จำซ้ำ', async () => {
+    const { user, t, water } = setup()
+    const { soId, soNumber } = soWith(t, water, [{ name: 'น้ำดื่มตราใหม่', qty: 1, unit: 'pack' }])
+    deductStockForSO(t, soId, soNumber)
+    const { doId } = doFor(t, soId)
+
+    const res = await request(doApp).put(`/api/delivery-orders/${doId}/status`)
+      .set('Authorization', 'Bearer ' + user.token).send({ status: 'DELIVERED' })
+    expect(res.status).toBe(200)
+    expect(qtyOf(water).quantity).toBe(1000 - 12)
+    const notes = (db.prepare("SELECT notes FROM stock_movements WHERE stock_item_id = ? AND type = 'OUT'").all(water) as any[]).map(r => r.notes)
+    expect(notes).toHaveLength(1)
+    expect(notes[0].startsWith('ขาย "น้ำดื่มตราใหม่" · ')).toBe(true)
+    expect(matchStockItem(t, 'น้ำดื่มตราใหม่').viaAlias).toBe(soNumber) // ไม่ถูก DO ทับ
+  })
+
+  it('ปิดสวิตช์ → DO ไม่จำ ไม่จดชื่อ', async () => {
+    const { user, t, water } = setup({ aliasEnabled: false })
+    const { soId } = soWith(t, water, [{ name: 'น้ำดื่มตราใหม่', qty: 1, unit: 'pack' }])
+    const { doId } = doFor(t, soId)
+    await request(doApp).put(`/api/delivery-orders/${doId}/status`)
+      .set('Authorization', 'Bearer ' + user.token).send({ status: 'DELIVERED' })
+    const n = (db.prepare("SELECT notes FROM stock_movements WHERE stock_item_id = ? AND type = 'OUT'").get(water) as any).notes
+    expect(n.startsWith('ขาย "')).toBe(false)
+    expect(db.prepare('SELECT 1 FROM stock_item_aliases WHERE tenant_id = ?').get(t)).toBeUndefined()
+  })
+})
+
+describe('คืนสต็อกตามที่ตัดไปจริง (ไม่แปลงใหม่ด้วยตัวคูณปัจจุบัน)', () => {
+  it('ตัด 2 แพ็ค × 15 → แก้ตัวคูณเป็น 12 → ยกเลิก → ได้คืน 30 · ยกเลิกซ้ำไม่คืนเพิ่ม', () => {
+    const { user, t, water } = setup()
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'pack', factor: 15 }, user.userId)
+    const { soId, soNumber } = soWith(t, water, [{ name: 'น้ำดื่มสิงห์', qty: 2, unit: 'pack' }])
+    deductStockForSO(t, soId, soNumber)
+    expect(qtyOf(water).quantity).toBe(970)
+
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'pack', factor: 12 }, user.userId)
+    const lineId = (db.prepare('SELECT id FROM sales_order_items WHERE sales_order_id = ?').get(soId) as any).id
+    expect(issuedBasePerUnit(t, lineId)).toBe(15) // ใบลดหนี้รับคืนบางส่วนใช้ตัวคูณตอนขาย
+
+    restoreStockForSO(t, soId, soNumber)
+    expect(qtyOf(water).quantity).toBe(1000)
+    restoreStockForSO(t, soId, soNumber)
+    expect(qtyOf(water).quantity).toBe(1000)
+  })
+
+  it('ลบชื่อเรียกแทนก่อนยกเลิก (ไม่มีกฎแปลงเหลือ) ก็ยังคืนได้เท่าที่ตัด', () => {
+    const { user, t, water } = setup()
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'case', factor: 24 }, user.userId)
+    const { soId, soNumber } = soWith(t, water, [{ name: 'น้ำดื่มสิงห์', qty: 1, unit: 'case' }])
+    deductStockForSO(t, soId, soNumber)
+    db.prepare('DELETE FROM stock_item_aliases WHERE tenant_id = ?').run(t)
+    restoreStockForSO(t, soId, soNumber)
+    expect(qtyOf(water).quantity).toBe(1000)
+  })
+
+  it('ส่งของบางส่วนผ่าน DO (SO ไม่ได้ตัด) → ยกเลิกคืนเท่าที่ DO ตัดจริง ไม่คืนทั้งใบ', async () => {
+    const { user, t, water } = setup()
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'pack', factor: 15 }, user.userId)
+    const { soId, soNumber } = soWith(t, water, [{ name: 'น้ำดื่มสิงห์', qty: 2, unit: 'pack' }])
+    const { doId } = doFor(t, soId)
+    db.prepare('UPDATE delivery_order_items SET quantity = 1 WHERE delivery_order_id = ?').run(doId)
+    await request(doApp).put(`/api/delivery-orders/${doId}/status`)
+      .set('Authorization', 'Bearer ' + user.token).send({ status: 'DELIVERED' })
+    expect(qtyOf(water).quantity).toBe(985)
+
+    saveAlias(t, { name: 'น้ำดื่มสิงห์', stockItemId: water, unit: 'pack', factor: 12 }, user.userId)
+    restoreStockForSO(t, soId, soNumber)
+    expect(qtyOf(water).quantity).toBe(1000)
   })
 })

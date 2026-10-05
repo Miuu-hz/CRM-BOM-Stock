@@ -984,7 +984,7 @@ function GeneralSettings() {
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
-          ชื่อเรียกแทน SKU (ชื่อที่ไม่ตรงกับ SKU)
+          {t('settings.settingsPage.stockAlias.title')}
         </h3>
         <button
           type="button"
@@ -994,13 +994,9 @@ function GeneralSettings() {
         >
           <div className="text-left">
             <p className={`font-medium ${stockAliasEnabled ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>
-              {stockAliasEnabled ? 'เปิดใช้ — ชื่อที่ไม่ตรง SKU ผูกเข้า SKU เดิมได้' : 'ปิดอยู่ — ต้องใช้ชื่อ SKU ตรงเป๊ะเท่านั้น'}
+              {t(stockAliasEnabled ? 'settings.settingsPage.stockAlias.toggleOn' : 'settings.settingsPage.stockAlias.toggleOff')}
             </p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">
-              ตัวช่วยสำหรับร้านเล็ก/SME: บิลผู้ขายเขียน "หมูบด" แต่ SKU ชื่อ "หมูสับ" หรือขาย "น้ำดื่มสิงห์" (1 แพ็ค = 15 ขวด)
-              กับ "น้ำดื่มทั่วไป" (1 แพ็ค = 12 ขวด) จาก SKU "น้ำดื่ม" ตัวเดียว — ระบบจำชื่อไว้ให้ทั้งฝั่งซื้อ ฝั่งขาย และ AI (MCP)
-              บริษัทที่ต้องการให้เอกสารตรง SKU เป๊ะ ๆ ปิดได้ (ข้อมูลชื่อเรียกแทนเดิมไม่ถูกลบ เปิดกลับมาใช้ต่อได้)
-            </p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('settings.settingsPage.stockAlias.toggleSub')}</p>
           </div>
           {aliasSaving
             ? <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin flex-shrink-0" />

@@ -16,7 +16,7 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, poNotReceivableMessage } from '../../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, changePurchaseOrderDate, PurchaseOrderUpdateError, poNotReceivableMessage } from '../../services/purchaseOrderUpdate.service'
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -542,9 +542,12 @@ items ถ้าส่งมาจะแทนที่รายการทั�
     'update_purchase_order',
     `แก้ไขใบสั่งซื้อ (PO) ที่สถานะ DRAFT — ใช้เมื่อข้อมูลผิดพลาดหรือต้องการแก้ไขรายการ
 po_id รับได้ทั้ง UUID หรือเลขที่ PO เช่น "PO-00001"
-items ถ้าส่งมาจะแทนที่รายการทั้งหมด`,
+items ถ้าส่งมาจะแทนที่รายการทั้งหมด
+order_date = แก้วันที่สั่งซื้อ/วันที่บนบิล (บิลเก่าที่ป้อนก่อนมี bill_date ได้วันที่ป้อนแทน) — แก้ได้เฉพาะยังไม่มีใบรับสินค้า/ใบแจ้งหนี้
+  ควรแก้ก่อน complete_purchase_bill เพราะ GR/PI/ใบจ่ายเงินลงวันที่ตามนี้ · เลขที่ PO คงเดิม ไม่ออกเลขใหม่`,
     {
       po_id:         z.string().describe('ID หรือเลขที่ PO เช่น PO-00006'),
+      order_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('วันที่สั่งซื้อ = วันที่บนบิล (YYYY-MM-DD ปี ค.ศ.)'),
       supplier_hint: z.string().optional().describe('ชื่อหรือรหัส supplier เพื่อค้นหา'),
       expected_date: z.string().optional().describe('วันที่คาดรับสินค้า (YYYY-MM-DD)'),
       notes:         z.string().optional().describe('หมายเหตุ'),
@@ -558,7 +561,7 @@ items ถ้าส่งมาจะแทนที่รายการทั�
       })).optional().describe('รายการสินค้า — ถ้าส่งจะแทนที่รายการทั้งหมด'),
     },
     async (args) => {
-      const { po_id, supplier_hint, expected_date, notes, tax_rate, items } = args
+      const { po_id, supplier_hint, expected_date, notes, tax_rate, items, order_date } = args
       let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })
@@ -584,22 +587,31 @@ items ถ้าส่งมาจะแทนที่รายการทั�
       }))
 
       let result: any
+      let dateChange: { from: string; to: string } | null = null
       try {
-        result = applyPurchaseOrderUpdate(tenantId, po.id, {
-          supplierId,
-          expectedDate: expected_date ?? po.expected_date,
-          notes,
-          items: itemsForUpdate,
-          taxRate: tax_rate ?? po.tax_rate ?? 7,
-          discountAmount: po.discount_amount ?? 0,
-        })
+        // วันที่กับรายการต้องสำเร็จพร้อมกัน — พังข้อใดข้อหนึ่งไม่ให้ค้างครึ่งทาง
+        result = db.transaction(() => {
+          if (order_date) dateChange = changePurchaseOrderDate(tenantId, po.id, order_date)
+          return applyPurchaseOrderUpdate(tenantId, po.id, {
+            supplierId,
+            expectedDate: expected_date ?? po.expected_date,
+            notes,
+            items: itemsForUpdate,
+            taxRate: tax_rate ?? po.tax_rate ?? 7,
+            discountAmount: po.discount_amount ?? 0,
+          })
+        })()
       } catch (e) {
         if (e instanceof PurchaseOrderUpdateError) return ok({ success: false, message: e.message })
         throw e
       }
 
       const { items: updatedItems, ...updated } = result
-      return ok({ message: `แก้ไข ${updated.po_number} สำเร็จ`, po: updated, items: updatedItems })
+      const dc = dateChange as { from: string; to: string } | null
+      const dateNote = dc && dc.from !== dc.to
+        ? ` · วันที่ ${dc.from} → ${dc.to} (เลขที่ ${updated.po_number} คงเดิม)`
+        : ''
+      return ok({ message: `แก้ไข ${updated.po_number} สำเร็จ${dateNote}`, po: updated, items: updatedItems })
     }
   )
 

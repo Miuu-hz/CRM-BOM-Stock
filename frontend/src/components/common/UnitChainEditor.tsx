@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Network, ArrowRight, X, Plus } from 'lucide-react'
+import { Network, ArrowRight, X, Plus, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { unitLabel } from '../../hooks/useUnits'
 import { UnitPicker } from './UnitPicker'
 
@@ -13,6 +14,21 @@ export interface UnitConversionRow {
   conversion_factor: number
 }
 
+/** 409 UNIT_CONVERSION_CONFLICT จาก POST /materials/unit-conversions — ชุดเดียวกับหน้า Settings › หน่วย */
+interface ConversionConflict {
+  fromLabel: string
+  toLabel: string
+  newFactor: number
+  existingFactor: number
+  pathLabels?: string[]
+  message: string
+}
+
+const conflictOf = (err: any): ConversionConflict | null =>
+  err?.response?.status === 409 && err?.response?.data?.code === 'UNIT_CONVERSION_CONFLICT'
+    ? (err.response.data.data as ConversionConflict)
+    : null
+
 interface Props {
   conversions: UnitConversionRow[]
   /**
@@ -22,7 +38,8 @@ interface Props {
   availableUnits?: Array<{ value: string; label: string }>
   /** id ของสินค้า — ส่งต่อให้ UnitPicker เพื่อให้เห็นหน่วยพิเศษเฉพาะสินค้านั้นด้วย */
   materialId?: string | null
-  onAdd: (from: string, to: string, factor: number) => Promise<void>
+  /** force = ผู้ใช้เห็นคำเตือนกฎขัดกันแล้วเลือกบันทึกทับ — ส่งต่อเป็น { force: true } ให้ API */
+  onAdd: (from: string, to: string, factor: number, force?: boolean) => Promise<void>
   onDelete: (id: string) => Promise<void>
   onClose: () => void
   baseUnit?: string
@@ -125,6 +142,7 @@ export default function UnitChainEditor({
   displayUnit = '',
   initialEdge = null,
 }: Props) {
+  const { t } = useTranslation()
   const markerIdRef = useRef(`uce-arrow-${Math.random().toString(36).slice(2)}`)
   const markerId = markerIdRef.current
 
@@ -143,6 +161,7 @@ export default function UnitChainEditor({
   const [edgeAdding, setEdgeAdding] = useState(false)
   const [addingUnit, setAddingUnit] = useState(false)
   const [newUnitValue, setNewUnitValue] = useState('')
+  const [conflict, setConflict] = useState<ConversionConflict | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const activeUnits = Object.keys(nodePositions)
@@ -178,6 +197,18 @@ export default function UnitChainEditor({
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [connectFrom])
+
+  // Esc ตอนเปิดคำเตือนกฎขัดกัน = กลับไปแก้ตัวเลข ไม่ปิดผัง/หน้าต่างแม่
+  useEffect(() => {
+    if (!conflict) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setConflict(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [conflict])
 
   const getCanvasPos = (e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -223,14 +254,22 @@ export default function UnitChainEditor({
 
   const handleConfirmEdge = async () => {
     // กัน Enter ซ้ำระหว่างรอบันทึก — เดิมยิง POST ซ้ำได้ แล้วตัวที่สองเด้ง "มีอยู่แล้ว"
-    if (edgeAdding || !pendingEdge || !factorInput || Number(factorInput) <= 0) return
+    if (edgeAdding || conflict || !pendingEdge || !factorInput || Number(factorInput) <= 0) return
+    await saveEdge(false)
+  }
+
+  // อัตราขัดกับกฎเดิม (409) → ถามในหน้าต่างก่อน เหมือนหน้า Settings · ไม่ใช่แค่ toast แล้วจบ
+  const saveEdge = async (force: boolean) => {
+    if (!pendingEdge) return
     setEdgeAdding(true)
     try {
-      await onAdd(pendingEdge.from, pendingEdge.to, Number(factorInput))
-      setPendingEdge(null); setFactorInput('')
+      await onAdd(pendingEdge.from, pendingEdge.to, Number(factorInput), force)
+      setConflict(null); setPendingEdge(null); setFactorInput('')
       toast.success('เพิ่มการแปลงหน่วยแล้ว')
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
+      const info = force ? null : conflictOf(err)
+      if (info) setConflict(info)
+      else toast.error(err?.response?.data?.message ?? 'เกิดข้อผิดพลาด')
     } finally {
       setEdgeAdding(false)
     }
@@ -534,7 +573,7 @@ export default function UnitChainEditor({
               onKeyDown={e => {
                 if (e.key === 'Enter') handleConfirmEdge()
                 // stopPropagation: Esc ปิดแค่ช่องกรอกอัตรา ไม่ให้ useModalClose ปิดหน้าต่างที่ครอบอยู่ไปด้วย
-                if (e.key === 'Escape') { e.stopPropagation(); setPendingEdge(null) }
+                if (e.key === 'Escape' && !conflict) { e.stopPropagation(); setPendingEdge(null) }
               }}
             />
             <div className="flex gap-2">
@@ -548,6 +587,53 @@ export default function UnitChainEditor({
                 className="flex-1 py-2 bg-[var(--uce-accent-btn)] hover:bg-[var(--uce-accent-btn-hover)] disabled:opacity-40 text-white rounded-lg text-xs font-medium min-h-[44px]"
               >
                 {edgeAdding ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* กฎขัดกัน — เห็นตัวเลขทั้งสองฝั่งก่อนตัดสินใจ (ข้อความชุดเดียวกับ Settings › หน่วย) */}
+      {conflict && pendingEdge && (
+        <div className="fixed inset-0 bg-[var(--fg-1)]/50 z-50 flex items-center justify-center p-4">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="uce-conflict-title" className="phopy-card w-full max-w-md">
+            <div className="p-4 border-b border-[var(--border)] flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-[var(--warning)]" />
+              <h4 id="uce-conflict-title" className="text-sm font-semibold text-[var(--fg-1)]">{t('settings.unitConversions.conflict.title')}</h4>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-[var(--fg-2)]">{conflict.message}</p>
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] divide-y divide-[var(--border)] text-sm">
+                <div className="p-3">
+                  <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('settings.unitConversions.conflict.derived')}</p>
+                  <p className="text-[var(--fg-1)] font-medium">1 {conflict.fromLabel} = {conflict.existingFactor} {conflict.toLabel}</p>
+                  {(conflict.pathLabels?.length ?? 0) > 2 && (
+                    <p className="text-xs text-[var(--fg-4)] mt-0.5">{conflict.pathLabels!.join(' → ')}</p>
+                  )}
+                </div>
+                <div className="p-3">
+                  <p className="text-xs text-[var(--fg-4)] mb-0.5">{t('settings.unitConversions.conflict.incoming')}</p>
+                  <p className="text-[var(--warning)] font-medium">1 {conflict.fromLabel} = {conflict.newFactor} {conflict.toLabel}</p>
+                </div>
+              </div>
+              <p className="text-xs text-[var(--fg-4)]">{t('settings.unitConversions.conflict.hint')}</p>
+            </div>
+            <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setConflict(null)}
+                className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-medium hover:opacity-90 min-h-[44px]"
+              >
+                {t('settings.unitConversions.conflict.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={edgeAdding}
+                onClick={() => saveEdge(true)}
+                className="px-4 py-2 rounded-lg text-sm text-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:opacity-40 min-h-[44px]"
+              >
+                {t('settings.unitConversions.conflict.override')}
               </button>
             </div>
           </div>

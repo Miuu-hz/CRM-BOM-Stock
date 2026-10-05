@@ -4,6 +4,7 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { registerPurchaseTools } from './purchase'
 import { registerPurchaseBillingTools } from './purchaseBilling'
 import { findStuckMcpPurchaseOrders } from '../../services/purchaseChain.service'
+import { changePurchaseOrderDate } from '../../services/purchaseOrderUpdate.service'
 import { createTestUser } from '../../test/testAuth'
 
 /**
@@ -100,6 +101,60 @@ describe('MCP บิลซื้อ: create_draft_po → complete_purchase_bill'
     const again = await call('complete_purchase_bill', { po_id: po.poId })
     expect(again.steps).toEqual([])
     expect((db.prepare('SELECT COUNT(*) c FROM purchase_invoices WHERE purchase_order_id = ?').get(po.poId) as any).c).toBe(1)
+  })
+
+  it('จ่ายบางส่วน: จ่ายแค่ paid_amount ที่เหลือค้างเป็นเจ้าหนี้ · เรียกซ้ำไม่จ่ายซ้ำ', async () => {
+    const { t, call } = setup()
+    seedItem(t, 'กุ้ง')
+    const po = await call('create_draft_po', {
+      items: [{ description: 'กุ้ง', quantity: 2, unit: 'kg', unitPrice: 100 }],
+      supplier_hint: 'แพกุ้ง', payment_method: 'เงินสด', is_paid: true, paid_amount: 120, bill_date: '2026-09-20',
+    })
+    const dry = await call('complete_purchase_bill', { po_id: po.poId, dry_run: true })
+    expect(dry.steps.at(-1)).toMatch(/฿120 /)
+
+    const r = await call('complete_purchase_bill', { po_id: po.poId })
+    expect(r.success).toBe(true)
+    const pi = db.prepare('SELECT id, paid_amount, balance_amount, payment_status FROM purchase_invoices WHERE purchase_order_id = ?').get(po.poId) as any
+    expect(pi).toMatchObject({ paid_amount: 120, balance_amount: 80 })
+    expect(pi.payment_status).not.toBe('PAID')
+    expect(findStuckMcpPurchaseOrders(t)).toEqual([])
+
+    const again = await call('complete_purchase_bill', { po_id: po.poId })
+    expect(again.steps).toEqual([])
+    const again2 = await call('complete_purchase_bill', { po_id: po.poId, dry_run: true })
+    expect(again2.steps).toEqual([])
+    expect((db.prepare('SELECT COUNT(*) c FROM supplier_payments WHERE purchase_invoice_id = ?').get(pi.id) as any).c).toBe(1)
+  })
+
+  it('บิลเก่าวันที่ผิด: update_purchase_order(order_date) แล้วเอกสารทั้งสายลงวันใหม่ · เลข PO คงเดิม', async () => {
+    const { t, call } = setup()
+    seedItem(t, 'ไข่')
+    const po = await call('create_draft_po', { items: [{ description: 'ไข่', quantity: 1, unit: 'kg', unitPrice: 50 }], supplier_hint: 'ฟาร์ม', is_paid: true })
+    const u = await call('update_purchase_order', { po_id: po.poNumber, order_date: '2026-09-15' })
+    expect(u.message).toContain('2026-09-15')
+    expect(u.po.po_number).toBe(po.poNumber)
+    expect(u.po.order_date).toBe('2026-09-15')
+
+    expect((await call('complete_purchase_bill', { po_id: po.poId })).success).toBe(true)
+    const gr = db.prepare('SELECT receipt_date FROM goods_receipts WHERE purchase_order_id = ?').get(po.poId) as any
+    expect(gr.receipt_date).toBe('2026-09-15')
+    // มีเอกสารลูกแล้ว แก้วันที่ไม่ได้
+    expect(() => changePurchaseOrderDate(t, po.poId, '2026-09-01')).toThrow(/ใบรับสินค้า/)
+  })
+
+  it('แก้วันที่: วันผิดรูปแบบ/งวดปิด → ไม่แตะ PO และไม่แก้รายการครึ่งทาง', async () => {
+    const { t, call } = setup()
+    const po = await call('create_draft_po', { items: [{ description: 'z', quantity: 1, unit: 'pcs', unitPrice: 10 }], bill_date: '2026-09-10' })
+    expect(() => changePurchaseOrderDate(t, po.poId, '2026-02-31')).toThrow(/ไม่ถูกต้อง/)
+    db.prepare(`INSERT INTO tax_periods (id, tenant_id, year, month, period_type, start_date, end_date, status)
+      VALUES (?, ?, 2026, 8, 'MONTHLY', '2026-08-01', '2026-08-31', 'CLOSED')`).run(generateId(), t)
+    const r = await call('update_purchase_order', { po_id: po.poId, order_date: '2026-08-15', notes: 'ห้ามเข้า' })
+    expect(r.success).toBe(false)
+    expect(r.message).toMatch(/8\/2026/)
+    const row = db.prepare('SELECT order_date, notes FROM purchase_orders WHERE id = ?').get(po.poId) as any
+    expect(row.order_date).toBe('2026-09-10')
+    expect(row.notes).not.toBe('ห้ามเข้า')
   })
 
   it('ไม่ได้ตั้งรูปแบบ: เลขใช้ปีของวันบนบิล', async () => {

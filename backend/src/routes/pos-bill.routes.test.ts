@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
-import { recalculateBillTotals } from './pos-bill.routes'
+import express from 'express'
+import request from 'supertest'
+import posBillRouter, { recalculateBillTotals } from './pos-bill.routes'
+import { createTestUser } from '../test/testAuth'
 
 function seedMenu(tenantId: string, posPrice: number) {
   // ponytail: schema.ts declares pos_menu_configs.product_id -> products(id), but the
@@ -132,5 +135,40 @@ describe('recalculateBillTotals (POS bill subtotal/VAT/service-charge math)', ()
     expect(bill.total_amount).toBe(139)
     expect(bill.subtotal + bill.extra_charge_amount - bill.discount_amount + bill.tax_amount)
       .toBe(bill.total_amount)
+  })
+})
+
+describe('แก้รายการบิล POS — ได้เฉพาะบิล OPEN ของ tenant ตัวเอง', () => {
+  const app = express()
+  app.use(express.json())
+  app.use('/api/pos', posBillRouter)
+
+  it('บิลที่จ่ายแล้ว: เพิ่ม/แก้/ลบรายการไม่ได้ ยอดบิลต้องไม่ขยับ', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const menuId = seedMenu(user.tenantId, 100)
+    const billId = seedOpenBill(user.tenantId)
+    addBillItem(user.tenantId, billId, menuId, 1, 100)
+    recalculateBillTotals(billId)
+    db.prepare(`UPDATE pos_running_bills SET status = 'PAID' WHERE id = ?`).run(billId)
+    const before = (db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ?').get(billId) as any).total_amount
+    const itemId = (db.prepare('SELECT id FROM pos_bill_items WHERE bill_id = ?').get(billId) as any).id
+    const auth = { Authorization: `Bearer ${user.token}` }
+
+    expect((await request(app).post(`/api/pos/bills/${billId}/items`).set(auth).send({ pos_menu_id: menuId, quantity: 2 })).status).toBe(409)
+    expect((await request(app).put(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ quantity: 5 })).status).toBe(409)
+    expect((await request(app).delete(`/api/pos/bills/${billId}/items/${itemId}`).set(auth)).status).toBe(409)
+
+    const after = (db.prepare('SELECT total_amount FROM pos_running_bills WHERE id = ?').get(billId) as any).total_amount
+    expect(after).toBe(before)
+  })
+
+  it('บิล OPEN ของ tenant อื่น: เพิ่มรายการไม่ได้', async () => {
+    const owner = createTestUser({ role: 'ADMIN' })
+    const other = createTestUser({ role: 'ADMIN' })
+    const billId = seedOpenBill(owner.tenantId)
+    const menuId = seedMenu(other.tenantId, 50)
+    const res = await request(app).post(`/api/pos/bills/${billId}/items`)
+      .set('Authorization', `Bearer ${other.token}`).send({ pos_menu_id: menuId, quantity: 1 })
+    expect(res.status).toBe(409)
   })
 })

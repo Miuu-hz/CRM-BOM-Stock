@@ -2651,6 +2651,12 @@
         "twoFactor": "Two-Factor Authentication (2FA)",
         "twoFactorDesc": "Increase security with two-factor authentication",
         "enable2FA": "Enable 2FA"
+      },
+      "stockAlias": {
+        "title": "SKU aliases (names that differ from the SKU)",
+        "toggleOn": "On — names that differ from the SKU can be linked to an existing SKU",
+        "toggleOff": "Off — documents must use the exact SKU name",
+        "toggleSub": "A helper for small businesses: a supplier bill says \"minced pork\" while the SKU is \"ground pork\", or you sell \"Singha water\" (1 pack = 15 bottles) and \"house water\" (1 pack = 12 bottles) from a single \"Drinking water\" SKU. The system remembers these names for purchasing, sales and AI (MCP). Companies that need documents to match the SKU exactly can turn this off (existing aliases are kept and work again when switched back on)."
       }
     },
     "adminUserManagement": {
@@ -3461,6 +3467,23 @@
     },
     "adjust": {
       "photosNotSaved": "The attached photos were not saved. You'll need to retake them after this is approved."
+    },
+    "alias": {
+      "title": "SKU aliases",
+      "hint": "Names suppliers or customers use that differ from this item's name — buying or selling under one of these names moves stock in or out of this item. Bind a unit if this name's pack size differs from the SKU's (unbound = use the item's unit conversions).",
+      "binding": "1 {{unit}} = {{factor}} {{base}}",
+      "useItemUnits": "Uses item units",
+      "deleteLabel": "Remove alias {{name}}",
+      "namePlaceholder": "Alias, e.g. Singha water",
+      "unitPlaceholder": "Unit (optional), e.g. pack",
+      "add": "Add",
+      "saved": "Alias saved",
+      "saveFailed": "Save failed",
+      "deleteFailed": "Delete failed",
+      "aliasOf": "alias of {{name}}",
+      "soldAs": "as \"{{name}}\"",
+      "docName": "Name on document",
+      "docNameTitle": "Name printed on the document (may be an SKU alias)"
     }
   },
   "receivables": {

@@ -133,7 +133,8 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
           }
           factor = conv.factor
         }
-        pricedItems.push({ ...item, unitPrice: (stockRow?.unit_price ?? 0) * factor })
+        // ปัดเป็นสตางค์ — ราคาฐาน × ตัวคูณ (เช่น 7.15 × 3) ได้ทศนิยมลอยยาว
+        pricedItems.push({ ...item, unitPrice: Math.round((stockRow?.unit_price ?? 0) * factor * 100) / 100 })
       }
 
       const inclusive = tenantVatInclusive(tenantId)

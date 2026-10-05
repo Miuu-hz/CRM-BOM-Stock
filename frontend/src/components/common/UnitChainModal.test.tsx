@@ -82,6 +82,37 @@ describe('UnitPicker — แก้หน่วยที่แปลงไม่�
     expect(screen.queryByPlaceholderText('เช่น 24')).toBeNull()
   })
 
+  it('อัตราขัดกับกฎเดิม (409) → ถามในหน้าต่าง · กลับไปแก้ไม่บันทึก · บันทึกทับส่ง force', async () => {
+    const conflict = { fromLabel: 'กล่อง', toLabel: 'มิลลิลิตร', newFactor: 500, existingFactor: 1000, pathLabels: ['กล่อง', 'ลิตร', 'มิลลิลิตร'], message: 'ขัดกับกฎที่มีอยู่' }
+    apiMock.post.mockImplementation(async (_url: string, body: any) => {
+      if (!body.force) throw { response: { status: 409, data: { code: 'UNIT_CONVERSION_CONFLICT', message: conflict.message, data: conflict } } }
+      rules = [...rules, { id: 'r1', ...body }]
+      return { data: { success: true } }
+    })
+    renderBill()
+    fireEvent.click(await screen.findByText('unitPicker.unreachableHintLink'))
+    const input = await screen.findByPlaceholderText('เช่น 24')
+    fireEvent.change(input, { target: { value: '500' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(await screen.findByRole('alertdialog')).toBeTruthy()
+    expect(screen.getByText('กล่อง → ลิตร → มิลลิลิตร')).toBeTruthy()
+    // Esc = กลับไปแก้ ไม่ปิดผัง
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.getByPlaceholderText('เช่น 24')).toBeTruthy()
+    expect(apiMock.post).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(screen.getByPlaceholderText('เช่น 24'), { key: 'Enter' })
+    fireEvent.click(await screen.findByText('settings.unitConversions.conflict.override'))
+    await waitFor(() => expect(apiMock.post).toHaveBeenLastCalledWith('/materials/unit-conversions', {
+      material_id: 'm1', from_unit: 'box', to_unit: 'ml', conversion_factor: 500, force: true,
+    }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(screen.queryByPlaceholderText('เช่น 24')).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'ผังการแปลงหน่วย' })).toBeTruthy()
+  })
+
   it('Esc ในช่องกรอกอัตรา ปิดแค่ช่องกรอก ไม่ปิดผังทั้งหน้าต่าง', async () => {
     renderBill()
     fireEvent.click(await screen.findByText('unitPicker.unreachableHintLink'))

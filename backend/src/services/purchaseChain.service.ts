@@ -38,6 +38,24 @@ function openInvoicesOfPo(tenantId: string, poId: string): any[] {
   `).all(tenantId, poId, `%"${poId}"%`) as any[]
 }
 
+/**
+ * ยอดที่ PO บอกว่าจ่ายไปแล้ว แต่ใบแจ้งหนี้ยังไม่ได้บันทึกจ่าย
+ * is_paid + paid_amount น้อยกว่ายอด PO = จ่ายบางส่วน → จ่ายแค่ paid_amount ส่วนที่เหลือค้างเป็นเจ้าหนี้
+ * is_paid + paid_amount ว่าง/0/ครบยอด = จ่ายเต็มยอดค้างของใบแจ้งหนี้
+ * หักยอดที่ใบแจ้งหนี้ของ PO นี้จ่ายไปแล้ว — เรียกซ้ำแล้วไม่จ่ายซ้ำ
+ */
+export function poPaymentTarget(tenantId: string, po: any): { partial: boolean; remaining: number } {
+  if (po.is_paid !== 1) return { partial: false, remaining: 0 }
+  const paid = Number(po.paid_amount) || 0
+  const partial = paid > 0.005 && paid < (Number(po.total_amount) || 0) - 0.005
+  if (!partial) return { partial: false, remaining: Infinity }
+  const already = (db.prepare(`
+    SELECT COALESCE(SUM(paid_amount), 0) AS s FROM purchase_invoices
+    WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
+  `).get(tenantId, po.id, `%"${po.id}"%`) as any).s as number
+  return { partial: true, remaining: Math.max(0, Math.round((paid - already) * 100) / 100) }
+}
+
 function freeGoodsReceipts(tenantId: string, poId: string): any[] {
   return db.prepare(
     "SELECT id, gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED' AND invoiced_at IS NULL"
@@ -123,25 +141,35 @@ export function completePurchaseChain(
     }
 
     if (isPaid) {
-      const open = dry ? [] : openInvoicesOfPo(tenantId, po.id)
+      const target = poPaymentTarget(tenantId, po)
+      let left = target.remaining
+      const note = target.partial ? ` (จ่ายบางส่วนตามบิล ฿${po.paid_amount} ที่เหลือค้างเป็นเจ้าหนี้)` : ''
       if (dry) {
-        res.steps.push('บันทึกจ่ายเงินยอดค้างของใบแจ้งหนี้ (PO ระบุว่าจ่ายแล้ว)')
-      }
-      for (const inv of open) {
-        run(`จ่ายเงิน ${inv.pi_number}`, () => {
-          // ponytail: จ่ายเต็มยอดค้าง (บิลซื้อสดจ่ายครบ ณ จุดซื้อ) — ไม่ได้เทียบ po.paid_amount ที่น้อยกว่ายอดบิล
-          const pay = paySupplier(tenantId, actor, {
-            supplierId: po.supplier_id,
-            purchaseInvoiceId: inv.id,
-            paymentDate: docDate,
-            paymentMethod: po.payment_method || 'TRANSFER',
-            paymentReference: po.payment_reference || '',
-            bankAccountId: po.bank_account_id || null,
-            amount: inv.balance_amount,
-            notes: `[ปิดสายบิล ${po.po_number}]`,
-          }) as any
-          return `${pay.payment_number} ฿${pay.amount}`
-        })
+        // ใบแจ้งหนี้ใหม่ยังไม่เกิด — บอกตามยอด PO · ใบเดิมที่ค้างอยู่ก็นับด้วย (เดิมขึ้นขั้นจ่ายเงินทั้งที่จ่ายครบแล้ว)
+        const willInvoice = res.steps.some(st => st.startsWith('ออกใบแจ้งหนี้ซื้อ'))
+        const openBal = openInvoicesOfPo(tenantId, po.id).reduce((a, i) => a + Number(i.balance_amount), 0)
+          + (willInvoice ? Number(po.total_amount) || 0 : 0)
+        const amt = Math.min(left, openBal)
+        if (amt > 0.005) res.steps.push(`บันทึกจ่ายเงิน ฿${Math.round(amt * 100) / 100}${note}`)
+      } else {
+        for (const inv of openInvoicesOfPo(tenantId, po.id)) {
+          const amount = Math.round(Math.min(left, Number(inv.balance_amount)) * 100) / 100
+          if (amount <= 0.005) break
+          run(`จ่ายเงิน ${inv.pi_number}${note}`, () => {
+            const pay = paySupplier(tenantId, actor, {
+              supplierId: po.supplier_id,
+              purchaseInvoiceId: inv.id,
+              paymentDate: docDate,
+              paymentMethod: po.payment_method || 'TRANSFER',
+              paymentReference: po.payment_reference || '',
+              bankAccountId: po.bank_account_id || null,
+              amount,
+              notes: `[ปิดสายบิล ${po.po_number}]`,
+            }) as any
+            return `${pay.payment_number} ฿${pay.amount}`
+          })
+          left -= amount
+        }
       }
     }
   } catch (e: any) {
@@ -170,6 +198,7 @@ export function findStuckMcpPurchaseOrders(tenantId?: string): any[] {
       "SELECT 1 FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)"
     ).get(po.tenant_id, po.id, `%"${po.id}"%`)
     if (!hasInvoice) return true
-    return po.is_paid === 1 && openInvoicesOfPo(po.tenant_id, po.id).length > 0
+    const open = openInvoicesOfPo(po.tenant_id, po.id)
+    return open.length > 0 && poPaymentTarget(po.tenant_id, po).remaining > 0.005
   })
 }

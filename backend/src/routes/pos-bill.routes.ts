@@ -329,6 +329,14 @@ router.delete('/bills/:id', (req, res) => {
 // ==================== BILL ITEMS ====================
 
 // Add item to bill
+// แก้รายการได้เฉพาะบิลที่ยังเปิด (OPEN) ของ tenant ตัวเอง — เดิมไม่เช็คเลย หน้าจอค้าง/MCP
+// ยิงเพิ่มรายการเข้าบิลที่จ่ายแล้วได้ ยอดบิลเปลี่ยนทั้งที่ journal/VAT ลงไปแล้ว (เจอใน vatGolden)
+// และเพิ่มเข้า bill id ของ tenant อื่นได้ด้วย
+function findOpenBill(billId: string, tenantId: string) {
+  return db.prepare(`SELECT id FROM pos_running_bills WHERE id = ? AND tenant_id = ? AND status = 'OPEN'`).get(billId, tenantId)
+}
+const BILL_NOT_OPEN = { success: false, message: 'ไม่พบบิล หรือบิลปิด/ยกเลิกไปแล้ว แก้รายการไม่ได้' }
+
 router.post('/bills/:id/items', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
@@ -339,6 +347,7 @@ router.post('/bills/:id/items', (req, res) => {
     if (!pos_menu_id || !quantity) {
       return res.status(400).json({ success: false, message: 'Menu ID and quantity required' })
     }
+    if (!findOpenBill(id, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
     
     // Get menu details (JOIN stock_items to get product_name)
     const menuStmt = db.prepare(`
@@ -389,6 +398,8 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     const { billId, itemId } = req.params
     const { quantity, special_instructions } = req.body
     
+    if (!findOpenBill(billId, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
+
     // Get current item scoped to tenant
     const itemStmt = db.prepare(`
       SELECT bi.* FROM pos_bill_items bi
@@ -430,7 +441,8 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { billId, itemId } = req.params
-    
+    if (!findOpenBill(billId, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
+
     const stmt = db.prepare(`
       DELETE FROM pos_bill_items 
       WHERE id = ? AND bill_id = ? AND EXISTS (

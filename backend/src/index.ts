@@ -384,6 +384,10 @@ app.use('/api/import', express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
 // ponytail: MCP รับรูปบิลเป็น image_base64 (มือถือ ~2-8MB หลัง base64) — 1mb ทำ create_draft_po โดน 413 เงียบ
 app.use(['/mcp', '/mcp/*'], express.json({ limit: '15mb' }))
+// โลโก้บริษัท (logo_base64) กับรูป QR บัญชีธนาคาร (qr_code_base64) ส่งมาเป็น base64 ใน JSON
+// รูปจากมือถือ ~1MB กลายเป็น ~1.4MB หลัง base64 → ชน 1mb แล้ว 413 (เจอใน log 2026-10)
+// 10mb ≈ รูปจริง ~7MB พอสำหรับโลโก้/QR ใกล้เคียงเพดาน multer 10MB ของไฟล์แนบ
+app.use(['/api/settings/company', '/api/bank-accounts'], express.json({ limit: '10mb' }))
 app.use(express.json({ limit: '1mb' }))
 
 
@@ -670,6 +674,11 @@ if (sentryEnabled) Sentry.setupExpressErrorHandler(app)
 app.use((err: any, _req: Request, res: Response, _next: any) => {
 
 
+  // body ใหญ่เกิน limit ของ express.json — ตอบภาษาไทยแทน "request entity too large"
+  if (err?.type === 'entity.too.large') {
+    const mb = Math.max(1, Math.round((err.limit || 0) / 1024 / 1024))
+    return res.status(413).json({ success: false, code: 'PAYLOAD_TOO_LARGE', message: `ไฟล์หรือข้อมูลใหญ่เกินไป (เกิน ${mb} MB) กรุณาย่อรูปหรือลดขนาดไฟล์แล้วลองใหม่` })
+  }
   console.error('Error:', err)
 
 

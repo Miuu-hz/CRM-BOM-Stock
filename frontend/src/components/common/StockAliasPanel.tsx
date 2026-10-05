@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import api from '../../services/api'
 import { unitLabelTh } from '../../utils/unitNormalize'
 
@@ -19,6 +20,7 @@ interface AliasRow {
 }
 
 export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId: string; baseUnit: string }) {
+  const { t } = useTranslation()
   const [rows, setRows] = useState<AliasRow[]>([])
   const [enabled, setEnabled] = useState(false)
   const [name, setName] = useState('')
@@ -43,9 +45,9 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
       })
       setRows(r.data?.data ?? [])
       setName(''); setUnit(''); setFactor('')
-      toast.success('บันทึกชื่อเรียกแทนแล้ว')
+      toast.success(t('stock.alias.saved'))
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'บันทึกไม่สำเร็จ')
+      toast.error(e?.response?.data?.message || t('stock.alias.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -56,7 +58,7 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
       await api.delete(`/stock/aliases/${id}`)
       setRows(prev => prev.filter(r => r.id !== id))
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'ลบไม่สำเร็จ')
+      toast.error(e?.response?.data?.message || t('stock.alias.deleteFailed'))
     }
   }
 
@@ -65,21 +67,18 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
 
   return (
     <div>
-      <p className="text-sm font-semibold text-[var(--fg-2)] mb-1">ชื่อเรียกแทน SKU</p>
-      <p className="text-[11px] text-[var(--fg-4)] mb-2">
-        ชื่อที่ผู้ขาย/ลูกค้าใช้แต่ไม่ตรงชื่อสินค้านี้ — ซื้อหรือขายด้วยชื่อนี้จะตัด/รับสต็อกเข้าสินค้านี้
-        ผูกหน่วยได้ถ้าแพ็คของชื่อนี้คนละขนาดกับของ SKU (ไม่ผูก = ใช้กฎแปลงหน่วยของสินค้า)
-      </p>
+      <p className="text-sm font-semibold text-[var(--fg-2)] mb-1">{t('stock.alias.title')}</p>
+      <p className="text-[11px] text-[var(--fg-4)] mb-2">{t('stock.alias.hint')}</p>
       {rows.length > 0 && (
         <div className="border border-[var(--border)] rounded-xl overflow-hidden mb-2">
           {rows.map(r => (
             <div key={r.id} className="flex items-center gap-2 px-3 py-2 text-xs border-b border-[var(--border)]/50 last:border-b-0">
               <span className="flex-1 min-w-0 truncate text-[var(--fg-1)]">{r.name}</span>
               <span className="text-[var(--fg-3)] tabular-nums">
-                {r.unit && r.factor ? `1 ${unitLabelTh(r.unit)} = ${r.factor} ${base}` : 'ใช้หน่วยของสินค้า'}
+                {r.unit && r.factor ? t('stock.alias.binding', { unit: unitLabelTh(r.unit), factor: r.factor, base }) : t('stock.alias.useItemUnits')}
               </span>
               {r.source_ref && <span className="font-mono text-[10px] text-[var(--fg-4)]">{r.source_ref}</span>}
-              <button type="button" onClick={() => remove(r.id)} aria-label={`ลบชื่อเรียกแทน ${r.name}`}
+              <button type="button" onClick={() => remove(r.id)} aria-label={t('stock.alias.deleteLabel', { name: r.name })}
                 className="p-1 text-[var(--fg-4)] hover:text-danger rounded">
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -88,10 +87,10 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อเรียกแทน เช่น น้ำดื่มสิงห์"
+        <input value={name} onChange={e => setName(e.target.value)} placeholder={t('stock.alias.namePlaceholder')}
           className={`${inputCls} flex-1 min-w-[10rem]`} />
         <span className="text-xs text-[var(--fg-4)]">1</span>
-        <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="หน่วย (ไม่บังคับ) เช่น แพ็ค"
+        <input value={unit} onChange={e => setUnit(e.target.value)} placeholder={t('stock.alias.unitPlaceholder')}
           className={`${inputCls} w-32`} />
         <span className="text-xs text-[var(--fg-4)]">=</span>
         <input type="number" min={0} step="any" value={factor} onChange={e => setFactor(e.target.value)}
@@ -99,7 +98,7 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
         <span className="text-xs text-[var(--fg-4)]">{base}</span>
         <button type="button" onClick={add} disabled={saving || !name.trim()}
           className="h-8 px-3 rounded-lg bg-phopy-indigo text-white text-sm font-semibold flex items-center gap-1 disabled:opacity-50">
-          <Plus className="w-3.5 h-3.5" /> เพิ่ม
+          <Plus className="w-3.5 h-3.5" /> {t('stock.alias.add')}
         </button>
       </div>
     </div>

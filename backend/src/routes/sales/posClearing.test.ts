@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import db from '../../db/sqlite'
@@ -147,5 +147,76 @@ describe('ปิดกะ POS — ปิดยอดบัญชีพัก 118
     expect(balanceOf(user.tenantId, ACC.POS_CLEARING)).toBe(0)
     expect(balanceOf(user.tenantId, ACC.CASH)).toBe(1025)
     expect(balanceOf(user.tenantId, ACC.CASH_OVER_SHORT)).toBe(-25)
+  })
+  it('ยอดบิลมีเศษสตางค์ครึ่ง: ปิดกะได้ ไม่หลุดดุล 0.01 (เดิม JournalError เดบิต 27.65 ≠ เครดิต 27.66)', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    tenants.push(user.tenantId)
+    const shiftId = seedShift(user.tenantId, [
+      { amount: 13.825, method: 'CASH' },
+      { amount: 13.825, method: 'QR_CODE' },
+    ])
+
+    const res = await request(app).post(`/api/sales/pos-shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ closing_cash_counted: 500 + 13.83 })
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const je = db.prepare(`SELECT total_debit, total_credit FROM journal_entries
+                           WHERE tenant_id = ? AND reference_type = 'POS_SHIFT_CLOSE'`).get(user.tenantId) as any
+    expect(je, 'ต้องลงบัญชีปิดกะได้').toBeTruthy()
+    expect(je.total_debit).toBe(je.total_credit)
+    // บัญชีพักเหลือเศษได้ไม่เกินสตางค์เดียว (ฝั่งขายลงรายบิล ฝั่งปิดกะปัดที่ยอดรวม)
+    expect(Math.abs(balanceOf(user.tenantId, ACC.POS_CLEARING))).toBeLessThanOrEqual(0.01)
+  })
+
+  it('ขายโอนล้วนแต่เงินในลิ้นชักขาด: ขาเงินสดย้ายไปฝั่งเครดิต ไม่โยนยอดติดลบ', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    tenants.push(user.tenantId)
+    const shiftId = seedShift(user.tenantId, [{ amount: 200, method: 'QR_CODE' }])
+
+    const res = await request(app).post(`/api/sales/pos-shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ closing_cash_counted: 500 - 20 })
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    expect(balanceOf(user.tenantId, ACC.POS_CLEARING)).toBe(0)
+    expect(balanceOf(user.tenantId, ACC.BANK)).toBe(200)
+    expect(balanceOf(user.tenantId, ACC.CASH), 'เงินสดหายไป 20').toBe(-20)
+    expect(balanceOf(user.tenantId, ACC.CASH_OVER_SHORT)).toBe(20)
+  })
+})
+
+describe('ปิดกะ POS — ยอดเงินสด/โอนรวมต่อบิล', () => {
+  it('บิลจ่ายแยก 2 ช่องทาง / payment ซ้ำ ไม่นับยอดบิลซ้ำ · บิลไม่มี payment เตือนแล้วตกเป็นเงินสด', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    tenants.push(user.tenantId)
+    const t = user.tenantId
+    const shiftId = seedShift(t, [{ amount: 300, method: 'CASH' }, { amount: 200, method: 'CASH' }])
+    const [split, dup] = db.prepare('SELECT id FROM pos_running_bills WHERE shift_id = ? ORDER BY total_amount DESC').all(shiftId) as any[]
+    const pay = db.prepare(`INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_by) VALUES (?, ?, ?, ?, ?, 'tester')`)
+    db.prepare('UPDATE pos_payments SET amount = 100 WHERE bill_id = ?').run(split.id)
+    pay.run(generateId(), t, split.id, 'QR_CODE', 200)   // 300 = เงินสด 100 + QR 200
+    pay.run(generateId(), t, dup.id, 'CASH', 200)        // แถวซ้ำ
+    const orphan = generateId()                           // บิลไม่มี payment
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, total_amount, subtotal, shift_id, closed_at)
+                VALUES (?, ?, 'B-ORPHAN', 'โต๊ะ 2', 'PAID', 50, 50, ?, ?)`).run(orphan, t, shiftId, new Date().toISOString())
+    postJournal({ tenantId: t, date: new Date().toISOString().slice(0, 10), referenceType: 'POS_SALE', referenceId: orphan,
+      description: 'ขายหน้าร้าน', lines: [{ code: ACC.POS_CLEARING, debit: 50 }, { code: ACC.REVENUE_PRODUCT, credit: 50 }] })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await request(app).post(`/api/sales/pos-shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ closing_cash_counted: 500 + 300 })
+    const warned = warn.mock.calls.some(c => String(c[0]).includes('50.00'))
+    warn.mockRestore()
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    expect(res.body.data.total_revenue).toBe(550)
+    expect(res.body.data.cash_revenue, 'เงินสด 100 + 200 (ไม่เบิ้ลแถวซ้ำ)').toBe(300)
+    expect(res.body.data.bank_revenue).toBe(200)
+    expect(warned, 'บิลไม่มี payment ต้องเตือน').toBe(true)
+    expect(balanceOf(t, ACC.POS_CLEARING)).toBe(0)
+    expect(balanceOf(t, ACC.BANK)).toBe(200)
+    expect(balanceOf(t, ACC.CASH)).toBe(350)
   })
 })

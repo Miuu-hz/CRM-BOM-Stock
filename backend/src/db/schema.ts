@@ -281,7 +281,7 @@ export function applySchema(db: any): void {
       id TEXT PRIMARY KEY,
       tenant_id TEXT,
       po_number TEXT NOT NULL,
-      supplier_id TEXT NOT NULL,
+      supplier_id TEXT, -- nullable: PO ร่างจาก AI ยังไม่มีผู้ขาย (ตรงกับ migration ที่ rebuild ตารางเก่า)
       status TEXT DEFAULT 'DRAFT',
       order_date TEXT DEFAULT CURRENT_TIMESTAMP,
       expected_date TEXT,

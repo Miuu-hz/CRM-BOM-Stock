@@ -2598,7 +2598,8 @@ function CustomerSearch({ value, onChange }: {
 // ─── Shared: Product Line Items Editor ───────────────────────────────────────
 
 /** ราคาเริ่มต้นของแถว: ชื่อเรียกแทนที่ผูกหน่วย = ราคาต่อหน่วยฐาน × จำนวนหน่วยฐานต่อหน่วยนั้น */
-const aliasPrice = (p: Product) => (p.sell_price || 0) * (p.alias_unit && p.alias_factor ? p.alias_factor : 1)
+// ปัดเป็นสตางค์ — 7.15 × 3 = 21.450000000000003 ไม่ควรโผล่ในช่องราคา
+const aliasPrice = (p: Product) => Math.round((p.sell_price || 0) * (p.alias_unit && p.alias_factor ? p.alias_factor : 1) * 100) / 100
 /** เปิดใช้ชื่อเรียกแทน SKU ไหม (ตั้งค่า > ทั่วไป) — ไม่มีค่า = เปิด */
 const aliasEnabledCo = () => {
   const v = (getCachedCompanySettings() as any)?.stock_alias_enabled
@@ -2666,7 +2667,7 @@ function ProductSearch({ value, products, onSelect, onClear }: {
                 <p className="text-sm text-[var(--fg-1)] truncate">{p.name}</p>
                 {/* ชื่อเรียกแทน — บอกว่าตัดสต็อก SKU ไหน และแพ็คของชื่อนี้กี่หน่วยฐาน */}
                 <p className="text-xs text-[var(--fg-4)] truncate">
-                  {p.code}{p.alias_of ? ` · เรียกแทน ${p.alias_of}${p.alias_unit && p.alias_factor ? ` (1 ${unitLabelTh(p.alias_unit)} = ${p.alias_factor} ${unitLabelTh(p.base_unit || p.unit || '')})` : ''}` : ''}
+                  {p.code}{p.alias_of ? ` · ${t('stock.alias.aliasOf', { name: p.alias_of })}${p.alias_unit && p.alias_factor ? ` (${t('stock.alias.binding', { unit: unitLabelTh(p.alias_unit), factor: p.alias_factor, base: unitLabelTh(p.base_unit || p.unit || '') })})` : ''}` : ''}
                 </p>
               </div>
               <span className="text-xs text-[var(--primary)] shrink-0">฿{aliasPrice(p).toLocaleString('th-TH')}</span>
@@ -2774,8 +2775,8 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               {/* ชื่อบนเอกสาร — ต่างจากชื่อ SKU ได้ (เหมือนฝั่งซื้อ) ยืนยันใบสั่งขายแล้วระบบจำเป็นชื่อเรียกแทนของ SKU นี้
                   ปิดฟีเจอร์ที่ ตั้งค่า แล้วช่องนี้หายไป */}
               {item.productId && aliasEnabledCo() && (
-                <input type="text" value={item.productName} title="ชื่อบนเอกสาร (ชื่อเรียกแทน SKU ได้)"
-                  placeholder={selectedProduct?.name || 'ชื่อบนเอกสาร'}
+                <input type="text" value={item.productName} title={t('stock.alias.docNameTitle')}
+                  placeholder={selectedProduct?.name || t('stock.alias.docName')}
                   onChange={e => update(i, { productName: e.target.value })}
                   onBlur={() => { if (!item.productName.trim() && selectedProduct) update(i, { productName: selectedProduct.name }) }}
                   className="mt-1 w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo" />

@@ -1306,7 +1306,7 @@ function DetailModal({
                         <span className="block font-mono text-[10px] text-[var(--fg-4)] truncate">{r.doc}</span>
                         {/* ซื้อ/ขายด้วยชื่อเรียกแทน (ยี่ห้อ B) — จดไว้ให้ย้อนดูได้ว่ารอบนั้นใช้ชื่ออะไร */}
                         {r.name && String(r.name).trim().toLowerCase() !== String(item.name).trim().toLowerCase() && (
-                          <span className="block text-[10px] text-[var(--primary)] truncate" title={r.name}>เป็น "{r.name}"</span>
+                          <span className="block text-[10px] text-[var(--primary)] truncate" title={r.name}>{t('stock.alias.soldAs', { name: r.name })}</span>
                         )}
                       </span>
                       <span className="text-right text-[var(--fg-2)] tabular-nums">{r.qty.toLocaleString('th-TH')} {r.unit || ''}</span>

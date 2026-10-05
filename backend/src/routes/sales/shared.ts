@@ -9,7 +9,10 @@ import path from 'path'
 import fs from 'fs'
 
 // ─── Invoice Attachments Setup ────────────────────────────────────────────────
-export const invoiceUploadDir = path.join(__dirname, '..', '..', '..', 'storage', 'payment-attachments')
+// ที่เก็บไฟล์แนบ/สลิปที่เดียวของระบบ (multer หน้าเว็บ, MCP image_base64 และ route เสิร์ฟไฟล์ใช้ตัวนี้ร่วมกัน)
+// อิง __dirname ไม่ใช่ cwd → backend/storage/payment-attachments ทั้งตอนรันจาก src และ dist
+// ATTACHMENT_STORAGE_DIR ใช้ย้ายไปที่อื่นได้ (เทสต์ชี้ไป /tmp จะได้ไม่เขียนลงโฟลเดอร์จริง)
+export const invoiceUploadDir = process.env.ATTACHMENT_STORAGE_DIR || path.join(__dirname, '..', '..', '..', 'storage', 'payment-attachments')
 if (!fs.existsSync(invoiceUploadDir)) fs.mkdirSync(invoiceUploadDir, { recursive: true })
 
 const invoiceStorage = multer.diskStorage({
@@ -231,11 +234,9 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
 
     // Dr ต้นทุนขาย / Cr สต็อกสินค้า ในทรานแซกชันเดียวกับการตัดของ — กันช่วงเวลาที่สต็อกในงบสูงเกินจริง
     // ระหว่างตอนตัดของกับตอนออกใบแจ้งหนี้ (ต้นทุนอาจขยับไปแล้วตอนนั้น) ข้ามถ้ามูลค่ารวมน้อยจนไม่มี
-    // นัยสำคัญ (ทศนิยมสะสมจากการปัดเศษ) หรือถ้าเคยลง SO_COGS ของ SO นี้ไปแล้ว (กันเรียกซ้ำ)
-    const alreadyPostedCogs = db.prepare(
-      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'SO_COGS' AND reference_id = ?"
-    ).get(tenantId, soId)
-    if (!alreadyPostedCogs && totalCogsValue > 0.005) {
+    // นัยสำคัญ (ทศนิยมสะสมจากการปัดเศษ) หรือถ้า SO_COGS ของ SO นี้ยังค้างอยู่ (กันเรียกซ้ำ) — ดูยอดสุทธิหลังหัก
+    // SO_COGS_CANCEL ไม่ใช่แค่มีแถว: ยืนยัน→ยกเลิก→ยืนยันใหม่ ต้องลงต้นทุนรอบใหม่ ไม่งั้นสต็อกในงบสูงกว่าสต็อกจริง
+    if (netSoCogs(tenantId, soId) <= 0.005 && totalCogsValue > 0.005) {
       postJournal({
         tenantId,
         date: new Date().toISOString().substring(0, 10),
@@ -257,10 +258,118 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
   deduct()
 }
 
+/** movement ที่เป็นของ SO นี้: ตัดตอนยืนยัน (SO: x) หรือตัดตอนส่งของ (DO: y ของ SO นี้) */
+function soOutRefs(tenantId: string, soId: string, soNumber: string): string[] {
+  const dos = db.prepare('SELECT do_number FROM delivery_orders WHERE sales_order_id = ? AND tenant_id = ?').all(soId, tenantId) as any[]
+  return [`SO: ${soNumber}`, ...dos.map(d => `DO: ${d.do_number}`)]
+}
+
+/** คืนแล้วเท่าไร: ยกเลิก SO ครั้งก่อน (SO: x) + ใบลดหนี้รับคืนของจากใบแจ้งหนี้ของ SO นี้ (CN: z) */
+function soReturnRefs(tenantId: string, soId: string, soNumber: string): string[] {
+  const cns = db.prepare(`SELECT cn.cn_number FROM credit_notes cn JOIN invoices i ON i.id = cn.invoice_id AND i.tenant_id = cn.tenant_id
+    WHERE i.sales_order_id = ? AND cn.tenant_id = ?`).all(soId, tenantId) as any[]
+  return [`SO: ${soNumber}`, ...cns.map(c => `CN: ${c.cn_number}`)]
+}
+
+function sumMovementsByItem(tenantId: string, type: 'OUT' | 'RETURN', refs: string[]): Map<string, number> {
+  const rows = db.prepare(`SELECT stock_item_id, SUM(quantity) AS q FROM stock_movements
+    WHERE tenant_id = ? AND type = ? AND reference IN (${refs.map(() => '?').join(',')}) GROUP BY stock_item_id`)
+    .all(tenantId, type, ...refs) as any[]
+  return new Map(rows.map(r => [r.stock_item_id, Number(r.q) || 0]))
+}
+
+/**
+ * หน่วยฐานที่ตัดออกจริงต่อ 1 หน่วยของบรรทัด SO (จาก movement OUT ตอนยืนยัน SO) — ใบลดหนี้รับคืนบางส่วน
+ * ใช้ตัวคูณเดิมตอนขาย ไม่ใช่ตัวคูณปัจจุบัน (แก้ตัวคูณชื่อเรียกแทน/กฎแปลงหน่วยทีหลังแล้วของคืนไม่เพี้ยน)
+ * null = หาไม่ได้แน่ชัด (สินค้าเดียวกันหลายบรรทัดใน SO เดียว / ตัดผ่านใบส่งของ / ไม่มี movement) → ผู้เรียกแปลงแบบเดิม
+ */
+export function issuedBasePerUnit(tenantId: string, soItemId: string): number | null {
+  const line = db.prepare(`SELECT soi.sales_order_id, soi.stock_item_id, soi.quantity, so.so_number FROM sales_order_items soi
+    JOIN sales_orders so ON so.id = soi.sales_order_id WHERE soi.id = ? AND so.tenant_id = ?`).get(soItemId, tenantId) as any
+  if (!line?.stock_item_id || !(Number(line.quantity) > 0)) return null
+  const siblings = db.prepare('SELECT COUNT(*) AS n FROM sales_order_items WHERE sales_order_id = ? AND stock_item_id = ?')
+    .get(line.sales_order_id, line.stock_item_id) as any
+  if (Number(siblings?.n) !== 1) return null // ponytail: ไม่มี line id ใน stock_movements แยกบรรทัดพี่น้องไม่ได้ — ใช้แปลงแบบเดิม
+  // หักที่ยกเลิก SO คืนไปแล้ว (RETURN 'SO: x') — ยืนยัน→ยกเลิก→ยืนยันใหม่ OUT สะสม 2 รอบ ถ้าไม่หักตัวคูณจะเบิ้ล
+  const ref = [`SO: ${line.so_number}`]
+  const out = sumMovementsByItem(tenantId, 'OUT', ref).get(line.stock_item_id) || 0
+  const net = out - (sumMovementsByItem(tenantId, 'RETURN', ref).get(line.stock_item_id) || 0)
+  return net > 0.000001 ? net / Number(line.quantity) : null // คืนครบ/คืนเกิน = ไม่สอดคล้อง → แปลงแบบเดิม
+}
+
+/**
+ * ต้นทุนขายของ SO ที่ยังค้างอยู่ = SO_COGS ทุกรอบ − SO_COGS_CANCEL ทุกรอบ (ยืนยัน/ยกเลิกได้หลายรอบ หลายแถวต่อ ref เดียวกัน)
+ * ไม่หัก CREDIT_NOTE_COGS — ส่วนนั้นถูกหักไว้ที่ปริมาณคืนแล้ว (restoreQty ไม่รวมของที่ใบลดหนี้รับคืน)
+ */
+function netSoCogs(tenantId: string, soId: string): number {
+  const row = db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN reference_type = 'SO_COGS' THEN total_debit ELSE 0 END), 0)
+      - COALESCE(SUM(CASE WHEN reference_type = 'SO_COGS_CANCEL' THEN total_debit ELSE 0 END), 0) AS net
+    FROM journal_entries WHERE tenant_id = ? AND reference_id = ? AND reference_type IN ('SO_COGS', 'SO_COGS_CANCEL')`)
+    .get(tenantId, soId) as any
+  return Math.round((Number(row?.net) || 0) * 100) / 100
+}
+
+/**
+ * กลับรายการต้นทุนขายเฉพาะส่วนที่ยกเลิกแล้วคืนเข้าสต็อกจริง (restoreQty × ต้นทุน ณ ตอนขาย) — ไม่ mirror SO_COGS ทั้งก้อน
+ * เพราะส่วนที่ใบลดหนี้รับคืนไปก่อนแล้วถูกกลับด้วย CREDIT_NOTE_COGS ไปแล้ว กลับซ้ำ = สต็อกในงบสูงกว่าสต็อกจริง
+ * ไม่เคยลง SO_COGS (ตัดผ่านใบส่งของ/เอกสารเก่า) หรือกลับครบแล้ว (ยกเลิกซ้ำ) → ยอดค้างเป็นศูนย์ ไม่ทำอะไร
+ */
+function reverseSoCogsForRestored(tenantId: string, soId: string, soNumber: string, restoreCost: number) {
+  const amount = Math.min(restoreCost, netSoCogs(tenantId, soId)) // ไม่กลับเกินยอดที่ยังค้างอยู่
+  if (amount <= 0.005) return
+  postJournal({
+    tenantId,
+    date: new Date().toISOString().substring(0, 10),
+    referenceType: 'SO_COGS_CANCEL',
+    referenceId: soId,
+    description: `กลับรายการต้นทุนขาย (ยกเลิก SO) - ${soNumber}`,
+    lines: [
+      { code: ACC.INVENTORY, description: `คืนสต็อก (ยกเลิก SO) - ${soNumber}`, debit: amount },
+      { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - ${soNumber}`, credit: amount },
+    ],
+    createdBy: 'system',
+    businessUnit: 'WHOLESALE',
+    sourceNumber: soNumber,
+    soNumber,
+  })
+}
+
+/**
+ * ยกเลิก SO → คืนสต็อกตาม movement OUT ที่บันทึกไว้จริง (หน่วยฐานที่ตัดไปจริง) ไม่ใช่แปลงใหม่ด้วยตัวคูณปัจจุบัน
+ * — แก้ตัวคูณชื่อเรียกแทน (แพ็คสิงห์ 15 → 12) หรือลบชื่อเรียกแทนระหว่างทาง ของต้องกลับเท่าที่ออกไป
+ * หักที่คืนไปแล้ว (ยกเลิกซ้ำ / ใบลดหนี้รับคืน) → ไม่คืนซ้ำไม่คืนเกิน · ส่งของบางส่วนผ่าน DO = คืนเท่าที่ DO ตัดจริง
+ * เอกสารเก่าที่ไม่มี movement OUT เลย → แปลงหน่วยแบบเดิมทีละบรรทัด
+ */
 export function restoreStockForSO(tenantId: string, soId: string, soNumber: string) {
   const items = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(soId) as any[]
 
   const restore = db.transaction(() => {
+    const outByItem = sumMovementsByItem(tenantId, 'OUT', soOutRefs(tenantId, soId, soNumber))
+    if (outByItem.size > 0) {
+      const returnedByItem = sumMovementsByItem(tenantId, 'RETURN', soReturnRefs(tenantId, soId, soNumber))
+      const now = new Date().toISOString()
+      const issuedCost = new Map((db.prepare('SELECT stock_item_id, issued_unit_cost FROM sales_order_items WHERE sales_order_id = ?')
+        .all(soId) as any[]).map(r => [r.stock_item_id, Number(r.issued_unit_cost || 0)]))
+      let restoreCost = 0
+      for (const [stockItemId, out] of outByItem) {
+        const restoreQty = roundQty(out - (returnedByItem.get(stockItemId) || 0))
+        if (restoreQty <= 0) continue
+        const stockItem = db.prepare('SELECT base_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+        if (!stockItem) continue
+        restoreCost += restoreQty * (issuedCost.get(stockItemId) || 0)
+        db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(restoreQty, now, stockItemId, tenantId)
+        db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+          VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, 'system')`).run(
+          generateId(), tenantId, stockItemId, restoreQty, `SO: ${soNumber}`,
+          `ยกเลิก SO ${soNumber} - คืนสต็อกตามที่ตัดไปจริง ${restoreQty} ${stockItem.base_unit || stockItem.unit || ''}`, now)
+      }
+      reverseSoCogsForRestored(tenantId, soId, soNumber, restoreCost)
+      return
+    }
+
+    // เอกสารเก่า (ไม่มี movement ให้อ้างอิง) — แปลงหน่วยใหม่ทีละบรรทัดแบบเดิม
     for (const item of items) {
       const stockItemId = item.stock_item_id
       if (!stockItemId) continue

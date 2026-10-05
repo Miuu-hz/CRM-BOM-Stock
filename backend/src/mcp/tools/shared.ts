@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import db from '../../db/sqlite'
+import { invoiceUploadDir } from '../../routes/sales/shared'
 import { approvalDenyReason } from '../../services/approvalGate.service'
 import { normName, findAliasTarget, isSellableItem } from '../../services/stockItem.service'
 
@@ -247,7 +248,9 @@ export function resolveDocRef(
   return null
 }
 
-const ATTACHMENT_DIR = process.env.ATTACHMENT_STORAGE_DIR || path.resolve(process.cwd(), 'storage/payment-attachments')
+// เดิมอิง process.cwd() — pm2 รันจาก /opt/crm ไฟล์จาก MCP เลยไปตกที่ /opt/crm/storage/...
+// ซึ่ง route เสิร์ฟไฟล์ (/api/attachments/:id/file) มองไม่เห็น ใช้โฟลเดอร์เดียวกับหน้าเว็บแทน
+const ATTACHMENT_DIR = invoiceUploadDir
 
 export function saveBase64Attachment(params: {
   tenantId: string

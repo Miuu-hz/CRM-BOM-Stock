@@ -4,6 +4,7 @@ import { calcVat } from '../utils/vat'
 import { resolveStockItemId, StockItemRefError } from './stockItem.service'
 import { rememberContactVatMode } from './accounting.service'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from './unitConversion.service'
+import { closedPeriodLabel } from '../routes/journal.routes'
 
 /**
  * ตรรกะ "แก้ไข PO ที่ออกไปแล้ว" ยกออกมาจาก routes/purchaseOrder.routes.ts PUT /:id
@@ -153,6 +154,41 @@ export function poNotReceivableMessage(tenantId: string, poId: string): string |
   const issues = poReceiptIssues(tenantId, poId)
   if (issues.length === 0) return null
   return `ส่งอนุมัติ/อนุมัติไม่ได้ — มี ${issues.length} รายการที่รับเข้าคลังไม่ได้:\n• ${issues.join('\n• ')}`
+}
+
+/**
+ * แก้วันที่สั่งซื้อ (= วันที่บนบิล) ของ PO
+ * ที่มา 2026-10-06: บิล MCP รุ่นก่อนมี bill_date ได้ order_date = วันที่ป้อน — ต้องแก้ก่อนเดินสาย
+ * เพราะ GR/PI/ใบจ่ายเงินลงวันที่ตาม order_date ทั้งหมด
+ * กติกา: แก้ได้เฉพาะตอนยังไม่มีใบรับสินค้า/ใบแจ้งหนี้ (ที่ยังไม่ยกเลิก) และทั้งวันเดิม/วันใหม่ต้องไม่อยู่ในงวดที่ปิดแล้ว
+ * เลขที่ PO ไม่เปลี่ยน (เลขเดิมอ้างอิงอยู่ข้างนอกแล้ว — ออกเลขใหม่เสี่ยงกว่าที่ได้)
+ */
+export function changePurchaseOrderDate(tenantId: string, poId: string, orderDate: string): { from: string; to: string } {
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(orderDate)
+    && !isNaN(Date.parse(orderDate + 'T00:00:00Z'))
+    && new Date(orderDate + 'T00:00:00Z').toISOString().slice(0, 10) === orderDate
+  if (!valid) throw new PurchaseOrderUpdateError(`วันที่ "${orderDate}" ไม่ถูกต้อง — ใช้รูปแบบ YYYY-MM-DD ปี ค.ศ.`)
+
+  const po = db.prepare('SELECT po_number, order_date, status FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+  if (!po) throw new PurchaseOrderUpdateError('ไม่พบใบสั่งซื้อ')
+  if (po.status === 'CANCELLED') throw new PurchaseOrderUpdateError(`${po.po_number} ถูกยกเลิกแล้ว แก้วันที่ไม่ได้`)
+  const from = String(po.order_date || '').slice(0, 10)
+
+  const gr = db.prepare("SELECT gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' LIMIT 1")
+    .get(tenantId, poId) as any
+  if (gr) throw new PurchaseOrderUpdateError(`มีใบรับสินค้า ${gr.gr_number} แล้ว — แก้วันที่ PO ไม่ได้ (เอกสารลูกลงวันที่ไปแล้ว)`)
+  const pi = db.prepare(`SELECT pi_number FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED'
+    AND (purchase_order_id = ? OR purchase_order_ids LIKE ?) LIMIT 1`).get(tenantId, poId, `%"${poId}"%`) as any
+  if (pi) throw new PurchaseOrderUpdateError(`มีใบแจ้งหนี้ ${pi.pi_number} แล้ว — แก้วันที่ PO ไม่ได้`)
+
+  for (const d of [from, orderDate]) {
+    const closed = d ? closedPeriodLabel(tenantId, d) : null
+    if (closed) throw new PurchaseOrderUpdateError(`งวด ${closed} ปิดบัญชีแล้ว — ย้ายวันที่ ${from} → ${orderDate} ไม่ได้`)
+  }
+
+  db.prepare('UPDATE purchase_orders SET order_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+    .run(orderDate, new Date().toISOString(), poId, tenantId)
+  return { from, to: orderDate }
 }
 
 export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload: PurchaseOrderUpdatePayload) {

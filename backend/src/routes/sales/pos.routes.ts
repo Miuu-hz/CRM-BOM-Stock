@@ -4,10 +4,11 @@ import { getLimits } from '../../services/subscription.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { ACC } from '../../config/accountCodes'
-import { postJournal, getOrCreateAccount } from '../../services/accounting.service'
+import { postJournal, getOrCreateAccount, JournalError } from '../../services/accounting.service'
 import { cancelPosBill } from '../../services/posBillCancel.service'
 import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.service'
 import posStockService from '../../services/pos-stock.service'
+import { buildShiftCloseJournal } from '../../services/posShiftRepair.service'
 
 const router = Router()
 
@@ -55,17 +56,24 @@ function getShiftCashMovementTotals(tenantId: string, shiftId: string): { cashIn
 // Sales inside a shift: prefer bills tagged with this shift_id (set at bill
 // creation once a shift is open); fall back to the old opened_at time-range
 // match for bills created before the shift_id column existed.
+// ยอดเงินสด/โอนรวมยอดต่อบิลก่อน (subquery) — เดิม LEFT JOIN pos_payments ตรง ๆ บิลที่มี payment 2 แถว
+// ถูกนับยอดบิลซ้ำ 2 เท่า · แบ่งยอดบิลตามสัดส่วนที่จ่ายแต่ละช่องทาง (CASH = เงินสด, อื่น ๆ = ธนาคาร เหมือนเดิม)
+// แถวซ้ำ/จ่ายแยกหลายช่องทางจึงรวมได้ไม่เกินยอดบิล · บิลไม่มี payment เลย = ไม่เข้าทั้งสองฝั่ง (ผู้ปิดกะเตือนเอง)
 function getShiftSalesSummary(tenantId: string, shift: { id: string; opened_at: string }) {
   return db.prepare(`
     SELECT
       COUNT(*) as bill_count,
-      COALESCE(SUM(b.total_amount), 0) as total_revenue,
-      COALESCE(SUM(CASE WHEN p.payment_method = 'CASH' THEN b.total_amount ELSE 0 END), 0) as cash_revenue,
-      COALESCE(SUM(CASE WHEN p.payment_method != 'CASH' THEN b.total_amount ELSE 0 END), 0) as bank_revenue
-    FROM pos_running_bills b
-    LEFT JOIN pos_payments p ON b.id = p.bill_id
-    WHERE b.tenant_id = ? AND b.status = 'PAID'
-      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?))
+      COALESCE(SUM(x.total_amount), 0) as total_revenue,
+      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * x.cash_paid / x.paid ELSE 0 END), 0) as cash_revenue,
+      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * (x.paid - x.cash_paid) / x.paid ELSE 0 END), 0) as bank_revenue
+    FROM (
+      SELECT b.total_amount,
+        (SELECT SUM(p.amount) FROM pos_payments p WHERE p.bill_id = b.id) as paid,
+        (SELECT SUM(CASE WHEN p.payment_method = 'CASH' THEN p.amount ELSE 0 END) FROM pos_payments p WHERE p.bill_id = b.id) as cash_paid
+      FROM pos_running_bills b
+      WHERE b.tenant_id = ? AND b.status = 'PAID'
+        AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?))
+    ) x
   `).get(tenantId, shift.id, shift.opened_at) as any
 }
 
@@ -555,67 +563,76 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     // Calculate sales in this shift
     const sales = getShiftSalesSummary(tenantId, shift)
     const movements = getShiftCashMovementTotals(tenantId, id)
+    // บิลที่ไม่มี payment (หรือ payment ไม่ครบ) ไม่เข้าทั้งเงินสดและธนาคาร แต่ขาเงินสดตอนปิดกะเป็น "ส่วนที่เหลือ"
+    // จึงดูดยอดนี้เข้าเงินสดเงียบ ๆ — เตือนไว้ให้ตามดูบิลนั้น
+    const unclassified = (sales.total_revenue || 0) - (sales.cash_revenue || 0) - (sales.bank_revenue || 0)
+    if (unclassified > 0.01) {
+      console.warn(`⚠️ ปิดกะ ${shift.shift_number}: ยอดบิล ${unclassified.toFixed(2)} บาทไม่มีรายการรับชำระ (pos_payments) — ถูกนับเป็นเงินสด`)
+    }
 
-    const expectedCash = (shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut
-    const cashDifference = closing_cash_counted - expectedCash
+    // ปัดเป็นสตางค์ก่อนใช้ทุกตัว — ยอดบิลบางใบมีเศษเกิน 2 ตำแหน่ง/เศษ floating point
+    // ถ้าปล่อยให้ postJournal ปัดทีละบรรทัดเอง ผลรวมสองฝั่งจะหลุดกัน 0.01 แล้วปิดกะไม่ได้
+    const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+    const expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
+    const cashDifference = r2(Number(closing_cash_counted) - expectedCash)
     const nowStr = new Date().toISOString()
     const today = nowStr.split('T')[0]
 
-    db.prepare(`
-      UPDATE pos_shifts SET
-        status = 'CLOSED', closed_at = ?,
-        closing_cash_counted = ?, expected_cash = ?, cash_difference = ?,
-        total_revenue = ?, cash_revenue = ?, bank_revenue = ?,
-        bill_count = ?, closed_by = ?,
-        notes = COALESCE(?, notes)
-      WHERE id = ? AND tenant_id = ?
-    `).run(
-      nowStr, closing_cash_counted, expectedCash, cashDifference,
-      sales.total_revenue, sales.cash_revenue, sales.bank_revenue,
-      sales.bill_count, userId, notes || null, id, tenantId
-    )
-
-    // Post เงินขาด/เงินเกิน เข้าบัญชีทันทีที่ปิดกะ (ข้ามถ้าเท่ากันพอดี) — ป้องกันลงซ้ำ
-    // อัตโนมัติเพราะ UPDATE ด้านบนใช้ WHERE status='OPEN' เท่านั้น กดปิดซ้ำจะเจอ 404
-    // ก่อนถึงจุดนี้เสมอ (shift ถูกเปลี่ยนเป็น CLOSED ไปแล้วในรอบแรก)
-    //
-    // ปิดกะ = ปิดยอดบัญชีพัก 1180 ทั้งก้อน ไม่ใช่ลงแค่ส่วนต่าง
-    //   Dr เงินสด        ยอดขายเงินสด บวก/ลบ ส่วนต่างที่นับได้จริง
-    //   Dr ธนาคาร        ยอดขายที่รับผ่านโอน/QR (เข้าบัญชีไปแล้วตั้งแต่ลูกค้าจ่าย)
-    //   Dr 5901          ถ้านับเงินได้น้อยกว่าที่ควรมี
-    //   Cr 1180          ยอดบิลทั้งกะ — หลังบรรทัดนี้บัญชีพักต้องกลับเป็นศูนย์
-    //   Cr 5901          ถ้านับเงินได้มากกว่าที่ควรมี
-    //
-    // เดิมลงเฉพาะส่วนต่างเงินขาด/เงินเกิน เพราะสมมติว่ายอดขายเข้าเงินสดไปแล้วตั้งแต่ปิดบิล
-    // พอย้ายฝั่งขายไปลงบัญชีพักแทน (pos-accounting.service.ts) ขั้นนี้ต้องรับช่วงปิดยอดเอง
-    //
-    // เงินทอนเริ่มกะกับเงินเข้า-ออกลิ้นชักไม่เกี่ยวกับยอดขาย มี journal ของตัวเองอยู่แล้ว
-    // จึงไม่นับซ้ำในรายการนี้ — ใช้แค่ cash_revenue / bank_revenue ของกะนี้
     let journalEntryId: string | null = null
-    const billsTotal = Number(sales.total_revenue || 0)
-    if (billsTotal > 0.005 || Math.abs(cashDifference) > 0.005) {
-      const diffLabel = cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'
-      const desc = Math.abs(cashDifference) > 0.005
-        ? `ปิดกะ ${shift.shift_number} — ${diffLabel} ${Math.abs(cashDifference).toFixed(2)} บาท`
-        : `ปิดกะ ${shift.shift_number} — นำยอดขายเข้าบัญชี`
-      journalEntryId = postJournal({
-        tenantId,
-        date: today,
-        referenceType: 'POS_SHIFT_CLOSE',
-        referenceId: id,
-        description: desc,
-        createdBy: userId,
-        businessUnit: 'RETAIL',
-        sourceNumber: shift.shift_number,
-        lines: [
-          { code: ACC.CASH, description: 'เงินสดจากการขายหน้าร้าน', debit: Number(sales.cash_revenue || 0) + cashDifference },
-          { code: ACC.BANK, description: 'ยอดรับผ่านโอน/QR', debit: Number(sales.bank_revenue || 0) },
-          { code: ACC.CASH_OVER_SHORT, description: 'เงินขาดจากการนับ', debit: cashDifference < 0 ? Math.abs(cashDifference) : 0 },
-          { code: ACC.POS_CLEARING, description: `ปิดยอดบิลทั้งกะ ${shift.shift_number}`, credit: billsTotal },
-          { code: ACC.CASH_OVER_SHORT, description: 'เงินเกินจากการนับ', credit: cashDifference > 0 ? cashDifference : 0 },
-        ],
+    // ปิดสถานะกะกับลงบัญชีต้องสำเร็จหรือล้มไปด้วยกัน — เดิมลงบัญชีพังแล้วกะถูกปิดค้าง
+    // (CLOSED แต่ไม่มี journal บัญชีพักไม่ถูกเคลียร์ และกดปิดซ้ำไม่ได้เพราะเจอ 404)
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE pos_shifts SET
+          status = 'CLOSED', closed_at = ?,
+          closing_cash_counted = ?, expected_cash = ?, cash_difference = ?,
+          total_revenue = ?, cash_revenue = ?, bank_revenue = ?,
+          bill_count = ?, closed_by = ?,
+          notes = COALESCE(?, notes)
+        WHERE id = ? AND tenant_id = ?
+      `).run(
+        nowStr, closing_cash_counted, expectedCash, cashDifference,
+        sales.total_revenue, sales.cash_revenue, sales.bank_revenue,
+        sales.bill_count, userId, notes || null, id, tenantId
+      )
+
+      // Post เงินขาด/เงินเกิน เข้าบัญชีทันทีที่ปิดกะ (ข้ามถ้าเท่ากันพอดี) — ป้องกันลงซ้ำ
+      // อัตโนมัติเพราะ UPDATE ด้านบนใช้ WHERE status='OPEN' เท่านั้น กดปิดซ้ำจะเจอ 404
+      // ก่อนถึงจุดนี้เสมอ (shift ถูกเปลี่ยนเป็น CLOSED ไปแล้วในรอบแรก)
+      //
+      // ปิดกะ = ปิดยอดบัญชีพัก 1180 ทั้งก้อน ไม่ใช่ลงแค่ส่วนต่าง
+      //   Dr เงินสด        ยอดขายเงินสด บวก/ลบ ส่วนต่างที่นับได้จริง
+      //   Dr ธนาคาร        ยอดขายที่รับผ่านโอน/QR (เข้าบัญชีไปแล้วตั้งแต่ลูกค้าจ่าย)
+      //   Dr 5901          ถ้านับเงินได้น้อยกว่าที่ควรมี
+      //   Cr 1180          ยอดบิลทั้งกะ — หลังบรรทัดนี้บัญชีพักต้องกลับเป็นศูนย์
+      //   Cr 5901          ถ้านับเงินได้มากกว่าที่ควรมี
+      //
+      // เดิมลงเฉพาะส่วนต่างเงินขาด/เงินเกิน เพราะสมมติว่ายอดขายเข้าเงินสดไปแล้วตั้งแต่ปิดบิล
+      // พอย้ายฝั่งขายไปลงบัญชีพักแทน (pos-accounting.service.ts) ขั้นนี้ต้องรับช่วงปิดยอดเอง
+      //
+      // เงินทอนเริ่มกะกับเงินเข้า-ออกลิ้นชักไม่เกี่ยวกับยอดขาย มี journal ของตัวเองอยู่แล้ว
+      // จึงไม่นับซ้ำในรายการนี้ — ใช้แค่ cash_revenue / bank_revenue ของกะนี้
+      // ปัดที่ยอดรวม (ไม่ใช่รายบรรทัด) แล้วให้ขาเงินสดเป็น "ส่วนที่เหลือ" ของยอดบิล
+      // = ยอดบิล − ธนาคาร + ส่วนต่าง → เดบิตเท่าเครดิตเป๊ะเสมอ ไม่ว่าเศษจะปัดไปทางไหน
+      // ติดลบได้ถ้าเงินขาดมากกว่ายอดขายเงินสด (เช่นกะที่ขายโอนล้วนแต่เงินทอนหาย) → ย้ายไปฝั่งเครดิต
+      const journal = buildShiftCloseJournal({
+        shift_number: shift.shift_number, total_revenue: sales.total_revenue,
+        bank_revenue: sales.bank_revenue, cash_difference: cashDifference,
       })
-    }
+      if (journal) {
+        journalEntryId = postJournal({
+          tenantId,
+          date: today,
+          referenceType: 'POS_SHIFT_CLOSE',
+          referenceId: id,
+          description: journal.description,
+          createdBy: userId,
+          businessUnit: 'RETAIL',
+          sourceNumber: shift.shift_number,
+          lines: journal.lines,
+        })
+      }
+    })()
 
     res.json({
       success: true,
@@ -636,6 +653,8 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     })
   } catch (error) {
     console.error('Close shift error:', error)
+    // ลงบัญชีไม่ผ่าน = กะยังเปิดอยู่ (rollback แล้ว) บอกเหตุผลจริงให้ผู้ใช้เห็น
+    if (error instanceof JournalError) return res.status(400).json({ success: false, message: error.message })
     res.status(500).json({ success: false, message: 'Failed to close shift' })
   }
 })

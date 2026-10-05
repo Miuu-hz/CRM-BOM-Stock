@@ -133,6 +133,16 @@ export function rememberAlias(tenantId: string, name: string, stockItemId: strin
 }
 
 /**
+ * ตัดสต็อกขายด้วยชื่อที่ไม่ตรง SKU (เช่น "น้ำดื่มสิงห์" ของ SKU "น้ำดื่ม") → จำเป็นชื่อรอง
+ * แล้วคืนคำนำหน้า stock log `ขาย "<ชื่อ>" · ` · ชื่อตรง SKU / ปิดฟีเจอร์ / จำไม่ได้ = ''
+ */
+export function soldAsNote(tenantId: string, lineName: unknown, stockItem: { id: string; name: string }, sourceRef: string, userId: string): string {
+  const name = String(lineName ?? '').trim()
+  if (!name || normName(name) === normName(stockItem.name)) return ''
+  return rememberAlias(tenantId, name, stockItem.id, sourceRef, userId) ? `ขาย "${name}" · ` : ''
+}
+
+/**
  * เพิ่ม/แก้ชื่อรองเองจากหน้าสต็อก พร้อมผูกหน่วย (ไม่บังคับ) · unit ต้อง normalize มาแล้ว (ผู้เรียกทำ)
  * ผิดกติกา → StockItemRefError ข้อความไทย ผู้เรียกแปลงเป็น 400
  */
@@ -167,6 +177,11 @@ export function saveAlias(
   `).run(randomUUID().replace(/-/g, '').slice(0, 25), tenantId, key, name, input.stockItemId, unit, factor, userId, now, now)
 }
 
+// รายการรวม (ช่องค้นหาหน้าซื้อ/ขาย) ไม่เอาชื่อรองที่ชนชื่อ SKU ที่ยังใช้งาน — findAliasTarget ไม่ใช้มันแล้ว
+// ถ้าปล่อยให้เลือก บรรทัดจะได้ตัวคูณของชื่อรองตอนตั้งราคา แต่ตอนตัดสต็อกได้กฎของ SKU (ตัวเลขไม่ตรงกัน)
+// รายการของสินค้าตัวเดียว (หน้าจัดการ) ยังโชว์ไว้ให้ลบทิ้งได้
+const SHADOW_FREE = `AND NOT EXISTS (SELECT 1 FROM stock_items x WHERE x.tenant_id = a.tenant_id AND x.${LIVE} AND LOWER(TRIM(x.name)) = a.name_norm)`
+
 /** ชื่อรองทั้งหมด (หรือเฉพาะของสินค้าตัวเดียว) — ปลายทางที่ปิดใช้ไม่เอา · ปิดฟีเจอร์ = ว่าง */
 export function listAliases(tenantId: string, stockItemId?: string): any[] {
   if (!aliasEnabled(tenantId)) return []
@@ -176,7 +191,7 @@ export function listAliases(tenantId: string, stockItemId?: string): any[] {
            s.name AS stock_item_name, s.sku, COALESCE(NULLIF(s.base_unit, ''), s.unit) AS base_unit, s.unit_price, s.category
     FROM stock_item_aliases a
     JOIN stock_items s ON s.id = a.stock_item_id AND s.tenant_id = a.tenant_id AND s.${LIVE}
-    WHERE a.tenant_id = ? ${stockItemId ? 'AND a.stock_item_id = ?' : ''}
+    WHERE a.tenant_id = ? ${stockItemId ? 'AND a.stock_item_id = ?' : SHADOW_FREE}
     ORDER BY a.name
   `).all(...params)
 }

@@ -89,9 +89,10 @@ export default function UnitChainModal({ materialId = null, baseUnit, unit, onCl
         baseUnit={baseUnit}
         displayUnit={unit}
         initialEdge={initialEdge}
-        onAdd={async (from, to, factor) => {
+        onAdd={async (from, to, factor, force) => {
           await api.post('/materials/unit-conversions', {
             material_id: materialId, from_unit: from, to_unit: to, conversion_factor: factor,
+            ...(force ? { force: true } : {}),
           })
           await afterChange()
         }}
