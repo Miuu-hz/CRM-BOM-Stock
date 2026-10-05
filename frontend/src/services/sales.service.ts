@@ -39,6 +39,9 @@ export interface CreateQuotationPayload {
   customerId: string
   expiryDate?: string
   taxRate?: number
+  vatInclusive?: boolean
+  extraChargeAmount?: number
+  extraChargeLabel?: string
   discountAmount?: number
   notes?: string
   items: QuotationItem[]
@@ -68,11 +71,6 @@ export interface CreateSOPayload {
 
 const salesService = {
   // Customers
-  getCustomers: async (): Promise<Customer[]> => {
-    const { data } = await api.get('/customers?status=ACTIVE&limit=500')
-    return data.data || []
-  },
-
   searchCustomers: async (q: string): Promise<Customer[]> => {
     const { data } = await api.get(`/customers/search?q=${encodeURIComponent(q)}&limit=20`)
     return data.data || []
@@ -87,9 +85,9 @@ const salesService = {
     return data.data
   },
 
-  // Products (stock_items with sell price)
+  // Products (stock_items with sell price) — เฉพาะที่ขายได้ (FINISHED/WIP/SERVICE) ไม่ใช่วัตถุดิบ
   getProducts: async (): Promise<Product[]> => {
-    const { data } = await api.get('/stock?limit=500&is_pos_enabled=false')
+    const { data } = await api.get('/stock?limit=500&sellable=1')
     return (data.data || []).map((p: any) => ({
       id: p.id,
       code: p.sku || p.code,
@@ -102,11 +100,6 @@ const salesService = {
   },
 
   // Quotations
-  getQuotations: async () => {
-    const { data } = await api.get('/sales/quotations')
-    return data
-  },
-
   getQuotation: async (id: string) => {
     const { data } = await api.get(`/sales/quotations/${id}`)
     return data
@@ -128,11 +121,6 @@ const salesService = {
   },
 
   // Sales Orders
-  getSalesOrders: async () => {
-    const { data } = await api.get('/sales/sales-orders')
-    return data
-  },
-
   getSalesOrder: async (id: string) => {
     const { data } = await api.get(`/sales/sales-orders/${id}`)
     return data
@@ -154,11 +142,6 @@ const salesService = {
   },
 
   // Invoices
-  getInvoices: async () => {
-    const { data } = await api.get('/sales/invoices')
-    return data
-  },
-
   getInvoice: async (id: string) => {
     const { data } = await api.get(`/sales/invoices/${id}`)
     return data
@@ -181,43 +164,12 @@ const salesService = {
   },
 
   // Credit Notes
-  getCreditNotes: async () => {
-    const { data } = await api.get('/sales/credit-notes')
-    return data
-  },
-
-  getCreditNote: async (id: string) => {
-    const { data } = await api.get(`/sales/credit-notes/${id}`)
-    return data
-  },
-
   createCreditNote: async (payload: {
     invoiceId: string; reason: string; creditDate?: string
     /** ระบุเมื่อโหมด "รับคืนสินค้า" เท่านั้น — ไม่ส่ง = โหมด "ลดราคา/ส่วนลด" (ไม่แตะสต็อก) */
     items?: { invoiceItemId: string; productId?: string; quantity: number; unitPrice: number; reason?: string }[]
   }) => {
     const { data } = await api.post('/sales/credit-notes', payload)
-    return data
-  },
-
-  updateCreditNoteStatus: async (id: string, status: string) => {
-    const { data } = await api.put(`/sales/credit-notes/${id}/status`, { status })
-    return data
-  },
-
-  // Backorders
-  getBackorders: async () => {
-    const { data } = await api.get('/sales/backorders')
-    return data
-  },
-
-  getBackorder: async (id: string) => {
-    const { data } = await api.get(`/sales/backorders/${id}`)
-    return data
-  },
-
-  updateBackorderStatus: async (id: string, status: string) => {
-    const { data } = await api.put(`/sales/backorders/${id}/status`, { status })
     return data
   },
 }

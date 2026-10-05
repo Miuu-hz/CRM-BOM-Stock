@@ -21,6 +21,7 @@ import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { unitLabel } from '../hooks/useUnits'
 import { timeAgo } from '../utils/timeAgo'
 import { calcVat, calcDocTotals, type VatMode, vatModeOf, vatModeToFields, defaultVatMode, vatModeWarning, VAT_MODE_LABEL } from '../utils/vat'
+import { priceForSaleUnit, applyRepricedRow } from '../utils/salePrice'
 
 // Types
 // รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
@@ -576,6 +577,14 @@ const Sales = () => {
       if (status === 'DELIVERED' || status === 'COMPLETED') fetchDeliveryOrders()
     } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
   }
+  const handleIssueDeliveryOrder = async (id: string) => {
+    try {
+      const res = await api.post(`/sales/sales-orders/${id}/delivery-order`)
+      toast.success(t('sales.toast.doIssued', { number: res.data?.data?.doNumber || '' }))
+      fetchDeliveryOrders()
+      fetchSalesOrders()
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.doIssueFailed')) }
+  }
 
   // Delete handlers
   const handleDeleteQuotation = async (id: string) => {
@@ -1059,6 +1068,8 @@ const Sales = () => {
       CONFIRMED:  { status: 'PROCESSING', label: t('sales.status.prepareGoods'), color: 'text-warning bg-[var(--warning-soft)] hover:bg-[var(--warning-soft)]' },
       PROCESSING: { status: 'READY',      label: t('sales.status.readyToShip'),     color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20' },
       READY:      { status: 'DELIVERED',  label: t('sales.status.delivered'),  color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
+      // PARTIAL เคยเป็นทางตัน (ไม่มีปุ่มพาไปต่อ) — ให้เดินต่อแบบเดียวกับ READY (สี/ป้ายเดียวกัน)
+      PARTIAL:    { status: 'DELIVERED',  label: t('sales.status.delivered'),  color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
       DELIVERED:  { status: 'COMPLETED',  label: t('sales.status.completed'),   color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
     }
 
@@ -1111,6 +1122,7 @@ const Sales = () => {
                   const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
                   const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
                   const next = soNextStatus[order.status]
+                  const hasDO = deliveryOrders.some(d => d.so_number === order.so_number)
                   return (
                     <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
@@ -1184,10 +1196,16 @@ const Sales = () => {
                               <CheckCircle className="w-3 h-3" /> {next.label}
                             </button>
                           )}
-                          {['CONFIRMED','PROCESSING','READY','DELIVERED','COMPLETED'].includes(order.status) && (
+                          {['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
                             <button onClick={() => handleCreateInvoiceFromSO(order)}
                               className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-1">
                               <Receipt className="w-3 h-3" /> INV
+                            </button>
+                          )}
+                          {!hasDO && ['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
+                            <button onClick={() => handleIssueDeliveryOrder(order.id)}
+                              className="px-2 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] flex items-center gap-1" title={t('sales.actions.issueDeliveryOrder')}>
+                              <Package className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -1206,6 +1224,7 @@ const Sales = () => {
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
               const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
               const next = soNextStatus[order.status]
+              const hasDO = deliveryOrders.some(d => d.so_number === order.so_number)
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -1275,10 +1294,16 @@ const Sales = () => {
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
-                    {['CONFIRMED','PROCESSING','READY','DELIVERED','COMPLETED'].includes(order.status) && (
+                    {['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
                       <button onClick={() => handleCreateInvoiceFromSO(order)}
                         className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] flex items-center justify-center gap-1">
                         <Receipt className="w-3 h-3" /> {t('sales.actions.createInvoiceShort')}
+                      </button>
+                    )}
+                    {!hasDO && ['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
+                      <button onClick={() => handleIssueDeliveryOrder(order.id)}
+                        className="px-3 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] flex items-center gap-1" title={t('sales.actions.issueDeliveryOrder')}>
+                        <Package className="w-3 h-3" />
                       </button>
                     )}
                   </div>
@@ -2340,6 +2365,8 @@ const Sales = () => {
           onRefresh={() => fetchSalesOrders()}
           onCreateInvoice={() => { setDetailSO(null); fetchInvoices(); setActiveTab('invoices') }}
           companyName={tenant?.name}
+          hasDeliveryOrder={deliveryOrders.some(d => d.so_number === detailSO.so_number)}
+          onIssueDO={() => handleIssueDeliveryOrder(detailSO.id)}
         />
       )}
       {detailInv && (
@@ -2577,6 +2604,8 @@ interface LineItem {
   unit: string
   unitPrice: number
   discountPercent: number
+  /** true เมื่อผู้ใช้พิมพ์ราคาเองในแถวนี้ — กันไม่ให้การเปลี่ยนหน่วยทับราคาที่ตั้งใจพิมพ์ */
+  priceEdited?: boolean
 }
 
 function ProductSearch({ value, products, onSelect, onClear }: {
@@ -2673,6 +2702,24 @@ function LineItemsEditor({
     next[i] = { ...next[i], ...patch }
     onChange(next)
   }
+  // ผลแปลงหน่วยกลับมาแบบ async — ต้องอ่านรายการล่าสุด ไม่ใช่ items ของรอบ render ตอนกดเลือก
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+
+  // stock_items.unit_price คือราคาต่อ "หน่วยฐาน" เสมอ (เจ้าของยืนยัน, Stock.tsx ป้ายไว้ตรงๆ)
+  // ขายเป็นหน่วยอื่น (เช่นแพ็ค) ต้องคูณด้วย factor หน่วยฐานต่อหน่วยที่เลือก — ขอ factor จาก backend
+  // ตัวเดียวกับที่ BOMModal ใช้คำนวณต้นทุน BOM ไม่เขียนสูตรแปลงหน่วยเองอีกชุด
+  // ponytail: single-hop แปลงไม่ได้ (404/ไม่มีกฎ) = เงียบๆคงราคาต่อหน่วยฐานไว้ ไม่บล็อกผู้ใช้
+  const repriceRow = async (i: number, productId: string, baseUnit: string, unit: string, basePrice: number) => {
+    if (!baseUnit || !unit || normalizeUnit(unit) === normalizeUnit(baseUnit)) return
+    try {
+      const res = await api.post('/materials/unit-conversions/convert', {
+        quantity: 1, from_unit: unit, to_unit: baseUnit, material_id: productId,
+      })
+      const next = applyRepricedRow(itemsRef.current, i, { productId, unit }, priceForSaleUnit(basePrice, res.data?.data?.converted))
+      if (next) onChange(next)
+    } catch { /* แปลงไม่ได้ก็คงราคาต่อหน่วยฐานเดิมไว้ */ }
+  }
 
   return (
     <div className="space-y-2">
@@ -2693,13 +2740,19 @@ function LineItemsEditor({
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
                 products={products}
-                onSelect={p => update(i, {
-                  productId: p.id,
-                  productName: p.name,
+                onSelect={p => {
+                  const base = normalizeUnit(p.base_unit || p.unit || '')
                   // ค่าเริ่มต้นหน่วย: หน่วยที่ตั้งไว้ให้ขาย (sale_unit) ก่อน แล้วค่อย fallback ไปหน่วยฐาน/หน่วยสินค้า
-                  unit: normalizeUnit(p.sale_unit || p.base_unit || p.unit || ''),
-                  unitPrice: p.sell_price || 0,
-                })}
+                  const unit = normalizeUnit(p.sale_unit || p.base_unit || p.unit || '')
+                  update(i, {
+                    productId: p.id,
+                    productName: p.name,
+                    unit,
+                    unitPrice: p.sell_price || 0, // ราคาต่อหน่วยฐานก่อน — รีไพรซ์ทันทีด้านล่างถ้าหน่วยขายไม่ใช่หน่วยฐาน
+                    priceEdited: false,
+                  })
+                  if (p.id) repriceRow(i, p.id, base, unit, p.sell_price || 0)
+                }}
 onClear={() => update(i, { productId: undefined, productName: '' })}
               />
             </div>
@@ -2714,14 +2767,21 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
               <UnitSelectForRow
                 productId={item.productId}
                 value={item.unit}
-                onChange={u => update(i, { unit: u })}
+                onChange={u => {
+                  update(i, { unit: u })
+                  // ไม่ทับราคาที่ผู้ใช้พิมพ์เองในแถวนี้ — รีไพรซ์เฉพาะตอนราคายังมาจากค่าเริ่มต้น
+                  if (!item.priceEdited && item.productId && selectedProduct) {
+                    const base = normalizeUnit(selectedProduct.base_unit || selectedProduct.unit || '')
+                    repriceRow(i, item.productId, base, u, selectedProduct.sell_price || 0)
+                  }
+                }}
                 baseUnit={selectedProduct?.base_unit || selectedProduct?.unit}
               />
             </div>
             <div className="col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.unitPrice')}</label>
               <input type="number" value={item.unitPrice} min={0} step={0.01}
-                onChange={e => update(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                onChange={e => update(i, { unitPrice: parseFloat(e.target.value) || 0, priceEdited: true })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div className="col-span-2">
@@ -3358,8 +3418,11 @@ function DealTimeline({ soId }: { soId: string }) {
   )
 }
 
-function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName }: {
+function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName, hasDeliveryOrder, onIssueDO }: {
   salesOrder: SalesOrder; onClose: () => void; onRefresh: () => void; onCreateInvoice: () => void; companyName?: string
+  /** มีใบส่งของของ SO นี้แล้วหรือยัง — ถ้ามีแล้วไม่ต้องเสนอปุ่มออกใบส่งของอีก */
+  hasDeliveryOrder?: boolean
+  onIssueDO?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -3371,6 +3434,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [creatingInv, setCreatingInv] = useState(false)
+  const [issuingDO, setIssuingDO] = useState(false)
   const [showSourceDoc, setShowSourceDoc] = useState(false)
 
   useEffect(() => {
@@ -3410,12 +3474,18 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     finally { setCreatingInv(false) }
   }
 
+  const handleIssueDO = async () => {
+    if (!onIssueDO) return
+    setIssuingDO(true)
+    try { await onIssueDO() } finally { setIssuingDO(false) }
+  }
+
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
 
   const SO_FLOW = ['DRAFT', 'CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'COMPLETED']
-  const nextStatus: Record<string, string> = { DRAFT: 'CONFIRMED', CONFIRMED: 'PROCESSING', PROCESSING: 'READY', READY: 'DELIVERED', DELIVERED: 'COMPLETED' }
-  const nextLabel: Record<string, string> = { DRAFT: t('sales.soActions.confirmSO'), CONFIRMED: t('sales.soActions.startProcessing'), PROCESSING: t('sales.status.readyToShip'), READY: t('sales.status.delivered'), DELIVERED: t('sales.status.completed') }
+  const nextStatus: Record<string, string> = { DRAFT: 'CONFIRMED', CONFIRMED: 'PROCESSING', PROCESSING: 'READY', READY: 'DELIVERED', PARTIAL: 'DELIVERED', DELIVERED: 'COMPLETED' }
+  const nextLabel: Record<string, string> = { DRAFT: t('sales.soActions.confirmSO'), CONFIRMED: t('sales.soActions.startProcessing'), PROCESSING: t('sales.status.readyToShip'), READY: t('sales.status.delivered'), PARTIAL: t('sales.status.delivered'), DELIVERED: t('sales.status.completed') }
 
   return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -3520,11 +3590,18 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               {nextLabel[salesOrder.status]}
             </button>
           ) : null}
-          {['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
+          {['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
             <button onClick={handleCreateInvoice} disabled={creatingInv}
               className="flex-1 py-2 bg-[var(--warning-soft)] border border-yellow-500/50 text-warning rounded-lg text-sm font-medium hover:bg-[var(--warning-soft)] disabled:opacity-50 flex items-center justify-center gap-1">
               {creatingInv ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Receipt className="w-3.5 h-3.5" />}
               {t('sales.actions.createInvoice')}
+            </button>
+          )}
+          {!hasDeliveryOrder && onIssueDO && ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
+            <button onClick={handleIssueDO} disabled={issuingDO}
+              className="flex-1 py-2 bg-blue-500/10 border border-blue-500/50 text-blue-400 rounded-lg text-sm font-medium hover:bg-[var(--info-soft)] disabled:opacity-50 flex items-center justify-center gap-1">
+              {issuingDO ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-3.5 h-3.5" />}
+              {t('sales.actions.issueDeliveryOrder')}
             </button>
           )}
           {canCancelDoc && !['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (

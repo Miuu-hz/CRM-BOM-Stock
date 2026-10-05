@@ -42,11 +42,6 @@ const posService = {
     return response.data
   },
 
-  getMenuConfig: async (id: string) => {
-    const response = await api.get(`/pos/menu-configs/${id}`)
-    return response.data
-  },
-
   createMenuConfig: async (data: {
     product_id: string
     bom_id?: string
@@ -93,46 +88,11 @@ const posService = {
     return response.data
   },
 
-  // ==================== Ingredients ====================
-  
-  addMenuIngredient: async (menuId: string, data: {
-    stock_item_id: string
-    quantity_used: number
-    unit_id?: string
-    is_optional?: boolean
-  }) => {
-    const response = await api.post(`/pos/menu-configs/${menuId}/ingredients`, data)
-    return response.data
-  },
-
-  updateMenuIngredient: async (menuId: string, ingredientId: string, data: {
-    quantity_used?: number
-    unit_id?: string
-    is_optional?: boolean
-  }) => {
-    const response = await api.put(`/pos/menu-configs/${menuId}/ingredients/${ingredientId}`, data)
-    return response.data
-  },
-
-  deleteMenuIngredient: async (menuId: string, ingredientId: string) => {
-    const response = await api.delete(`/pos/menu-configs/${menuId}/ingredients/${ingredientId}`)
-    return response.data
-  },
-
   // ==================== Products ====================
   
   getAvailableProducts: async (search?: string) => {
     const response = await api.get('/pos/available-products', {
       params: search ? { search } : undefined
-    })
-    return response.data
-  },
-
-  // ==================== Stock Check ====================
-  
-  getMenuStock: async (id: string, quantity?: number) => {
-    const response = await api.get(`/pos/menu-configs/${id}/stock`, {
-      params: quantity ? { quantity } : undefined
     })
     return response.data
   },
@@ -167,15 +127,6 @@ const posService = {
     notes?: string
   }) => {
     const response = await api.post('/pos/clearing/transfer', data)
-    return response.data
-  },
-
-  getClearingTransfers: async (params?: {
-    date_from?: string
-    date_to?: string
-    limit?: number
-  }) => {
-    const response = await api.get('/pos/clearing/transfers', { params })
     return response.data
   },
 
