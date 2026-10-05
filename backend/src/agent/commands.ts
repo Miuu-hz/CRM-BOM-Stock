@@ -4,6 +4,7 @@
 import { AgentContext, AgentCommand } from './types'
 import { formatDocumentNumber } from '../utils/id'
 import { poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
+import { totalStockValue } from '../services/stockValue.service'
 
 const commands: Record<string, AgentCommand> = {
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -36,10 +37,11 @@ const commands: Record<string, AgentCommand> = {
   async get_executive_summary(ctx: AgentContext) {
     const stock = ctx.db.prepare(
       `SELECT COUNT(*) as total_items,
-              SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock,
-              COALESCE(SUM(quantity * unit_cost), 0) as stock_value
+              SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock
        FROM stock_items WHERE tenant_id = ?`
     ).get(ctx.tenantId) as any
+    // totalStockValue() นับของที่ยังปิดห่อ (sealed_qty) ด้วย — สูตรเดียวกับ /stock/stats
+    const stockValue = totalStockValue(ctx.tenantId)
 
     const sales = ctx.db.prepare(
       `SELECT COUNT(*) as orders,
@@ -63,7 +65,7 @@ const commands: Record<string, AgentCommand> = {
     return {
       type: 'executive_summary',
       tenantId: ctx.tenantId,
-      stock: { totalItems: stock.total_items, lowStock: stock.low_stock, stockValue: stock.stock_value },
+      stock: { totalItems: stock.total_items, lowStock: stock.low_stock, stockValue },
       sales: { orders30d: sales.orders, revenue30d: sales.revenue },
       purchase: { openPOs: purchase.pos, committedSpend: purchase.committed },
       production: { activeWorkOrders: work.active_wo },

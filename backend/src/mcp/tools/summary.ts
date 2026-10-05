@@ -2,6 +2,7 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { ok } from './shared'
+import { totalStockValue } from '../../services/stockValue.service'
 
 export function registerSummaryTools(server: IMcpServer, tenantId: string): void {
   // ── 2. get_summary ─────────────────────────────────────────────────────────
@@ -12,10 +13,11 @@ export function registerSummaryTools(server: IMcpServer, tenantId: string): void
     async () => {
       const stock = db.prepare(
         `SELECT COUNT(*) as total_items,
-                SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock,
-                COALESCE(SUM(quantity * unit_cost), 0) as stock_value
+                SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock
          FROM stock_items WHERE tenant_id = ?`
-      ).get(tenantId) as { total_items: number; low_stock: number; stock_value: number }
+      ).get(tenantId) as { total_items: number; low_stock: number }
+      // totalStockValue() นับของที่ยังปิดห่อ (sealed_qty) ด้วย — สูตรเดียวกับ /stock/stats
+      const stockValue = totalStockValue(tenantId)
 
       const sales = db.prepare(
         `SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue
@@ -42,7 +44,7 @@ export function registerSummaryTools(server: IMcpServer, tenantId: string): void
         stock: {
           totalItems: stock.total_items,
           lowStock: stock.low_stock,
-          stockValue: stock.stock_value,
+          stockValue,
           lowStockItems,
         },
         sales_30d: { orders: sales.orders, revenue: sales.revenue },

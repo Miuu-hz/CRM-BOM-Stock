@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { totalStockValue } from '../services/stockValue.service'
 
 const router = Router()
 router.use(authenticate)
@@ -504,9 +505,8 @@ router.get('/extended', (req: Request, res: Response) => {
     }
 
     // ── Zone 6: Outsource Production (Phase 3 — ส่งวัตถุดิบออกไปผลิตข้างนอก) ─────────────────
-    const inHouseStockValue = (db.prepare(
-      `SELECT COALESCE(SUM(quantity * unit_cost), 0) as v FROM stock_items WHERE tenant_id = ?`
-    ).get(tenantId) as any).v
+    // totalStockValue() นับของที่ยังปิดห่อ (sealed_qty) ด้วย — สูตรเดียวกับ /stock/stats
+    const inHouseStockValue = totalStockValue(tenantId)
 
     const offsiteStockValue = (db.prepare(
       `SELECT COALESCE(SUM(total_value), 0) as v FROM subcon_stock WHERE tenant_id = ?`

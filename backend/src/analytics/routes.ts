@@ -3,6 +3,7 @@
 
 import { Router, Request, Response } from 'express'
 import db from '../db/sqlite'
+import { totalStockValue } from '../services/stockValue.service'
 
 const router = Router()
 
@@ -19,10 +20,11 @@ router.get('/executive-summary', (req: Request, res: Response) => {
 
     const stock = db.prepare(
       `SELECT COUNT(*) as total_items,
-              SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock,
-              COALESCE(SUM(quantity * unit_cost), 0) as stock_value
+              SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock
        FROM stock_items WHERE tenant_id = ?`
     ).get(tenantId) as any
+    // totalStockValue() นับของที่ยังปิดห่อ (sealed_qty) ด้วย — สูตรเดียวกับ /stock/stats
+    const stockValue = totalStockValue(tenantId)
 
     const sales = db.prepare(
       `SELECT COUNT(*) as orders,
@@ -46,7 +48,7 @@ router.get('/executive-summary', (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        stock: { totalItems: stock.total_items, lowStock: stock.low_stock, stockValue: stock.stock_value },
+        stock: { totalItems: stock.total_items, lowStock: stock.low_stock, stockValue },
         sales: { orders30d: sales.orders, revenue30d: sales.revenue },
         purchase: { openPOs: purchase.pos, committedSpend: purchase.committed },
         production: { activeWorkOrders: work.active_wo },

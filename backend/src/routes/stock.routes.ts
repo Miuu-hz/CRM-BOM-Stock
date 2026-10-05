@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { getLimits } from '../services/subscription.service'
 import { randomUUID } from 'crypto'
@@ -16,6 +16,7 @@ import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGat
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
 import { aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES } from '../services/stockItem.service'
+import { getPackFactor, totalStockValue } from '../services/stockValue.service'
 
 // Multer config: store in uploads/stock-images/
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'stock-images')
@@ -54,16 +55,6 @@ function generateId() {
  * Returns null when the item has no separate pack unit, or when no conversion
  * rule links the two, which is exactly the case where a pack cannot be opened.
  */
-function getPackFactor(item: any, tenantId: string): number | null {
-  const baseUnit = item.base_unit || item.unit
-  const displayUnit = item.display_unit || item.unit
-  if (!baseUnit || !displayUnit) return null
-  if (normalizeUnit(baseUnit) === normalizeUnit(displayUnit)) return null
-  const converted = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, item.id)
-  if (!converted || !(converted.factor > 0)) return null
-  return roundQty(converted.factor)
-}
-
 /** Enrich stock item with display quantity computed from base_unit ↔ display_unit */
 function enrichStockItem(item: any, tenantId: string) {
   if (!item) return item
@@ -121,15 +112,11 @@ router.get('/stats', async (req: Request, res: Response) => {
       (item: any) => availableOf(item) <= item.min_stock * 0.3
     ).length
 
-    let totalValue = 0
-    for (const item of stockItems) {
-      if (item.material_id) {
-        const material = db.prepare('SELECT unit_cost FROM stock_items WHERE id = ?').get(item.material_id) as any
-        if (material) {
-          totalValue += item.quantity * (material.unit_cost || 0)
-        }
-      }
-    }
+    // ของในสต็อกทุกชิ้นมีต้นทุนอยู่ในแถวของตัวเอง (unit_cost) อยู่แล้ว — ไม่ต้อง join
+    // material_id (คอลัมน์นี้ไม่มีอยู่จริงบน stock_items อยู่ดี ของเก่าจึงได้ 0 เสมอ)
+    // totalStockValue() คือสูตรเดียวที่นับของที่ยังปิดห่อ (sealed_qty) ด้วย — ที่นี่ต้องตรง
+    // กับ analytics/agent/mcp/phopy-board ทุกจุดเสมอ
+    const totalValue = totalStockValue(tenantId)
 
     res.json({
       success: true,
@@ -327,6 +314,12 @@ router.post('/', async (req: Request, res: Response) => {
     let finalUnitCost = (unitCost !== undefined && unitCost !== null && unitCost !== '') ? Number(unitCost) : 0
     let finalPurchasePrice: number | null = null
     let finalPurchaseUnit: string | null = null
+    // Catch-22: a per-item unit conversion rule can only be created once the item exists
+    // (it needs the item's id), but this endpoint used to 400 before the item existed when
+    // no rule was found yet. Create the item anyway — unit_cost stays 0 and the caller gets
+    // a warning instead of a hard failure — so the owner can add the conversion rule, then
+    // PUT the same purchasePrice again (PUT recomputes unit_cost once the rule exists).
+    let unitCostWarning: string | null = null
 
     if (purchasePrice !== undefined && purchasePrice !== null && purchasePrice !== '') {
       const purchasePriceNum = Number(purchasePrice)
@@ -342,12 +335,11 @@ router.post('/', async (req: Request, res: Response) => {
       } else {
         const converted = convertQuantityBidirectional(1, normPurchaseUnit, effectiveBaseUnit, tenantId, id)
         if (!converted || !(converted.factor > 0)) {
-          return res.status(400).json({
-            success: false,
-            message: `ไม่พบอัตราแปลงหน่วย "${normPurchaseUnit}" → "${effectiveBaseUnit}" กรุณาไปตั้งค่าอัตราแปลงหน่วย (Unit Conversion) ก่อน แล้วค่อยกลับมากรอกราคาซื้ออีกครั้ง`,
-          })
+          finalUnitCost = 0
+          unitCostWarning = 'ตั้งกฎแปลงหน่วยแล้วแก้ราคาซื้ออีกครั้งเพื่อคำนวณต้นทุน'
+        } else {
+          finalUnitCost = priceToBaseUnitCost(purchasePriceNum, converted.factor, `create stock item ${normPurchaseUnit}→${effectiveBaseUnit}`)
         }
-        finalUnitCost = priceToBaseUnitCost(purchasePriceNum, converted.factor, `create stock item ${normPurchaseUnit}→${effectiveBaseUnit}`)
       }
     }
 
@@ -358,10 +350,11 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (aliasMsg) dropAlias(tenantId, name) // ผู้ใช้เลือกแยกเป็นสินค้าใหม่ — ชื่อนี้เลิกเป็นชื่อรอง
     const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id)
-    
+
     res.status(201).json({
       success: true,
       data: enrichStockItem(item, tenantId),
+      ...(unitCostWarning ? { warning: unitCostWarning } : {}),
     })
   } catch (error: any) {
     // รหัสสินค้าซ้ำ (UNIQUE tenant_id+sku) — เดิมตอบ 500 ผู้ใช้เห็นแค่ "บันทึกไม่สำเร็จ" ไม่รู้ว่าต้องเปลี่ยนรหัส
@@ -508,7 +501,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 })
 
 // Delete stock item
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('ADMIN', 'MASTER'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
@@ -727,7 +720,7 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
 })
 
 // Delete image for stock item
-router.delete('/:id/image', async (req: Request, res: Response) => {
+router.delete('/:id/image', requireRole('ADMIN', 'MASTER', 'MANAGER'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
