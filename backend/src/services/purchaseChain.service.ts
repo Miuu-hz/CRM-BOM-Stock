@@ -1,0 +1,175 @@
+import db from '../db/sqlite'
+import { closedPeriodLabel } from '../routes/journal.routes'
+import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from './goodsReceipt.service'
+import { createPurchaseInvoice, paySupplier } from './purchaseBilling.service'
+import { poNotReceivableMessage } from './purchaseOrderUpdate.service'
+
+/**
+ * เดินบิลซื้อให้ครบสาย PO → GR → ใบแจ้งหนี้ซื้อ (PI) → บันทึกจ่ายเงิน (เฉพาะ PO ที่ is_paid)
+ *
+ * ที่มา (2026-10-06): create_draft_po ของ MCP เก็บข้อมูลการจ่ายเงินไว้ที่ PO แต่ไม่มีอะไรพาไปต่อ —
+ * บิลที่ AI ป้อนจึงค้างเป็น PO DRAFT ไม่มี GR/PI/ใบจ่ายเงิน (สต็อกไม่เข้า เจ้าหนี้/เงินออกไม่ลงบัญชี)
+ * ตัวนี้เรียก service ตัวเดียวกับหน้าเว็บทุกขั้น (ไม่มีสำเนาตรรกะ) ใช้ทั้ง MCP complete_purchase_bill
+ * และสคริปต์ซ่อม scripts/repair-mcp-bills-2026-10-06.ts
+ *
+ * วันที่ของทุกเอกสารในสาย = วันที่สั่งซื้อของ PO (= วันที่บนบิล) — เลขที่เอกสารจึงตามวันบนบิลด้วย
+ * ทำต่อจากจุดที่ค้าง (ยืนยัน GR ร่างที่มีอยู่, ออก PI จาก GR ที่ยังไม่ออก, จ่ายยอดค้างของ PI เดิม) เรียกซ้ำได้
+ * สิทธิ์ (อนุมัติ PO / แตะเงิน) ผู้เรียกต้องเช็คเอง — service ไม่รู้จัก caller
+ */
+
+export interface PurchaseChainResult {
+  poId: string
+  poNumber: string
+  /** ขั้นที่ทำไปแล้ว (dryRun = ขั้นที่จะทำ) */
+  steps: string[]
+  /** เหตุที่ไปต่อไม่ได้ — ขั้นก่อนหน้าที่ทำไปแล้วยังคงอยู่ */
+  blocker: string | null
+  complete: boolean
+}
+
+/** สถานะ PO ที่ต้องอนุมัติก่อนรับของ */
+export const PO_NEEDS_APPROVAL = ['DRAFT', 'SUBMITTED']
+
+function openInvoicesOfPo(tenantId: string, poId: string): any[] {
+  return db.prepare(`
+    SELECT id, pi_number, balance_amount FROM purchase_invoices
+    WHERE tenant_id = ? AND status != 'CANCELLED' AND balance_amount > 0.005
+      AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
+  `).all(tenantId, poId, `%"${poId}"%`) as any[]
+}
+
+function freeGoodsReceipts(tenantId: string, poId: string): any[] {
+  return db.prepare(
+    "SELECT id, gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'CONFIRMED' AND invoiced_at IS NULL"
+  ).all(tenantId, poId) as any[]
+}
+
+export function completePurchaseChain(
+  tenantId: string,
+  actor: string,
+  userId: string,
+  poId: string,
+  opts: { dryRun?: boolean } = {}
+): PurchaseChainResult {
+  const dry = !!opts.dryRun
+  const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+  if (!po) throw new Error(`ไม่พบ PO: ${poId}`)
+
+  const res: PurchaseChainResult = { poId: po.id, poNumber: po.po_number, steps: [], blocker: null, complete: false }
+  const block = (msg: string) => { res.blocker = msg; return res }
+  const isPaid = po.is_paid === 1
+  const docDate = String(po.order_date || new Date().toISOString()).slice(0, 10)
+
+  // ── ตรวจทุกอย่างก่อนเขียนอะไรลง DB ──
+  if (po.status === 'CANCELLED') return block('PO ถูกยกเลิกแล้ว')
+  if (!po.supplier_id) return block('PO ยังไม่ระบุผู้ขาย — แก้ PO ให้มีผู้ขายก่อน')
+  const closed = closedPeriodLabel(tenantId, docDate)
+  if (closed) return block(`งวด ${closed} ปิดบัญชีแล้ว ลงเอกสารวันที่ ${docDate} ไม่ได้`)
+  const pending = getPendingPoItems(tenantId, po.id)
+  if (pending.length > 0) {
+    const notReceivable = poNotReceivableMessage(tenantId, po.id)
+    if (notReceivable) return block(notReceivable)
+  }
+
+  const run = (label: string, fn: () => string | void) => {
+    if (dry) { res.steps.push(label); return }
+    const detail = fn()
+    res.steps.push(detail ? `${label}: ${detail}` : label)
+  }
+
+  try {
+    if (PO_NEEDS_APPROVAL.includes(po.status)) {
+      run(`อนุมัติ ${po.po_number}`, () => {
+        const now = new Date().toISOString()
+        db.prepare("UPDATE purchase_orders SET status = 'APPROVED', approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(userId, now, now, po.id, tenantId)
+      })
+    }
+
+    const draftGr = db.prepare("SELECT id, gr_number FROM goods_receipts WHERE purchase_order_id = ? AND tenant_id = ? AND status = 'DRAFT'")
+      .get(po.id, tenantId) as any
+    if (draftGr) run(`ยืนยันใบรับสินค้าร่าง ${draftGr.gr_number}`, () => { confirmGoodsReceipt(tenantId, userId, draftGr.id) })
+
+    // dry-run ยืนยัน GR ร่างไม่ได้จริง — ถือว่ายังค้างตาม PO ปัจจุบัน (ถ้ามีร่างอยู่ ร่างจะกินส่วนนี้ไป)
+    const stillPending = dry ? (draftGr ? [] : pending) : getPendingPoItems(tenantId, po.id)
+    if (stillPending.length > 0) {
+      run(`รับสินค้าที่ค้าง ${stillPending.length} รายการ (วันที่ ${docDate})`, () => {
+        const gr = createGoodsReceipt(tenantId, actor, {
+          purchaseOrderId: po.id,
+          receiptDate: docDate,
+          deliveryNoteNo: po.payment_reference || null,
+          notes: `[ปิดสายบิล ${po.po_number}]`,
+          items: stillPending.map(p => ({
+            poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty,
+          })),
+        }) as any
+        confirmGoodsReceipt(tenantId, userId, gr.id)
+        return gr.gr_number
+      })
+    }
+
+    const grs = freeGoodsReceipts(tenantId, po.id)
+    if (grs.length > 0 || (dry && (draftGr || stillPending.length > 0))) {
+      run(`ออกใบแจ้งหนี้ซื้อ (วันที่ ${docDate})`, () => {
+        // autoPay: false — จ่ายแยกขั้นถัดไป เพราะ auto-settle ใน createPurchaseInvoice กลืน error เงียบ
+        const pi = createPurchaseInvoice(tenantId, actor, {
+          goodsReceiptIds: grs.map(g => g.id),
+          invoiceDate: docDate,
+          supplierInvoiceNumber: po.payment_reference || '',
+          autoPay: false,
+        }) as any
+        return `${pi.pi_number} ฿${pi.total_amount}`
+      })
+    }
+
+    if (isPaid) {
+      const open = dry ? [] : openInvoicesOfPo(tenantId, po.id)
+      if (dry) {
+        res.steps.push('บันทึกจ่ายเงินยอดค้างของใบแจ้งหนี้ (PO ระบุว่าจ่ายแล้ว)')
+      }
+      for (const inv of open) {
+        run(`จ่ายเงิน ${inv.pi_number}`, () => {
+          // ponytail: จ่ายเต็มยอดค้าง (บิลซื้อสดจ่ายครบ ณ จุดซื้อ) — ไม่ได้เทียบ po.paid_amount ที่น้อยกว่ายอดบิล
+          const pay = paySupplier(tenantId, actor, {
+            supplierId: po.supplier_id,
+            purchaseInvoiceId: inv.id,
+            paymentDate: docDate,
+            paymentMethod: po.payment_method || 'TRANSFER',
+            paymentReference: po.payment_reference || '',
+            bankAccountId: po.bank_account_id || null,
+            amount: inv.balance_amount,
+            notes: `[ปิดสายบิล ${po.po_number}]`,
+          }) as any
+          return `${pay.payment_number} ฿${pay.amount}`
+        })
+      }
+    }
+  } catch (e: any) {
+    return block(e?.message || String(e))
+  }
+
+  res.complete = !dry
+  return res
+}
+
+/**
+ * PO ที่ป้อนผ่าน MCP (create_draft_po ใส่ notes '[AI Draft]' เสมอ) แล้วยังเดินไม่ครบสาย:
+ * ยังมีของค้างรับ / มี GR ยังไม่ออกใบแจ้งหนี้ / จ่ายแล้วตามบิลแต่ใบแจ้งหนี้ยังค้างจ่าย หรือยังไม่มีใบแจ้งหนี้เลย
+ */
+export function findStuckMcpPurchaseOrders(tenantId?: string): any[] {
+  const rows = db.prepare(`
+    SELECT po.* FROM purchase_orders po
+    WHERE po.notes LIKE '[AI Draft]%' AND po.status != 'CANCELLED' ${tenantId ? 'AND po.tenant_id = ?' : ''}
+    ORDER BY po.tenant_id, po.order_date
+  `).all(...(tenantId ? [tenantId] : [])) as any[]
+  return rows.filter(po => {
+    if (!db.prepare('SELECT 1 FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?').get(po.id, po.tenant_id)) return false
+    if (getPendingPoItems(po.tenant_id, po.id).length > 0) return true
+    if (freeGoodsReceipts(po.tenant_id, po.id).length > 0) return true
+    const hasInvoice = db.prepare(
+      "SELECT 1 FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)"
+    ).get(po.tenant_id, po.id, `%"${po.id}"%`)
+    if (!hasInvoice) return true
+    return po.is_paid === 1 && openInvoicesOfPo(po.tenant_id, po.id).length > 0
+  })
+}

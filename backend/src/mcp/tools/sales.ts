@@ -122,11 +122,12 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
           return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `"${item.description}" ไม่ได้ผูกกับสินค้าในสต็อก ต้องระบุ unitPrice เอง` })
         }
         const stockRow = db.prepare('SELECT unit_price, base_unit, sale_unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
-        const lineUnit = normalizeUnit(item.unit || defaultLineUnit(tenantId, stockItemId))
+        const lineUnit = normalizeUnit(item.unit || matches[idx].aliasUnit || defaultLineUnit(tenantId, stockItemId))
         const baseUnit = normalizeUnit(stockRow?.base_unit || stockRow?.sale_unit || lineUnit)
         let factor = 1
         if (lineUnit !== baseUnit) {
-          const conv = convertQuantityBidirectional(1, lineUnit, baseUnit, tenantId, stockItemId)
+          // ส่งชื่อบรรทัดไปด้วย — ชื่อเรียกแทนที่ผูกหน่วยไว้ (แพ็คสิงห์ = 15 ขวด) ใช้ตัวคูณของตัวเอง
+          const conv = convertQuantityBidirectional(1, lineUnit, baseUnit, tenantId, stockItemId, item.description)
           if (!conv) {
             return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `ไม่มีกฎแปลงหน่วย ${lineUnit} → ${baseUnit} ของ "${item.description}" — คิดราคาต่อ ${lineUnit} ให้ไม่ได้ ต้องระบุ unitPrice เอง` })
           }
@@ -160,7 +161,7 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
           const stockItemId = match.exact?.id ?? null
           // ไม่ระบุหน่วยมา → ใช้หน่วยขาย/หน่วยฐานของสินค้าที่ผูกได้ ไม่ใช่คอลัมน์ unit เดิม
           // แล้ว normalize ให้เป็น code มาตรฐานเดียวกับที่ REST เก็บเสมอ (ไม่เก็บข้อความดิบจาก AI)
-          const unit = normalizeUnit(item.unit || defaultLineUnit(tenantId, stockItemId))
+          const unit = normalizeUnit(item.unit || match.aliasUnit || defaultLineUnit(tenantId, stockItemId))
           const lineTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent ?? 0) / 100)
           ins.run(genId(), tenantId, id, stockItemId, item.description,
             item.quantity, unit, item.unitPrice, item.discountPercent ?? 0, lineTotal)

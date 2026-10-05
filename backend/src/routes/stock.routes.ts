@@ -15,7 +15,9 @@ import { formatDocumentNumber } from '../utils/id'
 import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
-import { aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES } from '../services/stockItem.service'
+import {
+  aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES, aliasEnabled, listAliases, saveAlias, deleteAliasById, StockItemRefError,
+} from '../services/stockItem.service'
 import { getPackFactor, totalStockValue } from '../services/stockValue.service'
 
 // Multer config: store in uploads/stock-images/
@@ -218,6 +220,47 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get stock items error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch stock items' })
+  }
+})
+
+// ── ชื่อเรียกแทน SKU (ชื่อรอง) — ดู services/stockItem.service.ts ──
+// วางก่อน GET /:id ไม่งั้น "aliases" ถูกจับเป็น id
+router.get('/aliases', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const stockItemId = typeof req.query.stockItemId === 'string' ? req.query.stockItemId : undefined
+    res.json({ success: true, data: listAliases(tenantId, stockItemId), enabled: aliasEnabled(tenantId) })
+  } catch (error) {
+    console.error('List stock aliases error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch aliases' })
+  }
+})
+
+router.post('/aliases', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { name, stockItemId, unit, factor } = req.body || {}
+    if (typeof name !== 'string' || typeof stockItemId !== 'string') {
+      return res.status(400).json({ success: false, message: 'ต้องระบุชื่อเรียกแทนและสินค้า' })
+    }
+    const normUnit = typeof unit === 'string' && unit.trim() ? normalizeUnit(unit) : null
+    saveAlias(tenantId, { name, stockItemId, unit: normUnit, factor: factor == null ? null : Number(factor) }, req.user!.userId)
+    res.json({ success: true, data: listAliases(tenantId, stockItemId) })
+  } catch (error) {
+    if (error instanceof StockItemRefError) return res.status(400).json({ success: false, message: error.message })
+    console.error('Save stock alias error:', error)
+    res.status(500).json({ success: false, message: 'Failed to save alias' })
+  }
+})
+
+router.delete('/aliases/:aliasId', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const removed = deleteAliasById(req.user!.tenantId, req.params.aliasId)
+    if (!removed) return res.status(404).json({ success: false, message: 'ไม่พบชื่อเรียกแทนนี้' })
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete stock alias error:', error)
+    res.status(500).json({ success: false, message: 'Failed to delete alias' })
   }
 })
 

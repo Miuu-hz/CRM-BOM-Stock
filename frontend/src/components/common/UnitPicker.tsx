@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
 import { ChevronDown, Search, Sparkles, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useUnits, unitLabelOf, unitCategoryOf, type UnitCategory, type UnitOption, type UnitSpecial } from '../../hooks/useUnits'
 import { normalizeUnit, canonicalUnitCode } from '../../utils/unitNormalize'
+import UnitChainModal from './UnitChainModal'
 
 /** หน่วยนับที่มีมาตราสากลต่อกันเอง (STANDARD_CONVERSIONS ฝั่ง backend) */
 const STD_COUNT = new Set(['pcs', 'dozen', 'gross', 'pair'])
@@ -68,10 +68,11 @@ export function UnitPicker({
   exclude,
 }: UnitPickerProps) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const { units, specials, loading } = useUnits(materialId || null)
 
   const [open, setOpen] = useState(false)
+  /** ผังแปลงหน่วยแบบหน้าต่างซ้อน — เปิดจากลิงก์ในคำเตือนแปลงไม่ถึงหน่วยฐาน */
+  const [chainOpen, setChainOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -536,13 +537,22 @@ export function UnitPicker({
             {t('unitPicker.unreachableHint', { base: baseUnitLabel })}{' '}
             <button
               type="button"
-              onClick={() => navigate('/settings?tab=units')}
+              // เดิม navigate('/settings?tab=units') — ออกจากหน้าบิล ของที่กรอกค้างหายหมด
+              onClick={() => setChainOpen(true)}
               className="underline hover:text-[var(--primary)]"
             >
               {t('unitPicker.unreachableHintLink')}
             </button>
           </span>
         </div>
+      )}
+      {chainOpen && (
+        <UnitChainModal
+          materialId={materialId}
+          baseUnit={baseUnitCode}
+          unit={canonicalUnitCode(normalizeUnit(String(value)))}
+          onClose={() => setChainOpen(false)}
+        />
       )}
     </div>
   )

@@ -58,7 +58,7 @@ describe('ชื่อรองของสินค้า (ยี่ห้อ B
     expect(log.notes).toContain('รับ "นมข้นหวาน ตรา B"')
   })
 
-  it('ฝั่งขายไม่ใช้ชื่อรอง · ชื่อที่ตรงกับ SKU เองไม่ถูกจำเป็นชื่อรอง', () => {
+  it('ฝั่งขายไม่ผูกชื่อรองที่ชี้วัตถุดิบ · ชื่อที่ตรงกับ SKU เองไม่ถูกจำเป็นชื่อรอง', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const a = addStock(user.tenantId, 'ไข่ไก่')
     receiveBrandB(user.tenantId, user.email, a, 'ไข่ไก่ ฟาร์ม B')

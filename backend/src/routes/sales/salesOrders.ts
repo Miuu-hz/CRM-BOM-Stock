@@ -358,7 +358,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         // unit != base_unit (e.g. shrimp: unit=kg, base_unit=g).
         const stockUnit = it.stock_base_unit || it.stock_unit || ''
         if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-          const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id)
+          const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id, it.product_name)
           if (converted) {
             needQty = converted.converted
           } else {

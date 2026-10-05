@@ -35,6 +35,7 @@ import {
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
+import StockAliasPanel from '../components/common/StockAliasPanel'
 import api from '../services/api'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
@@ -1303,6 +1304,10 @@ function DetailModal({
                       <span className="min-w-0">
                         <span className="block text-[var(--fg-2)] truncate">{r.party || (r.kind === 'pos' ? 'หน้าร้าน (POS)' : '-')}</span>
                         <span className="block font-mono text-[10px] text-[var(--fg-4)] truncate">{r.doc}</span>
+                        {/* ซื้อ/ขายด้วยชื่อเรียกแทน (ยี่ห้อ B) — จดไว้ให้ย้อนดูได้ว่ารอบนั้นใช้ชื่ออะไร */}
+                        {r.name && String(r.name).trim().toLowerCase() !== String(item.name).trim().toLowerCase() && (
+                          <span className="block text-[10px] text-[var(--primary)] truncate" title={r.name}>เป็น "{r.name}"</span>
+                        )}
                       </span>
                       <span className="text-right text-[var(--fg-2)] tabular-nums">{r.qty.toLocaleString('th-TH')} {r.unit || ''}</span>
                       <span className="text-right font-semibold text-[var(--fg-1)] tabular-nums">
@@ -1322,6 +1327,7 @@ function DetailModal({
               </p>
             )}
           </div>
+          <StockAliasPanel stockItemId={item.id} baseUnit={item.baseUnit || item.unit || ''} />
           {/* ── ผังหน่วย ── สายหน่วยของสินค้าตัวนี้ตัวเดียว ไม่เกี่ยวกับสินค้าตัวอื่น */}
           {(() => {
             const base = item.baseUnit || item.unit || ''

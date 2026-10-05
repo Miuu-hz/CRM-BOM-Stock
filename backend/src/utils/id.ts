@@ -36,13 +36,17 @@ export function getNextDocumentNumber(
 /**
  * Format an atomically-reserved document number.
  * @param segment optional middle segment (e.g. year or YYYYMMDD). Omit for no segment.
+ * @param docDate วันที่ของตัวเอกสารเอง (เช่นวันที่บนบิลที่ป้อนย้อนหลัง) — ใช้ทำส่วนวันที่และเลือกถังปี
+ *   ของเลขรันตามรูปแบบใน Settings ไม่ส่งมา = วันนี้ (พฤติกรรมเดิม) เดิมใช้ new Date() เสมอ บิลย้อนหลัง
+ *   ที่ป้อนผ่าน MCP จึงได้วันที่ "วันนี้" ในเลขเอกสารแทนวันที่บนบิล
  */
 export function formatDocumentNumber(
   prefix: string,
   tenantId: string,
   docType: string,
   segment?: number | string,
-  pad = 5
+  pad = 5,
+  docDate?: string | Date | null
 ): string {
   // Custom format override (Settings → เลขที่เอกสาร): {PREFIX}{sep}{SEQ}{sep}{DATE}
   let fmt: any
@@ -52,7 +56,8 @@ export function formatDocumentNumber(
     ).get(tenantId, docType)
   } catch { /* table not migrated yet */ }
 
-  const currentYear = new Date().getFullYear()
+  const d = parseDocDate(docDate)
+  const currentYear = d.getFullYear()
   const fmtHasYear = !!(fmt && fmt.date_format && fmt.date_format !== 'NONE')
   const seq = getNextDocumentNumber(
     tenantId,
@@ -64,7 +69,6 @@ export function formatDocumentNumber(
     const p = fmt.prefix || prefix
     const num = String(seq).padStart(fmt.padding || pad, '0')
     const sep = fmt.separator ?? '-'
-    const d = new Date()
     const dd = String(d.getDate()).padStart(2, '0')
     const mm = String(d.getMonth() + 1).padStart(2, '0')
     const yy = String(d.getFullYear()).slice(-2)
@@ -78,4 +82,16 @@ export function formatDocumentNumber(
 
   const middle = segment !== undefined ? `-${segment}-` : '-'
   return `${prefix}${middle}${String(seq).padStart(pad, '0')}`
+}
+
+/** 'YYYY-MM-DD' ล้วน → เที่ยงคืนเวลาท้องถิ่น (new Date('YYYY-MM-DD') = UTC ทำให้วันเลื่อนในโซนติดลบ) · ว่าง/ผิดรูป → วันนี้ */
+function parseDocDate(v?: string | Date | null): Date {
+  if (!v) return new Date()
+  const d = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : new Date(v)
+  return isNaN(d.getTime()) ? new Date() : d
+}
+
+/** ปี ค.ศ. ของวันที่เอกสาร — ใช้เป็น segment ของเลขแบบไม่ได้ตั้งรูปแบบ (PO-2026-00001) */
+export function docYear(v?: string | Date | null): number {
+  return parseDocDate(v).getFullYear()
 }

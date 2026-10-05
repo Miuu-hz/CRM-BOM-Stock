@@ -24,6 +24,11 @@ export interface Product {
   /** หน่วยที่ตั้งไว้ให้ขาย (stock_items.sale_unit) — ถ้ามี ให้ใช้เป็นค่าเริ่มต้นก่อน unit */
   sale_unit?: string
   sell_price?: number
+  /** แถวนี้คือ "ชื่อเรียกแทน" ของสินค้า id เดียวกัน (ชื่อ SKU จริง) — ไม่มี = สินค้าจริง */
+  alias_of?: string
+  /** หน่วยที่ผูกกับชื่อเรียกแทน + จำนวนหน่วยฐานต่อ 1 หน่วยนั้น (เช่น แพ็ค = 15 ขวด) */
+  alias_unit?: string
+  alias_factor?: number
 }
 
 export interface QuotationItem {
@@ -86,9 +91,13 @@ const salesService = {
   },
 
   // Products (stock_items with sell price) — เฉพาะที่ขายได้ (FINISHED/WIP/SERVICE) ไม่ใช่วัตถุดิบ
+  // + ชื่อเรียกแทน SKU (ต่อท้าย สินค้าจริงมาก่อนเสมอ — find ตาม id จะได้ตัวจริง) ปิดฟีเจอร์ = backend คืนว่าง
   getProducts: async (): Promise<Product[]> => {
-    const { data } = await api.get('/stock?limit=500&sellable=1')
-    return (data.data || []).map((p: any) => ({
+    const [{ data }, aliasRes] = await Promise.all([
+      api.get('/stock?limit=500&sellable=1'),
+      api.get('/stock/aliases').catch(() => ({ data: { data: [] } })),
+    ])
+    const products: Product[] = (data.data || []).map((p: any) => ({
       id: p.id,
       code: p.sku || p.code,
       name: p.name,
@@ -97,6 +106,17 @@ const salesService = {
       sale_unit: p.sale_unit ? normalizeUnit(p.sale_unit) : undefined,
       sell_price: p.unit_price || p.unitCost || 0,
     }))
+    const byId = new Map(products.map(p => [p.id, p]))
+    const aliases: Product[] = (aliasRes.data?.data || [])
+      .filter((a: any) => byId.has(a.stock_item_id)) // เฉพาะปลายทางที่ขายได้ (อยู่ในรายการด้านบน)
+      .map((a: any) => ({
+        ...byId.get(a.stock_item_id)!,
+        name: a.name,
+        alias_of: a.stock_item_name,
+        alias_unit: a.unit ? normalizeUnit(a.unit) : undefined,
+        alias_factor: a.factor ? Number(a.factor) : undefined,
+      }))
+    return [...products, ...aliases]
   },
 
   // Quotations

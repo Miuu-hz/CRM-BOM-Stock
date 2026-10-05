@@ -162,7 +162,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
           // Deduct stock (with unit conversion)
           // แถวขายส่วนใหญ่ไม่มี product_id — ของจริงอยู่ที่ sales_order_items.stock_item_id
-          const soItem = db.prepare('SELECT unit, stock_item_id FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
+          const soItem = db.prepare('SELECT unit, stock_item_id, product_name FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
           const stockItem = db.prepare('SELECT * FROM stock_items WHERE (id = ? OR product_id = ?) AND tenant_id = ?')
             .get(soItem?.stock_item_id || null, item.product_id || null, tenantId) as any
           // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด · ตัดไปแล้วตอนยืนยัน SO ก็ไม่ตัดซ้ำ
@@ -175,7 +175,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             let movementNotes = `Delivered to customer`
 
             if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-              const converted = convertQuantityBidirectional(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id)
+              const converted = convertQuantityBidirectional(Number(item.quantity), soUnit, stockUnit, tenantId, stockItem.id, soItem?.product_name)
               if (!converted) {
                 throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name}" กรุณาตั้งค่า Unit Conversion ก่อน`)
               }

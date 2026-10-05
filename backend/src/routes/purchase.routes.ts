@@ -697,7 +697,7 @@ router.get('/goods-receipts/pending-items/:poId', async (req: Request, res: Resp
       const keep = normalizeUnit(it.stock_unit || '')
       it.stock_factor = null
       if (buy && keep && buy !== keep && it.material_id) {
-        const conv = convertQuantityBidirectional(1, buy, keep, tenantId, it.material_id)
+        const conv = convertQuantityBidirectional(1, buy, keep, tenantId, it.material_id, it.description)
         if (conv) it.stock_factor = conv.factor
       }
     }

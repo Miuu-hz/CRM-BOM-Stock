@@ -290,11 +290,17 @@ async function loadGlobalExtras(): Promise<GlobalData> {
   return cachePromise
 }
 
+/** useUnits ทุกตัวที่เปิดอยู่ฟังอีเวนต์นี้ แล้วโหลดหน่วยใหม่ */
+const UNITS_CHANGED_EVENT = 'phopy:units-changed'
+
 /** Call this after adding/deleting a global unit conversion */
 export function invalidateUnitsCache() {
   globalExtraCache = null
   cachePromise = null
   catalogUnavailable = false
+  // เดิมล้างแค่ cache — ช่องหน่วยที่เปิดค้างอยู่ (เช่น แถวในบิล) ไม่รู้ตัว
+  // คำเตือน "แปลงไม่ถึงหน่วยฐาน" จึงค้างจนกว่าจะรีเฟรชหน้า
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(UNITS_CHANGED_EVENT))
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +373,13 @@ export function useUnits(materialId?: string | null): {
   const [units, setUnits] = useState<UnitOption[]>(() => relabel(BASE_UNITS))
   const [specials, setSpecials] = useState<UnitSpecial[]>([])
   const [loading, setLoading] = useState(false)
+  const [rev, setRev] = useState(0)
+
+  useEffect(() => {
+    const onChanged = () => setRev(r => r + 1)
+    window.addEventListener(UNITS_CHANGED_EVENT, onChanged)
+    return () => window.removeEventListener(UNITS_CHANGED_EVENT, onChanged)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -415,7 +428,7 @@ export function useUnits(materialId?: string | null): {
 
     load()
     return () => { cancelled = true }
-  }, [materialId, lang])
+  }, [materialId, lang, rev])
 
   return { units, specials, loading }
 }

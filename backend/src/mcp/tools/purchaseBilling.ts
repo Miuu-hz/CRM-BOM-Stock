@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
-import { ok } from './shared'
+import { ok, checkApprovalPermission } from './shared'
+import { completePurchaseChain, PO_NEEDS_APPROVAL } from '../../services/purchaseChain.service'
 import { canHandleBillingByUserId } from '../../services/rbac.service'
 import {
   createPurchaseInvoice,
@@ -230,6 +231,49 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
         if (error instanceof PurchaseBillingError) return ok({ success: false, message: error.message })
         return ok({ success: false, message: error.message || 'บันทึกจ่ายเงินไม่สำเร็จ' })
       }
+    }
+  )
+
+  // ── complete_purchase_bill ──────────────────────────────────────────────────
+  // บิลที่ป้อนด้วย create_draft_po เดิมค้างที่ PO DRAFT ตลอด (ไม่มีอะไรพาไป GR/PI/จ่ายเงิน) — tool นี้
+  // เดินต่อให้ครบสายด้วย service ตัวเดียวกับหน้าเว็บ (services/purchaseChain.service.ts)
+  server.tool(
+    'complete_purchase_bill',
+    `เดินบิลซื้อให้ครบสาย PO → รับสินค้า (GR) → ใบแจ้งหนี้ซื้อ (PI) → บันทึกจ่ายเงิน / Complete a purchase bill end-to-end.
+ใช้หลัง create_draft_po เมื่อผู้ใช้ตรวจรายการ/ผูกสินค้าครบแล้ว — ทุกเอกสารลงวันที่ตามวันที่สั่งซื้อของ PO (วันบนบิล)
+บันทึกจ่ายเงินให้เฉพาะ PO ที่ระบุว่าจ่ายแล้ว (is_paid) — ทำต่อจากจุดที่ค้างได้ เรียกซ้ำได้
+dry_run=true ดูก่อนว่าจะทำอะไรบ้างโดยไม่บันทึก
+⚠️ ต้องมีสิทธิ์จัดการบิลฝั่งซื้อ (ADMIN/MASTER/POWERUSER, แผนก CEO/IT, ฝ่ายจัดซื้อ/บัญชี) และถ้า PO ยังไม่อนุมัติ ต้องมีสิทธิ์อนุมัติ PO ตามวงเงินด้วย
+ตัวอย่าง: "ปิดบิล PO-2026-00012 ให้ครบ" → complete_purchase_bill(po_id="PO-2026-00012")`,
+    {
+      po_id: z.string().describe('ID หรือเลขที่ PO'),
+      dry_run: z.boolean().optional().describe('true = แสดงขั้นตอนที่จะทำโดยไม่บันทึก'),
+    },
+    async (args) => {
+      if (!canHandleBillingByUserId(userId, callerRole, 'purchase')) {
+        return ok({ success: false, message: 'ไม่มีสิทธิ์จัดการบิลซื้อ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+      }
+      let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(args.po_id, tenantId) as any
+      if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(args.po_id, tenantId) as any
+      if (!po) return ok({ success: false, message: `ไม่พบ PO: ${args.po_id}` })
+      if (PO_NEEDS_APPROVAL.includes(po.status)) {
+        const check = checkApprovalPermission(tenantId, userId, callerRole, 'purchase_order', po.total_amount || 0)
+        if (!check.allowed) return ok({ success: false, message: check.message })
+      }
+
+      const r = completePurchaseChain(tenantId, callerName, userId, po.id, { dryRun: args.dry_run })
+      return ok({
+        success: !r.blocker,
+        poNumber: r.poNumber,
+        dryRun: !!args.dry_run,
+        steps: r.steps,
+        blocker: r.blocker,
+        message: r.blocker
+          ? `${r.poNumber} ไปต่อไม่ได้: ${r.blocker}${r.steps.length ? ` (ทำไปแล้ว: ${r.steps.join(' → ')})` : ''}`
+          : r.steps.length === 0
+            ? `${r.poNumber} ครบสายอยู่แล้ว ไม่มีอะไรต้องทำ`
+            : `${args.dry_run ? 'จะทำ' : 'ทำแล้ว'}: ${r.steps.join(' → ')}`,
+      })
     }
   )
 }

@@ -12,7 +12,10 @@ describe('BOMModal.tsx — ปุ่มตั้งค่าหน่วยต�
     expect(SRC).not.toContain("'/settings/unit-conversions'")
   })
 
-  it('ต้องเปิด /settings?tab=units แทน', () => {
-    expect(SRC).toContain('/settings?tab=units')
+  // 2026-10-06: ไม่เปิดแท็บใหม่แล้ว — เปิดผังแปลงหน่วยซ้อนบนหน้าต่างสูตรผลิต
+  // แก้เสร็จปิดผัง คำเตือนตรวจใหม่เอง ไม่ต้องสลับแท็บไปมา
+  it('ปุ่มตั้งค่าหน่วยกลางเปิดผังซ้อน ไม่ window.open ไปหน้าตั้งค่า', () => {
+    expect(SRC).not.toContain("window.open('/settings")
+    expect(SRC).toContain('<UnitChainModal')
   })
 })

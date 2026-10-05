@@ -134,7 +134,8 @@ export function receiptIssuesForItems(tenantId: string, items: ReceivableItem[])
     const displayUnit = normalizeUnit(si.display_unit || '')
     if (displayUnit && displayUnit !== stockUnit && poUnit === displayUnit
       && findConversionChain(displayUnit, stockUnit, tenantId, it.material_id)) continue
-    if (!convertQuantityBidirectional(1, poUnit, stockUnit, tenantId, it.material_id)) {
+    // ชื่อเรียกแทนที่ผูกหน่วยไว้ (แพ็คสิงห์ = 15 ขวด) นับเป็นกฎแปลงได้ — ตรงกับที่ confirmGoodsReceipt ใช้
+    if (!convertQuantityBidirectional(1, poUnit, stockUnit, tenantId, it.material_id, it.description)) {
       issues.push(`"${si.name || label}" สั่งเป็น ${poUnit} แต่คลังนับเป็น ${stockUnit} และยังไม่มีกฎแปลงหน่วย ${poUnit} → ${stockUnit}`)
     }
   }

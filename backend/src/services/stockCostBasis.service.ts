@@ -27,6 +27,8 @@ export interface CostSource {
   baseQty: number
   /** มูลค่าของครั้งนั้น = qty × unitPrice */
   value: number
+  /** ชื่อบนบรรทัดใบสั่งซื้อ — ไม่ตรงชื่อ SKU = ซื้อมาด้วยชื่อเรียกแทน (ยี่ห้อ B) */
+  name?: string | null
 }
 
 export interface CostBasis {
@@ -45,7 +47,7 @@ export interface CostBasis {
 const SOURCE_SQL = `
   SELECT s.name AS supplier, gr.gr_number AS doc, gr.receipt_date AS date,
          gri.accepted_qty AS qty, poi.unit AS unit, poi.unit_price AS unitPrice,
-         gri.stock_qty AS baseQty
+         gri.stock_qty AS baseQty, poi.description AS name
     FROM goods_receipt_items gri
     JOIN goods_receipts gr ON gr.id = gri.goods_receipt_id
     JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
@@ -73,6 +75,7 @@ export function getCostBasis(tenantId: string, stockItemId: string): CostBasis {
     unitPrice: Number(r.unitPrice) || 0,
     baseQty: Number(r.baseQty),
     value: (Number(r.qty) || 0) * (Number(r.unitPrice) || 0),
+    name: r.name ?? null,
   }))
 
   const totalBaseQty = sources.reduce((t, r) => t + r.baseQty, 0)
@@ -109,6 +112,8 @@ export interface PriceLogRow {
   price: number | null
   /** เอาไว้ให้หน้าเว็บบอกผู้ใช้ว่าทำไมบางแถวไม่มีราคา */
   kind: 'sale' | 'pos' | 'production'
+  /** ชื่อที่ใช้บนเอกสาร (ชื่อเรียกแทน SKU ถ้าไม่ตรงชื่อสินค้า) */
+  name?: string | null
 }
 
 /**
@@ -121,7 +126,7 @@ export interface PriceLogRow {
 export function getSellLog(tenantId: string, stockItemId: string, limit = 20): PriceLogRow[] {
   const sales = db.prepare(`
     SELECT so.order_date AS date, c.name AS party, so.so_number AS doc,
-           soi.quantity AS qty, soi.unit, soi.unit_price AS price
+           soi.quantity AS qty, soi.unit, soi.unit_price AS price, soi.product_name AS name
       FROM sales_order_items soi
       JOIN sales_orders so ON so.id = soi.sales_order_id
       LEFT JOIN customers c ON c.id = so.customer_id
@@ -141,7 +146,7 @@ export function getSellLog(tenantId: string, stockItemId: string, limit = 20): P
     ...sales.map(r => ({
       date: r.date, party: r.party ?? null, doc: r.doc,
       qty: Number(r.qty) || 0, unit: r.unit ?? null,
-      price: Number(r.price) || 0, kind: 'sale' as const,
+      price: Number(r.price) || 0, kind: 'sale' as const, name: r.name ?? null,
     })),
     ...pos.map(r => ({
       date: r.date, party: null, doc: String(r.doc || '').slice(0, 12),
@@ -156,6 +161,6 @@ export function getSellLog(tenantId: string, stockItemId: string, limit = 20): P
 export function getBuyLog(tenantId: string, stockItemId: string, limit = 20): PriceLogRow[] {
   return getCostBasis(tenantId, stockItemId).sources.slice(0, limit).map(s => ({
     date: s.date, party: s.supplier, doc: s.doc,
-    qty: s.qty, unit: s.unit, price: s.unitPrice, kind: 'sale' as const,
+    qty: s.qty, unit: s.unit, price: s.unitPrice, kind: 'sale' as const, name: s.name ?? null,
   }))
 }

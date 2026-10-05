@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import db from '../../db/sqlite'
 import { approvalDenyReason } from '../../services/approvalGate.service'
-import { normName, findAliasTarget } from '../../services/stockItem.service'
+import { normName, findAliasTarget, isSellableItem } from '../../services/stockItem.service'
 
 export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
 
@@ -132,6 +132,8 @@ export interface StockMatch {
   candidates: StockCandidate[]
   /** ผูกจากชื่อรอง — เลขเอกสารที่ยืนยันครั้งแรก (ไม่ใช่ชื่อตรงของสินค้า) */
   viaAlias?: string
+  /** ชื่อรองนี้ผูกหน่วยไว้ (เช่น แพ็ค = 15 ขวด) — ใช้เป็นหน่วยเริ่มต้นของบรรทัดเมื่อไม่ได้ระบุมา */
+  aliasUnit?: string
 }
 
 /**
@@ -155,15 +157,22 @@ export function matchStockItem(tenantId: string, description: string, rawOnly = 
   const exactRows = rows.filter(r => normName(r.name) === want)
   // ชื่อตรงเป๊ะแต่มีมากกว่า 1 ตัว = ยังเลือกแทนคนไม่ได้ ต้องให้คนชี้
   const exact = exactRows.length === 1 ? exactRows[0] : null
-  if (exact || exactRows.length > 1 || !rawOnly) return { exact, candidates: rows }
+  if (exact || exactRows.length > 1) return { exact, candidates: rows }
 
-  // ฝั่งซื้อ: ไม่มีชื่อตรง → ลองชื่อรองที่เคยยืนยันตอนรับของ (ยี่ห้อ B → SKU ยี่ห้อ A)
+  // ไม่มีชื่อตรง → ลองชื่อรองที่เคยยืนยัน/ตั้งไว้ (ยี่ห้อ B → SKU ยี่ห้อ A) ทั้งสายซื้อและสายขาย
+  // findAliasTarget คืน null เองถ้าบริษัทปิด "ชื่อเรียกแทน SKU" ไว้ · ฝั่งขายเอาเฉพาะปลายทางที่ขายได้
+  // (ชื่อรองที่จำจากฝั่งซื้อมักชี้วัตถุดิบ — ผูกไปก็โดนการ์ดขายวัตถุดิบปฏิเสธทั้งใบ ปล่อยเป็นบรรทัดไม่ผูกดีกว่า)
   const alias = findAliasTarget(tenantId, description)
   if (!alias) return { exact, candidates: rows }
   const target = db.prepare(`
-    SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity FROM stock_items WHERE id = ? AND tenant_id = ?
-  `).get(alias.stockItemId, tenantId) as StockCandidate
-  return { exact: target, candidates: [target, ...rows.filter(r => r.id !== target.id)], viaAlias: alias.sourceRef || 'ชื่อรอง' }
+    SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity, category FROM stock_items WHERE id = ? AND tenant_id = ?
+  `).get(alias.stockItemId, tenantId) as StockCandidate & { category?: string }
+  if (!rawOnly && !isSellableItem(target)) return { exact, candidates: rows }
+  const { category: _c, ...candidate } = target
+  return {
+    exact: candidate, candidates: [candidate, ...rows.filter(r => r.id !== candidate.id)],
+    viaAlias: alias.sourceRef || 'ชื่อรอง', ...(alias.unit ? { aliasUnit: alias.unit } : {}),
+  }
 }
 
 /** แถวสำหรับโชว์เป็นตารางกลับไปให้ผู้ใช้ตรวจก่อนยืนยัน */
@@ -174,7 +183,7 @@ export function bindingRow(description: string, match: StockMatch, unit: string)
     ผูกกับสินค้า: match.exact ? match.exact.name : null,
     คงเหลือ: match.exact ? `${match.exact.quantity} ${match.exact.baseUnit}` : null,
     สถานะ: !match.exact ? 'ยังไม่ผูก — ต้องเลือกก่อนยืนยัน'
-      : match.viaAlias ? `ผูกจากความจำ — ใช้แทน "${match.exact.name}" (ยืนยันครั้งแรกใน ${match.viaAlias}) ถ้าไม่ใช่ให้ผูกใหม่`
+      : match.viaAlias ? `ผูกจากชื่อเรียกแทน — ใช้แทน "${match.exact.name}" (ที่มา: ${match.viaAlias}) ถ้าไม่ใช่ให้ผูกใหม่`
       : 'ผูกแล้ว (ชื่อตรงเป๊ะ)',
     ตัวเลือก: match.exact ? undefined : match.candidates.map(c => ({
       stock_item_id: c.id, ชื่อ: c.name, คงเหลือ: `${c.quantity} ${c.baseUnit}`,

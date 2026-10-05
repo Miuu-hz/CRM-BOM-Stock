@@ -65,3 +65,9 @@ export function normalizeUnit(unit: string): string {
   if (mapped) return canonicalUnitCode(mapped)
   return canonicalUnitCode(u)
 }
+
+/** ชื่อไทยของรหัสหน่วย (pack → แพ็ค) สำหรับข้อความสั้น ๆ — ไม่รู้จักคืนรหัสเดิม */
+export function unitLabelTh(code: string): string {
+  const c = normalizeUnit(code || '')
+  return Object.keys(UNIT_NAME_MAP).find(k => UNIT_NAME_MAP[k] === c) || c
+}

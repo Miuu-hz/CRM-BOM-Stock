@@ -21,6 +21,7 @@ export interface CompanySettings {
   show_subcon_stock_widget?: number | boolean  // 1=แสดงการ์ดมูลค่าสต็อกผู้รับเหมาในหน้า Stock, 0=ซ่อน (default 1)
   allow_negative_stock?: number | boolean  // 1=อนุญาตขาย/เบิกแม้สต็อกไม่พอ (POS/ใบสั่งขาย/ใบสั่งผลิต ติดลบได้), 0=บล็อกตามเดิม (default 0)
   require_pos_shift?: number | boolean  // 1=ต้องเปิดกะก่อนจึงจะรับชำระเงินที่ POS ได้, 0=ขายได้โดยไม่ต้องเปิดกะ (default 0)
+  stock_alias_enabled?: number | boolean  // 1=ใช้ชื่อเรียกแทน SKU ได้ (ชื่อที่ไม่ตรง SKU ผูกเข้า SKU เดิม ซื้อ/ขาย/MCP), 0=ต้องตรงชื่อ SKU เท่านั้น (default 1)
   subscription_plan_code?: string  // read-only, attached by GET /settings/company from tenant_subscriptions
   subscription_plan_name?: string
   subscription_status?: string

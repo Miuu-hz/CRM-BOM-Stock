@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { roundQty } from '../utils/qty'
+import { findAliasTarget } from './stockItem.service'
 
 export interface UnitConversion {
   id: string
@@ -701,14 +702,40 @@ export function convertQuantity(
   return { converted: quantity * factor, factor }
 }
 
+/**
+ * บรรทัดเอกสารใช้ชื่อรองที่ผูกหน่วยไว้ (เช่น "น้ำดื่มสิงห์" 1 แพ็ค = 15 ขวด) → ตัวคูณของชื่อนั้น
+ * ชนะกฎแปลงหน่วยของสินค้า (ที่อาจบอก 1 แพ็ค = 12 ขวด) · ไม่เกี่ยว/ปิดฟีเจอร์ = null ใช้กฎปกติ
+ */
+function aliasConversionFactor(fromUnit: string, toUnit: string, tenantId: string, materialId: string, lineName: string): number | null {
+  const alias = findAliasTarget(tenantId, lineName)
+  if (!alias || alias.stockItemId !== materialId || !alias.unit || !alias.factor) return null
+  const from = normalizeUnit(fromUnit)
+  const to = normalizeUnit(toUnit)
+  const aliasUnit = normalizeUnit(alias.unit)
+  if (from === to || (from !== aliasUnit && to !== aliasUnit)) return null
+  const item = db.prepare('SELECT base_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(materialId, tenantId) as any
+  const base = normalizeUnit(item?.base_unit || item?.unit || '')
+  if (!base) return null
+  if (from === aliasUnit) {
+    const rest = resolveConversion(base, to, tenantId, materialId)
+    return rest ? alias.factor * rest.factor : null
+  }
+  const rest = resolveConversion(from, base, tenantId, materialId)
+  return rest ? rest.factor / alias.factor : null
+}
+
 // แปลงแบบสองทิศทาง — ตอนนี้เดินผ่าน resolveConversion (signature เดิมไม่เปลี่ยน)
+// lineName = ชื่อบนบรรทัดเอกสาร (ไม่บังคับ) — ถ้าเป็นชื่อรองที่ผูกหน่วยไว้ ใช้ตัวคูณของชื่อนั้นก่อน
 export function convertQuantityBidirectional(
   quantity: number,
   fromUnit: string,
   toUnit: string,
   tenantId: string,
-  materialId?: string
+  materialId?: string,
+  lineName?: string | null
 ): { converted: number; factor: number } | null {
+  const aliasFactor = lineName && materialId ? aliasConversionFactor(fromUnit, toUnit, tenantId, materialId, lineName) : null
+  if (aliasFactor !== null) return { converted: quantity * aliasFactor, factor: aliasFactor }
   const resolved = resolveConversion(fromUnit, toUnit, tenantId, materialId)
   if (!resolved) return null
   if (resolved.path.length > 2) {

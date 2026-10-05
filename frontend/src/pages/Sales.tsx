@@ -10,7 +10,7 @@ import { stockService } from '../services/stock'
 import { printBill } from '../utils/printBill'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
-import { normalizeUnit } from '../utils/unitNormalize'
+import { normalizeUnit, unitLabelTh } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
@@ -2597,6 +2597,14 @@ function CustomerSearch({ value, onChange }: {
 
 // ─── Shared: Product Line Items Editor ───────────────────────────────────────
 
+/** ราคาเริ่มต้นของแถว: ชื่อเรียกแทนที่ผูกหน่วย = ราคาต่อหน่วยฐาน × จำนวนหน่วยฐานต่อหน่วยนั้น */
+const aliasPrice = (p: Product) => (p.sell_price || 0) * (p.alias_unit && p.alias_factor ? p.alias_factor : 1)
+/** เปิดใช้ชื่อเรียกแทน SKU ไหม (ตั้งค่า > ทั่วไป) — ไม่มีค่า = เปิด */
+const aliasEnabledCo = () => {
+  const v = (getCachedCompanySettings() as any)?.stock_alias_enabled
+  return v !== 0 && v !== false
+}
+
 interface LineItem {
   productId?: string
   productName: string
@@ -2651,14 +2659,17 @@ function ProductSearch({ value, products, onSelect, onClear }: {
       {open && filtered.length > 0 && (
         <div className="absolute z-50 w-full mt-0.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
           {filtered.map(p => (
-            <button key={p.id} type="button"
+            <button key={`${p.id}:${p.name}`} type="button"
               onMouseDown={() => { onSelect(p); setQuery(''); setOpen(false) }}
               className="w-full px-3 py-2 flex items-center justify-between hover:bg-[var(--bg)] text-left gap-2">
               <div className="min-w-0">
                 <p className="text-sm text-[var(--fg-1)] truncate">{p.name}</p>
-                <p className="text-xs text-[var(--fg-4)]">{p.code}</p>
+                {/* ชื่อเรียกแทน — บอกว่าตัดสต็อก SKU ไหน และแพ็คของชื่อนี้กี่หน่วยฐาน */}
+                <p className="text-xs text-[var(--fg-4)] truncate">
+                  {p.code}{p.alias_of ? ` · เรียกแทน ${p.alias_of}${p.alias_unit && p.alias_factor ? ` (1 ${unitLabelTh(p.alias_unit)} = ${p.alias_factor} ${unitLabelTh(p.base_unit || p.unit || '')})` : ''}` : ''}
+                </p>
               </div>
-              <span className="text-xs text-[var(--primary)] shrink-0">฿{(p.sell_price || 0).toLocaleString('th-TH')}</span>
+              <span className="text-xs text-[var(--primary)] shrink-0">฿{aliasPrice(p).toLocaleString('th-TH')}</span>
             </button>
           ))}
         </div>
@@ -2742,6 +2753,11 @@ function LineItemsEditor({
                 products={products}
                 onSelect={p => {
                   const base = normalizeUnit(p.base_unit || p.unit || '')
+                  if (p.alias_unit && p.alias_factor) {
+                    // ชื่อเรียกแทนผูกหน่วย (แพ็คสิงห์ = 15 ขวด) → หน่วย/ราคาตามชื่อนั้น ไม่ใช้กฎแปลงของ SKU
+                    update(i, { productId: p.id, productName: p.name, unit: p.alias_unit, unitPrice: aliasPrice(p), priceEdited: false })
+                    return
+                  }
                   // ค่าเริ่มต้นหน่วย: หน่วยที่ตั้งไว้ให้ขาย (sale_unit) ก่อน แล้วค่อย fallback ไปหน่วยฐาน/หน่วยสินค้า
                   const unit = normalizeUnit(p.sale_unit || p.base_unit || p.unit || '')
                   update(i, {
@@ -2755,6 +2771,15 @@ function LineItemsEditor({
                 }}
 onClear={() => update(i, { productId: undefined, productName: '' })}
               />
+              {/* ชื่อบนเอกสาร — ต่างจากชื่อ SKU ได้ (เหมือนฝั่งซื้อ) ยืนยันใบสั่งขายแล้วระบบจำเป็นชื่อเรียกแทนของ SKU นี้
+                  ปิดฟีเจอร์ที่ ตั้งค่า แล้วช่องนี้หายไป */}
+              {item.productId && aliasEnabledCo() && (
+                <input type="text" value={item.productName} title="ชื่อบนเอกสาร (ชื่อเรียกแทน SKU ได้)"
+                  placeholder={selectedProduct?.name || 'ชื่อบนเอกสาร'}
+                  onChange={e => update(i, { productName: e.target.value })}
+                  onBlur={() => { if (!item.productName.trim() && selectedProduct) update(i, { productName: selectedProduct.name }) }}
+                  className="mt-1 w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo" />
+              )}
             </div>
             <div className="col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.qty')}</label>
@@ -2768,6 +2793,12 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
                 productId={item.productId}
                 value={item.unit}
                 onChange={u => {
+                  // กลับมาใช้หน่วยที่ผูกกับชื่อเรียกแทน → ราคาตามตัวคูณของชื่อนั้น (ไม่ใช่กฎแปลงของ SKU)
+                  const aliasRow = products.find(p => p.id === item.productId && p.name === item.productName && p.alias_unit)
+                  if (!item.priceEdited && aliasRow && normalizeUnit(u) === aliasRow.alias_unit) {
+                    update(i, { unit: u, unitPrice: aliasPrice(aliasRow) })
+                    return
+                  }
                   update(i, { unit: u })
                   // ไม่ทับราคาที่ผู้ใช้พิมพ์เองในแถวนี้ — รีไพรซ์เฉพาะตอนราคายังมาจากค่าเริ่มต้น
                   if (!item.priceEdited && item.productId && selectedProduct) {

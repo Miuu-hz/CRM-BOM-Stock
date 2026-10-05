@@ -3437,7 +3437,7 @@
     "badgeTenant": "Company-wide",
     "unreachableRowHint": "No conversion rate to {{base}} yet",
     "unreachableHint": "This unit has no conversion rate to {{base}} yet —",
-    "unreachableHintLink": "set it up in Settings → Unit Conversions",
+    "unreachableHintLink": "add a conversion here",
     "subUnitToggle": "This item is bought by pack/case",
     "subUnitToggleHint": "Tick if the purchase unit differs from the unit you actually use",
     "displayUnitLabel": "Purchase / packing unit",

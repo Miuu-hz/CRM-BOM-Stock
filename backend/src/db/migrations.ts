@@ -2426,6 +2426,20 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: stock_item_aliases พร้อมใช้งาน')
   } catch (e) { console.error('⚠️ stock_item_aliases migration error:', e) }
 
+  // ชื่อรองผูกหน่วยได้ (2026-10-06): "น้ำดื่มสิงห์" 1 แพ็ค = 15 ขวด แต่ "น้ำดื่มทั่วไป" 1 แพ็ค = 12 ขวด
+  // ทั้งคู่ชี้ SKU เดียวกัน — unit = หน่วยที่ผูก (code), factor = จำนวนหน่วยฐานต่อ 1 unit · NULL = ไม่ผูกหน่วย
+  // + สวิตช์ระดับบริษัท company_settings.stock_alias_enabled (ค่าเริ่มต้น 1 = เปิด ตามพฤติกรรมเดิมฝั่งซื้อ)
+  try {
+    const aliasCols = db.prepare(`PRAGMA table_info(stock_item_aliases)`).all() as any[]
+    if (!aliasCols.some((c: any) => c.name === 'unit')) db.exec(`ALTER TABLE stock_item_aliases ADD COLUMN unit TEXT`)
+    if (!aliasCols.some((c: any) => c.name === 'factor')) db.exec(`ALTER TABLE stock_item_aliases ADD COLUMN factor REAL`)
+    const csCols = db.prepare(`PRAGMA table_info(company_settings)`).all() as any[]
+    if (!csCols.some((c: any) => c.name === 'stock_alias_enabled')) {
+      db.exec(`ALTER TABLE company_settings ADD COLUMN stock_alias_enabled INTEGER DEFAULT 1`)
+      console.log('✅ Migration: company_settings.stock_alias_enabled added')
+    }
+  } catch (e) { console.error('⚠️ stock_item_aliases unit/toggle migration error:', e) }
+
   // ==================== backfill customers/suppliers.vat_mode (2026-09-29) ====================
   // one-time: เติมโหมด VAT ให้คู่ค้าที่ยังเป็น NULL จากเอกสารล่าสุดของเขา (ไม่แตะแถวที่ตั้งมาแล้ว)
   // คู่ค้าที่ไม่มีเอกสารเลยปล่อย NULL ไว้ต่อไป (ยังไม่มีข้อมูลให้เดา)

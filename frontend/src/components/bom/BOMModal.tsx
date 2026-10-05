@@ -6,6 +6,7 @@ import bomService, { BOM, Material, Product } from '../../services/bom'
 import materialsService, { MaterialCategory } from '../../services/materials'
 import { SearchableDropdown } from '../common/SearchableDropdown'
 import { UnitPicker } from '../common/UnitPicker'
+import UnitChainModal from '../common/UnitChainModal'
 import api from '../../services/api'
 import { useUnits, unitLabel } from '../../hooks/useUnits'
 import { normalizeUnit } from '../../utils/unitNormalize'
@@ -126,6 +127,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
   ])
   const [compatibleUnits, setCompatibleUnits] = useState<Record<string, { code: string; label: string }[]>>({})
   const [rowCosts, setRowCosts] = useState<Record<string, number>>({})
+  /** ผังแปลงหน่วยกลางแบบหน้าต่างซ้อน (เปิดจากปุ่มในคำเตือนแปลงหน่วยไม่ได้) */
+  const [chainIssue, setChainIssue] = useState<{ from: string; to: string } | null>(null)
+  /** เพิ่มทุกครั้งที่ปิดผัง — ให้ตรวจการแปลงหน่วย/ต้นทุนใหม่ คำเตือนที่แก้แล้วจะหายเอง */
+  const [unitsRev, setUnitsRev] = useState(0)
   const [conversionIssues, setConversionIssues] = useState<Array<{
     rowId: string
     materialName: string
@@ -471,7 +476,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
       setConversionIssues(issues)
     }
     calculateCosts()
-  }, [itemRows, materials, availableChildBOMs])
+  }, [itemRows, materials, availableChildBOMs, unitsRev])
 
   const totalCost = itemRows.reduce((sum, row) => sum + (rowCosts[row.id] || 0), 0)
 
@@ -861,7 +866,8 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               </button>
                               <button
                                 type="button"
-                                onClick={() => window.open('/settings?tab=units', '_blank')}
+                                // เดิมเปิดแท็บใหม่ไป /settings?tab=units — แก้เสร็จต้องกลับมาเอง และคำเตือนไม่หาย
+                                onClick={() => setChainIssue({ from: issue.from, to: issue.to })}
                                 className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
                               >
                                 {t('bomModal.globalUnitSettings')}
@@ -979,6 +985,16 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
             setIsMaterialModalOpen(false)
           }}
         />
+
+        {chainIssue && (
+          <UnitChainModal
+            key="unit-chain"
+            materialId={null}
+            baseUnit={chainIssue.to}
+            unit={chainIssue.from}
+            onClose={() => { setChainIssue(null); setUnitsRev(r => r + 1) }}
+          />
+        )}
 
         {/* Edit Material Modal — opens on units tab with pre-filled conversion form */}
         <EditModal

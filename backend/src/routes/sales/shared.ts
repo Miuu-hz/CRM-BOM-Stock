@@ -46,7 +46,7 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 // ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
 // กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
 import { getOrCreateAccount, postJournal } from '../../services/accounting.service'
-import { isServiceItem, isSellableItem } from '../../services/stockItem.service'
+import { isServiceItem, isSellableItem, normName, rememberAlias } from '../../services/stockItem.service'
 export { getOrCreateAccount }
 
 // ── Sellable guard (ขายได้แค่ FINISHED/WIP/SERVICE) ─────────────────────────────
@@ -167,7 +167,7 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
       // took 5g off stock). Fall back to `unit` only when base_unit is empty.
       const stockUnit = stockItem.base_unit || stockItem.unit || ''
       if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
+        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId, item.product_name)
         if (!converted) {
           // Never deduct the raw SO-unit number: for g -> kg that would take 500 kg
           // off stock for a 500 g line.
@@ -209,11 +209,17 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
         throw new Error(`Insufficient stock for ${stockItem.name || stockItemId}: need ${deductQty} ${stockUnit}, have ${availableQty}${sealedNote}`)
       }
 
+      // ขายด้วยชื่อที่ไม่ตรง SKU (ชื่อเรียกแทน เช่น "น้ำดื่มสิงห์" ของ SKU "น้ำดื่ม") → จำเป็นชื่อรอง
+      // แบบเดียวกับฝั่งรับของ + จดชื่อที่ขายไว้ใน stock log (ระบบไม่รู้ว่าของที่ออกจริงยี่ห้อไหน แค่จดชื่อ)
+      const lineName = String(item.product_name || '').trim()
+      const soldAs = lineName && normName(lineName) !== normName(stockItem.name)
+        && rememberAlias(tenantId, lineName, stockItemId, soNumber, 'system') ? `ขาย "${lineName}" · ` : ''
+
       db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(deductQty, new Date().toISOString(), stockItemId, tenantId)
       db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
         VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')`).run(
-        generateId(), tenantId, stockItemId, deductQty, `SO: ${soNumber}`, `ขายสินค้า SO ${soNumber}${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} → ${deductQty} ${stockUnit})` : ''}`, new Date().toISOString())
+        generateId(), tenantId, stockItemId, deductQty, `SO: ${soNumber}`, `${soldAs}ขายสินค้า SO ${soNumber}${soUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${soUnit} → ${deductQty} ${stockUnit})` : ''}`, new Date().toISOString())
 
       // เก็บต้นทุนต่อหน่วยฐาน ณ วินาทีตัดสต็อกจริงไว้ที่บรรทัด SO — stock_items.unit_cost เปลี่ยนได้
       // ตลอดเวลา (รับของเข้าใหม่ราคาไม่เท่าเดิม) ถ้ารอไปอ่านตอนออกใบแจ้งหนี้ทีหลังจะได้ต้นทุนผิดตัว
@@ -272,7 +278,7 @@ export function restoreStockForSO(tenantId: string, soId: string, soNumber: stri
       // in a different unit than it was deducted in and the quantity doesn't match.
       const stockUnit = stockItem.base_unit || stockItem.unit || ''
       if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId)
+        const converted = convertQuantityBidirectional(qty, soUnit, stockUnit, tenantId, stockItemId, item.product_name)
         if (!converted) {
           throw new Error(`ไม่พบการแปลงหน่วย ${soUnit} → ${stockUnit} สำหรับ "${stockItem.name || stockItemId}" จึงคืนสต็อกไม่ได้ กรุณาตั้งค่า Unit Conversion กลับคืนก่อน`)
         }

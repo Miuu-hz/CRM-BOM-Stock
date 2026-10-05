@@ -36,10 +36,11 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
     const {
       name, address, phone, email, tax_id, tax_branch, vat_inclusive, logo_base64, pos_bom_deduct,
       pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
-      qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, vat_registered
+      qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, vat_registered,
+      stock_alias_enabled
     } = req.body
 
-    if (allow_negative_stock !== undefined || require_pos_shift !== undefined || vat_registered !== undefined) {
+    if (allow_negative_stock !== undefined || require_pos_shift !== undefined || vat_registered !== undefined || stock_alias_enabled !== undefined) {
       const callerRole = (req as any).user!.role
       if (callerRole !== 'ADMIN' && callerRole !== 'MASTER') {
         return res.status(403).json({ success: false, message: 'เฉพาะ Master และ Admin เท่านั้นที่เปลี่ยนการตั้งค่านี้ได้' })
@@ -116,6 +117,11 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
     )
 
     db.prepare('UPDATE company_settings SET vat_registered = ? WHERE tenant_id = ?').run(mergedVatRegistered, tenantId)
+    // ชื่อเรียกแทน SKU — ส่งมาเมื่อไรค่อยแตะ (ค่าเริ่มต้นของคอลัมน์ = 1 เปิด)
+    if (stock_alias_enabled !== undefined) {
+      db.prepare('UPDATE company_settings SET stock_alias_enabled = ? WHERE tenant_id = ?')
+        .run(stock_alias_enabled === false || stock_alias_enabled === 0 ? 0 : 1, tenantId)
+    }
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)
     res.json({ success: true, data: updated })

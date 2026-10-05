@@ -27,6 +27,8 @@ interface Props {
   onClose: () => void
   baseUnit?: string
   displayUnit?: string
+  /** เปิดมาพร้อมช่องกรอกอัตราของเส้นนี้เลย (ใช้ตอนเปิดจากคำเตือน "แปลงไม่ถึงหน่วยฐาน") */
+  initialEdge?: { from: string; to: string } | null
 }
 
 const CANVAS_H = 360
@@ -121,6 +123,7 @@ export default function UnitChainEditor({
   onClose,
   baseUnit = '',
   displayUnit = '',
+  initialEdge = null,
 }: Props) {
   const markerIdRef = useRef(`uce-arrow-${Math.random().toString(36).slice(2)}`)
   const markerId = markerIdRef.current
@@ -135,7 +138,7 @@ export default function UnitChainEditor({
   const [dragging, setDragging] = useState<{ unit: string; ox: number; oy: number } | null>(null)
   const [connectFrom, setConnectFrom] = useState<string | null>(null)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
-  const [pendingEdge, setPendingEdge] = useState<{ from: string; to: string } | null>(null)
+  const [pendingEdge, setPendingEdge] = useState<{ from: string; to: string } | null>(initialEdge)
   const [factorInput, setFactorInput] = useState('')
   const [edgeAdding, setEdgeAdding] = useState(false)
   const [addingUnit, setAddingUnit] = useState(false)
@@ -163,13 +166,18 @@ export default function UnitChainEditor({
     })
   }, [conversions, baseUnit, displayUnit])
 
+  // ฟังแบบ capture และกลืน Esc ตอนกำลังลากเส้น — ไม่งั้น useModalClose (ฟังที่ document)
+  // ได้ Esc ก่อน แล้วปิดทั้งหน้าต่างที่ครอบผังอยู่ แทนที่จะแค่ยกเลิกการเชื่อม
   useEffect(() => {
+    if (!connectFrom) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setConnectFrom(null); setMousePos(null) }
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setConnectFrom(null); setMousePos(null)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [connectFrom])
 
   const getCanvasPos = (e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -214,7 +222,8 @@ export default function UnitChainEditor({
   }
 
   const handleConfirmEdge = async () => {
-    if (!pendingEdge || !factorInput || Number(factorInput) <= 0) return
+    // กัน Enter ซ้ำระหว่างรอบันทึก — เดิมยิง POST ซ้ำได้ แล้วตัวที่สองเด้ง "มีอยู่แล้ว"
+    if (edgeAdding || !pendingEdge || !factorInput || Number(factorInput) <= 0) return
     setEdgeAdding(true)
     try {
       await onAdd(pendingEdge.from, pendingEdge.to, Number(factorInput))
@@ -522,7 +531,11 @@ export default function UnitChainEditor({
               step="any"
               className="phopy-input w-full text-sm mb-3"
               autoFocus
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirmEdge(); if (e.key === 'Escape') setPendingEdge(null) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleConfirmEdge()
+                // stopPropagation: Esc ปิดแค่ช่องกรอกอัตรา ไม่ให้ useModalClose ปิดหน้าต่างที่ครอบอยู่ไปด้วย
+                if (e.key === 'Escape') { e.stopPropagation(); setPendingEdge(null) }
+              }}
             />
             <div className="flex gap-2">
               <button type="button" onClick={() => setPendingEdge(null)} className="flex-1 py-2 border border-[var(--border)] text-[var(--fg-3)] rounded-lg text-xs min-h-[44px]">

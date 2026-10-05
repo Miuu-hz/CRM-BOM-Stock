@@ -3450,7 +3450,7 @@
     "groupReachable": "หน่วยที่ใช้กับสินค้านี้ได้",
     "unreachableRowHint": "ยังไม่มีอัตราแปลงเป็น{{base}}",
     "unreachableHint": "หน่วยนี้ยังไม่มีอัตราแปลงเป็น{{base}} —",
-    "unreachableHintLink": "ตั้งค่าที่ ตั้งค่า → การแปลงหน่วย"
+    "unreachableHintLink": "เพิ่มอัตราแปลงตรงนี้"
   },
   "stock": {
     "unpack": {

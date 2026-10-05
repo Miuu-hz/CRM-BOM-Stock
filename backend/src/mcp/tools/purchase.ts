@@ -4,7 +4,8 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
-import { formatDocumentNumber } from '../../utils/id'
+import { formatDocumentNumber, docYear } from '../../utils/id'
+import { isCashMethod } from '../../services/purchaseBilling.service'
 import { calcVat, vatModeToFields, type VatMode } from '../../utils/vat'
 import { rememberContactVatMode } from '../../services/accounting.service'
 import {
@@ -116,17 +117,21 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         'ถ้ามีและตัวเลขไม่ตรงกัน (ต่างกัน >5%) ให้แจ้ง user ก่อนสร้าง'
       ),
       notes: z.string().optional().describe('หมายเหตุ เช่น "จากรูปภาพใบสั่งซื้อ" หรือ "จาก AI อ่านรูป"'),
+      bill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe(
+        'วันที่บนบิล/ใบเสร็จ (YYYY-MM-DD ปี ค.ศ.) — ใส่ทุกครั้งที่อ่านได้ ใช้เป็นวันที่สั่งซื้อและวันที่ในเลขเอกสาร (บิลย้อนหลัง) · ไม่ระบุ = วันนี้'
+      ),
     },
     async (args) => {
       const {
         items, supplier_hint, billTotal, notes,
         payment_method, payment_reference, bank_hint, is_paid, paid_amount,
-        image_base64, image_name,
+        image_base64, image_name, bill_date,
       } = args
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      // เดิม COUNT+1 เอง: ไม่ตามค่าตั้งเลขที่เอกสาร และชนเลขเดิมได้เมื่อมีการลบ
-      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', new Date().getFullYear(), 5)
+      // เลขที่ตามรูปแบบใน Settings + วันที่บนบิล (เดิมใช้วันที่กดสร้างเสมอ บิลย้อนหลังได้วันผิดในเลข)
+      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', docYear(bill_date), 5, bill_date)
       const now = new Date().toISOString()
+      const orderDate = bill_date || now
 
       // ── Auto-find or create supplier ────────────────────────────────────────
       let supplierId: string | null = null
@@ -138,8 +143,13 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         if (existing) {
           supplierId = existing.id
         } else {
-          const supCount = (db.prepare('SELECT COUNT(*) as c FROM suppliers WHERE tenant_id = ?').get(tenantId) as any).c
-          const supCode = `SUP-${new Date().getFullYear()}-${String(supCount + 1).padStart(4, '0')}`
+          // เดิม COUNT(*)+1 — ลบผู้ขายไปสักรายแล้วรหัสชน UNIQUE(tenant_id, code) ทำให้สร้างบิลไม่ได้ทั้งใบ
+          // ใช้ตัวนับกลาง + ข้ามรหัสที่มีอยู่แล้ว แบบเดียวกับ CUS ใน sales.ts
+          const codeTaken = db.prepare('SELECT 1 FROM suppliers WHERE tenant_id = ? AND code = ?')
+          let supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
+          for (let i = 0; i < 50 && codeTaken.get(tenantId, supCode); i++) {
+            supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
+          }
           const supId = randomUUID().replace(/-/g, '').substring(0, 25)
           db.prepare(`
             INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status, type, created_at, updated_at)
@@ -189,7 +199,8 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         `).get(tenantId, `%${bank_hint}%`, `%${bank_hint}%`, `%${bank_hint}%`) as any
         if (bankRow) resolvedBankAccountId = bankRow.id
       }
-      if (!resolvedBankAccountId && resolvedIsPaid) {
+      // จ่ายเงินสด = ไม่ผูกบัญชีธนาคาร (เดิมผูกบัญชีแรกให้เสมอ ตอนตัดจ่ายเลยลงเครดิตธนาคารแทนเงินสด)
+      if (!resolvedBankAccountId && resolvedIsPaid && !isCashMethod(resolvedPaymentMethod)) {
         const defaultBank = db.prepare(`
           SELECT id FROM bank_accounts WHERE tenant_id = ? AND is_active = 1 LIMIT 1
         `).get(tenantId) as any
@@ -202,7 +213,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
            payment_method, payment_reference, bank_account_id, is_paid, paid_amount,
            created_at, updated_at)
         VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, tenantId, poNumber, supplierId, now, subtotal, draftTaxRate, vatCalc.taxAmount, totalAmount, draftVatInclusive ? 1 : 0,
+      `).run(id, tenantId, poNumber, supplierId, orderDate, subtotal, draftTaxRate, vatCalc.taxAmount, totalAmount, draftVatInclusive ? 1 : 0,
         `[AI Draft] ${notes ?? supplier_hint ?? 'จากรูปภาพ'}`,
         resolvedPaymentMethod, resolvedPaymentRef, resolvedBankAccountId,
         resolvedIsPaid ? 1 : 0, resolvedPaidAmount,
@@ -308,6 +319,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         message: [
           `สร้าง Draft PO ${poNumber} แล้ว (${items.length} รายการ มูลค่า ฿${totalAmount.toLocaleString()}) — ${statusNote}`,
           unboundCount > 0 ? 'รายการที่ยังไม่ผูกสามารถผูกต่อในหน้าเว็บหรือใช้ bind_document_item' : '',
+          resolvedIsPaid ? `บิลนี้จ่ายแล้ว — ตรวจ/ผูกสินค้าครบแล้วใช้ complete_purchase_bill(po_id="${poNumber}") เพื่อออก GR → ใบแจ้งหนี้ → บันทึกจ่ายเงินให้ครบสาย` : '',
           supplierCreated ? `— สร้าง Supplier "${supplier_hint}" ใหม่` : '',
           billTotalMismatch ? `⚠️ ยอดรวมที่คำนวณ ฿${subtotal.toLocaleString()} ต่างจากยอดในบิล ฿${billTotal!.toLocaleString()} — กรุณาตรวจสอบ` : '',
         ].filter(Boolean).join(' '),
@@ -708,9 +720,10 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       })).optional().describe('รายการที่รับ — ถ้าไม่ระบุรับทุกรายการที่ค้างเต็มจำนวน'),
       delivery_note_no: z.string().optional().describe('เลขที่ใบส่งของจากซัพพลายเออร์'),
       notes: z.string().optional().describe('หมายเหตุ'),
+      receipt_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('วันที่รับของจริง (YYYY-MM-DD) — ใช้ในเลขที่ GR และวันที่ลงบัญชี · ไม่ระบุ = วันนี้'),
     },
     async (args) => {
-      const { po_id, items, delivery_note_no, notes } = args
+      const { po_id, items, delivery_note_no, notes, receipt_date } = args
       let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })
@@ -752,6 +765,7 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       try {
         const receipt = createGoodsReceipt(tenantId, callerName, {
           purchaseOrderId: po.id,
+          receiptDate: receipt_date,
           notes,
           deliveryNoteNo: delivery_note_no,
           items: lines,

@@ -721,6 +721,9 @@ function GeneralSettings() {
   const [subconWidgetSaving, setSubconWidgetSaving] = useState(false)
   const [negStockSaving, setNegStockSaving] = useState(false)
   const [requireShiftSaving, setRequireShiftSaving] = useState(false)
+  // ชื่อเรียกแทน SKU — ค่าเริ่มต้นเปิด (ไม่มีค่า/null = เปิด)
+  const [stockAliasEnabled, setStockAliasEnabled] = useState(true)
+  const [aliasSaving, setAliasSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -731,6 +734,7 @@ function GeneralSettings() {
         setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
         setAllowNegativeStock(Number(d.allow_negative_stock) === 1)
         setRequirePosShift(Number(d.require_pos_shift) === 1)
+        setStockAliasEnabled(d.stock_alias_enabled !== 0 && d.stock_alias_enabled !== false)
         setSubPlanName(d.subscription_plan_name || '')
       }).catch(() => {})
     })
@@ -806,6 +810,20 @@ function GeneralSettings() {
       setRequirePosShift(!next)
     } finally {
       setRequireShiftSaving(false)
+    }
+  }
+
+  const handleToggleStockAlias = async () => {
+    const next = !stockAliasEnabled
+    setStockAliasEnabled(next)
+    setAliasSaving(true)
+    try {
+      const m = await import('../services/companySettings.service')
+      await m.default.update({ stock_alias_enabled: next })
+    } catch {
+      setStockAliasEnabled(!next)
+    } finally {
+      setAliasSaving(false)
     }
   }
 
@@ -959,6 +977,39 @@ function GeneralSettings() {
             : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
         </button>
       </div>
+
+      {/* ชื่อเรียกแทน SKU — สะดวกสำหรับ SME (บิลผู้ขาย/ชื่อที่ลูกค้าเรียก ไม่ตรงชื่อ SKU) · บริษัทที่ต้องการ
+          ความเข้มงวดปิดได้ ให้ผูกได้เฉพาะชื่อ SKU ตรงเป๊ะ · ADMIN/MASTER เท่านั้น (backend บังคับเหมือนกัน) */}
+      {(isAdmin || isMaster) && (
+      <div className="phopy-card p-6">
+        <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-1 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
+          ชื่อเรียกแทน SKU (ชื่อที่ไม่ตรงกับ SKU)
+        </h3>
+        <button
+          type="button"
+          onClick={() => !aliasSaving && handleToggleStockAlias()}
+          disabled={aliasSaving}
+          className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 mt-3 ${stockAliasEnabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
+        >
+          <div className="text-left">
+            <p className={`font-medium ${stockAliasEnabled ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>
+              {stockAliasEnabled ? 'เปิดใช้ — ชื่อที่ไม่ตรง SKU ผูกเข้า SKU เดิมได้' : 'ปิดอยู่ — ต้องใช้ชื่อ SKU ตรงเป๊ะเท่านั้น'}
+            </p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">
+              ตัวช่วยสำหรับร้านเล็ก/SME: บิลผู้ขายเขียน "หมูบด" แต่ SKU ชื่อ "หมูสับ" หรือขาย "น้ำดื่มสิงห์" (1 แพ็ค = 15 ขวด)
+              กับ "น้ำดื่มทั่วไป" (1 แพ็ค = 12 ขวด) จาก SKU "น้ำดื่ม" ตัวเดียว — ระบบจำชื่อไว้ให้ทั้งฝั่งซื้อ ฝั่งขาย และ AI (MCP)
+              บริษัทที่ต้องการให้เอกสารตรง SKU เป๊ะ ๆ ปิดได้ (ข้อมูลชื่อเรียกแทนเดิมไม่ถูกลบ เปิดกลับมาใช้ต่อได้)
+            </p>
+          </div>
+          {aliasSaving
+            ? <div className="w-5 h-5 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            : stockAliasEnabled
+              ? <ToggleRight className="w-8 h-8 text-[var(--primary)] flex-shrink-0" />
+              : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
+        </button>
+      </div>
+      )}
 
       {/* Allow Negative Stock — risky override, block by default. ADMIN/MASTER only:
           hidden entirely for lower roles rather than shown disabled, since the

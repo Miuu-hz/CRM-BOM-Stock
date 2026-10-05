@@ -140,7 +140,7 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
         let movementNotes = `Returned by customer (CN ${cn.cn_number})`
 
         if (cnUnit && stockUnit && normalizeUnit(cnUnit) !== normalizeUnit(stockUnit)) {
-          const converted = convertQuantityBidirectional(addQty, cnUnit, stockUnit, tenantId, stockItem.id)
+          const converted = convertQuantityBidirectional(addQty, cnUnit, stockUnit, tenantId, stockItem.id, invItem?.product_name)
           if (!converted) {
             throw new Error(`ไม่พบการแปลงหน่วย ${cnUnit} → ${stockUnit} สำหรับ "${stockItem.name}" กรุณาตั้งค่า Unit Conversion ก่อน`)
           }

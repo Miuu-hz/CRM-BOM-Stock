@@ -1,5 +1,5 @@
 import db from '../db/sqlite'
-import { generateId, formatDocumentNumber } from '../utils/id'
+import { generateId, formatDocumentNumber, docYear } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, type JournalLineInput } from './accounting.service'
 import { calcVat } from '../utils/vat'
@@ -328,7 +328,8 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
 
   // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
   const id = generateId()
-  const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', new Date().getFullYear(), 5)
+  // เลขที่ตามวันที่ใบแจ้งหนี้ (บิลย้อนหลังได้เลขของวันบนบิล) ไม่ใช่วันที่กดสร้าง
+  const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', docYear(finalInvoiceDate), 5, finalInvoiceDate)
   const now = new Date().toISOString()
 
   // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
@@ -602,6 +603,11 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   }
 }
 
+/** 'CASH' (REST) หรือข้อความที่มีคำว่า "เงินสด" (บิลที่ AI อ่านผ่าน MCP) */
+export function isCashMethod(method?: string | null): boolean {
+  return /^cash$|เงินสด/i.test(String(method || '').trim())
+}
+
 export interface PaySupplierPayload {
   supplierId: string
   purchaseInvoiceId?: string | null
@@ -638,7 +644,8 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกการจ่ายเงินวันที่นี้ไม่ได้`)
 
   const id = generateId()
-  const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', new Date().getFullYear(), 5)
+  // prefix 'SP' ใช้เฉพาะตอนยังไม่เปิดรูปแบบใน Settings (ถ้าเปิด จะใช้ prefix ที่ตั้งไว้ เช่น PAY)
+  const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', docYear(paymentDate), 5, paymentDate)
   const now = new Date().toISOString()
   const wht = payload.withholdingTax || 0
   const netAmount = amount - wht
@@ -647,13 +654,10 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
   // Dr/Cr บัญชีธนาคารที่เลือกโดยตรงถ้ามี ไม่งั้น fallback ตาม paymentMethod (CASH -> 1101, อื่นๆ -> 1102)
   const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
+  // MCP เก็บวิธีจ่ายเป็นข้อความไทยจากบิล ("เงินสด") — เดิมเทียบแค่ === 'CASH' บิลเงินสดเลยไปลงธนาคาร
+  const cashCode = isCashMethod(paymentMethod) ? ACC.CASH : ACC.BANK
   const cashAccId = linkedAccountId || getOrCreateAccount(
-    tenantId,
-    (paymentMethod || 'TRANSFER') === 'CASH' ? ACC.CASH : ACC.BANK,
-    (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.name : ACC_META[ACC.BANK]!.name,
-    (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.type : ACC_META[ACC.BANK]!.type,
-    (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.category : ACC_META[ACC.BANK]!.category,
-    (paymentMethod || 'TRANSFER') === 'CASH' ? ACC_META[ACC.CASH]!.normalBalance : ACC_META[ACC.BANK]!.normalBalance
+    tenantId, cashCode, ACC_META[cashCode]!.name, ACC_META[cashCode]!.type, ACC_META[cashCode]!.category, ACC_META[cashCode]!.normalBalance
   )
   const whtAccId = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
   const journalId = generateId()

@@ -1,11 +1,11 @@
 import db from '../db/sqlite'
-import { generateId, formatDocumentNumber } from '../utils/id'
+import { generateId, formatDocumentNumber, docYear } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from './unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { priceToBaseUnitCost } from './stockMovement.service'
 import { postJournal, isVatRegistered } from './accounting.service'
 import { ACC } from '../config/accountCodes'
-import { resolveStockItemId, StockItemRefError, normName, rememberAlias } from './stockItem.service'
+import { resolveStockItemId, StockItemRefError, normName, rememberAlias, findAliasTarget } from './stockItem.service'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -148,7 +148,8 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
   const id = generateId()
   // Bug #1: ตัวนับกลาง — เดิม MCP ใช้ COUNT(*)+1 ชนกับเลขที่ REST ออกได้ (ลบใบเดียวแล้วสร้าง
   // ใหม่ได้เลขซ้ำ) ตอนนี้ทั้ง REST และ MCP เดินผ่าน document_sequences ตัวเดียวกัน
-  const grNumber = formatDocumentNumber('GR', tenantId, 'GOODS_RECEIPT', new Date().getFullYear(), 5)
+  // เลขที่ตามวันที่รับของจริง (บิลย้อนหลัง) ไม่ใช่วันที่กดสร้าง
+  const grNumber = formatDocumentNumber('GR', tenantId, 'GOODS_RECEIPT', docYear(receiptDate), 5, receiptDate)
   const now = new Date().toISOString()
 
   db.transaction(() => {
@@ -290,7 +291,12 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           : null
         const canUnpackDisplay = !!displayToBaseChain
 
-        if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay) {
+        // บรรทัดใช้ชื่อเรียกแทนที่ผูกหน่วยไว้ (แพ็คสิงห์ = 15 ขวด) → ไม่เข้าทางแพ็คปิดผนึก (ขนาดแพ็คของ SKU คนละขนาด)
+        // แตกเป็นหน่วยฐานด้วยตัวคูณของชื่อนั้นแทน (convertQuantityBidirectional ด้านล่างรับ lineName)
+        const aliasHit = findAliasTarget(tenantId, String(poItem?.description || ''))
+        const aliasUnit = aliasHit?.unit && aliasHit.stockItemId === item.material_id ? normalizeUnit(aliasHit.unit) : null
+
+        if (stockItem && poUnit && displayUnit && poUnit === displayUnit && canUnpackDisplay && poUnit !== aliasUnit) {
           addToSealed = true
           const packFactor = displayToBaseChain?.factor ?? 1
           sealedPacks = Math.floor(Number(item.accepted_qty) + PACK_EPS)
@@ -302,7 +308,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
               ? `Received as sealed ${poUnit}: ${sealedPacks} ${poUnit} (ยังไม่แกะ)`
               : `Received ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit} (ไม่ถึงหนึ่งแพ็ค)`
         } else if (stockItem && poUnit && poUnit !== stockUnit) {
-          const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id)
+          const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id, poItem?.description)
           if (!converted) {
             const materialName = (db.prepare('SELECT name FROM stock_items WHERE id = ?').get(item.material_id) as any)?.name
               || stockItem.name
