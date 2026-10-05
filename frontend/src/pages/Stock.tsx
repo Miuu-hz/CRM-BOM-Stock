@@ -47,6 +47,7 @@ import { unitLabel } from '../hooks/useUnits'
 import { useModalClose } from '../hooks/useModalClose'
 import { useUnits, invalidateUnitsCache, UNIT_LABELS as UNIT_LABELS_MAP } from '../hooks/useUnits'
 import { normalizeUnit } from '../utils/unitNormalize'
+import { movementHistoryLine } from '../utils/movementHistoryLabel'
 import { buildUnitGraph, pathBetween as unitPathBetween, repriceForUnit, type ConvRule } from '../utils/unitGraph'
 import { useTranslation } from 'react-i18next'
 
@@ -124,6 +125,8 @@ function getDefaultCols(): Record<ColumnKey, boolean> {
     for (const k of Object.keys(fallback) as ColumnKey[]) {
       if (typeof parsed?.[k] === 'boolean') out[k] = parsed[k]
     }
+    // คอลัมน์บังคับ (quantity/status) ต้องเปิดเสมอ ไม่ว่า localStorage เก่าจะเก็บ false มาก็ตาม
+    for (const k of ALWAYS_VISIBLE) out[k] = true
     return out
   } catch { return fallback }
 }
@@ -275,8 +278,8 @@ function Stock() {
   }, [stockItems])
   const filteredItems = useMemo(() => (stockItems || []).filter((item) => {
     const matchesSearch =
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase())
+      (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.sku || '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory =
       selectedCategory === 'all' || getCategoryGroup(item.category) === selectedCategory
     const status = getItemStatus(item)
@@ -1559,13 +1562,20 @@ function DetailModal({
                           movement.type === 'OUT' ? 'text-danger' :
                           movement.type === 'PRICE_CHANGE' ? 'text-warning' : 'text-blue-400'
                         }`}>
-                          {movement.type === 'IN' ? `+${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}` :
-                           movement.type === 'OUT' ? `-${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}` :
-                           movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
-                           `${movement.quantity} ${unitLabel(movement.movementUnit || item.baseUnit || item.unit)}`}
-                          {movement.movementQuantity !== undefined && movement.movementQuantity !== movement.quantity && movement.movementUnit && (
-                            <span className="text-xs text-[var(--fg-4)] ml-1">(นับ {movement.movementQuantity} {unitLabel(movement.movementUnit)})</span>
-                          )}
+                          {(() => {
+                            const { qty, unit, note } = movementHistoryLine(movement, item.baseUnit || item.unit)
+                            const unitTxt = unitLabel(unit)
+                            const main = movement.type === 'IN' ? `+${qty} ${unitTxt}` :
+                              movement.type === 'OUT' ? `-${qty} ${unitTxt}` :
+                              movement.type === 'PRICE_CHANGE' ? 'เปลี่ยนราคา' :
+                              `${qty} ${unitTxt}`
+                            return (
+                              <>
+                                {main}
+                                {note && <span className="text-xs text-[var(--fg-4)] ml-1">(= {note.qty} {unitLabel(note.unit)})</span>}
+                              </>
+                            )
+                          })()}
                         </p>
                         {movement.notes && (
                           <p className="text-[var(--fg-3)] text-xs mt-0.5">{movement.notes}</p>
@@ -2483,7 +2493,7 @@ function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'servi
   const finished = ['[สินค้าสำเร็จรูป]', '[สินค้า]', '[สินค้าไม่มีตัวตน]', 'finished', 'finish']
   // ค่าขนส่ง/ค่าแพ็ค — ขายได้แต่ไม่มีของ ไม่ถูกตัดสต็อก (services/stockItem.service.ts)
   const service = ['service', 'บริการ']
-  const c = category.toLowerCase()
+  const c = (category || '').toLowerCase()
   if (raw.includes(c)) return 'raw'
   if (wip.includes(c)) return 'wip'
   if (finished.includes(c)) return 'finished'
@@ -2628,6 +2638,7 @@ function AdjustModal({
   onPending?: (data: any) => boolean
 }) {
   useModalClose(onClose)
+  const { t } = useTranslation()
   const [selectedItemId, setSelectedItemId] = useState('')
   const [countText, setCountText] = useState('')
   const [unit, setUnit] = useState('')
@@ -2636,6 +2647,8 @@ function AdjustModal({
   const [saving, setSaving] = useState(false)
   const [costBasis, setCostBasis] = useState<any>(null)
   // null = ยังไม่รู้ (โหลดไม่สำเร็จ) ให้ใช้ค่าสำรอง · ตัวเลขจริงมาจาก approval_settings ของบริษัทนี้
+  // null = ยังไม่รู้ตัวคูณหน่วย (unit ที่นับ ≠ หน่วยฐาน) — รอ backend บอกมา ไม่คำนวณเองจาก displayQuantity
+  const [convertedBaseQty, setConvertedBaseQty] = useState<number | null>(null)
   const [gateLimit, setGateLimit] = useState<number | null>(null)
   // หมวดนี้เปิดด่านอนุมัติไว้กับ role ของคนนี้หรือเปล่า — ใช้บอกว่า "ของจะขยับทันที" หรือ "ต้องรอ"
   const [gateRequired, setGateRequired] = useState(false)
@@ -2680,33 +2693,32 @@ function AdjustModal({
       .catch(() => setCostBasis(null))
   }, [open, selectedItemId])
 
-  // วงเงินของบริษัทนี้เอง (Settings > การอนุมัติ) — อ่านจากตัวบังคับจริง ไม่คิดกฎเองซ้ำ
-  useEffect(() => {
-    if (!open) return
-    api.get('/approval/check-required', { params: { moduleType: 'stock_adjust', amount: 0 } })
-      .then(r => {
-        setGateLimit(Number(r.data?.data?.autoApproveThreshold) || 0)
-        setGateRequired(!!r.data?.data?.required)
-      })
-      .catch(() => { setGateLimit(null); setGateRequired(false) })
-  }, [open])
-
   const physicalCount = Number(countText)
   const countInvalid = countText.trim() === '' || !isFinite(physicalCount) || physicalCount < 0
+  const baseU = selectedItem?.baseUnit || selectedItem?.unit || ''
+  const baseUnitLabel = unitLabel(baseU)
+  const sameUnit = !unit || !baseU || unit === baseU
 
-  const baseQuantity = useMemo(() => {
-    if (!selectedItem || !unit || unit === (selectedItem.baseUnit || selectedItem.unit)) return physicalCount
-    if (unit === selectedItem.displayUnit && selectedItem.displayQuantity !== undefined && selectedItem.displayQuantity !== null && selectedItem.displayQuantity > 0) {
-      const ratio = selectedItem.quantity / selectedItem.displayQuantity
-      if (!isFinite(ratio) || ratio <= 0) return physicalCount
-      return Math.round(physicalCount * ratio * 1000) / 1000
-    }
-    return physicalCount
-  }, [physicalCount, unit, selectedItem])
+  // นับเป็นหน่วยอื่นที่ไม่ใช่หน่วยฐาน (เช่นนับเป็นลัง/ขวด) — ขอตัวคูณจาก backend ตัวเดียวกับที่ Sales
+  // ใช้ (POST /materials/unit-conversions/convert) ไม่คำนวณเองจาก displayQuantity/quantity แบบเดิม
+  // ที่พังตอนสต็อกเหลือ 0 หรือหน่วยที่นับไม่ใช่ displayUnit — payload ตอนบันทึกจริงส่ง quantity+unit
+  // ดิบไปเลย ให้ backend แปลงเอง ตัวคูณที่ขอมานี้ใช้แค่โชว์ preview บนจอ
+  useEffect(() => {
+    if (!open || !selectedItem || sameUnit || countInvalid) { setConvertedBaseQty(null); return }
+    let cancelled = false
+    api.post('/materials/unit-conversions/convert', {
+      quantity: physicalCount, from_unit: unit, to_unit: baseU, material_id: selectedItem.id,
+    }).then(r => { if (!cancelled) setConvertedBaseQty(Number(r.data?.data?.converted) ?? null) })
+      .catch(() => { if (!cancelled) setConvertedBaseQty(null) })
+    return () => { cancelled = true }
+  }, [open, selectedItem, sameUnit, unit, physicalCount, countInvalid, baseU])
 
   const systemQty = selectedItem?.quantity ?? 0
-  const baseUnitLabel = unitLabel(selectedItem?.baseUnit || selectedItem?.unit || '')
-  const diff = countInvalid ? 0 : baseQuantity - systemQty
+  // ponytail: ยังไม่รู้ตัวคูณ (กำลังขอ/ไม่มีสูตรแปลง) = ไม่ฟันธงส่วนต่าง ไม่บล็อกปุ่มส่ง ปล่อย backend
+  // ตัดสินตอนบันทึกจริง (แปลงหน่วย→ฐานเองอยู่แล้ว) — อัปเกรด: ถ้าอยากเห็น preview ระหว่างรอ ค่อยต่อ loading state
+  const diffKnown = !countInvalid && (sameUnit || convertedBaseQty !== null)
+  const baseQuantity = sameUnit ? physicalCount : (convertedBaseQty ?? physicalCount)
+  const diff = diffKnown ? baseQuantity - systemQty : 0
   const avgCost = costBasis?.weightedAvg ?? 0
   const diffValue = diff * avgCost
   // เกณฑ์ "ถามซ้ำก่อนกด" ใช้วงเงินที่บริษัทตั้งไว้เอง ไม่ใช่เลขตายตัวในโค้ด
@@ -2714,13 +2726,26 @@ function AdjustModal({
   // ถามซ้ำจึงเป็นการ์ดใบสุดท้ายของคนที่ไม่มีใครคอยเบรก
   const warnOver = gateLimit === null ? 1000 : gateLimit
   const bigLoss = Math.abs(diffValue) > warnOver
+
+  // วงเงินของบริษัทนี้เอง (Settings > การอนุมัติ) — อ่านจากตัวบังคับจริง ไม่คิดกฎเองซ้ำ
+  // ส่งมูลค่าส่วนต่างจริง (เลขเดียวกับที่ตัดสิน bigLoss) ไม่ใช่ 0 ตายตัว — เดิมส่ง 0 เสมอทำให้
+  // ข้อความ/ป้ายบนปุ่มไม่ตรงกับที่ backend จะทำจริง (backend เองกันถูกอยู่แล้ว ไม่กระทบความถูกต้อง แค่ UI บอกผิด)
+  useEffect(() => {
+    if (!open) return
+    api.get('/approval/check-required', { params: { moduleType: 'stock_adjust', amount: Math.abs(diffValue) } })
+      .then(r => {
+        setGateLimit(Number(r.data?.data?.autoApproveThreshold) || 0)
+        setGateRequired(!!r.data?.data?.required)
+      })
+      .catch(() => { setGateLimit(null); setGateRequired(false) })
+  }, [open, diffValue])
   // เกินเกณฑ์เตือน กับ ต้องรออนุมัติจริง เป็นคนละเรื่อง — ADMIN เกินเกณฑ์ก็ยังทำเองได้
   const needsBoss = bigLoss && gateRequired
   const photoMissing = bigLoss && shots.length === 0
   const blockReason =
     !selectedItemId ? 'ยังไม่ได้เลือกสินค้า'
     : countInvalid ? 'ยังไม่ได้กรอกจำนวนที่นับได้'
-    : diff === 0 ? 'จำนวนตรงกับระบบแล้ว ไม่มีอะไรต้องปรับ'
+    : (diffKnown && diff === 0) ? 'จำนวนตรงกับระบบแล้ว ไม่มีอะไรต้องปรับ'
     : !reason ? 'ยังไม่ได้เลือกเหตุผล'
     : photoMissing ? 'ส่วนต่างเกินวงเงิน ต้องแนบรูปก่อน'
     : ''
@@ -2740,6 +2765,8 @@ function AdjustModal({
   // ไม่เลือกเหตุผลก็ยังส่งไม่ได้อยู่แล้ว ค่า fallback ไว้กันจอว่างระหว่างยังไม่เลือก
   // ไม่ว่าทิศไหนก็ไม่ใช่บัญชีรายได้ — ของเกินในสต็อกไม่ใช่ยอดขาย
   const reasonAccount = REASONS.find(([label]) => label === reason)?.[3] || 'ค่าใช้จ่ายปรับปรุงสต็อก'
+  // ponytail: diff ถูกบังคับเป็น 0 ตอนยังไม่รู้ตัวคูณหน่วย ⇒ ตัวกรองนี้เห็นแค่เหตุผลไม่ระบุทิศ
+  // ("นับผิดรอบก่อน") จนกว่าจะรู้ทิศจริง — ไม่บล็อกผู้ใช้ แค่ตัวเลือกแคบลงชั่วคราว
   const visibleReasons = REASONS.filter(([, , dir]) =>
     diff === 0 ? dir === 'any' : diff > 0 ? dir !== 'down' : dir !== 'up')
 
@@ -2753,7 +2780,7 @@ function AdjustModal({
     e.preventDefault()
     if (!selectedItemId) { toast.error('กรุณาเลือกสินค้า'); return }
     if (countInvalid) { toast.error('กรอกจำนวนที่นับได้ให้ถูกต้อง'); return }
-    if (diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
+    if (diffKnown && diff === 0) { toast('จำนวนเท่าเดิม ไม่มีการเปลี่ยนแปลง'); onClose(); return }
     if (!reason) { toast.error('เลือกเหตุผลก่อน — เหตุผลเป็นตัวบอกว่าเงินก้อนนี้ลงบัญชีไหน'); return }
     // ของมูลค่าสูงหายไปโดยไม่มีรูปเป็นหลักฐาน = ตรวจย้อนหลังไม่ได้เลย
     if (photoMissing) { toast.error('แนบรูปของจริงอย่างน้อย 1 รูปก่อน — ส่วนต่างเกินวงเงินที่บริษัทตั้งไว้'); return }
@@ -2767,14 +2794,15 @@ function AdjustModal({
       const moveResult = await stockService.recordMovement({
         stockItemId: selectedItemId,
         type: 'ADJUST',
-        quantity: baseQuantity,
-        unit: selectedItem?.baseUnit || selectedItem?.unit || undefined,
+        quantity: physicalCount,
+        unit: unit || baseU || undefined,
         adjustReason: reason,
-        notes: notes || (reason + ': ' + systemQty + ' → ' + baseQuantity + ' ' + baseUnitLabel),
+        notes: notes || (reason + ': นับได้ ' + physicalCount + ' ' + unitLabel(unit || baseU)),
       })
       if (onPending?.(moveResult)) {
-        // ติดด่านอนุมัติ = ทะเบียนยังไม่เกิด จึงยังไม่มี id ให้ผูกไฟล์
-        if (shots.length > 0) toast('รูปยังแนบไม่ได้จนกว่าจะมีคนอนุมัติ — เปิดใบแล้วแนบได้ทีหลัง')
+        // ติดด่านอนุมัติ = ทะเบียนยังไม่เกิด จึงยังไม่มี id ให้ผูกไฟล์ และไฟล์ที่ถือไว้ (File object)
+        // จะหายไปเมื่อปิดโมดัลนี้ — เดิมบอกผู้ใช้ว่า "แนบได้ทีหลัง" ทั้งที่ไม่มีทางทำได้จริง
+        if (shots.length > 0) toast(t('stock.adjust.photosNotSaved'))
         onClose(); return
       }
       // ทะเบียนเพิ่งเกิด ถึงจะมี id ให้ผูกไฟล์
@@ -3309,7 +3337,7 @@ function AddStockModal({
         name: formData.name,
         gs1Barcode: formData.gs1Barcode || undefined,
         category: formData.category,
-        unit: formData.unit,
+        unit: formData.baseUnit || formData.unit,
         baseUnit: formData.baseUnit || undefined,
         displayUnit: formData.displayUnit || undefined,
         quantity: formData.quantity,
@@ -3421,30 +3449,16 @@ function AddStockModal({
             {/* ── Section: หน่วยนับ ── */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">หน่วยนับ</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยบรรจุ</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="phopy-input w-full"
-                  >
-                    {availableUnits.map((u) => (
-                      <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
-                  <input
-                    type="number"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
-                    onFocus={(e) => e.target.select()}
-                    className="phopy-input w-full"
-                    min="0"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
+                <input
+                  type="number"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                  onFocus={(e) => e.target.select()}
+                  className="phopy-input w-full"
+                  min="0"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
