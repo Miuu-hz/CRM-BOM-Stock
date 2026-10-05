@@ -23,10 +23,11 @@ const parse = (res: any) => JSON.parse(res.content[0].text)
 
 function seedTenant() {
   const t = 'tn' + Math.random().toString(36).slice(2, 10)
+  // ขนมจีน = สินค้ากึ่งสำเร็จ (เจ้าของยืนยัน 2026-10-04) — วัตถุดิบ raw ออกใบเสนอราคาไม่ได้แล้ว
   const mk = (name: string, qty: number) => {
     const id = 'si' + Math.random().toString(36).slice(2, 12)
     db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
-      VALUES (?, ?, ?, ?, 'raw', ?, 'g', 'g', 1, 'STOCK', 'ACTIVE')`).run(id, t, 'SKU-' + id.slice(2, 8), name, qty)
+      VALUES (?, ?, ?, ?, 'wip', ?, 'g', 'g', 1, 'STOCK', 'ACTIVE')`).run(id, t, 'SKU-' + id.slice(2, 8), name, qty)
     return id
   }
   return { t, exact: mk('ขนมจีน', 1000), similar: mk('ขนมจีนน้ำยาปักษ์ใต้', 50) }

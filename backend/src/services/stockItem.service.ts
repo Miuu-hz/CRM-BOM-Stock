@@ -19,6 +19,15 @@ export function isServiceItem(stockItem: { category?: string | null } | null | u
   return String(stockItem?.category ?? '').trim().toUpperCase() === SERVICE_CATEGORY
 }
 
+// หมวดที่ขายออกได้ — วัตถุดิบ (raw) ขายไม่ได้ทุกช่องทาง (ใบขาย / เมนู POS / MCP)
+// เจ้าของยืนยัน 2026-10-04: ไม่มีร้านไหนตั้งใจขายวัตถุดิบ
+export const SELLABLE_CATEGORIES = ['FINISHED', 'WIP', SERVICE_CATEGORY]
+
+/** true = ขายได้ (สินค้าสำเร็จรูป / กึ่งสำเร็จรูป / บริการ) */
+export function isSellableItem(stockItem: { category?: string | null } | null | undefined): boolean {
+  return SELLABLE_CATEGORIES.includes(String(stockItem?.category ?? '').trim().toUpperCase())
+}
+
 /** อ้างถึงสินค้าที่ไม่มีอยู่ในเทแนนต์นี้ — ผู้เรียกแปลงเป็น 400 พร้อมข้อความนี้ */
 export class StockItemRefError extends Error {
   constructor(message: string) {

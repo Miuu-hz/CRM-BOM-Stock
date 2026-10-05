@@ -38,10 +38,12 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const id = generateId()
-    const boNumber = formatDocumentNumber('BO', tenantId, 'BACKORDER', new Date().getFullYear(), 5)
+    let boNumber = ''
     const now = new Date().toISOString()
 
     const transaction = db.transaction(() => {
+      // ออกเลขในทรานแซกชันเดียวกับการ insert — กันเลขหายถ้า insert ล้มเหลว (เช่น FK ลูกค้า/SO ไม่มีจริง)
+      boNumber = formatDocumentNumber('BO', tenantId, 'BACKORDER', new Date().getFullYear(), 5)
       db.prepare(`
         INSERT INTO backorders (id, tenant_id, bo_number, sales_order_id, original_do_id, customer_id, status, notes, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
@@ -147,12 +149,17 @@ router.get('/pending-items/:salesOrderId', async (req: Request, res: Response) =
     const { salesOrderId } = req.params
     
     const items = db.prepare(`
-      SELECT soi.*, p.name as product_name, p.code as product_code,
+      -- product_id ชี้ตาราง products ที่ตายแล้ว (12 แถวลอย ไม่มีสายงานจริงเขียน) — ของจริงอยู่
+      -- stock_items ผ่าน soi.stock_item_id (กติกาเดียวกับ quotations.ts GET) เก็บ LEFT JOIN p
+      -- ไว้เป็น fallback ชั้นสุดท้ายเผื่อแถวเก่าก่อนย้ายมา stock_items ยังผูก product_id ไว้จริง
+      SELECT soi.*, COALESCE(si.sku, p.code) as product_code,
+        COALESCE(si.name, p.name, soi.product_name) as product_name,
         (soi.quantity - soi.delivered_qty) as remaining_qty
       FROM sales_order_items soi
+      LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
       LEFT JOIN products p ON soi.product_id = p.id
-      WHERE soi.sales_order_id = ? AND soi.quantity > soi.delivered_qty
-    `).all(salesOrderId)
+      WHERE soi.tenant_id = ? AND soi.sales_order_id = ? AND soi.quantity > soi.delivered_qty
+    `).all(tenantId, salesOrderId)
 
     res.json({ success: true, data: items })
   } catch (error) {

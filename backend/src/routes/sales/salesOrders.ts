@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES } from './shared'
+import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES, findNonSellableLine, notSellableMessage } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive } from '../../utils/vatSettings'
@@ -87,8 +87,14 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
     }
 
+    // ขายวัตถุดิบไม่ได้ทุกช่องทาง (เจ้าของยืนยัน 2026-10-04) — เช็คก่อนออกเลขเอกสารเสมอ
+    const badLine = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
+    if (badLine) {
+      return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+    }
+
     const id = generateId()
-    const soNumber = formatDocumentNumber('SO', tenantId, 'SALES_ORDER', new Date().getFullYear(), 5)
+    let soNumber = ''
     const now = new Date().toISOString()
 
     // Calculate totals
@@ -116,6 +122,9 @@ router.post('/', async (req: Request, res: Response) => {
     subtotal = calc.subtotal
 
     const transaction = db.transaction(() => {
+      // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้า insert ล้มเหลว (เช่น FK ลูกค้าไม่มีจริง)
+      // ตัวนับต้องย้อนกลับไปด้วย ไม่ใช่เสียเลขไปเปล่าๆ
+      soNumber = formatDocumentNumber('SO', tenantId, 'SALES_ORDER', new Date().getFullYear(), 5)
       db.prepare(`
         INSERT INTO sales_orders (id, tenant_id, so_number, quotation_id, customer_id, order_date, delivery_date,
           subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, payment_status, notes, created_at, updated_at)
@@ -188,6 +197,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     const taxAmount = afterDiscount * (tax / 100)
     const totalAmount = afterDiscount + taxAmount
 
+    const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
+    if (badLineUpd) {
+      return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })
+    }
+
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE sales_orders
@@ -225,6 +239,28 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 })
 
+// สถานะถัดไปที่ยอมให้ไปได้จากสถานะปัจจุบัน — ตรงกับปุ่มที่หน้าเว็บกดจริง (Sales.tsx
+// soNextStatus/nextStatus): DRAFT→CONFIRMED→PROCESSING→READY→DELIVERED→COMPLETED ทีละขั้น
+// PARTIAL ไม่มีปุ่มกดตรงนี้ (ตั้งผ่าน POST /delivery-orders โดยตรง) แต่เผื่อไว้ให้ไปต่อได้จาก
+// CONFIRMED/PROCESSING/READY (ขั้นที่ตัดสต็อกแล้วทั้งนั้น) และจบที่ DELIVERED เสมอ
+// ยกเลิกได้จากทุกสถานะที่ยังไม่ COMPLETED — ตรงกับเงื่อนไขปุ่มยกเลิกในหน้าเว็บ
+// (PENDING_APPROVAL→CONFIRMED/DRAFT ไม่ผ่านที่นี่ — executor ที่ routes/approval.routes.ts
+// เขียนสถานะตรงเองหลังอนุมัติ/ปฏิเสธ จึงไม่ต้องมีอยู่ใน map นี้)
+const SO_NEXT_STATUS: Record<string, string[]> = {
+  DRAFT: ['CONFIRMED', 'CANCELLED'],
+  // PENDING_APPROVAL ไม่มีปุ่มพาไปต่อ (ประตูอนุมัติเป็นคนเปลี่ยนสถานะเองตามคอมเมนต์ด้านบน)
+  // แต่ปุ่มยกเลิกในหน้าเว็บโชว์ทุกสถานะที่ไม่ใช่ CANCELLED/COMPLETED (Sales.tsx ~L3607)
+  // รวม PENDING_APPROVAL ด้วย — ของเดิมอนุญาต any→CANCELLED (role-gated) ไว้แล้ว
+  PENDING_APPROVAL: ['CANCELLED'],
+  CONFIRMED: ['PROCESSING', 'PARTIAL', 'CANCELLED'],
+  PROCESSING: ['READY', 'PARTIAL', 'CANCELLED'],
+  READY: ['DELIVERED', 'PARTIAL', 'CANCELLED'],
+  PARTIAL: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+}
+
 // PUT update sales order status
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
@@ -239,6 +275,15 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
+    }
+
+    // ยิงสถานะเดิมซ้ำ (ดับเบิลคลิก/retry) ถือเป็น no-op ผ่านได้ — ของจริงกันซ้ำที่การ์ด
+    // soStockAlreadyDeducted ด้านล่างอยู่แล้ว ส่วนนี้กันแค่ "ข้ามขั้น" ที่ flow ไม่รองรับ
+    if (status !== existing.status && !(SO_NEXT_STATUS[existing.status] || []).includes(status)) {
+      return res.status(400).json({
+        success: false, code: 'INVALID_STATUS_TRANSITION',
+        message: `เปลี่ยนสถานะจาก ${existing.status} ไป ${status} ไม่ได้`,
+      })
     }
 
     // Snapshot the pre-transition status: needed after the UPDATE below to decide
@@ -392,6 +437,41 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Update sales order status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
+  }
+})
+
+// POST create delivery order for this SO explicitly — ไว้ให้คลังออกใบส่งของได้โดยไม่ต้อง
+// รอกดเปลี่ยนสถานะเป็น DELIVERED/COMPLETED ก่อน (ซึ่งเป็นทางออกใบอัตโนมัติทางเดียวที่มีอยู่เดิม)
+// เอาเฉพาะของที่ยังค้างส่งเหมือน auto-DO — ไม่ตัดสต็อกซ้ำเพราะ createDeliveryOrderForSO()
+// ไม่แตะ stock_items/stock_movements เลย (สต็อกถูกตัดไปแล้วตั้งแต่ยืนยัน SO — deductStockForSO)
+router.post('/:id/delivery-order', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const so = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!so) {
+      return res.status(404).json({ success: false, message: 'Sales order not found' })
+    }
+
+    const allowedStatuses = ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED']
+    if (!allowedStatuses.includes(so.status)) {
+      return res.status(400).json({ success: false, message: `ออกใบส่งของไม่ได้ — สถานะ ${so.status} ต้องยืนยันคำสั่งขายก่อน` })
+    }
+
+    const existingDO = db.prepare("SELECT id FROM delivery_orders WHERE tenant_id = ? AND sales_order_id = ? AND status != 'CANCELLED' LIMIT 1")
+      .get(tenantId, so.id)
+    if (existingDO) {
+      return res.status(409).json({ success: false, message: 'มีใบส่งของสำหรับคำสั่งขายนี้อยู่แล้ว' })
+    }
+
+    const result = createDeliveryOrderForSO(tenantId, so.id, { createdBy: req.user!.userId })
+    if (!result) {
+      return res.status(400).json({ success: false, message: 'ไม่มีของค้างส่งให้ออกใบส่งของ' })
+    }
+
+    res.status(201).json({ success: true, data: { id: result.id, doNumber: result.do_number } })
+  } catch (error) {
+    console.error('Create delivery order for SO error:', error)
+    res.status(500).json({ success: false, message: 'Failed to create delivery order' })
   }
 })
 

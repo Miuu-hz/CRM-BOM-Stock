@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
+import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
+import { findNonSellableLine, notSellableMessage } from './shared'
 
 const router = Router()
 
@@ -180,8 +182,27 @@ router.post('/from-template', async (req: Request, res: Response) => {
     // Get template items
     const templateItems = db.prepare('SELECT * FROM quotation_template_items WHERE template_id = ?').all(templateId) as any[]
 
+    // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · กติกาเดียวกับ quotations.ts
+    // เช็คก่อนออกเลขเอกสารเสมอ ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
+    // ไม่ระบุ taxRate มาเลย (undefined) ≠ ระบุมาเป็น 0 — เดิมโค้ดนี้ hardcode 7% เสมอ (บั๊ก:
+    // บังคับ VAT แม้กิจการไม่จด) ตอนแก้เปลี่ยนเป็น req.body.taxRate || 0 ดิบๆ กลับไปอีกทาง
+    // (กิจการจด VAT แล้วแต่ผู้เรียกไม่ส่ง taxRate มา กลับได้ 0 ทั้งที่ควร default 7 เหมือนเดิม)
+    // ไม่ระบุ → จด VAT แล้ว default 7, ไม่จด default 0; ระบุมาเท่าไรก็ใช้ตามนั้นแล้วเช็คด่านข้างล่าง
+    const registered = isVatRegistered(tenantId)
+    const taxRate = req.body.taxRate !== undefined ? Number(req.body.taxRate) : (registered ? 7 : 0)
+    if (taxRate > 0 && !registered) {
+      return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
+    }
+
+    // ขายวัตถุดิบไม่ได้ทุกช่องทาง (เจ้าของยืนยัน 2026-10-04) — product_id ของ template item
+    // ชี้ stock_items จริง (ดูคอมเมนต์ GET /:id ด้านบน) ไม่ใช่ตาราง products ที่เลิกใช้แล้ว
+    const badLine = findNonSellableLine(tenantId, templateItems.map((i: any) => i.product_id))
+    if (badLine) {
+      return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+    }
+
     const id = generateId()
-    const quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
+    let quotationNumber = ''
     const now = new Date().toISOString()
     const expiry = expiryDate || new Date(Date.now() + (template.expiration_days * 24 * 60 * 60 * 1000)).toISOString()
 
@@ -191,10 +212,11 @@ router.post('/from-template', async (req: Request, res: Response) => {
       const itemTotal = item.quantity * item.unit_price * (1 - (item.discount_percent || 0) / 100)
       subtotal += itemTotal
     }
-    const taxRate = 7
     const { taxAmount, totalAmount } = calcVat(subtotal, { rate: taxRate })
 
     const transaction = db.transaction(() => {
+      // ออกเลขในทรานแซกชันเดียวกับการ insert — เหตุผลเดียวกับ quotations.ts/salesOrders.ts
+      quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
       db.prepare(`
         INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
           subtotal, discount_amount, tax_rate, tax_amount, total_amount, status, notes, created_at, updated_at)
@@ -214,6 +236,8 @@ router.post('/from-template', async (req: Request, res: Response) => {
     })
 
     transaction()
+
+    rememberContactVatMode(tenantId, 'customer', customerId, taxRate, false)
 
     const quotation = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(id)

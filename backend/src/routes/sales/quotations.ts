@@ -4,6 +4,7 @@ import { isVatRegistered, rememberContactVatMode } from '../../services/accounti
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive } from '../../utils/vatSettings'
+import { findNonSellableLine, notSellableMessage } from './shared'
 
 const router = Router()
 
@@ -74,8 +75,15 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
     }
 
+    // ขายวัตถุดิบไม่ได้ทุกช่องทาง (เจ้าของยืนยัน 2026-10-04) — เช็คก่อนออกเลขเอกสารเสมอ
+    // ไม่งั้นถูกปฏิเสธแล้วเลขที่จองไว้หาย (กับดักเดียวกับ VAT_NOT_REGISTERED ด้านบน)
+    const badLine = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
+    if (badLine) {
+      return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+    }
+
     const id = generateId()
-    const quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
+    let quotationNumber = ''
     const now = new Date().toISOString()
 
     // Calculate totals
@@ -98,6 +106,9 @@ router.post('/', async (req: Request, res: Response) => {
     subtotal = calc.subtotal
 
     const transaction = db.transaction(() => {
+      // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้า insert ล้มเหลว ตัวนับต้องย้อนกลับไปด้วย
+      // (กติกาเดียวกับ salesOrders.ts/templates.ts — เดิมจุดนี้ออกเลขไว้ก่อนเข้า transaction)
+      quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
       db.prepare(`
         INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
           subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, notes, created_at, updated_at)
@@ -163,6 +174,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     const taxAmount = afterDiscount * (tax / 100)
     const totalAmount = afterDiscount + taxAmount
 
+    const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
+    if (badLineUpd) {
+      return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })
+    }
+
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE quotations
@@ -200,6 +216,19 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 })
 
+// สถานะถัดไปที่ยอมให้ไปได้จากสถานะปัจจุบัน — ตรงกับปุ่มที่หน้าเว็บกดจริง (Sales.tsx
+// qtNextStatus/updateStatus): DRAFT ไป SENT หรือ ACCEPTED ตรงได้เลย (ข้าม SENT),
+// SENT ไป ACCEPTED/REJECTED/EXPIRED ได้, ยกเลิกได้จากทุกสถานะที่ยังไม่ปิดงาน (ไม่ใช่
+// CANCELLED/EXPIRED เดิม — ตรงกับเงื่อนไขปุ่มยกเลิกในหน้าเว็บ)
+const QT_NEXT_STATUS: Record<string, string[]> = {
+  DRAFT: ['SENT', 'ACCEPTED', 'CANCELLED'],
+  SENT: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
+  ACCEPTED: ['CANCELLED'],
+  REJECTED: ['CANCELLED'],
+  EXPIRED: [],
+  CANCELLED: [],
+}
+
 // PUT update quotation status
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
@@ -211,9 +240,17 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
-    const existing = db.prepare('SELECT id FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    const existing = db.prepare('SELECT id, status FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Quotation not found' })
+    }
+
+    // ยิงสถานะเดิมซ้ำ (ดับเบิลคลิก/retry) ถือเป็น no-op ผ่านได้ — ไม่ใช่การเปลี่ยนสถานะจริง
+    if (status !== existing.status && !(QT_NEXT_STATUS[existing.status] || []).includes(status)) {
+      return res.status(400).json({
+        success: false, code: 'INVALID_STATUS_TRANSITION',
+        message: `เปลี่ยนสถานะจาก ${existing.status} ไป ${status} ไม่ได้`,
+      })
     }
 
     const now = new Date().toISOString()

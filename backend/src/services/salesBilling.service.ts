@@ -103,12 +103,14 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
   if (!salesOrder) throw new SalesBillingError('SO_NOT_FOUND', 'Sales order not found')
 
   const id = generateId()
-  const invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
+  let invoiceNumber = ''
   const now = new Date().toISOString()
 
   const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(salesOrderId) as any[]
 
   db.transaction(() => {
+    // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้าล้มเหลวตัวนับต้องย้อนกลับไปด้วย ไม่เสียเลขเปล่าๆ
+    invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
     db.prepare(`
       INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date,
         subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, balance_amount, status, payment_status, notes, created_at, updated_at,
@@ -217,7 +219,7 @@ export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoic
   if (!customer) throw new SalesBillingError('CUSTOMER_NOT_FOUND', 'ไม่พบลูกค้ารายนี้')
 
   const id = generateId()
-  const invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
+  let invoiceNumber = ''
   const now = new Date().toISOString()
   const invoiceDate = bill.closed_at || now
 
@@ -235,6 +237,8 @@ export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoic
     .filter(Boolean).join(' · ')
 
   db.transaction(() => {
+    // ออกเลขในทรานแซกชันเดียวกับการ insert — เหตุผลเดียวกับ createInvoiceFromSO ข้างบน
+    invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
     // ⚠️ invoices ไม่มีคอลัมน์เก็บค่าบริการแยก ต้องบวก service_charge_amount เข้า subtotal
     // ไม่งั้น subtotal + tax_amount จะไม่เท่ากับ total_amount แล้วใบพิมพ์ออกมายอดไม่บาลานซ์
     const subtotal = (bill.subtotal || 0) + (bill.service_charge_amount || 0) + (bill.extra_charge_amount || 0)
@@ -334,7 +338,7 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
   }
 
   const id = generateId()
-  const receiptNumber = formatDocumentNumber('RC', tenantId, 'RECEIPT', new Date().getFullYear(), 5)
+  let receiptNumber = ''
   const now = new Date().toISOString()
   const date = receiptDate || now
 
@@ -349,6 +353,8 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
   }
 
   db.transaction(() => {
+    // ออกเลขในทรานแซกชันเดียวกับการ insert — กันเลขหายถ้า insert ล้มเหลว
+    receiptNumber = formatDocumentNumber('RC', tenantId, 'RECEIPT', new Date().getFullYear(), 5)
     db.prepare(`
       INSERT INTO receipts (id, tenant_id, receipt_number, invoice_id, customer_id, receipt_date, payment_method,
         payment_reference, amount, notes, bank_account_id, created_at, updated_at)

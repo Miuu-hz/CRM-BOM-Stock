@@ -46,8 +46,27 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 // ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
 // กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
 import { getOrCreateAccount, postJournal } from '../../services/accounting.service'
-import { isServiceItem } from '../../services/stockItem.service'
+import { isServiceItem, isSellableItem } from '../../services/stockItem.service'
 export { getOrCreateAccount }
+
+// ── Sellable guard (ขายได้แค่ FINISHED/WIP/SERVICE) ─────────────────────────────
+// เจ้าของยืนยัน 2026-10-04: ไม่มีร้านไหนตั้งใจขายวัตถุดิบ (raw) — ก่อนหน้านี้ไม่มี guard
+// เลยสักช่องทาง (REST ขาย / MCP ขาย) ใช้ร่วมกันที่นี่ที่เดียวกันหย่อนไม่เท่ากัน
+// (ดู [[project_erp_mcp_parity]]) — ตัวที่จริงอยู่ที่ services/stockItem.service.ts (isSellableItem)
+export function findNonSellableLine(
+  tenantId: string,
+  stockItemIds: Array<string | null | undefined>
+): { name: string; category: string } | null {
+  for (const id of stockItemIds) {
+    if (!id) continue   // บรรทัด free text / บริการไม่ผูกสินค้า ผ่านเหมือนเดิม
+    const item = db.prepare('SELECT name, category FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+    if (item && !isSellableItem(item)) return { name: item.name, category: item.category }
+  }
+  return null
+}
+
+export const notSellableMessage = (name: string, category: string): string =>
+  `"${name}" เป็นสินค้าหมวด ${category} ขายไม่ได้ — ขายได้เฉพาะสินค้าสำเร็จรูป/กึ่งสำเร็จรูป/บริการ`
 
 // account_balances ถูกถอดออกจากระบบ 2026-09-14 — ตรวจแล้วไม่มีโค้ดไหนอ่านตารางนี้เลย
 // (งบการเงิน/ผังบัญชีรวมยอดจาก journal_lines ตรง ๆ) การคอยเขียนให้มันจึงเป็นการเลี้ยงยอดคงเหลือ
@@ -443,10 +462,13 @@ export function createDeliveryOrderForSO(
   const cust = db.prepare('SELECT address FROM customers WHERE id = ?').get(so.customer_id) as any
 
   const id = generateId()
-  const doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5)
   const now = new Date().toISOString()
+  let doNumber = ''
 
   db.transaction(() => {
+    // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้า insert ล้มเหลว ตัวนับต้องย้อนกลับไปด้วย
+    // ไม่ใช่เสียเลขไปเปล่าๆ (ponytail ของเดิม: ออกเลขไว้ก่อนนอกทรานแซกชัน)
+    doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5)
     db.prepare(`
       INSERT INTO delivery_orders (id, tenant_id, do_number, sales_order_id, customer_id, delivery_date,
         delivery_address, driver_name, vehicle_plate, status, notes, created_by, created_at, updated_at)

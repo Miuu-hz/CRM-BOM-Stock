@@ -2,10 +2,9 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
-import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
-import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
-import { ok, matchStockItem as matchStock, bindingRow } from './shared'
-import { deductStockForSO, restoreStockForSO, soStockAlreadyDeducted, createDeliveryOrderForSO, STOCK_DEDUCTED_STATUSES } from '../../routes/sales/shared'
+import { normalizeUnit, convertQuantityBidirectional } from '../../services/unitConversion.service'
+import { ok, matchStockItem as matchStock, bindingRow, StockMatch } from './shared'
+import { findNonSellableLine, notSellableMessage } from '../../routes/sales/shared'
 import { formatDocumentNumber } from '../../utils/id'
 import { calcDocTotals } from '../../utils/vat'
 import { tenantVatInclusive } from '../../utils/vatSettings'
@@ -13,47 +12,35 @@ import { isVatRegistered, rememberContactVatMode } from '../../services/accounti
 
 const genId = () => randomUUID().replace(/-/g, '').substring(0, 25)
 
-const findSalesOrder = (soId: string, tenantId: string): any => {
-  let so = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(soId, tenantId) as any
-  if (!so) so = db.prepare('SELECT * FROM sales_orders WHERE so_number = ? AND tenant_id = ?').get(soId, tenantId) as any
-  return so
+/**
+ * หน่วยเริ่มต้นเมื่อ AI ไม่ได้ระบุมา — ใช้หน่วยขาย/หน่วยฐานของสินค้าที่ผูกได้ ไม่ใช่คอลัมน์
+ * `unit` เดิม (คอลัมน์เก่าก่อนย้ายมาเป็น base/sale/display unit อาจคนละหน่วยกับของจริง
+ * ดู deductStockForSO ใน routes/sales/shared.ts — กับดักเดียวกัน) ไม่มี stock item ผูกไว้
+ * (บรรทัด free text) fallback เป็น 'pcs'
+ */
+function defaultLineUnit(tenantId: string, stockItemId: string | null): string {
+  if (!stockItemId) return 'pcs'
+  const row = db.prepare('SELECT sale_unit, base_unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+  return row?.sale_unit || row?.base_unit || 'pcs'
 }
 
 const itemSchema = z.object({
   description: z.string().describe('ชื่อสินค้า/เมนู'),
   quantity: z.number().positive(),
   unit: z.string().optional().describe('หน่วย เช่น pcs, kg, box — ถ้าไม่ระบุใช้หน่วยของ stock item ที่ match ได้'),
-  unitPrice: z.number().min(0).describe('ราคาขายต่อหน่วย (บาท)'),
+  unitPrice: z.number().min(0).optional().describe('ราคาขายต่อหน่วย (บาท) — ถ้าไม่ระบุและบรรทัดนี้ผูกกับสินค้าในสต็อกได้ จะคิดให้จาก stock_items.unit_price (ต่อหน่วยฐาน) คูณตัวแปลงหน่วย; บรรทัดที่ไม่ผูกสินค้า (free text) ต้องระบุเอง'),
   discountPercent: z.number().min(0).max(100).optional().describe('ส่วนลด % ต่อรายการ'),
 })
 
 type SalesItem = z.infer<typeof itemSchema>
+// หลังผ่านด่านเติมราคาเริ่มต้นแล้ว (ดู create_quotation) unitPrice การันตีว่าไม่ใช่ undefined
+type PricedItem = SalesItem & { unitPrice: number }
 
 // จับคู่รายการขายกับ stock item — เมนู/สินค้าสำเร็จรูปมาก่อน
-const computeTotals = (items: SalesItem[], discountAmount: number, taxRate: number, inclusive = false) => {
+const computeTotals = (items: PricedItem[], discountAmount: number, taxRate: number, inclusive = false) => {
   const lines = items.map(i => ({ quantity: i.quantity, unitPrice: i.unitPrice, discountPercent: i.discountPercent }))
   const t = calcDocTotals(lines, { rate: taxRate, discountAmount, inclusive })
   return { subtotal: t.subtotal, taxAmount: t.taxAmount, totalAmount: t.totalAmount, inclusive }
-}
-
-const insertSoItems = (tenantId: string, soId: string, items: SalesItem[]): any[] => {
-  const ins = db.prepare(`
-    INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, '')
-  `)
-  const results: any[] = []
-  let lineNo = 0
-  for (const item of items) {
-    lineNo++
-    // ผูกให้เฉพาะชื่อตรงเป๊ะ — ไม่ตรงเป๊ะปล่อยว่างไว้ให้คนเลือกด้วย bind_document_item
-    // (กติกาเดียวกับสายซื้อตั้งแต่เคส "ข้าวโพด" → "สลัดทูน่าข้าวโพด")
-    const match = matchStock(tenantId, item.description)
-    const unit = item.unit || match.exact?.unit || 'pcs'
-    const lineTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent ?? 0) / 100)
-    ins.run(genId(), tenantId, soId, match.exact?.id ?? null, item.description, item.quantity, unit, item.unitPrice, item.discountPercent ?? 0, lineTotal)
-    results.push({ บรรทัดที่: lineNo, ...bindingRow(item.description, match, unit), จำนวน: item.quantity, ราคาต่อหน่วย: item.unitPrice })
-  }
-  return results
 }
 
 /** หาลูกค้าจากชื่อ/รหัส ไม่เจอก็สร้างให้ — เดิมฝังอยู่ใน create_sales_order */
@@ -110,13 +97,53 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
         return ok({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
       }
 
+      // จับคู่สินค้าทุกบรรทัดก่อนออกเลขเอกสาร — ผูกให้เฉพาะชื่อตรงเป๊ะ (กติกาเดียวกับสายซื้อ
+      // ตั้งแต่เคส "ข้าวโพด" → "สลัดทูน่าข้าวโพด") แล้วเช็คว่าขายได้ไหมด้วยการ์ดเดียวกับ REST
+      // (routes/sales/shared.ts findNonSellableLine) — ไม่งั้น AI ขายวัตถุดิบหลุดไปได้ทาง MCP
+      // ทั้งที่ REST ปิดแล้ว (ดู [[project_erp_mcp_parity]])
+      const matches: StockMatch[] = items.map((i: SalesItem) => matchStock(tenantId, i.description))
+      const badLine = findNonSellableLine(tenantId, matches.map((m: StockMatch) => m.exact?.id ?? null))
+      if (badLine) {
+        return ok({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+      }
+
+      // unitPrice ไม่ระบุมา (AI ไม่รู้ราคา) → ถ้าบรรทัดผูกกับ stock item ได้ ตั้งราคาให้จาก
+      // stock_items.unit_price (เก็บต่อ "หน่วยฐาน" เสมอ — ดู [[project_erp_unit_three_tier]])
+      // คูณตัวแปลงหน่วยจากหน่วยที่ขาย (unit ของบรรทัด) ไปหน่วยฐาน เช่น 1 แพ็ค = 6 ชิ้น,
+      // ฐาน 29/ชิ้น → 174/แพ็ค ใช้ resolver ตัวเดียวกับฝั่ง REST (convertQuantityBidirectional)
+      // ไม่มีกฎแปลง → เดาเป็น factor 1 ไม่ได้ (ราคาเพี้ยนเงียบๆ) ต้องให้ผู้เรียกระบุ unitPrice เอง
+      // บรรทัดไม่ผูกสินค้า (free text) ก็ยังต้องระบุ unitPrice เสมอ — ไม่มีฐานให้เดา
+      const pricedItems: PricedItem[] = []
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx]
+        if (item.unitPrice != null) { pricedItems.push({ ...item, unitPrice: item.unitPrice }); continue }
+        const stockItemId = matches[idx].exact?.id ?? null
+        if (!stockItemId) {
+          return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `"${item.description}" ไม่ได้ผูกกับสินค้าในสต็อก ต้องระบุ unitPrice เอง` })
+        }
+        const stockRow = db.prepare('SELECT unit_price, base_unit, sale_unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+        const lineUnit = normalizeUnit(item.unit || defaultLineUnit(tenantId, stockItemId))
+        const baseUnit = normalizeUnit(stockRow?.base_unit || stockRow?.sale_unit || lineUnit)
+        let factor = 1
+        if (lineUnit !== baseUnit) {
+          const conv = convertQuantityBidirectional(1, lineUnit, baseUnit, tenantId, stockItemId)
+          if (!conv) {
+            return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `ไม่มีกฎแปลงหน่วย ${lineUnit} → ${baseUnit} ของ "${item.description}" — คิดราคาต่อ ${lineUnit} ให้ไม่ได้ ต้องระบุ unitPrice เอง` })
+          }
+          factor = conv.factor
+        }
+        pricedItems.push({ ...item, unitPrice: (stockRow?.unit_price ?? 0) * factor })
+      }
+
       const inclusive = tenantVatInclusive(tenantId)
-      const { subtotal, taxAmount, totalAmount } = computeTotals(items, discount_amount, tax_rate, inclusive)
+      const { subtotal, taxAmount, totalAmount } = computeTotals(pricedItems, discount_amount, tax_rate, inclusive)
       const id = genId()
-      const qtNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
+      let qtNumber = ''
 
       let resultItems: any[] = []
       db.transaction(() => {
+        // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้าล้มเหลวตัวนับต้องย้อนกลับไปด้วย ไม่เสียเลขเปล่าๆ
+        qtNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
         db.prepare(`
           INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
             subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive, status, notes, created_at, updated_at)
@@ -128,13 +155,17 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
           INSERT INTO quotation_items (id, tenant_id, quotation_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, '')
         `)
-        for (const item of items) {
-          const match = matchStock(tenantId, item.description)
+        pricedItems.forEach((item: PricedItem, idx: number) => {
+          const match = matches[idx]
+          const stockItemId = match.exact?.id ?? null
+          // ไม่ระบุหน่วยมา → ใช้หน่วยขาย/หน่วยฐานของสินค้าที่ผูกได้ ไม่ใช่คอลัมน์ unit เดิม
+          // แล้ว normalize ให้เป็น code มาตรฐานเดียวกับที่ REST เก็บเสมอ (ไม่เก็บข้อความดิบจาก AI)
+          const unit = normalizeUnit(item.unit || defaultLineUnit(tenantId, stockItemId))
           const lineTotal = item.quantity * item.unitPrice * (1 - (item.discountPercent ?? 0) / 100)
-          ins.run(genId(), tenantId, id, match.exact?.id ?? null, item.description,
-            item.quantity, item.unit ?? '', item.unitPrice, item.discountPercent ?? 0, lineTotal)
-          resultItems.push(bindingRow(item.description, match, item.unit ?? ''))
-        }
+          ins.run(genId(), tenantId, id, stockItemId, item.description,
+            item.quantity, unit, item.unitPrice, item.discountPercent ?? 0, lineTotal)
+          resultItems.push(bindingRow(item.description, match, unit))
+        })
       })()
 
       // จำโหมด VAT ของใบนี้ไว้กับลูกค้ารายนี้ — ใบเสนอราคาถัดไป (ทั้งฝั่งเว็บและ AI) จะ default ให้ถูก
