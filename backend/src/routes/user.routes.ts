@@ -206,7 +206,7 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params
 
   if (id === req.user!.userId) {
-    return res.status(403).json({ success: false, message: 'ไม่สามารถลบบัญชีต��วเองได้' })
+    return res.status(403).json({ success: false, message: 'ไม่สามารถลบบัญชีตัวเองได้' })
   }
 
   const db = getDb()
