@@ -39,6 +39,9 @@ interface Customer {
   loyalty_points?: number
   /** โหมด VAT ล่าสุดที่ใช้กับลูกค้ารายนี้ */
   vat_mode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
+  /** ที่มาของลีด/แคมเปญ — ใช้ตอบ "ลีดจากแคมเปญไหนปิดการขายได้ดีที่สุด" */
+  lead_source?: string | null
+  campaign?: string | null
 }
 
 interface ActivityLog {
@@ -692,8 +695,16 @@ function CustomerModal({ open, customer, onClose, onSave }: {
     code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
     city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE',
     vatMode: null as 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null,
+    leadSource: '', campaign: '',
   })
   const [saving, setSaving] = useState(false)
+  // ตัวเลือกช่องทาง/แคมเปญที่มีอยู่แล้วของ tenant นี้ — ใช้กับ <datalist> ของช่อง campaign
+  const [attrOptions, setAttrOptions] = useState<{ leadSources: string[]; campaigns: string[] }>({ leadSources: [], campaigns: [] })
+
+  useEffect(() => {
+    if (!open) return
+    api.get('/customers/meta/attribution-options').then(res => setAttrOptions(res.data.data)).catch(() => {})
+  }, [open])
 
   useEffect(() => {
     if (customer) {
@@ -702,10 +713,12 @@ function CustomerModal({ open, customer, onClose, onSave }: {
         contactName: customer.contactName, email: customer.email, phone: customer.phone,
         city: customer.city, address: customer.address ?? '', taxId: customer.taxId ?? '', creditLimit: customer.creditLimit, status: customer.status,
         vatMode: customer.vat_mode ?? null,
+        leadSource: customer.lead_source ?? '', campaign: customer.campaign ?? '',
       })
     } else {
       setForm({ code: '', name: '', type: 'RETAIL', contactName: '', email: '', phone: '',
-        city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE', vatMode: null })
+        city: '', address: '', taxId: '', creditLimit: 0, status: 'ACTIVE', vatMode: null,
+        leadSource: '', campaign: '' })
     }
   }, [customer, open])
 
@@ -830,6 +843,28 @@ function CustomerModal({ open, customer, onClose, onSave }: {
                   <input type="number" value={form.creditLimit}
                     onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) })}
                     className="phopy-input w-full" min="0" placeholder="0" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.leadSource')}</label>
+                  <select value={form.leadSource} onChange={(e) => setForm({ ...form, leadSource: e.target.value })}
+                    className="phopy-input w-full">
+                    <option value="">{t('crm.modal.leadSourcePlaceholder')}</option>
+                    {['Facebook', 'LINE', 'Shopee', 'หน้าร้าน', 'แนะนำต่อ', 'งานแสดงสินค้า', 'อื่นๆ'].map(src => (
+                      <option key={src} value={src}>{src}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.campaign')}</label>
+                  <input type="text" value={form.campaign} list="crm-campaign-options"
+                    onChange={(e) => setForm({ ...form, campaign: e.target.value })}
+                    className="phopy-input w-full" placeholder={t('crm.modal.campaignPlaceholder')} />
+                  <datalist id="crm-campaign-options">
+                    {attrOptions.campaigns.map(c => <option key={c} value={c} />)}
+                  </datalist>
                 </div>
               </div>
 
@@ -1076,6 +1111,14 @@ function CustomerDetailModal({
               <div className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
                 <span className="text-xs text-[var(--fg-2)] truncate">{customer.city}</span>
+              </div>
+            )}
+            {(customer.lead_source || customer.campaign) && (
+              <div className="flex items-center gap-2">
+                <Target className="w-3.5 h-3.5 text-[var(--fg-4)] flex-shrink-0" />
+                <span className="text-xs text-[var(--fg-2)] truncate">
+                  {[customer.lead_source, customer.campaign].filter(Boolean).join(' · ')}
+                </span>
               </div>
             )}
           </div>

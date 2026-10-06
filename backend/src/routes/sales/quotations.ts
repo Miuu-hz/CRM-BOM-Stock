@@ -70,6 +70,11 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
+    // แคมเปญ: ไม่ส่งมา → เอาจากลูกค้ารายนี้ (ผูกดีลเข้าแคมเปญเดิมของลูกค้าโดยอัตโนมัติ)
+    // ส่งมาเป็น '' ชัดเจน (ล้างค่า) ต่างจากไม่ส่งมาเลย (undefined) — ใช้ default เฉพาะกรณีหลัง
+    const campaign = req.body.campaign !== undefined ? (req.body.campaign || null)
+      : (db.prepare('SELECT campaign FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any)?.campaign || null
+
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
     if ((Number(taxRate) || 0) > 0 && !isVatRegistered(tenantId)) {
       return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })
@@ -111,10 +116,10 @@ router.post('/', async (req: Request, res: Response) => {
       quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
       db.prepare(`
         INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
-          subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+          subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, campaign, status, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
       `).run(id, tenantId, quotationNumber, customerId, now, expiryDate || null,
-        subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, notes || '', now, now)
+        subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, campaign, notes || '', now, now)
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -150,6 +155,8 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { customerId, expiryDate, notes, items, taxRate, discountAmount } = req.body
+    // เหมือน notes ด้านบน: ไม่ส่งมา (undefined) = ไม่แก้, ส่ง '' มาจริง ๆ = เคลียร์ค่า (better-sqlite3 รับ undefined ไม่ได้ ต้องเป็น null)
+    const campaign = req.body.campaign ?? null
     const now = new Date().toISOString()
 
     const existing = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
@@ -193,9 +200,10 @@ router.put('/:id', async (req: Request, res: Response) => {
         SET customer_id = COALESCE(?, customer_id), expiry_date = ?,
             subtotal = ?, discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?,
             tax_rate = ?, tax_amount = ?, total_amount = ?, vat_inclusive = ?,
+            campaign = COALESCE(?, campaign),
             notes = COALESCE(?, notes), updated_at = ?
         WHERE id = ? AND tenant_id = ?
-      `).run(customerId || null, expiryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? null, now, req.params.id, tenantId)
+      `).run(customerId || null, expiryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, campaign, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
         db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)

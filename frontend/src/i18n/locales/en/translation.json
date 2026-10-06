@@ -1513,6 +1513,8 @@
       "customerRequired": "Customer *",
       "itemNumberPrefix": "Item",
       "notesPlaceholder": "Notes...",
+      "campaign": "Campaign",
+      "campaignPlaceholder": "Campaign name (optional)",
       "orderDateLabel": "Order date",
       "showingCount": "Showing {{count}} items",
       "success": "Success",
@@ -1998,7 +2000,11 @@
       "taxId": "Tax ID",
       "taxIdPlaceholder": "13 digits",
       "address": "Address",
-      "addressPlaceholder": "Street, district, province"
+      "addressPlaceholder": "Street, district, province",
+      "leadSource": "Lead Source",
+      "leadSourcePlaceholder": "Select channel",
+      "campaign": "Campaign",
+      "campaignPlaceholder": "Campaign name (optional)"
     },
     "suppliers": {
       "stats": {

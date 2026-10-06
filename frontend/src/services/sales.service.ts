@@ -12,6 +12,8 @@ export interface Customer {
   address?: string
   /** โหมด VAT ล่าสุดที่ใช้กับลูกค้ารายนี้ — backend อัปเดตอัตโนมัติจากเอกสารล่าสุด, แก้มือได้ที่ฟอร์มลูกค้า */
   vat_mode?: 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE' | null
+  /** แคมเปญของลูกค้ารายนี้ — ใบเสนอราคาใหม่ใช้เป็นค่าเริ่มต้นถ้าไม่ระบุเอง */
+  campaign?: string | null
 }
 
 export interface Product {
@@ -74,6 +76,8 @@ export interface CreateQuotationPayload {
   extraChargeLabel?: string
   discountAmount?: number
   notes?: string
+  /** แคมเปญที่ผูกดีลนี้ไว้ — ไม่ส่งมา = backend เอาแคมเปญของลูกค้าเป็นค่าเริ่มต้นให้ */
+  campaign?: string
   items: QuotationItem[]
 }
 

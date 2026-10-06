@@ -14,6 +14,7 @@ interface McpInfo {
   canManage: boolean
   hasKey: boolean
   quota: { used: number; limit: number | null }
+  scope: 'full' | 'readonly'
 }
 interface TeamUser {
   id: string
@@ -21,6 +22,7 @@ interface TeamUser {
   email: string
   role: string
   hasKey: number
+  scope: 'full' | 'readonly'
 }
 
 type ClientPreset = 'gemini' | 'claude-code' | 'claude-desktop' | 'raw'
@@ -142,6 +144,20 @@ export default function MCPSettings() {
     } finally { setActing(null) }
   }
 
+  const changeScope = async (u: TeamUser, scope: 'full' | 'readonly') => {
+    if (scope === u.scope) return
+    setActing(u.id)
+    try {
+      const res = await api.post(`/mcp-settings/team/${u.id}/scope`, { scope })
+      if (res.data.success) {
+        setTeam(t => t.map(x => x.id === u.id ? { ...x, scope } : x))
+        toast.success(`เปลี่ยนสิทธิ์ ${u.name} เป็น${scope === 'readonly' ? 'อ่านอย่างเดียว' : 'เต็มสิทธิ์'}แล้ว`)
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'เปลี่ยนสิทธิ์ไม่สำเร็จ')
+    } finally { setActing(null) }
+  }
+
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" /></div>
   if (!info) return null
 
@@ -191,6 +207,11 @@ export default function MCPSettings() {
         <div className="flex items-center gap-2">
           <PlugZap className="w-4 h-4 text-[var(--primary)]" />
           <h3 className="font-semibold text-[var(--fg-1)]">{t('settings.llm.mcp.title', 'การเชื่อมต่อของคุณ')}</h3>
+          {info.hasKey && (
+            <span className={'text-xs px-1.5 py-0.5 rounded font-medium ' + (info.scope === 'readonly' ? 'bg-[var(--warning-soft)] text-[var(--warning)]' : 'bg-[var(--success-soft)] text-[var(--success)]')}>
+              {info.scope === 'readonly' ? 'อ่านอย่างเดียว (ตรวจสอบ)' : 'สิทธิ์เต็ม'}
+            </span>
+          )}
         </div>
 
         {info.key ? (
@@ -342,6 +363,18 @@ export default function MCPSettings() {
                       </div>
                       <p className="text-xs text-[var(--fg-4)] font-mono truncate">{u.email}</p>
                     </div>
+                    {has && (
+                      <select
+                        value={u.scope}
+                        disabled={acting === u.id}
+                        onChange={e => changeScope(u, e.target.value as 'full' | 'readonly')}
+                        title="สิทธิ์เต็ม / อ่านอย่างเดียว (ตรวจสอบ)"
+                        className="px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--fg-2)] text-xs disabled:opacity-50"
+                      >
+                        <option value="full">สิทธิ์เต็ม</option>
+                        <option value="readonly">อ่านอย่างเดียว (ตรวจสอบ)</option>
+                      </select>
+                    )}
                     {has ? (
                       <button onClick={() => revoke(u)} disabled={acting === u.id}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--danger)] hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all text-sm disabled:opacity-50">

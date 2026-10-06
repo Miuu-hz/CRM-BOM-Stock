@@ -1029,3 +1029,95 @@ export function getStandardConversions(): Array<{ from_unit: string; to_unit: st
     return { from_unit, to_unit, factor }
   })
 }
+
+// ===================================================================
+// สินค้า/หน่วยที่แปลงไม่ได้ — ตรวจล่วงหน้า ไม่ต้องรอไปเจอตอนยืนยันเอกสาร
+// ===================================================================
+export interface BrokenUnitPair {
+  stock_item_id: string
+  name: string
+  sku: string
+  base_unit: string
+  unit: string
+  /** เอกสารที่ใช้คู่หน่วยนี้อยู่: bom / purchase_order / sales_order / quotation / pos_recipe */
+  used_in: string[]
+  /** จำนวนบรรทัดเอกสารที่ใช้คู่นี้ (รวมทุกประเภท) */
+  count: number
+}
+
+/**
+ * หา (สินค้า, หน่วย) ที่ใช้อยู่จริงในเอกสาร แต่แปลงกลับไปหน่วยฐานของสินค้าไม่ได้เลย
+ * (ไม่มีกฎตรง ไม่มีกฎ tenant ไม่มีมาตราสากล ไม่มี chain) — ข้ามเอกสารที่ยกเลิก/ปฏิเสธแล้ว
+ * และสินค้าที่ปิดใช้ (INACTIVE) เพราะไม่มีผลกับงานจริงอีกต่อไป
+ */
+export function findBrokenUnitPairs(tenantId: string): BrokenUnitPair[] {
+  const rows = db.prepare(`
+    SELECT stock_item_id, unit, used_in FROM (
+      SELECT bi.material_id AS stock_item_id, bi.unit AS unit, 'bom' AS used_in
+        FROM bom_items bi JOIN boms b ON b.id = bi.bom_id
+        WHERE bi.tenant_id = ? AND b.status != 'CANCELLED'
+      UNION ALL
+      SELECT poi.material_id, poi.unit, 'purchase_order'
+        FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
+        WHERE poi.tenant_id = ? AND po.status != 'CANCELLED'
+      UNION ALL
+      SELECT soi.stock_item_id, soi.unit, 'sales_order'
+        FROM sales_order_items soi JOIN sales_orders so ON so.id = soi.sales_order_id
+        WHERE soi.tenant_id = ? AND so.status != 'CANCELLED'
+      UNION ALL
+      SELECT qi.stock_item_id, qi.unit, 'quotation'
+        FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id
+        WHERE qi.tenant_id = ? AND q.status != 'REJECTED'
+      UNION ALL
+      SELECT pmi.stock_item_id, pmi.unit_id, 'pos_recipe'
+        FROM pos_menu_ingredients pmi
+        WHERE pmi.tenant_id = ?
+    )
+    WHERE stock_item_id IS NOT NULL AND unit IS NOT NULL AND TRIM(unit) != ''
+  `).all(tenantId, tenantId, tenantId, tenantId, tenantId) as Array<{ stock_item_id: string; unit: string; used_in: string }>
+
+  // รวมตาม (สินค้า, หน่วยที่ normalize แล้ว) — ทำใน JS เพราะ SQLite เรียก normalizeUnit() ไม่ได้
+  const groups = new Map<string, { stock_item_id: string; unit: string; used_in: Set<string>; count: number }>()
+  for (const r of rows) {
+    const normUnit = normalizeUnit(r.unit)
+    if (!normUnit) continue
+    const key = `${r.stock_item_id}|${normUnit}`
+    let g = groups.get(key)
+    if (!g) {
+      g = { stock_item_id: r.stock_item_id, unit: normUnit, used_in: new Set(), count: 0 }
+      groups.set(key, g)
+    }
+    g.used_in.add(r.used_in)
+    g.count++
+  }
+  if (groups.size === 0) return []
+
+  const itemIds = Array.from(new Set(Array.from(groups.values()).map((g) => g.stock_item_id)))
+  const placeholders = itemIds.map(() => '?').join(',')
+  const items = db.prepare(`
+    SELECT id, name, sku, base_unit, unit FROM stock_items
+    WHERE tenant_id = ? AND status != 'INACTIVE' AND id IN (${placeholders})
+  `).all(tenantId, ...itemIds) as Array<{ id: string; name: string; sku: string; base_unit: string | null; unit: string }>
+  const itemMap = new Map(items.map((i) => [i.id, i]))
+
+  const out: BrokenUnitPair[] = []
+  for (const g of groups.values()) {
+    const item = itemMap.get(g.stock_item_id)
+    if (!item) continue // ไม่มีในเทแนนต์นี้ หรือปิดใช้แล้ว
+    const baseUnit = normalizeUnit(item.base_unit || item.unit)
+    if (!baseUnit || g.unit === baseUnit) continue // ใช้หน่วยฐานอยู่แล้ว ไม่ broken
+    const chain = findConversionChain(g.unit, baseUnit, tenantId, g.stock_item_id)
+    if (chain) continue // มีเส้นทางแปลงแล้ว (ตรง/tenant/สากล/chain) ไม่ broken
+    out.push({
+      stock_item_id: item.id,
+      name: item.name,
+      sku: item.sku,
+      base_unit: baseUnit,
+      unit: g.unit,
+      used_in: Array.from(g.used_in),
+      count: g.count,
+    })
+  }
+  out.sort((a, b) => b.count - a.count)
+  return out
+}

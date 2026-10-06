@@ -1514,6 +1514,8 @@
       "customerRequired": "ลูกค้า *",
       "itemNumberPrefix": "รายการ",
       "notesPlaceholder": "หมายเหตุ...",
+      "campaign": "แคมเปญ",
+      "campaignPlaceholder": "ชื่อแคมเปญ (ถ้ามี)",
       "orderDateLabel": "วันสั่งซื้อ",
       "showingCount": "แสดง {{count}} รายการ",
       "success": "สำเร็จ",
@@ -1999,7 +2001,11 @@
       "taxId": "เลขประจำตัวผู้เสียภาษี",
       "taxIdPlaceholder": "13 หลัก",
       "address": "ที่อยู่",
-      "addressPlaceholder": "บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด"
+      "addressPlaceholder": "บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด",
+      "leadSource": "ช่องทางที่ลูกค้ามา",
+      "leadSourcePlaceholder": "เลือกช่องทาง",
+      "campaign": "แคมเปญ",
+      "campaignPlaceholder": "ชื่อแคมเปญ (ถ้ามี)"
     },
     "suppliers": {
       "stats": {

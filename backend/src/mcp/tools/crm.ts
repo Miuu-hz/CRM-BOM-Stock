@@ -158,6 +158,7 @@ function customerProfile(tenantId: string, customerQuery?: string) {
     contact: {
       code: c.code, name: c.name, contact_name: c.contact_name, email: c.email, phone: c.phone,
       address: c.address, city: c.city, tax_id: c.tax_id, credit_limit: c.credit_limit, status: c.status,
+      lead_source: c.lead_source, campaign: c.campaign,
     },
     lifetime_spend: lifetimeSpend,
     spend_last_90d: spend90d,
@@ -168,6 +169,83 @@ function customerProfile(tenantId: string, customerQuery?: string) {
     recent_activity: recentActivity,
     open_quotations: openQuotations,
     pending_recommendations: pendingRecommendations,
+  })
+}
+
+// ── วิเคราะห์ลีด/แคมเปญ: ไหนปิดการขายได้ดีที่สุด ──────────────────────────────────
+// group_by='campaign': กลุ่มตาม COALESCE(quotation.campaign, customer.campaign) — ใบเสนอราคาผูกแคมเปญเอง
+//   ได้ (เช่นลูกค้าเดิมแต่ติดต่อมาจากบูธงานแสดงสินค้าครั้งนี้) ถ้าไม่ผูกก็สืบจากแคมเปญของลูกค้า
+// group_by='lead_source': ช่องทางอยู่ที่ลูกค้าเท่านั้น (ไม่มีช่องทางระดับใบเสนอราคา) กลุ่มตาม customer.lead_source
+// won = สถานะ ACCEPTED หรือมีใบสั่งขายที่แปลงมาจากใบเสนอราคานี้ (sales_orders.quotation_id ไม่ถูกยกเลิก)
+// lost = REJECTED/EXPIRED, ที่เหลือ (DRAFT/SENT) ยังเปิดอยู่ ไม่นับทั้งคู่
+// ไม่มีช่องทาง/แคมเปญ = "(ไม่ระบุ)" — ยกเลิก (CANCELLED) ไม่นับเป็นสัญญาณผลงานเลขานี้ ตัดออกทั้งกลุ่ม
+function leadSourcePerformance(tenantId: string, groupBy: 'campaign' | 'lead_source', period?: string) {
+  const periodArg = period && period !== 'all' && /^\d{4}-\d{2}$/.test(period) ? period : null
+
+  let where = `q.tenant_id = ? AND q.status != 'CANCELLED'`
+  const params: unknown[] = [tenantId]
+  if (periodArg) { where += ` AND strftime('%Y-%m', q.quotation_date) = ?`; params.push(periodArg) }
+
+  const groupExpr = groupBy === 'lead_source' ? 'c.lead_source' : 'COALESCE(q.campaign, c.campaign)'
+
+  const rows = db.prepare(`
+    SELECT q.id AS quotation_id, q.customer_id, q.status, q.total_amount,
+      ${groupExpr} AS group_key,
+      EXISTS(
+        SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id AND so.tenant_id = q.tenant_id AND so.status != 'CANCELLED'
+      ) AS has_so
+    FROM quotations q
+    LEFT JOIN customers c ON c.id = q.customer_id AND c.tenant_id = q.tenant_id
+    WHERE ${where}
+  `).all(...params) as Array<{
+    quotation_id: string; customer_id: string; status: string; total_amount: number
+    group_key: string | null; has_so: number
+  }>
+
+  type Group = { customers: Set<string>; quotations: number; won: number; lost: number; wonValue: number }
+  const groups = new Map<string, Group>()
+  for (const r of rows) {
+    const key = r.group_key || '(ไม่ระบุ)'
+    let g = groups.get(key)
+    if (!g) { g = { customers: new Set(), quotations: 0, won: 0, lost: 0, wonValue: 0 }; groups.set(key, g) }
+    g.customers.add(r.customer_id)
+    g.quotations++
+    if (r.status === 'ACCEPTED' || r.has_so === 1) { g.won++; g.wonValue += r.total_amount }
+    else if (r.status === 'REJECTED' || r.status === 'EXPIRED') g.lost++
+  }
+
+  // รายได้จากใบแจ้งหนี้จริงของลูกค้าในกลุ่มนี้ (ไม่ใช่มูลค่าใบเสนอราคา) — นับระดับลูกค้า ไม่ใช่ระดับใบเสนอราคา
+  const invRows = db.prepare(`
+    SELECT customer_id, COALESCE(SUM(total_amount), 0) AS revenue FROM invoices
+    WHERE tenant_id = ? AND customer_id IS NOT NULL AND status NOT IN ('CANCELLED', 'DRAFT')
+    GROUP BY customer_id
+  `).all(tenantId) as Array<{ customer_id: string; revenue: number }>
+  const invoiceRevenueByCustomer = new Map(invRows.map(r => [r.customer_id, r.revenue]))
+
+  const result = Array.from(groups.entries()).map(([key, g]) => {
+    const decided = g.won + g.lost
+    const winRate = decided > 0 ? g.won / decided : null
+    const revenue = Array.from(g.customers).reduce((sum, cid) => sum + (invoiceRevenueByCustomer.get(cid) || 0), 0)
+    return {
+      group: key,
+      customers: g.customers.size,
+      quotations: g.quotations,
+      won: g.won,
+      lost: g.lost,
+      win_rate: winRate,
+      won_value: g.wonValue,
+      revenue,
+    }
+  }).sort((a, b) => {
+    const wrA = a.win_rate ?? -1, wrB = b.win_rate ?? -1
+    if (wrB !== wrA) return wrB - wrA
+    return b.won_value - a.won_value
+  })
+
+  return ok({
+    group_by: groupBy,
+    period: periodArg ?? 'all',
+    groups: result,
   })
 }
 
@@ -241,5 +319,23 @@ month: YYYY-MM กรองตามวันที่ใบเสนอรา�
         quotations: list,
       })
     }
+  )
+
+  server.tool(
+    'get_lead_source_performance',
+    `วิเคราะห์ว่าช่องทาง/แคมเปญไหนปิดการขายได้ดีที่สุด / อ่านอย่างเดียว ไม่แก้ข้อมูล
+ใช้เมื่อถาม "ลีดจากแคมเปญไหนปิดการขายได้ดีที่สุด" "ช่องทางไหนทำเงินให้เรามากสุด" "แคมเปญนี้คุ้มไหม"
+group_by="campaign" (default): กลุ่มตามชื่อแคมเปญ (ของใบเสนอราคาเอง ถ้าไม่ระบุใช้แคมเปญของลูกค้า)
+group_by="lead_source": กลุ่มตามช่องทางที่ลูกค้ามา (Facebook/LINE/Shopee/หน้าร้าน/แนะนำต่อ/งานแสดงสินค้า/อื่นๆ)
+ต่อกลุ่มจะได้: จำนวนลูกค้า, จำนวนใบเสนอราคา, ปิดได้ (won: ACCEPTED หรือแปลงเป็นใบสั่งขายแล้ว),
+  ปิดไม่ได้ (lost: REJECTED/EXPIRED), อัตราปิดได้ (win_rate), มูลค่าที่ปิดได้ (won_value),
+  และรายได้จริงจากใบแจ้งหนี้ของลูกค้ากลุ่มนั้น (revenue) — เรียงตาม win_rate มาก่อน แล้วตามมูลค่า
+ลูกค้า/ใบเสนอราคาที่ไม่มีช่องทาง/แคมเปญระบุไว้ จะรวมอยู่ในกลุ่ม "(ไม่ระบุ)"
+period: เดือน YYYY-MM หรือ "all" (default ทุกช่วงเวลา — วิเคราะห์ตลอดอายุแคมเปญ ไม่ตัดแค่ 90 วัน)`,
+    {
+      group_by: z.enum(['campaign', 'lead_source']).optional().describe('campaign=กลุ่มตามแคมเปญ (default), lead_source=กลุ่มตามช่องทาง'),
+      period: z.string().optional().describe('เดือน YYYY-MM หรือ "all" (default all)'),
+    },
+    async (args) => leadSourcePerformance(tenantId, args.group_by ?? 'campaign', args.period)
   )
 }

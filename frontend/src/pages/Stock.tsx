@@ -43,6 +43,7 @@ import companySettingsService from '../services/companySettings.service'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import ImportModal from '../components/common/ImportModal'
 import UnitChainEditor from '../components/common/UnitChainEditor'
+import UnitChainModal from '../components/common/UnitChainModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { unitLabel } from '../hooks/useUnits'
 import { useModalClose } from '../hooks/useModalClose'
@@ -132,6 +133,17 @@ function getDefaultCols(): Record<ColumnKey, boolean> {
   } catch { return fallback }
 }
 
+/** คู่ (สินค้า, หน่วย) ที่ใช้อยู่จริงในเอกสารแต่แปลงกลับหน่วยฐานไม่ได้ — ตรงกับ data ของ GET /materials/unit-conversions/broken */
+export interface BrokenUnitPair {
+  stock_item_id: string
+  name: string
+  sku: string
+  base_unit: string
+  unit: string
+  used_in: string[]
+  count: number
+}
+
 function Stock() {
   const navigate = useNavigate()
   const { t } = useTranslation()
@@ -201,8 +213,16 @@ function Stock() {
   // Import Modal
   const [showImportModal, setShowImportModal] = useState(false)
 
+  // หน่วยที่ใช้อยู่จริงในเอกสารแต่แปลงกลับหน่วยฐานไม่ได้ — เตือนแต่เนิ่นๆ ไม่ต้องรอไปเจอตอนยืนยันเอกสาร
+  const [brokenUnits, setBrokenUnits] = useState<BrokenUnitPair[]>([])
+  const [showBrokenUnits, setShowBrokenUnits] = useState(false)
+  const loadBrokenUnits = () => {
+    api.get('/materials/unit-conversions/broken').then(r => setBrokenUnits(r.data?.data ?? [])).catch(() => {})
+  }
+
   useEffect(() => {
     loadData()
+    loadBrokenUnits()
     companySettingsService.get().then(d => {
       const enabled = Number(d.show_subcon_stock_widget) !== 0
       setShowSubconStockWidget(enabled)
@@ -426,6 +446,12 @@ function Stock() {
             {(stats?.criticalCount ?? 0) > 0 && (
               <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
               <span className="text-danger">หมด {(stats?.criticalCount ?? 0).toLocaleString('th-TH')}</span></>
+            )}
+            {brokenUnits.length > 0 && (
+              <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
+              <button type="button" onClick={() => setShowBrokenUnits(true)} className="text-[var(--warning-strong)] hover:underline">
+                หน่วยมีปัญหา {brokenUnits.length.toLocaleString('th-TH')} รายการ
+              </button></>
             )}
             {showSubconStockWidget && (
               <><span className="mx-1.5 text-[var(--fg-4)]">·</span>
@@ -960,7 +986,74 @@ function Stock() {
         type="stock"
         onSuccess={loadData}
       />
+      {/* หน่วยมีปัญหา — คู่ (สินค้า, หน่วย) ที่แปลงกลับหน่วยฐานไม่ได้ */}
+      <BrokenUnitsModal
+        open={showBrokenUnits}
+        items={brokenUnits}
+        onClose={() => setShowBrokenUnits(false)}
+        onFixed={loadBrokenUnits}
+      />
     </motion.div>
+  )
+}
+
+// หน่วยมีปัญหา — รายการ (สินค้า, หน่วย) ที่ใช้อยู่จริงในเอกสารแต่แปลงกลับหน่วยฐานไม่ได้
+// คลิกแถวเพื่อเปิด UnitChainModal เพิ่มกฎแปลงหน่วยทันที ไม่ต้องออกไปหน้า /settings/unit-conversions
+export function BrokenUnitsModal({ open, items, onClose, onFixed }: {
+  open: boolean
+  items: BrokenUnitPair[]
+  onClose: () => void
+  onFixed: () => void
+}) {
+  useModalClose(onClose)
+  const [chainFor, setChainFor] = useState<BrokenUnitPair | null>(null)
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/50 flex items-center justify-center z-50 p-4 animate-fadeIn" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-xl max-h-[80vh] flex flex-col animate-scaleIn">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-[var(--warning-strong)]" />
+            <div>
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">หน่วยมีปัญหา {items.length.toLocaleString('th-TH')} รายการ</h2>
+              <p className="text-xs text-[var(--fg-3)]">หน่วยที่ใช้ในบิล/สูตรอยู่จริง แต่ยังไม่มีกฎแปลงกลับหน่วยฐาน</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="ปิด" className="p-1 rounded-lg hover:bg-[var(--bg)]">
+            <X className="w-4 h-4 text-[var(--fg-3)]" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {items.map((it) => (
+            <button
+              key={`${it.stock_item_id}|${it.unit}`}
+              type="button"
+              onClick={() => setChainFor(it)}
+              className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-[var(--border)] hover:border-[var(--primary)] text-left transition-colors"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-[var(--fg-1)] truncate">{it.name}</span>
+                <span className="block text-xs text-[var(--fg-3)]">{it.sku} · ใช้ใน {it.used_in.join(', ')} ({it.count} บรรทัด)</span>
+              </span>
+              <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--warning-strong)] whitespace-nowrap">
+                {unitLabel(it.unit)} <ArrowRight className="w-3 h-3" /> {unitLabel(it.base_unit)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {chainFor && (
+        <UnitChainModal
+          materialId={chainFor.stock_item_id}
+          baseUnit={chainFor.base_unit}
+          unit={chainFor.unit}
+          onAdded={onFixed}
+          onClose={() => setChainFor(null)}
+        />
+      )}
+    </div>
   )
 }
 

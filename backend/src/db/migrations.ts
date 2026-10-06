@@ -2461,6 +2461,24 @@ export function runMigrations(db: any): void {
     }
     console.log('✅ Migration: backfill suppliers.vat_mode ต่อ tenant:', supplierCountByTenant)
   } catch (e) { console.error('⚠️ suppliers.vat_mode backfill error:', e) }
+
+  // Migration: Lead-source/Campaign attribution สำหรับ CRM — ตอบคำถาม "ลีดจากแคมเปญไหนปิดการขายได้ดีที่สุด"
+  // ponytail: free text + ไม่มีตาราง campaigns (ไม่มีงบ/วันที่ให้ผูก) — เพิ่มตารางทีหลังถ้าต้องเก็บงบ/ช่วงเวลาแคมเปญ
+  ;[
+    "ALTER TABLE customers ADD COLUMN lead_source TEXT",
+    "ALTER TABLE customers ADD COLUMN campaign TEXT",
+    "ALTER TABLE quotations ADD COLUMN campaign TEXT",
+  ].forEach(sql => { try { db.exec(sql); console.log('✅ Migration:', sql) } catch { /* column already exists */ } })
+
+  // Migration: per-user MCP scope — 'full' (ค่าเริ่มต้น) หรือ 'readonly' (ตรวจสอบ/audit อย่างเดียว)
+  // บังคับจริงที่ mcp/tools.ts registerTools() — ชั้นเดียว ครอบคลุมทุก transport (SSE/streamable/test)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(users)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'mcp_scope')) {
+      db.exec(`ALTER TABLE users ADD COLUMN mcp_scope TEXT DEFAULT 'full'`)
+      console.log('✅ Migration: users.mcp_scope added')
+    }
+  } catch (e) { console.error('⚠️ users.mcp_scope migration error:', e) }
 }
 
 /**

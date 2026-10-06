@@ -31,18 +31,20 @@ afterEach(() => {
   for (const t of tenants.splice(0)) {
     for (const tbl of [
       'customer_recommendations', 'activity_logs', 'invoice_items', 'invoices',
-      'quotations', 'sales_orders', 'pos_running_bills', 'customers',
+      // sales_orders ก่อน quotations เสมอ — เทสต์ lead_source_performance ผูก sales_orders.quotation_id ไว้
+      // (ลบ quotations ก่อนจะชน FK) ส่วน pos_running_bills/customers ไม่มีใครอ้างจึงลบท้ายได้เหมือนเดิม
+      'sales_orders', 'quotations', 'pos_running_bills', 'customers',
     ]) {
       db.prepare(`DELETE FROM ${tbl} WHERE tenant_id = ?`).run(t)
     }
   }
 })
 
-function addCustomer(t: string, name: string, daysAgoCreated = 0) {
+function addCustomer(t: string, name: string, daysAgoCreated = 0, opts: { leadSource?: string; campaign?: string } = {}) {
   const id = generateId()
-  db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, status, created_at)
-              VALUES (?, ?, ?, ?, 'COMPANY', '-', '-', '0800000000', '-', '-', 'ACTIVE', ?)`)
-    .run(id, t, 'C' + id.slice(0, 6), name, new Date(Date.now() - daysAgoCreated * 86_400_000).toISOString())
+  db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, status, lead_source, campaign, created_at)
+              VALUES (?, ?, ?, ?, 'COMPANY', '-', '-', '0800000000', '-', '-', 'ACTIVE', ?, ?, ?)`)
+    .run(id, t, 'C' + id.slice(0, 6), name, opts.leadSource || null, opts.campaign || null, new Date(Date.now() - daysAgoCreated * 86_400_000).toISOString())
   return id
 }
 
@@ -66,13 +68,21 @@ function addActivityLog(t: string, customerId: string, daysAgo: number) {
     .run(generateId(), customerId, t, new Date(Date.now() - daysAgo * 86_400_000).toISOString())
 }
 
-function addQuotation(t: string, customerId: string, status: string, total: number, daysAgoDate: number, expiryDaysFromNow: number | null) {
+function addQuotation(t: string, customerId: string, status: string, total: number, daysAgoDate: number, expiryDaysFromNow: number | null, campaign: string | null = null) {
   const id = generateId()
   const date = new Date(Date.now() - daysAgoDate * 86_400_000).toISOString()
   const expiry = expiryDaysFromNow === null ? null : new Date(Date.now() + expiryDaysFromNow * 86_400_000).toISOString()
-  db.prepare(`INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date, total_amount, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, t, 'QT-' + id.slice(0, 8), customerId, date, expiry, total, status)
+  db.prepare(`INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date, total_amount, status, campaign)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, t, 'QT-' + id.slice(0, 8), customerId, date, expiry, total, status, campaign)
+  return id
+}
+
+// ใบสั่งขายที่แปลงมาจากใบเสนอราคา — สถานะ default DRAFT ก็ถือว่า "ยังไม่ยกเลิก" พอแล้วสำหรับทดสอบ has_so
+function addSalesOrderForQuotation(t: string, customerId: string, quotationId: string) {
+  const id = generateId()
+  db.prepare(`INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, quotation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, t, 'SO-' + id.slice(0, 8), customerId, quotationId, new Date().toISOString())
   return id
 }
 
@@ -196,5 +206,76 @@ describe('get_customer_insights mode=profile', () => {
     const res = parseOk(await tools['get_customer_insights']({ mode: 'profile', customer: 'สมชาย' }))
     expect(res.ambiguous).toBe(true)
     expect(res.candidates.length).toBe(2)
+  })
+})
+
+
+describe('get_lead_source_performance', () => {
+  it('กลุ่มตามแคมเปญ: คำนวณ win rate/won value/revenue ถูกต้อง และไม่ปนกับ tenant อื่น', async () => {
+    const t = setupTenant()
+    const tOther = setupTenant()
+
+    // แคมเปญ Facebook Promo: ปิดได้ 2 ใน 3 (1 ผ่าน ACCEPTED, 1 ผ่านแปลงเป็น SO, 1 REJECTED)
+    const custA1 = addCustomer(t, 'ลูกค้า FB 1', 0, { campaign: 'Facebook Promo' })
+    const custA2 = addCustomer(t, 'ลูกค้า FB 2', 0, { campaign: 'Facebook Promo' })
+    addQuotation(t, custA1, 'ACCEPTED', 1000, 10, null, 'Facebook Promo')
+    const qtWonBySO = addQuotation(t, custA2, 'SENT', 2000, 10, null, 'Facebook Promo')
+    addSalesOrderForQuotation(t, custA2, qtWonBySO)
+    addQuotation(t, custA1, 'REJECTED', 500, 10, null, 'Facebook Promo')
+    addInvoice(t, custA1, 1500, 5, 'ISSUED', 'PAID') // revenue ของกลุ่มนี้
+
+    // แคมเปญ LINE OA: ปิดไม่ได้เลย (0 ใน 1)
+    const custB1 = addCustomer(t, 'ลูกค้า LINE 1', 0, { campaign: 'LINE OA' })
+    addQuotation(t, custB1, 'EXPIRED', 300, 10, null, 'LINE OA')
+
+    // ไม่ระบุแคมเปญ
+    const custC1 = addCustomer(t, 'ลูกค้าไม่ระบุ')
+    addQuotation(t, custC1, 'ACCEPTED', 400, 10, null)
+
+    // tenant อื่น ต้องไม่ปนมา แม้ชื่อแคมเปญเดียวกัน
+    const custOther = addCustomer(tOther, 'ลูกค้าทีมอื่น', 0, { campaign: 'Facebook Promo' })
+    addQuotation(tOther, custOther, 'ACCEPTED', 99999, 10, null, 'Facebook Promo')
+
+    const { server, tools, valid } = fakeServer()
+    registerCrmTools(server, t)
+    expect(valid('get_lead_source_performance', { group_by: 'campaign' })).toBe(true)
+    const res = parseOk(await tools['get_lead_source_performance']({ group_by: 'campaign' }))
+
+    const fb = res.groups.find((g: any) => g.group === 'Facebook Promo')
+    expect(fb.customers).toBe(2)
+    expect(fb.quotations).toBe(3)
+    expect(fb.won).toBe(2)
+    expect(fb.lost).toBe(1)
+    expect(fb.win_rate).toBeCloseTo(2 / 3)
+    expect(fb.won_value).toBe(3000)
+    expect(fb.revenue).toBe(1500) // ต้องไม่รวม 99999 ของ tenant อื่น
+
+    const line = res.groups.find((g: any) => g.group === 'LINE OA')
+    expect(line.won).toBe(0)
+    expect(line.lost).toBe(1)
+    expect(line.win_rate).toBe(0)
+
+    const none = res.groups.find((g: any) => g.group === '(ไม่ระบุ)')
+    expect(none.quotations).toBe(1)
+
+    // เรียงตาม win_rate มาก่อน: Facebook (2/3) ต้องมาก่อน LINE (0)
+    expect(res.groups.findIndex((g: any) => g.group === 'Facebook Promo'))
+      .toBeLessThan(res.groups.findIndex((g: any) => g.group === 'LINE OA'))
+  })
+
+  it('กลุ่มตามช่องทาง (lead_source) และ default group_by เป็น campaign', async () => {
+    const t = setupTenant()
+    const cust = addCustomer(t, 'ลูกค้า Shopee', 0, { leadSource: 'Shopee' })
+    addQuotation(t, cust, 'ACCEPTED', 777, 1, null)
+
+    const { server, tools } = fakeServer()
+    registerCrmTools(server, t)
+    const res = parseOk(await tools['get_lead_source_performance']({ group_by: 'lead_source' }))
+    const shopee = res.groups.find((g: any) => g.group === 'Shopee')
+    expect(shopee.won).toBe(1)
+    expect(shopee.won_value).toBe(777)
+
+    const resDefault = parseOk(await tools['get_lead_source_performance']({}))
+    expect(resDefault.group_by).toBe('campaign')
   })
 })

@@ -18,6 +18,7 @@ import {
   normalizeUnit,
   detectConversionConflict,
   getUnitCatalog,
+  findBrokenUnitPairs,
 } from '../services/unitConversion.service'
 import { suggestUnitConversion } from '../services/llm.service'
 import { recordStockMovement } from './stock.routes'
@@ -486,6 +487,19 @@ router.post('/unit-conversions/suggest', async (req: Request, res: Response) => 
   } catch (error) {
     console.error('suggest error:', error)
     res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
+  }
+})
+
+// GET /api/materials/unit-conversions/broken — สินค้า/หน่วยที่ใช้อยู่จริงในเอกสารแต่แปลงกลับหน่วยฐานไม่ได้
+// อยู่ก่อน router.get('/:id') เพราะ express จับ path ตามลำดับ ไม่งั้น "broken" จะถูกตีความเป็น :id
+router.get('/unit-conversions/broken', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const data = findBrokenUnitPairs(tenantId)
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('Broken unit pairs error:', error)
+    res.status(500).json({ success: false, message: 'ตรวจหน่วยที่แปลงไม่ได้ไม่สำเร็จ' })
   }
 })
 

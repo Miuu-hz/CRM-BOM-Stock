@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { ok } from './shared'
 import { applyStockMovement, movementGateAmount } from '../../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
+import { findBrokenUnitPairs } from '../../services/unitConversion.service'
 
 export function registerStockTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── set_product_image ───────────────────────────────────────────────────────
@@ -291,6 +292,36 @@ quantity คือ "ยอดหลังปรับ" ไม่ใช่ส่�
         total_in: totalIn,
         total_out: totalOut,
         movements,
+      })
+    }
+  )
+
+
+  // ── check_unit_issues (read-only) ────────────────────────────────────────────
+  server.tool(
+    'check_unit_issues',
+    `สินค้าตัวไหนตั้งหน่วยไม่ครบ / หน่วยที่แปลงไม่ได้ — Find stock items used with a unit that cannot convert to their base unit.
+ใช้เมื่อถามว่า "มีสินค้าไหนตั้งหน่วยพลาดไหม" "ทำไมยืนยันบิลแล้ว error แปลงหน่วยไม่ได้" "เช็คหน่วยทั้งคลังก่อนปิดงวด"
+ตรวจทุกเอกสารที่ใช้งานอยู่ (BOM / ใบสั่งซื้อ / ใบสั่งขาย / ใบเสนอราคา / สูตร POS) ข้ามเอกสารที่ยกเลิก/ปฏิเสธแล้ว และสินค้าที่ปิดใช้
+ไม่แก้อะไรให้ — ใช้ manage_unit_conversion สร้างกฎแปลงหน่วยเพิ่มเองหลังเจอปัญหา`,
+    {},
+    async () => {
+      const broken = findBrokenUnitPairs(tenantId)
+      if (broken.length === 0) {
+        return ok({ success: true, count: 0, message: 'ไม่พบปัญหาการแปลงหน่วย — ทุกคู่หน่วยที่ใช้อยู่แปลงถึงหน่วยฐานได้หมด' })
+      }
+      return ok({
+        success: true,
+        count: broken.length,
+        message: `พบ ${broken.length} คู่สินค้า/หน่วยที่แปลงกลับหน่วยฐานไม่ได้`,
+        items: broken.map(b => ({
+          sku: b.sku,
+          สินค้า: b.name,
+          หน่วยที่ใช้: b.unit,
+          หน่วยฐาน: b.base_unit,
+          ใช้ในเอกสาร: b.used_in,
+          จำนวนบรรทัด: b.count,
+        })),
       })
     }
   )

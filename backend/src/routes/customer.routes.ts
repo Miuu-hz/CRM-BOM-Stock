@@ -53,7 +53,7 @@ router.get('/search', (req: Request, res: Response) => {
     // ในหน้า POS ต้องให้แคชเชียร์ยืนยันข้อมูลผู้ซื้อก่อนกดออกใบ ไม่ใช่เห็นแค่ชื่อกับเบอร์
     const customers = db.prepare(`
       SELECT id, code, name, contact_name, phone, email,
-             tax_id, address, tax_branch, vat_mode,
+             tax_id, address, tax_branch, vat_mode, campaign,
              loyalty_points, total_spent, status
       FROM customers
       WHERE tenant_id = ? AND status = 'ACTIVE'
@@ -66,6 +66,30 @@ router.get('/search', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Customer search error:', error)
     res.status(500).json({ success: false, message: 'ค้นหาลูกค้าไม่สำเร็จ' })
+  }
+})
+
+// GET /customers/meta/attribution-options — ค่า lead_source/campaign ที่มีอยู่แล้วของ tenant นี้ (สำหรับ <datalist>)
+// ponytail: endpoint เล็กสุด ไม่ทำ pagination/cache — จำนวนค่าไม่ต่างกันมากแม้ลูกค้าเยอะ (DISTINCT ของ text สั้น)
+// IMPORTANT: ต้องอยู่ก่อน /:id (เหมือน /search ด้านบน) ไม่งั้นโดนจับเป็น id
+router.get('/meta/attribution-options', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const leadSources = (db.prepare(
+      `SELECT DISTINCT lead_source FROM customers WHERE tenant_id = ? AND lead_source IS NOT NULL AND lead_source != '' ORDER BY lead_source`
+    ).all(tenantId) as any[]).map(r => r.lead_source)
+    // แคมเปญเก็บได้ทั้งที่ customers.campaign (ตั้งจากตอนสมัคร) และ quotations.campaign (ผูกดีลให้แคมเปญทีหลัง)
+    const campaigns = (db.prepare(
+      `SELECT DISTINCT campaign FROM (
+         SELECT campaign FROM customers WHERE tenant_id = ? AND campaign IS NOT NULL AND campaign != ''
+         UNION
+         SELECT campaign FROM quotations WHERE tenant_id = ? AND campaign IS NOT NULL AND campaign != ''
+       ) ORDER BY campaign`
+    ).all(tenantId, tenantId) as any[]).map(r => r.campaign)
+    res.json({ success: true, data: { leadSources, campaigns } })
+  } catch (error) {
+    console.error('Get attribution options error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถดึงตัวเลือกได้' })
   }
 })
 
@@ -102,7 +126,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { code, name, type, contactName, email, phone, city, address, taxId, taxBranch, creditLimit = 0, vatMode } = req.body
+    const { code, name, type, contactName, email, phone, city, address, taxId, taxBranch, creditLimit = 0, vatMode, leadSource, campaign } = req.body
 
     // Validation — ชื่อ/ประเภท/เบอร์โทรยังบังคับเหมือนเดิม แต่ code กับ contactName ผ่อนให้ เพราะ
     // popup "เพิ่มลูกค้าใหม่" ตอนลูกค้า POS ขอใบกำกับกะทันหัน แคชเชียร์ไม่มีทางรู้จะตั้งรหัสอะไร
@@ -144,9 +168,9 @@ router.post('/', (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, vat_mode, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, vatMode || null, now, now)
+      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, vat_mode, lead_source, campaign, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, vatMode || null, leadSource || null, campaign || null, now, now)
 
     res.status(201).json({
       success: true,
@@ -164,7 +188,7 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, vatMode } = req.body
+    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, vatMode, leadSource, campaign } = req.body
 
     // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (เหมือนตอนสร้าง)
     if (taxId && !/^\d{13}$/.test(taxId)) {
@@ -196,10 +220,12 @@ router.put('/:id', (req: Request, res: Response) => {
           tax_branch = COALESCE(?, tax_branch),
           credit_limit = COALESCE(?, credit_limit),
           vat_mode = COALESCE(?, vat_mode),
+          lead_source = COALESCE(?, lead_source),
+          campaign = COALESCE(?, campaign),
           status = COALESCE(?, status),
           updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, vatMode, status, now, id, tenantId)
+    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, vatMode, leadSource, campaign, status, now, id, tenantId)
     
     res.json({ success: true, message: 'อัปเดตลูกค้าสำเร็จ' })
   } catch (error) {

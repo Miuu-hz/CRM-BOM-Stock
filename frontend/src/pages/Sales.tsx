@@ -2923,6 +2923,10 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: editData?.extra_charge_label || '', amount: editData?.extra_charge_amount || 0 })
   const [discountAmount, setDiscountAmount] = useState(editData?.discount_amount ?? 0)
   const [notes, setNotes] = useState(editData?.notes || '')
+  // แคมเปญ: ถ้าแก้ใบเดิมใช้ค่าเดิม ถ้าสร้างใหม่ค่อย default จากแคมเปญของลูกค้าตอนเลือก (เหมือน vatMode ด้านบน)
+  const [campaign, setCampaign] = useState(editData?.campaign || '')
+  const [campaignTouched, setCampaignTouched] = useState(isEdit)
+  const [campaignOptions, setCampaignOptions] = useState<string[]>([])
   const [items, setItems] = useState<LineItem[]>(
     editData?.items?.length
       ? editData.items.map((it: any) => ({
@@ -2946,7 +2950,9 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const handleCustomerChange = (c: Customer | null) => {
     setCustomer(c)
     if (!vatModeTouched) setVatMode(defaultVatMode({ side: 'sale', registered, contactMode: c?.vat_mode ?? null }).mode)
+    if (!campaignTouched) setCampaign(c?.campaign || '')
   }
+  const handleCampaignChange = (v: string) => { setCampaign(v); setCampaignTouched(true) }
   const handleVatModeChange = (m: VatMode) => { setVatMode(m); setVatModeTouched(true) }
   const scrollToVatSelector = () => {
     vatSelectorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -2958,6 +2964,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
     if (isEdit && editData?.customer_name) {
       salesService.searchCustomers(editData.customer_name).then(r => { if (r.length) setCustomer(r[0]) }).catch(() => {})
     }
+    api.get('/customers/meta/attribution-options').then(res => setCampaignOptions(res.data.data.campaigns)).catch(() => {})
   }, [])
 
   const handleSave = async () => {
@@ -2975,6 +2982,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         extraChargeLabel: extraCharge.label,
         discountAmount,
         notes,
+        campaign: campaign || undefined,
         items: items.filter(it => it.productName || it.productId).map(it => ({
           productId: it.productId,
           productName: it.productName,
@@ -3045,6 +3053,15 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
               <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.notes')}</label>
               <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('sales.common.notesPlaceholder')}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.campaign')}</label>
+              <input type="text" value={campaign} list="qt-campaign-options" onChange={e => handleCampaignChange(e.target.value)}
+                placeholder={t('sales.common.campaignPlaceholder')}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+              <datalist id="qt-campaign-options">
+                {campaignOptions.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
           </div>
 

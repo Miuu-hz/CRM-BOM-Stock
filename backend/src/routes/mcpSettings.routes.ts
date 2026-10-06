@@ -58,6 +58,13 @@ function newKey(): string {
   return crypto.randomBytes(24).toString('hex')
 }
 
+// โหมดอ่านอย่างเดียว (audit) ต่อผู้ใช้ — master เต็มสิทธิ์เสมอ, ไม่ตั้งไว้ = 'full'
+function getScope(userId: string): 'full' | 'readonly' {
+  if (isMasterId(userId)) return 'full'
+  const row = db.prepare(`SELECT mcp_scope FROM users WHERE id = ?`).get(userId) as { mcp_scope: string | null } | undefined
+  return row?.mcp_scope === 'readonly' ? 'readonly' : 'full'
+}
+
 // ── GET /api/mcp-settings ── own key + connection info + quota ────────────────
 router.get('/', authenticate, (req: Request, res: Response) => {
   const { userId, tenantId, role } = req.user!
@@ -72,6 +79,7 @@ router.get('/', authenticate, (req: Request, res: Response) => {
       canManage: canManage(role),
       hasKey: !!key,
       quota: { used: usedCount(tenantId), limit },
+      scope: getScope(userId),
     },
   })
 })
@@ -108,7 +116,8 @@ router.get('/team', authenticate, (req: Request, res: Response): void => {
   if (!canManage(role)) { res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์จัดการ' }); return }
   const users = db.prepare(
     `SELECT id, name, email, role,
-            CASE WHEN mcp_api_key IS NOT NULL AND mcp_api_key != '' THEN 1 ELSE 0 END AS hasKey
+            CASE WHEN mcp_api_key IS NOT NULL AND mcp_api_key != '' THEN 1 ELSE 0 END AS hasKey,
+            COALESCE(mcp_scope, 'full') AS scope
      FROM users WHERE tenant_id = ? AND status = 'active'
      ORDER BY (role = 'ADMIN') DESC, name`,
   ).all(tenantId)
@@ -132,7 +141,23 @@ router.post('/team/:userId/grant', authenticate, (req: Request, res: Response): 
   }
   const key = newKey()
   setKeyForUser(target.id, key)
-  res.json({ success: true, data: { key } })
+  const scope = req.body?.scope === 'readonly' ? 'readonly' : 'full'
+  db.prepare(`UPDATE users SET mcp_scope = ? WHERE id = ?`).run(scope, target.id)
+  res.json({ success: true, data: { key, scope } })
+})
+
+// ── POST /api/mcp-settings/team/:userId/scope ── (ADMIN/MASTER) change audit/full scope ──
+router.post('/team/:userId/scope', authenticate, (req: Request, res: Response): void => {
+  const { tenantId, role } = req.user!
+  if (!canManage(role)) { res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์จัดการ' }); return }
+  const scope = req.body?.scope
+  if (scope !== 'readonly' && scope !== 'full') { res.status(400).json({ success: false, message: `scope ต้องเป็น 'readonly' หรือ 'full'` }); return }
+  const target = db.prepare(`SELECT id, tenant_id FROM users WHERE id = ?`).get(req.params.userId) as
+    | { id: string; tenant_id: string } | undefined
+  if (!target || target.tenant_id !== tenantId) { res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้ในบริษัทนี้' }); return }
+  // ponytail: session ที่ connect ไปแล้วก่อนหน้านี้ยังใช้สิทธิ์เดิมจน TTL 2 ชม. หมด (mcp/server.ts) — ต้องการ revoke ทันที ค่อยทำ resolveTenant ทุก request
+  db.prepare(`UPDATE users SET mcp_scope = ?, updated_at = ? WHERE id = ?`).run(scope, new Date().toISOString(), target.id)
+  res.json({ success: true, data: { scope } })
 })
 
 // ── POST /api/mcp-settings/team/:userId/revoke ── (ADMIN/MASTER) disable a user ─
