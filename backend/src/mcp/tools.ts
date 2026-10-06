@@ -15,6 +15,7 @@ import { registerStockTools } from './tools/stock'
 import { registerProductionTools } from './tools/production'
 import { registerBomTools } from './tools/bom'
 import { registerFinanceTools } from './tools/finance'
+import { registerCrmTools } from './tools/crm'
 import { registerMarketingTools } from './tools/marketing'
 import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
@@ -35,6 +36,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerProductionTools(server, tenantId, userId, callerRole)
   registerBomTools(server, tenantId)
   registerFinanceTools(server, tenantId, callerRole)
+  registerCrmTools(server, tenantId)
   registerMarketingTools(server, tenantId)
   registerBindingTools(server, tenantId)
   registerPurchaseBillingTools(server, tenantId, userId, callerName, callerRole)
