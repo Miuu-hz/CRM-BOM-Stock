@@ -84,11 +84,20 @@ export function formatDocumentNumber(
   return `${prefix}${middle}${String(seq).padStart(pad, '0')}`
 }
 
-/** 'YYYY-MM-DD' ล้วน → เที่ยงคืนเวลาท้องถิ่น (new Date('YYYY-MM-DD') = UTC ทำให้วันเลื่อนในโซนติดลบ) · ว่าง/ผิดรูป → วันนี้ */
+// เซิร์ฟเวอร์รัน UTC — ต้องแปลงเป็นนาฬิกาไทยก่อนดึงวัน/เดือน/ปีไปทำเลขเอกสาร
+// ไม่งั้นเอกสารที่ออกช่วง 00:00–06:59 น. ได้วันที่ (DDMMYY) และถังปีของ "เมื่อวาน"
+const thaiWallClock = (d: Date) => new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+
+/** คืน Date ที่ฟิลด์ local = วัน/เวลาตามนาฬิกาไทย ·
+ *  'YYYY-MM-DD' หรือวันเวลาที่ไม่มีโซน = เป็นวันที่ตามนาฬิกาอยู่แล้ว ไม่แปลง ·
+ *  timestamp ที่มีโซน (…Z / +07:00) หรือ Date → แปลงเป็นเวลาไทย · ว่าง/ผิดรูป → ตอนนี้ (เวลาไทย) */
 function parseDocDate(v?: string | Date | null): Date {
-  if (!v) return new Date()
-  const d = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : new Date(v)
-  return isNaN(d.getTime()) ? new Date() : d
+  if (!v) return thaiWallClock(new Date())
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(`${v}T00:00:00`)
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return thaiWallClock(new Date())
+  const hasZone = v instanceof Date || /(Z|[+-]\d{2}:?\d{2})$/.test(v)
+  return hasZone ? thaiWallClock(d) : d
 }
 
 /** ปี ค.ศ. ของวันที่เอกสาร — ใช้เป็น segment ของเลขแบบไม่ได้ตั้งรูปแบบ (PO-2026-00001) */

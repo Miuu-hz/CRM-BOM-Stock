@@ -5,7 +5,7 @@ import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs }
 import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments, receiptIssuesForItems, poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
 import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 import { randomUUID } from 'crypto'
-import { formatDocumentNumber } from '../utils/id'
+import { formatDocumentNumber, docYear } from '../utils/id'
 import { z } from 'zod'
 import { calcVat } from '../utils/vat'
 import { resolveVatInclusive } from '../utils/vatSettings'
@@ -56,8 +56,10 @@ const PurchaseOrderItemsSchema = z.array(
   }).passthrough()
 ).min(1, 'ต้องมีอย่างน้อย 1 รายการ')
 
+// ส่งปีเหมือน MCP (create_draft_po) และ purchase.routes — เดิมส่ง undefined ทำให้บริษัทที่ไม่ได้ตั้งรูปแบบเลข
+// ได้ PO-00025 จากเว็บแต่ PO-2026-00025 จาก MCP โดยนับคนละตัวนับ (ถังปี 0 กับถังปี 2026)
 function generatePONumber(tenantId: string) {
-  return formatDocumentNumber('PO', tenantId, 'PO', undefined, 5)
+  return formatDocumentNumber('PO', tenantId, 'PO', docYear(), 5)
 }
 
 // GET all purchase orders
