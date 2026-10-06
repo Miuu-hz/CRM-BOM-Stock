@@ -51,7 +51,7 @@ export function getRange(period: string, offset: number = 0): { start: string; e
 // ขาย POS ที่ผ่านบัญชีจริง (reference_type=POS_SALE) โดยไม่นับซ้ำ เพราะ POS ไม่ได้
 // สร้างแถวใน invoices/orders เลย (ตรวจโค้ด sales/pos.routes.ts แล้ว)
 // startDate/endDate เป็นรูปแบบ 'YYYY-MM-DD' ตรงกับ journal_entries.date เป๊ะ (ไม่มีเวลา)
-function getLedgerTotals(tenantId: string, startDate: string, endDate: string, role = ''): { revenue: number; cogs: number } {
+function getLedgerTotals(tenantId: string, startDate: string, endDate: string): { revenue: number; cogs: number } {
   const row = db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN
@@ -63,14 +63,14 @@ function getLedgerTotals(tenantId: string, startDate: string, endDate: string, r
     FROM journal_lines jl
     JOIN journal_entries je ON jl.journal_entry_id = je.id
     JOIN accounts a ON jl.account_id = a.id
-    WHERE (a.tenant_id = ? OR ? = 'MASTER')
-      AND (jl.tenant_id = ? OR ? = 'MASTER')
-      AND (je.tenant_id = ? OR ? = 'MASTER')
+    WHERE a.tenant_id = ?
+      AND jl.tenant_id = ?
+      AND je.tenant_id = ?
       AND a.is_active = 1 AND a.level >= 1
       AND je.is_posted = 1
       AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
       AND je.date >= ? AND je.date <= ?
-  `).get(tenantId, role, tenantId, role, tenantId, role, startDate, endDate) as any
+  `).get(tenantId, tenantId, tenantId, startDate, endDate) as any
   return { revenue: row?.revenue || 0, cogs: row?.cogs || 0 }
 }
 
@@ -78,12 +78,11 @@ function getLedgerTotals(tenantId: string, startDate: string, endDate: string, r
 router.get('/low-stock', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
     const rows = db.prepare(`
       SELECT id, name, sku, quantity, min_stock, unit, base_unit, display_unit, sealed_qty
       FROM stock_items
-      WHERE (tenant_id = ? OR ? = 'MASTER') AND quantity <= min_stock AND min_stock > 0
-    `).all(tenantId, role) as any[]
+      WHERE tenant_id = ? AND quantity <= min_stock AND min_stock > 0
+    `).all(tenantId) as any[]
 
     // An unopened pack is still stock. Items whose loose quantity is low but
     // that still hold sealed packs are not actually short, so drop them here
@@ -115,7 +114,6 @@ router.get('/low-stock', async (req: Request, res: Response) => {
 router.get('/revenue', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
     const period = (req.query.period as string) || 'month'
 
     const cur = getRange(period, 0)
@@ -124,8 +122,8 @@ router.get('/revenue', async (req: Request, res: Response) => {
     // รายได้/ต้นทุนขาย: ledger-based (getLedgerTotals) — เดียวกับ /reports/profit-loss
     // เป๊ะ แก้บั๊ก B1 (ต้นทุนขายเดิมเอายอด PO ที่รับของมาใช้ผิด) และ B2 (ไม่นับ POS)
     // ไปพร้อมกัน เพราะ ledger รวมทั้งใบแจ้งหนี้และ POS ที่ผ่านบัญชีจริงอยู่แล้ว
-    const curTotals  = getLedgerTotals(tenantId, cur.start, cur.end, role)
-    const prevTotals = getLedgerTotals(tenantId, prev.start, prev.end, role)
+    const curTotals  = getLedgerTotals(tenantId, cur.start, cur.end)
+    const prevTotals = getLedgerTotals(tenantId, prev.start, prev.end)
     const curRev = curTotals.revenue, prevRev = prevTotals.revenue
     const curCost = curTotals.cogs, prevCost = prevTotals.cogs
 
@@ -155,7 +153,6 @@ router.get('/revenue', async (req: Request, res: Response) => {
 router.get('/cashflow-forecast', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
 
     const now = thaiNow()
     const todayStr = ymd(now)
@@ -170,13 +167,13 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
         i.due_date, i.balance_amount as amount,
         c.name as party_name
       FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE (c.tenant_id = ? OR ? = 'MASTER')
-        AND (i.tenant_id = ? OR ? = 'MASTER')
+      WHERE c.tenant_id = ?
+        AND i.tenant_id = ?
         AND i.payment_status NOT IN ('PAID')
         AND i.status NOT IN ('CANCELLED','DRAFT')
         AND i.balance_amount > 0
       ORDER BY i.due_date ASC
-    `).all(tenantId, role, tenantId, role) as any[]
+    `).all(tenantId, tenantId) as any[]
 
     // AP: หนี้การค้าจริงจาก purchase_invoices ที่ยังค้างจ่าย
     // (เดิมใช้ purchase_orders ซึ่งเป็นแค่ใบสั่งซื้อ ยังไม่ใช่ภาระหนี้ และนับยอดเต็มใบ
@@ -186,12 +183,12 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
         pi.due_date, pi.balance_amount as amount,
         s.name as party_name
       FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id
-      WHERE (pi.tenant_id = ? OR ? = 'MASTER')
+      WHERE pi.tenant_id = ?
         AND pi.status NOT IN ('CANCELLED','DRAFT')
         AND pi.payment_status <> 'PAID'
         AND pi.balance_amount > 0
       ORDER BY pi.due_date ASC
-    `).all(tenantId, role) as any[]
+    `).all(tenantId) as any[]
 
     // เอกสารที่ไม่ได้ระบุ due_date ถือว่า "ต้องจ่าย/เก็บวันนี้" ตามนโยบายที่เจ้าของ
     // ระบบเลือกเอง (ซ่อนไว้ผู้ใช้จะลืม ต้องโชว์ขึ้นมาเลย) — แต่ต้องติด dueUnspecified=true
@@ -248,27 +245,26 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
 router.get('/funnel', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
 
     const qt = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM quotations WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','REJECTED')
-    `).get(tenantId, role) as any
+      FROM quotations WHERE tenant_id = ? AND status NOT IN ('CANCELLED','REJECTED')
+    `).get(tenantId) as any
 
     const so = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED')
-    `).get(tenantId, role) as any
+      FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED')
+    `).get(tenantId) as any
 
     const inv = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM invoices WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED')
-    `).get(tenantId, role) as any
+      FROM invoices WHERE tenant_id = ? AND status NOT IN ('CANCELLED')
+    `).get(tenantId) as any
 
     const pending = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status IN ('CONFIRMED','PROCESSING','READY','PARTIAL')
-    `).get(tenantId, role) as any
+      FROM sales_orders WHERE tenant_id = ? AND status IN ('CONFIRMED','PROCESSING','READY','PARTIAL')
+    `).get(tenantId) as any
 
     res.json({
       success: true,
@@ -289,7 +285,6 @@ router.get('/funnel', async (req: Request, res: Response) => {
 router.get('/top-customers', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
     const period = (req.query.period as string) || 'month'
 
     const range = getRange(period, 0)
@@ -298,12 +293,12 @@ router.get('/top-customers', async (req: Request, res: Response) => {
       SELECT c.id, c.name, COUNT(i.id) as invoice_count,
         COALESCE(SUM(i.total_amount), 0) as revenue
       FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE (c.tenant_id = ? OR ? = 'MASTER')
-        AND (i.tenant_id = ? OR ? = 'MASTER')
+      WHERE c.tenant_id = ?
+        AND i.tenant_id = ?
         AND i.status NOT IN ('CANCELLED','DRAFT')
         AND date(i.invoice_date) >= ? AND date(i.invoice_date) <= ?
       GROUP BY c.id ORDER BY revenue DESC LIMIT 5
-    `).all(tenantId, role, tenantId, role, range.start, range.end)
+    `).all(tenantId, tenantId, range.start, range.end)
 
     res.json({ success: true, data: rows })
   } catch (error) {
@@ -324,13 +319,12 @@ const PIPELINE_MONTHS = 6
 router.get('/pipeline', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
 
     const quotations = db.prepare(`
       SELECT q.id, q.status, q.total_amount,
         EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id AND so.status NOT IN ('CANCELLED')) AS has_so
-      FROM quotations q WHERE (q.tenant_id = ? OR ? = 'MASTER') AND q.status <> 'DRAFT'
-    `).all(tenantId, role) as any[]
+      FROM quotations q WHERE q.tenant_id = ? AND q.status <> 'DRAFT'
+    `).all(tenantId) as any[]
 
     const stages = {
       quoting:  { count: 0, value: 0 }, // ยื่นไปแล้ว ยังไม่รู้ผล
@@ -359,35 +353,35 @@ router.get('/pipeline', async (req: Request, res: Response) => {
     const linkage = db.prepare(`
       SELECT COUNT(*) AS soTotal,
         COALESCE(SUM(CASE WHEN quotation_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS soFromQuotation
-      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status <> 'CANCELLED'
-    `).get(tenantId, role) as any
+      FROM sales_orders WHERE tenant_id = ? AND status <> 'CANCELLED'
+    `).get(tenantId) as any
 
     // เงินไหลถึงไหนแล้ว: รับออเดอร์ → วางบิล → เก็บเงินได้จริง
     const ordered = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS value
-      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT')
-    `).get(tenantId, role) as any
+      FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId) as any
 
     const billing = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS invoiced,
              COALESCE(SUM(paid_amount), 0) AS collected,
              COALESCE(SUM(balance_amount), 0) AS outstanding
-      FROM invoices WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT')
-    `).get(tenantId, role) as any
+      FROM invoices WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
+    `).get(tenantId) as any
 
     const orderedByMonth = db.prepare(`
       SELECT substr(order_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
       FROM sales_orders
-      WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT') AND order_date IS NOT NULL
+      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND order_date IS NOT NULL
       GROUP BY month
-    `).all(tenantId, role) as any[]
+    `).all(tenantId) as any[]
 
     const invoicedByMonth = db.prepare(`
       SELECT substr(invoice_date, 1, 7) AS month, COALESCE(SUM(total_amount), 0) AS value
       FROM invoices
-      WHERE (tenant_id = ? OR ? = 'MASTER') AND status NOT IN ('CANCELLED','DRAFT') AND invoice_date IS NOT NULL
+      WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT') AND invoice_date IS NOT NULL
       GROUP BY month
-    `).all(tenantId, role) as any[]
+    `).all(tenantId) as any[]
 
     const orderedMap = new Map(orderedByMonth.map(r => [r.month, r.value]))
     const invoicedMap = new Map(invoicedByMonth.map(r => [r.month, r.value]))
@@ -440,7 +434,6 @@ router.get('/pipeline', async (req: Request, res: Response) => {
 router.get('/recent-orders', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
     const limit = Math.min(Number(req.query.limit) || 5, 50)
 
     const rows = db.prepare(`
@@ -449,10 +442,10 @@ router.get('/recent-orders', async (req: Request, res: Response) => {
              c.id as customer_id, c.name as customer_name
       FROM sales_orders so
       LEFT JOIN customers c ON so.customer_id = c.id
-      WHERE (so.tenant_id = ? OR ? = 'MASTER')
+      WHERE so.tenant_id = ?
       ORDER BY so.created_at DESC, so.order_date DESC
       LIMIT ?
-    `).all(tenantId, role, limit)
+    `).all(tenantId, limit)
 
     res.json({ success: true, data: rows })
   } catch (error) {
@@ -465,7 +458,6 @@ router.get('/recent-orders', async (req: Request, res: Response) => {
 router.get('/production', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const role = req.user?.role || ''
 
     const rows = db.prepare(`
       SELECT 
@@ -474,9 +466,9 @@ router.get('/production', async (req: Request, res: Response) => {
         COALESCE(SUM(quantity), 0) as total_qty,
         COALESCE(SUM(completed_qty), 0) as completed_qty
       FROM work_orders
-      WHERE (tenant_id = ? OR ? = 'MASTER')
+      WHERE tenant_id = ?
       GROUP BY status
-    `).all(tenantId, role) as any[]
+    `).all(tenantId) as any[]
 
     const summary: Record<string, number> = {
       draft: 0,

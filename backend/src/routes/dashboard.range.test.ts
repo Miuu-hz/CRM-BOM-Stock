@@ -13,3 +13,10 @@ describe('dashboard getRange ใช้เวลาไทย', () => {
     expect(getRange('year', 0)).toEqual({ start: '2026-01-01', end: '2026-10-07' })
   })
 })
+
+// แดชบอร์ดต้องกรองบริษัทเสมอ แม้เป็น MASTER — เดิม OR ? = MASTER ทำให้ MASTER เห็นยอดทุกบริษัทปนกัน
+it("dashboard ไม่มีทางลัด MASTER ข้าม tenant", async () => {
+  const fs = await import("fs")
+  const src = fs.readFileSync(__dirname + "/dashboard.routes.ts", "utf8")
+  expect(src).not.toMatch(/OR \? = .MASTER./)
+})
