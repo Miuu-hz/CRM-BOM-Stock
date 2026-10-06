@@ -181,6 +181,7 @@ export default function Dashboard() {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
   const [lowStock, setLowStock] = useState<LowStock[]>([])
+  const [lowStockTotal, setLowStockTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [revLoading, setRevLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(new Date())
@@ -215,7 +216,10 @@ export default function Dashboard() {
       if (cfRes.status === 'fulfilled') setCashflow(cfRes.value.data.data)
       if (fnRes.status === 'fulfilled') setFunnel(fnRes.value.data.data)
       if (plRes.status === 'fulfilled') setPipeline(plRes.value.data.data)
-      if (lsRes.status === 'fulfilled') setLowStock(lsRes.value.data.data)
+      if (lsRes.status === 'fulfilled') {
+        setLowStock(lsRes.value.data.data)
+        setLowStockTotal(lsRes.value.data.total ?? lsRes.value.data.data.length)
+      }
       setLastUpdated(new Date())
     } catch {}
     setLoading(false)
@@ -566,7 +570,7 @@ export default function Dashboard() {
           </div>
           {loading ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-warning">{lowStock.length} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
+              <p className="text-2xl font-bold text-warning">{lowStockTotal} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
               {lowStock.slice(0, 2).map(s => (
                 <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · {t('dashboard.remaining', { quantity: s.available ?? s.quantity, unit: s.unit })}</p>
               ))}

@@ -10,14 +10,17 @@ router.use(authenticate)
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+// เซิร์ฟเวอร์รัน UTC — ก่อน 7 โมงเช้าไทย new Date() ยังเป็น "เมื่อวาน" ทำให้แท็บวันนี้โชว์ยอดเมื่อวาน
+// ทุกช่วงเวลาบนแดชบอร์ดจึงต้องคิดจากเวลาไทย
+export const thaiNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
 
 // ช่วงเวลาปัจจุบัน (offset=0) และช่วงเทียบก่อนหน้า (offset=1) — ต้อง "ยาวเท่ากันเสมอ"
 // ทั้งสองฝั่ง ไม่งั้น % เปลี่ยนแปลงจะเพี้ยน (บั๊ก B3 เดิม: 'month' เทียบเดือนปฏิทิน
 // ปัจจุบันที่ยังไม่จบกับเดือนก่อนที่จบเต็มเดือน). ป้ายบนหน้าเว็บคือ
 // วันนี้/7 วัน/30 วัน/ปีนี้ ดังนั้น 'week'/'month' ต้องเป็น rolling window ย้อนหลังจริง
 // ไม่ใช่สัปดาห์/เดือนปฏิทิน — ตรงกับสิ่งที่ผู้ใช้เห็นบนแท็บ
-function getRange(period: string, offset: number = 0): { start: string; end: string } {
-  const now = new Date()
+export function getRange(period: string, offset: number = 0): { start: string; end: string } {
+  const now = thaiNow()
   if (period === 'day') {
     const d = new Date(now); d.setDate(d.getDate() - offset)
     const s = ymd(d)
@@ -99,9 +102,9 @@ router.get('/low-stock', async (req: Request, res: Response) => {
       })
       .filter((r: any) => r.available <= r.min_stock)
       .sort((a: any, b: any) => (a.available / (a.min_stock || 1)) - (b.available / (b.min_stock || 1)))
-      .slice(0, 8)
 
-    res.json({ success: true, data: items })
+    // total = จำนวนจริงทั้งหมด (เดิมการ์ดโชว์ length ของรายการที่ตัดเหลือ 8 → ขึ้น "8 รายการ" ตลอดทั้งที่ขาด 363)
+    res.json({ success: true, data: items.slice(0, 8), total: items.length })
   } catch (error) {
     console.error('Dashboard low-stock error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch low stock' })
@@ -154,11 +157,10 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const role = req.user?.role || ''
 
-    // เวลาไทย (Asia/Bangkok = UTC+7) ป้องกันบั๊กก่อน 7 โมงเช้าบนเซิร์ฟเวอร์ UTC
-    const thaiNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
-    const todayStr = ymd(thaiNow)
-    const week7  = new Date(thaiNow); week7.setDate(thaiNow.getDate() + 7)
-    const month30 = new Date(thaiNow); month30.setDate(thaiNow.getDate() + 30)
+    const now = thaiNow()
+    const todayStr = ymd(now)
+    const week7  = new Date(now); week7.setDate(now.getDate() + 7)
+    const month30 = new Date(now); month30.setDate(now.getDate() + 30)
     const week7Str  = ymd(week7)
     const month30Str = ymd(month30)
 
@@ -265,7 +267,7 @@ router.get('/funnel', async (req: Request, res: Response) => {
 
     const pending = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as value
-      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status IN ('CONFIRMED','PROCESSING','APPROVED')
+      FROM sales_orders WHERE (tenant_id = ? OR ? = 'MASTER') AND status IN ('CONFIRMED','PROCESSING','READY','PARTIAL')
     `).get(tenantId, role) as any
 
     res.json({
@@ -390,7 +392,7 @@ router.get('/pipeline', async (req: Request, res: Response) => {
     const orderedMap = new Map(orderedByMonth.map(r => [r.month, r.value]))
     const invoicedMap = new Map(invoicedByMonth.map(r => [r.month, r.value]))
 
-    const anchor = new Date()
+    const anchor = thaiNow()
     anchor.setDate(1)
     const monthly: any[] = []
     for (let back = PIPELINE_MONTHS - 1; back >= 0; back--) {
