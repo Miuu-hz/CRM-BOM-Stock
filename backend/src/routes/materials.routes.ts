@@ -20,6 +20,7 @@ import {
   getUnitCatalog,
 } from '../services/unitConversion.service'
 import { suggestUnitConversion } from '../services/llm.service'
+import { recordStockMovement } from './stock.routes'
 
 const router = Router()
 
@@ -28,6 +29,20 @@ router.use(authenticate)
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
+}
+
+// หน่วยเริ่มต้นของหมวดหมู่ — เดิมสร้าง/แก้ใช้คนละรายการ (สร้างด้วย mg/lb/oz ไม่ได้ แต่แก้เป็นได้)
+const CATEGORY_UNITS = ['kg', 'g', 'mg', 'lb', 'oz', 'm', 'cm', 'inch', 'ft', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'ml', 'gallon', 'bottle', 'bag', 'sachet', 'can', 'tube']
+const badUnitMsg = (u: string) => `หน่วย "${u}" ใช้ไม่ได้ — เลือกจาก: ${CATEGORY_UNITS.join(', ')}`
+
+/** รหัสวัตถุดิบ = sku ของ stock_items — ซ้ำตอบ 409 แบบเดียวกับ POST /stock (SKU_DUPLICATE) */
+function skuDuplicate(res: Response, tenantId: string, code: string, exceptId?: string) {
+  const dup = db.prepare('SELECT id, name FROM stock_items WHERE sku = ? AND tenant_id = ?').get(code, tenantId) as any
+  if (!dup || dup.id === exceptId) return null
+  return res.status(409).json({
+    success: false, code: 'SKU_DUPLICATE',
+    message: `รหัส "${code}" ถูกใช้แล้วกับ "${dup.name}" — เปลี่ยนรหัสแล้วบันทึกใหม่`,
+  })
 }
 
 // Material Categories Routes
@@ -45,7 +60,7 @@ router.get('/categories', (req: Request, res: Response) => {
     res.json({ success: true, data: categories })
   } catch (error) {
     console.error('Get categories error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch categories' })
+    res.status(500).json({ success: false, message: 'โหลดหมวดหมู่ไม่สำเร็จ' })
   }
 })
 
@@ -58,13 +73,10 @@ router.post('/categories', (req: Request, res: Response) => {
     const finalItemType = validItemTypes.includes(itemType) ? itemType : 'raw'
     
     if (!code || !name || !defaultUnit) {
-      return res.status(400).json({ success: false, message: 'Code, name, and defaultUnit are required' })
+      return res.status(400).json({ success: false, message: 'ต้องระบุรหัส ชื่อ และหน่วยเริ่มต้นของหมวดหมู่' })
     }
-    
-    // Validate unit
-    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle', 'ml', 'bag', 'sachet', 'can', 'tube']
-    if (!validUnits.includes(defaultUnit)) {
-      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
+    if (!CATEGORY_UNITS.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: badUnitMsg(defaultUnit) })
     }
     
     const id = generateId()
@@ -77,9 +89,13 @@ router.post('/categories', (req: Request, res: Response) => {
     
     const category = db.prepare('SELECT * FROM material_categories WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     res.json({ success: true, data: category })
-  } catch (error) {
+  } catch (error: any) {
+    // UNIQUE(tenant_id, code) — เดิมตอบ 500 ผู้ใช้ไม่รู้ว่ารหัสซ้ำ
+    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ success: false, code: 'CATEGORY_CODE_DUPLICATE', message: `รหัสหมวดหมู่ "${req.body?.code}" ถูกใช้แล้ว` })
+    }
     console.error('Create category error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create category' })
+    res.status(500).json({ success: false, message: 'สร้างหมวดหมู่ไม่สำเร็จ' })
   }
 })
 
@@ -93,30 +109,32 @@ router.put('/categories/:id', (req: Request, res: Response) => {
     const finalItemType = itemType && validItemTypes.includes(itemType) ? itemType : undefined
 
     if (!name || !defaultUnit) {
-      return res.status(400).json({ success: false, message: 'Name and defaultUnit are required' })
+      return res.status(400).json({ success: false, message: 'ต้องระบุชื่อและหน่วยเริ่มต้นของหมวดหมู่' })
+    }
+    if (!CATEGORY_UNITS.includes(defaultUnit)) {
+      return res.status(400).json({ success: false, message: badUnitMsg(defaultUnit) })
     }
 
-    const validUnits = ['kg', 'g', 'm', 'cm', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'bottle', 'ml', 'mg', 'lb', 'oz', 'inch', 'ft', 'gallon', 'can', 'tube', 'sachet', 'bag']
-    if (!validUnits.includes(defaultUnit)) {
-      return res.status(400).json({ success: false, message: `Invalid unit. Valid units: ${validUnits.join(', ')}` })
-    }
-
-    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    const existing = db.prepare('SELECT tenant_id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId) as any
     if (!existing) {
-      return res.status(404).json({ success: false, message: 'Category not found' })
+      return res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+    }
+    // หมวดหมู่ส่วนกลาง (tenant_id ว่าง) ใช้ร่วมทุกร้าน — เดิมร้านไหนก็แก้/ลบได้ กระทบร้านอื่น
+    if (existing.tenant_id == null) {
+      return res.status(403).json({ success: false, message: 'หมวดหมู่ส่วนกลางแก้ไขไม่ได้' })
     }
 
     db.prepare(`
       UPDATE material_categories
       SET name = ?, default_unit = ?, description = ?, item_type = COALESCE(?, item_type), updated_at = ?
-      WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)
+      WHERE id = ? AND tenant_id = ?
     `).run(name, defaultUnit, description || '', finalItemType || null, new Date().toISOString(), id, tenantId)
 
     const category = db.prepare('SELECT id, code, name, default_unit as defaultUnit, description, item_type as itemType FROM material_categories WHERE id = ?').get(id)
     res.json({ success: true, data: category })
   } catch (error) {
     console.error('Update category error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update category' })
+    res.status(500).json({ success: false, message: 'แก้ไขหมวดหมู่ไม่สำเร็จ' })
   }
 })
 
@@ -126,24 +144,27 @@ router.delete('/categories/:id', requireRole('ADMIN', 'MASTER'), (req: Request, 
     const tenantId = req.user!.tenantId
     const { id } = req.params
 
-    const existing = db.prepare('SELECT id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId)
+    const existing = db.prepare('SELECT tenant_id FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').get(id, tenantId) as any
     if (!existing) {
-      return res.status(404).json({ success: false, message: 'Category not found' })
+      return res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+    }
+    if (existing.tenant_id == null) {
+      return res.status(403).json({ success: false, message: 'หมวดหมู่ส่วนกลางลบไม่ได้' })
     }
 
     const materialCount = db.prepare('SELECT COUNT(*) as count FROM stock_items WHERE category_id = ? AND tenant_id = ?').get(id, tenantId) as any
     if (materialCount.count > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete: Category is used by ${materialCount.count} material(s)`,
+        message: `ลบไม่ได้ — มีสินค้า/วัตถุดิบ ${materialCount.count} รายการใช้หมวดหมู่นี้อยู่`,
       })
     }
 
-    db.prepare('DELETE FROM material_categories WHERE id = ? AND (tenant_id = ? OR tenant_id IS NULL)').run(id, tenantId)
-    res.json({ success: true, message: 'Category deleted successfully' })
+    db.prepare('DELETE FROM material_categories WHERE id = ? AND tenant_id = ?').run(id, tenantId)
+    res.json({ success: true, message: 'ลบหมวดหมู่แล้ว' })
   } catch (error) {
     console.error('Delete category error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete category' })
+    res.status(500).json({ success: false, message: 'ลบหมวดหมู่ไม่สำเร็จ' })
   }
 })
 
@@ -180,7 +201,7 @@ router.get('/stats', (req: Request, res: Response) => {
     })
   } catch (error) {
     console.error('Get materials stats error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch materials stats' })
+    res.status(500).json({ success: false, message: 'โหลดสรุปวัตถุดิบไม่สำเร็จ' })
   }
 })
 
@@ -206,7 +227,7 @@ router.get('/unit-conversions/catalog', (req: Request, res: Response) => {
     res.json({ success: true, data })
   } catch (error) {
     console.error('Get unit catalog error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch unit catalog' })
+    res.status(500).json({ success: false, message: 'โหลดรายการหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -215,7 +236,7 @@ router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
   try {
     const { unit, materialId } = req.query
     if (!unit || typeof unit !== 'string') {
-      return res.status(400).json({ success: false, message: 'unit query param is required' })
+      return res.status(400).json({ success: false, message: 'ต้องระบุหน่วย (unit)' })
     }
     const tenantId = req.user!.tenantId
 
@@ -235,7 +256,7 @@ router.get('/unit-conversions/compatible', (req: Request, res: Response) => {
     res.json({ success: true, data: { unit, compatible: mapped } })
   } catch (error) {
     console.error('Get compatible units error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch compatible units' })
+    res.status(500).json({ success: false, message: 'โหลดหน่วยที่แปลงได้ไม่สำเร็จ' })
   }
 })
 
@@ -247,7 +268,7 @@ router.get('/unit-conversions/all', (req: Request, res: Response) => {
     res.json({ success: true, data })
   } catch (error) {
     console.error('List all conversions error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch conversions' })
+    res.status(500).json({ success: false, message: 'โหลดกฎแปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -260,7 +281,7 @@ router.get('/unit-conversions', (req: Request, res: Response) => {
     res.json({ success: true, data })
   } catch (error) {
     console.error('List conversions error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch unit conversions' })
+    res.status(500).json({ success: false, message: 'โหลดกฎแปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -273,7 +294,8 @@ router.post('/unit-conversions', (req: Request, res: Response) => {
     if (!from_unit || !to_unit || conversion_factor == null) {
       return res.status(400).json({ success: false, message: 'from_unit, to_unit และ conversion_factor จำเป็นต้องระบุ' })
     }
-    if (Number(conversion_factor) <= 0) {
+    // !(x > 0) จับ NaN ด้วย — เดิม "abc" ผ่าน `<= 0` แล้วบันทึก factor เป็น NULL
+    if (!(Number(conversion_factor) > 0)) {
       return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
     }
     if (from_unit === to_unit) {
@@ -301,7 +323,7 @@ router.post('/unit-conversions', (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: 'มีการแปลงหน่วยนี้อยู่แล้ว' })
     }
     console.error('Create conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create unit conversion' })
+    res.status(500).json({ success: false, message: 'บันทึกกฎแปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -311,7 +333,7 @@ router.put('/unit-conversions/:id', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const { conversion_factor, notes, force } = req.body
 
-    if (conversion_factor != null && Number(conversion_factor) <= 0) {
+    if (conversion_factor != null && !(Number(conversion_factor) > 0)) {
       return res.status(400).json({ success: false, message: 'conversion_factor ต้องมากกว่า 0' })
     }
 
@@ -336,12 +358,15 @@ router.put('/unit-conversions/:id', (req: Request, res: Response) => {
       }
     }
 
-    const updated = updateConversion(req.params.id, tenantId, { conversion_factor: Number(conversion_factor), notes })
+    // แก้แค่ notes: เดิมส่ง Number(undefined)=NaN เข้าไป (?? ไม่กัน NaN) → factor กลายเป็น NULL
+    const updated = updateConversion(req.params.id, tenantId, {
+      conversion_factor: conversion_factor == null ? undefined : Number(conversion_factor), notes,
+    })
     if (!updated) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูล หรือไม่สามารถแก้ไขได้' })
     res.json({ success: true, data: updated })
   } catch (error) {
     console.error('Update conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update unit conversion' })
+    res.status(500).json({ success: false, message: 'แก้ไขกฎแปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -354,7 +379,7 @@ router.delete('/unit-conversions/:id', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (error) {
     console.error('Delete conversion error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete unit conversion' })
+    res.status(500).json({ success: false, message: 'ลบกฎแปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -405,7 +430,7 @@ router.post('/unit-conversions/convert', (req: Request, res: Response) => {
     })
   } catch (error) {
     console.error('Convert error:', error)
-    res.status(500).json({ success: false, message: 'Failed to convert' })
+    res.status(500).json({ success: false, message: 'แปลงหน่วยไม่สำเร็จ' })
   }
 })
 
@@ -528,7 +553,7 @@ router.get('/', (req: Request, res: Response) => {
     })
   } catch (error) {
     console.error('Get materials error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch materials' })
+    res.status(500).json({ success: false, message: 'โหลดรายการวัตถุดิบไม่สำเร็จ' })
   }
 })
 
@@ -552,7 +577,7 @@ router.get('/:id', (req: Request, res: Response) => {
     if (!material) {
       return res.status(404).json({
         success: false,
-        message: 'Material not found',
+        message: 'ไม่พบวัตถุดิบ',
       })
     }
 
@@ -582,7 +607,7 @@ router.get('/:id', (req: Request, res: Response) => {
     })
   } catch (error) {
     console.error('Get material error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch material' })
+    res.status(500).json({ success: false, message: 'โหลดวัตถุดิบไม่สำเร็จ' })
   }
 })
 
@@ -596,7 +621,7 @@ router.post('/', (req: Request, res: Response) => {
     if (!code || !name || !categoryId || unitCost === undefined) {
       return res.status(400).json({
         success: false,
-        message: 'Code, name, categoryId, and unitCost are required',
+        message: 'ต้องระบุรหัส ชื่อ หมวดหมู่ และต้นทุนต่อหน่วย',
       })
     }
 
@@ -611,7 +636,7 @@ router.post('/', (req: Request, res: Response) => {
     if (!category) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid categoryId',
+        message: 'ไม่พบหมวดหมู่ที่เลือก',
       })
     }
 
@@ -621,13 +646,8 @@ router.post('/', (req: Request, res: Response) => {
     const unit = normalizeUnit(reqUnit || category.default_unit || 'pcs')
 
     // รหัสวัตถุดิบ = sku ของ stock_items (ทะเบียนเดียว ไม่สร้างของซ้อนกัน 2 แถวอีก)
-    const existing = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(code, tenantId)
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: 'Material code already exists',
-      })
-    }
+    const dupRes = skuDuplicate(res, tenantId, code)
+    if (dupRes) return dupRes
 
     const id = generateId()
     const now = new Date().toISOString()
@@ -648,12 +668,12 @@ router.post('/', (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Material created successfully',
+      message: 'สร้างวัตถุดิบแล้ว',
       data: { ...material, stockId: id },
     })
   } catch (error) {
     console.error('Create material error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create material' })
+    res.status(500).json({ success: false, message: 'สร้างวัตถุดิบไม่สำเร็จ' })
   }
 })
 
@@ -668,19 +688,14 @@ router.put('/:id', (req: Request, res: Response) => {
     if (!existing) {
       return res.status(404).json({
         success: false,
-        message: 'Material not found',
+        message: 'ไม่พบวัตถุดิบ',
       })
     }
 
     // Check for duplicate code (excluding current)
     if (code && code !== existing.code) {
-      const duplicate = db.prepare('SELECT id FROM stock_items WHERE sku = ? AND tenant_id = ?').get(code, tenantId)
-      if (duplicate) {
-        return res.status(400).json({
-          success: false,
-          message: 'Material code already exists',
-        })
-      }
+      const dupRes = skuDuplicate(res, tenantId, code, existing.id)
+      if (dupRes) return dupRes
     }
 
     // If changing category, get new unit
@@ -690,7 +705,7 @@ router.put('/:id', (req: Request, res: Response) => {
       if (!category) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid categoryId',
+          message: 'ไม่พบหมวดหมู่ที่เลือก',
         })
       }
       newUnit = category.default_unit
@@ -715,12 +730,12 @@ router.put('/:id', (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Material updated successfully',
+      message: 'บันทึกวัตถุดิบแล้ว',
       data: material,
     })
   } catch (error) {
     console.error('Update material error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update material' })
+    res.status(500).json({ success: false, message: 'บันทึกวัตถุดิบไม่สำเร็จ' })
   }
 })
 
@@ -734,7 +749,7 @@ router.delete('/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Respon
     if (!existing) {
       return res.status(404).json({
         success: false,
-        message: 'Material not found',
+        message: 'ไม่พบวัตถุดิบ',
       })
     }
 
@@ -743,7 +758,7 @@ router.delete('/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Respon
     if (bomCount.count > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete: Material is used in ${bomCount.count} BOM(s)`,
+        message: `ลบไม่ได้ — วัตถุดิบนี้ใช้อยู่ใน BOM ${bomCount.count} รายการ`,
       })
     }
 
@@ -751,106 +766,21 @@ router.delete('/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Respon
 
     res.json({
       success: true,
-      message: 'Material deleted successfully',
+      message: 'ลบวัตถุดิบแล้ว',
     })
   } catch (error) {
     console.error('Delete material error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete material' })
+    res.status(500).json({ success: false, message: 'ลบวัตถุดิบไม่สำเร็จ' })
   }
 })
 
 // Adjust stock for material
+// เดิมเขียน stock_items/stock_movements ตรง ๆ — ข้ามแปลงหน่วย ต้นทุน ลงบัญชี และประตูอนุมัติ
+// วัตถุดิบคือแถว stock_items เดียวกันแล้ว จึงส่งต่อให้ POST /stock/movement ตัวเดียวกันเลย
+// (ผลตอบกลับ = ของ /stock/movement: data = stock item ที่อัปเดต หรือ 202 pending_approval)
 router.post('/:id/stock', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { type, quantity, notes } = req.body
-
-    if (!type || quantity === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'Type and quantity are required',
-      })
-    }
-
-    // วัตถุดิบกับ stock item เป็นแถวเดียวกันแล้ว ไม่ต้องหา/สร้างคู่ของมันอีก
-    const stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-
-    if (!stockItem) {
-      return res.status(404).json({
-        success: false,
-        message: 'Material not found',
-      })
-    }
-
-    // ponytail: read-modify-write material stock in one transaction.
-    const adjustTransaction = db.transaction(() => {
-      const currentItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItem.id, tenantId) as any
-      if (!currentItem) {
-        throw new Error('STOCK_ITEM_NOT_FOUND')
-      }
-
-      let newQuantity = currentItem.quantity
-      if (type === 'IN') {
-        newQuantity += quantity
-      } else if (type === 'OUT') {
-        newQuantity -= quantity
-        if (newQuantity < 0) {
-          throw new Error('INSUFFICIENT_STOCK')
-        }
-      } else if (type === 'ADJUST') {
-        newQuantity = quantity
-      }
-
-      let status = 'ADEQUATE'
-      if (newQuantity <= stockItem.min_stock * 0.3) {
-        status = 'CRITICAL'
-      } else if (newQuantity <= stockItem.min_stock) {
-        status = 'LOW'
-      } else if (newQuantity >= stockItem.max_stock) {
-        status = 'OVERSTOCK'
-      }
-
-      const now = new Date().toISOString()
-
-      db.prepare('UPDATE stock_items SET quantity = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(newQuantity, status, now, currentItem.id, tenantId)
-
-      const movementId = generateId()
-      db.prepare(`
-        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, notes, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(movementId, tenantId, currentItem.id, type, quantity, notes || '', now, 'system')
-
-      return { newQuantity, status, previousQuantity: currentItem.quantity }
-    })
-
-    let result: { newQuantity: number; status: string; previousQuantity: number }
-    try {
-      result = adjustTransaction()
-    } catch (err: any) {
-      if (err.message === 'INSUFFICIENT_STOCK') {
-        return res.status(400).json({ success: false, message: 'Insufficient stock' })
-      }
-      if (err.message === 'STOCK_ITEM_NOT_FOUND') {
-        return res.status(404).json({ success: false, message: 'Stock item not found' })
-      }
-      throw err
-    }
-
-    res.json({
-      success: true,
-      message: 'Stock adjusted successfully',
-      data: {
-        material: { ...stockItem, code: stockItem.sku },
-        stockItem: { ...stockItem, quantity: result.newQuantity, status: result.status },
-        previousQuantity: result.previousQuantity,
-        newQuantity: result.newQuantity,
-      },
-    })
-  } catch (error) {
-    console.error('Adjust stock error:', error)
-    res.status(500).json({ success: false, message: 'Failed to adjust stock' })
-  }
+  req.body = { ...req.body, stockItemId: req.params.id }
+  return recordStockMovement(req, res)
 })
 
 export default router

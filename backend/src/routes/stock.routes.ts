@@ -232,11 +232,13 @@ router.get('/aliases', (req: Request, res: Response) => {
     res.json({ success: true, data: listAliases(tenantId, stockItemId), enabled: aliasEnabled(tenantId) })
   } catch (error) {
     console.error('List stock aliases error:', error)
-    res.status(500).json({ success: false, message: 'Failed to fetch aliases' })
+    res.status(500).json({ success: false, message: 'โหลดชื่อเรียกแทนไม่สำเร็จ' })
   }
 })
 
-router.post('/aliases', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+// สิทธิ์เท่ากับสร้าง/แก้สินค้า (POST/PUT /stock) และกฎแปลงหน่วย — แค่ authenticate (แคชเชียร์โดนกันที่ cashierScope)
+// เดิม requireRole('ADMIN','MASTER','MANAGER') ทำให้ POWERUSER/USER ที่แก้สินค้าได้ กลับผูกชื่อเรียกแทนไม่ได้
+router.post('/aliases', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { name, stockItemId, unit, factor } = req.body || {}
@@ -249,18 +251,18 @@ router.post('/aliases', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request
   } catch (error) {
     if (error instanceof StockItemRefError) return res.status(400).json({ success: false, message: error.message })
     console.error('Save stock alias error:', error)
-    res.status(500).json({ success: false, message: 'Failed to save alias' })
+    res.status(500).json({ success: false, message: 'บันทึกชื่อเรียกแทนไม่สำเร็จ' })
   }
 })
 
-router.delete('/aliases/:aliasId', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+router.delete('/aliases/:aliasId', (req: Request, res: Response) => {
   try {
     const removed = deleteAliasById(req.user!.tenantId, req.params.aliasId)
     if (!removed) return res.status(404).json({ success: false, message: 'ไม่พบชื่อเรียกแทนนี้' })
     res.json({ success: true })
   } catch (error) {
     console.error('Delete stock alias error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete alias' })
+    res.status(500).json({ success: false, message: 'ลบชื่อเรียกแทนไม่สำเร็จ' })
   }
 })
 
@@ -612,14 +614,19 @@ router.delete('/:id', requireRole('ADMIN', 'MASTER'), async (req: Request, res: 
   }
 })
 
-// Record stock movement
-router.post('/movement', async (req: Request, res: Response) => {
+// Record stock movement — export ให้ POST /materials/:id/stock ใช้ตัวเดียวกัน (วัตถุดิบ = แถว stock_items เดียวกัน)
+// จะได้ผ่านแปลงหน่วย/ต้นทุน/บัญชี/ประตูอนุมัติชุดเดียว ไม่มีเส้นปรับสต็อกลัดอีกเส้น
+export async function recordStockMovement(req: Request, res: Response) {
   try {
     const tenantId = req.user!.tenantId
     const { stockItemId, type, quantity, unit, reference, notes, unitCost, adjustReason } = req.body
 
     if (!stockItemId || !type || quantity === undefined || quantity === null) {
       return res.status(400).json({ success: false, message: 'Missing required fields' })
+    }
+    // type อื่นเคยบันทึก movement แต่ไม่ขยับยอด · quantity ไม่ใช่ตัวเลข/ติดลบ → ยอดกลายเป็น NaN/ผิดทิศ
+    if (!['IN', 'OUT', 'ADJUST'].includes(type) || !Number.isFinite(Number(quantity)) || Number(quantity) < 0) {
+      return res.status(400).json({ success: false, message: 'ต้องระบุประเภท (IN/OUT/ADJUST) และจำนวนที่ไม่ติดลบ' })
     }
 
     // ประตูอนุมัติ: ถ้าหมวด "ปรับ/เปลี่ยนสต็อก" ถูกเปิดไว้สำหรับ role นี้ ให้เก็บคำขอไว้
@@ -697,7 +704,8 @@ router.post('/movement', async (req: Request, res: Response) => {
     console.error('Record movement error:', error)
     res.status(500).json({ success: false, message: 'Failed to record movement' })
   }
-})
+}
+router.post('/movement', recordStockMovement)
 
 // Get movements for a stock item
 router.get('/:id/movements', async (req: Request, res: Response) => {

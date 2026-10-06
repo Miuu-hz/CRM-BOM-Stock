@@ -62,6 +62,7 @@ export function applySchema(db: any): void {
       name TEXT NOT NULL,
       default_unit TEXT NOT NULL,
       description TEXT,
+      item_type TEXT DEFAULT 'raw',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(tenant_id, code)
@@ -181,6 +182,7 @@ export function applySchema(db: any): void {
       quantity INTEGER NOT NULL,         -- จำนวนที่แปลงเป็น base_unit แล้ว
       movement_unit TEXT,                -- หน่วยที่ user กรอก
       movement_quantity REAL,            -- จำนวนที่ user กรอก
+      source_line_id TEXT,               -- บรรทัด sales_order_items ที่ทำให้ของเข้า/ออก (ขาย/ส่งของ/คืน) — NULL = movement เก่าหรือไม่ใช่งานขาย
       reference TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

@@ -600,7 +600,9 @@ function StockAdjustModal({
 
     setSubmitting(true)
     try {
-      await materialsService.adjustStock(material.id, { type, quantity, notes })
+      const result = await materialsService.adjustStock(material.id, { type, quantity, notes })
+      // ติดด่านอนุมัติ (202) — สต็อกยังไม่ขยับ ต้องบอกผู้ใช้ ไม่งั้นนึกว่าปรับแล้ว
+      if (result?.pending_approval) alert(result.message)
       onSuccess()
       onClose()
     } catch (err: any) {

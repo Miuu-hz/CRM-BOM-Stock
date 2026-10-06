@@ -9,17 +9,22 @@ import UceSource from './UnitChainEditor.tsx?raw'
 const SRC: string = UceSource
 
 describe('UnitChainEditor — ปุ่มที่ลบของถาวรต้องถามก่อน', () => {
-  it('ลบโหนดต้องผ่าน confirm', () => {
-    const fn = SRC.slice(SRC.indexOf('const handleRemoveNode'), SRC.indexOf('const handleDeleteEdge'))
-    expect(fn).toContain('confirm(')
+  // ถามผ่านกล่องในแอป (setAskDel) ไม่ใช่ window.confirm — พฤติกรรมจริงทดสอบใน UnitChainModal.test.tsx
+  it('ลบโหนดต้องถามก่อน', () => {
+    const fn = SRC.slice(SRC.indexOf('const handleRemoveNode'), SRC.indexOf('const removeNode'))
+    expect(fn).toContain('setAskDel(')
     expect(fn, 'ต้องบอกจำนวนกฎที่จะหายไปด้วย').toContain('toDelete.length')
   })
 
-  it('ลบกฎจากป้ายด้านล่างต้องผ่าน confirm ไม่ยิง onDelete ตรง ๆ', () => {
+  it('ลบกฎจากป้ายด้านล่างต้องถามก่อน ไม่ยิง onDelete ตรง ๆ', () => {
     // เดิมเป็น onClick={() => onDelete(conv.id)} คือลบทันทีที่คลิกโดน
     expect(SRC).not.toContain('onClick={() => onDelete(conv.id)}')
     const fn = SRC.slice(SRC.indexOf('const handleDeleteEdge'), SRC.indexOf('const edgePath'))
-    expect(fn).toContain('confirm(')
+    expect(fn).toContain('setAskDel(')
+  })
+
+  it('ไม่ใช้ window.confirm แล้ว', () => {
+    expect(SRC).not.toMatch(/(^|[^.\w])confirm\(|window\.confirm\(/m)
   })
 
   it('ลบสำเร็จต้องมีเสียงตอบกลับ ไม่เงียบ', () => {

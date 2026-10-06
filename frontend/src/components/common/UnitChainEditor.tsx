@@ -162,6 +162,8 @@ export default function UnitChainEditor({
   const [addingUnit, setAddingUnit] = useState(false)
   const [newUnitValue, setNewUnitValue] = useState('')
   const [conflict, setConflict] = useState<ConversionConflict | null>(null)
+  // ถามก่อนลบกฎถาวร — เดิมใช้ window.confirm (กล่องเบราว์เซอร์ บล็อกทั้งหน้า ไม่เข้าธีม ต่างจากกล่องกฎขัดกัน)
+  const [askDel, setAskDel] = useState<{ message: string; run: () => Promise<void> } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const activeUnits = Object.keys(nodePositions)
@@ -198,17 +200,17 @@ export default function UnitChainEditor({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [connectFrom])
 
-  // Esc ตอนเปิดคำเตือนกฎขัดกัน = กลับไปแก้ตัวเลข ไม่ปิดผัง/หน้าต่างแม่
+  // Esc ตอนเปิดคำเตือนกฎขัดกัน/ถามลบ = ปิดแค่กล่องถาม ไม่ปิดผัง/หน้าต่างแม่
   useEffect(() => {
-    if (!conflict) return
+    if (!conflict && !askDel) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
-      setConflict(null)
+      setConflict(null); setAskDel(null)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [conflict])
+  }, [conflict, askDel])
 
   const getCanvasPos = (e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -286,19 +288,23 @@ export default function UnitChainEditor({
     setNewUnitValue(''); setAddingUnit(false)
   }
 
-  const handleRemoveNode = async (unit: string) => {
+  const handleRemoveNode = (unit: string) => {
     const toDelete = conversions.filter(c => c.from_unit === unit || c.to_unit === unit)
+    if (toDelete.length === 0) { removeNode(unit, toDelete); return }
 
     // ย้อนยาก: กฎที่ลบไปแล้วสร้างใหม่เองไม่ได้ ต้องจำตัวเลขเดิมให้ได้
     // และของที่ไม่มีกฎแปลง จะรับเข้าคลังไม่ได้เลย (goodsReceipt โยน NO_CONVERSION)
-    if (toDelete.length > 0) {
-      const lines = toDelete.map(c => `  • 1 ${ul(c.from_unit)} = ${c.conversion_factor} ${ul(c.to_unit)}`).join('\n')
-      const extra = (unit === baseUnit || unit === displayUnit)
-        ? `\n\n"${ul(unit)}" เป็นหน่วย${unit === baseUnit ? 'ที่คลังนับ' : 'บรรจุ'}ของสินค้านี้ — ลบกฎแล้วระบบจะคิดสต็อกไม่ได้`
-        : ''
-      if (!confirm(`ลบ "${ul(unit)}" ออกจากผัง จะลบกฎแปลงหน่วย ${toDelete.length} ข้อนี้ถาวร:\n\n${lines}${extra}\n\nยืนยันลบ?`)) return
-    }
+    const lines = toDelete.map(c => `  • 1 ${ul(c.from_unit)} = ${c.conversion_factor} ${ul(c.to_unit)}`).join('\n')
+    const extra = (unit === baseUnit || unit === displayUnit)
+      ? `\n\n"${ul(unit)}" เป็นหน่วย${unit === baseUnit ? 'ที่คลังนับ' : 'บรรจุ'}ของสินค้านี้ — ลบกฎแล้วระบบจะคิดสต็อกไม่ได้`
+      : ''
+    setAskDel({
+      message: `ลบ "${ul(unit)}" ออกจากผัง จะลบกฎแปลงหน่วย ${toDelete.length} ข้อนี้ถาวร:\n\n${lines}${extra}`,
+      run: () => removeNode(unit, toDelete),
+    })
+  }
 
+  const removeNode = async (unit: string, toDelete: UnitConversionRow[]) => {
     try {
       await Promise.all(toDelete.map(c => onDelete(c.id)))
       setNodePositions(prev => { const next = { ...prev }; delete next[unit]; return next })
@@ -312,14 +318,23 @@ export default function UnitChainEditor({
   }
 
   // ป้ายด้านล่างก็ลบกฎจริงเหมือนกัน ต้องถามแบบเดียวกัน
-  const handleDeleteEdge = async (conv: UnitConversionRow) => {
-    if (!confirm(`ลบกฎ 1 ${ul(conv.from_unit)} = ${conv.conversion_factor} ${ul(conv.to_unit)} ถาวร?\n\nของที่ไม่มีกฎแปลงหน่วย จะรับเข้าคลังไม่ได้`)) return
-    try {
-      await onDelete(conv.id)
-      toast.success('ลบกฎแปลงหน่วยแล้ว')
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
-    }
+  const handleDeleteEdge = (conv: UnitConversionRow) => setAskDel({
+    message: `ลบกฎ 1 ${ul(conv.from_unit)} = ${conv.conversion_factor} ${ul(conv.to_unit)} ถาวร?\n\nของที่ไม่มีกฎแปลงหน่วย จะรับเข้าคลังไม่ได้`,
+    run: async () => {
+      try {
+        await onDelete(conv.id)
+        toast.success('ลบกฎแปลงหน่วยแล้ว')
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message ?? 'ลบไม่สำเร็จ')
+      }
+    },
+  })
+
+  // ปิดกล่องก่อนค่อยลบ — กดซ้ำระหว่างรอ API จะไม่ยิง DELETE ซ้ำ
+  const confirmDelete = () => {
+    const job = askDel
+    setAskDel(null)
+    job?.run()
   }
 
   const edgePath = (from: string, to: string) => {
@@ -634,6 +649,36 @@ export default function UnitChainEditor({
                 className="px-4 py-2 rounded-lg text-sm text-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:opacity-40 min-h-[44px]"
               >
                 {t('settings.unitConversions.conflict.override')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ถามก่อนลบกฎแปลงหน่วย — โฟกัสอยู่ที่ "ยกเลิก" กด Enter พลาดก็ไม่ลบ */}
+      {askDel && (
+        <div className="fixed inset-0 bg-[var(--fg-1)]/50 z-50 flex items-center justify-center p-4">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="uce-del-title" aria-describedby="uce-del-msg" className="phopy-card w-full max-w-md">
+            <div className="p-4 border-b border-[var(--border)] flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-[var(--danger)]" />
+              <h4 id="uce-del-title" className="text-sm font-semibold text-[var(--fg-1)]">ลบกฎแปลงหน่วยถาวร</h4>
+            </div>
+            <p id="uce-del-msg" className="p-4 text-sm text-[var(--fg-2)] whitespace-pre-line">{askDel.message}</p>
+            <div className="p-4 border-t border-[var(--border)] flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setAskDel(null)}
+                className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-medium hover:opacity-90 min-h-[44px]"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded-lg text-sm text-[var(--danger)] hover:bg-[var(--danger-soft)] min-h-[44px]"
+              >
+                {t('common.delete')}
               </button>
             </div>
           </div>

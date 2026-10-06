@@ -4,7 +4,7 @@ import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { isServiceItem, soldAsNote } from '../../services/stockItem.service'
 import { roundQty } from '../../utils/qty'
-import { soStockAlreadyDeducted } from './shared'
+import { soStockAlreadyDeducted, lineNetMovements, blendIssuedUnitCost, postSoCogs } from './shared'
 
 const router = Router()
 
@@ -139,6 +139,19 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Delivery order not found' })
     }
 
+    // ส่งของแล้ว/ยกเลิกแล้ว = จบ ห้ามย้อนสถานะ: เดิมย้อน DELIVERED → อื่น ๆ ได้โดยสต็อกไม่คืน และกด DELIVERED ซ้ำ
+    // จะตัดสต็อก + บวก delivered_qty ซ้ำอีกรอบ · ปลุกใบที่ยกเลิกแล้วกลับมาส่งก็ซ้อนกับใบใหม่ที่ออกแทน
+    // หน้าเว็บไม่มีปุ่มยกเลิก/ย้อนใบส่งของอยู่แล้ว ทางคืนของที่ออกแบบไว้คือใบลดหนี้ (รับคืนสินค้า) หรือยกเลิกคำสั่งขาย
+    // (restoreStockForSO คืนตาม movement ของ DO ให้เอง)
+    if ((deliveryOrder.status === 'DELIVERED' || deliveryOrder.status === 'CANCELLED') && status !== deliveryOrder.status) {
+      return res.status(409).json({
+        success: false,
+        message: deliveryOrder.status === 'DELIVERED'
+          ? 'ใบส่งของนี้ส่งของถึงลูกค้าแล้ว เปลี่ยนสถานะ/ยกเลิกไม่ได้ — ถ้าลูกค้าคืนของ ให้ออกใบลดหนี้ (รับคืนสินค้า) จากใบแจ้งหนี้ หรือยกเลิกคำสั่งขายเพื่อคืนสต็อก'
+          : 'ใบส่งของนี้ถูกยกเลิกแล้ว เปลี่ยนสถานะไม่ได้ — ออกใบส่งของใหม่จากคำสั่งขายแทน',
+      })
+    }
+
     const now = new Date().toISOString()
 
     // สต็อกถูกตัดไปแล้วตั้งแต่ยืนยันคำสั่งขาย (deductStockForSO) ถ้าตัดซ้ำตรงนี้
@@ -154,6 +167,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       const transaction = db.transaction(() => {
         db.prepare("UPDATE delivery_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
           .run(status, now, req.params.id, tenantId)
+        let doCogs = 0
 
         // Update sales order delivered quantity
         for (const item of items) {
@@ -207,14 +221,27 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(needed, now, stockItem.id, tenantId)
 
-            // Record stock movement
+            // ต้นทุน ณ วินาทีตัดจริง เหมือนเส้นยืนยัน SO — เดิมเส้นนี้ไม่ลงต้นทุนขายเลย สต็อกในงบค้างสูงกว่าสต็อกจริง
+            // และใบลดหนี้/ยกเลิก SO ไม่มีต้นทุนให้กลับ (issued_unit_cost ว่าง)
+            const unitCost = Number(stockItem.unit_cost || 0)
+            if (item.sales_order_item_id) {
+              const prev = lineNetMovements(tenantId, [item.sales_order_item_id]).get(item.sales_order_item_id)?.qty || 0
+              blendIssuedUnitCost(item.sales_order_item_id, Math.max(0, prev), needed, unitCost)
+            }
+            doCogs += needed * unitCost
+
+            // Record stock movement — ผูกบรรทัด SO + จำนวนในหน่วยของบรรทัด ไว้ให้ใบลดหนี้/ยกเลิก SO คืนตามตัวคูณที่ตัดจริง
             db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id, needed, `DO: ${deliveryOrder.do_number}`,
-              movementNotes, now, req.user!.userId)
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, source_line_id, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(generateId(), tenantId, stockItem.id, needed, soUnit || null, Number(item.quantity), item.sales_order_item_id || null,
+              `DO: ${deliveryOrder.do_number}`, movementNotes, now, req.user!.userId)
           }
         }
+
+        // ลงเป็น SO_COGS ของ SO แม่ (ไม่ใช่ type ใหม่) → ยกเลิก SO / ใบลดหนี้กลับต้นทุนผ่านทางเดิมได้ครบ
+        if (parentSO) postSoCogs(tenantId, deliveryOrder.sales_order_id, parentSO.so_number, doCogs,
+          `ต้นทุนขาย DO ${deliveryOrder.do_number} (SO ${parentSO.so_number})`, deliveryOrder.do_number)
 
         // Check if all items delivered and update sales order status
         const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(deliveryOrder.sales_order_id) as any[]

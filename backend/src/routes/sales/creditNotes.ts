@@ -3,12 +3,15 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { ACC, ACC_META } from '../../config/accountCodes'
 import { getOrCreateAccount, issuedBasePerUnit } from './shared'
-import { postJournal } from '../../services/accounting.service'
+import { postJournal, JournalError } from '../../services/accounting.service'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
 import { calcVat } from '../../utils/vat'
 
 const router = Router()
+
+/** ออกใบลดหนี้ไม่ได้ด้วยเหตุที่ผู้ใช้แก้เองได้ (ข้อความไทยส่งถึงหน้าจอตรง ๆ) */
+class CreditNoteIssueError extends Error {}
 
 // ─── Accounting: post reversing GL journal entry when a credit note is ISSUED ──
 // Dr Revenue (reduce revenue) + Dr VAT-output (reduce output VAT liability)
@@ -16,52 +19,47 @@ const router = Router()
 // posting in shared.ts but in reverse. Idempotent: guarded by a lookup on
 // (tenant_id, reference_type='CREDIT_NOTE', reference_id).
 function postCreditNoteJournal(tenantId: string, cn: any) {
-  try {
-    const existing = db.prepare(
-      "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'CREDIT_NOTE' AND reference_id = ?"
-    ).get(tenantId, cn.id)
-    if (existing) return // already posted — avoid double-posting
+  const existing = db.prepare(
+    "SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'CREDIT_NOTE' AND reference_id = ?"
+  ).get(tenantId, cn.id)
+  if (existing) return // already posted — avoid double-posting
 
-    const now = new Date().toISOString()
-    const dateStr = now.split('T')[0]
-    const yr = new Date().getFullYear()
-    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+  const now = new Date().toISOString()
+  const dateStr = now.split('T')[0]
+  const yr = new Date().getFullYear()
+  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
 
-    const arMeta = ACC_META[ACC.AR]!
-    const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
-    const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
+  const arMeta = ACC_META[ACC.AR]!
+  const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
+  const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
 
-    const arId = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
-    const revId = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
-    const vatId = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
+  const arId = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
+  const revId = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
+  const vatId = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
 
-    const subtotal = cn.subtotal || 0
-    const taxAmount = cn.tax_amount || 0
-    const totalAmount = cn.total_amount || 0
-    const entryId = generateId()
-    const description = `ลดหนี้ CN ${cn.cn_number}`
+  const subtotal = cn.subtotal || 0
+  const taxAmount = cn.tax_amount || 0
+  const totalAmount = cn.total_amount || 0
+  const entryId = generateId()
+  const description = `ลดหนี้ CN ${cn.cn_number}`
 
-    db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
-      VALUES (?, ?, ?, ?, 'CREDIT_NOTE', ?, ?, NULL, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
-      .run(entryId, tenantId, jvNumber, dateStr, cn.id, cn.cn_number || null, description, totalAmount, totalAmount, now, now)
+  db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+    VALUES (?, ?, ?, ?, 'CREDIT_NOTE', ?, ?, NULL, ?, ?, ?, 1, 1, 'system', ?, ?, 'WHOLESALE')`)
+    .run(entryId, tenantId, jvNumber, dateStr, cn.id, cn.cn_number || null, description, totalAmount, totalAmount, now, now)
 
-    let lineNum = 1
-    // Dr Revenue — reduces previously recognized revenue
+  let lineNum = 1
+  // Dr Revenue — reduces previously recognized revenue
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+    .run(generateId(), tenantId, entryId, revId, lineNum++, description, subtotal)
+  // Dr Output VAT — reduces VAT liability owed on the original sale
+  if (taxAmount > 0) {
     db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-      .run(generateId(), tenantId, entryId, revId, lineNum++, description, subtotal)
-    // Dr Output VAT — reduces VAT liability owed on the original sale
-    if (taxAmount > 0) {
-      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-        .run(generateId(), tenantId, entryId, vatId, lineNum++, `ภาษีขาย - ${description}`, taxAmount)
-    }
-    // Cr Accounts Receivable — reduces amount owed by customer
-    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-      .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
-
-  } catch (err) {
-    console.error('⚠️ postCreditNoteJournal error:', err)
-    // Non-fatal — don't block the status update if journal posting fails
+      .run(generateId(), tenantId, entryId, vatId, lineNum++, `ภาษีขาย - ${description}`, taxAmount)
   }
+  // Cr Accounts Receivable — reduces amount owed by customer
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+    .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
+
 }
 
 // ─── Stock: restore inventory when a credit note (ISSUED) has actual return
@@ -83,118 +81,116 @@ function postCreditNoteJournal(tenantId: string, cn: any) {
 // no unit column), then converts to base_unit via convertQuantityBidirectional and
 // records stock_movements exactly like those two. Idempotent: guarded by checking
 // for a movement already tagged with this credit note's reference (re-issuing / a
-// retried request restores nothing twice). Non-fatal like postCreditNoteJournal
-// above — a stock-side problem (e.g. missing unit conversion rule) is logged, not
-// allowed to block the credit note from being issued.
+// retried request restores nothing twice).
+// ล้มได้ (เช่น ไม่มีการแปลงหน่วย) → ผู้เรียกต้องห่อใน transaction เดียวกับการเปลี่ยนสถานะ ISSUED + ลงบัญชี
+// ให้ทั้งใบล้มพร้อมกัน — เดิมกลืน error แล้วออกใบลดหนี้ได้ทั้งที่ของไม่ได้กลับเข้าคลัง (ลูกค้าได้เงินคืน สต็อกหาย)
 function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: string) {
-  try {
-    const items = db.prepare('SELECT * FROM credit_note_items WHERE credit_note_id = ? AND tenant_id = ?').all(cn.id, tenantId) as any[]
-    if (items.length === 0) return // nothing returned — pure price/billing adjustment, stock must not move
+  const items = db.prepare('SELECT * FROM credit_note_items WHERE credit_note_id = ? AND tenant_id = ?').all(cn.id, tenantId) as any[]
+  if (items.length === 0) return // nothing returned — pure price/billing adjustment, stock must not move
 
-    const reference = `CN: ${cn.cn_number}`
-    const already = db.prepare('SELECT 1 FROM stock_movements WHERE tenant_id = ? AND reference = ? LIMIT 1').get(tenantId, reference)
-    if (already) return // already restored once — never double count on re-issue/retry
+  const reference = `CN: ${cn.cn_number}`
+  const already = db.prepare('SELECT 1 FROM stock_movements WHERE tenant_id = ? AND reference = ? LIMIT 1').get(tenantId, reference)
+  if (already) return // already restored once — never double count on re-issue/retry
 
-    // Valued at the cost the goods were ISSUED at (sales_order_items.issued_unit_cost,
-    // frozen at the moment shared.ts's deductStockForSO cut the stock) — not at
-    // stock_items.unit_cost today, which may have moved since the original sale.
-    let totalReturnCost = 0
+  // Valued at the cost the goods were ISSUED at (sales_order_items.issued_unit_cost,
+  // frozen at the moment shared.ts's deductStockForSO cut the stock) — not at
+  // stock_items.unit_cost today, which may have moved since the original sale.
+  let totalReturnCost = 0
 
-    // Wrapped in a transaction, same as shared.ts's restoreStockForSO — all lines of this
-    // credit note restore atomically or not at all (a mid-loop unit-conversion throw must
-    // not leave some stock rows already bumped while others aren't).
-    const restore = db.transaction(() => {
-      for (const item of items) {
-        if (!(item.quantity > 0)) continue
+  // Wrapped in a transaction, same as shared.ts's restoreStockForSO — all lines of this
+  // credit note restore atomically or not at all (a mid-loop unit-conversion throw must
+  // not leave some stock rows already bumped while others aren't).
+  const restore = db.transaction(() => {
+    for (const item of items) {
+      if (!(item.quantity > 0)) continue
 
-        // credit_note_items.product_id doesn't reliably resolve a stock row in this
-        // schema — product_id is vestigial throughout the real sales pipeline (verified:
-        // invoice_items.product_id and sales_order_items.product_id are NULL on every real
-        // row; stock_items.product_id is NULL on all 492 rows too). The link that's actually
-        // populated is stock_item_id, so walk back through the invoice line this credit note
-        // item was issued against to find the exact stock item — and sales_order_items.unit
-        // for the unit that sale was recorded in, since credit_note_items has no unit column.
-        const invItem = db.prepare('SELECT * FROM invoice_items WHERE id = ? AND tenant_id = ?').get(item.invoice_item_id, tenantId) as any
-        let stockItem: any = null
-        if (invItem?.stock_item_id) {
-          stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(invItem.stock_item_id, tenantId)
-        }
-        if (!stockItem && item.product_id) {
-          // Fallback for legacy/edge-case rows that do carry a real product_id link.
-          stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId)
-        }
-        if (!stockItem) continue
-
-        let cnUnit = ''
-        let issuedUnitCost = 0
-        if (invItem?.sales_order_item_id) {
-          const soItem = db.prepare('SELECT unit, issued_unit_cost FROM sales_order_items WHERE id = ?').get(invItem.sales_order_item_id) as any
-          cnUnit = soItem?.unit || ''
-          issuedUnitCost = Number(soItem?.issued_unit_cost || 0)
-        }
-        // stock_items.quantity is stored in base_unit, not the legacy `unit` column —
-        // fall back to `unit` only when base_unit is empty (old rows), same as
-        // deliveryOrders.ts / restoreStockForSO.
-        const stockUnit = stockItem.base_unit || stockItem.unit || ''
-        let addQty = Number(item.quantity)
-        let movementNotes = `Returned by customer (CN ${cn.cn_number})`
-
-        // คืนด้วยตัวคูณเดิมตอนตัดสต็อกจริง (movement OUT ของ SO) — แก้ตัวคูณชื่อเรียกแทน/กฎแปลงหน่วยทีหลังแล้วไม่เพี้ยน
-        const issuedPer = invItem?.sales_order_item_id && cnUnit && stockUnit && normalizeUnit(cnUnit) !== normalizeUnit(stockUnit)
-          ? issuedBasePerUnit(tenantId, invItem.sales_order_item_id) : null
-        if (issuedPer !== null) {
-          addQty = Number(item.quantity) * issuedPer
-          movementNotes = `Returned by customer (as issued: ${item.quantity} ${cnUnit} → ${addQty.toFixed(4)} ${stockUnit})`
-        } else if (cnUnit && stockUnit && normalizeUnit(cnUnit) !== normalizeUnit(stockUnit)) {
-          const converted = convertQuantityBidirectional(addQty, cnUnit, stockUnit, tenantId, stockItem.id, invItem?.product_name)
-          if (!converted) {
-            throw new Error(`ไม่พบการแปลงหน่วย ${cnUnit} → ${stockUnit} สำหรับ "${stockItem.name}" กรุณาตั้งค่า Unit Conversion ก่อน`)
-          }
-          addQty = converted.converted
-          movementNotes = `Returned by customer (converted: ${item.quantity} ${cnUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`
-        }
-
-        const gained = roundQty(addQty)
-        db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(gained, now, stockItem.id, tenantId)
-
-        // type 'RETURN' matches shared.ts's restoreStockForSO — the established
-        // convention in this codebase for "stock coming back because a sale is being
-        // undone", as opposed to a fresh 'IN' (new stock received).
-        db.prepare(`
-          INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-          VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, ?)
-        `).run(generateId(), tenantId, stockItem.id, gained, reference, movementNotes, now, userId)
-
-        // ไม่มี issued_unit_cost (เอกสารเก่า/ไม่ได้ผูก SO) = ไม่รู้ต้นทุนจริง ข้ามไป
-        // แทนการเดา — ไม่งั้นได้ตัวเลขที่ผู้ตรวจสอบย้อนกลับไปเอกสารต้นทางไม่ได้
-        totalReturnCost += gained * issuedUnitCost
+      // credit_note_items.product_id doesn't reliably resolve a stock row in this
+      // schema — product_id is vestigial throughout the real sales pipeline (verified:
+      // invoice_items.product_id and sales_order_items.product_id are NULL on every real
+      // row; stock_items.product_id is NULL on all 492 rows too). The link that's actually
+      // populated is stock_item_id, so walk back through the invoice line this credit note
+      // item was issued against to find the exact stock item — and sales_order_items.unit
+      // for the unit that sale was recorded in, since credit_note_items has no unit column.
+      const invItem = db.prepare('SELECT * FROM invoice_items WHERE id = ? AND tenant_id = ?').get(item.invoice_item_id, tenantId) as any
+      let stockItem: any = null
+      if (invItem?.stock_item_id) {
+        stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(invItem.stock_item_id, tenantId)
       }
-    })
-    restore()
+      if (!stockItem && item.product_id) {
+        // Fallback for legacy/edge-case rows that do carry a real product_id link.
+        stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId)
+      }
+      if (!stockItem) continue
 
-    // รับคืนสินค้าเข้าสต็อก → กลับรายการต้นทุนขายด้วย Dr สต็อก / Cr ต้นทุนขาย เดียวกับที่
-    // deductStockForSO ลงไว้ตอนขาย (shared.ts, ACC.COGS_PRODUCT / ACC.INVENTORY) มูลค่าตาม
-    // ต้นทุน ณ ตอนขายจริง (issued_unit_cost) ไม่ใช่ unit_cost ปัจจุบันของสต็อก
-    if (totalReturnCost > 0.005) {
-      postJournal({
-        tenantId,
-        date: now.substring(0, 10),
-        referenceType: 'CREDIT_NOTE_COGS',
-        referenceId: cn.id,
-        description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`,
-        lines: [
-          { code: ACC.INVENTORY, description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`, debit: totalReturnCost },
-          { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - CN ${cn.cn_number}`, credit: totalReturnCost },
-        ],
-        createdBy: userId,
-        businessUnit: 'WHOLESALE',
-        sourceNumber: cn.cn_number,
-      })
+      let cnUnit = ''
+      let issuedUnitCost = 0
+      if (invItem?.sales_order_item_id) {
+        const soItem = db.prepare('SELECT unit, issued_unit_cost FROM sales_order_items WHERE id = ?').get(invItem.sales_order_item_id) as any
+        cnUnit = soItem?.unit || ''
+        issuedUnitCost = Number(soItem?.issued_unit_cost || 0)
+      }
+      // stock_items.quantity is stored in base_unit, not the legacy `unit` column —
+      // fall back to `unit` only when base_unit is empty (old rows), same as
+      // deliveryOrders.ts / restoreStockForSO.
+      const stockUnit = stockItem.base_unit || stockItem.unit || ''
+      let addQty = Number(item.quantity)
+      let movementNotes = `Returned by customer (CN ${cn.cn_number})`
+
+      // คืนด้วยตัวคูณเดิมตอนตัดสต็อกจริง (movement OUT ของบรรทัดนี้ ทั้งตัดตอนยืนยัน SO และตอนส่งของผ่าน DO)
+      // — แก้ตัวคูณชื่อเรียกแทน/กฎแปลงหน่วยทีหลังแล้วไม่เพี้ยน
+      const issuedPer = invItem?.sales_order_item_id && cnUnit && stockUnit && normalizeUnit(cnUnit) !== normalizeUnit(stockUnit)
+        ? issuedBasePerUnit(tenantId, invItem.sales_order_item_id) : null
+      if (issuedPer !== null) {
+        addQty = Number(item.quantity) * issuedPer
+        movementNotes = `Returned by customer (as issued: ${item.quantity} ${cnUnit} → ${addQty.toFixed(4)} ${stockUnit})`
+      } else if (cnUnit && stockUnit && normalizeUnit(cnUnit) !== normalizeUnit(stockUnit)) {
+        const converted = convertQuantityBidirectional(addQty, cnUnit, stockUnit, tenantId, stockItem.id, invItem?.product_name)
+        if (!converted) {
+          throw new CreditNoteIssueError(`ออกใบลดหนี้ไม่ได้: ไม่พบการแปลงหน่วย ${cnUnit} → ${stockUnit} ของสินค้า "${stockItem.name}" จึงคืนสต็อกไม่ได้ — ไปตั้งที่ Settings > การแปลงหน่วย แล้วออกใบลดหนี้อีกครั้ง`)
+        }
+        addQty = converted.converted
+        movementNotes = `Returned by customer (converted: ${item.quantity} ${cnUnit} → ${converted.converted.toFixed(4)} ${stockUnit}, factor: ${converted.factor})`
+      }
+
+      const gained = roundQty(addQty)
+      db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(gained, now, stockItem.id, tenantId)
+
+      // type 'RETURN' matches shared.ts's restoreStockForSO — the established
+      // convention in this codebase for "stock coming back because a sale is being
+      // undone", as opposed to a fresh 'IN' (new stock received).
+      // ผูกบรรทัด SO + จำนวนในหน่วยของบรรทัด → ตัวคูณรายบรรทัด (issuedBasePerUnit) หักส่วนที่คืนแล้วได้ตรงสัดส่วน
+      db.prepare(`
+        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, source_line_id, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(generateId(), tenantId, stockItem.id, gained, cnUnit || null, Number(item.quantity), invItem?.sales_order_item_id || null,
+        reference, movementNotes, now, userId)
+
+      // ไม่มี issued_unit_cost (เอกสารเก่า/ไม่ได้ผูก SO) = ไม่รู้ต้นทุนจริง ข้ามไป
+      // แทนการเดา — ไม่งั้นได้ตัวเลขที่ผู้ตรวจสอบย้อนกลับไปเอกสารต้นทางไม่ได้
+      totalReturnCost += gained * issuedUnitCost
     }
-  } catch (err) {
-    console.error('⚠️ restoreCreditNoteStock error:', err)
-    // Non-fatal — don't block the status update if stock restore fails
+  })
+  restore()
+
+  // รับคืนสินค้าเข้าสต็อก → กลับรายการต้นทุนขายด้วย Dr สต็อก / Cr ต้นทุนขาย เดียวกับที่
+  // deductStockForSO ลงไว้ตอนขาย (shared.ts, ACC.COGS_PRODUCT / ACC.INVENTORY) มูลค่าตาม
+  // ต้นทุน ณ ตอนขายจริง (issued_unit_cost) ไม่ใช่ unit_cost ปัจจุบันของสต็อก
+  if (totalReturnCost > 0.005) {
+    postJournal({
+      tenantId,
+      date: now.substring(0, 10),
+      referenceType: 'CREDIT_NOTE_COGS',
+      referenceId: cn.id,
+      description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`,
+      lines: [
+        { code: ACC.INVENTORY, description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`, debit: totalReturnCost },
+        { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - CN ${cn.cn_number}`, credit: totalReturnCost },
+      ],
+      createdBy: userId,
+      businessUnit: 'WHOLESALE',
+      sourceNumber: cn.cn_number,
+    })
   }
 }
 
@@ -379,18 +375,24 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
-    db.prepare('UPDATE credit_notes SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-      .run(status, now, req.params.id, tenantId)
+    // เปลี่ยนสถานะ + ลงบัญชีลดหนี้ + คืนสต็อก/กลับต้นทุน ในทรานแซกชันเดียว — ส่วนไหนล้ม ใบยังเป็นสถานะเดิม ไม่มีอะไรค้างครึ่งทาง
+    db.transaction(() => {
+      db.prepare('UPDATE credit_notes SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(status, now, req.params.id, tenantId)
 
-    if (status === 'ISSUED') {
-      const updated = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-      postCreditNoteJournal(tenantId, updated)
-      restoreCreditNoteStock(tenantId, updated, req.user!.userId, now)
-    }
+      if (status === 'ISSUED') {
+        const updated = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+        postCreditNoteJournal(tenantId, updated)
+        restoreCreditNoteStock(tenantId, updated, req.user!.userId, now)
+      }
+    })()
 
     const creditNote = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: creditNote })
   } catch (error) {
+    if (error instanceof CreditNoteIssueError || error instanceof JournalError) {
+      return res.status(422).json({ success: false, message: error.message })
+    }
     console.error('Update credit note status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update credit note status' })
   }

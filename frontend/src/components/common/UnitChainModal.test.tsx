@@ -17,6 +17,7 @@ const apiMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn()
 vi.mock('../../services/api', () => ({ default: apiMock }))
 
 import UnitPicker from './UnitPicker'
+import UnitChainModal from './UnitChainModal'
 
 beforeEach(() => {
   rules = []
@@ -111,6 +112,57 @@ describe('UnitPicker — แก้หน่วยที่แปลงไม่�
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(screen.queryByPlaceholderText('เช่น 24')).toBeNull()
     expect(screen.getByRole('dialog', { name: 'ผังการแปลงหน่วย' })).toBeTruthy()
+  })
+
+  // เดิมใช้ window.confirm — ตอนนี้ถามในกล่องของแอปเอง แบบเดียวกับกล่องกฎขัดกัน
+  describe('ลบกฎต้องถามในกล่องของแอป', () => {
+    const renderModal = () => {
+      rules = [{ id: 'r9', from_unit: 'pack', to_unit: 'box', conversion_factor: 6 }]
+      apiMock.delete.mockReset().mockImplementation(async (url: string) => {
+        rules = rules.filter(r => !url.endsWith('/' + r.id))
+        return { data: { success: true } }
+      })
+      const onClose = vi.fn()
+      render(<UnitChainModal materialId="m1" baseUnit="ml" unit="box" onClose={onClose} />)
+      return { onClose }
+    }
+
+    it('ลบจากป้ายกฎ: Esc ปิดแค่กล่องถาม ไม่ลบ ไม่ปิดผัง · กดลบแล้วค่อยยิง DELETE', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      const { onClose } = renderModal()
+      fireEvent.click(await screen.findByTitle('ลบกฎนี้'))
+
+      const dlg = await screen.findByRole('alertdialog')
+      expect(dlg.textContent).toContain('ถาวร')
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+      expect(onClose).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: 'ผังการแปลงหน่วย' })).toBeTruthy()
+      expect(apiMock.delete).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByTitle('ลบกฎนี้'))
+      fireEvent.click(await screen.findByText('common.delete'))
+      await waitFor(() => expect(apiMock.delete).toHaveBeenCalledWith('/materials/unit-conversions/r9'))
+      expect(apiMock.delete).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(screen.queryByTitle('ลบกฎนี้')).toBeNull())
+      expect(confirmSpy).not.toHaveBeenCalled()
+      confirmSpy.mockRestore()
+    })
+
+    it('เอาหน่วยออกจากผัง: บอกจำนวนกฎที่จะหาย · ยกเลิกแล้วไม่ลบ', async () => {
+      renderModal()
+      await screen.findByTitle('ลบกฎนี้')
+      // ปุ่ม X บนโหนด "กล่อง" (ผูกกฎ pack→box อยู่ 1 ข้อ)
+      const removeBtn = screen.getAllByTitle('เอาหน่วยนี้ออก (ลบกฎแปลงที่ผูกอยู่ด้วย)')
+        .find(b => b.closest('.rounded-xl')?.textContent?.includes('กล่อง'))
+      fireEvent.click(removeBtn!)
+
+      const dlg = await screen.findByRole('alertdialog')
+      expect(dlg.textContent).toContain('1 ข้อ')
+      fireEvent.click(screen.getByText('common.cancel'))
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+      expect(apiMock.delete).not.toHaveBeenCalled()
+    })
   })
 
   it('Esc ในช่องกรอกอัตรา ปิดแค่ช่องกรอก ไม่ปิดผังทั้งหน้าต่าง', async () => {

@@ -2057,6 +2057,10 @@ export function runMigrations(db: any): void {
       db.exec('ALTER TABLE stock_items ADD COLUMN category_id TEXT REFERENCES material_categories(id)')
       db.exec('CREATE INDEX IF NOT EXISTS idx_stock_items_category_id ON stock_items(category_id)')
     } catch { /* มีคอลัมน์อยู่แล้ว */ }
+    // materials.routes.ts อ่าน/เขียน material_categories.item_type (raw/wip/finished/service)
+    // แต่ไม่เคยมีใน schema/migration — DB ใหม่ GET/POST /materials/categories ตอบ 500
+    const mcCols = db.prepare('PRAGMA table_info(material_categories)').all() as any[]
+    if (!mcCols.some(c => c.name === 'item_type')) db.exec("ALTER TABLE material_categories ADD COLUMN item_type TEXT DEFAULT 'raw'")
 
     // 2. ตาราง materials จะถูกลบได้ต่อเมื่อย้ายข้อมูลออกหมดแล้วเท่านั้น
     //    (ห้ามลบข้อมูลของใครทิ้งเงียบ ๆ — ถ้ายังมีแถวค้าง ให้หยุดแล้วฟ้อง)
@@ -2217,6 +2221,19 @@ export function runMigrations(db: any): void {
       console.log('✅ Migration: added issued_unit_cost to sales_order_items')
     }
   } catch (e) { console.error('⚠️ sales_order_items issued_unit_cost migration error:', e) }
+
+  // ==================== stock_movements ผูกบรรทัด SO (2026-10-06) ====================
+  // เดิม movement ขาย/ส่งของ/คืนผูกแค่เลขเอกสาร (SO:/DO:/CN:) — SO ที่มีสินค้าเดียวกันหลายบรรทัด (ชื่อเรียกแทนคนละขนาดแพ็ค)
+  // หรือตัดผ่านใบส่งของ แยกไม่ออกว่าบรรทัดไหนออกไปกี่หน่วยฐาน ใบลดหนี้เลยต้องเดาด้วยตัวคูณปัจจุบัน
+  // แถวเก่าเป็น NULL → โค้ดถอยไปใช้วิธีเดิมเอง
+  try {
+    const cols = db.prepare(`PRAGMA table_info(stock_movements)`).all() as any[]
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'source_line_id')) {
+      db.exec(`ALTER TABLE stock_movements ADD COLUMN source_line_id TEXT`)
+      console.log('✅ Migration: added source_line_id to stock_movements')
+    }
+    if (cols.length > 0) db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_movements_source_line ON stock_movements(source_line_id)`)
+  } catch (e) { console.error('⚠️ stock_movements source_line_id migration error:', e) }
 
   // ==================== บัญชีขายผ่านแพลตฟอร์ม Shopee/Lazada/TikTok (2026-09-19) ====================
   // ยังไม่มีไฟล์ settlement จริงจากแพลตฟอร์มไหนเลย โครงคอลัมน์ของแต่ละเจ้าไม่เหมือนกันและเรายังไม่เห็น
