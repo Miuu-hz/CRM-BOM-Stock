@@ -73,6 +73,12 @@ export function UnitPicker({
   const [open, setOpen] = useState(false)
   /** ผังแปลงหน่วยแบบหน้าต่างซ้อน — เปิดจากลิงก์ในคำเตือนแปลงไม่ถึงหน่วยฐาน */
   const [chainOpen, setChainOpen] = useState(false)
+  /**
+   * หน่วยที่ผู้ใช้คลิกจากกลุ่ม "แปลงไม่ถึง" ในโหมด strict — เปิดผังให้ตั้งอัตราแปลงของหน่วยนั้น
+   * บันทึกกฎแล้วปิด = เลือกหน่วยนั้นให้เลย (เดิมแถวถูก disabled เฉยๆ ไม่มีทางไปตั้งหน่วยจากบิล)
+   */
+  const [chainUnit, setChainUnit] = useState<string | null>(null)
+  const chainAddedRef = useRef(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -345,6 +351,15 @@ export function UnitPicker({
     setQuery('')
   }
 
+  /** เลือกแถว: แปลงถึง = commit · strict + แปลงไม่ถึง = เปิดผังตั้งอัตราแปลงของหน่วยนั้น */
+  const pickRow = (row: Row) => {
+    if (canCommit(row)) { commit(row.code); return }
+    setOpen(false)
+    setQuery('')
+    chainAddedRef.current = false
+    setChainUnit(row.code)
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -355,7 +370,7 @@ export function UnitPicker({
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const row = flatRows[activeIndex]
-      if (row && canCommit(row)) commit(row.code)
+      if (row) pickRow(row)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
@@ -382,7 +397,7 @@ export function UnitPicker({
       initial={{ opacity: 0, y: pos.openUp ? 4 : -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.12, ease: 'easeOut' }}
-      className="fixed z-[60] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+      className="fixed z-[80] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl flex flex-col overflow-hidden"
       style={{
         top: pos.openUp ? undefined : pos.top,
         bottom: pos.openUp ? window.innerHeight - pos.top : undefined,
@@ -443,13 +458,13 @@ export function UnitPicker({
                   key={`${g.key}-${row.code}`}
                   type="button"
                   data-active={isActive}
-                  disabled={disabledRow}
-                  onMouseEnter={() => !disabledRow && setActiveIndex(idx)}
-                  onMouseDown={e => { e.preventDefault(); if (canCommit(row)) commit(row.code) }}
+                  title={disabledRow ? t('unitPicker.unreachableRowSetup') : undefined}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseDown={e => { e.preventDefault(); pickRow(row) }}
                   className={`w-full px-3 py-2 text-left transition-colors ${
-                    isActive && !disabledRow ? 'bg-[var(--bg)]' : ''
+                    isActive ? 'bg-[var(--bg)]' : ''
                   } ${isSelected ? 'bg-[var(--primary-soft)]' : ''} ${
-                    disabledRow ? 'opacity-40 cursor-not-allowed' : isDimGroup ? 'opacity-60' : ''
+                    disabledRow ? 'opacity-50' : isDimGroup ? 'opacity-60' : ''
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -481,6 +496,7 @@ export function UnitPicker({
                   {isDimGroup && (
                     <div className="text-[11px] text-warning mt-0.5 truncate">
                       {t('unitPicker.unreachableRowHint', { base: baseUnitLabel })}
+                      {disabledRow && <span className="underline"> · {t('unitPicker.unreachableRowSetup')}</span>}
                     </div>
                   )}
                   {sp && (
@@ -552,6 +568,18 @@ export function UnitPicker({
           baseUnit={baseUnitCode}
           unit={canonicalUnitCode(normalizeUnit(String(value)))}
           onClose={() => setChainOpen(false)}
+        />
+      )}
+      {chainUnit && (
+        <UnitChainModal
+          materialId={materialId}
+          baseUnit={baseUnitCode}
+          unit={canonicalUnitCode(normalizeUnit(chainUnit))}
+          onAdded={() => { chainAddedRef.current = true }}
+          onClose={() => {
+            if (chainAddedRef.current) onChange(chainUnit)
+            setChainUnit(null)
+          }}
         />
       )}
     </div>

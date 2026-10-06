@@ -3442,6 +3442,7 @@
     "badgeMaterial": "This item only",
     "badgeTenant": "Company-wide",
     "unreachableRowHint": "No conversion rate to {{base}} yet",
+    "unreachableRowSetup": "click to set a conversion here",
     "unreachableHint": "This unit has no conversion rate to {{base}} yet —",
     "unreachableHintLink": "add a conversion here",
     "subUnitToggle": "This item is bought by pack/case",

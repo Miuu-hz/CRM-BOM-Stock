@@ -174,3 +174,47 @@ describe('UnitPicker — แก้หน่วยที่แปลงไม่�
     expect(screen.getByRole('dialog', { name: 'ผังการแปลงหน่วย' })).toBeTruthy()
   })
 })
+
+// ฝั่งจัดซื้อใช้ restrict="strict" — เดิมแถวที่แปลงไม่ถึงเป็น disabled เฉยๆ ไม่มีทางไปตั้งหน่วยจากบิลเลย
+describe('UnitPicker strict — คลิกหน่วยที่แปลงไม่ถึงแล้วตั้งอัตราได้ทันที', () => {
+  // jsdom ไม่มี scrollIntoView (ดรอปดาวน์เลื่อนแถวที่ active เข้าจอ)
+  beforeEach(() => { Element.prototype.scrollIntoView = vi.fn() })
+  it('คลิกแถว → เปิดผัง ไม่เลือกหน่วยก่อน · บันทึกกฎแล้วปิด → เลือกหน่วยนั้นให้', async () => {
+    const onChange = vi.fn()
+    render(<UnitPicker value="ml" onChange={onChange} materialId="m1" baseUnit="ml" restrict="strict" />)
+    fireEvent.click(screen.getAllByRole('button')[0])
+    // แถวถูกวาดใหม่ตอน catalog โหลดเสร็จ — หาใหม่ทุกรอบจนผังเปิด (ไม่ถือ node เก่าที่หลุดจาก DOM)
+    await screen.findAllByText(/unreachableRowSetup/)
+    await waitFor(() => {
+      const btn = screen.queryAllByText(/unreachableRowSetup/)[0]?.closest("button")
+      if (btn) fireEvent.mouseDown(btn)
+      expect(screen.getByRole("dialog")).toBeTruthy()
+    })
+
+    expect(onChange).not.toHaveBeenCalled()
+    const input = await screen.findByPlaceholderText('เช่น 24')
+    fireEvent.change(input, { target: { value: '1000' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(apiMock.post).toHaveBeenCalledWith('/materials/unit-conversions', {
+      material_id: 'm1', from_unit: 'box', to_unit: 'ml', conversion_factor: 1000,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'ปิด' }))
+    expect(onChange).toHaveBeenCalledWith('box')
+  })
+
+  it('เปิดผังแล้วปิดโดยไม่บันทึก → ไม่เปลี่ยนหน่วย', async () => {
+    const onChange = vi.fn()
+    render(<UnitPicker value="ml" onChange={onChange} materialId="m1" baseUnit="ml" restrict="strict" />)
+    fireEvent.click(screen.getAllByRole('button')[0])
+    await screen.findAllByText(/unreachableRowSetup/)
+    await waitFor(() => {
+      const btn = screen.queryAllByText(/unreachableRowSetup/)[0]?.closest('button')
+      if (btn) fireEvent.mouseDown(btn)
+      expect(screen.getByRole('dialog')).toBeTruthy()
+    })
+    await screen.findByPlaceholderText('เช่น 24')
+    fireEvent.click(screen.getByRole('button', { name: 'ปิด' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(apiMock.post).not.toHaveBeenCalled()
+  })
+})

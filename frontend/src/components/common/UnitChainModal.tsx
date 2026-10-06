@@ -14,6 +14,8 @@ interface Props {
   /** หน่วยที่ยังแปลงไม่ถึง — ยังไม่มีในระบบก็ได้ บันทึกกฎแล้วหน่วยนี้จะเกิดขึ้นเอง */
   unit: string
   onClose: () => void
+  /** เรียกเมื่อบันทึกกฎเพิ่มสำเร็จ (ไม่นับการลบ) — ช่องหน่วยที่เปิดหน้าต่างนี้ใช้เลือกหน่วยนั้นให้หลังปิด */
+  onAdded?: () => void
 }
 
 /** ข้อความผิดพลาดที่คนอ่านเข้าใจ — 401/402/403 = ไม่มีสิทธิ์/แพ็กเกจไม่ครอบคลุม */
@@ -30,7 +32,7 @@ export function unitChainLoadError(err: unknown): string {
  * เดิมปุ่มพาไป /settings?tab=units — บิลที่กรอกค้างไว้หายหมด
  * หน้าต่างนี้ซ้อนบนฟอร์มเดิม ปิดแล้วกรอกต่อได้ ส่วน invalidateUnitsCache() ทำให้ช่องหน่วยทุกช่องโหลดใหม่เอง
  */
-export default function UnitChainModal({ materialId = null, baseUnit, unit, onClose }: Props) {
+export default function UnitChainModal({ materialId = null, baseUnit, unit, onClose, onAdded }: Props) {
   const [convs, setConvs] = useState<UnitConversionRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -95,6 +97,7 @@ export default function UnitChainModal({ materialId = null, baseUnit, unit, onCl
             ...(force ? { force: true } : {}),
           })
           await afterChange()
+          onAdded?.()
         }}
         onDelete={async id => {
           await api.delete(`/materials/unit-conversions/${id}`)
