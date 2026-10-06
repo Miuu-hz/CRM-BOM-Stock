@@ -220,3 +220,20 @@ describe('ปิดกะ POS — ยอดเงินสด/โอนรวม
     expect(balanceOf(t, ACC.CASH)).toBe(350)
   })
 })
+
+describe('ปิดกะ POS — วันที่ journal ตามเวลาไทย', () => {
+  afterEach(() => { vi.useRealTimers() })
+  it('ปิดกะ 02:00 ไทย (19:00Z วันก่อน) → journal ลงวันที่ไทย', async () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    tenants.push(user.tenantId)
+    const shiftId = seedShift(user.tenantId, [{ amount: 100, method: 'CASH' }])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-25T19:00:00Z'))
+    const res = await request(app).post(`/api/sales/pos-shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ closing_cash_counted: 600 })
+    expect(res.status).toBe(200)
+    const je = db.prepare("SELECT date FROM journal_entries WHERE tenant_id = ? AND reference_type = 'POS_SHIFT_CLOSE'").get(user.tenantId) as any
+    expect(je.date).toBe('2026-09-26')
+  })
+})

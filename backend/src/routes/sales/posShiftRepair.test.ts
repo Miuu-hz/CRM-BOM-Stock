@@ -68,6 +68,15 @@ function seedClosedShift(tenantId: string, opts: {
 }
 
 describe('ซ่อมกะ POS ปิดค้าง (CLOSED แต่ไม่มี journal POS_SHIFT_CLOSE)', () => {
+  it('closed_at 19:00Z = 02:00 ไทยวันถัดไป → journal ลงวันที่ไทย', () => {
+    const { tenantId } = createTestUser({ role: 'ADMIN' })
+    tenants.push(tenantId)
+    const id = seedClosedShift(tenantId, { number: 'SH-LATE', closedAt: '2026-09-27T19:00:00.000Z', counted: 600, bills: [{ amount: 100, method: 'CASH' }] })
+    const r = repairStuckShift(findStuckClosedShifts(tenantId).find(x => x.id === id), 'test')
+    expect(r.date).toBe('2026-09-28')
+    expect((db.prepare('SELECT date FROM journal_entries WHERE id = ?').get(r.journalEntryId) as any).date).toBe('2026-09-28')
+  })
+
   it('ลงย้อนหลังวันที่ปิดกะ เคลียร์ 1180 · กะปกติ/กะยุคเก่าไม่แตะ · งวดปิดติด · รันซ้ำไม่ลงซ้ำ', () => {
     const { tenantId } = createTestUser({ role: 'ADMIN' })
     tenants.push(tenantId)

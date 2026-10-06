@@ -113,12 +113,17 @@ export function findAliasTarget(tenantId: string, name: string): AliasTarget | n
  * จำ/ทับชื่อรองตอนยืนยันใบรับของ/ใบสั่งขาย · คืน true ถ้าจำ
  * ไม่จำเมื่อ: ปิดฟีเจอร์ · ชื่อตรงกับชื่อสินค้าที่ผูกอยู่แล้ว · ชนชื่อสินค้าหลักตัวอื่น (1 ชื่อ = 1 ที่)
  * ย้ายไปชี้ SKU อื่น → ทิ้งหน่วยที่ผูกไว้ (ตัวคูณของ SKU เดิมใช้กับ SKU ใหม่ไม่ได้)
+ * onlyIfAbsent (ฝั่งขาย): มีชื่อรองนี้อยู่แล้ว → ไม่แตะเลย (ไม่ย้าย SKU/ไม่ล้างหน่วย) · คืน true เมื่อชื่อนี้ชี้ SKU นี้อยู่ (เพิ่งจำ/จำไว้แล้ว)
  */
-export function rememberAlias(tenantId: string, name: string, stockItemId: string, sourceRef: string, userId: string): boolean {
+export function rememberAlias(tenantId: string, name: string, stockItemId: string, sourceRef: string, userId: string, opts: { onlyIfAbsent?: boolean } = {}): boolean {
   const key = normName(name)
   if (!key || !aliasEnabled(tenantId) || liveItemsNamed(tenantId, name).length > 0) return false
   const target = db.prepare('SELECT name FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
   if (!target || normName(target.name) === key) return false
+  if (opts.onlyIfAbsent) {
+    const cur = db.prepare('SELECT stock_item_id FROM stock_item_aliases WHERE tenant_id = ? AND name_norm = ?').get(tenantId, key) as any
+    if (cur) return cur.stock_item_id === stockItemId
+  }
   const now = new Date().toISOString()
   db.prepare(`
     INSERT INTO stock_item_aliases (id, tenant_id, name_norm, name, stock_item_id, source_ref, created_by, created_at, updated_at)
@@ -139,7 +144,7 @@ export function rememberAlias(tenantId: string, name: string, stockItemId: strin
 export function soldAsNote(tenantId: string, lineName: unknown, stockItem: { id: string; name: string }, sourceRef: string, userId: string): string {
   const name = String(lineName ?? '').trim()
   if (!name || normName(name) === normName(stockItem.name)) return ''
-  return rememberAlias(tenantId, name, stockItem.id, sourceRef, userId) ? `ขาย "${name}" · ` : ''
+  return rememberAlias(tenantId, name, stockItem.id, sourceRef, userId, { onlyIfAbsent: true }) ? `ขาย "${name}" · ` : ''
 }
 
 /**

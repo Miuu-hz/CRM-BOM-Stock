@@ -79,6 +79,9 @@ export function UnitPicker({
    */
   const [chainUnit, setChainUnit] = useState<string | null>(null)
   const chainAddedRef = useRef(false)
+  /** หน่วยที่เพิ่งตั้งกฎจากผัง รอเลือกให้เมื่อ units รีเฟรชแล้วแปลงถึงจริง (ไม่ข้าม strict) */
+  const [pendingSelect, setPendingSelect] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -360,6 +363,18 @@ export function UnitPicker({
     setChainUnit(row.code)
   }
 
+  // เลือกหน่วยที่เพิ่งตั้งกฎให้ ก็ต่อเมื่อแปลงถึงหน่วยฐานแล้วจริง · ไม่ถึงภายใน 5 วิ = เลิกรอ ไม่เลือกให้
+  useEffect(() => {
+    if (!pendingSelect) return
+    if (isReachable(pendingSelect)) { onChange(pendingSelect); setPendingSelect(null); return }
+    const id = setTimeout(() => setPendingSelect(null), 5000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSelect, isReachable])
+
+  /** ปิดผังแล้วคืนโฟกัสให้ปุ่มของช่องนี้ — แถวใน dropdown ถูกถอดไปแล้ว opener ของผังเลยเป็น body */
+  const restoreFocus = () => { setTimeout(() => triggerRef.current?.focus(), 0) }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -517,6 +532,7 @@ export function UnitPicker({
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(o => !o)}
@@ -567,7 +583,7 @@ export function UnitPicker({
           materialId={materialId}
           baseUnit={baseUnitCode}
           unit={canonicalUnitCode(normalizeUnit(String(value)))}
-          onClose={() => setChainOpen(false)}
+          onClose={() => { setChainOpen(false); restoreFocus() }}
         />
       )}
       {chainUnit && (
@@ -577,8 +593,9 @@ export function UnitPicker({
           unit={canonicalUnitCode(normalizeUnit(chainUnit))}
           onAdded={() => { chainAddedRef.current = true }}
           onClose={() => {
-            if (chainAddedRef.current) onChange(chainUnit)
+            if (chainAddedRef.current) setPendingSelect(chainUnit)
             setChainUnit(null)
+            restoreFocus()
           }}
         />
       )}

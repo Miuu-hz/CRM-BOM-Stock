@@ -3,6 +3,7 @@ import { closedPeriodLabel } from '../routes/journal.routes'
 import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from './goodsReceipt.service'
 import { createPurchaseInvoice, paySupplier } from './purchaseBilling.service'
 import { poNotReceivableMessage } from './purchaseOrderUpdate.service'
+import { thaiDateStr } from '../utils/id'
 
 /**
  * เดินบิลซื้อให้ครบสาย PO → GR → ใบแจ้งหนี้ซื้อ (PI) → บันทึกจ่ายเงิน (เฉพาะ PO ที่ is_paid)
@@ -29,6 +30,9 @@ export interface PurchaseChainResult {
 
 /** สถานะ PO ที่ต้องอนุมัติก่อนรับของ */
 export const PO_NEEDS_APPROVAL = ['DRAFT', 'SUBMITTED']
+
+/** ร่างที่ยังไม่จ่ายและรออนุมัติ — คนยังไม่ได้ตรวจ ห้ามให้สคริปต์ซ่อมอนุมัติ/รับของแทน (ข้ามเพดานอนุมัติ) */
+export const isAwaitingHumanReview = (po: any): boolean => po.is_paid !== 1 && PO_NEEDS_APPROVAL.includes(po.status)
 
 function openInvoicesOfPo(tenantId: string, poId: string): any[] {
   return db.prepare(`
@@ -76,14 +80,20 @@ export function completePurchaseChain(
   const res: PurchaseChainResult = { poId: po.id, poNumber: po.po_number, steps: [], blocker: null, complete: false }
   const block = (msg: string) => { res.blocker = msg; return res }
   const isPaid = po.is_paid === 1
-  const docDate = String(po.order_date || new Date().toISOString()).slice(0, 10)
+  // order_date เป็น timestamp (UTC) ได้ — แปลงเป็นวันตามเวลาไทย ไม่งั้น 00:00–06:59 ได้วันก่อนหน้า
+  const docDate = thaiDateStr(po.order_date)
 
   // ── ตรวจทุกอย่างก่อนเขียนอะไรลง DB ──
   if (po.status === 'CANCELLED') return block('PO ถูกยกเลิกแล้ว')
   if (!po.supplier_id) return block('PO ยังไม่ระบุผู้ขาย — แก้ PO ให้มีผู้ขายก่อน')
-  const closed = closedPeriodLabel(tenantId, docDate)
-  if (closed) return block(`งวด ${closed} ปิดบัญชีแล้ว ลงเอกสารวันที่ ${docDate} ไม่ได้`)
   const pending = getPendingPoItems(tenantId, po.id)
+  // ไม่เหลืออะไรต้องเขียน = ครบสายแล้ว — ไม่เช็คงวดปิด (งวดที่ปิดทีหลังต้องไม่ทำให้ PO ที่ครบแล้วขึ้นว่าติด)
+  const hasWork = PO_NEEDS_APPROVAL.includes(po.status) || pending.length > 0
+    || !!db.prepare("SELECT 1 FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status = 'DRAFT'").get(tenantId, po.id)
+    || freeGoodsReceipts(tenantId, po.id).length > 0
+    || (isPaid && openInvoicesOfPo(tenantId, po.id).length > 0 && poPaymentTarget(tenantId, po).remaining > 0.005)
+  const closed = hasWork ? closedPeriodLabel(tenantId, docDate) : null
+  if (closed) return block(`งวด ${closed} ปิดบัญชีแล้ว ลงเอกสารวันที่ ${docDate} ไม่ได้`)
   if (pending.length > 0) {
     const notReceivable = poNotReceivableMessage(tenantId, po.id)
     if (notReceivable) return block(notReceivable)
@@ -115,7 +125,7 @@ export function completePurchaseChain(
         const gr = createGoodsReceipt(tenantId, actor, {
           purchaseOrderId: po.id,
           receiptDate: docDate,
-          deliveryNoteNo: po.payment_reference || null,
+          deliveryNoteNo: null, // ไม่ใช้เลขอ้างอิงจ่ายเงินแทนเลขใบส่งของ
           notes: `[ปิดสายบิล ${po.po_number}]`,
           items: stillPending.map(p => ({
             poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty,
@@ -133,7 +143,7 @@ export function completePurchaseChain(
         const pi = createPurchaseInvoice(tenantId, actor, {
           goodsReceiptIds: grs.map(g => g.id),
           invoiceDate: docDate,
-          supplierInvoiceNumber: po.payment_reference || '',
+          supplierInvoiceNumber: '', // ไม่ใช้เลขอ้างอิงจ่ายเงินแทนเลขใบกำกับของผู้ขาย
           autoPay: false,
         }) as any
         return `${pi.pi_number} ฿${pi.total_amount}`

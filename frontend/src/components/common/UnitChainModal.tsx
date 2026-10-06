@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Lock, X } from 'lucide-react'
 import api from '../../services/api'
@@ -35,14 +35,18 @@ export function unitChainLoadError(err: unknown): string {
 export default function UnitChainModal({ materialId = null, baseUnit, unit, onClose, onAdded }: Props) {
   const [convs, setConvs] = useState<UnitConversionRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Esc ปิดเฉพาะหน้าต่างบนสุด (หน้าต่างนี้) ไม่ปิดบิลข้างล่าง
   useModalClose(onClose)
 
   const qs = materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''
+  // กัน reload ที่ตอบกลับสลับลำดับ — ใช้เฉพาะผลของรอบล่าสุด
+  const reloadSeq = useRef(0)
   const reload = useCallback(async () => {
+    const seq = ++reloadSeq.current
     const res = await api.get(`/materials/unit-conversions${qs}`)
-    setConvs(res.data?.data ?? [])
+    if (seq === reloadSeq.current) setConvs(res.data?.data ?? [])
   }, [qs])
 
   useEffect(() => {
@@ -52,12 +56,14 @@ export default function UnitChainModal({ materialId = null, baseUnit, unit, onCl
   // ปิดแล้วคืนโฟกัสให้ปุ่มที่เปิด — คีย์บอร์ดจะได้กรอกบิลต่อจากจุดเดิม
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
+    dialogRef.current?.focus()
     return () => opener?.focus?.()
   }, [])
 
+  // บันทึก/ลบสำเร็จแล้ว ให้ล้าง cache ก่อนเสมอ — reload ผังพลาดไม่ควรทำให้ดูเหมือนบันทึกไม่สำเร็จ
   const afterChange = async () => {
-    await reload()
     invalidateUnitsCache()
+    try { await reload() } catch { /* ผังเก่าค้างได้ ข้อมูลจริงบันทึกแล้ว */ }
   }
 
   const initialEdge = unit && baseUnit && unit !== baseUnit ? { from: unit, to: baseUnit } : null
@@ -96,12 +102,19 @@ export default function UnitChainModal({ materialId = null, baseUnit, unit, onCl
             material_id: materialId, from_unit: from, to_unit: to, conversion_factor: factor,
             ...(force ? { force: true } : {}),
           })
-          await afterChange()
           onAdded?.()
+          await afterChange()
         }}
         onDelete={async id => {
           await api.delete(`/materials/unit-conversions/${id}`)
           await afterChange()
+        }}
+        onDeleteMany={async ids => {
+          try {
+            await Promise.all(ids.map(id => api.delete(`/materials/unit-conversions/${id}`)))
+          } finally {
+            await afterChange() // ลบสำเร็จบางข้อก็ต้องโหลดผังใหม่
+          }
         }}
         onClose={onClose}
       />
@@ -115,7 +128,9 @@ export default function UnitChainModal({ materialId = null, baseUnit, unit, onCl
       role="dialog"
       aria-modal="true"
       aria-label="ผังการแปลงหน่วย"
-      className="relative z-[70]"
+      ref={dialogRef}
+      tabIndex={-1}
+      className="relative z-[70] outline-none"
       onClick={e => e.stopPropagation()}
     >
       {body}

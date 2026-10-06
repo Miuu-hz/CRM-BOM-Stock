@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import api from '../services/api'
 import { normalizeUnit, canonicalUnitCode } from '../utils/unitNormalize'
 import i18n from '../i18n'
@@ -298,6 +298,7 @@ export function invalidateUnitsCache() {
   globalExtraCache = null
   cachePromise = null
   catalogUnavailable = false
+  catalogInflight.clear()
   // เดิมล้างแค่ cache — ช่องหน่วยที่เปิดค้างอยู่ (เช่น แถวในบิล) ไม่รู้ตัว
   // คำเตือน "แปลงไม่ถึงหน่วยฐาน" จึงค้างจนกว่าจะรีเฟรชหน้า
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(UNITS_CHANGED_EVENT))
@@ -309,8 +310,22 @@ export function invalidateUnitsCache() {
 
 interface CatalogResult { units: UnitOption[]; specials: UnitSpecial[] }
 
-async function loadCatalog(materialId?: string | null): Promise<CatalogResult | null> {
-  if (catalogUnavailable) return null
+/** request ที่กำลังบินอยู่ แยกตาม materialId — picker หลายแถวใช้ร่วมกัน ไม่ยิงซ้ำ (ล้างตอน invalidate) */
+const catalogInflight = new Map<string, Promise<CatalogResult | null>>()
+
+function loadCatalog(materialId?: string | null): Promise<CatalogResult | null> {
+  if (catalogUnavailable) return Promise.resolve(null)
+  const key = materialId ?? ''
+  const existing = catalogInflight.get(key)
+  if (existing) return existing
+  const p = fetchCatalog(materialId).finally(() => {
+    if (catalogInflight.get(key) === p) catalogInflight.delete(key)
+  })
+  catalogInflight.set(key, p)
+  return p
+}
+
+async function fetchCatalog(materialId?: string | null): Promise<CatalogResult | null> {
   try {
     const qs = materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''
     const res = await api.get(`/materials/unit-conversions/catalog${qs}`)
@@ -374,6 +389,8 @@ export function useUnits(materialId?: string | null): {
   const [specials, setSpecials] = useState<UnitSpecial[]>([])
   const [loading, setLoading] = useState(false)
   const [rev, setRev] = useState(0)
+  // refetch จาก invalidate/เปลี่ยนภาษา ให้โชว์รายการเดิมต่อ ไม่กระพริบ loading
+  const loadedKey = useRef<string | null>(null)
 
   useEffect(() => {
     const onChanged = () => setRev(r => r + 1)
@@ -383,7 +400,8 @@ export function useUnits(materialId?: string | null): {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    const key = materialId ?? ''
+    if (loadedKey.current !== key) setLoading(true)
 
     async function load() {
       try {
@@ -422,7 +440,7 @@ export function useUnits(materialId?: string | null): {
           setSpecials([])
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) { loadedKey.current = key; setLoading(false) }
       }
     }
 

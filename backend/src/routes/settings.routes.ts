@@ -29,6 +29,12 @@ router.get('/company', (req, res) => {
   }
 })
 
+function parseAliasFlag(v: unknown): 0 | 1 | null {
+  if (v === false || v === 0 || v === '0' || v === 'false') return 0
+  if (v === true || v === 1 || v === '1' || v === 'true') return 1
+  return null
+}
+
 // PUT /api/settings/company — บันทึกข้อมูลบริษัท
 router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
   try {
@@ -45,6 +51,12 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
       if (callerRole !== 'ADMIN' && callerRole !== 'MASTER') {
         return res.status(403).json({ success: false, message: 'เฉพาะ Master และ Admin เท่านั้นที่เปลี่ยนการตั้งค่านี้ได้' })
       }
+    }
+
+    // stock_alias_enabled: false/0/'0'/'false' = ปิด · true/1/'1'/'true' = เปิด · อย่างอื่น 400 (เดิม null/"0" ถูกตีเป็นเปิดเงียบ ๆ)
+    const aliasEnabled = parseAliasFlag(stock_alias_enabled)
+    if (stock_alias_enabled !== undefined && aliasEnabled === null) {
+      return res.status(400).json({ success: false, message: 'stock_alias_enabled ต้องเป็น true/false (หรือ 1/0)' })
     }
 
     // Get existing settings to merge partial updates
@@ -118,9 +130,8 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
 
     db.prepare('UPDATE company_settings SET vat_registered = ? WHERE tenant_id = ?').run(mergedVatRegistered, tenantId)
     // ชื่อเรียกแทน SKU — ส่งมาเมื่อไรค่อยแตะ (ค่าเริ่มต้นของคอลัมน์ = 1 เปิด)
-    if (stock_alias_enabled !== undefined) {
-      db.prepare('UPDATE company_settings SET stock_alias_enabled = ? WHERE tenant_id = ?')
-        .run(stock_alias_enabled === false || stock_alias_enabled === 0 ? 0 : 1, tenantId)
+    if (aliasEnabled !== null) {
+      db.prepare('UPDATE company_settings SET stock_alias_enabled = ? WHERE tenant_id = ?').run(aliasEnabled, tenantId)
     }
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)

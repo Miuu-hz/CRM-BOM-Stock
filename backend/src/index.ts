@@ -387,7 +387,10 @@ app.use(['/mcp', '/mcp/*'], express.json({ limit: '15mb' }))
 // โลโก้บริษัท (logo_base64) กับรูป QR บัญชีธนาคาร (qr_code_base64) ส่งมาเป็น base64 ใน JSON
 // รูปจากมือถือ ~1MB กลายเป็น ~1.4MB หลัง base64 → ชน 1mb แล้ว 413 (เจอใน log 2026-10)
 // 10mb ≈ รูปจริง ~7MB พอสำหรับโลโก้/QR ใกล้เคียงเพดาน multer 10MB ของไฟล์แนบ
-app.use(['/api/settings/company', '/api/bank-accounts'], express.json({ limit: '10mb' }))
+// เปิด 10mb เฉพาะคำขอที่แนบ Authorization (authenticate อ่านโทเคนจาก header นี้ที่เดียว) — ไม่มี header = ตกไป 1mb ด้านล่าง
+// กันคนนอกยิงบอดี้ 10MB ให้ parse ก่อนโดนปฏิเสธ 401 (413 handler ภาษาไทยยังใช้ได้ตามเดิม)
+const largeJsonParser = express.json({ limit: '10mb' })
+app.use(['/api/settings/company', '/api/bank-accounts'], (req, res, next) => (req.headers.authorization ? largeJsonParser(req, res, next) : next()))
 app.use(express.json({ limit: '1mb' }))
 
 

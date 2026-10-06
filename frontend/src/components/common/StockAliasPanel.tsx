@@ -27,14 +27,26 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
   const [unit, setUnit] = useState('')
   const [factor, setFactor] = useState('')
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
-  const load = () => api.get('/stock/aliases', { params: { stockItemId } })
-    .then(r => { setRows(r.data?.data ?? []); setEnabled(r.data?.enabled !== false) })
-    .catch(() => setEnabled(false))
+  // ignore flag: ถ้าเปลี่ยน stockItemId ระหว่างรอ ผลของสินค้าเก่าต้องไม่ทับของใหม่
+  useEffect(() => {
+    let ignore = false
+    setLoadError(false)
+    api.get('/stock/aliases', { params: { stockItemId } })
+      .then(r => {
+        if (ignore) return
+        setRows(r.data?.data ?? []); setEnabled(r.data?.enabled !== false)
+      })
+      .catch(() => { if (!ignore) { setEnabled(false); setLoadError(true) } })
+    return () => { ignore = true }
+  }, [stockItemId])
 
-  useEffect(() => { load() }, [stockItemId])
-
+  if (loadError) return <p className="text-[11px] text-warning" role="alert">{t('stock.alias.loadFailed')}</p>
   if (!enabled) return null
+
+  // มีหน่วยแล้วต้องมีอัตรา > 0 · ไม่มีหน่วย = ใช้กฎแปลงของสินค้า (อัตราว่างได้)
+  const factorOk = !unit.trim() || Number(factor) > 0
 
   const add = async () => {
     if (!name.trim()) return
@@ -88,15 +100,17 @@ export default function StockAliasPanel({ stockItemId, baseUnit }: { stockItemId
       )}
       <div className="flex flex-wrap items-center gap-2">
         <input value={name} onChange={e => setName(e.target.value)} placeholder={t('stock.alias.namePlaceholder')}
+          aria-label={t('stock.alias.namePlaceholder')}
           className={`${inputCls} flex-1 min-w-[10rem]`} />
         <span className="text-xs text-[var(--fg-4)]">1</span>
         <input value={unit} onChange={e => setUnit(e.target.value)} placeholder={t('stock.alias.unitPlaceholder')}
+          aria-label={t('stock.alias.unitPlaceholder')}
           className={`${inputCls} w-32`} />
         <span className="text-xs text-[var(--fg-4)]">=</span>
         <input type="number" min={0} step="any" value={factor} onChange={e => setFactor(e.target.value)}
-          disabled={!unit.trim()} placeholder="15" className={`${inputCls} w-20 disabled:opacity-50`} />
+          disabled={!unit.trim()} placeholder="15" aria-label={t('stock.alias.factorLabel')} className={`${inputCls} w-20 disabled:opacity-50`} />
         <span className="text-xs text-[var(--fg-4)]">{base}</span>
-        <button type="button" onClick={add} disabled={saving || !name.trim()}
+        <button type="button" onClick={add} disabled={saving || !name.trim() || !factorOk}
           className="h-8 px-3 rounded-lg bg-phopy-indigo text-white text-sm font-semibold flex items-center gap-1 disabled:opacity-50">
           <Plus className="w-3.5 h-3.5" /> {t('stock.alias.add')}
         </button>

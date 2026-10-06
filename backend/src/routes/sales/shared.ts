@@ -221,7 +221,7 @@ export function deductStockForSO(tenantId: string, soId: string, soNumber: strin
       // แบบเดียวกับฝั่งรับของ + จดชื่อที่ขายไว้ใน stock log (ระบบไม่รู้ว่าของที่ออกจริงยี่ห้อไหน แค่จดชื่อ)
       const lineName = String(item.product_name || '').trim()
       const soldAs = lineName && normName(lineName) !== normName(stockItem.name)
-        && rememberAlias(tenantId, lineName, stockItemId, soNumber, 'system') ? `ขาย "${lineName}" · ` : ''
+        && rememberAlias(tenantId, lineName, stockItemId, soNumber, 'system', { onlyIfAbsent: true }) ? `ขาย "${lineName}" · ` : ''
 
       db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(deductQty, new Date().toISOString(), stockItemId, tenantId)
@@ -616,9 +616,20 @@ export { isValidImageFile, sanitizeFilename }
  */
 export const STOCK_DEDUCTED_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'PARTIAL', 'COMPLETED']
 
+// นับสุทธิ OUT − RETURN ของ 'SO: x' — ยกเลิก SO แล้วคืนสต็อก (RETURN) ต้องไม่ถือว่ายัง "ตัดอยู่"
+// ไม่งั้นใบส่งของของ SO ที่ยกเลิกแล้วกด DELIVERED จะไม่ตัดสต็อกแต่ดัน delivered_qty
 export function soStockAlreadyDeducted(tenantId: string, soNumber: string): boolean {
-  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
-    .get(tenantId, `SO: ${soNumber}`)
+  const r = db.prepare(`SELECT COALESCE(SUM(CASE WHEN type = 'OUT' THEN quantity WHEN type = 'RETURN' THEN -quantity ELSE 0 END), 0) AS net
+    FROM stock_movements WHERE tenant_id = ? AND type IN ('OUT', 'RETURN') AND reference = ?`)
+    .get(tenantId, `SO: ${soNumber}`) as any
+  return Number(r?.net) > 0.0001
+}
+
+/** SO นี้เคยมี OUT จริงไหม (ตอนยืนยัน SO หรือผ่านใบส่งของ) — ใช้ตอนยกเลิก SO ที่สถานะไม่อยู่ใน STOCK_DEDUCTED_STATUSES (เช่น DRAFT ที่ส่งของไปแล้ว) */
+export function soHasOut(tenantId: string, soId: string, soNumber: string): boolean {
+  const refs = soOutRefs(tenantId, soId, soNumber)
+  return !!db.prepare(`SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT'
+    AND reference IN (${refs.map(() => '?').join(',')}) LIMIT 1`).get(tenantId, ...refs)
 }
 
 /**

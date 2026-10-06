@@ -1730,9 +1730,10 @@ function DetailModal({
           conversions={convs}
           materialId={item.id}
           availableUnits={chainUnits}
-          onAdd={async (from, to, factor) => {
+          onAdd={async (from, to, factor, force) => {
             await api.post('/materials/unit-conversions', {
               material_id: item.id, from_unit: from, to_unit: to, conversion_factor: factor,
+              ...(force ? { force: true } : {}),
             })
             await reloadConvs()
             invalidateUnitsCache()
@@ -1741,6 +1742,15 @@ function DetailModal({
             await api.delete(`/materials/unit-conversions/${convId}`)
             await reloadConvs()
             invalidateUnitsCache()
+          }}
+          onDeleteMany={async (ids) => {
+            // โหลดผังใหม่/ล้าง cache ครั้งเดียวหลังลบครบ ไม่ใช่ต่อกฎ
+            try {
+              await Promise.all(ids.map(id => api.delete(`/materials/unit-conversions/${id}`)))
+            } finally {
+              await reloadConvs()
+              invalidateUnitsCache()
+            }
           }}
           onClose={() => setShowChain(false)}
           baseUnit={item.baseUnit || item.unit || ''}
@@ -2521,17 +2531,26 @@ export function EditModal({
           conversions={itemConversions}
           materialId={item.id}
           availableUnits={availableUnits}
-          onAdd={async (from, to, factor) => {
+          onAdd={async (from, to, factor, force) => {
             await api.post('/materials/unit-conversions', {
               material_id: item.id,
               from_unit: from,
               to_unit: to,
               conversion_factor: factor,
+              ...(force ? { force: true } : {}),
             })
             await fetchItemConversions(item.id)
             invalidateUnitsCache()
           }}
           onDelete={handleDeleteConversion}
+          onDeleteMany={async (ids) => {
+            try {
+              await Promise.all(ids.map(id => api.delete(`/materials/unit-conversions/${id}`)))
+            } finally {
+              await fetchItemConversions(item.id)
+              invalidateUnitsCache()
+            }
+          }}
           onClose={() => setShowChainEditor(false)}
           baseUnit={formData.baseUnit}
           displayUnit={formData.displayUnit}

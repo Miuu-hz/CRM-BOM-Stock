@@ -6,6 +6,7 @@ import db from '../db/sqlite'
 import { ACC } from '../config/accountCodes'
 import { postJournal, type JournalLineInput } from './accounting.service'
 import { closedPeriodLabel } from '../routes/journal.routes'
+import { thaiDateStr } from '../utils/id'
 
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -78,12 +79,12 @@ export interface ShiftRepairResult {
 }
 
 /**
- * ลง journal ปิดกะย้อนหลัง ลงวันที่ตาม closed_at (วันแบบเดียวกับที่ route ใช้ = ส่วนวันที่ของ ISO)
+ * ลง journal ปิดกะย้อนหลัง ลงวันที่ตาม closed_at (วันตามเวลาไทย แบบเดียวกับที่ route ปิดกะใช้)
  * ทำใน transaction · dryRun = ลงจริงแล้วถอยกลับ ให้ postJournal ตรวจดุลจริงโดยไม่เขียนอะไร
  * รันซ้ำได้: ตรวจซ้ำใน transaction ว่ายังไม่มี journal ก่อนลงทุกครั้ง
  */
 export function repairStuckShift(shift: any, actor: string, opts: { dryRun?: boolean } = {}): ShiftRepairResult {
-  const date = String(shift.closed_at || '').slice(0, 10)
+  const date = shift.closed_at ? thaiDateStr(shift.closed_at) : ''
   const result = (status: ShiftRepairResult['status'], message: string, journalEntryId?: string) =>
     ({ status, message, date, journalEntryId })
 

@@ -94,3 +94,21 @@ describe('Purchase.tsx — ชื่อเรียกแทน SKU (เหม�
     expect(fn).not.toMatch(/sell_price|unit_price/)
   })
 })
+
+describe('Purchase.tsx — เลือกชื่อเรียกแทนที่คนละหน่วย ต้องคิดราคาใหม่ (บิลไม่ต่ำเกิน)', () => {
+  it('aliasCost ปัดเฉพาะตอนมีตัวคูณ ≠ 1 และเก็บ 4 ตำแหน่ง', () => {
+    const fn = SRC.slice(SRC.indexOf('const aliasCost'), SRC.indexOf('const MaterialSearchInput'))
+    expect(fn).toContain('factor === 1 ? cost')
+    expect(fn).toContain('10000')
+    expect(fn).not.toContain('* 100) / 100')
+  })
+  it('onChange ของช่องค้นหาสินค้า: หน่วยเปลี่ยน + ผู้ใช้ไม่ได้แก้ราคาเอง → คิดราคาจาก aliasCost ใหม่', () => {
+    const start = SRC.indexOf('const unitChanged = !!alias?.unit')
+    const blk = SRC.slice(start, SRC.indexOf('onAddNew={modalMode', start))
+    expect(blk).toMatch(/unitChanged && !item\.price_edited/)
+    expect(blk).toContain('aliasCost(mat, alias)')
+  })
+  it('แก้ช่องราคาเอง = price_edited (กันทับ)', () => {
+    expect(SRC).toMatch(/unit_price: parseFloat\(e\.target\.value\) \|\| 0, price_edited: true/)
+  })
+})

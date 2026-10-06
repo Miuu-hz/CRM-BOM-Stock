@@ -4,7 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
-import { formatDocumentNumber, docYear } from '../../utils/id'
+import { formatDocumentNumber, docYear, thaiDateStr } from '../../utils/id'
 import { isCashMethod } from '../../services/purchaseBilling.service'
 import { calcVat, vatModeToFields, type VatMode } from '../../utils/vat'
 import { rememberContactVatMode } from '../../services/accounting.service'
@@ -17,6 +17,10 @@ import {
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
 import { applyPurchaseOrderUpdate, changePurchaseOrderDate, PurchaseOrderUpdateError, poNotReceivableMessage } from '../../services/purchaseOrderUpdate.service'
+
+/** วันที่ปฏิทินจริงหรือไม่ (ตัด 2026-02-31 / 2026-13-01 ที่ regex ปล่อยผ่าน) — เช็คแบบเดียวกับ changePurchaseOrderDate */
+const isRealDate = (d: string) => !isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d
+const badDateMessage = (d: string) => `วันที่ "${d}" ไม่ถูกต้อง — ใช้รูปแบบ YYYY-MM-DD ปี ค.ศ.`
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
   // ── 5. create_purchase_request ─────────────────────────────────────────────
@@ -127,11 +131,12 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         payment_method, payment_reference, bank_hint, is_paid, paid_amount,
         image_base64, image_name, bill_date,
       } = args
+      if (bill_date && !isRealDate(bill_date)) return ok({ success: false, message: badDateMessage(bill_date) })
       const id = randomUUID().replace(/-/g, '').substring(0, 25)
       // เลขที่ตามรูปแบบใน Settings + วันที่บนบิล (เดิมใช้วันที่กดสร้างเสมอ บิลย้อนหลังได้วันผิดในเลข)
       const poNumber = formatDocumentNumber('PO', tenantId, 'PO', docYear(bill_date), 5, bill_date)
       const now = new Date().toISOString()
-      const orderDate = bill_date || now
+      const orderDate = bill_date || thaiDateStr() // เก็บเป็นวันที่ไทย ไม่ใช่ UTC ISO
 
       // ── Auto-find or create supplier ────────────────────────────────────────
       let supplierId: string | null = null
@@ -147,7 +152,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
           // ใช้ตัวนับกลาง + ข้ามรหัสที่มีอยู่แล้ว แบบเดียวกับ CUS ใน sales.ts
           const codeTaken = db.prepare('SELECT 1 FROM suppliers WHERE tenant_id = ? AND code = ?')
           let supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
-          for (let i = 0; i < 50 && codeTaken.get(tenantId, supCode); i++) {
+          while (codeTaken.get(tenantId, supCode)) { // ตัวนับกลางเดินหน้าทุกรอบ จึงจบเสมอ
             supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
           }
           const supId = randomUUID().replace(/-/g, '').substring(0, 25)
@@ -736,6 +741,7 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
     },
     async (args) => {
       const { po_id, items, delivery_note_no, notes, receipt_date } = args
+      if (receipt_date && !isRealDate(receipt_date)) return ok({ success: false, message: badDateMessage(receipt_date) })
       let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })

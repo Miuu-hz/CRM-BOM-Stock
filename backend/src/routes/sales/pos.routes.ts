@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { getLimits } from '../../services/subscription.service'
-import { generateId, formatDocumentNumber } from '../../utils/id'
+import { generateId, formatDocumentNumber, thaiDateStr } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { ACC } from '../../config/accountCodes'
 import { postJournal, getOrCreateAccount, JournalError } from '../../services/accounting.service'
@@ -264,7 +264,7 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
     const userId = req.user!.userId
     const { sales_date, notes } = req.body
 
-    const targetDate = sales_date || new Date().toISOString().split('T')[0]
+    const targetDate = sales_date || thaiDateStr()
 
     // Check if already closed for this date
     const existingCheck = db.prepare(`
@@ -576,7 +576,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     const expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
     const cashDifference = r2(Number(closing_cash_counted) - expectedCash)
     const nowStr = new Date().toISOString()
-    const today = nowStr.split('T')[0]
+    const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
 
     let journalEntryId: string | null = null
     // ปิดสถานะกะกับลงบัญชีต้องสำเร็จหรือล้มไปด้วยกัน — เดิมลงบัญชีพังแล้วกะถูกปิดค้าง
@@ -718,7 +718,7 @@ router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
     `).run(movementId, tenantId, id, type, amt, reason || null, account_id, userId, nowStr)
 
     const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
-    const today = nowStr.split('T')[0]
+    const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
     const desc = `${type === 'PAID_OUT' ? 'จ่ายออกจากลิ้นชัก' : 'รับเข้าลิ้นชัก'} กะ ${shift.shift_number}${reason ? ' - ' + reason : ''}`
     const journalEntryId = type === 'PAID_OUT'
       // จ่ายออก: Dr บัญชีค่าใช้จ่ายที่เลือก / Cr เงินสด

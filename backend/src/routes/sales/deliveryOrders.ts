@@ -156,8 +156,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // สต็อกถูกตัดไปแล้วตั้งแต่ยืนยันคำสั่งขาย (deductStockForSO) ถ้าตัดซ้ำตรงนี้
     // ของจะหายจากคลังสองเท่าของที่ขายจริง — เช็คจากรายการเคลื่อนไหวของ SO แม่
-    const parentSO = db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?')
+    const parentSO = db.prepare('SELECT so_number, status FROM sales_orders WHERE id = ? AND tenant_id = ?')
       .get(deliveryOrder.sales_order_id, tenantId) as any
+    // SO แม่ถูกยกเลิกแล้ว (สต็อกคืนไปแล้ว) → ห้ามส่งของ: ไม่งั้นดัน delivered_qty แล้วปลุก SO กลับเป็น DELIVERED
+    if (status === 'DELIVERED' && parentSO?.status === 'CANCELLED') {
+      return res.status(409).json({ success: false, message: 'คำสั่งขายของใบส่งของนี้ถูกยกเลิกแล้ว ส่งของไม่ได้ — ออกคำสั่งขายใหม่แทน' })
+    }
     const alreadyDeducted = !!parentSO && soStockAlreadyDeducted(tenantId, parentSO.so_number)
 
     // When delivered, deduct stock

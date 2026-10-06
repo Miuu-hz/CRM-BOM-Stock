@@ -5,7 +5,9 @@
 // ค่าเริ่มต้น = ดูอย่างเดียว (dry-run) ไม่เขียน DB · ต้องใส่ --apply ถึงจะบันทึกจริง
 // ตัวเลือก:
 //   --tenant <tenant_id>              เฉพาะเทแนนต์นี้
-//   --po <เลขที่ PO หรือ id>            เฉพาะใบนี้ (ซ้ำได้)
+//   --po <เลขที่ PO หรือ id>            เฉพาะใบนี้ (ซ้ำได้) — ระบุเองถือว่าตั้งใจ จึงรวม PO ที่ยังไม่จ่ายและรออนุมัติด้วย
+//   --include-unpaid                  รวม PO ที่ยังไม่จ่าย (is_paid = 0) สถานะ DRAFT/SUBMITTED — ปกติข้าม เพราะเป็นร่างที่รอคนตรวจ/อนุมัติ
+//                                     (สคริปต์นี้อนุมัติ+รับของให้เอง จึงข้ามเพดานอนุมัติถ้าไปแตะร่างที่ยังไม่มีใครดู)
 //   --date PO-xxx=YYYY-MM-DD          แก้วันที่บนบิลก่อนเดินสาย (ซ้ำได้) — บิลที่ป้อนก่อนมี bill_date ได้วันที่ป้อนแทน
 //   --dates-file dates.csv            เหมือน --date แต่อ่านจากไฟล์ บรรทัดละ  PO-xxx,YYYY-MM-DD  (บรรทัดหัว/ว่างข้ามได้)
 // แก้วันที่ได้เฉพาะ PO ที่ยังไม่มีใบรับสินค้า/ใบแจ้งหนี้ และไม่อยู่งวดที่ปิดแล้ว · เลขที่ PO คงเดิม ไม่ออกเลขใหม่
@@ -23,7 +25,7 @@
 import fs from 'fs'
 import path from 'path'
 import db from '../src/db/sqlite'
-import { completePurchaseChain, findStuckMcpPurchaseOrders, type PurchaseChainResult } from '../src/services/purchaseChain.service'
+import { completePurchaseChain, findStuckMcpPurchaseOrders, isAwaitingHumanReview, type PurchaseChainResult } from '../src/services/purchaseChain.service'
 import { changePurchaseOrderDate } from '../src/services/purchaseOrderUpdate.service'
 
 const ACTOR = 'repair-mcp-bills-2026-10-06'
@@ -34,6 +36,7 @@ const apply = argv.includes('--apply')
 const valuesOf = (flag: string) => argv.flatMap((a, i) => (a === flag && argv[i + 1] ? [argv[i + 1]] : []))
 const tenant = valuesOf('--tenant')[0]
 const onlyPos = valuesOf('--po')
+const includeUnpaid = argv.includes('--include-unpaid')
 
 /** PO (เลขที่หรือ id) → วันที่ใหม่ · พังตั้งแต่ตอนอ่าน ดีกว่าไปเจอครึ่งทาง */
 function parseDates(): Map<string, string> {
@@ -116,8 +119,12 @@ function printTable(rows: Row[]) {
 
 async function main() {
   const dates = parseDates()
-  const stuck = findStuckMcpPurchaseOrders(tenant)
+  const allStuck = findStuckMcpPurchaseOrders(tenant)
     .filter(po => onlyPos.length === 0 || onlyPos.includes(po.po_number) || onlyPos.includes(po.id))
+  // ร่างที่ยังไม่จ่ายและรออนุมัติ = รอคนตรวจ — ไม่แตะเว้นแต่สั่งเอง (--po / --include-unpaid)
+  const skipReview = onlyPos.length === 0 && !includeUnpaid
+  const stuck = skipReview ? allStuck.filter(po => !isAwaitingHumanReview(po)) : allStuck
+  const skipped = allStuck.length - stuck.length
   const dateFor = (po: any) => dates.get(po.po_number) ?? dates.get(po.id)
   const unknown = [...dates.keys()].filter(k => !stuck.some(po => po.po_number === k || po.id === k))
 
@@ -130,7 +137,7 @@ async function main() {
     await db.backup(dest)
     console.log(`สำรอง DB แล้ว: ${dest}`)
   }
-  console.log(`พบบิล MCP ค้างสาย ${stuck.length} ใบ\n`)
+  console.log(`พบบิล MCP ค้างสาย ${stuck.length} ใบ${skipped ? ` · ข้าม ${skipped} ใบ (ยังไม่จ่าย รออนุมัติ — ใช้ --po หรือ --include-unpaid ถ้าตั้งใจทำ)` : ''}\n`)
 
   const rows = stuck.map(po => processPo(po, dateFor(po)))
   if (rows.length) printTable(rows)

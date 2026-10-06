@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -822,6 +823,7 @@ function GeneralSettings() {
       await m.default.update({ stock_alias_enabled: next })
     } catch {
       setStockAliasEnabled(!next)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setAliasSaving(false)
     }
@@ -990,6 +992,8 @@ function GeneralSettings() {
           type="button"
           onClick={() => !aliasSaving && handleToggleStockAlias()}
           disabled={aliasSaving}
+          role="switch"
+          aria-checked={stockAliasEnabled}
           className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all disabled:opacity-60 mt-3 ${stockAliasEnabled ? 'border-phopy-indigo/60 bg-phopy-indigo/5' : 'border-[var(--border)] bg-[var(--surface-2)]'}`}
         >
           <div className="text-left">

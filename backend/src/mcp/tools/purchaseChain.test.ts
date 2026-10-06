@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { registerPurchaseTools } from './purchase'
 import { registerPurchaseBillingTools } from './purchaseBilling'
-import { findStuckMcpPurchaseOrders } from '../../services/purchaseChain.service'
+import { findStuckMcpPurchaseOrders, isAwaitingHumanReview } from '../../services/purchaseChain.service'
 import { changePurchaseOrderDate } from '../../services/purchaseOrderUpdate.service'
 import { createTestUser } from '../../test/testAuth'
 
@@ -190,5 +190,54 @@ describe('MCP บิลซื้อ: create_draft_po → complete_purchase_bill'
       .run(generateId(), t, `SUP-${new Date().getFullYear()}-0001`)
     const po = await call('create_draft_po', { items: [{ description: 'y', quantity: 1, unit: 'pcs', unitPrice: 1 }], supplier_hint: 'ร้านใหม่' })
     expect(po.supplier.isNew).toBe(true)
+  })
+
+  it('สร้างผู้ขายใหม่เมื่อรหัสที่มีอยู่เกิน 50 ตัว ไม่ใส่รหัสซ้ำ', async () => {
+    const { t, call } = setup()
+    const y = new Date().getFullYear()
+    for (let i = 1; i <= 60; i++) {
+      db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status) VALUES (?, ?, ?, 'เก่า', 'เก่า', 'INACTIVE')")
+        .run(generateId(), t, `SUP-${y}-${String(i).padStart(4, '0')}`)
+    }
+    const po = await call('create_draft_po', { items: [{ description: 'y', quantity: 1, unit: 'pcs', unitPrice: 1 }], supplier_hint: 'ร้านที่ 61' })
+    expect(po.supplier.isNew).toBe(true)
+    expect((db.prepare('SELECT COUNT(DISTINCT code) c FROM suppliers WHERE tenant_id = ?').get(t) as any).c).toBe(61)
+  })
+
+  it('bill_date/receipt_date ที่ไม่มีในปฏิทิน → ปฏิเสธด้วยข้อความไทย', async () => {
+    const { call } = setup()
+    const r = await call('create_draft_po', { items: [{ description: 'y', quantity: 1, unit: 'pcs', unitPrice: 1 }], supplier_hint: 'x', bill_date: '2026-02-31' })
+    expect(r.success).toBe(false)
+    expect(r.message).toContain('ไม่ถูกต้อง')
+    const g = await call('create_goods_receipt', { po_id: 'x', receipt_date: '2026-13-01' })
+    expect(g.success).toBe(false)
+    expect(g.message).toContain('ไม่ถูกต้อง')
+  })
+
+  it('วันเวลาไทย: ไม่ระบุ bill_date เก็บเป็นวันที่ · order_date แบบ UTC 00:00–06:59 ไทย ได้วันไทยของเอกสาร · ไม่ยืมเลขอ้างอิงจ่ายเป็นเลขใบส่งของ/ใบกำกับ', async () => {
+    const { t, call } = setup()
+    seedItem(t, 'ไข่')
+    const po = await call('create_draft_po', {
+      items: [{ description: 'ไข่', quantity: 1, unit: 'kg', unitPrice: 50 }],
+      supplier_hint: 'ร้านไข่', payment_method: 'เงินสด', is_paid: true, payment_reference: 'SLIP-123',
+    })
+    expect((db.prepare('SELECT order_date FROM purchase_orders WHERE id = ?').get(po.poId) as any).order_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // บิลเก่าที่เก็บ UTC ISO — 2026-09-27 20:00Z = 28 ก.ย. 03:00 ไทย
+    db.prepare('UPDATE purchase_orders SET order_date = ? WHERE id = ?').run('2026-09-27T20:00:00.000Z', po.poId)
+    const r = await call('complete_purchase_bill', { po_id: po.poId })
+    expect(r.success).toBe(true)
+    const gr = db.prepare('SELECT receipt_date, delivery_note_no FROM goods_receipts WHERE purchase_order_id = ?').get(po.poId) as any
+    expect(gr.receipt_date).toBe('2026-09-28')
+    expect(gr.delivery_note_no || '').toBe('')
+    const pi = db.prepare('SELECT invoice_date, supplier_invoice_number FROM purchase_invoices WHERE purchase_order_id = ?').get(po.poId) as any
+    expect(pi.invoice_date).toBe('2026-09-28')
+    expect(pi.supplier_invoice_number || '').toBe('')
+  })
+
+  it('isAwaitingHumanReview: เฉพาะร่าง/รอส่งที่ยังไม่จ่าย', () => {
+    expect(isAwaitingHumanReview({ is_paid: 0, status: 'DRAFT' })).toBe(true)
+    expect(isAwaitingHumanReview({ is_paid: 0, status: 'SUBMITTED' })).toBe(true)
+    expect(isAwaitingHumanReview({ is_paid: 1, status: 'DRAFT' })).toBe(false)
+    expect(isAwaitingHumanReview({ is_paid: 0, status: 'APPROVED' })).toBe(false)
   })
 })

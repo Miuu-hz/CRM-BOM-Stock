@@ -279,6 +279,8 @@ interface OrderItem {
   total_price: number
   received_qty?: number
   skip_stock?: boolean
+  /** ผู้ใช้แก้ราคาเองแล้ว — เปลี่ยนหน่วยตามชื่อเรียกแทนต้องไม่ทับราคานี้ */
+  price_edited?: boolean
   notes: string
 }
 
@@ -394,8 +396,12 @@ const SubmitSplitButton = ({
 )
 
 /** ต้นทุนเริ่มต้นต่อหน่วยของบรรทัด: ชื่อเรียกแทนที่ผูกหน่วย = ต้นทุนต่อหน่วยฐาน × ตัวคูณของชื่อนั้น (ราคาซื้อ ไม่ใช่ราคาขาย) */
-const aliasCost = (mat?: Material, alias?: StockAlias) =>
-  Math.round((mat?.unitCost || 0) * (alias?.unit && alias.factor ? alias.factor : 1) * 100) / 100
+// ปัดเฉพาะตอนคูณตัวคูณ (4 ตำแหน่ง) — ไม่มีตัวคูณคืนต้นทุนตรง ๆ ไม่งั้น 0.125 กลายเป็น 0.13 แล้วยอดเพี้ยน
+const aliasCost = (mat?: Material, alias?: StockAlias) => {
+  const cost = mat?.unitCost || 0
+  const factor = alias?.unit && alias.factor ? alias.factor : 1
+  return factor === 1 ? cost : Math.round(cost * factor * 10000) / 10000
+}
 
 const MaterialSearchInput = ({ materials, aliases = [], value, onChange, disabled = false, onAddNew }: {
   materials: Material[]; value: string; onChange: (id: string, mat?: Material, alias?: StockAlias) => void; disabled?: boolean
@@ -4458,15 +4464,22 @@ const Purchase = () => {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <MaterialSearchInput materials={materials} aliases={stockAliases} value={item.material_id} disabled={modalMode === 'view'}
-                  onChange={(id, mat, alias) => updateOrderItemFields(index, {
+                  onChange={(id, mat, alias) => {
+                    // ชื่อเรียกแทนที่ผูกหน่วยคนละหน่วยกับบรรทัดเดิม (เช่น ขวด → แพ็ค 15 ขวด) ราคาเดิมเป็นราคาต่อหน่วยเก่า
+                    // คิดใหม่จากต้นทุน ยกเว้นผู้ใช้แก้ราคาเอง
+                    const unitChanged = !!alias?.unit && !!item.unit && normalizeUnit(alias.unit) !== normalizeUnit(item.unit)
+                    const repriceFromCost = !!mat?.unitCost && (item.unit_price === 0 || (unitChanged && !item.price_edited))
+                    updateOrderItemFields(index, {
                     material_id: id,
                     // ผูก SKU ไม่ทับชื่อจากบิล — ชื่อย่อยจับคู่ได้อยู่แล้ว เติมชื่อ SKU เฉพาะบรรทัดที่ยังว่าง
                     // เลือกชื่อเรียกแทน → ชื่อบรรทัด = ชื่อเรียกแทน + หน่วยที่ผูก (ตอนรับของใช้ตัวคูณของชื่อนี้)
                     description: alias?.name || item.description || mat?.name || '',
                     unit: alias?.unit || item.unit || mat?.unit,
-                    unit_price: mat?.unitCost && item.unit_price === 0 ? prefillUnitPriceFromCost(aliasCost(mat, alias), effectiveOrderVatMode, registered) : item.unit_price,
+                    unit_price: repriceFromCost ? prefillUnitPriceFromCost(aliasCost(mat, alias), effectiveOrderVatMode, registered) : item.unit_price,
+                    ...(repriceFromCost ? { price_edited: false } : {}),
                     skip_stock: id ? false : item.skip_stock,
-                  })}
+                    })
+                  }}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
                     (newItem) => {
                       updateOrderItemFields(index, {
@@ -4510,7 +4523,7 @@ const Purchase = () => {
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
                     <input type="number" min="0" step="any" value={item.unit_price}
-                      onChange={e => updateOrderItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                      onChange={e => updateOrderItemFields(index, { unit_price: parseFloat(e.target.value) || 0, price_edited: true })}
                       disabled={modalMode === 'view'}
                       className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>

@@ -3487,6 +3487,8 @@
       "saved": "Alias saved",
       "saveFailed": "Save failed",
       "deleteFailed": "Delete failed",
+      "loadFailed": "Could not load aliases — try refreshing",
+      "factorLabel": "Conversion factor to base unit",
       "aliasOf": "alias of {{name}}",
       "soldAs": "as \"{{name}}\"",
       "docName": "Name on document",

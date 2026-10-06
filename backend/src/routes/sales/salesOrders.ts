@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES, findNonSellableLine, notSellableMessage } from './shared'
+import { soHasOut, deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES, findNonSellableLine, notSellableMessage } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive } from '../../utils/vatSettings'
@@ -438,7 +438,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // คืน stock เมื่อยกเลิก SO ที่เคยตัดสต็อกไปแล้ว (previousStatus อยู่ใน STOCK_DEDUCTED_STATUSES).
     // ถ้า SO ถูกยกเลิกไปแล้ว (previousStatus === 'CANCELLED') จะไม่อยู่ในลิสต์นี้ — ป้องกันคืนสต็อกซ้ำ
-    if (status === 'CANCELLED' && STOCK_DEDUCTED_STATUSES.includes(previousStatus) && salesOrder) {
+    // DRAFT/PENDING_APPROVAL ที่มีใบส่งของ DELIVERED แล้ว (ตัดสต็อก+SO_COGS ผ่าน DO) ก็ต้องคืน — เช็คจาก OUT จริง
+    // ไม่ทิ้ง gate: restoreStockForSO มีทางสำรองแบบเดาที่จะคืนของที่ไม่เคยตัด
+    if (status === 'CANCELLED' && salesOrder
+      && (STOCK_DEDUCTED_STATUSES.includes(previousStatus) || soHasOut(tenantId, salesOrder.id, salesOrder.so_number))) {
       restoreStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
     }
 

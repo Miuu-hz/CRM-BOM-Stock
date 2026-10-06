@@ -1,5 +1,5 @@
 import db from '../db/sqlite'
-import { generateId, formatDocumentNumber } from '../utils/id'
+import { generateId, formatDocumentNumber, thaiDateStr } from '../utils/id'
 import { getOrCreateAccount } from './accounting.service'
 import { resolveBankAccountGL, ACC, ACC_META } from '../config/accountCodes'
 import { convertQuantityBidirectional, normalizeUnit } from './unitConversion.service'
@@ -237,7 +237,7 @@ class POSAccountingService {
       // 1. Create Revenue Journal Entry
       const entryNumber = this.generateEntryNumber(tenantId)
       const entryId = generateId()
-      const today = now().split('T')[0]
+      const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย
 
       // ต้องเท่ากับ total − ภาษี พอดี ไม่งั้น Dr บัญชีพัก POS (= total) ไม่บาลานซ์กับ Cr
       // ค่าขนส่ง/ค่าบริการอื่นที่เรียกเก็บจากลูกค้าเป็นรายได้ ส่วนลดท้ายบิลหักออกจากรายได้
@@ -484,7 +484,7 @@ class POSAccountingService {
       const reversalTotal = saleLines.reduce((s, l) => s + (l.debit || 0), 0)
       const entryNumber = this.generateEntryNumber(tenantId)
       const entryId = generateId()
-      const today = now().split('T')[0]
+      const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย
 
       const entryStmt = db.prepare(`
         INSERT INTO journal_entries (

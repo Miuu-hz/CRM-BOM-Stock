@@ -2602,7 +2602,10 @@ function CustomerSearch({ value, onChange }: {
 const aliasPrice = (p: Product) => Math.round((p.sell_price || 0) * (p.alias_unit && p.alias_factor ? p.alias_factor : 1) * 100) / 100
 /** เปิดใช้ชื่อเรียกแทน SKU ไหม (ตั้งค่า > ทั่วไป) — ไม่มีค่า = เปิด */
 const aliasEnabledCo = () => {
-  const v = (getCachedCompanySettings() as any)?.stock_alias_enabled
+  const s = getCachedCompanySettings() as any
+  // แคชยังว่าง (ตั้งค่ายังไม่โหลด) = ยังไม่รู้ว่าเปิดไหม — ไม่โชว์ช่องชื่อเอกสารตอนสวิตช์อาจปิดอยู่
+  if (!s || Object.keys(s).length === 0) return false
+  const v = s.stock_alias_enabled
   return v !== 0 && v !== false
 }
 

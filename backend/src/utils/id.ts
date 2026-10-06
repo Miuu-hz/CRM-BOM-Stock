@@ -104,3 +104,10 @@ function parseDocDate(v?: string | Date | null): Date {
 export function docYear(v?: string | Date | null): number {
   return parseDocDate(v).getFullYear()
 }
+
+/** วันที่ตามนาฬิกาไทยเป็น 'YYYY-MM-DD' — timestamp ที่มีโซน (…Z) แปลงเป็นเวลาไทยก่อน · ว่าง = วันนี้ (ไทย) */
+export function thaiDateStr(v?: string | Date | null): string {
+  const d = parseDocDate(v)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}

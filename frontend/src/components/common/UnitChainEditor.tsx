@@ -39,8 +39,10 @@ interface Props {
   /** id ของสินค้า — ส่งต่อให้ UnitPicker เพื่อให้เห็นหน่วยพิเศษเฉพาะสินค้านั้นด้วย */
   materialId?: string | null
   /** force = ผู้ใช้เห็นคำเตือนกฎขัดกันแล้วเลือกบันทึกทับ — ส่งต่อเป็น { force: true } ให้ API */
-  onAdd: (from: string, to: string, factor: number, force?: boolean) => Promise<void>
+  onAdd: (from: string, to: string, factor: number, force: boolean) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  /** ลบหลายกฎในครั้งเดียว (ลบหน่วยออกจากผัง) — ให้ผู้เรียกโหลดซ้ำ/ล้าง cache ครั้งเดียว ไม่ใช่ต่อกฎ · ไม่ส่ง = ใช้ onDelete ทีละข้อ */
+  onDeleteMany?: (ids: string[]) => Promise<void>
   onClose: () => void
   baseUnit?: string
   displayUnit?: string
@@ -137,6 +139,7 @@ export default function UnitChainEditor({
   materialId = null,
   onAdd,
   onDelete,
+  onDeleteMany,
   onClose,
   baseUnit = '',
   displayUnit = '',
@@ -306,7 +309,8 @@ export default function UnitChainEditor({
 
   const removeNode = async (unit: string, toDelete: UnitConversionRow[]) => {
     try {
-      await Promise.all(toDelete.map(c => onDelete(c.id)))
+      if (onDeleteMany) await onDeleteMany(toDelete.map(c => c.id))
+      else await Promise.all(toDelete.map(c => onDelete(c.id)))
       setNodePositions(prev => { const next = { ...prev }; delete next[unit]; return next })
       // ไม่มีเสียงตอบกลับ = คนกดไม่รู้ว่าเพิ่งลบอะไรไปกี่ข้อ
       toast.success(toDelete.length > 0
