@@ -289,16 +289,21 @@ router.get('/top-customers', async (req: Request, res: Response) => {
 
     const range = getRange(period, 0)
 
+    // รวมบิล POS ที่ผูกสมาชิก CRM ด้วย — เดิมนับแต่ใบแจ้งหนี้ ลูกค้าหน้าร้านจึงไม่เคยติดอันดับ
+    // (POS ไม่สร้างแถวใน invoices จึงไม่นับซ้ำ) ยอดทั้งสองฝั่งรวม VAT เหมือนกัน
     const rows = db.prepare(`
-      SELECT c.id, c.name, COUNT(i.id) as invoice_count,
-        COALESCE(SUM(i.total_amount), 0) as revenue
-      FROM invoices i JOIN customers c ON i.customer_id = c.id
-      WHERE c.tenant_id = ?
-        AND i.tenant_id = ?
-        AND i.status NOT IN ('CANCELLED','DRAFT')
-        AND date(i.invoice_date) >= ? AND date(i.invoice_date) <= ?
+      SELECT c.id, c.name, COUNT(*) as invoice_count, COALESCE(SUM(s.amount), 0) as revenue
+      FROM (
+        SELECT customer_id, total_amount as amount FROM invoices
+        WHERE tenant_id = ? AND status NOT IN ('CANCELLED','DRAFT')
+          AND date(invoice_date) >= ? AND date(invoice_date) <= ?
+        UNION ALL
+        SELECT customer_id, total_amount FROM pos_running_bills
+        WHERE tenant_id = ? AND status = 'PAID' AND customer_id IS NOT NULL
+          AND date(closed_at, '+7 hours') >= ? AND date(closed_at, '+7 hours') <= ?
+      ) s JOIN customers c ON s.customer_id = c.id AND c.tenant_id = ?
       GROUP BY c.id ORDER BY revenue DESC LIMIT 5
-    `).all(tenantId, tenantId, range.start, range.end)
+    `).all(tenantId, range.start, range.end, tenantId, range.start, range.end, tenantId)
 
     res.json({ success: true, data: rows })
   } catch (error) {

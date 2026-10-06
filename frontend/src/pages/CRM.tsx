@@ -1336,8 +1336,8 @@ function CustomerDetailModal({
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-[var(--primary)]">{order.orderNumber}</span>
-                            {order.source === 'SO' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/20">SO</span>
+                            {(order.source === 'SO' || order.source === 'POS') && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/20">{order.source}</span>
                             )}
                           </div>
                           <span className="text-xs text-[var(--fg-3)]">{new Date(order.orderDate).toLocaleDateString('th-TH')}</span>

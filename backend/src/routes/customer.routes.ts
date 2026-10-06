@@ -350,10 +350,16 @@ router.get('/:id/insights', (req: Request, res: Response) => {
         JOIN sales_orders so ON soi.sales_order_id = so.id
         LEFT JOIN stock_items si ON soi.stock_item_id = si.id
         WHERE so.customer_id = ? AND so.tenant_id = ? AND so.status != 'CANCELLED'
+        UNION ALL
+        SELECT pbi.product_name as name, 'POS' as category,
+          pbi.quantity as qty, pbi.total_price as revenue
+        FROM pos_bill_items pbi
+        JOIN pos_running_bills b ON pbi.bill_id = b.id
+        WHERE b.customer_id = ? AND b.tenant_id = ? AND b.status = 'PAID' AND (pbi.status IS NULL OR pbi.status NOT IN ('CANCELLED','VOID'))
       )
       GROUP BY name
       ORDER BY totalQuantity DESC LIMIT 10
-    `).all(id, id, tenantId) || []
+    `).all(id, id, tenantId, id, tenantId) || []
 
     // ── Auto-recommendations from stock_items ──────────────────────────────────
     const autoRecommendations = db.prepare(`
@@ -442,8 +448,10 @@ router.get('/:id/orders', (req: Request, res: Response) => {
         SELECT COUNT(*) FROM orders WHERE customer_id = ?
       ) + (
         SELECT COUNT(*) FROM sales_orders WHERE customer_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+      ) + (
+        SELECT COUNT(*) FROM pos_running_bills WHERE customer_id = ? AND tenant_id = ? AND status = 'PAID'
       ) as total
-    `).get(id, id, tenantId) as any
+    `).get(id, id, tenantId, id, tenantId) as any
 
     const orders = db.prepare(`
       SELECT id, orderNumber, orderDate, totalAmount, status, notes, source
@@ -456,9 +464,14 @@ router.get('/:id/orders', (req: Request, res: Response) => {
           so.total_amount as totalAmount, so.status, so.notes, 'SO' as source
         FROM sales_orders so
         WHERE so.customer_id = ? AND so.tenant_id = ? AND so.status != 'CANCELLED'
+        UNION ALL
+        SELECT b.id, b.bill_number as orderNumber, COALESCE(b.closed_at, b.opened_at) as orderDate,
+          b.total_amount as totalAmount, b.status, b.notes, 'POS' as source
+        FROM pos_running_bills b
+        WHERE b.customer_id = ? AND b.tenant_id = ? AND b.status = 'PAID'
       )
       ORDER BY orderDate DESC LIMIT ? OFFSET ?
-    `).all(id, id, tenantId, limit, offset) as any[]
+    `).all(id, id, tenantId, id, tenantId, limit, offset) as any[]
 
     for (const order of orders) {
       if (order.source === 'SO') {
@@ -468,6 +481,11 @@ router.get('/:id/orders', (req: Request, res: Response) => {
           FROM sales_order_items soi
           LEFT JOIN stock_items si ON soi.stock_item_id = si.id
           WHERE soi.sales_order_id = ?
+        `).all(order.id) || []
+      } else if (order.source === 'POS') {
+        order.items = db.prepare(`
+          SELECT product_name as productName, quantity, total_price as totalPrice
+          FROM pos_bill_items WHERE bill_id = ? AND (status IS NULL OR status NOT IN ('CANCELLED','VOID'))
         `).all(order.id) || []
       } else {
         order.items = db.prepare(`
