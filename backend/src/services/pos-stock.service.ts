@@ -41,6 +41,95 @@ export interface IngredientStockCheck {
   canMake: number
 }
 
+
+/**
+ * เมนูที่ตั้งไว้ก่อนสร้าง BOM จะมี pos_menu_configs.bom_id ว่าง — เดิมตกไปตัดสต็อก "ตัวจาน" แทนวัตถุดิบ
+ * ทั้งที่สินค้ามี BOM ACTIVE อยู่แล้ว (เจอ 10 เมนูใน Kids House 2026-10-07) จึงใช้ BOM ACTIVE ล่าสุดของสินค้าแทน
+ */
+export function resolveMenuBomId(tenantId: string, bomId: string | null | undefined, productId: string | null | undefined): string | null {
+  if (bomId) return bomId
+  if (!productId) return null
+  const row = db.prepare(
+    "SELECT id FROM boms WHERE tenant_id = ? AND product_id = ? AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1"
+  ).get(tenantId, productId) as any
+  return row?.id ?? null
+}
+
+/**
+ * แตกสูตรเป็นวัตถุดิบจริงแบบพวงต่อกันไปเรื่อย ๆ (BOM root → ลูก → หลาน)
+ * - แถว CHILD_BOM แตกเสมอ
+ * - แถว MATERIAL ที่ตัวสินค้ามี BOM ACTIVE แบบกึ่งสำเร็จ (is_semi_finished=1) ก็แตกด้วย = ทำสดทีละจาน
+ *   (เช่นไข่ต้ม/น้ำยำ) ร้านอาหารไม่ต้องเปิด WO ผลิตของกึ่งสำเร็จก่อนขาย
+ *   ถ้าไม่ได้ติ๊กกึ่งสำเร็จ (เช่นขนมจีนที่ซื้อมาเป็นสต็อก) = ตัดสต็อกตัวนั้นตรง ๆ เหมือนเดิม
+ * - แปลงจำนวนจากหน่วยในสูตรเป็นหน่วยผลผลิตของ BOM ลูกก่อนคูณ (แบบเดียวกับ calculateBOMCost)
+ *   ถ้าแปลงไม่ได้: MATERIAL → ตัดสต็อกตัวนั้นตรง ๆ แทน (ไม่ทำให้ขายไม่ได้) · CHILD_BOM → ใช้ตัวเลขเดิม
+ */
+export function getBomIngredientsRecursive(
+  bomId: string,
+  tenantId: string,
+  multiplier: number = 1,
+  path: Set<string> = new Set()
+): any[] {
+  // กันวนเฉพาะในสายเดียวกัน — เดิมใช้ Set ร่วมทั้งต้น ทำให้ BOM ลูกตัวเดียวกันที่โผล่ 2 บรรทัดถูกข้ามเงียบ
+  if (path.has(bomId)) return []
+  const nextPath = new Set(path).add(bomId)
+
+  const bom = db.prepare('SELECT output_qty FROM boms WHERE id = ?').get(bomId) as any
+  const outputQty = bom && bom.output_qty ? Number(bom.output_qty) : 1
+  const effectiveMultiplier = multiplier / outputQty
+
+  const items = db.prepare(`
+    SELECT
+      bi.id as ingredient_id,
+      bi.material_id as stock_item_id,
+      bi.item_type,
+      COALESCE(bi.child_bom_id, CASE WHEN bi.item_type = 'MATERIAL' THEN (
+        SELECT cb.id FROM boms cb
+        WHERE cb.product_id = bi.material_id AND cb.tenant_id = bi.tenant_id
+          AND cb.status = 'ACTIVE' AND cb.is_semi_finished = 1
+        ORDER BY cb.created_at DESC LIMIT 1) END) as explode_bom_id,
+      bi.quantity,
+      bi.unit as ingredient_unit,
+      si.name as stock_item_name,
+      si.quantity as current_stock,
+      si.unit as stock_unit,
+      si.base_unit as stock_base_unit,
+      0 as is_optional
+    FROM bom_items bi
+    LEFT JOIN stock_items si ON bi.material_id = si.id
+    WHERE bi.bom_id = ? AND bi.tenant_id = ?
+  `).all(bomId, tenantId) as any[]
+
+  let result: any[] = []
+  for (const it of items) {
+    if (it.explode_bom_id && !nextPath.has(it.explode_bom_id)) {
+      const child = db.prepare(`
+        SELECT b.product_id, COALESCE(b.output_unit, p.base_unit, p.unit) as out_unit
+        FROM boms b LEFT JOIN stock_items p ON p.id = b.product_id WHERE b.id = ?
+      `).get(it.explode_bom_id) as any
+      let qty = Number(it.quantity)
+      let converted = true
+      if (it.ingredient_unit && child?.out_unit && it.ingredient_unit !== child.out_unit) {
+        const c = convertQuantityBidirectional(qty, it.ingredient_unit, child.out_unit, tenantId, child.product_id)
+        if (c) qty = c.converted
+        else converted = false
+      }
+      if (converted || it.item_type === 'CHILD_BOM') {
+        result = result.concat(getBomIngredientsRecursive(it.explode_bom_id, tenantId, qty * effectiveMultiplier, nextPath))
+        continue
+      }
+      console.warn(`[bom] แตก ${it.stock_item_name} ไม่ได้: ไม่มีการแปลง ${it.ingredient_unit} → ${child?.out_unit} — ตัดสต็อกตัวมันเองแทน`)
+    }
+    if (it.item_type === 'MATERIAL' && it.stock_item_id) {
+      result.push({
+        ...it,
+        quantity_used: Number(it.quantity) * effectiveMultiplier
+      })
+    }
+  }
+  return result
+}
+
 class POSStockService {
   /**
    * Check stock availability for a menu item
@@ -69,25 +158,10 @@ class POSStockService {
     // Get ingredients - ใช้ BOM items ถ้ามี bom_id
     let ingredients: any[] = []
     
-    if (menu.bom_id) {
-      // ดึงวัตถุดิบจาก BOM items
-      const ingStmt = db.prepare(`
-        SELECT 
-          bi.id as ingredient_id,
-          bi.material_id as stock_item_id,
-          bi.quantity / COALESCE(NULLIF(bo.output_qty, 0), 1) as quantity_used,
-          bi.unit as ingredient_unit,
-          si.name as stock_item_name,
-          si.quantity as current_stock,
-          si.unit as stock_unit,
-          si.base_unit as stock_base_unit,
-          0 as is_optional
-        FROM bom_items bi
-              JOIN boms bo ON bo.id = bi.bom_id
-        JOIN stock_items si ON bi.material_id = si.id
-        WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-      `)
-      ingredients = ingStmt.all(menu.bom_id, tenantId) as any[]
+    const menuBomId = resolveMenuBomId(tenantId, menu.bom_id, menu.product_id)
+    if (menuBomId) {
+      // ดึงวัตถุดิบจาก BOM items (รองรับ CHILD_BOM / Sub-BOM recursive explode)
+      ingredients = getBomIngredientsRecursive(menuBomId, tenantId, 1)
     } else {
       // ใช้ pos_menu_ingredients (แบบเก่า)
       const ingStmt = db.prepare(`
@@ -225,21 +299,10 @@ class POSStockService {
           // Get ingredients - ใช้ BOM ถ้ามี bom_id ไม่งันใช้ pos_menu_ingredients
           let ingredients: any[] = []
 
-          if (item.bom_id) {
-            const ingStmt = db.prepare(`
-              SELECT
-                bi.id,
-                bi.material_id as stock_item_id,
-                bi.quantity / COALESCE(NULLIF(bo.output_qty, 0), 1) as quantity_used,
-                bi.unit as ingredient_unit,
-                si.base_unit as stock_base_unit,
-                si.unit as stock_unit
-              FROM bom_items bi
-              JOIN boms bo ON bo.id = bi.bom_id
-              JOIN stock_items si ON bi.material_id = si.id
-              WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-            `)
-            ingredients = ingStmt.all(item.bom_id, tenantId) as any[]
+          const itemBomId = resolveMenuBomId(tenantId, item.bom_id, item.product_id)
+          if (itemBomId) {
+            // ดึงวัตถุดิบจาก BOM items (รองรับ CHILD_BOM / Sub-BOM recursive explode)
+            ingredients = getBomIngredientsRecursive(itemBomId, tenantId, 1)
           } else {
             const ingStmt = db.prepare(`
               SELECT 

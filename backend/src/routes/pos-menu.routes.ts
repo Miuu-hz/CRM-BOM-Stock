@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { getBomIngredientsRecursive, resolveMenuBomId } from '../services/pos-stock.service'
 import db from '../db/sqlite'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { convertQuantityBidirectional } from '../services/unitConversion.service'
@@ -214,22 +215,11 @@ router.get('/menu-configs/:id', (req, res) => {
     // Get ingredients - ใช้ BOM items ถ้ามี bom_id ไม่งันใช้ pos_menu_ingredients
     let ingredients: any[] = []
     
-    if (menu.bom_id) {
-      // ดึงวัตถุดิบจาก BOM
-      const ingStmt = db.prepare(`
-        SELECT 
-          bi.id as ingredient_id,
-          bi.material_id as stock_item_id,
-          bi.quantity as quantity_used,
-          si.name as stock_item_name,
-          si.unit as stock_item_unit,
-          si.quantity as current_stock,
-          0 as is_optional
-        FROM bom_items bi
-        LEFT JOIN stock_items si ON bi.material_id = si.id
-        WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-      `)
-      ingredients = ingStmt.all(menu.bom_id, tenantId)
+    // ใช้ตัวแตกสูตรตัวเดียวกับตอนตัดสต็อกจริง — เดิมอ่านแค่ MATERIAL ชั้นเดียว ข้าม BOM ลูก (น้ำยำ) ทั้งก้อน
+    const menuBomId = resolveMenuBomId(tenantId, (menu as any).bom_id, (menu as any).product_id)
+    if (menuBomId) {
+      ingredients = getBomIngredientsRecursive(menuBomId, tenantId, 1)
+        .map(i => ({ ...i, stock_item_unit: i.stock_base_unit || i.stock_unit }))
     } else {
       // ใช้ pos_menu_ingredients (แบบเก่า) ถ้าไม่มี BOM
       const ingStmt = db.prepare(`
