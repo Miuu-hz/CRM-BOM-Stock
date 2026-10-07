@@ -819,6 +819,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="number"
+                      min="0"
                       value={formData.pos_price}
                       onChange={(e) => setFormData({ ...formData, pos_price: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
@@ -833,6 +834,7 @@ function MenuModal({ isOpen, onClose, menu, categories, onSaved }: MenuModalProp
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)]" />
                     <input
                       type="number"
+                      min="0"
                       value={formData.cost_price}
                       onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"

@@ -72,11 +72,12 @@ export default function ApprovalSettings() {
   const [savingSetting, setSavingSetting] = useState(false)
   const [savingPerm, setSavingPerm]       = useState(false)
 
+  // ponytail: work_orders เอาออกแล้ว — ไม่มี backend enforce (workOrder.routes.ts ไม่เคยเรียก approvalGate)
+  // ตั้งค่าแล้วไม่มีผลจริง จึงไม่ให้แอดมินตั้งค่าที่ไม่ทำงาน
   const MODULE_TYPES = [
     { value: 'purchase_request',  label: t('settings.approval.modules.purchaseRequest') },
     { value: 'purchase_order',    label: t('settings.approval.modules.purchaseOrder') },
     { value: 'sales_order',       label: t('settings.approval.modules.salesOrder') },
-    { value: 'work_orders',       label: t('settings.approval.modules.workOrder') },
     { value: 'stock_adjust',      label: t('settings.approval.modules.stockChange') },
     { value: 'pos_void',          label: t('settings.approval.modules.posVoid') },
     { value: 'doc_edit',          label: t('settings.approval.modules.docEdit') },

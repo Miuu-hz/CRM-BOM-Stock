@@ -38,14 +38,23 @@ router.get('/settings', async (req: Request, res: Response) => {
   }
 })
 
+// โมดูลที่ตัวบังคับจริง (approvalGate.service GateCategory + approvalDenyReason) เช็คอยู่เท่านั้น —
+// กันแอดมินตั้งค่าหมวดที่ไม่มีใครบังคับ (เช่น work_orders เดิม) แล้วหลงคิดว่าใช้งานได้จริง
+const ENFORCED_MODULE_TYPES = new Set([
+  'purchase_request', 'purchase_order', 'sales_order', 'stock_adjust', 'pos_void', 'doc_edit', 'pos_invoice',
+])
+
 // POST create/update approval setting (Master only)
 router.post('/settings', requireRole('MASTER', 'ADMIN'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { role, moduleType, approvalRequired, autoApproveThreshold } = req.body
-    
+
     if (!role || !moduleType) {
       return res.status(400).json({ success: false, message: 'Role and module type are required' })
+    }
+    if (!ENFORCED_MODULE_TYPES.has(moduleType)) {
+      return res.status(400).json({ success: false, message: `Module type "${moduleType}" is not enforced by any gate` })
     }
 
     const id = generateId()
@@ -117,6 +126,12 @@ router.post('/permissions', requireRole('MASTER', 'ADMIN'), async (req: Request,
 
     if (!userId || !moduleType) {
       return res.status(400).json({ success: false, message: 'User ID and module type are required' })
+    }
+
+    // userId มาจาก body ตรงๆ — ไม่เช็คมาก่อนจะมอบสิทธิ์อนุมัติให้ user tenant อื่นได้
+    const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(userId, tenantId)
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' })
     }
 
     const id = generateId()

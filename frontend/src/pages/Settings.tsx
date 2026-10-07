@@ -28,7 +28,6 @@ import {
   ArrowLeftRight,
   Tag,
   Info,
-  Brain,
   Database,
   Zap,
   UserCog,
@@ -44,7 +43,6 @@ import BankAccountSettings from './settings/BankAccountSettings'
 import LineSettings from './settings/LineSettings'
 import UnitConversions from './settings/UnitConversions'
 import MaterialCategories from './settings/MaterialCategories'
-import LLMSettings from './settings/LLMSettings'
 import BackupSettings from './settings/BackupSettings'
 import PermissionSettings from './settings/PermissionSettings'
 import AdminUserManagement from './settings/AdminUserManagement'
@@ -70,8 +68,8 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'llm' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
-  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'llm', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
+  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
+  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
   // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get('tab') as SettingsTab | null
@@ -99,6 +97,18 @@ export default function SettingsPage() {
     await loadChildren()
     setLoading(false)
   }
+
+  // ลิงก์ ?tab= เข้าแท็บที่ role นี้มองไม่เห็น (เช่น user ธรรมดาเปิด ?tab=llm) เคยเหลือพาเนลเปล่า — ดีดกลับ general
+  // รายการนี้ต้องตรงกับ show: ของแต่ละแท็บในกลุ่มด้านล่าง
+  useEffect(() => {
+    const alwaysVisible: SettingsTab[] = ['general', 'units', 'security', 'mcp']
+    const adminOrMasterOnly: SettingsTab[] = ['material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'line', 'bank-accounts']
+    const masterOnly: SettingsTab[] = ['backup']
+    const visible = alwaysVisible.includes(activeTab)
+      || (adminOrMasterOnly.includes(activeTab) && (isAdmin || isMaster))
+      || (masterOnly.includes(activeTab) && isMaster)
+    if (!visible) setActiveTab('general')
+  }, [activeTab, isAdmin, isMaster])
 
   return (
     <motion.div
@@ -133,7 +143,8 @@ export default function SettingsPage() {
           {
             id: 'people', label: t('settings.settingsPage.groups.people'), icon: Users,
             tabs: [
-              { id: 'users' as const, icon: Users, label: t('settings.settingsPage.tabs.users'), show: isAdmin || isMaster, badge: localChildren.length },
+              // badge แสดงยอด localChildren เฉพาะ MASTER (คนเดียวที่โหลดรายชื่อนี้จริง — ADMIN เห็น AdminUserManagement แยก)
+              { id: 'users' as const, icon: Users, label: t('settings.settingsPage.tabs.users'), show: isAdmin || isMaster, badge: isMaster ? localChildren.length : undefined },
               { id: 'permissions' as const, icon: UserCog, label: t('settings.settingsPage.tabs.permissions'), show: isAdmin || isMaster },
               { id: 'approval' as const, icon: ShieldCheck, label: t('settings.settingsPage.tabs.approval'), show: isAdmin || isMaster },
               { id: 'security' as const, icon: Shield, label: t('settings.settingsPage.tabs.security'), show: true },
@@ -152,9 +163,8 @@ export default function SettingsPage() {
           {
             id: 'advanced', label: t('settings.settingsPage.groups.advanced'), icon: Database,
             tabs: [
-              { id: 'llm' as const, icon: Brain, label: t('settings.settingsPage.tabs.llm'), show: isMaster },
               { id: 'backup' as const, icon: Database, label: t('settings.settingsPage.tabs.backup'), show: isMaster },
-              { id: 'mcp' as const, icon: Zap, label: 'MCP / AI Connect', show: true },
+              { id: 'mcp' as const, icon: Zap, label: t('settings.settingsPage.tabs.mcp'), show: true },
             ],
           },
         ]
@@ -232,7 +242,6 @@ export default function SettingsPage() {
 
         {activeTab === 'material-categories' && (isAdmin || isMaster) && <MaterialCategories />}
 
-        {activeTab === 'llm' && isMaster && <LLMSettings />}
 
         {activeTab === 'backup' && isMaster && <BackupSettings />}
         {activeTab === 'mcp' && <MCPSettings />}
@@ -336,16 +345,34 @@ export function loadBillingConfig(): BillingConfig {
   }
 }
 
-function BillingSettings() {
+export function BillingSettings() {
   const { t } = useTranslation()
   const [cfg, setCfg] = useState<BillingConfig>(loadBillingConfig)
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  // ค่าจริงอยู่ที่ backend (company_settings.pos_vat_*/pos_service_*) — POS ใช้ค่านี้คิดบิลจริง
+  // ส่วน localStorage (loadBillingConfig) เป็นแค่ cache ที่ AuthContext ล้างตอน logout เท่านั้น ห้ามใช้เป็นค่าตั้งต้น
+  useEffect(() => {
+    let alive = true
+    import('../services/companySettings.service').then(m => m.default.get()).then(d => {
+      if (!alive) return
+      setCfg({
+        vatEnabled: Number(d.pos_vat_enabled) === 1,
+        vatRate: d.pos_vat_rate != null ? Number(d.pos_vat_rate) : DEFAULT_BILLING.vatRate,
+        vatInclusive: Number(d.pos_vat_inclusive) === 1,
+        serviceEnabled: Number(d.pos_service_enabled) === 1,
+        serviceRate: d.pos_service_rate != null ? Number(d.pos_service_rate) : DEFAULT_BILLING.serviceRate,
+      })
+    }).catch(() => {
+      toast.error(t('settings.settingsPage.general.saveFailed'))
+    }).finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [])
 
   const save = async () => {
-    localStorage.setItem('pos_billing_settings', JSON.stringify(cfg))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-    // Sync to backend so POS bill calculations use the same settings
+    setSaving(true)
     try {
       const m = await import('../services/companySettings.service')
       await m.default.update({
@@ -355,8 +382,13 @@ function BillingSettings() {
         pos_service_enabled: cfg.serviceEnabled,
         pos_service_rate: cfg.serviceRate,
       })
+      localStorage.setItem('pos_billing_settings', JSON.stringify(cfg))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
     } catch (e) {
-      console.warn('Failed to sync billing config to backend:', e)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -506,9 +538,10 @@ function BillingSettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
+        disabled={loading || saving}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
-        {saved ? <><CheckCircle className="w-5 h-5" /> {t('common.saved')}</> : t('settings.settingsPage.billing.save')}
+        {loading ? t('common.loading') : saving ? t('common.saving') : saved ? <><CheckCircle className="w-5 h-5" /> {t('common.saved')}</> : t('settings.settingsPage.billing.save')}
       </button>
     </div>
   )
@@ -767,6 +800,7 @@ function GeneralSettings() {
       await m.default.update({ qc_gate_enabled: next })
     } catch {
       setQcGateEnabled(!next)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setQcSaving(false)
     }
@@ -781,6 +815,7 @@ function GeneralSettings() {
       await m.default.update({ show_subcon_stock_widget: next })
     } catch {
       setShowSubconStockWidget(!next)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setSubconWidgetSaving(false)
     }
@@ -795,6 +830,7 @@ function GeneralSettings() {
       await m.default.update({ allow_negative_stock: next })
     } catch {
       setAllowNegativeStock(!next)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setNegStockSaving(false)
     }
@@ -809,6 +845,7 @@ function GeneralSettings() {
       await m.default.update({ require_pos_shift: next })
     } catch {
       setRequirePosShift(!next)
+      toast.error(t('settings.settingsPage.general.saveFailed'))
     } finally {
       setRequireShiftSaving(false)
     }
@@ -839,7 +876,8 @@ function GeneralSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Company Profile — editable */}
+      {/* Company Profile — editable. PUT /settings/company เป็น ADMIN/MASTER เท่านั้น ซ่อนให้ role อื่นด้วย */}
+      {(isAdmin || isMaster) && (
       <div className="phopy-card p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
@@ -942,8 +980,10 @@ function GeneralSettings() {
           </div>
         </div>
       </div>
+      )}
 
-      {/* QC Gate — require QC pass before closing work order */}
+      {/* QC Gate — require QC pass before closing work order. ADMIN/MASTER เท่านั้นเหมือนกัน */}
+      {(isAdmin || isMaster) && (
       <div className="phopy-card p-6">
         <h3 className="text-lg font-semibold text-[var(--fg-1)] mb-4 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
@@ -979,6 +1019,7 @@ function GeneralSettings() {
             : <ToggleLeft className="w-8 h-8 text-[var(--fg-4)] flex-shrink-0" />}
         </button>
       </div>
+      )}
 
       {/* ชื่อเรียกแทน SKU — สะดวกสำหรับ SME (บิลผู้ขาย/ชื่อที่ลูกค้าเรียก ไม่ตรงชื่อ SKU) · บริษัทที่ต้องการ
           ความเข้มงวดปิดได้ ให้ผูกได้เฉพาะชื่อ SKU ตรงเป๊ะ · ADMIN/MASTER เท่านั้น (backend บังคับเหมือนกัน) */}
@@ -1399,7 +1440,6 @@ function AddChildModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             >
               <option value="USER">{t('settings.settingsPage.addChildModal.roles.user')}</option>
               <option value="MANAGER">{t('settings.settingsPage.addChildModal.roles.manager')}</option>
-              <option value="VIEWER">{t('settings.settingsPage.addChildModal.roles.viewer')}</option>
             </select>
           </div>
 

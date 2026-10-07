@@ -67,6 +67,26 @@ describe('หมวดหมู่วัตถุดิบ', () => {
     expect(res.status).toBe(200)
   })
 
+  it('USER สร้าง/แก้หมวดหมู่ไม่ได้ (เดิมไม่เช็ค role เลย) · ADMIN สร้างด้วย egg ได้ (เดิม whitelist ไม่มี)', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+
+    const userPost = await request(app).post('/api/materials/categories').set('Authorization', `Bearer ${user.token}`)
+      .send({ code: 'CAT-U', name: 'ห้ามสร้าง', defaultUnit: 'kg' })
+    expect(userPost.status).toBe(403)
+
+    const adminPost = await request(app).post('/api/materials/categories').set('Authorization', `Bearer ${admin.token}`)
+      .send({ code: 'CAT-EGG', name: 'ไข่', defaultUnit: 'egg' })
+    expect(adminPost.status).toBe(200)
+    const categoryId = adminPost.body.data.id
+
+    const userPut = await request(app).put(`/api/materials/categories/${categoryId}`).set('Authorization', `Bearer ${user.token}`)
+      .send({ name: 'ห้ามแก้', defaultUnit: 'egg' })
+    expect(userPut.status).toBe(403)
+
+    db.prepare('DELETE FROM material_categories WHERE id = ?').run(categoryId)
+  })
+
   it('หมวดหมู่ส่วนกลาง (tenant_id ว่าง) ร้านไหนก็แก้/ลบไม่ได้', async () => {
     const u = createTestUser({ role: 'ADMIN' })
     const auth = `Bearer ${u.token}`

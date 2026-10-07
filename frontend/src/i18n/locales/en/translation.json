@@ -50,7 +50,8 @@
     "confirm": "Confirm",
     "vatInclusive": "Prices include VAT",
     "extraCharge": "Shipping / other charge",
-    "extraChargeLabel": "Label"
+    "extraChargeLabel": "Label",
+    "itemCount": "{{count}} items"
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -2486,7 +2487,8 @@
         "docNumbering": "Document Numbering",
         "currency": "Currency",
         "bankAccounts": "Bank Accounts / Payment QR",
-        "documents": "Document Settings"
+        "documents": "Document Settings",
+        "mcp": "MCP / AI Connect"
       },
       "groups": {
         "system": "System",

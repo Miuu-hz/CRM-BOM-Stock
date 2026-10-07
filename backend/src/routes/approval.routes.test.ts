@@ -187,3 +187,31 @@ describe('รายละเอียดคำขอ — GET /approval/requests/
     expect(notMine.status).toBe(403)
   })
 })
+
+describe('ช่องโหว่ข้าม tenant / module ที่ไม่มี gate บังคับ', () => {
+  it('POST /permissions ด้วย userId ของ tenant อื่น ต้อง 404 ไม่ใช่มอบสิทธิ์ให้', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const foreignUser = createTestUser({ role: 'USER' }) // tenant อื่นโดยปริยาย
+
+    const res = await request(app).post('/api/approval/permissions')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ userId: foreignUser.userId, moduleType: 'stock_adjust', canApprove: true })
+
+    expect(res.status).toBe(404)
+    const row = db.prepare('SELECT 1 FROM user_approval_permissions WHERE user_id = ?').get(foreignUser.userId)
+    expect(row).toBeUndefined()
+  })
+
+  it('POST /settings moduleType "work_orders" ต้อง 400 — ไม่มี gate ใดบังคับหมวดนี้จริง', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+
+    const res = await request(app).post('/api/approval/settings')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ role: 'USER', moduleType: 'work_orders', approvalRequired: true })
+
+    expect(res.status).toBe(400)
+    const row = db.prepare("SELECT 1 FROM approval_settings WHERE tenant_id = ? AND module_type = 'work_orders'")
+      .get(admin.tenantId)
+    expect(row).toBeUndefined()
+  })
+})

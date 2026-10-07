@@ -19,6 +19,7 @@ import {
   detectConversionConflict,
   getUnitCatalog,
   findBrokenUnitPairs,
+  UNIT_LABELS,
 } from '../services/unitConversion.service'
 import { suggestUnitConversion } from '../services/llm.service'
 import { recordStockMovement } from './stock.routes'
@@ -32,8 +33,10 @@ function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
 }
 
-// หน่วยเริ่มต้นของหมวดหมู่ — เดิมสร้าง/แก้ใช้คนละรายการ (สร้างด้วย mg/lb/oz ไม่ได้ แต่แก้เป็นได้)
-const CATEGORY_UNITS = ['kg', 'g', 'mg', 'lb', 'oz', 'm', 'cm', 'inch', 'ft', 'yard', 'roll', 'pcs', 'box', 'pack', 'set', 'pair', 'sheet', 'ltr', 'ml', 'gallon', 'bottle', 'bag', 'sachet', 'can', 'tube']
+// หน่วยเริ่มต้นของหมวดหมู่ — เดิมเป็น whitelist แยกต่างหากแค่ 25 หน่วย ไม่ตรงกับ dropdown
+// หน้า frontend (48 หน่วยจาก useUnits.ts) ทำให้เลือก egg/dozen/case ฯลฯ แล้ว 400
+// ใช้ canonical unit catalog ตัวเดียวกับที่ normalizeUnit/getUnitDisplayName ใช้แทน
+const CATEGORY_UNITS = Object.keys(UNIT_LABELS)
 const badUnitMsg = (u: string) => `หน่วย "${u}" ใช้ไม่ได้ — เลือกจาก: ${CATEGORY_UNITS.join(', ')}`
 
 /** รหัสวัตถุดิบ = sku ของ stock_items — ซ้ำตอบ 409 แบบเดียวกับ POST /stock (SKU_DUPLICATE) */
@@ -66,7 +69,7 @@ router.get('/categories', (req: Request, res: Response) => {
 })
 
 // POST /api/materials/categories - สร้างหมวดหมู่ใหม่
-router.post('/categories', (req: Request, res: Response) => {
+router.post('/categories', requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { code, name, defaultUnit, description, itemType } = req.body
@@ -101,7 +104,7 @@ router.post('/categories', (req: Request, res: Response) => {
 })
 
 // PUT /api/materials/categories/:id — แก้ไขหมวดหมู่
-router.put('/categories/:id', (req: Request, res: Response) => {
+router.put('/categories/:id', requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params

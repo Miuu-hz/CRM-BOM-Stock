@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { convertQuantityBidirectional } from '../services/unitConversion.service'
 import { isSellableItem } from '../services/stockItem.service'
 
@@ -20,6 +20,24 @@ const generateId = () => {
 
 // Helper: Get current timestamp
 const now = () => new Date().toISOString()
+
+// ตรวจราคาขาย/ต้นทุนก่อนลงฐาน — กันราคาติดลบ/NaN ที่ทำยอดขาย POS เพี้ยน (ใช้ร่วมทั้ง POST และ PUT)
+// คืนข้อความ error เป็นภาษาไทย หรือ null ถ้าผ่าน
+const validatePosPricing = (pos_price: unknown, cost_price: unknown): string | null => {
+  if (pos_price !== undefined) {
+    const p = Number(pos_price)
+    if (!Number.isFinite(p) || p <= 0) {
+      return 'ราคาขาย (POS Price) ต้องเป็นตัวเลขมากกว่า 0'
+    }
+  }
+  if (cost_price !== undefined) {
+    const c = Number(cost_price)
+    if (!Number.isFinite(c) || c < 0) {
+      return 'ต้นทุน (Cost Price) ต้องไม่ติดลบ'
+    }
+  }
+  return null
+}
 
 // ==================== POS CATEGORIES ====================
 
@@ -43,7 +61,7 @@ router.get('/categories', (req, res) => {
 })
 
 // Create category
-router.post('/categories', (req, res) => {
+router.post('/categories', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { name, color, icon, sort_order } = req.body
@@ -72,7 +90,7 @@ router.post('/categories', (req, res) => {
 })
 
 // Update category
-router.put('/categories/:id', (req, res) => {
+router.put('/categories/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
@@ -94,7 +112,7 @@ router.put('/categories/:id', (req, res) => {
 })
 
 // Delete category
-router.delete('/categories/:id', (req, res) => {
+router.delete('/categories/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
@@ -238,7 +256,7 @@ router.get('/menu-configs/:id', (req, res) => {
 })
 
 // Create menu config
-router.post('/menu-configs', (req, res) => {
+router.post('/menu-configs', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const {
@@ -254,12 +272,17 @@ router.post('/menu-configs', (req, res) => {
       preparation_time,
       description
     } = req.body
-    
+
     if (!product_id || !pos_price) {
       return res.status(400).json({
         success: false,
         message: 'Product ID and POS price are required'
       })
+    }
+
+    const priceError = validatePosPricing(pos_price, cost_price)
+    if (priceError) {
+      return res.status(400).json({ success: false, message: priceError })
     }
 
     // สินค้าหมวดวัตถุดิบ (raw) ขายเป็นเมนู POS ไม่ได้ — เช็คก่อนสร้างเมนู ไม่ใช่ปล่อยให้
@@ -325,12 +348,20 @@ router.post('/menu-configs', (req, res) => {
 })
 
 // Update menu config
-router.put('/menu-configs/:id', (req, res) => {
+router.put('/menu-configs/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
     const allowed = ['bom_id', 'category_id', 'pos_price', 'cost_price', 'is_available',
       'is_pos_enabled', 'display_order', 'quick_code', 'image_url', 'preparation_time', 'description', 'sale_unit']
+
+    const priceError = validatePosPricing(
+      'pos_price' in req.body ? req.body.pos_price : undefined,
+      'cost_price' in req.body ? req.body.cost_price : undefined
+    )
+    if (priceError) {
+      return res.status(400).json({ success: false, message: priceError })
+    }
 
     const fields: string[] = []
     const values: any[] = []
@@ -360,7 +391,7 @@ router.put('/menu-configs/:id', (req, res) => {
 })
 
 // Toggle menu availability
-router.patch('/menu-configs/:id/toggle', (req, res) => {
+router.patch('/menu-configs/:id/toggle', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
@@ -385,7 +416,7 @@ router.patch('/menu-configs/:id/toggle', (req, res) => {
 })
 
 // Delete menu config
-router.delete('/menu-configs/:id', (req, res) => {
+router.delete('/menu-configs/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
@@ -427,7 +458,7 @@ router.get('/available-products', (req, res) => {
     const params: any[] = [tenantId, tenantId]
     
     if (search) {
-      query += ' AND (p.name LIKE ? OR p.code LIKE ?)'
+      query += ' AND (p.name LIKE ? OR p.sku LIKE ?)'
       params.push(`%${search}%`, `%${search}%`)
     }
     

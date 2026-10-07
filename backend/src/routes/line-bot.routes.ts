@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { getDb } from '../db/sqlite'
-import { authenticate, requireMaster } from '../middleware/auth.middleware'
+import { authenticate, requireMaster, requireRole } from '../middleware/auth.middleware'
 import { lineBotService } from '../services/line-bot.service'
 
 const router = Router()
@@ -42,8 +42,8 @@ router.post('/webhook', (req: Request, res: Response) => {
 // 2. Settings / Config Endpoints (Auth Required)
 // ==========================================
 
-// Get Line Config for Tenant
-router.get('/config', authenticate, (req: Request, res: Response) => {
+// Get Line Config for Tenant (ADMIN/MASTER เท่านั้น — แท็บ LINE ใน Settings โชว์ให้ 2 role นี้)
+router.get('/config', authenticate, requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
     try {
         const tenantId = req.user!.tenantId;
         const db = getDb();

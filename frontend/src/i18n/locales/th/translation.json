@@ -186,7 +186,8 @@
     "confirm": "ยืนยัน",
     "vatInclusive": "ราคารวม VAT แล้ว",
     "extraCharge": "ค่าขนส่ง/ค่าบริการอื่น",
-    "extraChargeLabel": "ชื่อรายการ"
+    "extraChargeLabel": "ชื่อรายการ",
+    "itemCount": "{{count}} รายการ"
   },
   "workOrders": {
     "title": "ใบสั่งงาน",
@@ -2487,7 +2488,8 @@
         "docNumbering": "เลขที่เอกสาร",
         "currency": "สกุลเงิน",
         "bankAccounts": "บัญชีธนาคาร / QR รับเงิน",
-        "documents": "ตั้งค่าเอกสาร"
+        "documents": "ตั้งค่าเอกสาร",
+        "mcp": "MCP / เชื่อมต่อ AI"
       },
       "groups": {
         "system": "ระบบ",

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserCog, ChevronDown, ChevronRight, Save, RefreshCw, Shield, Search, Check, AlertTriangle, X } from 'lucide-react'
+import { UserCog, ChevronDown, Save, RefreshCw, Search, Check, AlertTriangle, X } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
 import { ROLE_PRESETS } from '../../config/rolePresets'
@@ -19,8 +19,6 @@ interface TenantUser {
 const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'POS', 'CEO', 'IT'] as const
 
 const ROLE_VALUES = ['MANAGER', 'POWERUSER', 'USER'] as const
-
-const CUSTOM_PERM_KEYS = ['accounting:delete', 'stock:delete', 'orders:delete', 'users:write'] as const
 
 const ROLE_COLOR: Record<string, string> = {
   ADMIN: 'bg-[var(--primary-soft)] text-[var(--primary)]',
@@ -128,7 +126,6 @@ export default function PermissionSettings() {
   const [draftRole, setDraftRole]     = useState('')
   const [draftDepts, setDraftDepts]   = useState<string[]>([])
   const [draftCustom, setDraftCustom] = useState<Record<string, boolean>>({})
-  const [showCustom, setShowCustom]   = useState(false)
   const [saving, setSaving]           = useState(false)
   const [loading, setLoading]         = useState(true)
   const [showCeoConfirm, setShowCeoConfirm] = useState(false)
@@ -152,10 +149,11 @@ export default function PermissionSettings() {
 
   function pick(u: TenantUser) {
     setSelected(u)
-    setDraftRole(u.role === 'ADMIN' ? 'MANAGER' : u.role)
+    // ห้าม coerce ADMIN เป็น MANAGER ตรงนี้ — save() เดิมส่ง role ที่ coerce แล้วทุกครั้ง
+    // ผลคือกดบันทึกแผนกของ ADMIN แต่ role หลุดไปเป็น MANAGER แบบเงียบๆ
+    setDraftRole(u.role)
     setDraftDepts(u.departments ?? [])
     setDraftCustom(u.custom_permissions ?? {})
-    setShowCustom(false)
   }
 
   function toggleDept(dept: string) {
@@ -176,14 +174,6 @@ export default function PermissionSettings() {
     setPendingCeoDept(null)
   }
 
-  function toggleCustom(key: string) {
-    setDraftCustom(prev => {
-      const next = { ...prev }
-      if (key in next) { delete next[key] } else { next[key] = true }
-      return next
-    })
-  }
-
   // พรีเซ็ตกำหนดแค่แผนก — ไม่ล้างสิทธิ์รายคน (custom) ที่ตั้งไว้แล้ว
   function applyPreset(preset: typeof ROLE_PRESETS[0]) {
     setDraftDepts(preset.departments)
@@ -193,7 +183,10 @@ export default function PermissionSettings() {
     if (!selected) return
     setSaving(true)
     try {
-      await api.put(`/users/${selected.id}`, { role: draftRole })
+      // ส่ง role ก็ต่อเมื่อเปลี่ยนจริง — กันเคส ADMIN ที่ไม่มีช่องให้แก้ role ถูกเขียนทับ role เดิมไปด้วย
+      if (draftRole !== selected.role) {
+        await api.put(`/users/${selected.id}`, { role: draftRole })
+      }
       await api.patch(`/users/${selected.id}/permissions`, {
         departments: draftDepts,
         customPermissions: draftCustom,
@@ -244,25 +237,29 @@ export default function PermissionSettings() {
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
-                  {t('settings.permission.roleSection')}
-                  <HelpLink anchor="roles" />
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {ROLE_VALUES.map(r => (
-                    <label key={r}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftRole === r ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}>
-                      <input type="radio" name="role" value={r} checked={draftRole === r}
-                        onChange={() => setDraftRole(r)} className="mt-0.5 accent-[var(--primary)]" />
-                      <div>
-                        <p className="text-sm font-medium text-[var(--fg-1)]">{t(`settings.permission.roles.${r.toLowerCase()}`)}</p>
-                        <p className="text-xs text-[var(--fg-3)]">{t(`settings.permission.roles.${r.toLowerCase()}Desc`)}</p>
-                      </div>
-                    </label>
-                  ))}
+              {/* ADMIN ไม่มีช่องให้แก้ role ตรงนี้ — ROLE_VALUES ไม่มี ADMIN อยู่แล้ว เดิม coerce เป็น
+                  MANAGER ไปโชว์ ทำให้ดูเหมือนแก้ role ได้ แต่กด save จริงมันถูกลดสิทธิ์ไปเลย */}
+              {selected.role !== 'ADMIN' && (
+                <div>
+                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+                    {t('settings.permission.roleSection')}
+                    <HelpLink anchor="roles" />
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {ROLE_VALUES.map(r => (
+                      <label key={r}
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${draftRole === r ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}>
+                        <input type="radio" name="role" value={r} checked={draftRole === r}
+                          onChange={() => setDraftRole(r)} className="mt-0.5 accent-[var(--primary)]" />
+                        <div>
+                          <p className="text-sm font-medium text-[var(--fg-1)]">{t(`settings.permission.roles.${r.toLowerCase()}`)}</p>
+                          <p className="text-xs text-[var(--fg-3)]">{t(`settings.permission.roles.${r.toLowerCase()}Desc`)}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
@@ -282,30 +279,6 @@ export default function PermissionSettings() {
                     </label>
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => setShowCustom(v => !v)}
-                    className="flex items-center gap-2 text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide hover:text-[var(--fg-1)] transition-colors cursor-pointer">
-                    {showCustom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                    <Shield className="w-3.5 h-3.5" />
-                    {t('settings.permission.customOverrides')}
-                  </button>
-                  <HelpLink anchor="custom" />
-                </div>
-                {showCustom && (
-                  <div className="mt-3 space-y-2 pl-4 border-l border-[var(--border)]">
-                    {CUSTOM_PERM_KEYS.map(cp => (
-                      <label key={cp} className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" checked={!!draftCustom[cp]}
-                          onChange={() => toggleCustom(cp)} className="accent-[var(--primary)]" />
-                        <span className="text-sm text-[var(--fg-1)]">{t(`settings.permission.customPermissions.${cp.replace(/:/g, '')}`)}</span>
-                        <span className="text-xs text-[var(--fg-4)]">({cp})</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="flex justify-end pt-2 border-t border-[var(--border)]">

@@ -132,7 +132,7 @@ const UNIT_NAME_MAP: Record<string, string> = {
 // ===================================================================
 // Canonical label (ภาษาไทย) ของแต่ละ code — ใช้แสดงผล/สร้างข้อความ note
 // ===================================================================
-const UNIT_LABELS: Record<string, string> = {
+export const UNIT_LABELS: Record<string, string> = {
   kg: 'กิโลกรัม', g: 'กรัม', mg: 'มิลลิกรัม', hg: 'ขีด', lb: 'ปอนด์', oz: 'ออนซ์',
   inch: 'นิ้ว', cm: 'เซนติเมตร', mm: 'มิลลิเมตร', m: 'เมตร', km: 'กิโลเมตร',
   ft: 'ฟุต', yard: 'หลา',
