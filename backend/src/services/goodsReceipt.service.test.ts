@@ -18,7 +18,7 @@ app.use('/api/purchase', authenticate, purchaseRouter)
  * snapshot, และ cancel คืนสต็อกเป๊ะ — ผ่าน REST route จริงเพื่อคุมทั้งเส้นทาง
  */
 
-function seedPoWithMaterial(tenantId: string, opts: { poUnit?: string; stockUnit?: string; qty?: number } = {}) {
+function seedPoWithMaterial(tenantId: string, opts: { poUnit?: string; stockUnit?: string; qty?: number; status?: string } = {}) {
   const supplierId = generateId()
   db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, 'Sup', 'C')")
     .run(supplierId, tenantId, supplierId)
@@ -36,8 +36,8 @@ function seedPoWithMaterial(tenantId: string, opts: { poUnit?: string; stockUnit
   const now = new Date().toISOString()
   db.prepare(`
     INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, subtotal, tax_amount, total_amount, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'APPROVED', 100, 0, 100, ?, ?)
-  `).run(poId, tenantId, 'PO-' + poId.slice(0, 6), supplierId, now, now)
+    VALUES (?, ?, ?, ?, ?, 100, 0, 100, ?, ?)
+  `).run(poId, tenantId, 'PO-' + poId.slice(0, 6), supplierId, opts.status || 'APPROVED', now, now)
 
   const poItemId = generateId()
   db.prepare(`
@@ -90,6 +90,45 @@ describe('goodsReceipt.service — createGoodsReceipt', () => {
     expect(() =>
       createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 1, acceptedQty: 1 }] })
     ).toThrow(GoodsReceiptError)
+  })
+
+  it('PO ยังเป็น SUBMITTED (ยังไม่อนุมัติ) รับของไม่ได้ (Bug: เดิมบล็อกแค่ RECEIVED/CANCELLED)', () => {
+    const { tenantId, email } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5, status: 'SUBMITTED' })
+
+    expect(() =>
+      createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] })
+    ).toThrow(GoodsReceiptError)
+    try {
+      createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] })
+    } catch (e: any) {
+      expect(e.code).toBe('PO_NOT_APPROVED')
+    }
+  })
+
+  it('PO ยังเป็น DRAFT รับของไม่ได้เหมือนกัน', () => {
+    const { tenantId, email } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5, status: 'DRAFT' })
+
+    expect(() =>
+      createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] })
+    ).toThrow(GoodsReceiptError)
+  })
+
+  it('PO เป็น PARTIAL (รับมาแล้วบางส่วน) รับต่อได้ปกติ', () => {
+    const { tenantId, email } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5, status: 'PARTIAL' })
+
+    const gr = createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] }) as any
+    expect(gr.status).toBe('DRAFT')
+  })
+
+  it('PO เป็น APPROVED รับของได้ปกติ (ของเดิมยังต้องผ่าน)', () => {
+    const { tenantId, email } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5, status: 'APPROVED' })
+
+    const gr = createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] }) as any
+    expect(gr.status).toBe('DRAFT')
   })
 })
 

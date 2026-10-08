@@ -2,6 +2,7 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { ok, dbAnchoredSearch, tokenWhere, tokenParams } from './shared'
+import { availableQuantity } from '../../services/stockValue.service'
 
 export function registerSearchTool(server: IMcpServer, tenantId: string): void {
   server.tool(
@@ -33,6 +34,10 @@ stock_type: ใช้ร่วมกับ category="stock" เพื่อก�
       const results: Record<string, unknown> = {}
 
       if (!cat || cat === 'stock') {
+        // si.quantity <= si.min_stock เป็นแค่ superset ที่ปลอดภัย (ของที่ยังปิดห่ออยู่ใน sealed_qty
+        // มีแต่ทำให้ของพร้อมใช้ "มากขึ้น" ไม่ใช่น้อยลง) กรองเป๊ะจริงด้วย availableQuantity() ด้านล่าง
+        // เดิมเทียบ si.quantity <= si.min_stock ตรงๆ ไม่นับ sealed_qty × pack factor เลย ทำให้ของที่
+        // แพ็คเต็มวางอยู่บนชั้นถูกฟ้องว่าใกล้หมดทั้งที่ยังเหลือเยอะ
         const lowWhere = lowStock ? 'AND si.quantity <= si.min_stock' : ''
         // Map stock_type to category filter
         let categoryWhere = ''
@@ -46,13 +51,16 @@ stock_type: ใช้ร่วมกับ category="stock" เพื่อก�
         const existsStmt = db.prepare(
           `SELECT 1 FROM stock_items si WHERE si.tenant_id = ? AND si.name LIKE ? ${categoryWhere} LIMIT 1`
         )
+        // low_stock ดึงมาเกินโควต้า (100) ก่อนกรองเป๊ะใน JS แล้วค่อยตัดเหลือ 20 — กันกรณี candidate
+        // ชุดแรกที่ SQL คัดมามีของพร้อมใช้จริง (sealed) ปนอยู่มากจนเหลือไม่ถึง 20 หลังกรอง
         const searchStmt = (where: string) =>
-          `SELECT si.sku, si.name, si.quantity, si.unit, si.min_stock, si.unit_cost, si.location, si.category
+          `SELECT si.id, si.sku, si.name, si.quantity, si.sealed_qty, si.unit, si.base_unit, si.display_unit,
+                  si.min_stock, si.unit_cost, si.location, si.category
            FROM stock_items si
            WHERE si.tenant_id = ? AND ${where} ${categoryWhere} ${lowWhere}
-           ORDER BY si.name LIMIT 20`
+           ORDER BY si.name LIMIT ${lowStock ? 100 : 20}`
 
-        const stockItems = dbAnchoredSearch(
+        let stockItems = dbAnchoredSearch(
           query,
           sub => existsStmt.get(tenantId, `%${sub}%`) !== undefined,
           (tokens, mode) => {
@@ -62,7 +70,12 @@ stock_type: ใช้ร่วมกับ category="stock" เพื่อก�
             const w = tokenWhere('si.name', tokens, mode)
             return db.prepare(searchStmt(w)).all(tenantId, ...tokenParams(tokens))
           }
-        )
+        ) as any[]
+        if (lowStock) {
+          stockItems = stockItems
+            .filter((item: any) => availableQuantity(item, tenantId) <= item.min_stock)
+            .slice(0, 20)
+        }
         if (stockItems.length > 0 || cat === 'stock') {
           results.stock = { count: stockItems.length, items: stockItems }
         }

@@ -58,6 +58,9 @@ function seed(tenantId: string, opts: { qty: number }) {
 const stockOf = (id: string) =>
   db.prepare('SELECT quantity, sealed_qty FROM stock_items WHERE id = ?').get(id) as any
 
+const lastInMovementOf = (id: string) =>
+  db.prepare("SELECT quantity, notes FROM stock_movements WHERE stock_item_id = ? AND type = 'IN' ORDER BY created_at DESC LIMIT 1").get(id) as any
+
 describe('รับของที่ไม่ลงตัวเป็นแพ็ค', () => {
   it('1.285 kg → แพ็คเต็ม 1 + เศษ 285 g (ไม่ใช่ปัดทิ้ง 285 g)', async () => {
     const admin = createTestUser({ role: 'ADMIN' })
@@ -70,6 +73,13 @@ describe('รับของที่ไม่ลงตัวเป็นแพ�
     const s = stockOf(stockId)
     expect(s.sealed_qty).toBe(1)
     expect(s.quantity).toBeCloseTo(285, 6)
+
+    // Bug #2: movement IN ต้องลงยอดรวม (sealed×factor + เศษ) เป็นหน่วยฐานเสมอ (SUM(IN) ต้อง
+    // ตรงกับยอดรับจริง) แต่หมายเหตุต้องบอกว่าส่วนไหนยังไม่แกะ ไม่งั้นดูเหมือนของหายไปจาก quantity
+    const mv = lastInMovementOf(stockId)
+    expect(mv.quantity).toBeCloseTo(1285, 6) // 1.285 kg = 1285 g รวม ไม่ใช่แค่เศษ 285
+    expect(mv.notes).toContain('1285')
+    expect(mv.notes).toContain('ยังไม่แกะ 1')
   })
 
   it('1.6 kg → แพ็คเต็ม 1 + เศษ 600 g (ไม่ใช่ปัดขึ้นเป็น 2 แพ็ค)', async () => {
@@ -106,6 +116,12 @@ describe('รับของที่ไม่ลงตัวเป็นแพ�
     const s = stockOf(stockId)
     expect(s.sealed_qty).toBe(3)
     expect(s.quantity).toBeCloseTo(0, 6)
+
+    // ไม่มีเศษเลย (ทั้งหมดเป็นแพ็คเต็ม) — IN ต้องยังลง 3000 g ไม่ใช่ 0 (quantity ไม่ขึ้นเพราะลง sealed_qty หมด)
+    const mv = lastInMovementOf(stockId)
+    expect(mv.quantity).toBeCloseTo(3000, 6)
+    expect(mv.notes).toContain('3000')
+    expect(mv.notes).toContain('ยังไม่แกะ 3')
   })
 
   it('รับแล้วยกเลิก → สต็อกกลับมาเป็น 0 เป๊ะ ทั้งแพ็คและเศษ', async () => {

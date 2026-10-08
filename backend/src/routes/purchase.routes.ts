@@ -7,7 +7,7 @@ import { approvalDenyReason } from '../services/approvalGate.service'
 import { can, canHandleBilling } from '../services/rbac.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber } from '../utils/id'
-import { convertQuantityBidirectional, normalizeUnit, findConversionChain } from '../services/unitConversion.service'
+import { convertQuantityBidirectional, normalizeUnit, findConversionChain, autoUnpackIfNeeded } from '../services/unitConversion.service'
 import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 
 // กันเลขทศนิยมลอยตัว (2.9999999 ต้องนับเป็น 3 แพ็ค ไม่ใช่ 2)
@@ -1503,6 +1503,21 @@ router.post('/returns', async (req: Request, res: Response) => {
       throw e
     }
 
+    // หน่วยของแต่ละบรรทัด: ผู้ใช้เลือกจาก UnitPicker ส่งมาเองอยู่แล้ว — เผื่อผู้เรียกไม่ส่งมา
+    // (เรียก API ตรง) ลองหาจากบรรทัด PO ที่ตรงสินค้านี้ก่อน ไม่เจอก็ปล่อยเป็น base_unit ของสินค้า
+    // (เท่ากับไม่แปลงหน่วยตอนยืนยัน ปลอดภัยกว่าเดาหน่วยผิด)
+    const poUnitByMaterial = new Map(
+      (db.prepare('SELECT material_id, unit FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?')
+        .all(purchaseOrderId, tenantId) as any[]).map((i: any) => [i.material_id, i.unit])
+    )
+    for (const item of items || []) {
+      if (!item.unit) {
+        item.unit = poUnitByMaterial.get(item.materialId)
+          || (db.prepare('SELECT COALESCE(base_unit, unit) as u FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.materialId, tenantId) as any)?.u
+          || null
+      }
+    }
+
     const id = generateId()
     const prNumber = generateNumber('PRT', tenantId, 'purchase_returns')
     const now = new Date().toISOString()
@@ -1525,14 +1540,14 @@ router.post('/returns', async (req: Request, res: Response) => {
 
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO purchase_return_items (id, tenant_id, purchase_return_id, goods_receipt_item_id, 
-            material_id, quantity, unit_price, reason, total_price)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO purchase_return_items (id, tenant_id, purchase_return_id, goods_receipt_item_id,
+            material_id, quantity, unit, unit_price, reason, total_price)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const item of items) {
           const total = item.quantity * item.unitPrice
           insertItem.run(generateId(), tenantId, id, item.grItemId || null, item.materialId || null,
-            item.quantity, item.unitPrice, item.reason || '', total)
+            item.quantity, item.unit || null, item.unitPrice, item.reason || '', total)
         }
       }
     })
@@ -1594,6 +1609,10 @@ router.put('/returns/:id/status', async (req: Request, res: Response) => {
   }
 })
 
+// โยนตอนยืนยันคืนสินค้าแล้วแปลงหน่วย/ตัดสต็อกไม่ได้ (ไม่มีกฎแปลงหน่วย, สต็อกไม่พอ) — จับคู่กับ
+// catch ด้านล่างเพื่อตอบ 400 เป็นข้อความไทย ไม่ใช่ 500 ทั่วไป เหมือน GoodsReceiptError/StockItemRefError
+class PurchaseReturnStockError extends Error {}
+
 // PUT confirm return (deduct stock) — requires APPROVED status
 router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
   try {
@@ -1636,12 +1655,19 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
     const journalNumber  = generateEntryNumber(tenantId, ret.return_date || now)
     const supplier = db.prepare('SELECT name, tax_id FROM suppliers WHERE id = ? AND tenant_id = ?').get(ret.supplier_id, tenantId) as any
 
+    const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+    const allowNegativeStock = !!negSetting && negSetting.allow_negative_stock === 1
+
     const transaction = db.transaction(() => {
       // Update return status
       db.prepare("UPDATE purchase_returns SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
         .run(now, req.params.id, tenantId)
 
-      // Deduct stock
+      // Deduct stock — item.quantity is in item.unit (what the user picked on the return
+      // form, e.g. "ลัง"), not necessarily stock_items' base_unit, so it has to go through
+      // the same convert + auto-unpack path every other deduction uses (sales/shared.ts,
+      // stockMovement.service.ts) instead of subtracting the raw number straight off
+      // quantity like before (1 "ลัง" of a bottle-based item used to remove 1 bottle).
       for (const item of items) {
         if (item.material_id && item.quantity > 0) {
           // item.material_id is a stock_items.id (see the migration note on the
@@ -1653,17 +1679,58 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
           if (!stockItem) {
             stockItem = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(item.material_id, tenantId) as any
           }
-          
-          if (stockItem) {
-            db.prepare('UPDATE stock_items SET quantity = quantity - ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
-              .run(roundQty(Number(item.quantity)), now, stockItem.id, tenantId)
 
-            // Record stock movement
+          if (stockItem) {
+            const stockUnit = normalizeUnit(stockItem.base_unit || stockItem.unit || '')
+            // แถวเก่าก่อนมีคอลัมน์ unit ไม่มีหน่วยบันทึกไว้ — ถือว่าหน่วยเดียวกับสต็อก (ไม่แปลง)
+            // ให้พฤติกรรมเดิมคงที่ ไม่ทำย้อนหลังพัง
+            const retUnit = normalizeUnit(item.unit || stockUnit)
+            let deductQty = roundQty(Number(item.quantity))
+            if (retUnit && stockUnit && retUnit !== stockUnit) {
+              const converted = convertQuantityBidirectional(Number(item.quantity), retUnit, stockUnit, tenantId, item.material_id)
+              if (!converted) {
+                throw new PurchaseReturnStockError(
+                  `ไม่พบการแปลงหน่วย ${retUnit} → ${stockUnit} สำหรับ "${stockItem.name || item.material_id}" กรุณาตั้งค่า Unit Conversion ก่อนจึงยืนยันคืนสินค้าได้`
+                )
+              }
+              deductQty = roundQty(converted.converted)
+            }
+
+            // เปิดแพ็คที่ยังไม่แกะอัตโนมัติถ้าของหลวม (loose) ไม่พอ — เหมือนทุกจุดตัดสต็อกอื่น
+            let availableQty = stockItem.quantity
+            if (availableQty < deductQty && (stockItem.sealed_qty ?? 0) > 0) {
+              const unpack = autoUnpackIfNeeded(stockItem, deductQty, tenantId)
+              if (unpack && unpack.unpackedPacks > 0) {
+                const released = roundQty(unpack.unpackedPacks * unpack.packFactor)
+                db.prepare('UPDATE stock_items SET quantity = ?, sealed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+                  .run(unpack.quantity, unpack.sealed_qty, now, stockItem.id, tenantId)
+                db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+                  VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)`).run(
+                  generateId(), tenantId, stockItem.id, released, stockItem.display_unit || null, unpack.unpackedPacks, `PRT: ${ret.pr_number}`,
+                  `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stockItem.display_unit || ''} → +${released} ${stockUnit}`, now, req.user!.userId)
+                availableQty = unpack.quantity
+                stockItem.quantity = unpack.quantity
+                stockItem.sealed_qty = unpack.sealed_qty
+              }
+            }
+
+            if (availableQty < deductQty && !allowNegativeStock) {
+              throw new PurchaseReturnStockError(
+                `สต็อก "${stockItem.name || item.material_id}" ไม่พอให้คืนสินค้า — ต้องการ ${deductQty} ${stockUnit} แต่มีอยู่ ${availableQty} ${stockUnit}`
+              )
+            }
+
+            db.prepare('UPDATE stock_items SET quantity = quantity - ?, unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
+              .run(deductQty, now, stockItem.id, tenantId)
+
+            // Record stock movement — movement_unit/movement_quantity จำหน่วย/จำนวนตามที่ผู้ใช้
+            // กรอกบนใบคืน (ก่อนแปลง) ไว้ด้วย เหมือนทุกจุดตัดสต็อกอื่นที่แปลงหน่วย
             db.prepare(`
-              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
-            `).run(generateId(), tenantId, stockItem.id, roundQty(Number(item.quantity)), `PRT: ${ret.pr_number}`, 
-              `Returned to supplier: ${ret.reason}`, now, req.user!.userId)
+              INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
+            `).run(generateId(), tenantId, stockItem.id, deductQty, item.unit || null, Number(item.quantity), `PRT: ${ret.pr_number}`,
+              `Returned to supplier: ${ret.reason}${retUnit !== stockUnit ? ` (แปลง: ${item.quantity} ${retUnit} → ${deductQty} ${stockUnit})` : ''}`,
+              now, req.user!.userId)
           }
         }
       }
@@ -1711,7 +1778,10 @@ router.put('/returns/:id/confirm', async (req: Request, res: Response) => {
 
     const updated = db.prepare('SELECT * FROM purchase_returns WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: 'Purchase return confirmed and stock deducted' })
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof PurchaseReturnStockError) {
+      return res.status(400).json({ success: false, message: error.message })
+    }
     console.error('Confirm purchase return error:', error)
     res.status(500).json({ success: false, message: 'Failed to confirm purchase return' })
   }

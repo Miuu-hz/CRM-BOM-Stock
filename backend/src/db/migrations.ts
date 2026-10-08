@@ -147,6 +147,18 @@ export function runMigrations(db: any): void {
     console.error('⚠️ supplier_payments.status migration error:', e)
   }
 
+  // Migration: add unit to purchase_return_items — หน้าคืนสินค้าให้ผู้ใช้เลือกหน่วยผ่าน
+  // UnitPicker ได้ (คืนเป็น "ลัง"/"กล่อง" ไม่ใช่หน่วยฐานของสต็อกเสมอไป) แต่ตารางนี้ไม่มีคอลัมน์
+  // เก็บหน่วยเลย ตอนยืนยันคืนของ (confirm) จึงตัด stock_items.quantity ด้วยเลขดิบที่ผู้ใช้กรอก
+  // โดยไม่แปลงหน่วย — คืน 1 ลัง (12 ขวด) หักสต็อกออกไปแค่ 1 ขวด สต็อกเพี้ยนทันที
+  try {
+    const cols = db.prepare(`PRAGMA table_info(purchase_return_items)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'unit')) {
+      db.exec(`ALTER TABLE purchase_return_items ADD COLUMN unit TEXT`)
+      console.log('✅ Migration: added unit to purchase_return_items')
+    }
+  } catch (e) { console.error('⚠️ purchase_return_items unit migration error:', e) }
+
   // ==================== MIGRATIONS ====================
   // Add bom_id column to pos_menu_configs (for existing databases)
   try {

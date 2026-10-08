@@ -2398,14 +2398,27 @@ const Purchase = () => {
   const handleCreateReturn = async () => {
     setFormLoading(true)
     try {
+      // backend (routes/purchase.routes.ts POST /returns) อ่าน body เป็น camelCase
+      // (purchaseOrderId, item.materialId/unitPrice) เหมือนใบรับสินค้า (handleCreateReceipt)
+      // — ก่อนหน้านี้ส่ง key แบบ snake_case ของ state ไปตรง ๆ ทำให้ purchaseOrderId/item.materialId
+      // เป็น undefined เสมอ สร้างใบคืนสินค้าไม่ได้แม้แต่ใบเดียว (400 "Purchase order ... required"
+      // หรือ 500 ตอน insert) ไม่ใช่แค่หน่วยหาย
       const items = returnForm.items.filter(i => i.material_id && i.quantity > 0).map(item => ({
-        ...item,
-        total_price: item.quantity * item.unit_price
+        materialId: item.material_id,
+        quantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unit_price,
+        reason: item.reason,
       }))
-      const subtotal = items.reduce((sum, i) => sum + i.total_price, 0)
+      const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
       const { taxAmount, totalAmount } = calcVat(subtotal, { rate: returnForm.tax_rate, inclusive: returnForm.vat_inclusive })
-      const { _vat_touched, ...returnFormPayload } = returnForm
-      const { data } = await api.post('/purchase/returns', { ...returnFormPayload, items, subtotal, taxAmount, totalAmount })
+      const { data } = await api.post('/purchase/returns', {
+        purchaseOrderId: returnForm.purchase_order_id,
+        goodsReceiptId: returnForm.goods_receipt_id || undefined,
+        reason: returnForm.reason,
+        notes: returnForm.notes,
+        items, subtotal, taxAmount, totalAmount,
+      })
       if (data.success) {
         toast.success(t('purchase.toast.returnCreated'))
         closeModal()

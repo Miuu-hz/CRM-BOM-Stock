@@ -29,6 +29,7 @@ export class GoodsReceiptError extends Error {
       | 'PO_CANCELLED'
       | 'DRAFT_EXISTS'
       | 'OVER_PENDING_QTY'
+      | 'PO_NOT_APPROVED'
       | 'GR_NOT_FOUND'
       | 'NOT_DRAFT'
       | 'UNBOUND_ITEM'
@@ -102,6 +103,12 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
   if (!po) throw new GoodsReceiptError('PO_NOT_FOUND', 'Purchase order not found')
   if (po.status === 'RECEIVED') throw new GoodsReceiptError('PO_RECEIVED', 'ใบสั่งซื้อนี้รับสินค้าครบแล้ว')
   if (po.status === 'CANCELLED') throw new GoodsReceiptError('PO_CANCELLED', 'ใบสั่งซื้อนี้ถูกยกเลิกไปแล้ว')
+  // Bug: เดิมบล็อกแค่ RECEIVED/CANCELLED — PO ที่ยังเป็น DRAFT/SUBMITTED (ยังไม่ผ่านอนุมัติ)
+  // รับเข้าสต็อกได้ทั้ง REST และ MCP ข้ามเพดานอนุมัติไปเลย ต้องอนุมัติแล้ว (APPROVED/PARTIAL) เท่านั้น
+  // completePurchaseChain อนุมัติ PO ให้ก่อนเรียกมาที่นี่แล้ว (ดู purchaseChain.service.ts) จึงไม่ติดเช็คนี้
+  if (po.status !== 'APPROVED' && po.status !== 'PARTIAL') {
+    throw new GoodsReceiptError('PO_NOT_APPROVED', `ใบสั่งซื้อนี้ยังไม่ได้รับการอนุมัติ (สถานะปัจจุบัน: ${po.status}) ต้องอนุมัติก่อนจึงรับสินค้าได้`)
+  }
 
   // materialId (= stock_items.id) มาจากฟอร์ม ต้องเป็นของเทแนนต์นี้
   for (const item of items || []) {
@@ -302,11 +309,16 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           sealedPacks = Math.floor(Number(item.accepted_qty) + PACK_EPS)
           stockQty = roundQty((Number(item.accepted_qty) - sealedPacks) * packFactor)
           appliedFactor = packFactor
+          // Bug: stock_movements IN ลง quantity รวม (sealed×factor + เศษ) เป็นหน่วยฐานเสมอ
+          // (ต้องเก็บยอดรวมไว้ให้ SUM(IN) ตรงกับยอดรับจริงที่ reports อ่าน) แต่ stock_items.quantity
+          // โตขึ้นแค่ส่วนเศษ (ส่วนที่ยังไม่แกะไปอยู่ sealed_qty) — ผู้ใช้เห็น "IN 4000 g" ทั้งที่
+          // quantity ไม่ขึ้นเลยคิดว่าของหาย จึงต้องบอกยอดรวมนี้ + จำนวนแพ็คที่ยังไม่แกะไว้ในหมายเหตุ
+          const combinedQty = roundQty(sealedPacks * packFactor + stockQty)
           movementNotes = sealedPacks > 0 && stockQty > 0
-            ? `Received ${item.accepted_qty} ${poUnit}: sealed ${sealedPacks} ${poUnit} (ยังไม่แกะ) + เศษ ${stockQty} ${stockUnit}`
+            ? `รับเข้า ${combinedQty} ${stockUnit} (ยังไม่แกะ ${sealedPacks} ${poUnit} + เศษ ${stockQty} ${stockUnit})`
             : sealedPacks > 0
-              ? `Received as sealed ${poUnit}: ${sealedPacks} ${poUnit} (ยังไม่แกะ)`
-              : `Received ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit} (ไม่ถึงหนึ่งแพ็ค)`
+              ? `รับเข้า ${combinedQty} ${stockUnit} (ยังไม่แกะ ${sealedPacks} ${poUnit})`
+              : `รับเข้า ${stockQty} ${stockUnit} (ไม่ถึงหนึ่ง ${poUnit})`
         } else if (stockItem && poUnit && poUnit !== stockUnit) {
           const converted = convertQuantityBidirectional(Number(item.accepted_qty), poUnit, stockUnit, tenantId, item.material_id, poItem?.description)
           if (!converted) {
