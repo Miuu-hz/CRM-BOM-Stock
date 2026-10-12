@@ -2496,6 +2496,12 @@ export function runMigrations(db: any): void {
     "ALTER TABLE quotations ADD COLUMN campaign TEXT",
   ].forEach(sql => { try { db.exec(sql); console.log('✅ Migration:', sql) } catch { /* column already exists */ } })
 
+  // Migration: บัญชีค่าใช้จ่ายต่อบรรทัด (2026-10-12) — บรรทัด skip_stock (ของไม่นับสต็อก) เลือกบัญชีค่าใช้จ่าย
+  // ได้เองต่อบรรทัด (เช่นน้ำมัน → ค่าใช้จ่ายเดินทาง, กล่อง → บรรจุภัณฑ์) แทนลง 5403 รวมกันหมดทุกบรรทัด
+  // ของเก่า NULL ทั้งหมด = fallback ไป 5403 เหมือนพฤติกรรมเดิม ไม่ต้อง backfill
+  ;["ALTER TABLE purchase_order_items ADD COLUMN expense_account_id TEXT"]
+    .forEach(sql => { try { db.exec(sql); console.log('✅ Migration:', sql) } catch { /* column already exists */ } })
+
   // Migration: per-user MCP scope — 'full' (ค่าเริ่มต้น) หรือ 'readonly' (ตรวจสอบ/audit อย่างเดียว)
   // บังคับจริงที่ mcp/tools.ts registerTools() — ชั้นเดียว ครอบคลุมทุก transport (SSE/streamable/test)
   try {

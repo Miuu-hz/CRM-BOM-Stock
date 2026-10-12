@@ -82,6 +82,8 @@ interface DerivedGrItem {
   materialId: string | null
   quantity: number
   unitPrice: number
+  skipStock: number
+  expenseAccountId: string | null
 }
 
 /** รายการจาก GR (join ราคาจาก PO item) ของ GR ทุกใบที่ระบุ — ใช้ derive items ของใบแจ้งหนี้ */
@@ -90,11 +92,44 @@ function deriveItemsFromGoodsReceipts(grIds: string[]): DerivedGrItem[] {
   const placeholders = grIds.map(() => '?').join(',')
   return db.prepare(`
     SELECT gri.id as grItemId, gri.purchase_order_item_id as poItemId, gri.material_id as materialId,
-      gri.accepted_qty as quantity, poi.unit_price as unitPrice
+      gri.accepted_qty as quantity, poi.unit_price as unitPrice, COALESCE(poi.skip_stock, 0) as skipStock,
+      poi.expense_account_id as expenseAccountId
     FROM goods_receipt_items gri
     JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
     WHERE gri.goods_receipt_id IN (${placeholders}) AND gri.accepted_qty > 0
   `).all(...grIds) as DerivedGrItem[]
+}
+
+/**
+ * รวมมูลค่าดิบ (qty×unitPrice) ของบรรทัด skip_stock แยกตามบัญชีค่าใช้จ่ายที่เลือกต่อบรรทัด
+ * (NULL = ยังไม่เลือก → รวมไว้ภายใต้ key null แล้วให้ calcPurchaseInvoiceTotals fallback ไป 5403)
+ */
+function buildSkipBuckets(items: { skipStock: any; expenseAccountId?: string | null; quantity: number; unitPrice: number }[]): { accountId: string | null; rawSubtotal: number }[] {
+  const map = new Map<string | null, number>()
+  for (const it of items) {
+    if (!it.skipStock) continue
+    const key = it.expenseAccountId || null
+    map.set(key, (map.get(key) || 0) + it.quantity * it.unitPrice)
+  }
+  return [...map.entries()].map(([accountId, rawSubtotal]) => ({ accountId, rawSubtotal }))
+}
+
+/**
+ * แบ่งยอดรวม (total) ลงบัญชีตามสัดส่วน rawSubtotal ของแต่ละ bucket — บรรทัดสุดท้ายรับเศษปัดทั้งหมด
+ * เพื่อให้ผลรวมที่แบ่งแล้ว = total เป๊ะ (กันดุลไม่ลงเพราะปัดสตางค์แต่ละ bucket แยกกัน)
+ */
+function allocateByBucket(buckets: { accountId: string; rawSubtotal: number }[], total: number): { accountId: string; amount: number }[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  if (buckets.length === 0 || total <= 0.005) return []
+  const rawTotal = buckets.reduce((s, b) => s + b.rawSubtotal, 0)
+  if (rawTotal <= 0.005) return []
+  let allocated = 0
+  return buckets.map((b, i) => {
+    if (i === buckets.length - 1) return { accountId: b.accountId, amount: r2(total - allocated) }
+    const amt = r2(total * (b.rawSubtotal / rawTotal))
+    allocated = r2(allocated + amt)
+    return { accountId: b.accountId, amount: amt }
+  })
 }
 
 interface PurchaseInvoiceTotals {
@@ -107,11 +142,20 @@ interface PurchaseInvoiceTotals {
   payableAccId: string
   vatAccId: string | null
   vatClaimable: boolean
+  /** กลุ่มบัญชีค่าใช้จ่ายของส่วน skip_stock แยกตามบัญชีที่เลือกต่อบรรทัด — ว่างถ้าไม่มีบรรทัด skip_stock หรือผู้ใช้เลือก drAccountId เอง */
+  expenseBuckets: { accountId: string; rawSubtotal: number }[]
+  /** สัดส่วนมูลค่า skip_stock ต่อ subtotal ทั้งใบ (0 ถ้าไม่มี/ผู้ใช้เลือกบัญชีเอง) */
+  skipShare: number
 }
 
 /**
  * คำนวณยอด VAT/ส่วนลด + resolve บัญชีปลายทางทั้งหมด — ทำนอก transaction เสมอ (auto-create
  * บัญชีในผังบัญชีถ้ายังไม่มี + throw ก่อนแตะ DB ถ้าบัญชีปลายทางที่เลือกไม่ถูกต้อง)
+ *
+ * skipBuckets = ผลรวม qty×unitPrice ของบรรทัด skip_stock (ของไม่นับสต็อก เช่นน้ำมัน/ของใช้สำนักงาน)
+ * ภายในใบนี้ แยกตามบัญชีค่าใช้จ่ายที่เลือกต่อบรรทัด (accountId: null = ยังไม่เลือก → fallback 5403)
+ * ใช้หาสัดส่วนที่ต้องแยกไปลงบัญชีค่าใช้จ่ายแทนสต็อกวัตถุดิบ (1107) — ไม่แยกถ้าผู้ใช้เลือก drAccountId
+ * เอง (เขาตั้งใจเลือกบัญชีนั้นสำหรับทั้งใบแล้ว)
  */
 function calcPurchaseInvoiceTotals(
   tenantId: string,
@@ -120,7 +164,8 @@ function calcPurchaseInvoiceTotals(
   discountAmount: number,
   inclusive: boolean,
   drAccountId?: string | null,
-  crAccountId?: string | null
+  crAccountId?: string | null,
+  skipBuckets: { accountId: string | null; rawSubtotal: number }[] = []
 ): PurchaseInvoiceTotals {
   const piCalc = calcVat(subtotalRaw, { rate: taxRate, discountAmount, inclusive })
   const { taxAmount, totalAmount, discount } = piCalc
@@ -144,7 +189,25 @@ function calcPurchaseInvoiceTotals(
   const vatClaimable = isVatRegistered(tenantId)
   const vatAccId = taxAmount > 0 ? (vatClaimable ? getOrCreateAccount(tenantId, ACC.INPUT_VAT, ACC_META[ACC.INPUT_VAT]!.name, ACC_META[ACC.INPUT_VAT]!.type, ACC_META[ACC.INPUT_VAT]!.category, ACC_META[ACC.INPUT_VAT]!.normalBalance) : inventoryAccId) : null
 
-  return { subtotal, discount, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable }
+  // ผู้ใช้เลือกบัญชีปลายทางเอง (resolvedDrAccId) = ตั้งใจเลือกแล้ว ไม่ต้องแยก skip_stock ออกให้
+  const skipRawTotal = skipBuckets.reduce((s, b) => s + b.rawSubtotal, 0)
+  const skipShare = (!resolvedDrAccId && subtotalRaw > 0.005)
+    ? Math.max(0, Math.min(1, skipRawTotal / subtotalRaw))
+    : 0
+  // รวม bucket ที่ resolve ไปบัญชีเดียวกัน (เช่นหลายบรรทัด NULL ปน บรรทัดที่เลือก 5403 เอง) ให้เป็น Dr เดียว
+  let expenseBuckets: { accountId: string; rawSubtotal: number }[] = []
+  if (skipShare > 0.0001) {
+    const fallbackExpenseAccId = getOrCreateAccount(tenantId, ACC.OTHER_EXPENSE, ACC_META[ACC.OTHER_EXPENSE]!.name, ACC_META[ACC.OTHER_EXPENSE]!.type, ACC_META[ACC.OTHER_EXPENSE]!.category, ACC_META[ACC.OTHER_EXPENSE]!.normalBalance)
+    const merged = new Map<string, number>()
+    for (const b of skipBuckets) {
+      if (b.rawSubtotal <= 0) continue
+      const accId = b.accountId || fallbackExpenseAccId
+      merged.set(accId, (merged.get(accId) || 0) + b.rawSubtotal)
+    }
+    expenseBuckets = [...merged.entries()].map(([accountId, rawSubtotal]) => ({ accountId, rawSubtotal }))
+  }
+
+  return { subtotal, discount, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable, expenseBuckets, skipShare }
 }
 
 /**
@@ -168,7 +231,7 @@ function postPurchaseInvoiceJournal(
   }
 ) {
   const { piId, piNumber, invoiceDate, notes, grIds, totals, taxRate, supplierName, supplierTaxId } = params
-  const { subtotal, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable } = totals
+  const { subtotal, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable, expenseBuckets, skipShare } = totals
   const now = new Date().toISOString()
   const r2 = (n: number) => Math.round(n * 100) / 100
   const drAccLabel = resolvedDrAccId
@@ -195,8 +258,20 @@ function postPurchaseInvoiceJournal(
   const payableTotal = r2(totalAmount)
   const vatDebit = vatAccId && taxAmount > 0 ? r2(taxAmount) : 0
   const goodsDebit = r2(payableTotal - vatDebit)
-  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), goodsDebit))
-  const inventoryPortion = r2(goodsDebit - grniPortion)
+  // ส่วน skip_stock (ของไม่นับสต็อก เช่นน้ำมัน/ของใช้สำนักงาน) ของยอดสินค้า — คิดจาก goodsDebit ทั้งก้อน
+  // ก่อนหัก GRNI (ไม่ใช่หลัง) ให้ตรงกับสัดส่วนมูลค่าที่แท้จริงในบิล ไม่ใช่ตัวเลขที่เหลือจากปิด 2109
+  const hasExpenseBuckets = expenseBuckets.length > 0
+  const expensePortion = hasExpenseBuckets ? Math.max(0, Math.min(goodsDebit, r2(goodsDebit * skipShare))) : 0
+  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), r2(goodsDebit - expensePortion)))
+  const inventoryPortion = r2(goodsDebit - expensePortion - grniPortion)
+  // ยังไม่จด VAT: vatAccId ชี้มาที่ inventoryAccId (ภาษีซื้อขอคืนไม่ได้ รวมเป็นต้นทุนของ) — ส่วน skip_stock
+  // ของภาษีนี้ก็ต้องแยกไปบัญชีค่าใช้จ่ายเหมือนกัน ถ้าจด VAT แล้ว vatDebit ลง 1110 เต็มจำนวนไม่ต้องแยก
+  const vatExpensePortion = (!vatClaimable && hasExpenseBuckets) ? Math.max(0, Math.min(vatDebit, r2(vatDebit * skipShare))) : 0
+  const vatInventoryPortion = r2(vatDebit - vatExpensePortion)
+  // แบ่ง expensePortion/vatExpensePortion ลงแต่ละบัญชีตามสัดส่วน rawSubtotal ของ bucket นั้น ๆ
+  // (บรรทัดสุดท้ายรับเศษปัดทั้งหมด กันดุลไม่ลง) — 1 Dr ต่อบัญชีค่าใช้จ่ายที่ต่างกัน
+  const expenseAllocations = allocateByBucket(expenseBuckets, expensePortion)
+  const vatExpenseAllocations = allocateByBucket(expenseBuckets, vatExpensePortion)
 
   const lines: JournalLineInput[] = []
   if (grniPortion > 0.005) {
@@ -205,8 +280,18 @@ function postPurchaseInvoiceJournal(
   if (inventoryPortion > 0.005) {
     lines.push({ accountId: inventoryAccId, description: `${drAccLabel} - ${piNumber}`, debit: inventoryPortion })
   }
-  if (vatDebit > 0) {
-    lines.push({ accountId: vatAccId!, description: `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${piNumber}`, debit: vatDebit })
+  for (const alloc of expenseAllocations) {
+    if (alloc.amount > 0.005) {
+      lines.push({ accountId: alloc.accountId, description: `ค่าใช้จ่ายไม่นับสต็อก - ${piNumber}`, debit: alloc.amount })
+    }
+  }
+  if (vatInventoryPortion > 0.005) {
+    lines.push({ accountId: vatAccId!, description: `${vatClaimable ? 'ภาษีซื้อ' : 'ภาษีซื้อที่ขอคืนไม่ได้ (ยังไม่จด VAT)'} - ${piNumber}`, debit: vatInventoryPortion })
+  }
+  for (const alloc of vatExpenseAllocations) {
+    if (alloc.amount > 0.005) {
+      lines.push({ accountId: alloc.accountId, description: `ภาษีซื้อที่ขอคืนไม่ได้ (ไม่นับสต็อก) - ${piNumber}`, debit: alloc.amount })
+    }
   }
   lines.push({ accountId: payableAccId, description: `เจ้าหนี้การค้า - ${piNumber}`, credit: payableTotal })
 
@@ -310,9 +395,12 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
       materialId: d.materialId,
       quantity: ov?.quantity != null ? Number(ov.quantity) : d.quantity,
       unitPrice: ov?.unitPrice != null ? Number(ov.unitPrice) : d.unitPrice,
+      skipStock: d.skipStock,
+      expenseAccountId: d.expenseAccountId,
     }
   })
   const subtotalRaw = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+  const skipBuckets = buildSkipBuckets(items)
 
   // ── 5) VAT/ส่วนลด สืบทอดจาก PO — อัตราภาษี/โหมดรวม VAT จาก PO ของ GR ใบแรก, ส่วนลดรวมทุก PO ที่เกี่ยวข้อง ──
   const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (orderedGrRows[0].po_tax_rate ?? 7)
@@ -333,7 +421,7 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const now = new Date().toISOString()
 
   // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
-  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId)
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId, skipBuckets)
 
   const transaction = db.transaction(() => {
     db.prepare(`
@@ -524,7 +612,14 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   }
 
   // ── ฟิลด์การเงิน — คำนวณยอดใหม่ก่อน แล้วค่อยตรวจ over-paid ก่อนแตะ DB ──
-  const existingItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id) as any[]
+  // join poi.skip_stock/expense_account_id เพื่อแยกส่วนไม่นับสต็อกให้ตรงกับตอนสร้าง
+  // (purchase_invoice_items ไม่มี 2 คอลัมน์นี้เอง)
+  const existingItems = db.prepare(`
+    SELECT pii.*, COALESCE(poi.skip_stock, 0) as skipStock, poi.expense_account_id as expenseAccountId
+    FROM purchase_invoice_items pii
+    LEFT JOIN purchase_order_items poi ON poi.id = pii.purchase_order_item_id
+    WHERE pii.purchase_invoice_id = ?
+  `).all(id) as any[]
   const overrideById = new Map((payload.items || []).map(o => [o.id, o]))
   for (const ov of payload.items || []) {
     if (!existingItems.find(e => e.id === ov.id)) {
@@ -538,9 +633,12 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
       materialId: e.material_id,
       quantity: ov?.quantity != null ? Number(ov.quantity) : e.quantity,
       unitPrice: ov?.unitPrice != null ? Number(ov.unitPrice) : e.unit_price,
+      skipStock: e.skipStock,
+      expenseAccountId: e.expenseAccountId,
     }
   })
   const subtotalRaw = newItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+  const skipBuckets = buildSkipBuckets(newItems)
 
   const taxRate = payload.taxRate != null ? Number(payload.taxRate) : pi.tax_rate
   const discountAmount = payload.discountAmount != null ? Number(payload.discountAmount) : pi.discount_amount
@@ -548,7 +646,7 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   const drAccountId = payload.drAccountId !== undefined ? payload.drAccountId : undefined
   const crAccountId = payload.crAccountId !== undefined ? payload.crAccountId : undefined
 
-  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId)
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId, skipBuckets)
 
   if (totals.totalAmount < (pi.paid_amount || 0) - 0.005) {
     throw new PurchaseBillingError(

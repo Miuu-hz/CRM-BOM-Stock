@@ -40,6 +40,20 @@ export function resolveSupplierId(tenantId: string, supplierId: unknown): string
   return id
 }
 
+/**
+ * บัญชีค่าใช้จ่ายต่อบรรทัดของรายการ skip_stock (ของไม่นับสต็อก) — ต้องเป็นบัญชีประเภท EXPENSE
+ * ของ tenant นี้เท่านั้น ไม่งั้น throw 400 ไทย เก็บเฉพาะบรรทัดที่ skip_stock จริง (บรรทัดสต็อกไม่มี
+ * ความหมายของ "บัญชีค่าใช้จ่ายต่อบรรทัด" ถึงจะส่งมาก็ไม่เก็บ)
+ */
+export function resolveExpenseAccountId(tenantId: string, expenseAccountId: unknown, skipStock: boolean): string | null {
+  if (!skipStock) return null
+  const id = blankToNull(expenseAccountId as any)
+  if (!id) return null
+  const acc = db.prepare("SELECT id FROM accounts WHERE id = ? AND tenant_id = ? AND type = 'EXPENSE'").get(id, tenantId)
+  if (!acc) throw new PurchaseOrderUpdateError('บัญชีค่าใช้จ่ายที่เลือกไม่ถูกต้อง — ต้องเป็นบัญชีประเภทค่าใช้จ่ายของกิจการนี้')
+  return id
+}
+
 export interface PurchaseOrderUpdatePayload {
   supplierId?: string | null
   expectedDate?: string | null
@@ -54,6 +68,8 @@ export interface PurchaseOrderUpdatePayload {
     unitPrice: number
     skipStock?: boolean | number
     skip_stock?: boolean | number
+    expenseAccountId?: string | null
+    expense_account_id?: string | null
     notes?: string
   }>
   taxRate?: number
@@ -266,13 +282,13 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
 
       const updateItem = db.prepare(`
         UPDATE purchase_order_items SET material_id = ?, description = ?, quantity = ?, unit = ?,
-          unit_price = ?, total_price = ?, skip_stock = ?, notes = ?
+          unit_price = ?, total_price = ?, skip_stock = ?, expense_account_id = ?, notes = ?
         WHERE id = ? AND purchase_order_id = ?
       `)
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description,
-          quantity, unit, unit_price, total_price, skip_stock, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          quantity, unit, unit_price, total_price, skip_stock, expense_account_id, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
       const kept = new Set<string>()
@@ -280,6 +296,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
         const materialId = blankToNull(item.materialId)
         const description = item.description || ''
         const skipStock = (item.skipStock || item.skip_stock) ? 1 : 0
+        const expenseAccountId = resolveExpenseAccountId(tenantId, item.expenseAccountId ?? item.expense_account_id, !!skipStock)
         const total = item.quantity * item.unitPrice
 
         let rowId = blankToNull(item.id)
@@ -298,14 +315,14 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
           }
           updateItem.run(
             materialId, description, item.quantity, item.unit || '',
-            item.unitPrice, total, skipStock, item.notes || '', rowId, poId
+            item.unitPrice, total, skipStock, expenseAccountId, item.notes || '', rowId, poId
           )
           kept.add(rowId)
         } else {
           const newId = generateId()
           insertItem.run(
             newId, tenantId, poId, materialId, description,
-            item.quantity, item.unit || '', item.unitPrice, total, skipStock, item.notes || ''
+            item.quantity, item.unit || '', item.unitPrice, total, skipStock, expenseAccountId, item.notes || ''
           )
           kept.add(newId)
         }
@@ -337,7 +354,12 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
     LEFT JOIN bank_accounts ba ON po.bank_account_id = ba.id
     WHERE po.id = ? AND po.tenant_id = ?
   `).get(poId, tenantId) as any
-  const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(poId)
+  const poItems = db.prepare(`
+    SELECT poi.*, ea.code as expense_account_code, ea.name as expense_account_name
+    FROM purchase_order_items poi
+    LEFT JOIN accounts ea ON ea.id = poi.expense_account_id
+    WHERE poi.purchase_order_id = ?
+  `).all(poId)
 
   // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — อ่านค่าหลังอัปเดตเสมอ เผื่อ supplierId/tax ไม่ได้ถูกส่งมา
   // ในรอบนี้แล้วยังใช้ของเดิมอยู่ (COALESCE ในคำสั่ง UPDATE ด้านบน)

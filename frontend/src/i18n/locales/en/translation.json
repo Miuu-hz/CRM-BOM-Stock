@@ -933,7 +933,9 @@
       "unitPrice": "Unit price",
       "subtotal": "Subtotal",
       "discount": "Discount (THB)",
-      "tax": "Tax (%)"
+      "tax": "Tax (%)",
+      "expenseCategory": "Expense category",
+      "expenseCategoryDefault": "Other expenses (default)"
     },
     "receiptModal": {
       "title": "Record Goods Receipt (GR)",

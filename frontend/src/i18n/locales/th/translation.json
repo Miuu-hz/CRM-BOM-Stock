@@ -934,7 +934,9 @@
       "unitPrice": "ราคา/หน่วย",
       "subtotal": "ก่อนหักส่วนลด",
       "discount": "ส่วนลด (บาท)",
-      "tax": "ภาษี (%)"
+      "tax": "ภาษี (%)",
+      "expenseCategory": "หมวดค่าใช้จ่าย",
+      "expenseCategoryDefault": "ค่าใช้จ่ายอื่น (ค่าเริ่มต้น)"
     },
     "receiptModal": {
       "title": "บันทึกรับสินค้า (GR)",

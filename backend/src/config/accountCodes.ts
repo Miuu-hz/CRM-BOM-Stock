@@ -53,6 +53,9 @@ export const ACC = {
 
   // Operating Expenses (examples)
   DEPRECIATION:      '5201',
+  // ส่วนของใบแจ้งหนี้ซื้อที่ skip_stock (น้ำมัน/ของใช้สำนักงาน ไม่เข้าคลัง) — เดิมหลุดไปลง 1107
+  // เป็นสินทรัพย์ทั้งที่เป็นค่าใช้จ่ายจริง (2026-10) ตรงกับ 5403 ใน DEFAULT_CHART_OF_ACCOUNTS
+  OTHER_EXPENSE:     '5403',  // ค่าใช้จ่ายอื่น
 
   // เดิมเป็น string ดิบตาม call site จนชื่อบัญชีขึ้นกับว่าธุรกรรมไหนเกิดก่อน
   POS_CLEARING:      '1180',  // ลูกหนี้การค้า-POS (พักเงินก่อนนำเข้าบัญชี)
@@ -118,6 +121,7 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.STOCK_ADJUSTMENT]: { name: 'ค่าใช้จ่ายปรับปรุงสต็อก', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.STOCK_WASTE]:      { name: 'ผลขาดทุนของเสีย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.STOCK_SHRINKAGE]:  { name: 'ผลขาดทุนสินค้าสูญหาย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
+  [ACC.OTHER_EXPENSE]:    { name: 'ค่าใช้จ่ายอื่น', type: 'EXPENSE', category: 'OTHER', normalBalance: 'DEBIT' },
 }
 
 // ============================================================

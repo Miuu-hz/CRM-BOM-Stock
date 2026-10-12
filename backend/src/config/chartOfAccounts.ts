@@ -115,7 +115,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '5310', name: 'ค่าบัญชีและตรวจสอบ', type: 'EXPENSE', category: 'PROFESSIONAL', level: 2, parent_code: '53', normal_balance: 'DEBIT' },
   { code: '5311', name: 'ค่าประกันภัย', type: 'EXPENSE', category: 'INSURANCE', level: 2, parent_code: '53', normal_balance: 'DEBIT' },
   { code: '5312', name: 'ภาษีอากร', type: 'EXPENSE', category: 'TAX', level: 2, parent_code: '53', normal_balance: 'DEBIT' },
-  
+  { code: '5313', name: 'ค่าวัสดุสิ้นเปลือง', type: 'EXPENSE', category: 'SUPPLIES', level: 2, parent_code: '53', normal_balance: 'DEBIT' },
+
   { code: '54', name: 'ค่าใช้จ่ายอื่น', type: 'EXPENSE', category: 'OTHER_EXPENSE', level: 1, parent_code: '5', normal_balance: 'DEBIT' },
   { code: '5401', name: 'ดอกเบี้ยจ่าย', type: 'EXPENSE', category: 'INTEREST', level: 2, parent_code: '54', normal_balance: 'DEBIT' },
   { code: '5402', name: 'ขาดทุนจากการขายสินทรัพย์', type: 'EXPENSE', category: 'LOSS', level: 2, parent_code: '54', normal_balance: 'DEBIT' },

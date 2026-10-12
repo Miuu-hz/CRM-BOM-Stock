@@ -398,12 +398,15 @@ router.get('/extended', (req: Request, res: Response) => {
     `).all(tenantId, startDate, endDate) as Array<{ platform: string; impressions: number; clicks: number; orders: number; revenue: number; adCost: number }>
 
     // ── Zone 3: Cost Structure ────────────────────────────────────────────────
+    // skip_stock บรรทัด (ของไม่นับสต็อก เช่นน้ำมัน/บรรจุภัณฑ์) ไม่ใช่ COGS วัตถุดิบ — ตั้งแต่ 2026-10-12
+    // ลง journal เป็นค่าใช้จ่ายต่อบัญชี (5xxx) อยู่แล้ว นับซ้ำที่นี่จะเบิ้ลยอดกับ expByCat/opex ด้านล่าง
     const cogsByCat = db.prepare(`
       SELECT COALESCE(mc.name, 'ไม่ระบุหมวด') as category, COALESCE(SUM(poi.total_price), 0) as amount
       FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id
       LEFT JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
       LEFT JOIN material_categories mc ON m.category_id = mc.id
       WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
+        AND COALESCE(poi.skip_stock, 0) = 0
       GROUP BY mc.name ORDER BY amount DESC
     `).all(tenantId, startDate, endDate) as Array<{ category: string; amount: number }>
 
@@ -432,7 +435,7 @@ router.get('/extended', (req: Request, res: Response) => {
       const mS = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10)
       const mE = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().substring(0, 10)
       const mn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const cogsR = db.prepare("SELECT COALESCE(SUM(poi.total_price), 0) as cogs FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { cogs: number }
+      const cogsR = db.prepare("SELECT COALESCE(SUM(poi.total_price), 0) as cogs FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND COALESCE(poi.skip_stock, 0) = 0").get(tenantId, mS, mE) as { cogs: number }
       const expR = db.prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as exp FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id JOIN accounts a ON jl.account_id = a.id WHERE je.tenant_id = ? AND a.type = 'EXPENSE' AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { exp: number }
       costTrend.push({ month: mn, cogs: Number(cogsR.cogs), opex: Math.max(0, Number(expR.exp)) })
     }

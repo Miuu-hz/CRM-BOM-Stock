@@ -279,6 +279,10 @@ interface OrderItem {
   total_price: number
   received_qty?: number
   skip_stock?: boolean
+  // หมวดบัญชีค่าใช้จ่าย — มีความหมายเฉพาะตอน skip_stock=true (ไม่นับสต็อก) ว่างแปลว่าใช้ค่าเริ่มต้น 5403 ฝั่ง backend
+  expense_account_id?: string | null
+  expense_account_code?: string
+  expense_account_name?: string
   /** ผู้ใช้แก้ราคาเองแล้ว — เปลี่ยนหน่วยตามชื่อเรียกแทนต้องไม่ทับราคานี้ */
   price_edited?: boolean
   notes: string
@@ -1961,6 +1965,7 @@ const Purchase = () => {
         unit: normalizeUnit(item.unit),
         unitPrice: item.unit_price,
         skipStock: item.skip_stock || false,
+        expenseAccountId: item.skip_stock ? (item.expense_account_id || null) : null,
         notes: item.notes,
       }))
       const check = await confirmReceivableOrDraft(items, toStatus)
@@ -2020,6 +2025,7 @@ const Purchase = () => {
         unit: normalizeUnit(item.unit),
         unitPrice: item.unit_price,
         skipStock: item.skip_stock || false,
+        expenseAccountId: item.skip_stock ? (item.expense_account_id || null) : null,
         notes: item.notes,
       }))
       // ใบที่ส่ง/อนุมัติไปแล้ว ถ้ายังมีบรรทัดรับเข้าคลังไม่ได้ backend จะถอยใบกลับเป็นร่างให้
@@ -4491,6 +4497,7 @@ const Purchase = () => {
                     unit_price: repriceFromCost ? prefillUnitPriceFromCost(aliasCost(mat, alias), effectiveOrderVatMode, registered) : item.unit_price,
                     ...(repriceFromCost ? { price_edited: false } : {}),
                     skip_stock: id ? false : item.skip_stock,
+                    expense_account_id: id ? null : item.expense_account_id,
                     })
                   }}
                   onAddNew={modalMode !== 'view' ? (q) => openQuickAddStock(
@@ -4556,15 +4563,32 @@ const Purchase = () => {
               </div>
               {/* ติ๊ก "ไม่นับสต็อก" — ซ่อนเมื่อมี SKU แล้ว */}
               {!item.material_id && modalMode !== 'view' && (
-                <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
-                  <input type="checkbox" checked={!!item.skip_stock}
-                    onChange={e => updateOrderItem(index, 'skip_stock', e.target.checked)}
-                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer" />
-                  <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">ไม่นับสต็อก (ของใช้สำนักงาน / รับได้โดยไม่ต้องผูก SKU)</span>
-                </label>
+                <div className="pt-1 space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={!!item.skip_stock}
+                      onChange={e => updateOrderItemFields(index, { skip_stock: e.target.checked, expense_account_id: e.target.checked ? item.expense_account_id : null })}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer" />
+                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">ไม่นับสต็อก (ของใช้สำนักงาน / รับได้โดยไม่ต้องผูก SKU)</span>
+                  </label>
+                  {item.skip_stock && (
+                    <div>
+                      <label htmlFor={`expense-account-${index}`} className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.orderModal.expenseCategory')}</label>
+                      <select id={`expense-account-${index}`} value={item.expense_account_id || ''}
+                        onChange={e => updateOrderItem(index, 'expense_account_id', e.target.value || null)}
+                        className="w-full px-2.5 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
+                        <option value="">{t('purchase.orderModal.expenseCategoryDefault')}</option>
+                        {drAccounts.filter(a => a.type === 'EXPENSE').map(a => (
+                          <option key={a.id} value={a.id}>{a.code} {a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               )}
               {!item.material_id && modalMode === 'view' && !!item.skip_stock && (
-                <span className="text-[11px] text-blue-600 dark:text-blue-400 flex items-center gap-1 pt-1 font-medium">✓ ไม่นับสต็อก</span>
+                <span className="text-[11px] text-blue-600 dark:text-blue-400 flex items-center gap-1 pt-1 font-medium">
+                  ✓ ไม่นับสต็อก{item.expense_account_name ? ` · ${item.expense_account_code ? item.expense_account_code + ' ' : ''}${item.expense_account_name}` : ''}
+                </span>
               )}
             </div>
             )

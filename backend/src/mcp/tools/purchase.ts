@@ -107,6 +107,10 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
           '"หมูสับ 5 กก. 120 บาท/กก." → unitPrice:120\n' +
           'ถ้าไม่แน่ใจว่าเป็นราคาต่อหน่วยหรือราคารวม ให้ใช้ lineTotal แทน'
         ),
+        expenseAccountCode: z.string().optional().describe(
+          'รหัสบัญชีค่าใช้จ่าย (เช่น "5308" ค่าใช้จ่ายเดินทาง, "5204" บรรจุภัณฑ์) — ระบุเฉพาะรายการที่ไม่ใช่วัตถุดิบ/สินค้าเข้าคลัง ' +
+          '(น้ำมัน/ของใช้สิ้นเปลือง) ระบบจะตั้งไม่นับสต็อกให้อัตโนมัติเมื่อระบุช่องนี้'
+        ),
       })).describe('รายการสินค้าที่อ่านได้จากรูปหรือข้อความ'),
       supplier_hint: z.string().optional().describe('ชื่อซัพพลายเออร์ถ้าอ่านได้จากรูป'),
       payment_method: z.string().optional().describe('วิธีชำระเงิน เช่น "โอนจ่าย QR KBANK", "เงินสด", "โอนเงิน", "บัตรเครดิต"'),
@@ -212,6 +216,16 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         if (defaultBank) resolvedBankAccountId = defaultBank.id
       }
 
+      // Resolve expenseAccountCode -> id ต่อบรรทัดก่อนเขียน DB — ผิดแล้วต้องรู้ก่อนสร้าง PO ไม่ใช่เขียนไปแล้วแก้ยาก
+      const resolvedExpenseAccountIds: (string | null)[] = []
+      for (const item of items) {
+        if (!item.expenseAccountCode) { resolvedExpenseAccountIds.push(null); continue }
+        const acc = db.prepare("SELECT id FROM accounts WHERE tenant_id = ? AND code = ? AND type = 'EXPENSE'")
+          .get(tenantId, item.expenseAccountCode) as any
+        if (!acc) return ok({ success: false, message: `ไม่พบบัญชีค่าใช้จ่ายรหัส "${item.expenseAccountCode}" หรือไม่ใช่บัญชีประเภทค่าใช้จ่ายของกิจการนี้` })
+        resolvedExpenseAccountIds.push(acc.id)
+      }
+
       db.prepare(`
         INSERT INTO purchase_orders
           (id, tenant_id, po_number, supplier_id, status, order_date, subtotal, tax_rate, tax_amount, total_amount, vat_inclusive, notes,
@@ -250,13 +264,14 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       // - หากเกินหรือขาด (ไม่ตรง 100% หรือกำกวม) -> ให้ material_id = null ไปก่อน
       const insertItem = db.prepare(`
         INSERT INTO purchase_order_items
-          (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+          (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, skip_stock, expense_account_id, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')
       `)
 
       const resultItems: any[] = []
       let boundCount = 0
-      for (const item of items) {
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx]
         const match = matchStockItem(tenantId, item.description, true)
         const exact = match.exact
         const materialId = exact ? exact.id : null
@@ -265,11 +280,13 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         const resolvedUnit = normalizeUnit(item.unit || exact?.unit || 'pcs')
         const itemUnitPrice = resolveUnitPrice(item)
         const itemLineTotal = resolveLineTotal(item)
+        const expenseAccountId = resolvedExpenseAccountIds[idx]
 
         insertItem.run(
           randomUUID().replace(/-/g, '').substring(0, 25),
           tenantId, id, materialId, item.description, item.quantity,
-          resolvedUnit, itemUnitPrice, itemLineTotal
+          resolvedUnit, itemUnitPrice, itemLineTotal,
+          expenseAccountId ? 1 : 0, expenseAccountId
         )
 
         resultItems.push({
@@ -279,6 +296,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
           unitPrice: itemUnitPrice,
           totalPrice: itemLineTotal,
           material_id: materialId,
+          expense_account_code: item.expenseAccountCode ?? null,
           boundTo: exact ? { id: exact.id, name: exact.name, sku: exact.sku, unit: exact.unit } : null,
           สถานะ: exact ? 'ผูกแล้ว (ชื่อตรงเป๊ะ 100%)' : 'ยังไม่ผูก — ชื่อไม่ตรง 100%',
           ตัวเลือก: exact ? undefined : match.candidates.map(c => ({
@@ -563,6 +581,10 @@ order_date = แก้วันที่สั่งซื้อ/วันที
         unit:        z.string().default('pcs'),
         unitPrice:   z.number().min(0),
         materialId:  z.string().optional().describe('ID วัตถุดิบ ถ้ามี'),
+        skipStock:   z.boolean().optional().describe('ไม่นับสต็อก (ของใช้สิ้นเปลือง) — true = ไม่ตัดสต็อก'),
+        expenseAccountCode: z.string().optional().describe(
+          'รหัสบัญชีค่าใช้จ่าย (เช่น "5308" ค่าใช้จ่ายเดินทาง) — ใช้เฉพาะบรรทัดที่ skipStock=true'
+        ),
       })).optional().describe('รายการสินค้า — ถ้าส่งจะแทนที่รายการทั้งหมด'),
     },
     async (args) => {
@@ -580,16 +602,32 @@ order_date = แก้วันที่สั่งซื้อ/วันที
         if (sup) supplierId = sup.id
       }
 
-      // เรียก applyPurchaseOrderUpdate ตัวเดียวกับ REST PUT /purchase-orders/:id — เดิมเขียนเองแล้ว
-      // ลบรายการทั้งใบแล้ว INSERT ใหม่ (ทิ้ง skip_stock/notes, id แถวเปลี่ยน), คิด VAT แยกนอกเสมอ,
-      // ไม่หักส่วนลด, ไม่เช็คสินค้าข้ามเทแนนต์ (แก้ 2026-09-27)
+      // เรียก applyPurchaseOrderUpdate ตัวเดียวกับ REST PUT /purchase-orders/:id — ลบรายการทั้งใบแล้ว
+      // INSERT ใหม่, คิด VAT แยกนอกเสมอ, ไม่หักส่วนลด, ไม่เช็คสินค้าข้ามเทแนนต์ (แก้ 2026-09-27)
       // service เขียนทับ ยอด/วันที่/ภาษี/ส่วนลด เสมอ → ช่องที่ AI ไม่ได้ส่งมาต้องส่งค่าเดิมเข้าไป
-      const itemsForUpdate = items ?? (db.prepare(
-        'SELECT id, material_id, description, quantity, unit, unit_price, skip_stock, notes FROM purchase_order_items WHERE purchase_order_id = ?'
-      ).all(po.id) as any[]).map(r => ({
-        id: r.id, materialId: r.material_id, description: r.description, quantity: r.quantity,
-        unit: r.unit, unitPrice: r.unit_price, skipStock: r.skip_stock, notes: r.notes,
-      }))
+      // skipStock/expenseAccountCode เดิมหายไปตอน AI ส่ง items แทนที่ทั้งใบ (schema ไม่มีช่องนี้) — เติมแล้ว
+      // 2026-10-12: resolve รหัสบัญชี -> id ที่นี่ก่อนส่งเข้า service (service รับแค่ id ไม่รับรหัส)
+      let itemsForUpdate: any[]
+      if (items) {
+        itemsForUpdate = []
+        for (const it of items) {
+          let expenseAccountId: string | null = null
+          if (it.skipStock && it.expenseAccountCode) {
+            const acc = db.prepare("SELECT id FROM accounts WHERE tenant_id = ? AND code = ? AND type = 'EXPENSE'")
+              .get(tenantId, it.expenseAccountCode) as any
+            if (!acc) return ok({ success: false, message: `ไม่พบบัญชีค่าใช้จ่ายรหัส "${it.expenseAccountCode}" หรือไม่ใช่บัญชีประเภทค่าใช้จ่ายของกิจการนี้` })
+            expenseAccountId = acc.id
+          }
+          itemsForUpdate.push({ ...it, expenseAccountId })
+        }
+      } else {
+        itemsForUpdate = (db.prepare(
+          'SELECT id, material_id, description, quantity, unit, unit_price, skip_stock, expense_account_id, notes FROM purchase_order_items WHERE purchase_order_id = ?'
+        ).all(po.id) as any[]).map(r => ({
+          id: r.id, materialId: r.material_id, description: r.description, quantity: r.quantity,
+          unit: r.unit, unitPrice: r.unit_price, skipStock: r.skip_stock, expenseAccountId: r.expense_account_id, notes: r.notes,
+        }))
+      }
 
       let result: any
       let dateChange: { from: string; to: string } | null = null

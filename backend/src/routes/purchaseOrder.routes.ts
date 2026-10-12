@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { gateOrCreate, recordAutoAction, approvalDenyReason, CreateRequestArgs } from '../services/approvalGate.service'
-import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, poBlockingDocuments, receiptIssuesForItems, poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError, resolveSupplierId, resolveExpenseAccountId, poBlockingDocuments, receiptIssuesForItems, poNotReceivableMessage } from '../services/purchaseOrderUpdate.service'
 import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber, docYear } from '../utils/id'
@@ -133,7 +133,12 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' })
     }
 
-    const items = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(req.params.id)
+    const items = db.prepare(`
+      SELECT poi.*, ea.code as expense_account_code, ea.name as expense_account_name
+      FROM purchase_order_items poi
+      LEFT JOIN accounts ea ON ea.id = poi.expense_account_id
+      WHERE poi.purchase_order_id = ?
+    `).all(req.params.id)
 
     res.json({ success: true, data: { ...po, items } })
   } catch (error) {
@@ -157,7 +162,12 @@ router.post('/', async (req: Request, res: Response) => {
     let supplierIdSafe: string | null
     try {
       supplierIdSafe = resolveSupplierId(tenantId, supplierId)
-      for (const item of items || []) item.materialId = resolveStockItemId(tenantId, item.materialId, item.description)
+      for (const item of items || []) {
+        item.materialId = resolveStockItemId(tenantId, item.materialId, item.description)
+        item.resolvedExpenseAccountId = resolveExpenseAccountId(
+          tenantId, item.expenseAccountId ?? item.expense_account_id, !!(item.skipStock || item.skip_stock)
+        )
+      }
     } catch (e) {
       if (e instanceof PurchaseOrderUpdateError || e instanceof StockItemRefError) {
         return res.status(400).json({ success: false, message: e.message })
@@ -217,9 +227,9 @@ router.post('/', async (req: Request, res: Response) => {
     `)
 
     const insertItem = db.prepare(`
-      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, 
-        quantity, unit, unit_price, total_price, skip_stock, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description,
+        quantity, unit, unit_price, total_price, skip_stock, expense_account_id, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const transaction = db.transaction(() => {
@@ -238,6 +248,7 @@ router.post('/', async (req: Request, res: Response) => {
             // ของที่ตั้งใจไม่นับสต็อก (ของใช้สำนักงาน) ติ๊กมาจากหน้าเว็บ — ตัวนี้คือตัวที่ GR ใช้แยก
             // ว่าบรรทัดที่ไม่ผูกสินค้าเป็นของที่ตั้งใจ หรือลืมผูก
             (item.skipStock || item.skip_stock) ? 1 : 0,
+            item.resolvedExpenseAccountId || null,
             item.notes || ''
           )
         }
@@ -250,7 +261,12 @@ router.post('/', async (req: Request, res: Response) => {
     rememberContactVatMode(tenantId, 'supplier', supplierIdSafe, tax, !!inclusive)
 
     const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const poItems = db.prepare('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?').all(id)
+    const poItems = db.prepare(`
+      SELECT poi.*, ea.code as expense_account_code, ea.name as expense_account_name
+      FROM purchase_order_items poi
+      LEFT JOIN accounts ea ON ea.id = poi.expense_account_id
+      WHERE poi.purchase_order_id = ?
+    `).all(id)
 
     res.status(201).json({ success: true, data: { ...po, items: poItems } })
   } catch (error) {
