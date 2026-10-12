@@ -37,15 +37,13 @@ async function main() {
     const page = await stripe.prices.list({ lookup_keys: defs.slice(i, i + 10).map(d => d.lookupKey), active: true, limit: 10 })
     page.data.forEach(p => p.lookup_key && existing.set(p.lookup_key, p))
   }
+  // ดึงรายการทีเดียว แทน retrieve ทีละตัว (ตัวที่ยังไม่มีจะขึ้น 404 เป็น "ข้อผิดพลาด" ใน dashboard ให้ตกใจเปล่า ๆ)
   const products = new Set<string>()
+  for await (const p of stripe.products.list({ limit: 100 })) products.add(p.id)
   let created = 0
   for (const d of defs) {
     if (!products.has(d.productId)) {
-      try {
-        await stripe.products.retrieve(d.productId)
-      } catch {
-        await stripe.products.create({ id: d.productId, name: d.productName })
-      }
+      await stripe.products.create({ id: d.productId, name: d.productName })
       products.add(d.productId)
     }
     const amount = d.unitAmountBaht * 100  // THB เป็นหน่วยสตางค์
